@@ -1,0 +1,29 @@
+// DeliveryWays - Prisma Schema
+// Modular Monolith Architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Base model pattern — all tenant-scoped models extend this
+// ============================================================
+
+// Convention:
+//   - Prefix model names with module context (e.g., AuthUser, OrderItem)
+//   - Use Decimal(10,2) for money fields
+//   - Use @db.Timestamptz for all DateTime fields
+//   - Every tenant-scoped model includes tenantId
+
+// Placeholder model — remove when first real model is added
+model HealthCheck {
+  id        String   @id @default(cuid())
+  status    String   @default("ok")
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@map("health_checks")
+}
