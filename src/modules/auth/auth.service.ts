@@ -7,8 +7,9 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { AuthRepository } from './auth.repository';
-import { MailerService } from '../mailer/mailer.service';
+import { PrismaService } from '../../database';
+import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -20,29 +21,106 @@ import {
   ResetPasswordDto,
   VerifyEmailDto,
 } from './dto';
-import { AuthUserContext } from '../../common/decorators';
+import { TenantsService } from '../tenants/tenants.service';
+import { RestaurantsService } from '../restaurants/restaurants.service';
+import { BranchesService } from '../branches/branches.service';
+import { UsersService } from '../users/users.service';
+import { ProfilesService } from '../profiles/profiles.service';
+import { MailerService } from '../mailer/mailer.service';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly authRepository: AuthRepository,
+    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly tenantsService: TenantsService,
+    private readonly restaurantsService: RestaurantsService,
+    private readonly branchesService: BranchesService,
+    private readonly usersService: UsersService,
+    private readonly profilesService: ProfilesService,
     private readonly mailerService: MailerService,
   ) {}
 
   async registerTenant(dto: RegisterTenantDto) {
-    const existing = await this.authRepository.findUserByEmail(dto.email);
+    const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
       throw new BadRequestException('User already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
     const verificationToken = this.generateToken();
 
-    const result = await this.authRepository.createTenantOnboarding({
-      ...dto,
-      password: hashedPassword,
-      verificationToken,
+    const result = await this.prisma.$transaction(async (tx) => {
+      const tenant = await this.tenantsService.create(
+        {
+          name: dto.tenantName,
+          slug: dto.tenantSlug,
+          bio: dto.tenantBio,
+          logoUrl: dto.tenantLogoUrl,
+          socialLinks: dto.tenantSocialLinks,
+          settings: dto.tenantSettings,
+        },
+        tx,
+      );
+
+      const restaurant = await this.restaurantsService.create(
+        tenant.id,
+        {
+          name: dto.restaurantName,
+          slug: dto.restaurantSlug,
+          tagline: dto.restaurantTagline,
+          supportContact: dto.restaurantSupportContact,
+          branding: dto.restaurantBranding,
+          socialMedia: dto.restaurantSocialMedia,
+        },
+        tx,
+      );
+
+      const branch = await this.branchesService.create(
+        tenant.id,
+        {
+          restaurantId: restaurant.id,
+          name: dto.branchName,
+          isMain: true,
+          street: dto.street,
+          city: dto.city,
+          state: dto.state,
+          coverImage: dto.branchCoverImage,
+          description: dto.branchDescription,
+          settings: dto.branchSettings,
+        },
+        tx,
+      );
+
+      const user = await this.usersService.createBusinessAdmin(
+        {
+          email: dto.email,
+          password: dto.password,
+          tenantId: tenant.id,
+          restaurantId: restaurant.id,
+          branchId: branch.id,
+          verificationToken,
+        },
+        tx,
+      );
+
+      await this.profilesService.create(
+        {
+          userId: user.id,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+        },
+        tx,
+      );
+
+      await this.tenantsService.assignOwner(tenant.id, user.id, tx);
+
+      return {
+        ownerId: user.id,
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        email: user.email,
+      };
     });
 
     await this.mailerService.sendVerificationEmail(dto.email, verificationToken);
@@ -54,27 +132,35 @@ export class AuthService {
   }
 
   async registerCustomer(dto: RegisterCustomerDto) {
-    const existing = await this.authRepository.findUserByEmail(
-      dto.email,
-      dto.restaurantId,
-    );
+    const existing = await this.usersService.findByEmail(dto.email, dto.restaurantId);
     if (existing) {
       throw new BadRequestException('Customer already exists for this restaurant');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
     const verificationToken = this.generateToken();
 
-    const restaurant = await this.authRepository.findRestaurantById(dto.restaurantId);
-    if (!restaurant) {
-      throw new NotFoundException('Restaurant not found');
-    }
+    await this.prisma.$transaction(async (tx) => {
+      const customer = await this.usersService.create(
+        {
+          email: dto.email,
+          password: await bcrypt.hash(dto.password, 10),
+          role: UserRoleEnum.CUSTOMER,
+          restaurantId: dto.restaurantId,
+          tenantId: dto.tenantId,
+          verificationToken,
+        },
+        tx,
+      );
 
-    await this.authRepository.createCustomer({
-      ...dto,
-      password: hashedPassword,
-      verificationToken,
-      tenantId: restaurant.tenantId,
+      await this.profilesService.create(
+        {
+          userId: customer.id,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+        },
+        tx,
+      );
     });
 
     await this.mailerService.sendVerificationEmail(dto.email, verificationToken);
@@ -86,7 +172,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.authRepository.findUserByEmail(dto.email, dto.restaurantId);
+    const user = await this.usersService.findByEmail(dto.email, dto.restaurantId);
     if (!user || user.deletedAt) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -113,7 +199,7 @@ export class AuthService {
     );
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-    await this.authRepository.setRefreshTokenHash(user.id, refreshTokenHash);
+    await this.usersService.setRefreshTokenHash(user.id, refreshTokenHash);
 
     return {
       data: {
@@ -151,7 +237,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const dbUser = await this.authRepository.findUserById(payload.uid);
+    const dbUser = await this.usersService.findById(payload.uid);
     if (!dbUser || !dbUser.refreshTokenHash) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -178,7 +264,7 @@ export class AuthService {
     );
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-    await this.authRepository.setRefreshTokenHash(dbUser.id, refreshTokenHash);
+    await this.usersService.setRefreshTokenHash(dbUser.id, refreshTokenHash);
 
     return {
       data: { accessToken, refreshToken },
@@ -187,7 +273,7 @@ export class AuthService {
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
-    const result = await this.authRepository.verifyUserEmail(dto.email, dto.token);
+    const result = await this.usersService.verifyEmail(dto.email, dto.token);
 
     if (result.count === 0) {
       throw new BadRequestException('Invalid verification token');
@@ -201,7 +287,7 @@ export class AuthService {
 
   async resendVerification(dto: ResendVerificationDto) {
     const token = this.generateToken();
-    const result = await this.authRepository.setVerificationToken(dto.email, token);
+    const result = await this.usersService.setVerificationToken(dto.email, token);
 
     if (result.count === 0) {
       throw new NotFoundException('User not found');
@@ -217,7 +303,7 @@ export class AuthService {
 
   async forgotPassword(dto: ForgotPasswordDto) {
     const token = this.generateToken();
-    const result = await this.authRepository.setVerificationToken(dto.email, token);
+    const result = await this.usersService.setVerificationToken(dto.email, token);
 
     if (result.count === 0) {
       return {
@@ -235,16 +321,15 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const user = await this.authRepository.findUserByEmail(dto.email);
+    const user = await this.usersService.findByEmail(dto.email);
 
     if (!user || user.verificationToken !== dto.token) {
       throw new BadRequestException('Invalid reset token');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
-    await this.authRepository.setVerificationToken(dto.email, null);
-    await this.authRepository.setRefreshTokenHash(user.id, null);
-    await this.authRepository.updatePassword(user.id, hashedPassword);
+    await this.usersService.setVerificationToken(dto.email, null);
+    await this.usersService.setRefreshTokenHash(user.id, null);
+    await this.usersService.updatePassword(user.id, dto.newPassword);
 
     return {
       data: null,
@@ -253,7 +338,7 @@ export class AuthService {
   }
 
   async changePassword(user: AuthUserContext, dto: ChangePasswordDto) {
-    const dbUser = await this.authRepository.findUserById(user.uid);
+    const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
     }
@@ -267,9 +352,7 @@ export class AuthService {
       throw new UnauthorizedException('Current password is invalid');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
-
-    await this.authRepository.updatePassword(dbUser.id, hashedPassword);
+    await this.usersService.updatePassword(dbUser.id, dto.newPassword);
 
     return {
       data: null,
@@ -278,7 +361,7 @@ export class AuthService {
   }
 
   async me(user: AuthUserContext) {
-    const dbUser = await this.authRepository.findUserById(user.uid);
+    const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
     }
@@ -298,7 +381,7 @@ export class AuthService {
   }
 
   async deleteAccount(user: AuthUserContext) {
-    await this.authRepository.softDeleteUser(user.uid);
+    await this.usersService.softDeleteUser(user.uid);
     return {
       data: null,
       message: 'Account scheduled for deletion in 30 days',
@@ -306,7 +389,7 @@ export class AuthService {
   }
 
   async cancelDeletion(user: AuthUserContext) {
-    await this.authRepository.cancelDeleteUser(user.uid);
+    await this.usersService.cancelDeleteUser(user.uid);
     return {
       data: null,
       message: 'Account deletion canceled',

@@ -18,7 +18,7 @@ export class RestaurantsController {
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateRestaurantDto) {
-    return this.restaurantsService.create(user, dto);
+    return this.restaurantsService.createFromUser(user, dto);
   }
 
   @ApiBearerAuth()

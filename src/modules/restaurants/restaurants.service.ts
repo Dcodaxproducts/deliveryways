@@ -1,7 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { QueryDto } from '../../common/dto';
 import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
+import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
 import { CreateRestaurantDto, UpdateRestaurantDto } from './dto';
 
@@ -9,18 +11,38 @@ import { CreateRestaurantDto, UpdateRestaurantDto } from './dto';
 export class RestaurantsService {
   constructor(private readonly restaurantsRepository: RestaurantsRepository) {}
 
-  async create(user: AuthUserContext, dto: CreateRestaurantDto) {
+  async create(
+    tenantId: string,
+    dto: CreateRestaurantDto,
+    tx?: PrismaTx,
+  ) {
+    return this.restaurantsRepository.create(
+      {
+        tenant: { connect: { id: tenantId } },
+        name: dto.name,
+        slug: dto.slug,
+        logo: dto.logo,
+        customDomain: dto.customDomain,
+        tagline: dto.tagline,
+        supportContact: dto.supportContact as Prisma.InputJsonValue,
+        branding: dto.branding as Prisma.InputJsonValue,
+        socialMedia: dto.socialMedia as Prisma.InputJsonValue,
+        settings: dto.settings as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  async createFromUser(
+    user: AuthUserContext,
+    dto: CreateRestaurantDto,
+    tx?: PrismaTx,
+  ) {
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const data = await this.restaurantsRepository.create({
-      tenant: { connect: { id: user.tid } },
-      name: dto.name,
-      slug: dto.slug,
-      logo: dto.logo,
-      customDomain: dto.customDomain,
-    });
+    const data = await this.create(user.tid, dto, tx);
 
     return {
       data,
@@ -68,12 +90,31 @@ export class RestaurantsService {
     };
   }
 
-  async update(user: AuthUserContext, id: string, dto: UpdateRestaurantDto) {
+  async update(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantDto,
+    tx?: PrismaTx,
+  ) {
     if (user.role !== 'SUPER_ADMIN' && !user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const data = await this.restaurantsRepository.update(id, dto);
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        name: dto.name,
+        slug: dto.slug,
+        logo: dto.logo,
+        customDomain: dto.customDomain,
+        tagline: dto.tagline,
+        supportContact: dto.supportContact as Prisma.InputJsonValue,
+        branding: dto.branding as Prisma.InputJsonValue,
+        socialMedia: dto.socialMedia as Prisma.InputJsonValue,
+        settings: dto.settings as Prisma.InputJsonValue,
+      },
+      tx,
+    );
 
     return {
       data,
@@ -81,8 +122,8 @@ export class RestaurantsService {
     };
   }
 
-  async remove(_user: AuthUserContext, id: string) {
-    const data = await this.restaurantsRepository.softDelete(id);
+  async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const data = await this.restaurantsRepository.softDelete(id, tx);
 
     return {
       data,

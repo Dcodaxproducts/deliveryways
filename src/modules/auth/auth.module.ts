@@ -4,9 +4,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { AuthRepository } from './auth.repository';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailerModule } from '../mailer/mailer.module';
+import { TenantsModule } from '../tenants/tenants.module';
+import { RestaurantsModule } from '../restaurants/restaurants.module';
+import { BranchesModule } from '../branches/branches.module';
+import { UsersModule } from '../users/users.module';
+import { ProfilesModule } from '../profiles/profiles.module';
 
 @Module({
   imports: [
@@ -23,9 +27,14 @@ import { MailerModule } from '../mailer/mailer.module';
       }),
     }),
     MailerModule,
+    TenantsModule,
+    RestaurantsModule,
+    BranchesModule,
+    UsersModule,
+    ProfilesModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthRepository, JwtStrategy],
-  exports: [AuthService, AuthRepository],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}

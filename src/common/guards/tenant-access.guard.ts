@@ -21,9 +21,14 @@ export class TenantAccessGuard implements CanActivate {
     }>();
 
     const user = request.user;
+    const tenantContext = (request as { tenantContext?: { tenantId?: string } }).tenantContext;
 
     if (!user || user.role === 'SUPER_ADMIN') {
       return true;
+    }
+
+    if (tenantContext?.tenantId && user.tid && tenantContext.tenantId !== user.tid) {
+      throw new ForbiddenException('Cross-tenant context access denied');
     }
 
     this.validatePayloadTenant(user.tid, request);

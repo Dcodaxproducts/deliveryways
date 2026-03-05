@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClsModule } from 'nestjs-cls';
 import { APP_GUARD } from '@nestjs/core';
@@ -11,7 +16,10 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { RestaurantsModule } from './modules/restaurants/restaurants.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { MailerModule } from './modules/mailer/mailer.module';
+import { UsersModule } from './modules/users/users.module';
+import { ProfilesModule } from './modules/profiles/profiles.module';
 import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from './common/guards';
+import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.middleware';
 
 @Module({
   imports: [
@@ -40,6 +48,8 @@ import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from './common/guards';
 
     DatabaseModule,
     MailerModule,
+    UsersModule,
+    ProfilesModule,
     AuthModule,
     TenantsModule,
     RestaurantsModule,
@@ -64,4 +74,11 @@ import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from './common/guards';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(TenantDiscoveryMiddleware).forRoutes({
+      path: '*',
+      method: RequestMethod.ALL,
+    });
+  }
+}

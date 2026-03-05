@@ -1,11 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { QueryDto } from '../../common/dto';
-import { Prisma } from '@prisma/client';
+import { PrismaTx } from '../../common/types';
 
 @Injectable()
 export class TenantsRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  private client(tx?: PrismaTx): PrismaClient | PrismaTx {
+    return tx ?? this.prisma;
+  }
+
+  async create(data: Prisma.TenantCreateInput, tx?: PrismaTx) {
+    return this.client(tx).tenant.create({ data });
+  }
 
   async list(query: QueryDto, withDeleted = false) {
     const where: Prisma.TenantWhereInput = {
@@ -35,8 +44,8 @@ export class TenantsRepository {
     return { items, total };
   }
 
-  async update(id: string, data: Prisma.TenantUpdateInput) {
-    return this.prisma.tenant.update({
+  async update(id: string, data: Prisma.TenantUpdateInput, tx?: PrismaTx) {
+    return this.client(tx).tenant.update({
       where: { id },
       data,
     });

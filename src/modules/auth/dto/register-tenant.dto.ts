@@ -1,5 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MinLength,
+  IsEmail,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { BranchSettingsDto } from '../../branches/dto/create-branch.dto';
 
 export class RegisterTenantDto {
   @ApiProperty()
@@ -31,6 +41,26 @@ export class RegisterTenantDto {
   @IsNotEmpty()
   tenantSlug!: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  tenantBio?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  tenantLogoUrl?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  tenantSocialLinks?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  tenantSettings?: Record<string, unknown>;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -41,10 +71,46 @@ export class RegisterTenantDto {
   @IsNotEmpty()
   restaurantSlug!: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantTagline?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  restaurantSupportContact?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  restaurantBranding?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  restaurantSocialMedia?: Record<string, unknown>;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
   branchName!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchCoverImage?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchDescription?: string;
+
+  @ApiPropertyOptional({ type: BranchSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BranchSettingsDto)
+  branchSettings?: BranchSettingsDto;
 
   @ApiProperty()
   @IsString()

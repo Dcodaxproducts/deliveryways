@@ -23,8 +23,11 @@ enum AddressRefType {
 model Tenant {
   id             String       @id @default(cuid())
   name           String
-  ownerId        String       @map("owner_id")
+  ownerId        String?      @map("owner_id")
   slug           String       @unique
+  bio            String?
+  logoUrl        String?      @map("logo_url")
+  socialLinks    Json?        @map("social_links")
   brandingConfig Json?        @map("branding_config")
   settings       Json?
   isActive       Boolean      @default(true) @map("is_active")
@@ -32,7 +35,7 @@ model Tenant {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
-  owner       User         @relation("TenantOwner", fields: [ownerId], references: [id])
+  owner       User?        @relation("TenantOwner", fields: [ownerId], references: [id])
   restaurants Restaurant[]
   branches    Branch[]
   users       User[]       @relation("TenantUsers")
@@ -45,10 +48,14 @@ model Restaurant {
   tenantId     String     @map("tenant_id")
   name         String
   slug         String
-  logo         String?
-  customDomain String?    @map("custom_domain")
-  settings     Json?
-  isActive     Boolean    @default(true) @map("is_active")
+  logo           String?
+  customDomain   String?    @map("custom_domain")
+  tagline        String?
+  supportContact Json?      @map("support_contact")
+  branding       Json?
+  socialMedia    Json?      @map("social_media")
+  settings       Json?
+  isActive       Boolean    @default(true) @map("is_active")
   deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
@@ -66,6 +73,9 @@ model Branch {
   restaurantId String     @map("restaurant_id")
   tenantId     String     @map("tenant_id")
   name         String
+  coverImage   String?    @map("cover_image")
+  description  String?
+  settings     Json?
   isMain       Boolean    @default(false) @map("is_main")
   managerId    String?    @map("manager_id")
   isActive     Boolean    @default(true) @map("is_active")

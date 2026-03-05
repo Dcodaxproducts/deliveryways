@@ -18,7 +18,7 @@ export class BranchesController {
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateBranchDto) {
-    return this.branchesService.create(user, dto);
+    return this.branchesService.createFromUser(user, dto);
   }
 
   @ApiBearerAuth()

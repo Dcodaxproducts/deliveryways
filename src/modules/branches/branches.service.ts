@@ -1,7 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { QueryDto } from '../../common/dto';
 import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
+import { PrismaTx } from '../../common/types';
 import { BranchesRepository } from './branches.repository';
 import { CreateBranchDto, UpdateBranchDto } from './dto';
 
@@ -9,15 +11,39 @@ import { CreateBranchDto, UpdateBranchDto } from './dto';
 export class BranchesService {
   constructor(private readonly branchesRepository: BranchesRepository) {}
 
-  async create(user: AuthUserContext, dto: CreateBranchDto) {
+  async create(
+    tenantId: string,
+    dto: CreateBranchDto,
+    tx?: PrismaTx,
+  ) {
+    return this.branchesRepository.create(
+      {
+        tenantId,
+        restaurantId: dto.restaurantId,
+        name: dto.name,
+        isMain: dto.isMain,
+        managerId: dto.managerId,
+        street: dto.street,
+        city: dto.city,
+        state: dto.state,
+        coverImage: dto.coverImage,
+        description: dto.description,
+        settings: dto.settings as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  async createFromUser(
+    user: AuthUserContext,
+    dto: CreateBranchDto,
+    tx?: PrismaTx,
+  ) {
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const data = await this.branchesRepository.createBranch({
-      tenantId: user.tid,
-      ...dto,
-    });
+    const data = await this.create(user.tid, dto, tx);
 
     return {
       data,
@@ -83,8 +109,28 @@ export class BranchesService {
     };
   }
 
-  async update(_user: AuthUserContext, id: string, dto: UpdateBranchDto) {
-    const data = await this.branchesRepository.update(id, dto);
+  async update(
+    _user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchDto,
+    tx?: PrismaTx,
+  ) {
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        name: dto.name,
+        isMain: dto.isMain,
+        manager: dto.managerId
+          ? {
+              connect: { id: dto.managerId },
+            }
+          : undefined,
+        coverImage: dto.coverImage,
+        description: dto.description,
+        settings: dto.settings as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
 
     return {
       data,
@@ -92,8 +138,8 @@ export class BranchesService {
     };
   }
 
-  async remove(_user: AuthUserContext, id: string) {
-    const data = await this.branchesRepository.softDelete(id);
+  async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const data = await this.branchesRepository.softDelete(id, tx);
 
     return {
       data,

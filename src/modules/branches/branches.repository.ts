@@ -1,13 +1,23 @@
 import { Injectable } from '@nestjs/common';
-import { AddressRefType, Prisma, UserRole } from '@prisma/client';
+import {
+  AddressRefType,
+  Prisma,
+  PrismaClient,
+  UserRole,
+} from '@prisma/client';
 import { PrismaService } from '../../database';
 import { QueryDto } from '../../common/dto';
+import { PrismaTx } from '../../common/types';
 
 @Injectable()
 export class BranchesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createBranch(payload: {
+  private client(tx?: PrismaTx): PrismaClient | PrismaTx {
+    return tx ?? this.prisma;
+  }
+
+  async create(payload: {
     tenantId: string;
     restaurantId: string;
     name: string;
@@ -16,54 +26,60 @@ export class BranchesRepository {
     street: string;
     city: string;
     state: string;
-  }) {
-    return this.prisma.$transaction(async (tx) => {
-      if (payload.isMain) {
-        await tx.branch.updateMany({
-          where: {
-            restaurantId: payload.restaurantId,
-            isMain: true,
-            deletedAt: null,
-          },
-          data: {
-            isMain: false,
-          },
-        });
-      }
+    coverImage?: string;
+    description?: string;
+    settings?: Prisma.InputJsonValue;
+  }, tx?: PrismaTx) {
+    const client = this.client(tx);
 
-      const branch = await tx.branch.create({
-        data: {
-          tenantId: payload.tenantId,
+    if (payload.isMain) {
+      await client.branch.updateMany({
+        where: {
           restaurantId: payload.restaurantId,
-          name: payload.name,
-          isMain: payload.isMain ?? false,
-          managerId: payload.managerId,
+          isMain: true,
+          deletedAt: null,
         },
-      });
-
-      await tx.address.create({
         data: {
-          tenantId: payload.tenantId,
-          referenceId: branch.id,
-          refType: AddressRefType.BRANCH,
-          street: payload.street,
-          city: payload.city,
-          state: payload.state,
+          isMain: false,
         },
       });
+    }
 
-      if (payload.managerId) {
-        await tx.user.update({
-          where: { id: payload.managerId },
-          data: {
-            branchId: branch.id,
-            role: UserRole.BRANCH_ADMIN,
-          },
-        });
-      }
-
-      return branch;
+    const branch = await client.branch.create({
+      data: {
+        tenantId: payload.tenantId,
+        restaurantId: payload.restaurantId,
+        name: payload.name,
+        isMain: payload.isMain ?? false,
+        managerId: payload.managerId,
+        coverImage: payload.coverImage,
+        description: payload.description,
+        settings: payload.settings,
+      },
     });
+
+    await client.address.create({
+      data: {
+        tenantId: payload.tenantId,
+        referenceId: branch.id,
+        refType: AddressRefType.BRANCH,
+        street: payload.street,
+        city: payload.city,
+        state: payload.state,
+      },
+    });
+
+    if (payload.managerId) {
+      await client.user.update({
+        where: { id: payload.managerId },
+        data: {
+          branchId: branch.id,
+          role: UserRole.BRANCH_ADMIN,
+        },
+      });
+    }
+
+    return branch;
   }
 
   async listByRestaurant(
@@ -112,12 +128,12 @@ export class BranchesRepository {
     });
   }
 
-  async update(id: string, data: Prisma.BranchUpdateInput) {
-    return this.prisma.branch.update({ where: { id }, data });
+  async update(id: string, data: Prisma.BranchUpdateInput, tx?: PrismaTx) {
+    return this.client(tx).branch.update({ where: { id }, data });
   }
 
-  async softDelete(id: string) {
-    return this.prisma.branch.update({
+  async softDelete(id: string, tx?: PrismaTx) {
+    return this.client(tx).branch.update({
       where: { id },
       data: {
         deletedAt: new Date(),

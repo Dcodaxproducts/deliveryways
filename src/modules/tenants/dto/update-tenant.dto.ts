@@ -1,22 +1,8 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsObject, IsOptional, IsString } from 'class-validator';
+import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBoolean, IsOptional } from 'class-validator';
+import { CreateTenantDto } from './create-tenant.dto';
 
-export class UpdateTenantDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  name?: string;
-
-  @ApiPropertyOptional({ type: Object })
-  @IsOptional()
-  @IsObject()
-  brandingConfig?: Record<string, unknown>;
-
-  @ApiPropertyOptional({ type: Object })
-  @IsOptional()
-  @IsObject()
-  settings?: Record<string, unknown>;
-
+export class UpdateTenantDto extends PartialType(CreateTenantDto) {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

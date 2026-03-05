@@ -19,6 +19,11 @@ export class RegisterCustomerDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
+  tenantId!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   firstName!: string;
 
   @ApiProperty()

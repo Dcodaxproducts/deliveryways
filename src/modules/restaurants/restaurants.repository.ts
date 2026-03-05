@@ -1,14 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../database';
-import { Prisma } from '@prisma/client';
 import { QueryDto } from '../../common/dto';
+import { PrismaTx } from '../../common/types';
 
 @Injectable()
 export class RestaurantsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.RestaurantCreateInput) {
-    return this.prisma.restaurant.create({ data });
+  private client(tx?: PrismaTx): PrismaClient | PrismaTx {
+    return tx ?? this.prisma;
+  }
+
+  async create(data: Prisma.RestaurantCreateInput, tx?: PrismaTx) {
+    return this.client(tx).restaurant.create({ data });
   }
 
   async listByTenant(
@@ -56,28 +61,28 @@ export class RestaurantsRepository {
     return restaurant?.tenantId;
   }
 
-  async update(id: string, data: Prisma.RestaurantUpdateInput) {
-    return this.prisma.restaurant.update({
+  async update(id: string, data: Prisma.RestaurantUpdateInput, tx?: PrismaTx) {
+    return this.client(tx).restaurant.update({
       where: { id },
       data,
     });
   }
 
-  async softDelete(id: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const deletedAt = new Date();
-      await tx.branch.updateMany({
-        where: { restaurantId: id, deletedAt: null },
-        data: { deletedAt, isActive: false },
-      });
+  async softDelete(id: string, tx?: PrismaTx) {
+    const client = this.client(tx);
+    const deletedAt = new Date();
 
-      return tx.restaurant.update({
-        where: { id },
-        data: {
-          deletedAt,
-          isActive: false,
-        },
-      });
+    await client.branch.updateMany({
+      where: { restaurantId: id, deletedAt: null },
+      data: { deletedAt, isActive: false },
+    });
+
+    return client.restaurant.update({
+      where: { id },
+      data: {
+        deletedAt,
+        isActive: false,
+      },
     });
   }
 }
