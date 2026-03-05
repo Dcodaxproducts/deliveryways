@@ -84,10 +84,39 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 ```bash
 npm install
 cp .env.example .env
-npx prisma generate
+npm run db:up
+npm run prisma:generate
+npm run prisma:migrate -- --name init
 npm run build
 npm run start:dev
 ```
+
+### Local PostgreSQL (Docker)
+
+The project includes `docker-compose.yml` with a local Postgres service.
+
+```bash
+# Start database
+npm run db:up
+
+# Follow logs
+npm run db:logs
+
+# Stop database
+npm run db:down
+
+# Reset database volume (destructive)
+npm run db:reset
+```
+
+Default local connection:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/deliveryways
+```
+
+Swagger: `http://localhost:3000/docs`
+API Base: `http://localhost:3000/api/v1`
 
 ## Branching Strategy
 
