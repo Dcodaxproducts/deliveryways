@@ -84,11 +84,7 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 ```bash
 npm install
 cp .env.example .env
-npm run db:up
-npm run prisma:generate
-npm run prisma:migrate -- --name init
-npm run build
-npm run start:dev
+npm run setup:local
 ```
 
 ### Local PostgreSQL (Docker)

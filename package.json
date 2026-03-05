@@ -24,7 +24,8 @@
     "db:reset": "docker compose down -v && docker compose up -d postgres",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push",
+    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run start:dev"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
