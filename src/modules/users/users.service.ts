@@ -20,13 +20,58 @@ export class UsersService {
           ? { connect: { id: dto.restaurantId } }
           : undefined,
         branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
+        profile: dto.profile
+          ? {
+              create: {
+                firstName: dto.profile.firstName,
+                lastName: dto.profile.lastName,
+                avatarUrl: dto.profile.avatarUrl,
+                bio: dto.profile.bio,
+                phone: dto.profile.phone,
+              },
+            }
+          : undefined,
       },
       tx,
     );
   }
 
   async update(id: string, dto: UpdateUserDto, tx?: PrismaTx) {
-    return this.usersRepository.update(id, dto, tx);
+    return this.usersRepository.update(
+      id,
+      {
+        email: dto.email,
+        password: dto.password,
+        role: dto.role,
+        verificationToken: dto.verificationToken,
+        tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
+        restaurant: dto.restaurantId
+          ? { connect: { id: dto.restaurantId } }
+          : undefined,
+        branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
+        profile: dto.profile
+          ? {
+              upsert: {
+                create: {
+                  firstName: dto.profile.firstName,
+                  lastName: dto.profile.lastName,
+                  avatarUrl: dto.profile.avatarUrl,
+                  bio: dto.profile.bio,
+                  phone: dto.profile.phone,
+                },
+                update: {
+                  firstName: dto.profile.firstName,
+                  lastName: dto.profile.lastName,
+                  avatarUrl: dto.profile.avatarUrl,
+                  bio: dto.profile.bio,
+                  phone: dto.profile.phone,
+                },
+              },
+            }
+          : undefined,
+      },
+      tx,
+    );
   }
 
   async createBusinessAdmin(payload: {

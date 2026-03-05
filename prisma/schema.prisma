@@ -51,6 +51,7 @@ model Restaurant {
   logoUrl      String?    @map("logo_url")
   customDomain String?    @map("custom_domain")
   tagline        String?
+  bio            String?
   supportContact Json?      @map("support_contact")
   branding       Json?
   socialMedia    Json?      @map("social_media")

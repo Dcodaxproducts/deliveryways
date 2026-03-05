@@ -27,6 +27,11 @@ export class CreateRestaurantDto {
   @IsString()
   tagline?: string;
 
+  @ApiPropertyOptional({ description: 'Brand bio/description' })
+  @IsOptional()
+  @IsString()
+  bio?: string;
+
   @ApiPropertyOptional({
     type: Object,
     example: {

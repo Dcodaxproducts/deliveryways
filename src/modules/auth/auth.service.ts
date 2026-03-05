@@ -25,7 +25,6 @@ import { TenantsService } from '../tenants/tenants.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
 import { BranchesService } from '../branches/branches.service';
 import { UsersService } from '../users/users.service';
-import { ProfilesService } from '../profiles/profiles.service';
 import { MailerService } from '../mailer/mailer.service';
 
 @Injectable()
@@ -37,12 +36,11 @@ export class AuthService {
     private readonly restaurantsService: RestaurantsService,
     private readonly branchesService: BranchesService,
     private readonly usersService: UsersService,
-    private readonly profilesService: ProfilesService,
     private readonly mailerService: MailerService,
   ) {}
 
   async registerTenant(dto: RegisterTenantDto) {
-    const existing = await this.usersService.findByEmail(dto.email);
+    const existing = await this.usersService.findByEmail(dto.user.email);
     if (existing) {
       throw new BadRequestException('User already exists');
     }
@@ -52,12 +50,12 @@ export class AuthService {
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await this.tenantsService.create(
         {
-          name: dto.tenantName,
-          slug: dto.tenantSlug,
-          bio: dto.tenantBio,
-          logoUrl: dto.tenantLogoUrl,
-          socialLinks: dto.tenantSocialLinks,
-          settings: dto.tenantSettings,
+          name: dto.tenant.name,
+          slug: dto.tenant.slug,
+          bio: dto.tenant.bio,
+          logoUrl: dto.tenant.logoUrl,
+          socialLinks: dto.tenant.socialLinks,
+          settings: dto.tenant.settings,
         },
         tx,
       );
@@ -65,13 +63,14 @@ export class AuthService {
       const restaurant = await this.restaurantsService.create(
         tenant.id,
         {
-          name: dto.restaurantName,
-          slug: dto.restaurantSlug,
-          logoUrl: dto.restaurantLogoUrl,
-          tagline: dto.restaurantTagline,
-          supportContact: dto.restaurantSupportContact,
-          branding: dto.restaurantBranding,
-          socialMedia: dto.restaurantSocialMedia,
+          name: dto.restaurant.name,
+          slug: dto.restaurant.slug,
+          logoUrl: dto.restaurant.logoUrl,
+          bio: dto.restaurant.bio,
+          tagline: dto.restaurant.tagline,
+          supportContact: dto.restaurant.supportContact,
+          branding: dto.restaurant.branding,
+          socialMedia: dto.restaurant.socialMedia,
         },
         tx,
       );
@@ -94,8 +93,8 @@ export class AuthService {
           taxPercentage: 0,
         },
         contact: {
-          whatsapp: dto.restaurantSupportContact?.whatsapp as string | undefined,
-          phone: dto.restaurantSupportContact?.phone as string | undefined,
+          whatsapp: dto.restaurant.supportContact?.whatsapp as string | undefined,
+          phone: dto.restaurant.supportContact?.phone as string | undefined,
         },
       };
 
@@ -103,39 +102,37 @@ export class AuthService {
         tenant.id,
         {
           restaurantId: restaurant.id,
-          name: dto.branchName,
+          name: dto.branch.name,
           isMain: true,
-          street: dto.street,
-          area: dto.area,
-          city: dto.city,
-          state: dto.state,
-          country: dto.country,
-          coverImage: dto.branchCoverImage,
-          description: dto.branchDescription,
-          settings: dto.branchSettings
-            ? { ...defaultMainBranchSettings, ...dto.branchSettings }
+          street: dto.branch.street,
+          area: dto.branch.area,
+          city: dto.branch.city,
+          state: dto.branch.state,
+          country: dto.branch.country,
+          coverImage: dto.branch.coverImage,
+          description: dto.branch.description,
+          settings: dto.branch.settings
+            ? { ...defaultMainBranchSettings, ...dto.branch.settings }
             : defaultMainBranchSettings,
         },
         tx,
       );
 
-      const user = await this.usersService.createBusinessAdmin(
+      const user = await this.usersService.create(
         {
-          email: dto.email,
-          password: dto.password,
+          email: dto.user.email,
+          password: await bcrypt.hash(dto.user.password, 10),
+          role: UserRoleEnum.BUSINESS_ADMIN,
           tenantId: tenant.id,
           restaurantId: restaurant.id,
           branchId: branch.id,
           verificationToken,
-        },
-        tx,
-      );
-
-      await this.profilesService.create(
-        {
-          userId: user.id,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
+          profile: {
+            firstName: dto.user.firstName,
+            lastName: dto.user.lastName,
+            avatarUrl: dto.user.avatarUrl,
+            bio: dto.user.bio,
+          },
         },
         tx,
       );
@@ -151,7 +148,7 @@ export class AuthService {
       };
     });
 
-    await this.mailerService.sendVerificationEmail(dto.email, verificationToken);
+    await this.mailerService.sendVerificationEmail(dto.user.email, verificationToken);
 
     return {
       data: result,
@@ -168,7 +165,7 @@ export class AuthService {
     const verificationToken = this.generateToken();
 
     await this.prisma.$transaction(async (tx) => {
-      const customer = await this.usersService.create(
+      await this.usersService.create(
         {
           email: dto.email,
           password: await bcrypt.hash(dto.password, 10),
@@ -176,16 +173,11 @@ export class AuthService {
           restaurantId: dto.restaurantId,
           tenantId: dto.tenantId,
           verificationToken,
-        },
-        tx,
-      );
-
-      await this.profilesService.create(
-        {
-          userId: customer.id,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          phone: dto.phone,
+          profile: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            phone: dto.phone,
+          },
         },
         tx,
       );

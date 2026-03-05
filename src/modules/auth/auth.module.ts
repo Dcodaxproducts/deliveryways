@@ -10,7 +10,6 @@ import { TenantsModule } from '../tenants/tenants.module';
 import { RestaurantsModule } from '../restaurants/restaurants.module';
 import { BranchesModule } from '../branches/branches.module';
 import { UsersModule } from '../users/users.module';
-import { ProfilesModule } from '../profiles/profiles.module';
 
 @Module({
   imports: [
@@ -31,7 +30,6 @@ import { ProfilesModule } from '../profiles/profiles.module';
     RestaurantsModule,
     BranchesModule,
     UsersModule,
-    ProfilesModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

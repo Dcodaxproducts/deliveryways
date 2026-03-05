@@ -1,6 +1,34 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { UserRoleEnum } from '../../../common/enums';
+
+export class CreateUserProfileDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  firstName!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  lastName!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  avatarUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  bio?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
 
 export class CreateUserDto {
   @ApiProperty()
@@ -34,4 +62,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({ type: CreateUserProfileDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateUserProfileDto)
+  profile?: CreateUserProfileDto;
 }
