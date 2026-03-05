@@ -29,8 +29,14 @@ export class BranchesController {
     @CurrentUser() user: AuthUserContext,
     @Query('restaurantId') restaurantId: string,
     @Query() query: QueryDto,
+    @Query('withDeleted') withDeleted?: string,
   ) {
-    return this.branchesService.list(user, restaurantId, query);
+    return this.branchesService.list(
+      user,
+      restaurantId,
+      query,
+      withDeleted === 'true',
+    );
   }
 
   @Public()

@@ -48,11 +48,10 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Public()
   @Post('refresh')
-  refresh(@CurrentUser() user: AuthUserContext, @Body() dto: RefreshDto) {
-    return this.authService.refreshTokens(user, dto);
+  refresh(@Body() dto: RefreshDto) {
+    return this.authService.refreshTokens(dto);
   }
 
   @Public()

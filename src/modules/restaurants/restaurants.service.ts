@@ -28,15 +28,23 @@ export class RestaurantsService {
     };
   }
 
-  async list(user: AuthUserContext, query: QueryDto) {
+  async list(user: AuthUserContext, query: QueryDto, withDeleted = false) {
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    const allowedWithDeleted = user.role === 'SUPER_ADMIN' && withDeleted;
+
+    const tenantId =
+      user.role === 'CUSTOMER' && user.rid
+        ? (await this.resolveTenantByRestaurant(user.rid))
+        : user.tid;
+
     const { items, total } = await this.restaurantsRepository.listByTenant(
-      user.tid,
+      tenantId,
       query,
       false,
+      allowedWithDeleted,
     );
 
     return {
@@ -80,5 +88,16 @@ export class RestaurantsService {
       data,
       message: 'Restaurant and all related branches soft deleted',
     };
+  }
+
+  private async resolveTenantByRestaurant(restaurantId: string): Promise<string> {
+    const tenantId =
+      await this.restaurantsRepository.findTenantIdByRestaurant(restaurantId);
+
+    if (!tenantId) {
+      throw new ForbiddenException('Restaurant context is invalid');
+    }
+
+    return tenantId;
   }
 }

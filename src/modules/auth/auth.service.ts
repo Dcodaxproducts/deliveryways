@@ -106,7 +106,10 @@ export class AuthService {
 
     const refreshToken = await this.jwtService.signAsync(
       { uid: user.id, type: 'refresh' },
-      { expiresIn: '30d' },
+      {
+        expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
+        secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
+      },
     );
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
@@ -130,8 +133,25 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(user: AuthUserContext, dto: RefreshDto) {
-    const dbUser = await this.authRepository.findUserById(user.uid);
+  async refreshTokens(dto: RefreshDto) {
+    let payload: { uid: string; type?: string };
+
+    try {
+      payload = await this.jwtService.verifyAsync<{ uid: string; type?: string }>(
+        dto.refreshToken,
+        {
+          secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
+        },
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (!payload?.uid) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const dbUser = await this.authRepository.findUserById(payload.uid);
     if (!dbUser || !dbUser.refreshTokenHash) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -151,7 +171,10 @@ export class AuthService {
 
     const refreshToken = await this.jwtService.signAsync(
       { uid: dbUser.id, type: 'refresh' },
-      { expiresIn: '30d' },
+      {
+        expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
+        secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
+      },
     );
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);

@@ -71,12 +71,13 @@ export class BranchesRepository {
     restaurantId: string,
     query: QueryDto,
     publicView = false,
+    withDeleted = false,
   ) {
     const where: Prisma.BranchWhereInput = {
       tenantId,
       restaurantId,
-      deletedAt: null,
-      ...(publicView ? { isActive: true } : {}),
+      ...(withDeleted ? {} : { deletedAt: null }),
+      ...(publicView ? { isActive: true, deletedAt: null } : {}),
       ...(query.search
         ? {
             OR: [
@@ -100,6 +101,15 @@ export class BranchesRepository {
     ]);
 
     return { items, total };
+  }
+
+  async listByBranchId(branchId: string) {
+    return this.prisma.branch.findMany({
+      where: {
+        id: branchId,
+        deletedAt: null,
+      },
+    });
   }
 
   async update(id: string, data: Prisma.BranchUpdateInput) {

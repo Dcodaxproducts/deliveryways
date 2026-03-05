@@ -25,8 +25,12 @@ export class RestaurantsController {
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Get()
-  list(@CurrentUser() user: AuthUserContext, @Query() query: QueryDto) {
-    return this.restaurantsService.list(user, query);
+  list(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: QueryDto,
+    @Query('withDeleted') withDeleted?: string,
+  ) {
+    return this.restaurantsService.list(user, query, withDeleted === 'true');
   }
 
   @Public()

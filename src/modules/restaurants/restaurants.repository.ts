@@ -11,11 +11,16 @@ export class RestaurantsRepository {
     return this.prisma.restaurant.create({ data });
   }
 
-  async listByTenant(tenantId: string, query: QueryDto, publicView = false) {
+  async listByTenant(
+    tenantId: string,
+    query: QueryDto,
+    publicView = false,
+    withDeleted = false,
+  ) {
     const where: Prisma.RestaurantWhereInput = {
       tenantId,
-      deletedAt: null,
-      ...(publicView ? { isActive: true } : {}),
+      ...(withDeleted ? {} : { deletedAt: null }),
+      ...(publicView ? { isActive: true, deletedAt: null } : {}),
       ...(query.search
         ? {
             OR: [
@@ -40,6 +45,15 @@ export class RestaurantsRepository {
     ]);
 
     return { items, total };
+  }
+
+  async findTenantIdByRestaurant(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { tenantId: true },
+    });
+
+    return restaurant?.tenantId;
   }
 
   async update(id: string, data: Prisma.RestaurantUpdateInput) {
