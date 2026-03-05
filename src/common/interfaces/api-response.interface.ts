@@ -1,6 +1,7 @@
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
+  message: string;
   meta?: Record<string, unknown>;
 }
 
@@ -10,15 +11,20 @@ export interface ApiErrorResponse {
     code: string;
     message: string;
   };
+  message: string;
   meta?: Record<string, unknown>;
 }
 
 export interface PaginatedResponse<T> {
   success: true;
   data: T[];
+  message: string;
   meta: {
-    nextCursor: string | null;
-    hasMore: boolean;
-    total?: number;
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrevious: boolean;
   };
 }

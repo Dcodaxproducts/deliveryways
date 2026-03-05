@@ -17,10 +17,32 @@ export class ResponseInterceptor<T>
     next: CallHandler,
   ): Observable<ApiResponse<T>> {
     return next.handle().pipe(
-      map((data) => ({
-        success: true as const,
-        data,
-      })),
+      map((payload: T | { data: T; message?: string; meta?: Record<string, unknown> }) => {
+        if (
+          typeof payload === 'object' &&
+          payload !== null &&
+          'data' in payload
+        ) {
+          const typedPayload = payload as {
+            data: T;
+            message?: string;
+            meta?: Record<string, unknown>;
+          };
+
+          return {
+            success: true as const,
+            data: typedPayload.data,
+            message: typedPayload.message ?? 'Request successful',
+            meta: typedPayload.meta,
+          };
+        }
+
+        return {
+          success: true as const,
+          data: payload as T,
+          message: 'Request successful',
+        };
+      }),
     );
   }
 }

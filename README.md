@@ -1,93 +1,97 @@
-# DeliveryWays
+# DeliveryWays Backend
 
-Modular monolith backend built with NestJS, Prisma, and PostgreSQL.
+Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 
-## Architecture
+## Base Path
 
-- **Modular Monolith** — Each module is a bounded context with clear boundaries
-- **Controller → Service → Repository → Prisma** — Strict layering
-- **Module communication** via public interfaces only (no cross-module internal imports)
-- **Cursor-based pagination** on all list endpoints
-- **Standard response envelope:** `{ success, data, meta }`
+`/api/v1`
+
+## Implemented Core Architecture
+
+- **Multi-tenancy** (shared DB/shared schema) with discriminator fields:
+  - `tenant_id` (group scope)
+  - `restaurant_id` (brand scope)
+- **Soft-delete pattern** across core tables:
+  - `deleted_at` timestamp
+  - `is_active` boolean
+- **Global query standard** (`QueryDto`):
+  - `page`, `limit`, `search`, `sortBy`, `sortOrder`
+- **RBAC + Security**
+  - JWT auth (`uid`, `role`, `tid`, `rid`, `bid`)
+  - Roles guard
+  - Tenant access guard
+  - Global throttling + endpoint-level throttling
+- **Standard response envelope**
+  - `{ success, data, message, meta? }`
+- **Global exception handling** and validation
+- **Swagger/OpenAPI** docs at `/docs`
+
+## Modules Included
+
+- `auth` (register/login/refresh/verification/password/account lifecycle)
+- `tenants` (list/update/analytics)
+- `restaurants` (create/list/public/update/delete)
+- `branches` (create/list/public/update/delete)
+- `mailer` (verification/reset email dispatch)
+
+## API Summary
+
+### Auth (`/auth`)
+- `POST /register-tenant`
+- `POST /register-customer`
+- `POST /login`
+- `POST /refresh`
+- `POST /verify-email`
+- `POST /resend-verification`
+- `POST /forgot-password`
+- `POST /reset-password`
+- `PATCH /change-password`
+- `GET /me`
+- `DELETE /account`
+- `POST /cancel-deletion`
+
+### Tenants (`/tenants`)
+- `GET /` (super admin)
+- `PATCH /:id`
+- `GET /:id/analytics`
+
+### Restaurants (`/restaurants`)
+- `POST /`
+- `GET /`
+- `GET /public`
+- `PATCH /:id`
+- `DELETE /:id`
+
+### Branches (`/branches`)
+- `POST /`
+- `GET /`
+- `GET /public`
+- `PATCH /:id`
+- `DELETE /:id`
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| Framework | NestJS 11 |
-| Language | TypeScript (strict) |
-| ORM | Prisma 7 |
-| Database | PostgreSQL |
-| Validation | class-validator + class-transformer |
-| API Docs | Swagger / OpenAPI |
+- NestJS 11
+- Prisma 7
+- PostgreSQL
+- Passport JWT
+- class-validator / class-transformer
+- Swagger
+- Nodemailer
 
-## Getting Started
+## Run Locally
 
 ```bash
-# Install dependencies
 npm install
-
-# Copy environment config
 cp .env.example .env
-
-# Generate Prisma client
 npx prisma generate
-
-# Run migrations
-npx prisma migrate dev
-
-# Start development server
+npm run build
 npm run start:dev
-```
-
-## Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run build` | Build the project |
-| `npm run start:dev` | Start in watch mode |
-| `npm run lint` | Lint & fix |
-| `npm test` | Run tests |
-| `npm run test:cov` | Test with coverage |
-| `npx prisma studio` | Visual DB browser |
-
-## Project Structure
-
-```
-src/
-├── common/                  # Shared utilities, DTOs, filters, guards
-│   ├── decorators/
-│   ├── dto/
-│   ├── enums/
-│   ├── exceptions/
-│   ├── filters/
-│   ├── guards/
-│   ├── interceptors/
-│   ├── interfaces/
-│   ├── pipes/
-│   └── utils/
-├── config/                  # App & database configuration
-├── database/                # Prisma service & module
-├── modules/                 # Feature modules (bounded contexts)
-│   └── <module>/
-│       ├── <module>.module.ts
-│       ├── <module>.controller.ts
-│       ├── <module>.service.ts
-│       ├── <module>.repository.ts
-│       └── dto/
-├── app.module.ts
-└── main.ts
 ```
 
 ## Branching Strategy
 
-| Branch | Purpose |
-|--------|---------|
-| `main` | Production-ready code |
-| `develop` | Development & testing |
-| `feature/*` | Feature branches (merge into `develop`) |
-| `hotfix/*` | Critical fixes (merge into `main` + `develop`) |
-
-## License
-
-MIT
+- `main`: production-ready
+- `develop`: development/integration
+- `feature/*`: feature branches
+- `hotfix/*`: urgent fixes

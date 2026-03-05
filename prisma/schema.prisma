@@ -1,6 +1,3 @@
-// DeliveryWays - Prisma Schema
-// Modular Monolith Architecture
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,21 +6,143 @@ datasource db {
   provider = "postgresql"
 }
 
-// ============================================================
-// Base model pattern — all tenant-scoped models extend this
-// ============================================================
+enum UserRole {
+  SUPER_ADMIN
+  BUSINESS_ADMIN
+  BRANCH_ADMIN
+  CUSTOMER
+}
 
-// Convention:
-//   - Prefix model names with module context (e.g., AuthUser, OrderItem)
-//   - Use Decimal(10,2) for money fields
-//   - Use @db.Timestamptz for all DateTime fields
-//   - Every tenant-scoped model includes tenantId
+enum AddressRefType {
+  TENANT
+  RESTAURANT
+  BRANCH
+  USER
+}
 
-// Placeholder model — remove when first real model is added
-model HealthCheck {
-  id        String   @id @default(cuid())
-  status    String   @default("ok")
-  createdAt DateTime @default(now()) @db.Timestamptz
+model Tenant {
+  id             String       @id @default(cuid())
+  name           String
+  ownerId        String       @map("owner_id")
+  slug           String       @unique
+  brandingConfig Json?        @map("branding_config")
+  settings       Json?
+  isActive       Boolean      @default(true) @map("is_active")
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@map("health_checks")
+  owner       User         @relation("TenantOwner", fields: [ownerId], references: [id])
+  restaurants Restaurant[]
+  branches    Branch[]
+  users       User[]       @relation("TenantUsers")
+
+  @@map("tenants")
+}
+
+model Restaurant {
+  id           String     @id @default(cuid())
+  tenantId     String     @map("tenant_id")
+  name         String
+  slug         String
+  logo         String?
+  customDomain String?    @map("custom_domain")
+  settings     Json?
+  isActive     Boolean    @default(true) @map("is_active")
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  branches Branch[]
+  users    User[]   @relation("RestaurantUsers")
+
+  @@unique([tenantId, slug])
+  @@map("restaurants")
+}
+
+model Branch {
+  id           String     @id @default(cuid())
+  restaurantId String     @map("restaurant_id")
+  tenantId     String     @map("tenant_id")
+  name         String
+  isMain       Boolean    @default(false) @map("is_main")
+  managerId    String?    @map("manager_id")
+  isActive     Boolean    @default(true) @map("is_active")
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  manager    User?      @relation("BranchManager", fields: [managerId], references: [id])
+  users      User[]     @relation("BranchUsers")
+
+  @@map("branches")
+}
+
+model Address {
+  id          String         @id @default(cuid())
+  tenantId    String         @map("tenant_id")
+  referenceId String         @map("reference_id")
+  refType     AddressRefType @map("ref_type")
+  street      String
+  city        String
+  state       String
+  lat         Decimal?       @db.Decimal(10, 7)
+  lng         Decimal?       @db.Decimal(10, 7)
+  isActive    Boolean        @default(true) @map("is_active")
+  deletedAt   DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([referenceId, refType])
+  @@map("addresses")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String
+  password          String
+  role              UserRole
+  isVerified        Boolean   @default(false) @map("is_verified")
+  verificationToken String?   @map("verification_token")
+  refreshTokenHash  String?   @map("refresh_token_hash")
+  deleteAfter       DateTime? @map("delete_after") @db.Timestamptz
+  tenantId          String?   @map("tenant_id")
+  restaurantId      String?   @map("restaurant_id")
+  branchId          String?   @map("branch_id")
+  isActive          Boolean   @default(true) @map("is_active")
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenantOwned Tenant[] @relation("TenantOwner")
+  tenant      Tenant? @relation("TenantUsers", fields: [tenantId], references: [id])
+  restaurant  Restaurant? @relation("RestaurantUsers", fields: [restaurantId], references: [id])
+  branch      Branch?     @relation("BranchUsers", fields: [branchId], references: [id])
+  managedBranches Branch[]   @relation("BranchManager")
+  profile     Profile?
+
+  @@unique([email, restaurantId])
+  @@map("users")
+}
+
+model Profile {
+  id        String    @id @default(cuid())
+  userId    String    @unique @map("user_id")
+  firstName String    @map("first_name")
+  lastName  String    @map("last_name")
+  avatarUrl String?   @map("avatar_url")
+  phone     String?
+  bio       String?
+  metadata  Json?
+  isActive  Boolean   @default(true) @map("is_active")
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("profiles")
 }
