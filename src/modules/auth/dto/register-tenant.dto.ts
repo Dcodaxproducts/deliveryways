@@ -66,10 +66,15 @@ export class RegisterTenantDto {
   @IsNotEmpty()
   restaurantName!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Optional unique slug, auto-generated if missing' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  restaurantSlug!: string;
+  restaurantSlug?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantLogoUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -117,6 +122,11 @@ export class RegisterTenantDto {
   @IsNotEmpty()
   street!: string;
 
+  @ApiPropertyOptional({ description: 'Area or sector' })
+  @IsOptional()
+  @IsString()
+  area?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -126,4 +136,9 @@ export class RegisterTenantDto {
   @IsString()
   @IsNotEmpty()
   state!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  country!: string;
 }

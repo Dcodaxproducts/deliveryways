@@ -9,7 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
-import { UserRoleEnum } from '../../common/enums';
+import { OrderTypeEnum, PaymentMethodEnum, UserRoleEnum } from '../../common/enums';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -67,6 +67,7 @@ export class AuthService {
         {
           name: dto.restaurantName,
           slug: dto.restaurantSlug,
+          logoUrl: dto.restaurantLogoUrl,
           tagline: dto.restaurantTagline,
           supportContact: dto.restaurantSupportContact,
           branding: dto.restaurantBranding,
@@ -75,6 +76,29 @@ export class AuthService {
         tx,
       );
 
+      const defaultMainBranchSettings = {
+        allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
+        allowedPaymentMethods: [PaymentMethodEnum.COD],
+        deliveryConfig: {
+          radiusKm: 5,
+          minOrderAmount: 0,
+          deliveryFee: 150,
+          isFreeDelivery: false,
+          freeDeliveryThreshold: 0,
+        },
+        automation: {
+          autoAcceptOrders: false,
+          estimatedPrepTime: 30,
+        },
+        taxation: {
+          taxPercentage: 0,
+        },
+        contact: {
+          whatsapp: dto.restaurantSupportContact?.whatsapp as string | undefined,
+          phone: dto.restaurantSupportContact?.phone as string | undefined,
+        },
+      };
+
       const branch = await this.branchesService.create(
         tenant.id,
         {
@@ -82,11 +106,15 @@ export class AuthService {
           name: dto.branchName,
           isMain: true,
           street: dto.street,
+          area: dto.area,
           city: dto.city,
           state: dto.state,
+          country: dto.country,
           coverImage: dto.branchCoverImage,
           description: dto.branchDescription,
-          settings: dto.branchSettings,
+          settings: dto.branchSettings
+            ? { ...defaultMainBranchSettings, ...dto.branchSettings }
+            : defaultMainBranchSettings,
         },
         tx,
       );

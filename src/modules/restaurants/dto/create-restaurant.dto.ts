@@ -7,15 +7,15 @@ export class CreateRestaurantDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Unique slug for subdomain/URL routing' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  slug!: string;
+  slug?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  logo?: string;
+  logoUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -29,7 +29,11 @@ export class CreateRestaurantDto {
 
   @ApiPropertyOptional({
     type: Object,
-    example: { email: 'support@brand.com', whatsapp: '+923001234567', phone: '+923001234567' },
+    example: {
+      email: 'support@brand.com',
+      whatsapp: '+923001234567',
+      phone: '+923001234567',
+    },
   })
   @IsOptional()
   @IsObject()
@@ -37,7 +41,11 @@ export class CreateRestaurantDto {
 
   @ApiPropertyOptional({
     type: Object,
-    example: { primaryColor: '#FF0000', secondaryColor: '#000000', fontFamily: 'Inter' },
+    example: {
+      primaryColor: '#FF0000',
+      secondaryColor: '#000000',
+      fontFamily: 'Inter',
+    },
   })
   @IsOptional()
   @IsObject()

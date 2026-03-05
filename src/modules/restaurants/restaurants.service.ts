@@ -16,12 +16,14 @@ export class RestaurantsService {
     dto: CreateRestaurantDto,
     tx?: PrismaTx,
   ) {
+    const slug = await this.ensureUniqueSlug(dto.slug ?? dto.name);
+
     return this.restaurantsRepository.create(
       {
         tenant: { connect: { id: tenantId } },
         name: dto.name,
-        slug: dto.slug,
-        logo: dto.logo,
+        slug,
+        logoUrl: dto.logoUrl,
         customDomain: dto.customDomain,
         tagline: dto.tagline,
         supportContact: dto.supportContact as Prisma.InputJsonValue,
@@ -104,8 +106,8 @@ export class RestaurantsService {
       id,
       {
         name: dto.name,
-        slug: dto.slug,
-        logo: dto.logo,
+        slug: dto.slug ? await this.ensureUniqueSlug(dto.slug, id) : undefined,
+        logoUrl: dto.logoUrl,
         customDomain: dto.customDomain,
         tagline: dto.tagline,
         supportContact: dto.supportContact as Prisma.InputJsonValue,
@@ -140,5 +142,26 @@ export class RestaurantsService {
     }
 
     return tenantId;
+  }
+
+  private async ensureUniqueSlug(base: string, ignoreId?: string): Promise<string> {
+    const normalizedBase = base
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+
+    let candidate = normalizedBase;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.restaurantsRepository.findBySlug(candidate);
+      if (!existing || existing.id === ignoreId) {
+        return candidate;
+      }
+      candidate = `${normalizedBase}-${counter}`;
+      counter += 1;
+    }
   }
 }

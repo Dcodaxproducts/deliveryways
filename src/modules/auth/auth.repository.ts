@@ -40,8 +40,10 @@ export class AuthRepository {
     restaurantSlug: string;
     branchName: string;
     street: string;
+    area?: string;
     city: string;
     state: string;
+    country: string;
     verificationToken: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -86,8 +88,10 @@ export class AuthRepository {
           referenceId: branch.id,
           refType: AddressRefType.BRANCH,
           street: payload.street,
+          area: payload.area,
           city: payload.city,
           state: payload.state,
+          country: payload.country,
         },
       });
 

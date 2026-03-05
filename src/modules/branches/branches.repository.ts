@@ -24,8 +24,10 @@ export class BranchesRepository {
     isMain?: boolean;
     managerId?: string;
     street: string;
+    area?: string;
     city: string;
     state: string;
+    country: string;
     coverImage?: string;
     description?: string;
     settings?: Prisma.InputJsonValue;
@@ -64,8 +66,10 @@ export class BranchesRepository {
         referenceId: branch.id,
         refType: AddressRefType.BRANCH,
         street: payload.street,
+        area: payload.area,
         city: payload.city,
         state: payload.state,
+        country: payload.country,
       },
     });
 

@@ -16,6 +16,13 @@ export class RestaurantsRepository {
     return this.client(tx).restaurant.create({ data });
   }
 
+  async findBySlug(slug: string) {
+    return this.prisma.restaurant.findUnique({
+      where: { slug },
+      select: { id: true, slug: true },
+    });
+  }
+
   async listByTenant(
     tenantId: string,
     query: QueryDto,

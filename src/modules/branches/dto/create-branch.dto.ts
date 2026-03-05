@@ -25,6 +25,15 @@ class DeliveryConfigDto {
   @ApiProperty()
   @IsNumber()
   deliveryFee!: number;
+
+  @ApiProperty()
+  @IsBoolean()
+  isFreeDelivery!: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  freeDeliveryThreshold?: number;
 }
 
 class AutomationConfigDto {
@@ -35,6 +44,24 @@ class AutomationConfigDto {
   @ApiProperty()
   @IsNumber()
   estimatedPrepTime!: number;
+}
+
+class TaxationConfigDto {
+  @ApiProperty()
+  @IsNumber()
+  taxPercentage!: number;
+}
+
+class BranchContactDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  whatsapp?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }
 
 export class BranchSettingsDto {
@@ -57,6 +84,17 @@ export class BranchSettingsDto {
   @ValidateNested()
   @Type(() => AutomationConfigDto)
   automation!: AutomationConfigDto;
+
+  @ApiProperty({ type: TaxationConfigDto })
+  @ValidateNested()
+  @Type(() => TaxationConfigDto)
+  taxation!: TaxationConfigDto;
+
+  @ApiPropertyOptional({ type: BranchContactDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BranchContactDto)
+  contact?: BranchContactDto;
 }
 
 export class CreateBranchDto {
@@ -85,6 +123,11 @@ export class CreateBranchDto {
   @IsNotEmpty()
   street!: string;
 
+  @ApiPropertyOptional({ description: 'Area or sector' })
+  @IsOptional()
+  @IsString()
+  area?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -94,6 +137,11 @@ export class CreateBranchDto {
   @IsString()
   @IsNotEmpty()
   state!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  country!: string;
 
   @ApiPropertyOptional()
   @IsOptional()
