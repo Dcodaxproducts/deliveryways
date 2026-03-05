@@ -90,6 +90,11 @@ export class RegisterRestaurantInfoDto {
   @IsString()
   logoUrl?: string;
 
+  @ApiPropertyOptional({ description: 'Optional custom domain e.g. orders.kfc.com.pk' })
+  @IsOptional()
+  @IsString()
+  customDomain?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

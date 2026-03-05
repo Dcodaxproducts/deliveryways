@@ -66,6 +66,7 @@ export class AuthService {
           name: dto.restaurant.name,
           slug: dto.restaurant.slug,
           logoUrl: dto.restaurant.logoUrl,
+          customDomain: dto.restaurant.customDomain,
           bio: dto.restaurant.bio,
           tagline: dto.restaurant.tagline,
           supportContact: dto.restaurant.supportContact,
