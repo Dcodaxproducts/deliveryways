@@ -77,6 +77,24 @@ export class RestaurantsRepository {
     });
   }
 
+  async setActive(id: string, isActive: boolean, tx?: PrismaTx) {
+    return this.client(tx).restaurant.update({
+      where: { id },
+      data: { isActive },
+    });
+  }
+
+  async setBranchesActiveByRestaurant(
+    restaurantId: string,
+    isActive: boolean,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).branch.updateMany({
+      where: { restaurantId, deletedAt: null },
+      data: { isActive },
+    });
+  }
+
   async softDelete(id: string, tx?: PrismaTx) {
     const client = this.client(tx);
     const deletedAt = new Date();

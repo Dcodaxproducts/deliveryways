@@ -130,6 +130,25 @@ export class RestaurantsService {
     };
   }
 
+  async suspend(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const data = await this.restaurantsRepository.setActive(id, false, tx);
+    await this.restaurantsRepository.setBranchesActiveByRestaurant(id, false, tx);
+
+    return {
+      data,
+      message: 'Restaurant suspended successfully',
+    };
+  }
+
+  async activate(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const data = await this.restaurantsRepository.setActive(id, true, tx);
+
+    return {
+      data,
+      message: 'Restaurant activated successfully',
+    };
+  }
+
   async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
     const data = await this.restaurantsRepository.softDelete(id, tx);
 

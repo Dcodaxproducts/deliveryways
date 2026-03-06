@@ -25,7 +25,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
-    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run start:dev"
+    "prisma:seed": "prisma db seed",
+    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run prisma:seed && npm run start:dev"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -51,6 +52,9 @@
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
+  DevTokenDto,
   ForgotPasswordDto,
   LoginDto,
   RefreshDto,
@@ -53,6 +54,12 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshDto) {
     return this.authService.refreshTokens(dto);
+  }
+
+  @Public()
+  @Post('dev-token')
+  devToken(@Body() dto: DevTokenDto) {
+    return this.authService.generateDevToken(dto);
   }
 
   @Public()

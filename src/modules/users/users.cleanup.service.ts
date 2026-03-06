@@ -16,6 +16,7 @@ export class UsersCleanupService {
       where: {
         isVerified: false,
         createdAt: { lt: threshold },
+        tenantId: null,
       },
       select: { id: true },
     });

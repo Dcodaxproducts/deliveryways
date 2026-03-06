@@ -138,6 +138,13 @@ export class BranchesRepository {
     return this.client(tx).branch.update({ where: { id }, data });
   }
 
+  async setActive(id: string, isActive: boolean, tx?: PrismaTx) {
+    return this.client(tx).branch.update({
+      where: { id },
+      data: { isActive },
+    });
+  }
+
   async softDelete(id: string, tx?: PrismaTx) {
     return this.client(tx).branch.update({
       where: { id },

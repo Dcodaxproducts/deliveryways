@@ -145,6 +145,24 @@ export class BranchesService {
     };
   }
 
+  async suspend(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const data = await this.branchesRepository.setActive(id, false, tx);
+
+    return {
+      data,
+      message: 'Branch suspended successfully',
+    };
+  }
+
+  async activate(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const data = await this.branchesRepository.setActive(id, true, tx);
+
+    return {
+      data,
+      message: 'Branch activated successfully',
+    };
+  }
+
   async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
     const data = await this.branchesRepository.softDelete(id, tx);
 

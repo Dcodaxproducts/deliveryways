@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -12,6 +13,7 @@ import { AuthUserContext } from '../../common/decorators';
 import { OrderTypeEnum, PaymentMethodEnum, UserRoleEnum } from '../../common/enums';
 import {
   ChangePasswordDto,
+  DevTokenDto,
   ForgotPasswordDto,
   LoginDto,
   RefreshDto,
@@ -315,6 +317,30 @@ export class AuthService {
     return {
       data: null,
       message: 'Email verified successfully',
+    };
+  }
+
+  async generateDevToken(dto: DevTokenDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('dev-token endpoint is disabled in production');
+    }
+
+    const payload = {
+      uid: dto.uid ?? 'dev-user-id',
+      role: dto.role ?? UserRoleEnum.SUPER_ADMIN,
+      tid: dto.tid,
+      rid: dto.rid,
+      bid: dto.bid,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload);
+
+    return {
+      data: {
+        accessToken,
+        payload,
+      },
+      message: 'Development token generated',
     };
   }
 
