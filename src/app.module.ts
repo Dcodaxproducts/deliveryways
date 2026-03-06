@@ -27,8 +27,10 @@ import {
   VerifiedUserGuard,
 } from './common/guards';
 import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.middleware';
+import { AppController } from './app.controller';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
