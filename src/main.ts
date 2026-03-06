@@ -60,13 +60,14 @@ async function bootstrap(): Promise<void> {
       SwaggerModule.setup('docs', app, document);
     }
 
+    const host = configService.get<string>('HOST', '0.0.0.0');
     const port = configService.get<number>('PORT', 3000);
 
-    await app.listen(port);
+    await app.listen(port, host);
 
-    logger.log(`✅ Server started successfully on port ${port}`);
-    logger.log(`🌐 API Base URL: http://localhost:${port}/api/v1`);
-    logger.log(`📚 Swagger docs: http://localhost:${port}/docs`);
+    logger.log(`✅ Server started successfully on ${host}:${port}`);
+    logger.log(`🌐 API Base URL: http://${host}:${port}/api/v1`);
+    logger.log(`📚 Swagger docs: http://${host}:${port}/docs`);
   } catch (error) {
     const message =
       error instanceof Error ? error.stack ?? error.message : 'Unknown startup error';

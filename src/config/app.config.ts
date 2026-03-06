@@ -2,6 +2,7 @@ import { registerAs } from '@nestjs/config';
 
 export default registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
+  host: process.env.HOST || '0.0.0.0',
   port: parseInt(process.env.PORT || '3000', 10),
   apiPrefix: 'api/v1',
   corsOrigins: process.env.CORS_ORIGINS || '*',
