@@ -9,60 +9,70 @@ import { GlobalExceptionFilter } from './common/filters';
 import { ResponseInterceptor } from './common/interceptors';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
-  });
-
-  const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
-  // Security
-  app.use(helmet());
-  app.use(compression());
+  try {
+    const app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    });
 
-  // CORS
-  app.enableCors({
-    origin: configService.get<string>('CORS_ORIGINS', '*').split(','),
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    credentials: true,
-  });
+    const configService = app.get(ConfigService);
 
-  // Global prefix
-  app.setGlobalPrefix('api/v1');
+    // Security
+    app.use(helmet());
+    app.use(compression());
 
-  // Global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+    // CORS
+    app.enableCors({
+      origin: configService.get<string>('CORS_ORIGINS', '*').split(','),
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      credentials: true,
+    });
 
-  app.useGlobalInterceptors(new ResponseInterceptor());
-  app.useGlobalFilters(new GlobalExceptionFilter());
+    // Global prefix
+    app.setGlobalPrefix('api/v1');
 
-  // Swagger
-  if (configService.get<string>('NODE_ENV') !== 'production') {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('DeliveryWays API')
-      .setDescription('DeliveryWays Backend API Documentation')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .build();
+    // Global validation pipe
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
 
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, document);
+    app.useGlobalInterceptors(new ResponseInterceptor());
+    app.useGlobalFilters(new GlobalExceptionFilter());
+
+    // Swagger
+    if (configService.get<string>('NODE_ENV') !== 'production') {
+      const swaggerConfig = new DocumentBuilder()
+        .setTitle('DeliveryWays API')
+        .setDescription('DeliveryWays Backend API Documentation')
+        .setVersion('1.0')
+        .addBearerAuth()
+        .build();
+
+      const document = SwaggerModule.createDocument(app, swaggerConfig);
+      SwaggerModule.setup('docs', app, document);
+    }
+
+    const port = configService.get<number>('PORT', 3000);
+
+    await app.listen(port);
+
+    logger.log(`✅ Server started successfully on port ${port}`);
+    logger.log(`🌐 API Base URL: http://localhost:${port}/api/v1`);
+    logger.log(`📚 Swagger docs: http://localhost:${port}/docs`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.stack ?? error.message : 'Unknown startup error';
+    logger.error(`❌ Server startup failed: ${message}`);
+    process.exit(1);
   }
-
-  const port = configService.get<number>('PORT', 3000);
-  await app.listen(port);
-
-  logger.log(`🚀 DeliveryWays API running on port ${port}`);
-  logger.log(`📚 Swagger docs: http://localhost:${port}/docs`);
 }
 
-bootstrap();
+void bootstrap();
