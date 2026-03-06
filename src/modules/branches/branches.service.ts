@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { QueryDto } from '../../common/dto';
+import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
 import { PrismaTx } from '../../common/types';
@@ -56,8 +56,7 @@ export class BranchesService {
   async list(
     user: AuthUserContext,
     restaurantId: string,
-    query: QueryDto,
-    withDeleted = false,
+    query: AdminListQueryDto,
   ) {
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
@@ -79,7 +78,12 @@ export class BranchesService {
       };
     }
 
-    const allowWithDeleted = user.role === 'SUPER_ADMIN' && withDeleted;
+    const allowWithDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
+    const includeInactive =
+      (user.role === 'SUPER_ADMIN' ||
+        user.role === 'BUSINESS_ADMIN' ||
+        user.role === 'BRANCH_ADMIN') &&
+      !!query.includeInactive;
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
       user.tid,
@@ -87,6 +91,7 @@ export class BranchesService {
       query,
       false,
       allowWithDeleted,
+      includeInactive,
     );
 
     return {

@@ -92,12 +92,14 @@ export class BranchesRepository {
     query: QueryDto,
     publicView = false,
     withDeleted = false,
+    includeInactive = false,
   ) {
     const where: Prisma.BranchWhereInput = {
       tenantId,
       restaurantId,
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(publicView ? { isActive: true, deletedAt: null } : {}),
+      ...(!publicView && !includeInactive ? { isActive: true } : {}),
       ...(query.search
         ? {
             OR: [

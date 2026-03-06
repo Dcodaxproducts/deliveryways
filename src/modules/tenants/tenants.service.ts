@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { QueryDto } from '../../common/dto';
+import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
 import { PrismaTx } from '../../common/types';
@@ -38,12 +38,16 @@ export class TenantsService {
     );
   }
 
-  async listTenants(user: AuthUserContext, query: QueryDto, withDeleted = false) {
+  async listTenants(user: AuthUserContext, query: AdminListQueryDto) {
     if (user.role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Only super admin can list all tenants');
     }
 
-    const { items, total } = await this.tenantsRepository.list(query, withDeleted);
+    const { items, total } = await this.tenantsRepository.list(
+      query,
+      !!query.withDeleted,
+      !!query.includeInactive,
+    );
 
     return {
       data: items,

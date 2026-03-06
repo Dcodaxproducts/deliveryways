@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { QueryDto } from '../../common/dto';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -24,13 +24,26 @@ export class RestaurantsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'search', required: false, example: 'kfc' })
+  @ApiQuery({ name: 'sortBy', required: false, example: 'createdAt' })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['ASC', 'DESC'] })
+  @ApiQuery({
+    name: 'withDeleted',
+    required: false,
+    example: false,
+    description: 'Super admin only',
+  })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    example: false,
+    description: 'Admin only',
+  })
   @Get()
-  list(
-    @CurrentUser() user: AuthUserContext,
-    @Query() query: QueryDto,
-    @Query('withDeleted') withDeleted?: string,
-  ) {
-    return this.restaurantsService.list(user, query, withDeleted === 'true');
+  list(@CurrentUser() user: AuthUserContext, @Query() query: AdminListQueryDto) {
+    return this.restaurantsService.list(user, query);
   }
 
   @Public()

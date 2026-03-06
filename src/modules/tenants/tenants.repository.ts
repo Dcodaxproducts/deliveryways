@@ -16,9 +16,14 @@ export class TenantsRepository {
     return this.client(tx).tenant.create({ data });
   }
 
-  async list(query: QueryDto, withDeleted = false) {
+  async list(
+    query: QueryDto,
+    withDeleted = false,
+    includeInactive = false,
+  ) {
     const where: Prisma.TenantWhereInput = {
       ...(withDeleted ? {} : { deletedAt: null }),
+      ...(includeInactive ? {} : { isActive: true }),
       ...(query.search
         ? {
             OR: [

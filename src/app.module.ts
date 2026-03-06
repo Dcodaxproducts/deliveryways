@@ -8,6 +8,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClsModule } from 'nestjs-cls';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { DatabaseModule } from './database/database.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -15,10 +16,16 @@ import { AuthModule } from './modules/auth/auth.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { RestaurantsModule } from './modules/restaurants/restaurants.module';
 import { BranchesModule } from './modules/branches/branches.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
 import { MailerModule } from './modules/mailer/mailer.module';
 import { UsersModule } from './modules/users/users.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
-import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from './common/guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  TenantAccessGuard,
+  VerifiedUserGuard,
+} from './common/guards';
 import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.middleware';
 
 @Module({
@@ -35,6 +42,8 @@ import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.
         mount: true,
       },
     }),
+
+    ScheduleModule.forRoot(),
 
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -54,6 +63,7 @@ import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.
     TenantsModule,
     RestaurantsModule,
     BranchesModule,
+    AddressesModule,
   ],
   providers: [
     {
@@ -63,6 +73,10 @@ import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: VerifiedUserGuard,
     },
     {
       provide: APP_GUARD,

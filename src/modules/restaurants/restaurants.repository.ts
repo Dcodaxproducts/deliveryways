@@ -28,11 +28,13 @@ export class RestaurantsRepository {
     query: QueryDto,
     publicView = false,
     withDeleted = false,
+    includeInactive = false,
   ) {
     const where: Prisma.RestaurantWhereInput = {
       tenantId,
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(publicView ? { isActive: true, deletedAt: null } : {}),
+      ...(!publicView && !includeInactive ? { isActive: true } : {}),
       ...(query.search
         ? {
             OR: [

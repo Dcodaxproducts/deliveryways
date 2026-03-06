@@ -15,6 +15,7 @@ export class UsersService {
         password: dto.password,
         role: dto.role,
         verificationToken: dto.verificationToken,
+        isVerified: dto.isVerified,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }
@@ -44,6 +45,7 @@ export class UsersService {
         password: dto.password,
         role: dto.role,
         verificationToken: dto.verificationToken,
+        isVerified: dto.isVerified,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }

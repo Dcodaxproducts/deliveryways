@@ -5,6 +5,7 @@ export default registerAs('app', () => ({
   port: parseInt(process.env.PORT || '3000', 10),
   apiPrefix: 'api/v1',
   corsOrigins: process.env.CORS_ORIGINS || '*',
+  emailEnabled: process.env.EMAIL_ENABLED === 'true',
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET || 'change-me-access',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',

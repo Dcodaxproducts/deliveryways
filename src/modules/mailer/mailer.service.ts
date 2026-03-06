@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
@@ -8,7 +9,20 @@ export class MailerService {
     jsonTransport: true,
   });
 
+  constructor(private readonly configService: ConfigService) {}
+
+  private isEmailEnabled(): boolean {
+    return this.configService.get<string>('EMAIL_ENABLED', 'false') === 'true';
+  }
+
   async sendVerificationEmail(email: string, token: string): Promise<void> {
+    if (!this.isEmailEnabled()) {
+      this.logger.warn(
+        `EMAIL_ENABLED=false, skipping verification email to ${email}`,
+      );
+      return;
+    }
+
     await this.transporter.sendMail({
       to: email,
       from: 'no-reply@deliveryways.app',
@@ -20,6 +34,13 @@ export class MailerService {
   }
 
   async sendPasswordResetEmail(email: string, token: string): Promise<void> {
+    if (!this.isEmailEnabled()) {
+      this.logger.warn(
+        `EMAIL_ENABLED=false, skipping password reset email to ${email}`,
+      );
+      return;
+    }
+
     await this.transporter.sendMail({
       to: email,
       from: 'no-reply@deliveryways.app',

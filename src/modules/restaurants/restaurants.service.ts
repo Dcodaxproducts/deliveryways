@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { QueryDto } from '../../common/dto';
+import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
 import { PrismaTx } from '../../common/types';
@@ -53,12 +53,15 @@ export class RestaurantsService {
     };
   }
 
-  async list(user: AuthUserContext, query: QueryDto, withDeleted = false) {
+  async list(user: AuthUserContext, query: AdminListQueryDto) {
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const allowedWithDeleted = user.role === 'SUPER_ADMIN' && withDeleted;
+    const allowedWithDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
+    const includeInactive =
+      (user.role === 'SUPER_ADMIN' || user.role === 'BUSINESS_ADMIN') &&
+      !!query.includeInactive;
 
     const tenantId =
       user.role === 'CUSTOMER' && user.rid
@@ -70,6 +73,7 @@ export class RestaurantsService {
       query,
       false,
       allowedWithDeleted,
+      includeInactive,
     );
 
     return {

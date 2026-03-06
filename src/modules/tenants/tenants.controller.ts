@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Patch, Query, UseGuards, Body } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { QueryDto } from '../../common/dto';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { AdminListQueryDto } from '../../common/dto';
 import { CurrentUser } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from '../../common/guards';
@@ -18,12 +18,25 @@ export class TenantsController {
 
   @Get()
   @Roles(RolesEnum.SUPER_ADMIN)
-  list(
-    @CurrentUser() user: AuthUserContext,
-    @Query() query: QueryDto,
-    @Query('withDeleted') withDeleted?: string,
-  ) {
-    return this.tenantsService.listTenants(user, query, withDeleted === 'true');
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'search', required: false, example: 'dcodax' })
+  @ApiQuery({ name: 'sortBy', required: false, example: 'createdAt' })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['ASC', 'DESC'] })
+  @ApiQuery({
+    name: 'withDeleted',
+    required: false,
+    example: false,
+    description: 'Super admin only',
+  })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    example: false,
+    description: 'Super admin only',
+  })
+  list(@CurrentUser() user: AuthUserContext, @Query() query: AdminListQueryDto) {
+    return this.tenantsService.listTenants(user, query);
   }
 
   @Patch(':id')

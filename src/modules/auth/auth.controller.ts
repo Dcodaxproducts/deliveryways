@@ -21,11 +21,12 @@ import {
   ResetPasswordDto,
   VerifyEmailDto,
 } from './dto';
-import { CurrentUser, Public } from '../../common/decorators';
+import { AllowUnverified, CurrentUser, Public } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { JwtAuthGuard } from '../../common/guards';
 
 @ApiTags('Auth')
+@AllowUnverified()
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

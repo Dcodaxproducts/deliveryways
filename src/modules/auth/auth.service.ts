@@ -45,7 +45,8 @@ export class AuthService {
       throw new BadRequestException('User already exists');
     }
 
-    const verificationToken = this.generateToken();
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const verificationToken = emailEnabled ? this.generateToken() : null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await this.tenantsService.create(
@@ -127,7 +128,8 @@ export class AuthService {
           tenantId: tenant.id,
           restaurantId: restaurant.id,
           branchId: branch.id,
-          verificationToken,
+          verificationToken: verificationToken ?? undefined,
+          isVerified: !emailEnabled,
           profile: {
             firstName: dto.user.firstName,
             lastName: dto.user.lastName,
@@ -149,11 +151,15 @@ export class AuthService {
       };
     });
 
-    await this.mailerService.sendVerificationEmail(dto.user.email, verificationToken);
+    if (verificationToken) {
+      await this.mailerService.sendVerificationEmail(dto.user.email, verificationToken);
+    }
 
     return {
       data: result,
-      message: 'Tenant registration initiated. Please verify your email.',
+      message: verificationToken
+        ? 'Tenant registration initiated. Please verify your email.'
+        : 'Tenant registration completed. Email verification is disabled.',
     };
   }
 
@@ -163,7 +169,8 @@ export class AuthService {
       throw new BadRequestException('Customer already exists for this restaurant');
     }
 
-    const verificationToken = this.generateToken();
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const verificationToken = emailEnabled ? this.generateToken() : null;
 
     await this.prisma.$transaction(async (tx) => {
       await this.usersService.create(
@@ -173,7 +180,8 @@ export class AuthService {
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
           tenantId: dto.tenantId,
-          verificationToken,
+          verificationToken: verificationToken ?? undefined,
+          isVerified: !emailEnabled,
           profile: {
             firstName: dto.firstName,
             lastName: dto.lastName,
@@ -184,11 +192,15 @@ export class AuthService {
       );
     });
 
-    await this.mailerService.sendVerificationEmail(dto.email, verificationToken);
+    if (verificationToken) {
+      await this.mailerService.sendVerificationEmail(dto.email, verificationToken);
+    }
 
     return {
       data: null,
-      message: 'Customer registration started. Verify email with OTP.',
+      message: verificationToken
+        ? 'Customer registration started. Verify email with OTP.'
+        : 'Customer registration completed. Email verification is disabled.',
     };
   }
 
