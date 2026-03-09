@@ -99,7 +99,7 @@ export class BranchSettingsDto {
   contact?: BranchContactDto;
 }
 
-export class CreateBranchAdminDto {
+export class CreateBranchUserDto {
   @ApiProperty()
   @IsEmail()
   email!: string;
@@ -150,14 +150,14 @@ export class CreateBranchDto {
   managerId?: string;
 
   @ApiPropertyOptional({
-    type: CreateBranchAdminDto,
+    type: CreateBranchUserDto,
     description:
-      'Optional branch admin account to create with this branch. Cannot be used with managerId.',
+      'Optional branch admin user account to create with this branch. Cannot be used with managerId.',
   })
   @IsOptional()
   @ValidateNested()
-  @Type(() => CreateBranchAdminDto)
-  branchAdmin?: CreateBranchAdminDto;
+  @Type(() => CreateBranchUserDto)
+  user?: CreateBranchUserDto;
 
   @ApiProperty()
   @IsString()

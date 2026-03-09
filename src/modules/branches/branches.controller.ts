@@ -1,10 +1,24 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
-import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from '../../common/guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  TenantAccessGuard,
+} from '../../common/guards';
 import { BranchesService } from './branches.service';
 import { CreateBranchDto, UpdateBranchDto } from './dto';
 
@@ -16,6 +30,27 @@ export class BranchesController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @ApiBody({
+    schema: {
+      example: {
+        restaurantId: 'clx_restaurant_id',
+        name: 'Main Branch',
+        street: 'Street 12',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        isMain: false,
+        area: 'DHA Phase 5',
+        user: {
+          email: 'branch.admin@example.com',
+          password: 'Admin@12345',
+          firstName: 'Branch',
+          lastName: 'Admin',
+          phone: '+923001234567',
+        },
+      },
+    },
+  })
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateBranchDto) {
     return this.branchesService.createFromUser(user, dto);
@@ -23,7 +58,11 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
   @ApiQuery({ name: 'restaurantId', required: true, example: 'clx...' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 10 })

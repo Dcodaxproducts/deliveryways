@@ -54,13 +54,11 @@ export class BranchesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    if (dto.managerId && dto.branchAdmin) {
-      throw new BadRequestException(
-        'Use either managerId or branchAdmin, not both',
-      );
+    if (dto.managerId && dto.user) {
+      throw new BadRequestException('Use either managerId or user, not both');
     }
 
-    if (!dto.branchAdmin) {
+    if (!dto.user) {
       const data = await this.create(user.tid, dto, tx);
       return {
         data,
@@ -69,7 +67,7 @@ export class BranchesService {
     }
 
     const existingBranchAdmin = await this.usersService.findByEmail(
-      dto.branchAdmin.email,
+      dto.user.email,
       dto.restaurantId,
     );
 
@@ -79,7 +77,7 @@ export class BranchesService {
       );
     }
 
-    const branchAdminInput = dto.branchAdmin;
+    const branchAdminInput = dto.user;
     const plainPassword =
       branchAdminInput.password ?? this.generateBranchAdminPassword();
 
@@ -136,12 +134,12 @@ export class BranchesService {
     return {
       data: {
         ...result,
-        branchAdminCredentials: {
+        userCredentials: {
           email: result.branchAdmin.email,
           password: plainPassword,
         },
       },
-      message: 'Branch and branch admin created successfully',
+      message: 'Branch and branch user created successfully',
     };
   }
 
