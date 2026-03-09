@@ -17,6 +17,7 @@ import {
 } from '../../common/enums';
 import {
   ChangePasswordDto,
+  DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForgotPasswordDto,
   LoginDto,
@@ -397,6 +398,67 @@ export class AuthService {
         payload,
       },
       message: 'Development token generated',
+    };
+  }
+
+  async bootstrapDevSuperAdmin(dto: DevBootstrapSuperAdminDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException(
+        'dev-bootstrap-super-admin endpoint is disabled in production',
+      );
+    }
+
+    const email =
+      dto.email ??
+      process.env.DEV_SUPER_ADMIN_EMAIL ??
+      'superadmin@deliveryways.dev';
+    const password =
+      dto.password ?? process.env.DEV_SUPER_ADMIN_PASSWORD ?? 'Admin@123456';
+
+    const existing = await this.usersService.findByEmail(email);
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (!existing) {
+      const user = await this.usersService.create({
+        email,
+        password: hashedPassword,
+        role: UserRoleEnum.SUPER_ADMIN,
+        isVerified: true,
+      });
+
+      return {
+        data: {
+          id: user.id,
+          email,
+          password,
+          role: user.role,
+        },
+        message: 'Super admin created successfully',
+      };
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        password: hashedPassword,
+        role: 'SUPER_ADMIN',
+        isVerified: true,
+        tenantId: null,
+        restaurantId: null,
+        branchId: null,
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+
+    return {
+      data: {
+        id: updated.id,
+        email,
+        password,
+        role: updated.role,
+      },
+      message: 'Super admin already existed. Credentials refreshed.',
     };
   }
 

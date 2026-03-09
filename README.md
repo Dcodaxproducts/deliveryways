@@ -41,6 +41,8 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `POST /register-customer`
 - `POST /login`
 - `POST /refresh`
+- `POST /dev-token` (development only)
+- `POST /dev-bootstrap-super-admin` (development only)
 - `POST /verify-email`
 - `POST /resend-verification`
 - `POST /forgot-password`

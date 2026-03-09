@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
+  DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForgotPasswordDto,
   LoginDto,
@@ -60,6 +61,12 @@ export class AuthController {
   @Post('dev-token')
   devToken(@Body() dto: DevTokenDto) {
     return this.authService.generateDevToken(dto);
+  }
+
+  @Public()
+  @Post('dev-bootstrap-super-admin')
+  devBootstrapSuperAdmin(@Body() dto: DevBootstrapSuperAdminDto) {
+    return this.authService.bootstrapDevSuperAdmin(dto);
   }
 
   @Public()

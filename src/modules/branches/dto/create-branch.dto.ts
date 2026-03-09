@@ -3,12 +3,14 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../../common/enums';
@@ -97,6 +99,35 @@ export class BranchSettingsDto {
   contact?: BranchContactDto;
 }
 
+export class CreateBranchAdminDto {
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional password. If omitted, backend generates one.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  password?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  firstName!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  lastName!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
+
 export class CreateBranchDto {
   @ApiProperty()
   @IsString()
@@ -117,6 +148,16 @@ export class CreateBranchDto {
   @IsOptional()
   @IsString()
   managerId?: string;
+
+  @ApiPropertyOptional({
+    type: CreateBranchAdminDto,
+    description:
+      'Optional branch admin account to create with this branch. Cannot be used with managerId.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateBranchAdminDto)
+  branchAdmin?: CreateBranchAdminDto;
 
   @ApiProperty()
   @IsString()

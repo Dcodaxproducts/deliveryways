@@ -2,6 +2,7 @@ export { RegisterTenantDto } from './register-tenant.dto';
 export { RegisterCustomerDto } from './register-customer.dto';
 export { LoginDto } from './login.dto';
 export { DevTokenDto } from './dev-token.dto';
+export { DevBootstrapSuperAdminDto } from './dev-bootstrap-super-admin.dto';
 export {
   RefreshDto,
   VerifyEmailDto,

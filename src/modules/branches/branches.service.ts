@@ -1,21 +1,30 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
-import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
+import { buildPaginationMeta } from '../../common/utils';
+import { PrismaService } from '../../database';
+import { UsersService } from '../users/users.service';
 import { BranchesRepository } from './branches.repository';
 import { CreateBranchDto, UpdateBranchDto } from './dto';
 
 @Injectable()
 export class BranchesService {
-  constructor(private readonly branchesRepository: BranchesRepository) {}
+  constructor(
+    private readonly branchesRepository: BranchesRepository,
+    private readonly usersService: UsersService,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  async create(
-    tenantId: string,
-    dto: CreateBranchDto,
-    tx?: PrismaTx,
-  ) {
+  async create(tenantId: string, dto: CreateBranchDto, tx?: PrismaTx) {
     return this.branchesRepository.create(
       {
         tenantId,
@@ -45,11 +54,94 @@ export class BranchesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const data = await this.create(user.tid, dto, tx);
+    if (dto.managerId && dto.branchAdmin) {
+      throw new BadRequestException(
+        'Use either managerId or branchAdmin, not both',
+      );
+    }
+
+    if (!dto.branchAdmin) {
+      const data = await this.create(user.tid, dto, tx);
+      return {
+        data,
+        message: 'Branch created successfully',
+      };
+    }
+
+    const existingBranchAdmin = await this.usersService.findByEmail(
+      dto.branchAdmin.email,
+      dto.restaurantId,
+    );
+
+    if (existingBranchAdmin) {
+      throw new BadRequestException(
+        'Branch admin already exists for this restaurant',
+      );
+    }
+
+    const branchAdminInput = dto.branchAdmin;
+    const plainPassword =
+      branchAdminInput.password ?? this.generateBranchAdminPassword();
+
+    const operation = async (trx: PrismaTx) => {
+      const branch = await this.create(
+        user.tid as string,
+        {
+          ...dto,
+          managerId: undefined,
+        },
+        trx,
+      );
+
+      const branchAdmin = await this.usersService.create(
+        {
+          email: branchAdminInput.email,
+          password: await bcrypt.hash(plainPassword, 10),
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tenantId: user.tid,
+          restaurantId: dto.restaurantId,
+          branchId: branch.id,
+          isVerified: true,
+          profile: {
+            firstName: branchAdminInput.firstName,
+            lastName: branchAdminInput.lastName,
+            phone: branchAdminInput.phone,
+          },
+        },
+        trx,
+      );
+
+      await this.branchesRepository.update(
+        branch.id,
+        {
+          manager: {
+            connect: {
+              id: branchAdmin.id,
+            },
+          },
+        },
+        trx,
+      );
+
+      return {
+        branch,
+        branchAdmin,
+      };
+    };
+
+    const result = tx
+      ? await operation(tx)
+      : await this.prisma.$transaction(async (trx) => operation(trx));
 
     return {
-      data,
-      message: 'Branch created successfully',
+      data: {
+        ...result,
+        branchAdminCredentials: {
+          email: result.branchAdmin.email,
+          password: plainPassword,
+        },
+      },
+      message: 'Branch and branch admin created successfully',
     };
   }
 
@@ -170,5 +262,9 @@ export class BranchesService {
       data,
       message: 'Branch soft deleted successfully',
     };
+  }
+
+  private generateBranchAdminPassword(): string {
+    return `Br@${randomBytes(4).toString('hex')}2026`;
   }
 }
