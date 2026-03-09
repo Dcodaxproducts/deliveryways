@@ -10,17 +10,22 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
-import { OrderTypeEnum, PaymentMethodEnum, UserRoleEnum } from '../../common/enums';
+import {
+  OrderTypeEnum,
+  PaymentMethodEnum,
+  UserRoleEnum,
+} from '../../common/enums';
 import {
   ChangePasswordDto,
   DevTokenDto,
   ForgotPasswordDto,
-  LoginDto,
+  PlatformLoginDto,
   RefreshDto,
   RegisterCustomerDto,
   RegisterTenantDto,
   ResendVerificationDto,
   ResetPasswordDto,
+  RestaurantLoginDto,
   VerifyEmailDto,
 } from './dto';
 import { TenantsService } from '../tenants/tenants.service';
@@ -97,7 +102,9 @@ export class AuthService {
           taxPercentage: 0,
         },
         contact: {
-          whatsapp: dto.restaurant.supportContact?.whatsapp as string | undefined,
+          whatsapp: dto.restaurant.supportContact?.whatsapp as
+            | string
+            | undefined,
           phone: dto.restaurant.supportContact?.phone as string | undefined,
         },
       };
@@ -154,7 +161,10 @@ export class AuthService {
     });
 
     if (verificationToken) {
-      await this.mailerService.sendVerificationEmail(dto.user.email, verificationToken);
+      await this.mailerService.sendVerificationEmail(
+        dto.user.email,
+        verificationToken,
+      );
     }
 
     return {
@@ -166,9 +176,28 @@ export class AuthService {
   }
 
   async registerCustomer(dto: RegisterCustomerDto) {
-    const existing = await this.usersService.findByEmail(dto.email, dto.restaurantId);
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: dto.restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        tenantId: true,
+      },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const existing = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
     if (existing) {
-      throw new BadRequestException('Customer already exists for this restaurant');
+      throw new BadRequestException(
+        'Customer already exists for this restaurant',
+      );
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
@@ -181,7 +210,7 @@ export class AuthService {
           password: await bcrypt.hash(dto.password, 10),
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
-          tenantId: dto.tenantId,
+          tenantId: restaurant.tenantId,
           verificationToken: verificationToken ?? undefined,
           isVerified: !emailEnabled,
           profile: {
@@ -195,7 +224,10 @@ export class AuthService {
     });
 
     if (verificationToken) {
-      await this.mailerService.sendVerificationEmail(dto.email, verificationToken);
+      await this.mailerService.sendVerificationEmail(
+        dto.email,
+        verificationToken,
+      );
     }
 
     return {
@@ -206,13 +238,25 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(dto.email, dto.restaurantId);
+  async platformLogin(dto: PlatformLoginDto) {
+    return this.loginWithScope(dto.email, dto.password);
+  }
+
+  async restaurantLogin(dto: RestaurantLoginDto) {
+    return this.loginWithScope(dto.email, dto.password, dto.restaurantId);
+  }
+
+  private async loginWithScope(
+    email: string,
+    password: string,
+    restaurantId?: string,
+  ) {
+    const user = await this.usersService.findByEmail(email, restaurantId);
     if (!user || user.deletedAt) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isValidPassword = await bcrypt.compare(dto.password, user.password);
+    const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -258,12 +302,12 @@ export class AuthService {
     let payload: { uid: string; type?: string };
 
     try {
-      payload = await this.jwtService.verifyAsync<{ uid: string; type?: string }>(
-        dto.refreshToken,
-        {
-          secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
-        },
-      );
+      payload = await this.jwtService.verifyAsync<{
+        uid: string;
+        type?: string;
+      }>(dto.refreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
+      });
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -277,7 +321,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const isValid = await bcrypt.compare(dto.refreshToken, dbUser.refreshTokenHash);
+    const isValid = await bcrypt.compare(
+      dto.refreshToken,
+      dbUser.refreshTokenHash,
+    );
     if (!isValid) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -322,7 +369,9 @@ export class AuthService {
 
   async generateDevToken(dto: DevTokenDto) {
     if (process.env.NODE_ENV === 'production') {
-      throw new ForbiddenException('dev-token endpoint is disabled in production');
+      throw new ForbiddenException(
+        'dev-token endpoint is disabled in production',
+      );
     }
 
     const payload = {
@@ -346,7 +395,10 @@ export class AuthService {
 
   async resendVerification(dto: ResendVerificationDto) {
     const token = this.generateToken();
-    const result = await this.usersService.setVerificationToken(dto.email, token);
+    const result = await this.usersService.setVerificationToken(
+      dto.email,
+      token,
+    );
 
     if (result.count === 0) {
       throw new NotFoundException('User not found');
@@ -362,7 +414,10 @@ export class AuthService {
 
   async forgotPassword(dto: ForgotPasswordDto) {
     const token = this.generateToken();
-    const result = await this.usersService.setVerificationToken(dto.email, token);
+    const result = await this.usersService.setVerificationToken(
+      dto.email,
+      token,
+    );
 
     if (result.count === 0) {
       return {
