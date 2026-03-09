@@ -19,13 +19,12 @@ import {
   ChangePasswordDto,
   DevTokenDto,
   ForgotPasswordDto,
-  PlatformLoginDto,
+  LoginDto,
   RefreshDto,
   RegisterCustomerDto,
   RegisterTenantDto,
   ResendVerificationDto,
   ResetPasswordDto,
-  RestaurantLoginDto,
   VerifyEmailDto,
 } from './dto';
 import { TenantsService } from '../tenants/tenants.service';
@@ -238,25 +237,33 @@ export class AuthService {
     };
   }
 
-  async platformLogin(dto: PlatformLoginDto) {
-    return this.loginWithScope(dto.email, dto.password);
-  }
+  async login(dto: LoginDto) {
+    const user = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
 
-  async restaurantLogin(dto: RestaurantLoginDto) {
-    return this.loginWithScope(dto.email, dto.password, dto.restaurantId);
-  }
-
-  private async loginWithScope(
-    email: string,
-    password: string,
-    restaurantId?: string,
-  ) {
-    const user = await this.usersService.findByEmail(email, restaurantId);
     if (!user || user.deletedAt) {
+      if (!dto.restaurantId) {
+        const restaurantScopedUsersCount = await this.prisma.user.count({
+          where: {
+            email: dto.email,
+            restaurantId: { not: null },
+            deletedAt: null,
+          },
+        });
+
+        if (restaurantScopedUsersCount > 0) {
+          throw new BadRequestException(
+            'restaurantId is required for this account',
+          );
+        }
+      }
+
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    const isValidPassword = await bcrypt.compare(dto.password, user.password);
     if (!isValidPassword) {
       throw new UnauthorizedException('Invalid credentials');
     }

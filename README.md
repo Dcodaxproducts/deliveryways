@@ -39,8 +39,7 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 ### Auth (`/auth`)
 - `POST /register-tenant`
 - `POST /register-customer`
-- `POST /login/platform`
-- `POST /login/restaurant`
+- `POST /login`
 - `POST /refresh`
 - `POST /verify-email`
 - `POST /resend-verification`

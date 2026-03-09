@@ -14,8 +14,7 @@ import {
   ChangePasswordDto,
   DevTokenDto,
   ForgotPasswordDto,
-  PlatformLoginDto,
-  RestaurantLoginDto,
+  LoginDto,
   RefreshDto,
   RegisterCustomerDto,
   RegisterTenantDto,
@@ -46,15 +45,9 @@ export class AuthController {
   }
 
   @Public()
-  @Post('login/platform')
-  platformLogin(@Body() dto: PlatformLoginDto) {
-    return this.authService.platformLogin(dto);
-  }
-
-  @Public()
-  @Post('login/restaurant')
-  restaurantLogin(@Body() dto: RestaurantLoginDto) {
-    return this.authService.restaurantLogin(dto);
+  @Post('login')
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
   }
 
   @Public()
