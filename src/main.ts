@@ -19,7 +19,13 @@ async function bootstrap(): Promise<void> {
     const configService = app.get(ConfigService);
 
     // Security
-    app.use(helmet());
+    app.use(
+      helmet({
+        // Swagger UI requires inline scripts/styles and can render a blank page with strict CSP
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false,
+      }),
+    );
     app.use(compression());
 
     // CORS
@@ -70,7 +76,9 @@ async function bootstrap(): Promise<void> {
     logger.log(`📚 Swagger docs: http://${host}:${port}/docs`);
   } catch (error) {
     const message =
-      error instanceof Error ? error.stack ?? error.message : 'Unknown startup error';
+      error instanceof Error
+        ? (error.stack ?? error.message)
+        : 'Unknown startup error';
     logger.error(`❌ Server startup failed: ${message}`);
     process.exit(1);
   }
