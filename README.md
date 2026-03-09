@@ -146,6 +146,18 @@ FORCE_RESTORE=yes npm run db:restore -- backups/db/<file>.sql
 0 */6 * * * cd /var/www/html/deliveryways/server && npm run db:backup >> /var/log/deliveryways-backup.log 2>&1
 ```
 
+## CI/CD Automation (Develop)
+
+This repo includes `.github/workflows/deploy-develop.yml`.
+On each push to `develop`, GitHub Actions deploys to server via SSH and runs `npm run deploy:safe`.
+
+Required GitHub repository secrets:
+
+- `DEPLOY_HOST`
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY` (private key content)
+- `DEPLOY_PORT` (optional if not 22)
+
 ### Local PostgreSQL (Docker)
 
 The project includes `docker-compose.yml` with a local Postgres service.
