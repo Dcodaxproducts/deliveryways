@@ -20,15 +20,15 @@ fi
 echo "🔧 Repairing postgres role/database inside $DB_CONTAINER ..."
 docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
 ALTER USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
-DO
-\$do\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$DB_NAME') THEN
-    EXECUTE 'CREATE DATABASE $DB_NAME OWNER $DB_USER';
-  END IF;
-END
-\$do\$;
 SQL
+
+DB_EXISTS="$(docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'")"
+if [[ "$DB_EXISTS" != "1" ]]; then
+  echo "🔧 Creating database: $DB_NAME"
+  docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";"
+else
+  echo "ℹ️ Database already exists: $DB_NAME"
+fi
 
 echo "🔧 Updating DATABASE_URL in .env ..."
 if [[ ! -f .env ]]; then
