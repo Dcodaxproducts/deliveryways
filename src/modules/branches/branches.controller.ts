@@ -41,7 +41,7 @@ export class BranchesController {
         country: 'Pakistan',
         isMain: false,
         area: 'DHA Phase 5',
-        user: {
+        branchAdmin: {
           email: 'branch.admin@example.com',
           password: 'Admin@12345',
           firstName: 'Branch',

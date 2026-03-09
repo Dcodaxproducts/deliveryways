@@ -31,7 +31,6 @@ export class BranchesService {
         restaurantId: dto.restaurantId,
         name: dto.name,
         isMain: dto.isMain,
-        managerId: dto.managerId,
         street: dto.street,
         area: dto.area,
         city: dto.city,
@@ -54,11 +53,7 @@ export class BranchesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    if (dto.managerId && dto.user) {
-      throw new BadRequestException('Use either managerId or user, not both');
-    }
-
-    if (!dto.user) {
+    if (!dto.branchAdmin) {
       const data = await this.create(user.tid, dto, tx);
       return {
         data,
@@ -67,7 +62,7 @@ export class BranchesService {
     }
 
     const existingBranchAdmin = await this.usersService.findByEmail(
-      dto.user.email,
+      dto.branchAdmin.email,
       dto.restaurantId,
     );
 
@@ -77,19 +72,12 @@ export class BranchesService {
       );
     }
 
-    const branchAdminInput = dto.user;
+    const branchAdminInput = dto.branchAdmin;
     const plainPassword =
       branchAdminInput.password ?? this.generateBranchAdminPassword();
 
     const operation = async (trx: PrismaTx) => {
-      const branch = await this.create(
-        user.tid as string,
-        {
-          ...dto,
-          managerId: undefined,
-        },
-        trx,
-      );
+      const branch = await this.create(user.tid as string, dto, trx);
 
       const branchAdmin = await this.usersService.create(
         {
@@ -134,7 +122,7 @@ export class BranchesService {
     return {
       data: {
         ...result,
-        userCredentials: {
+        branchAdminCredentials: {
           email: result.branchAdmin.email,
           password: plainPassword,
         },
@@ -217,11 +205,6 @@ export class BranchesService {
       {
         name: dto.name,
         isMain: dto.isMain,
-        manager: dto.managerId
-          ? {
-              connect: { id: dto.managerId },
-            }
-          : undefined,
         coverImage: dto.coverImage,
         description: dto.description,
         settings: dto.settings as unknown as Prisma.InputJsonValue,

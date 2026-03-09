@@ -1,10 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AddressRefType,
-  Prisma,
-  PrismaClient,
-  UserRole,
-} from '@prisma/client';
+import { AddressRefType, Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
@@ -17,21 +12,23 @@ export class BranchesRepository {
     return tx ?? this.prisma;
   }
 
-  async create(payload: {
-    tenantId: string;
-    restaurantId: string;
-    name: string;
-    isMain?: boolean;
-    managerId?: string;
-    street: string;
-    area?: string;
-    city: string;
-    state: string;
-    country: string;
-    coverImage?: string;
-    description?: string;
-    settings?: Prisma.InputJsonValue;
-  }, tx?: PrismaTx) {
+  async create(
+    payload: {
+      tenantId: string;
+      restaurantId: string;
+      name: string;
+      isMain?: boolean;
+      street: string;
+      area?: string;
+      city: string;
+      state: string;
+      country: string;
+      coverImage?: string;
+      description?: string;
+      settings?: Prisma.InputJsonValue;
+    },
+    tx?: PrismaTx,
+  ) {
     const client = this.client(tx);
 
     if (payload.isMain) {
@@ -53,7 +50,6 @@ export class BranchesRepository {
         restaurantId: payload.restaurantId,
         name: payload.name,
         isMain: payload.isMain ?? false,
-        managerId: payload.managerId,
         coverImage: payload.coverImage,
         description: payload.description,
         settings: payload.settings,
@@ -72,16 +68,6 @@ export class BranchesRepository {
         country: payload.country,
       },
     });
-
-    if (payload.managerId) {
-      await client.user.update({
-        where: { id: payload.managerId },
-        data: {
-          branchId: branch.id,
-          role: UserRole.BRANCH_ADMIN,
-        },
-      });
-    }
 
     return branch;
   }
