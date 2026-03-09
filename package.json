@@ -24,8 +24,12 @@
     "db:reset": "docker compose down -v && docker compose up --detach postgres",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed",
+    "db:doctor": "bash scripts/db-doctor.sh",
+    "db:repair": "bash scripts/db-repair.sh",
+    "sync:server": "bash scripts/sync-server.sh",
     "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run prisma:seed && npm run start:dev"
   },
   "dependencies": {

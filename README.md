@@ -89,6 +89,31 @@ cp .env.example .env
 npm run setup:local
 ```
 
+## Shared Dev/Server Sync Flow
+
+After pulling latest code on server:
+
+```bash
+npm run db:doctor
+npm run prisma:generate
+npm run prisma:migrate:deploy
+npm run build
+pm2 restart deliveryways-server --update-env
+```
+
+If DB auth/schema looks broken, run one-time repair:
+
+```bash
+npm run db:repair
+npm run db:doctor
+```
+
+Or run full sync in one command:
+
+```bash
+npm run sync:server
+```
+
 ### Local PostgreSQL (Docker)
 
 The project includes `docker-compose.yml` with a local Postgres service.
