@@ -27,10 +27,16 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed",
+    "seed:base": "ts-node prisma/seed.ts --mode=base",
+    "seed:demo": "ts-node prisma/seed.ts --mode=demo",
+    "seed:all": "ts-node prisma/seed.ts --mode=all",
     "db:doctor": "bash scripts/db-doctor.sh",
     "db:repair": "bash scripts/db-repair.sh",
+    "db:backup": "bash scripts/backup-db.sh",
+    "db:restore": "bash scripts/restore-db.sh",
     "sync:server": "bash scripts/sync-server.sh",
-    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run prisma:seed && npm run start:dev"
+    "deploy:safe": "bash scripts/deploy-safe.sh",
+    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

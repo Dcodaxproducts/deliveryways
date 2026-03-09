@@ -108,10 +108,42 @@ npm run db:repair
 npm run db:doctor
 ```
 
-Or run full sync in one command:
+One-command safe deploy (pull + backup + migrate + build + pm2 restart):
 
 ```bash
-npm run sync:server
+npm run deploy:safe
+```
+
+## Seed Strategy
+
+- `seed:base` → safe baseline data (super admin)
+- `seed:demo` → recreatable demo/testing data
+- `seed:all` → runs both
+
+```bash
+npm run seed:base
+npm run seed:demo
+npm run seed:all
+```
+
+## Backups & Restore
+
+Create backup:
+
+```bash
+npm run db:backup
+```
+
+Restore from backup (destructive):
+
+```bash
+FORCE_RESTORE=yes npm run db:restore -- backups/db/<file>.sql
+```
+
+### Cron (every 6 hours)
+
+```bash
+0 */6 * * * cd /var/www/html/deliveryways/server && npm run db:backup >> /var/log/deliveryways-backup.log 2>&1
 ```
 
 ### Local PostgreSQL (Docker)

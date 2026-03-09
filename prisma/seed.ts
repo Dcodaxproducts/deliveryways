@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import * as bcrypt from 'bcrypt';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { seedBase } from './seeds/base.seed';
+import { seedDemo } from './seeds/demo.seed';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -14,68 +15,30 @@ const prisma = new PrismaClient({
 });
 
 async function main(): Promise<void> {
-  const superAdminEmail =
-    process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@deliveryways.local';
-  const superAdminPassword = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'Admin@123';
+  const modeArg = process.argv.find((arg) => arg.startsWith('--mode='));
+  const mode = (
+    modeArg?.split('=')[1] ??
+    process.env.SEED_MODE ??
+    'base'
+  ).toLowerCase();
 
-  const passwordHash = await bcrypt.hash(superAdminPassword, 10);
-
-  const existing = await prisma.user.findFirst({
-    where: {
-      email: superAdminEmail,
-      restaurantId: null,
-    },
-    include: { profile: true },
-  });
-
-  if (existing) {
-    await prisma.user.update({
-      where: { id: existing.id },
-      data: {
-        password: passwordHash,
-        role: UserRole.SUPER_ADMIN,
-        isVerified: true,
-        isActive: true,
-        deletedAt: null,
-        profile: existing.profile
-          ? {
-              update: {
-                firstName: 'Super',
-                lastName: 'Admin',
-                bio: 'System super admin user',
-              },
-            }
-          : {
-              create: {
-                firstName: 'Super',
-                lastName: 'Admin',
-                bio: 'System super admin user',
-              },
-            },
-      },
-    });
-  } else {
-    await prisma.user.create({
-      data: {
-        email: superAdminEmail,
-        password: passwordHash,
-        role: UserRole.SUPER_ADMIN,
-        isVerified: true,
-        isActive: true,
-        profile: {
-          create: {
-            firstName: 'Super',
-            lastName: 'Admin',
-            bio: 'System super admin user',
-          },
-        },
-      },
-    });
+  if (mode === 'base') {
+    await seedBase(prisma);
+    return;
   }
 
-  console.log('✅ Seed completed');
-  console.log(`Super admin email: ${superAdminEmail}`);
-  console.log(`Super admin password: ${superAdminPassword}`);
+  if (mode === 'demo') {
+    await seedDemo(prisma);
+    return;
+  }
+
+  if (mode === 'all') {
+    await seedBase(prisma);
+    await seedDemo(prisma);
+    return;
+  }
+
+  throw new Error(`Unsupported SEED mode: ${mode}. Use base | demo | all`);
 }
 
 main()
