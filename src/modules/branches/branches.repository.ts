@@ -120,6 +120,15 @@ export class BranchesRepository {
     });
   }
 
+  async findTenantIdByRestaurant(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { tenantId: true },
+    });
+
+    return restaurant?.tenantId;
+  }
+
   async update(id: string, data: Prisma.BranchUpdateInput, tx?: PrismaTx) {
     return this.client(tx).branch.update({ where: { id }, data });
   }

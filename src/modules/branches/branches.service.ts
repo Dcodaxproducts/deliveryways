@@ -136,10 +136,6 @@ export class BranchesService {
   }
 
   async list(user: AuthUserContext, query: ListBranchesDto) {
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
-
     if (user.role === 'BRANCH_ADMIN' && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
       return {
@@ -163,7 +159,22 @@ export class BranchesService {
         : query.restaurantId;
 
     if (!effectiveRestaurantId) {
-      throw new BadRequestException('restaurantId is required');
+      throw new BadRequestException(
+        user.role === UserRoleEnum.SUPER_ADMIN
+          ? 'restaurantId is required for super admin'
+          : 'restaurantId is required',
+      );
+    }
+
+    const effectiveTenantId =
+      user.role === UserRoleEnum.SUPER_ADMIN
+        ? await this.branchesRepository.findTenantIdByRestaurant(
+            effectiveRestaurantId,
+          )
+        : user.tid;
+
+    if (!effectiveTenantId) {
+      throw new ForbiddenException('Restaurant context is invalid');
     }
 
     const allowWithDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
@@ -174,7 +185,7 @@ export class BranchesService {
       !!query.includeInactive;
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
-      user.tid,
+      effectiveTenantId,
       effectiveRestaurantId,
       query,
       false,
