@@ -5,10 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 DB_CONTAINER="${DB_CONTAINER:-deliveryways-postgres}"
-DB_USER="${DB_USER:-postgres}"
-DB_PASSWORD="${DB_PASSWORD:-postgres}"
+DB_USER="${DB_USER:-deliveryways}"
+DB_PASSWORD="${DB_PASSWORD:-deliveryways}"
 DB_NAME="${DB_NAME:-deliveryways}"
-DB_PORT="${DB_PORT:-5432}"
+DB_PORT="${DB_PORT:-5434}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then

@@ -4,15 +4,15 @@ services:
     container_name: deliveryways-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: deliveryways
+      POSTGRES_PASSWORD: deliveryways
       POSTGRES_DB: deliveryways
     ports:
-      - '5432:5432'
+      - '5434:5432'
     volumes:
       - deliveryways_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d deliveryways']
+      test: ['CMD-SHELL', 'pg_isready -U deliveryways -d deliveryways']
       interval: 5s
       timeout: 5s
       retries: 10

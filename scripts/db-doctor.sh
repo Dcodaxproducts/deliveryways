@@ -26,8 +26,10 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "delive
   exit 1
 }
 
+DB_USER="${DB_USER:-deliveryways}"
+
 printf "\n🔎 Databases inside deliveryways-postgres\n"
-docker exec deliveryways-postgres psql -U postgres -d postgres -c "\\l" || {
+docker exec deliveryways-postgres psql -U "$DB_USER" -d postgres -c "\\l" || {
   echo "❌ Could not list databases from container"
   exit 1
 }

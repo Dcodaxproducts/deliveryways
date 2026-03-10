@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 DB_CONTAINER="${DB_CONTAINER:-deliveryways-postgres}"
-DB_USER="${DB_USER:-postgres}"
+DB_USER="${DB_USER:-deliveryways}"
 DB_NAME="${DB_NAME:-deliveryways}"
 BACKUP_DIR="${BACKUP_DIR:-backups/db}"
 

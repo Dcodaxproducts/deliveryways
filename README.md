@@ -179,7 +179,7 @@ npm run db:reset
 Default local connection:
 
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/deliveryways
+DATABASE_URL=postgresql://deliveryways:deliveryways@127.0.0.1:5434/deliveryways
 ```
 
 Swagger: `http://localhost:3000/docs`
