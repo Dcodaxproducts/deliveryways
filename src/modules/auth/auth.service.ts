@@ -509,6 +509,7 @@ export class AuthService {
     const result = await this.usersService.setVerificationToken(
       dto.email,
       token,
+      dto.restaurantId,
     );
 
     if (result.count === 0) {
@@ -531,13 +532,20 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
 
     if (!user || user.verificationToken !== dto.token) {
       throw new BadRequestException('Invalid reset token');
     }
 
-    await this.usersService.setVerificationToken(dto.email, null);
+    await this.usersService.setVerificationToken(
+      dto.email,
+      null,
+      dto.restaurantId,
+    );
     await this.usersService.setRefreshTokenHash(user.id, null);
     await this.usersService.updatePassword(user.id, dto.newPassword);
 

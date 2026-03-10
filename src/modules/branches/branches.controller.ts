@@ -10,7 +10,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -20,7 +19,12 @@ import {
   TenantAccessGuard,
 } from '../../common/guards';
 import { BranchesService } from './branches.service';
-import { CreateBranchDto, UpdateBranchDto } from './dto';
+import {
+  CreateBranchDto,
+  ListBranchesDto,
+  ListPublicBranchesDto,
+  UpdateBranchDto,
+} from './dto';
 
 @ApiTags('Branches')
 @Controller('branches')
@@ -82,22 +86,14 @@ export class BranchesController {
     description: 'Admin only',
   })
   @Get()
-  list(
-    @CurrentUser() user: AuthUserContext,
-    @Query('restaurantId') restaurantId: string,
-    @Query() query: AdminListQueryDto,
-  ) {
-    return this.branchesService.list(user, restaurantId, query);
+  list(@CurrentUser() user: AuthUserContext, @Query() query: ListBranchesDto) {
+    return this.branchesService.list(user, query);
   }
 
   @Public()
   @Get('public')
-  listPublic(
-    @Query('tenantId') tenantId: string,
-    @Query('restaurantId') restaurantId: string,
-    @Query() query: QueryDto,
-  ) {
-    return this.branchesService.listPublic(tenantId, restaurantId, query);
+  listPublic(@Query() query: ListPublicBranchesDto) {
+    return this.branchesService.listPublic(query);
   }
 
   @ApiBearerAuth()

@@ -6,7 +6,6 @@ import {
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
@@ -14,7 +13,12 @@ import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
 import { BranchesRepository } from './branches.repository';
-import { CreateBranchDto, UpdateBranchDto } from './dto';
+import {
+  CreateBranchDto,
+  ListBranchesDto,
+  ListPublicBranchesDto,
+  UpdateBranchDto,
+} from './dto';
 
 @Injectable()
 export class BranchesService {
@@ -131,16 +135,12 @@ export class BranchesService {
     };
   }
 
-  async list(
-    user: AuthUserContext,
-    restaurantId: string,
-    query: AdminListQueryDto,
-  ) {
+  async list(user: AuthUserContext, query: ListBranchesDto) {
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    if (!restaurantId) {
+    if (!query.restaurantId) {
       throw new BadRequestException('restaurantId is required');
     }
 
@@ -169,7 +169,7 @@ export class BranchesService {
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
       user.tid,
-      restaurantId,
+      query.restaurantId,
       query,
       false,
       allowWithDeleted,
@@ -183,18 +183,18 @@ export class BranchesService {
     };
   }
 
-  async listPublic(tenantId: string, restaurantId: string, query: QueryDto) {
-    if (!tenantId) {
+  async listPublic(query: ListPublicBranchesDto) {
+    if (!query.tenantId) {
       throw new BadRequestException('tenantId is required');
     }
 
-    if (!restaurantId) {
+    if (!query.restaurantId) {
       throw new BadRequestException('restaurantId is required');
     }
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
-      tenantId,
-      restaurantId,
+      query.tenantId,
+      query.restaurantId,
       query,
       true,
     );

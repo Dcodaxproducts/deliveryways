@@ -76,14 +76,17 @@ export class UsersService {
     );
   }
 
-  async createBusinessAdmin(payload: {
-    email: string;
-    password: string;
-    tenantId: string;
-    restaurantId: string;
-    branchId: string;
-    verificationToken: string;
-  }, tx?: PrismaTx) {
+  async createBusinessAdmin(
+    payload: {
+      email: string;
+      password: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      verificationToken: string;
+    },
+    tx?: PrismaTx,
+  ) {
     const hashedPassword = await bcrypt.hash(payload.password, 10);
 
     return this.usersRepository.createBusinessAdmin(
@@ -103,10 +106,18 @@ export class UsersService {
     return this.usersRepository.findById(id);
   }
 
-  async setVerificationToken(email: string, token: string | null) {
-    return this.usersRepository.updateByEmail(email, {
-      verificationToken: token,
-    });
+  async setVerificationToken(
+    email: string,
+    token: string | null,
+    restaurantId?: string,
+  ) {
+    return this.usersRepository.updateByEmail(
+      email,
+      {
+        verificationToken: token,
+      },
+      restaurantId,
+    );
   }
 
   async setRefreshTokenHash(userId: string, tokenHash: string | null) {

@@ -31,14 +31,25 @@ export class UsersRepository {
   }
 
   async findById(id: string) {
-    return this.prisma.user.findUnique({ where: { id }, include: { profile: true } });
+    return this.prisma.user.findUnique({
+      where: { id },
+      include: { profile: true },
+    });
   }
 
   async updateByEmail(
     email: string,
     data: Prisma.UserUpdateManyMutationInput,
+    restaurantId?: string,
   ) {
-    return this.prisma.user.updateMany({ where: { email, deletedAt: null }, data });
+    return this.prisma.user.updateMany({
+      where: {
+        email,
+        deletedAt: null,
+        ...(restaurantId !== undefined ? { restaurantId } : {}),
+      },
+      data,
+    });
   }
 
   async verifyUserEmail(email: string, token: string) {
