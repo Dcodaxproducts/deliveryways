@@ -140,6 +140,10 @@ export class BranchesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    if (!restaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
     if (user.role === 'BRANCH_ADMIN' && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
       return {
@@ -180,6 +184,14 @@ export class BranchesService {
   }
 
   async listPublic(tenantId: string, restaurantId: string, query: QueryDto) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required');
+    }
+
+    if (!restaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
     const { items, total } = await this.branchesRepository.listByRestaurant(
       tenantId,
       restaurantId,
