@@ -9,9 +9,26 @@ import {
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 
+type ValidationErrorDetail = {
+  name: string;
+  message: string;
+};
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+  private mapValidationMessage(rawMessage: string): ValidationErrorDetail {
+    const inFieldMatch = rawMessage.match(/ in ([A-Za-z0-9_.[\]-]+)\s+must\b/i);
+    const directFieldMatch = rawMessage.match(/^([A-Za-z0-9_.[\]-]+)\s+must\b/i);
+
+    const name = inFieldMatch?.[1] ?? directFieldMatch?.[1] ?? 'field';
+    const mustIndex = rawMessage.toLowerCase().indexOf(' must ');
+    const reason = mustIndex >= 0 ? rawMessage.slice(mustIndex + 1).trim() : rawMessage;
+    const message = reason.startsWith('must') ? `${name} ${reason}` : rawMessage;
+
+    return { name, message };
+  }
 
   private mapPrismaError(
     exception: Prisma.PrismaClientKnownRequestError,
@@ -66,6 +83,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let code = 'INTERNAL_ERROR';
+    let details: ValidationErrorDetail[] | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -75,8 +93,24 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = exceptionResponse;
       } else if (typeof exceptionResponse === 'object') {
         const resp = exceptionResponse as Record<string, unknown>;
-        message = (resp.message as string) || message;
-        code = (resp.error as string) || code;
+        const responseMessage = resp.message;
+
+        if (Array.isArray(responseMessage)) {
+          details = responseMessage
+            .filter((item): item is string => typeof item === 'string')
+            .map((item) => this.mapValidationMessage(item));
+
+          if (details.length > 0) {
+            message = details[0].message;
+            code = 'VALIDATION_ERROR';
+          }
+        } else if (typeof responseMessage === 'string') {
+          message = responseMessage;
+        }
+
+        if (code !== 'VALIDATION_ERROR') {
+          code = (resp.error as string) || code;
+        }
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = this.mapPrismaError(exception);
@@ -97,6 +131,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error: {
         code,
         message,
+        details,
       },
       meta: {
         timestamp: new Date().toISOString(),
