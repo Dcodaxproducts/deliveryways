@@ -5,17 +5,17 @@ import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
 import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
-import { CreateRestaurantDto, UpdateRestaurantDto } from './dto';
+import {
+  CreateRestaurantDto,
+  UpdateRestaurantDto,
+  UpdateRestaurantImagesDto,
+} from './dto';
 
 @Injectable()
 export class RestaurantsService {
   constructor(private readonly restaurantsRepository: RestaurantsRepository) {}
 
-  async create(
-    tenantId: string,
-    dto: CreateRestaurantDto,
-    tx?: PrismaTx,
-  ) {
+  async create(tenantId: string, dto: CreateRestaurantDto, tx?: PrismaTx) {
     const slug = await this.ensureUniqueSlug(dto.slug ?? dto.name);
 
     return this.restaurantsRepository.create(
@@ -58,14 +58,15 @@ export class RestaurantsService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const allowedWithDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
+    const allowedWithDeleted =
+      user.role === 'SUPER_ADMIN' && !!query.withDeleted;
     const includeInactive =
       (user.role === 'SUPER_ADMIN' || user.role === 'BUSINESS_ADMIN') &&
       !!query.includeInactive;
 
     const tenantId =
       user.role === 'CUSTOMER' && user.rid
-        ? (await this.resolveTenantByRestaurant(user.rid))
+        ? await this.resolveTenantByRestaurant(user.rid)
         : user.tid;
 
     const { items, total } = await this.restaurantsRepository.listByTenant(
@@ -132,7 +133,11 @@ export class RestaurantsService {
 
   async suspend(_user: AuthUserContext, id: string, tx?: PrismaTx) {
     const data = await this.restaurantsRepository.setActive(id, false, tx);
-    await this.restaurantsRepository.setBranchesActiveByRestaurant(id, false, tx);
+    await this.restaurantsRepository.setBranchesActiveByRestaurant(
+      id,
+      false,
+      tx,
+    );
 
     return {
       data,
@@ -149,6 +154,26 @@ export class RestaurantsService {
     };
   }
 
+  async updateImages(
+    _user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantImagesDto,
+    tx?: PrismaTx,
+  ) {
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        logoUrl: dto.logoUrl,
+      },
+      tx,
+    );
+
+    return {
+      data,
+      message: 'Restaurant images updated successfully',
+    };
+  }
+
   async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
     const data = await this.restaurantsRepository.softDelete(id, tx);
 
@@ -158,7 +183,9 @@ export class RestaurantsService {
     };
   }
 
-  private async resolveTenantByRestaurant(restaurantId: string): Promise<string> {
+  private async resolveTenantByRestaurant(
+    restaurantId: string,
+  ): Promise<string> {
     const tenantId =
       await this.restaurantsRepository.findTenantIdByRestaurant(restaurantId);
 
@@ -169,7 +196,10 @@ export class RestaurantsService {
     return tenantId;
   }
 
-  private async ensureUniqueSlug(base: string, ignoreId?: string): Promise<string> {
+  private async ensureUniqueSlug(
+    base: string,
+    ignoreId?: string,
+  ): Promise<string> {
     const normalizedBase = base
       .toLowerCase()
       .trim()

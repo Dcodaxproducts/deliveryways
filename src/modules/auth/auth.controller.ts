@@ -23,6 +23,7 @@ import {
   RegisterTenantDto,
   ResendVerificationDto,
   ResetPasswordDto,
+  UpdateMyAvatarDto,
   VerifyEmailDto,
 } from './dto';
 import {
@@ -126,6 +127,16 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUserContext) {
     return this.authService.me(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/avatar')
+  updateMyAvatar(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateMyAvatarDto,
+  ) {
+    return this.authService.updateMyAvatar(user, dto);
   }
 
   @ApiBearerAuth()

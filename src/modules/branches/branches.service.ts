@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Branch, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
@@ -14,10 +14,13 @@ import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
 import { BranchesRepository } from './branches.repository';
 import {
+  BulkBranchItemDto,
+  BulkCreateBranchesDto,
   CreateBranchDto,
   ListBranchesDto,
   ListPublicBranchesDto,
   UpdateBranchDto,
+  UpdateBranchImagesDto,
 } from './dto';
 
 @Injectable()
@@ -132,6 +135,50 @@ export class BranchesService {
         },
       },
       message: 'Branch and branch user created successfully',
+    };
+  }
+
+  async createBulkFromUser(user: AuthUserContext, dto: BulkCreateBranchesDto) {
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (!dto.branches || dto.branches.length === 0) {
+      throw new BadRequestException('At least one branch is required');
+    }
+
+    const effectiveRestaurantId =
+      user.role === UserRoleEnum.BUSINESS_ADMIN ||
+      user.role === UserRoleEnum.BRANCH_ADMIN
+        ? user.rid
+        : dto.restaurantId;
+
+    if (!effectiveRestaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
+    const createdBranches = await this.prisma.$transaction(async (trx) => {
+      const results: Branch[] = [];
+
+      for (const item of dto.branches) {
+        const branchInput: CreateBranchDto = {
+          ...(item as BulkBranchItemDto),
+          restaurantId: effectiveRestaurantId,
+        };
+
+        const branch = await this.create(user.tid as string, branchInput, trx);
+        results.push(branch);
+      }
+
+      return results;
+    });
+
+    return {
+      data: createdBranches,
+      message: 'Branches created successfully',
+      meta: {
+        totalCreated: createdBranches.length,
+      },
     };
   }
 
@@ -262,6 +309,26 @@ export class BranchesService {
     return {
       data,
       message: 'Branch activated successfully',
+    };
+  }
+
+  async updateImages(
+    _user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchImagesDto,
+    tx?: PrismaTx,
+  ) {
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        coverImage: dto.coverImage,
+      },
+      tx,
+    );
+
+    return {
+      data,
+      message: 'Branch images updated successfully',
     };
   }
 

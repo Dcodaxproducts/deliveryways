@@ -20,6 +20,7 @@ import { AddressesModule } from './modules/addresses/addresses.module';
 import { MailerModule } from './modules/mailer/mailer.module';
 import { UsersModule } from './modules/users/users.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
+import { DevTestingModule } from './modules/dev-testing/dev-testing.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -62,6 +63,7 @@ import { AppController } from './app.controller';
     UsersModule,
     ProfilesModule,
     AuthModule,
+    DevTestingModule,
     TenantsModule,
     RestaurantsModule,
     BranchesModule,

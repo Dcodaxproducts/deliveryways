@@ -1,12 +1,30 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
-import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from '../../common/guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  TenantAccessGuard,
+} from '../../common/guards';
 import { RestaurantsService } from './restaurants.service';
-import { CreateRestaurantDto, UpdateRestaurantDto } from './dto';
+import {
+  CreateRestaurantDto,
+  UpdateRestaurantDto,
+  UpdateRestaurantImagesDto,
+} from './dto';
 
 @ApiTags('Restaurants')
 @Controller('restaurants')
@@ -17,7 +35,10 @@ export class RestaurantsController {
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Post()
-  create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateRestaurantDto) {
+  create(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateRestaurantDto,
+  ) {
     return this.restaurantsService.createFromUser(user, dto);
   }
 
@@ -42,7 +63,10 @@ export class RestaurantsController {
     description: 'Admin only',
   })
   @Get()
-  list(@CurrentUser() user: AuthUserContext, @Query() query: AdminListQueryDto) {
+  list(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminListQueryDto,
+  ) {
     return this.restaurantsService.list(user, query);
   }
 
@@ -78,6 +102,18 @@ export class RestaurantsController {
   @Patch(':id/activate')
   activate(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.restaurantsService.activate(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/images')
+  updateImages(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantImagesDto,
+  ) {
+    return this.restaurantsService.updateImages(user, id, dto);
   }
 
   @ApiBearerAuth()

@@ -28,6 +28,7 @@ import {
   RegisterTenantDto,
   ResendVerificationDto,
   ResetPasswordDto,
+  UpdateMyAvatarDto,
   VerifyEmailDto,
 } from './dto';
 import { TenantsService } from '../tenants/tenants.service';
@@ -636,6 +637,40 @@ export class AuthService {
         profile: dbUser.profile,
       },
       message: 'Current user context fetched',
+    };
+  }
+
+  async updateMyAvatar(user: AuthUserContext, dto: UpdateMyAvatarDto) {
+    const dbUser = await this.usersService.findById(user.uid);
+    if (!dbUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dbUser.profile) {
+      await this.prisma.profile.update({
+        where: { id: dbUser.profile.id },
+        data: { avatarUrl: dto.avatarUrl },
+      });
+    } else {
+      const emailPrefix = dbUser.email.split('@')[0] || 'user';
+      await this.prisma.profile.create({
+        data: {
+          userId: dbUser.id,
+          firstName: emailPrefix,
+          lastName: emailPrefix,
+          avatarUrl: dto.avatarUrl,
+        },
+      });
+    }
+
+    const updated = await this.usersService.findById(user.uid);
+
+    return {
+      data: {
+        id: updated?.id,
+        profile: updated?.profile,
+      },
+      message: 'Profile avatar updated successfully',
     };
   }
 

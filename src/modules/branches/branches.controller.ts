@@ -20,10 +20,12 @@ import {
 } from '../../common/guards';
 import { BranchesService } from './branches.service';
 import {
+  BulkCreateBranchesDto,
   CreateBranchDto,
   ListBranchesDto,
   ListPublicBranchesDto,
   UpdateBranchDto,
+  UpdateBranchImagesDto,
 } from './dto';
 
 @ApiTags('Branches')
@@ -58,6 +60,17 @@ export class BranchesController {
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateBranchDto) {
     return this.branchesService.createFromUser(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Post('bulk')
+  createBulk(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: BulkCreateBranchesDto,
+  ) {
+    return this.branchesService.createBulkFromUser(user, dto);
   }
 
   @ApiBearerAuth()
@@ -127,6 +140,18 @@ export class BranchesController {
   @Patch(':id/activate')
   activate(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.activate(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/images')
+  updateImages(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchImagesDto,
+  ) {
+    return this.branchesService.updateImages(user, id, dto);
   }
 
   @ApiBearerAuth()
