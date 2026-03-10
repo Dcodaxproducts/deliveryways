@@ -67,7 +67,12 @@ export class BranchesController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
   )
-  @ApiQuery({ name: 'restaurantId', required: true, example: 'clx...' })
+  @ApiQuery({
+    name: 'restaurantId',
+    required: false,
+    example: 'clx...',
+    description: 'Optional for business/branch admin; token restaurant scope is used',
+  })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 10 })
   @ApiQuery({ name: 'search', required: false, example: 'islamabad' })

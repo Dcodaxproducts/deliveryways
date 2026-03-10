@@ -140,10 +140,6 @@ export class BranchesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    if (!query.restaurantId) {
-      throw new BadRequestException('restaurantId is required');
-    }
-
     if (user.role === 'BRANCH_ADMIN' && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
       return {
@@ -160,6 +156,16 @@ export class BranchesService {
       };
     }
 
+    const effectiveRestaurantId =
+      user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === UserRoleEnum.BUSINESS_ADMIN
+        ? user.rid
+        : query.restaurantId;
+
+    if (!effectiveRestaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
     const allowWithDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
     const includeInactive =
       (user.role === 'SUPER_ADMIN' ||
@@ -169,7 +175,7 @@ export class BranchesService {
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
       user.tid,
-      query.restaurantId,
+      effectiveRestaurantId,
       query,
       false,
       allowWithDeleted,

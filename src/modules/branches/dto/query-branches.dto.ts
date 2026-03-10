@@ -1,12 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { AdminListQueryDto, QueryDto } from '../../../common/dto';
 
 export class ListBranchesDto extends AdminListQueryDto {
-  @ApiProperty({ description: 'Restaurant id to fetch branches for' })
+  @ApiPropertyOptional({
+    description:
+      'Restaurant id to fetch branches for (optional for business/branch admin; token scope is used)',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  restaurantId!: string;
+  restaurantId?: string;
 }
 
 export class ListPublicBranchesDto extends QueryDto {
