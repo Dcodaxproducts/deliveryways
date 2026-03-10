@@ -53,6 +53,7 @@ export class AuthService {
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldAutoVerifyUser = this.shouldAutoVerifyUser(emailEnabled);
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const verificationToken = this.generateToken();
 
@@ -138,8 +139,8 @@ export class AuthService {
           tenantId: tenant.id,
           restaurantId: restaurant.id,
           branchId: branch.id,
-          verificationToken: emailEnabled ? verificationToken : undefined,
-          isVerified: !emailEnabled,
+          verificationToken: shouldAutoVerifyUser ? undefined : verificationToken,
+          isVerified: shouldAutoVerifyUser,
           profile: {
             firstName: dto.user.firstName,
             lastName: dto.user.lastName,
@@ -173,9 +174,9 @@ export class AuthService {
         ...result,
         verificationToken: shouldExposeDevToken ? verificationToken : undefined,
       },
-      message: emailEnabled
-        ? 'Tenant registration initiated. Please verify your email.'
-        : 'Tenant registration completed. Email verification is disabled.',
+      message: shouldAutoVerifyUser
+        ? 'Tenant registration completed. Email verification is disabled.'
+        : 'Tenant registration initiated. Please verify your email.',
     };
   }
 
@@ -205,6 +206,7 @@ export class AuthService {
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldAutoVerifyUser = this.shouldAutoVerifyUser(emailEnabled);
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const verificationToken = this.generateToken();
 
@@ -216,8 +218,8 @@ export class AuthService {
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
           tenantId: restaurant.tenantId,
-          verificationToken: emailEnabled ? verificationToken : undefined,
-          isVerified: !emailEnabled,
+          verificationToken: shouldAutoVerifyUser ? undefined : verificationToken,
+          isVerified: shouldAutoVerifyUser,
           profile: {
             firstName: dto.firstName,
             lastName: dto.lastName,
@@ -239,9 +241,9 @@ export class AuthService {
       data: {
         verificationToken: shouldExposeDevToken ? verificationToken : undefined,
       },
-      message: emailEnabled
-        ? 'Customer registration started. Verify email with OTP.'
-        : 'Customer registration completed. Email verification is disabled.',
+      message: shouldAutoVerifyUser
+        ? 'Customer registration completed. Email verification is disabled.'
+        : 'Customer registration started. Verify email with OTP.',
     };
   }
 
@@ -596,6 +598,11 @@ export class AuthService {
       data: null,
       message: 'Account deletion canceled',
     };
+  }
+
+  private shouldAutoVerifyUser(emailEnabled: boolean): boolean {
+    const isDevMode = process.env.NODE_ENV !== 'production';
+    return !emailEnabled && !isDevMode;
   }
 
   private shouldExposeDevToken(emailEnabled: boolean): boolean {
