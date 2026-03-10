@@ -21,7 +21,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const target = Array.isArray(exception.meta?.target)
           ? (exception.meta?.target as string[])
           : [];
-        const fieldLabel = target.length > 0 ? target.join(', ') : 'field';
+        const messageTargetMatch = exception.message.match(/fields:\s*\(`([^`]+)`\)/i);
+        const fallbackField = messageTargetMatch?.[1] ?? null;
+        const fieldLabel =
+          target.length > 0 ? target.join(', ') : (fallbackField ?? 'field');
 
         return {
           status: HttpStatus.CONFLICT,

@@ -38,6 +38,10 @@ export class TenantsService {
     );
   }
 
+  async findBySlug(slug: string) {
+    return this.tenantsRepository.findBySlug(slug);
+  }
+
   async listTenants(user: AuthUserContext, query: AdminListQueryDto) {
     if (user.role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Only super admin can list all tenants');

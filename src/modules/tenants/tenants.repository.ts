@@ -16,11 +16,14 @@ export class TenantsRepository {
     return this.client(tx).tenant.create({ data });
   }
 
-  async list(
-    query: QueryDto,
-    withDeleted = false,
-    includeInactive = false,
-  ) {
+  async findBySlug(slug: string) {
+    return this.prisma.tenant.findUnique({
+      where: { slug },
+      select: { id: true, slug: true },
+    });
+  }
+
+  async list(query: QueryDto, withDeleted = false, includeInactive = false) {
     const where: Prisma.TenantWhereInput = {
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(includeInactive ? {} : { isActive: true }),
@@ -57,11 +60,14 @@ export class TenantsRepository {
   }
 
   async analytics(tenantId: string) {
-    const [restaurantsCount, branchesCount, activeUsers] = await this.prisma.$transaction([
-      this.prisma.restaurant.count({ where: { tenantId, deletedAt: null } }),
-      this.prisma.branch.count({ where: { tenantId, deletedAt: null } }),
-      this.prisma.user.count({ where: { tenantId, deletedAt: null, isActive: true } }),
-    ]);
+    const [restaurantsCount, branchesCount, activeUsers] =
+      await this.prisma.$transaction([
+        this.prisma.restaurant.count({ where: { tenantId, deletedAt: null } }),
+        this.prisma.branch.count({ where: { tenantId, deletedAt: null } }),
+        this.prisma.user.count({
+          where: { tenantId, deletedAt: null, isActive: true },
+        }),
+      ]);
 
     return {
       restaurantsCount,

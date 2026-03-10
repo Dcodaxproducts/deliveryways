@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -50,6 +51,11 @@ export class AuthService {
     const existing = await this.usersService.findByEmail(dto.user.email);
     if (existing) {
       throw new BadRequestException('User already exists');
+    }
+
+    const existingTenant = await this.tenantsService.findBySlug(dto.tenant.slug);
+    if (existingTenant) {
+      throw new ConflictException('Tenant slug already exists');
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
