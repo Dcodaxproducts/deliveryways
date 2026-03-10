@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
+import { AdminListQueryDto } from '../../common/dto';
 import { PrismaService } from '../../database';
 import { PrismaTx } from '../../common/types';
 
@@ -35,6 +36,56 @@ export class UsersRepository {
       where: { id },
       include: { profile: true },
     });
+  }
+
+  async listCustomers(
+    tenantId: string,
+    query: AdminListQueryDto & {
+      restaurantId?: string;
+      isVerified?: boolean;
+      isActive?: boolean;
+    },
+    withDeleted = false,
+  ) {
+    const where: Prisma.UserWhereInput = {
+      tenantId,
+      role: UserRole.CUSTOMER,
+      ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
+      ...(query.isVerified !== undefined ? { isVerified: query.isVerified } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(withDeleted ? {} : { deletedAt: null }),
+      ...(query.search
+        ? {
+            OR: [
+              { email: { contains: query.search, mode: 'insensitive' } },
+              {
+                profile: {
+                  OR: [
+                    { firstName: { contains: query.search, mode: 'insensitive' } },
+                    { lastName: { contains: query.search, mode: 'insensitive' } },
+                    { phone: { contains: query.search, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        include: { profile: true },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: {
+          [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return { items, total };
   }
 
   async updateByEmail(

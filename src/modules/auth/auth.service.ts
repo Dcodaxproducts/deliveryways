@@ -21,6 +21,7 @@ import {
   DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForgotPasswordDto,
+  ListCustomersDto,
   LoginDto,
   RefreshDto,
   RegisterCustomerDto,
@@ -250,6 +251,32 @@ export class AuthService {
       message: shouldAutoVerifyUser
         ? 'Customer registration completed. Email verification is disabled.'
         : 'Customer registration started. Verify email with OTP.',
+    };
+  }
+
+  async listCustomers(user: AuthUserContext, query: ListCustomersDto) {
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const allowWithDeleted = user.role === UserRoleEnum.SUPER_ADMIN && !!query.withDeleted;
+    const { items, total } = await this.usersService.listCustomers(
+      user.tid,
+      query,
+      allowWithDeleted,
+    );
+
+    return {
+      data: items,
+      message: 'Customers fetched successfully',
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / query.limit)),
+        hasNext: query.page * query.limit < total,
+        hasPrevious: query.page > 1,
+      },
     };
   }
 

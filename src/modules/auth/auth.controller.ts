@@ -5,6 +5,7 @@ import {
   Get,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -15,6 +16,7 @@ import {
   DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForgotPasswordDto,
+  ListCustomersDto,
   LoginDto,
   RefreshDto,
   RegisterCustomerDto,
@@ -23,8 +25,14 @@ import {
   ResetPasswordDto,
   VerifyEmailDto,
 } from './dto';
-import { AllowUnverified, CurrentUser, Public } from '../../common/decorators';
+import {
+  AllowUnverified,
+  CurrentUser,
+  Public,
+  Roles,
+} from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
+import { RolesEnum } from '../../common/enums';
 import { JwtAuthGuard } from '../../common/guards';
 
 @ApiTags('Auth')
@@ -43,6 +51,14 @@ export class AuthController {
   @Post('register-customer')
   registerCustomer(@Body() dto: RegisterCustomerDto) {
     return this.authService.registerCustomer(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get('customers')
+  listCustomers(@CurrentUser() user: AuthUserContext, @Query() query: ListCustomersDto) {
+    return this.authService.listCustomers(user, query);
   }
 
   @Public()

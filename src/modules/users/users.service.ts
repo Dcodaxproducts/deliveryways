@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { AdminListQueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { CreateUserDto, UpdateUserDto } from './dto';
 import { UsersRepository } from './users.repository';
@@ -104,6 +105,18 @@ export class UsersService {
 
   async findById(id: string) {
     return this.usersRepository.findById(id);
+  }
+
+  async listCustomers(
+    tenantId: string,
+    query: AdminListQueryDto & {
+      restaurantId?: string;
+      isVerified?: boolean;
+      isActive?: boolean;
+    },
+    withDeleted = false,
+  ) {
+    return this.usersRepository.listCustomers(tenantId, query, withDeleted);
   }
 
   async setVerificationToken(
