@@ -259,10 +259,24 @@ export class AuthService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const allowWithDeleted = user.role === UserRoleEnum.SUPER_ADMIN && !!query.withDeleted;
+    const scopedQuery: ListCustomersDto = { ...query };
+
+    if (
+      user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === UserRoleEnum.BUSINESS_ADMIN
+    ) {
+      if (!user.rid) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      scopedQuery.restaurantId = user.rid;
+    }
+
+    const allowWithDeleted =
+      user.role === UserRoleEnum.SUPER_ADMIN && !!scopedQuery.withDeleted;
     const { items, total } = await this.usersService.listCustomers(
       user.tid,
-      query,
+      scopedQuery,
       allowWithDeleted,
     );
 
