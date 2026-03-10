@@ -53,7 +53,8 @@ export class AuthService {
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-    const verificationToken = emailEnabled ? this.generateToken() : null;
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
+    const verificationToken = this.generateToken();
 
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await this.tenantsService.create(
@@ -137,7 +138,7 @@ export class AuthService {
           tenantId: tenant.id,
           restaurantId: restaurant.id,
           branchId: branch.id,
-          verificationToken: verificationToken ?? undefined,
+          verificationToken: emailEnabled ? verificationToken : undefined,
           isVerified: !emailEnabled,
           profile: {
             firstName: dto.user.firstName,
@@ -160,7 +161,7 @@ export class AuthService {
       };
     });
 
-    if (verificationToken) {
+    if (emailEnabled) {
       await this.mailerService.sendVerificationEmail(
         dto.user.email,
         verificationToken,
@@ -168,8 +169,11 @@ export class AuthService {
     }
 
     return {
-      data: result,
-      message: verificationToken
+      data: {
+        ...result,
+        verificationToken: shouldExposeDevToken ? verificationToken : undefined,
+      },
+      message: emailEnabled
         ? 'Tenant registration initiated. Please verify your email.'
         : 'Tenant registration completed. Email verification is disabled.',
     };
@@ -201,7 +205,8 @@ export class AuthService {
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-    const verificationToken = emailEnabled ? this.generateToken() : null;
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
+    const verificationToken = this.generateToken();
 
     await this.prisma.$transaction(async (tx) => {
       await this.usersService.create(
@@ -211,7 +216,7 @@ export class AuthService {
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
           tenantId: restaurant.tenantId,
-          verificationToken: verificationToken ?? undefined,
+          verificationToken: emailEnabled ? verificationToken : undefined,
           isVerified: !emailEnabled,
           profile: {
             firstName: dto.firstName,
@@ -223,7 +228,7 @@ export class AuthService {
       );
     });
 
-    if (verificationToken) {
+    if (emailEnabled) {
       await this.mailerService.sendVerificationEmail(
         dto.email,
         verificationToken,
@@ -231,8 +236,10 @@ export class AuthService {
     }
 
     return {
-      data: null,
-      message: verificationToken
+      data: {
+        verificationToken: shouldExposeDevToken ? verificationToken : undefined,
+      },
+      message: emailEnabled
         ? 'Customer registration started. Verify email with OTP.'
         : 'Customer registration completed. Email verification is disabled.',
     };
@@ -463,6 +470,8 @@ export class AuthService {
   }
 
   async resendVerification(dto: ResendVerificationDto) {
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const token = this.generateToken();
     const result = await this.usersService.setVerificationToken(
       dto.email,
@@ -473,15 +482,21 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    await this.mailerService.sendVerificationEmail(dto.email, token);
+    if (emailEnabled) {
+      await this.mailerService.sendVerificationEmail(dto.email, token);
+    }
 
     return {
-      data: null,
+      data: {
+        verificationToken: shouldExposeDevToken ? token : undefined,
+      },
       message: 'Verification token resent',
     };
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const token = this.generateToken();
     const result = await this.usersService.setVerificationToken(
       dto.email,
@@ -495,10 +510,14 @@ export class AuthService {
       };
     }
 
-    await this.mailerService.sendPasswordResetEmail(dto.email, token);
+    if (emailEnabled) {
+      await this.mailerService.sendPasswordResetEmail(dto.email, token);
+    }
 
     return {
-      data: null,
+      data: {
+        resetToken: shouldExposeDevToken ? token : undefined,
+      },
       message: 'If account exists, reset instructions are sent',
     };
   }
@@ -577,6 +596,10 @@ export class AuthService {
       data: null,
       message: 'Account deletion canceled',
     };
+  }
+
+  private shouldExposeDevToken(emailEnabled: boolean): boolean {
+    return !emailEnabled && process.env.NODE_ENV !== 'production';
   }
 
   private generateToken(): string {
