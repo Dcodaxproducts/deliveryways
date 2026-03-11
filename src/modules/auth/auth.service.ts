@@ -545,6 +545,11 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
+    await this.ensureRestaurantIdForRestaurantScopedEmail(
+      dto.email,
+      dto.restaurantId,
+    );
+
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const token = this.generateToken();
@@ -574,6 +579,11 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
+    await this.ensureRestaurantIdForRestaurantScopedEmail(
+      dto.email,
+      dto.restaurantId,
+    );
+
     const user = await this.usersService.findByEmail(
       dto.email,
       dto.restaurantId,
@@ -688,6 +698,27 @@ export class AuthService {
       data: null,
       message: 'Account deletion canceled',
     };
+  }
+
+  private async ensureRestaurantIdForRestaurantScopedEmail(
+    email: string,
+    restaurantId?: string,
+  ) {
+    if (restaurantId) {
+      return;
+    }
+
+    const restaurantScopedUsersCount = await this.prisma.user.count({
+      where: {
+        email,
+        restaurantId: { not: null },
+        deletedAt: null,
+      },
+    });
+
+    if (restaurantScopedUsersCount > 0) {
+      throw new BadRequestException('restaurantId is required for this account');
+    }
   }
 
   private shouldAutoVerifyUser(emailEnabled: boolean): boolean {
