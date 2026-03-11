@@ -9,7 +9,9 @@ export interface PaginationMeta {
   hasPrevious: boolean;
 }
 
-export const getPagination = (query: QueryDto): {
+export const getPagination = (
+  query: QueryDto,
+): {
   skip: number;
   take: number;
 } => {

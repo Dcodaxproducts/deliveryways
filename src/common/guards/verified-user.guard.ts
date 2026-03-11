@@ -5,10 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import {
-  ALLOW_UNVERIFIED_KEY,
-  IS_PUBLIC_KEY,
-} from '../decorators';
+import { ALLOW_UNVERIFIED_KEY, IS_PUBLIC_KEY } from '../decorators';
 import { UsersService } from '../../modules/users/users.service';
 
 @Injectable()
@@ -37,7 +34,9 @@ export class VerifiedUserGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{ user?: { uid?: string } }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<{ user?: { uid?: string } }>();
     const userId = request.user?.uid;
 
     if (!userId) {

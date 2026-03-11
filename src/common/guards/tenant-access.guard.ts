@@ -21,13 +21,18 @@ export class TenantAccessGuard implements CanActivate {
     }>();
 
     const user = request.user;
-    const tenantContext = (request as { tenantContext?: { tenantId?: string } }).tenantContext;
+    const tenantContext = (request as { tenantContext?: { tenantId?: string } })
+      .tenantContext;
 
     if (!user || user.role === 'SUPER_ADMIN') {
       return true;
     }
 
-    if (tenantContext?.tenantId && user.tid && tenantContext.tenantId !== user.tid) {
+    if (
+      tenantContext?.tenantId &&
+      user.tid &&
+      tenantContext.tenantId !== user.tid
+    ) {
       throw new ForbiddenException('Cross-tenant context access denied');
     }
 
@@ -123,7 +128,9 @@ export class TenantAccessGuard implements CanActivate {
         request.params?.id;
 
       if (requestedBranchId && user.bid && requestedBranchId !== user.bid) {
-        throw new ForbiddenException('Branch admin cannot access other branches');
+        throw new ForbiddenException(
+          'Branch admin cannot access other branches',
+        );
       }
     }
 
@@ -132,7 +139,11 @@ export class TenantAccessGuard implements CanActivate {
         (request.body?.restaurantId as string | undefined) ??
         request.query?.restaurantId;
 
-      if (requestedRestaurantId && user.rid && requestedRestaurantId !== user.rid) {
+      if (
+        requestedRestaurantId &&
+        user.rid &&
+        requestedRestaurantId !== user.rid
+      ) {
         throw new ForbiddenException(
           'Customer cannot access resources of other restaurants',
         );

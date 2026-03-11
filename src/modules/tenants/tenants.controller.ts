@@ -1,9 +1,21 @@
-import { Controller, Get, Param, Patch, Query, UseGuards, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Query,
+  UseGuards,
+  Body,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminListQueryDto } from '../../common/dto';
 import { CurrentUser } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
-import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from '../../common/guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  TenantAccessGuard,
+} from '../../common/guards';
 import { RolesEnum } from '../../common/enums';
 import { Roles } from '../../common/decorators';
 import { TenantsService } from './tenants.service';
@@ -35,7 +47,10 @@ export class TenantsController {
     example: false,
     description: 'Super admin only',
   })
-  list(@CurrentUser() user: AuthUserContext, @Query() query: AdminListQueryDto) {
+  list(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminListQueryDto,
+  ) {
     return this.tenantsService.listTenants(user, query);
   }
 

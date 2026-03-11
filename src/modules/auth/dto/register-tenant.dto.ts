@@ -80,7 +80,9 @@ export class RegisterRestaurantInfoDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiPropertyOptional({ description: 'Optional unique slug, auto-generated if missing' })
+  @ApiPropertyOptional({
+    description: 'Optional unique slug, auto-generated if missing',
+  })
   @IsOptional()
   @IsString()
   slug?: string;
@@ -90,7 +92,9 @@ export class RegisterRestaurantInfoDto {
   @IsString()
   logoUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Optional custom domain e.g. orders.kfc.com.pk' })
+  @ApiPropertyOptional({
+    description: 'Optional custom domain e.g. orders.kfc.com.pk',
+  })
   @IsOptional()
   @IsString()
   customDomain?: string;

@@ -21,7 +21,10 @@ import { UsersModule } from '../users/users.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_ACCESS_SECRET', 'change-me'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_ACCESS_EXPIRES_IN', '1d') as never,
+          expiresIn: configService.get<string>(
+            'JWT_ACCESS_EXPIRES_IN',
+            '1d',
+          ) as never,
         },
       }),
     }),

@@ -14,7 +14,11 @@ import { AdminListQueryDto } from '../../common/dto';
 import { CurrentUser, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
-import { JwtAuthGuard, RolesGuard, TenantAccessGuard } from '../../common/guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  TenantAccessGuard,
+} from '../../common/guards';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto, UpdateAddressDto } from './dto';
 

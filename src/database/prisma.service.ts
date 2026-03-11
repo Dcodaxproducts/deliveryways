@@ -30,7 +30,8 @@ export class PrismaService
       await this.$connect();
       this.logger.log('✅ Database connection successful');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown DB error';
+      const message =
+        error instanceof Error ? error.message : 'Unknown DB error';
       this.logger.error(`❌ Database connection failed: ${message}`);
       throw error;
     }

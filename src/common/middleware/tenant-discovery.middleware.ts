@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NestMiddleware,
-} from '@nestjs/common';
+import { Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../database';
@@ -40,7 +37,11 @@ export class TenantDiscoveryMiddleware implements NestMiddleware {
     const host = req.hostname;
     const subdomain = host.split('.')[0];
 
-    if (!context.restaurantSlug && subdomain && !['www', 'api', 'localhost'].includes(subdomain)) {
+    if (
+      !context.restaurantSlug &&
+      subdomain &&
+      !['www', 'api', 'localhost'].includes(subdomain)
+    ) {
       context.restaurantSlug = subdomain;
     }
 

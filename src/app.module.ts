@@ -21,6 +21,8 @@ import { MailerModule } from './modules/mailer/mailer.module';
 import { UsersModule } from './modules/users/users.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { DevTestingModule } from './modules/dev-testing/dev-testing.module';
+import { MenuModule } from './modules/menu/menu.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -68,6 +70,8 @@ import { AppController } from './app.controller';
     RestaurantsModule,
     BranchesModule,
     AddressesModule,
+    MenuModule,
+    InventoryModule,
   ],
   providers: [
     {

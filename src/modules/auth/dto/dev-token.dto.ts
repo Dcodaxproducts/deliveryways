@@ -3,7 +3,10 @@ import { IsOptional, IsString } from 'class-validator';
 import { UserRoleEnum } from '../../../common/enums';
 
 export class DevTokenDto {
-  @ApiPropertyOptional({ enum: UserRoleEnum, default: UserRoleEnum.SUPER_ADMIN })
+  @ApiPropertyOptional({
+    enum: UserRoleEnum,
+    default: UserRoleEnum.SUPER_ADMIN,
+  })
   @IsOptional()
   role?: UserRoleEnum;
 
