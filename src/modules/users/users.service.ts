@@ -16,6 +16,11 @@ export class UsersService {
         password: dto.password,
         role: dto.role,
         verificationToken: dto.verificationToken,
+        verificationOtp: dto.verificationOtp,
+        verificationOtpExpiresAt: dto.verificationOtpExpiresAt
+          ? new Date(dto.verificationOtpExpiresAt)
+          : undefined,
+        verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
@@ -46,6 +51,11 @@ export class UsersService {
         password: dto.password,
         role: dto.role,
         verificationToken: dto.verificationToken,
+        verificationOtp: dto.verificationOtp,
+        verificationOtpExpiresAt: dto.verificationOtpExpiresAt
+          ? new Date(dto.verificationOtpExpiresAt)
+          : undefined,
+        verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
@@ -137,8 +147,24 @@ export class UsersService {
     return this.usersRepository.update(userId, { refreshTokenHash: tokenHash });
   }
 
-  async verifyEmail(email: string, token: string) {
-    return this.usersRepository.verifyUserEmail(email, token);
+  async verifyEmailByOtp(userId: string, otp: string) {
+    return this.usersRepository.verifyUserEmailByOtp(userId, otp, new Date());
+  }
+
+  async incrementVerificationOtpAttempts(userId: string) {
+    return this.usersRepository.incrementVerificationOtpAttempts(userId);
+  }
+
+  async setVerificationOtp(
+    userId: string,
+    otp: string | null,
+    expiresAt: Date | null,
+  ) {
+    return this.usersRepository.update(userId, {
+      verificationOtp: otp,
+      verificationOtpExpiresAt: expiresAt,
+      verificationOtpAttempts: 0,
+    });
   }
 
   async updatePassword(userId: string, plainPassword: string) {

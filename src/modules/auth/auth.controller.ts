@@ -93,17 +93,22 @@ export class AuthController {
     return this.authService.bootstrapDevSuperAdmin(dto);
   }
 
-  @Public()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @Post('verify-email')
-  verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto);
+  verifyEmail(@CurrentUser() user: AuthUserContext, @Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(user, dto);
   }
 
-  @Public()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @Throttle({ default: { ttl: 60_000, limit: 3 } })
   @Post('resend-verification')
-  resendVerification(@Body() dto: ResendVerificationDto) {
-    return this.authService.resendVerification(dto);
+  resendVerification(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ResendVerificationDto,
+  ) {
+    return this.authService.resendVerification(user, dto);
   }
 
   @Public()

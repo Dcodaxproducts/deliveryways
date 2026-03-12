@@ -1,11 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class RefreshDto {
   @ApiProperty()
@@ -15,21 +9,13 @@ export class RefreshDto {
 }
 
 export class VerifyEmailDto {
-  @ApiProperty()
-  @IsEmail()
-  email!: string;
-
-  @ApiProperty()
+  @ApiProperty({ description: '6-digit OTP code' })
   @IsString()
   @IsNotEmpty()
-  token!: string;
+  otp!: string;
 }
 
-export class ResendVerificationDto {
-  @ApiProperty()
-  @IsEmail()
-  email!: string;
-}
+export class ResendVerificationDto {}
 
 export class ForgotPasswordDto {
   @ApiProperty()

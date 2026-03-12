@@ -24,8 +24,8 @@ export class UsersRepository {
     return this.prisma.user.findFirst({
       where: {
         email,
-        restaurantId: restaurantId ?? null,
         deletedAt: null,
+        ...(restaurantId !== undefined ? { restaurantId } : {}),
       },
       include: { profile: true },
     });
@@ -112,16 +112,28 @@ export class UsersRepository {
     });
   }
 
-  async verifyUserEmail(email: string, token: string) {
+  async verifyUserEmailByOtp(userId: string, otp: string, now: Date) {
     return this.prisma.user.updateMany({
       where: {
-        email,
-        verificationToken: token,
+        id: userId,
+        verificationOtp: otp,
+        verificationOtpExpiresAt: { gte: now },
         deletedAt: null,
       },
       data: {
         isVerified: true,
-        verificationToken: null,
+        verificationOtp: null,
+        verificationOtpExpiresAt: null,
+        verificationOtpAttempts: 0,
+      },
+    });
+  }
+
+  async incrementVerificationOtpAttempts(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        verificationOtpAttempts: { increment: 1 },
       },
     });
   }

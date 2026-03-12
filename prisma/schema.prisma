@@ -168,21 +168,24 @@ model Address {
 }
 
 model User {
-  id                String    @id @default(cuid())
-  email             String
-  password          String
-  role              UserRole
-  isVerified        Boolean   @default(false) @map("is_verified")
-  verificationToken String?   @map("verification_token")
-  refreshTokenHash  String?   @map("refresh_token_hash")
-  deleteAfter       DateTime? @map("delete_after") @db.Timestamptz
-  tenantId          String?   @map("tenant_id")
-  restaurantId      String?   @map("restaurant_id")
-  branchId          String?   @map("branch_id")
-  isActive          Boolean   @default(true) @map("is_active")
-  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                       String    @id @default(cuid())
+  email                    String
+  password                 String
+  role                     UserRole
+  isVerified               Boolean   @default(false) @map("is_verified")
+  verificationToken        String?   @map("verification_token")
+  verificationOtp          String?   @map("verification_otp")
+  verificationOtpExpiresAt DateTime? @map("verification_otp_expires_at") @db.Timestamptz
+  verificationOtpAttempts  Int       @default(0) @map("verification_otp_attempts")
+  refreshTokenHash         String?   @map("refresh_token_hash")
+  deleteAfter              DateTime? @map("delete_after") @db.Timestamptz
+  tenantId                 String?   @map("tenant_id")
+  restaurantId             String?   @map("restaurant_id")
+  branchId                 String?   @map("branch_id")
+  isActive                 Boolean   @default(true) @map("is_active")
+  deletedAt                DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   tenantOwned      Tenant[]            @relation("TenantOwner")
   tenant           Tenant?             @relation("TenantUsers", fields: [tenantId], references: [id])
@@ -194,7 +197,7 @@ model User {
   customerOrders   Order[]             @relation("OrderCustomer")
   couponUsages     CouponUsage[]
 
-  @@unique([email, restaurantId])
+  @@unique([email])
   @@map("users")
 }
 

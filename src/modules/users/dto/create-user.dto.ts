@@ -1,10 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsDateString,
   IsEmail,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -54,6 +57,22 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   verificationToken?: string;
+
+  @ApiPropertyOptional({ description: '6-digit email verification OTP' })
+  @IsOptional()
+  @IsString()
+  verificationOtp?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  verificationOtpExpiresAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  verificationOtpAttempts?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

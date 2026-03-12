@@ -59,7 +59,7 @@ export class MailerService {
     return this.configService.get<string>('EMAIL_ENABLED', 'false') === 'true';
   }
 
-  async sendVerificationEmail(email: string, token: string): Promise<void> {
+  async sendVerificationEmail(email: string, otp: string): Promise<void> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(
         `EMAIL_ENABLED=false, skipping verification email to ${email}`,
@@ -71,7 +71,7 @@ export class MailerService {
       to: email,
       from: this.fromAddress,
       subject: 'Verify your account',
-      text: `Your verification token is: ${token}`,
+      text: `Your OTP code is: ${otp}. It expires in 10 minutes.`,
     });
 
     this.logger.log(`Verification email queued for ${email}`);

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -65,7 +65,10 @@ export class AuthService {
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldAutoVerifyUser = this.shouldAutoVerifyUser(emailEnabled);
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
-    const verificationToken = this.generateToken();
+    const verificationOtp = shouldAutoVerifyUser ? null : this.generateOtp();
+    const verificationOtpExpiresAt = shouldAutoVerifyUser
+      ? null
+      : this.generateOtpExpiry();
 
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await this.tenantsService.create(
@@ -149,9 +152,11 @@ export class AuthService {
           tenantId: tenant.id,
           restaurantId: restaurant.id,
           branchId: branch.id,
-          verificationToken: shouldAutoVerifyUser
-            ? undefined
-            : verificationToken,
+          verificationOtp: verificationOtp ?? undefined,
+          verificationOtpExpiresAt: verificationOtpExpiresAt
+            ? verificationOtpExpiresAt.toISOString()
+            : undefined,
+          verificationOtpAttempts: 0,
           isVerified: shouldAutoVerifyUser,
           profile: {
             firstName: dto.user.firstName,
@@ -174,21 +179,37 @@ export class AuthService {
       };
     });
 
-    if (emailEnabled) {
-      await this.mailerService.sendVerificationEmail(
-        dto.user.email,
-        verificationToken,
-      );
+    if (emailEnabled && verificationOtp) {
+      await this.mailerService.sendVerificationEmail(dto.user.email, verificationOtp);
     }
+
+    const auth = await this.issueAuthTokens({
+      uid: result.ownerId,
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      tid: result.tenantId,
+      rid: result.restaurantId,
+      bid: result.branchId,
+    });
 
     return {
       data: {
         ...result,
-        verificationToken: shouldExposeDevToken ? verificationToken : undefined,
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: result.ownerId,
+          email: result.email,
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tenantId: result.tenantId,
+          restaurantId: result.restaurantId,
+          branchId: result.branchId,
+          isVerified: shouldAutoVerifyUser,
+        },
+        verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
       message: shouldAutoVerifyUser
         ? 'Tenant registration completed. Email verification is disabled.'
-        : 'Tenant registration initiated. Please verify your email.',
+        : 'Tenant registration completed. Verify email with OTP.',
     };
   }
 
@@ -207,32 +228,32 @@ export class AuthService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const existing = await this.usersService.findByEmail(
-      dto.email,
-      dto.restaurantId,
-    );
+    const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
-      throw new BadRequestException(
-        'Customer already exists for this restaurant',
-      );
+      throw new BadRequestException('Email already exists');
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldAutoVerifyUser = this.shouldAutoVerifyUser(emailEnabled);
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
-    const verificationToken = this.generateToken();
+    const verificationOtp = shouldAutoVerifyUser ? null : this.generateOtp();
+    const verificationOtpExpiresAt = shouldAutoVerifyUser
+      ? null
+      : this.generateOtpExpiry();
 
-    await this.prisma.$transaction(async (tx) => {
-      await this.usersService.create(
+    const createdUser = await this.prisma.$transaction(async (tx) => {
+      return this.usersService.create(
         {
           email: dto.email,
           password: await bcrypt.hash(dto.password, 10),
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
           tenantId: restaurant.tenantId,
-          verificationToken: shouldAutoVerifyUser
-            ? undefined
-            : verificationToken,
+          verificationOtp: verificationOtp ?? undefined,
+          verificationOtpExpiresAt: verificationOtpExpiresAt
+            ? verificationOtpExpiresAt.toISOString()
+            : undefined,
+          verificationOtpAttempts: 0,
           isVerified: shouldAutoVerifyUser,
           profile: {
             firstName: dto.firstName,
@@ -244,20 +265,36 @@ export class AuthService {
       );
     });
 
-    if (emailEnabled) {
-      await this.mailerService.sendVerificationEmail(
-        dto.email,
-        verificationToken,
-      );
+    if (emailEnabled && verificationOtp) {
+      await this.mailerService.sendVerificationEmail(dto.email, verificationOtp);
     }
+
+    const auth = await this.issueAuthTokens({
+      uid: createdUser.id,
+      role: createdUser.role,
+      tid: createdUser.tenantId,
+      rid: createdUser.restaurantId,
+      bid: createdUser.branchId,
+    });
 
     return {
       data: {
-        verificationToken: shouldExposeDevToken ? verificationToken : undefined,
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: createdUser.id,
+          email: createdUser.email,
+          role: createdUser.role,
+          tenantId: createdUser.tenantId,
+          restaurantId: createdUser.restaurantId,
+          branchId: createdUser.branchId,
+          isVerified: createdUser.isVerified,
+        },
+        verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
       message: shouldAutoVerifyUser
         ? 'Customer registration completed. Email verification is disabled.'
-        : 'Customer registration started. Verify email with OTP.',
+        : 'Customer registration completed. Verify email with OTP.',
     };
   }
 
@@ -302,28 +339,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(
-      dto.email,
-      dto.restaurantId,
-    );
+    const user = await this.usersService.findByEmail(dto.email);
 
     if (!user || user.deletedAt) {
-      if (!dto.restaurantId) {
-        const restaurantScopedUsersCount = await this.prisma.user.count({
-          where: {
-            email: dto.email,
-            restaurantId: { not: null },
-            deletedAt: null,
-          },
-        });
-
-        if (restaurantScopedUsersCount > 0) {
-          throw new BadRequestException(
-            'restaurantId is required for this account',
-          );
-        }
-      }
-
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -425,11 +443,33 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(dto: VerifyEmailDto) {
-    const result = await this.usersService.verifyEmail(dto.email, dto.token);
+  async verifyEmail(user: AuthUserContext, dto: VerifyEmailDto) {
+    const dbUser = await this.usersService.findById(user.uid);
+
+    if (!dbUser || dbUser.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dbUser.isVerified) {
+      return {
+        data: null,
+        message: 'Email already verified',
+      };
+    }
+
+    if (!dbUser.verificationOtp || !dbUser.verificationOtpExpiresAt) {
+      throw new BadRequestException('No active OTP found. Please request a new OTP.');
+    }
+
+    if (dbUser.verificationOtpAttempts >= 5) {
+      throw new BadRequestException('Too many invalid attempts. Please request a new OTP.');
+    }
+
+    const result = await this.usersService.verifyEmailByOtp(user.uid, dto.otp);
 
     if (result.count === 0) {
-      throw new BadRequestException('Invalid verification token');
+      await this.usersService.incrementVerificationOtpAttempts(user.uid);
+      throw new BadRequestException('Invalid or expired OTP');
     }
 
     return {
@@ -525,45 +565,44 @@ export class AuthService {
     };
   }
 
-  async resendVerification(dto: ResendVerificationDto) {
-    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
-    const token = this.generateToken();
-    const result = await this.usersService.setVerificationToken(
-      dto.email,
-      token,
-    );
+  async resendVerification(user: AuthUserContext, _dto: ResendVerificationDto) {
+    const dbUser = await this.usersService.findById(user.uid);
 
-    if (result.count === 0) {
+    if (!dbUser || dbUser.deletedAt) {
       throw new NotFoundException('User not found');
     }
 
+    if (dbUser.isVerified) {
+      return {
+        data: null,
+        message: 'Email already verified',
+      };
+    }
+
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
+    const otp = this.generateOtp();
+    const expiresAt = this.generateOtpExpiry();
+
+    await this.usersService.setVerificationOtp(dbUser.id, otp, expiresAt);
+
     if (emailEnabled) {
-      await this.mailerService.sendVerificationEmail(dto.email, token);
+      await this.mailerService.sendVerificationEmail(dbUser.email, otp);
     }
 
     return {
       data: {
-        verificationToken: shouldExposeDevToken ? token : undefined,
+        verificationOtp: shouldExposeDevToken ? otp : undefined,
       },
-      message: 'Verification token resent',
+      message: 'Verification OTP resent',
     };
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    await this.ensureRestaurantIdForRestaurantScopedEmail(
-      dto.email,
-      dto.restaurantId,
-    );
-
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const token = this.generateToken();
-    const result = await this.usersService.setVerificationToken(
-      dto.email,
-      token,
-      dto.restaurantId,
-    );
+    const result = await this.usersService.setVerificationToken(dto.email, token);
 
     if (result.count === 0) {
       return {
@@ -585,25 +624,13 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    await this.ensureRestaurantIdForRestaurantScopedEmail(
-      dto.email,
-      dto.restaurantId,
-    );
-
-    const user = await this.usersService.findByEmail(
-      dto.email,
-      dto.restaurantId,
-    );
+    const user = await this.usersService.findByEmail(dto.email);
 
     if (!user || user.verificationToken !== dto.token) {
       throw new BadRequestException('Invalid reset token');
     }
 
-    await this.usersService.setVerificationToken(
-      dto.email,
-      null,
-      dto.restaurantId,
-    );
+    await this.usersService.setVerificationToken(dto.email, null);
     await this.usersService.setRefreshTokenHash(user.id, null);
     await this.usersService.updatePassword(user.id, dto.newPassword);
 
@@ -706,27 +733,30 @@ export class AuthService {
     };
   }
 
-  private async ensureRestaurantIdForRestaurantScopedEmail(
-    email: string,
-    restaurantId?: string,
-  ) {
-    if (restaurantId) {
-      return;
-    }
+  private async issueAuthTokens(payload: {
+    uid: string;
+    role: string;
+    tid: string | null | undefined;
+    rid: string | null | undefined;
+    bid: string | null | undefined;
+  }) {
+    const accessToken = await this.jwtService.signAsync(payload);
 
-    const restaurantScopedUsersCount = await this.prisma.user.count({
-      where: {
-        email,
-        restaurantId: { not: null },
-        deletedAt: null,
+    const refreshToken = await this.jwtService.signAsync(
+      { uid: payload.uid, type: 'refresh' },
+      {
+        expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
+        secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
       },
-    });
+    );
 
-    if (restaurantScopedUsersCount > 0) {
-      throw new BadRequestException(
-        'restaurantId is required for this account',
-      );
-    }
+    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    await this.usersService.setRefreshTokenHash(payload.uid, refreshTokenHash);
+
+    return {
+      accessToken,
+      refreshToken,
+    };
   }
 
   private shouldAutoVerifyUser(emailEnabled: boolean): boolean {
@@ -740,5 +770,13 @@ export class AuthService {
 
   private generateToken(): string {
     return randomBytes(16).toString('hex');
+  }
+
+  private generateOtp(): string {
+    return randomInt(100000, 1000000).toString();
+  }
+
+  private generateOtpExpiry(): Date {
+    return new Date(Date.now() + 10 * 60 * 1000);
   }
 }
