@@ -268,7 +268,6 @@ model MenuItem {
   recipes         MenuItemRecipe[]
   couponScopes    Coupon[]
   orderItems      OrderItem[]
-  orderItems      OrderItem[]
 
   @@unique([restaurantId, slug])
   @@unique([restaurantId, sku])
