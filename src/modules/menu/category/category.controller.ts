@@ -35,7 +35,10 @@ export class MenuCategoryController {
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Post()
-  create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateMenuCategoryDto) {
+  create(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateMenuCategoryDto,
+  ) {
     return this.menuCategoryService.create(user, dto);
   }
 
@@ -52,9 +55,16 @@ export class MenuCategoryController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Get()
-  list(@CurrentUser() user: AuthUserContext, @Query() query: ListMenuCategoriesDto) {
+  list(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListMenuCategoriesDto,
+  ) {
     return this.menuCategoryService.list(user, query);
   }
 

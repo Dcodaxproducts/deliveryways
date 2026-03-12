@@ -12,7 +12,10 @@ export class InventoryMovementRepository {
     return tx ?? this.prisma;
   }
 
-  async create(data: Prisma.InventoryMovementUncheckedCreateInput, tx?: PrismaTx) {
+  async create(
+    data: Prisma.InventoryMovementUncheckedCreateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).inventoryMovement.create({ data });
   }
 

@@ -4,7 +4,9 @@ import { IsBoolean, IsOptional, IsString } from 'class-validator';
 import { AdminListQueryDto } from '../../../common/dto';
 
 export class ListCustomersDto extends AdminListQueryDto {
-  @ApiPropertyOptional({ description: 'Optional restaurant scope for super admin' })
+  @ApiPropertyOptional({
+    description: 'Optional restaurant scope for super admin',
+  })
   @IsOptional()
   @IsString()
   restaurantId?: string;

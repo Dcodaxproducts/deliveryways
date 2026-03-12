@@ -54,16 +54,15 @@ export class InventoryMovementService {
         tx,
       );
 
-      await this.itemRepository.adjustQty(
-        dto.inventoryItemId,
-        qtyDelta,
-        tx,
-      );
+      await this.itemRepository.adjustQty(dto.inventoryItemId, qtyDelta, tx);
 
       return movement;
     });
 
-    return { data: result, message: 'Inventory movement recorded successfully' };
+    return {
+      data: result,
+      message: 'Inventory movement recorded successfully',
+    };
   }
 
   async list(user: AuthUserContext, query: ListInventoryMovementsDto) {
@@ -106,7 +105,9 @@ export class InventoryMovementService {
         user.role !== UserRoleEnum.BRANCH_ADMIN) ||
       user.rid !== restaurantId
     ) {
-      throw new ForbiddenException('Insufficient permissions for inventory movement');
+      throw new ForbiddenException(
+        'Insufficient permissions for inventory movement',
+      );
     }
   }
 

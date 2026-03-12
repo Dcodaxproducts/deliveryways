@@ -51,7 +51,9 @@ export class UsersRepository {
       tenantId,
       role: UserRole.CUSTOMER,
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
-      ...(query.isVerified !== undefined ? { isVerified: query.isVerified } : {}),
+      ...(query.isVerified !== undefined
+        ? { isVerified: query.isVerified }
+        : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(query.search
@@ -61,8 +63,15 @@ export class UsersRepository {
               {
                 profile: {
                   OR: [
-                    { firstName: { contains: query.search, mode: 'insensitive' } },
-                    { lastName: { contains: query.search, mode: 'insensitive' } },
+                    {
+                      firstName: {
+                        contains: query.search,
+                        mode: 'insensitive',
+                      },
+                    },
+                    {
+                      lastName: { contains: query.search, mode: 'insensitive' },
+                    },
                     { phone: { contains: query.search, mode: 'insensitive' } },
                   ],
                 },

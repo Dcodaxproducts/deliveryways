@@ -59,7 +59,11 @@ export class MenuCategoryRepository {
     return { items, total };
   }
 
-  async update(id: string, data: Prisma.MenuCategoryUpdateInput, tx?: PrismaTx) {
+  async update(
+    id: string,
+    data: Prisma.MenuCategoryUpdateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).menuCategory.update({ where: { id }, data });
   }
 

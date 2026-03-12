@@ -49,7 +49,11 @@ export class ModifierRepository {
     return this.prisma.modifierGroup.findUnique({ where: { id } });
   }
 
-  async updateGroup(id: string, data: Prisma.ModifierGroupUpdateInput, tx?: PrismaTx) {
+  async updateGroup(
+    id: string,
+    data: Prisma.ModifierGroupUpdateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).modifierGroup.update({ where: { id }, data });
   }
 
@@ -68,7 +72,11 @@ export class ModifierRepository {
     return this.prisma.modifier.findUnique({ where: { id } });
   }
 
-  async updateModifier(id: string, data: Prisma.ModifierUpdateInput, tx?: PrismaTx) {
+  async updateModifier(
+    id: string,
+    data: Prisma.ModifierUpdateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).modifier.update({ where: { id }, data });
   }
 

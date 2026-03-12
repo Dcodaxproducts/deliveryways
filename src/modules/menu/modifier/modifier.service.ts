@@ -48,8 +48,15 @@ export class ModifierService {
   }
 
   async listGroups(user: AuthUserContext, query: ListModifierGroupsDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId, true);
-    const { items, total } = await this.modifierRepository.listGroups(restaurantId, query);
+    const restaurantId = this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+      true,
+    );
+    const { items, total } = await this.modifierRepository.listGroups(
+      restaurantId,
+      query,
+    );
 
     return {
       data: items,
@@ -58,7 +65,11 @@ export class ModifierService {
     };
   }
 
-  async updateGroup(user: AuthUserContext, id: string, dto: UpdateModifierGroupDto) {
+  async updateGroup(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateModifierGroupDto,
+  ) {
     const group = await this.modifierRepository.findGroupById(id);
     if (!group || group.deletedAt) {
       throw new NotFoundException('Modifier group not found');
@@ -100,7 +111,9 @@ export class ModifierService {
   }
 
   async createModifier(user: AuthUserContext, dto: CreateModifierDto) {
-    const group = await this.modifierRepository.findGroupById(dto.modifierGroupId);
+    const group = await this.modifierRepository.findGroupById(
+      dto.modifierGroupId,
+    );
     if (!group || group.deletedAt) {
       throw new NotFoundException('Modifier group not found');
     }
@@ -118,13 +131,19 @@ export class ModifierService {
     return { data, message: 'Modifier created successfully' };
   }
 
-  async updateModifier(user: AuthUserContext, id: string, dto: UpdateModifierDto) {
+  async updateModifier(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateModifierDto,
+  ) {
     const modifier = await this.modifierRepository.findModifierById(id);
     if (!modifier || modifier.deletedAt) {
       throw new NotFoundException('Modifier not found');
     }
 
-    const group = await this.modifierRepository.findGroupById(modifier.modifierGroupId);
+    const group = await this.modifierRepository.findGroupById(
+      modifier.modifierGroupId,
+    );
     if (!group || group.deletedAt) {
       throw new NotFoundException('Modifier group not found');
     }
@@ -134,7 +153,9 @@ export class ModifierService {
     const data = await this.modifierRepository.updateModifier(id, {
       name: dto.name,
       priceDelta:
-        dto.priceDelta !== undefined ? new Prisma.Decimal(dto.priceDelta) : undefined,
+        dto.priceDelta !== undefined
+          ? new Prisma.Decimal(dto.priceDelta)
+          : undefined,
       sortOrder: dto.sortOrder,
       isActive: dto.isActive,
     });
@@ -148,7 +169,9 @@ export class ModifierService {
       throw new NotFoundException('Modifier not found');
     }
 
-    const group = await this.modifierRepository.findGroupById(modifier.modifierGroupId);
+    const group = await this.modifierRepository.findGroupById(
+      modifier.modifierGroupId,
+    );
     if (!group || group.deletedAt) {
       throw new NotFoundException('Modifier group not found');
     }
@@ -165,7 +188,9 @@ export class ModifierService {
     groupId: string,
     dto: AttachModifierGroupDto,
   ) {
-    const item = await this.prisma.menuItem.findUnique({ where: { id: itemId } });
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id: itemId },
+    });
     if (!item || item.deletedAt) {
       throw new NotFoundException('Menu item not found');
     }
@@ -224,8 +249,13 @@ export class ModifierService {
       return;
     }
 
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || user.rid !== restaurantId) {
-      throw new ForbiddenException('Insufficient permissions for modifier write');
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
+      user.rid !== restaurantId
+    ) {
+      throw new ForbiddenException(
+        'Insufficient permissions for modifier write',
+      );
     }
   }
 }

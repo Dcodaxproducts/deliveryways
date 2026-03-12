@@ -81,8 +81,15 @@ export class MenuItemService {
   }
 
   async list(user: AuthUserContext, query: ListMenuItemsDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId, true);
-    const { items, total } = await this.itemRepository.list(restaurantId, query);
+    const restaurantId = this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+      true,
+    );
+    const { items, total } = await this.itemRepository.list(
+      restaurantId,
+      query,
+    );
 
     return {
       data: items,
@@ -104,14 +111,18 @@ export class MenuItemService {
     }
 
     const data = await this.itemRepository.update(id, {
-      category: dto.categoryId ? { connect: { id: dto.categoryId } } : undefined,
+      category: dto.categoryId
+        ? { connect: { id: dto.categoryId } }
+        : undefined,
       name: dto.name,
       slug: dto.slug,
       description: dto.description,
       imageUrl: dto.imageUrl,
       sku: dto.sku,
       basePrice:
-        dto.basePrice !== undefined ? new Prisma.Decimal(dto.basePrice) : undefined,
+        dto.basePrice !== undefined
+          ? new Prisma.Decimal(dto.basePrice)
+          : undefined,
       prepTimeMinutes: dto.prepTimeMinutes,
       dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
       allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
@@ -160,7 +171,10 @@ export class MenuItemService {
     throw new ForbiddenException('Insufficient permissions for menu items');
   }
 
-  private ensureCanAccessRestaurant(user: AuthUserContext, restaurantId: string) {
+  private ensureCanAccessRestaurant(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

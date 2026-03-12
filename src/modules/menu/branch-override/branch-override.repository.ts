@@ -22,7 +22,11 @@ export class BranchOverrideRepository {
     });
   }
 
-  async upsertCategoryOverride(branchId: string, menuCategoryId: string, isVisible: boolean) {
+  async upsertCategoryOverride(
+    branchId: string,
+    menuCategoryId: string,
+    isVisible: boolean,
+  ) {
     return this.prisma.branchCategoryOverride.upsert({
       where: { branchId_menuCategoryId: { branchId, menuCategoryId } },
       update: { isVisible },

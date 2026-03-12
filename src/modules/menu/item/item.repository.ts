@@ -51,7 +51,10 @@ export class MenuItemRepository {
         },
         include: {
           category: { select: { id: true, name: true } },
-          variations: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } },
+          variations: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+          },
         },
       }),
       this.prisma.menuItem.count({ where }),

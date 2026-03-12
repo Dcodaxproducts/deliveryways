@@ -162,7 +162,7 @@ export class BranchesService {
 
       for (const item of dto.branches) {
         const branchInput: CreateBranchDto = {
-          ...(item as BulkBranchItemDto),
+          ...item,
           restaurantId: effectiveRestaurantId,
         };
 

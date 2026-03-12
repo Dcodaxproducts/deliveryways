@@ -55,16 +55,18 @@ export class MenuCategoryService {
       await this.validateParentCategory(restaurantId, item.parentCategoryId);
     }
 
-    const payload: Prisma.MenuCategoryCreateManyInput[] = dto.items.map((item) => ({
-      restaurantId,
-      parentCategoryId: item.parentCategoryId,
-      name: item.name,
-      slug: item.slug,
-      description: item.description,
-      imageUrl: item.imageUrl,
-      sortOrder: item.sortOrder ?? 0,
-      isActive: item.isActive ?? true,
-    }));
+    const payload: Prisma.MenuCategoryCreateManyInput[] = dto.items.map(
+      (item) => ({
+        restaurantId,
+        parentCategoryId: item.parentCategoryId,
+        name: item.name,
+        slug: item.slug,
+        description: item.description,
+        imageUrl: item.imageUrl,
+        sortOrder: item.sortOrder ?? 0,
+        isActive: item.isActive ?? true,
+      }),
+    );
 
     const result = await this.categoryRepository.createMany(payload);
 
@@ -75,8 +77,15 @@ export class MenuCategoryService {
   }
 
   async list(user: AuthUserContext, query: ListMenuCategoriesDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId, true);
-    const { items, total } = await this.categoryRepository.list(restaurantId, query);
+    const restaurantId = this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+      true,
+    );
+    const { items, total } = await this.categoryRepository.list(
+      restaurantId,
+      query,
+    );
 
     return {
       data: items,
@@ -92,7 +101,11 @@ export class MenuCategoryService {
     }
 
     this.ensureCanAccessRestaurant(user, category.restaurantId);
-    await this.validateParentCategory(category.restaurantId, dto.parentCategoryId, id);
+    await this.validateParentCategory(
+      category.restaurantId,
+      dto.parentCategoryId,
+      id,
+    );
 
     const data = await this.categoryRepository.update(id, {
       parent: dto.parentCategoryId
@@ -147,10 +160,15 @@ export class MenuCategoryService {
       return requestedRestaurantId;
     }
 
-    throw new ForbiddenException('Insufficient permissions for menu categories');
+    throw new ForbiddenException(
+      'Insufficient permissions for menu categories',
+    );
   }
 
-  private ensureCanAccessRestaurant(user: AuthUserContext, restaurantId: string) {
+  private ensureCanAccessRestaurant(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

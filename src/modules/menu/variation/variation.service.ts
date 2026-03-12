@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
@@ -19,7 +23,9 @@ export class MenuVariationService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuVariationDto) {
-    const item = await this.prisma.menuItem.findUnique({ where: { id: dto.menuItemId } });
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id: dto.menuItemId },
+    });
 
     if (!item || item.deletedAt) {
       throw new NotFoundException('Menu item not found');
@@ -50,7 +56,9 @@ export class MenuVariationService {
   }
 
   async list(user: AuthUserContext, query: ListMenuVariationsDto) {
-    const item = await this.prisma.menuItem.findUnique({ where: { id: query.menuItemId } });
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id: query.menuItemId },
+    });
     if (!item || item.deletedAt) {
       throw new NotFoundException('Menu item not found');
     }
@@ -71,7 +79,9 @@ export class MenuVariationService {
       throw new NotFoundException('Menu variation not found');
     }
 
-    const item = await this.prisma.menuItem.findUnique({ where: { id: variation.menuItemId } });
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id: variation.menuItemId },
+    });
     if (!item || item.deletedAt) {
       throw new NotFoundException('Menu item not found');
     }
@@ -88,7 +98,8 @@ export class MenuVariationService {
         {
           name: dto.name,
           sku: dto.sku,
-          price: dto.price !== undefined ? new Prisma.Decimal(dto.price) : undefined,
+          price:
+            dto.price !== undefined ? new Prisma.Decimal(dto.price) : undefined,
           sortOrder: dto.sortOrder,
           isDefault: dto.isDefault,
           isActive: dto.isActive,
@@ -106,7 +117,9 @@ export class MenuVariationService {
       throw new NotFoundException('Menu variation not found');
     }
 
-    const item = await this.prisma.menuItem.findUnique({ where: { id: variation.menuItemId } });
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id: variation.menuItemId },
+    });
     if (!item || item.deletedAt) {
       throw new NotFoundException('Menu item not found');
     }
@@ -117,17 +130,28 @@ export class MenuVariationService {
     return { data, message: 'Menu variation deleted successfully' };
   }
 
-  private ensureRestaurantWriteAccess(user: AuthUserContext, restaurantId: string) {
+  private ensureRestaurantWriteAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
 
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || user.rid !== restaurantId) {
-      throw new ForbiddenException('Insufficient permissions for menu variation write');
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
+      user.rid !== restaurantId
+    ) {
+      throw new ForbiddenException(
+        'Insufficient permissions for menu variation write',
+      );
     }
   }
 
-  private ensureRestaurantReadAccess(user: AuthUserContext, restaurantId: string) {
+  private ensureRestaurantReadAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

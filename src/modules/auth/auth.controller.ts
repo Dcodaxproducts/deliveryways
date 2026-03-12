@@ -56,9 +56,16 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
   @Get('customers')
-  listCustomers(@CurrentUser() user: AuthUserContext, @Query() query: ListCustomersDto) {
+  listCustomers(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListCustomersDto,
+  ) {
     return this.authService.listCustomers(user, query);
   }
 

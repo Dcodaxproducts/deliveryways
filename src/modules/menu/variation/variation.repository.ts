@@ -49,7 +49,11 @@ export class MenuVariationRepository {
     });
   }
 
-  async update(id: string, data: Prisma.MenuItemVariationUpdateInput, tx?: PrismaTx) {
+  async update(
+    id: string,
+    data: Prisma.MenuItemVariationUpdateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).menuItemVariation.update({ where: { id }, data });
   }
 

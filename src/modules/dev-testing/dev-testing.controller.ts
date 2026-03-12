@@ -14,6 +14,8 @@ import { AuthService } from '../auth/auth.service';
 import { ListPublicBranchesDto } from '../branches/dto';
 import { BranchesService } from '../branches/branches.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
+import { DevBootstrapStoreDto } from './dto';
+import { DevTestingService } from './dev-testing.service';
 
 @ApiTags('DEV_TESTING')
 @Controller('dev-testing')
@@ -23,11 +25,14 @@ export class DevTestingController {
     private readonly authService: AuthService,
     private readonly restaurantsService: RestaurantsService,
     private readonly branchesService: BranchesService,
+    private readonly devTestingService: DevTestingService,
   ) {}
 
   private assertDevMode(): void {
     if (process.env.NODE_ENV === 'production') {
-      throw new ForbiddenException('DEV_TESTING endpoints are disabled in production');
+      throw new ForbiddenException(
+        'DEV_TESTING endpoints are disabled in production',
+      );
     }
   }
 
@@ -44,7 +49,10 @@ export class DevTestingController {
   }
 
   @Get('restaurants')
-  listPublicRestaurants(@Query('tenantId') tenantId: string, @Query() query: QueryDto) {
+  listPublicRestaurants(
+    @Query('tenantId') tenantId: string,
+    @Query() query: QueryDto,
+  ) {
     this.assertDevMode();
     return this.restaurantsService.listPublic(tenantId, query);
   }
@@ -53,5 +61,11 @@ export class DevTestingController {
   listPublicBranches(@Query() query: ListPublicBranchesDto) {
     this.assertDevMode();
     return this.branchesService.listPublic(query);
+  }
+
+  @Post('bootstrap-store')
+  bootstrapStore(@Body() dto: DevBootstrapStoreDto) {
+    this.assertDevMode();
+    return this.devTestingService.bootstrapStore(dto);
   }
 }

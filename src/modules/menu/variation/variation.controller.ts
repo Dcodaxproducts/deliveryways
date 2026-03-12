@@ -43,9 +43,16 @@ export class MenuVariationController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Get()
-  list(@CurrentUser() user: AuthUserContext, @Query() query: ListMenuVariationsDto) {
+  list(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListMenuVariationsDto,
+  ) {
     return this.menuVariationService.list(user, query);
   }
 

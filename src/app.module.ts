@@ -23,6 +23,8 @@ import { ProfilesModule } from './modules/profiles/profiles.module';
 import { DevTestingModule } from './modules/dev-testing/dev-testing.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { CouponsModule } from './modules/coupons/coupons.module';
+import { OrdersModule } from './modules/orders/orders.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -72,6 +74,8 @@ import { AppController } from './app.controller';
     AddressesModule,
     MenuModule,
     InventoryModule,
+    CouponsModule,
+    OrdersModule,
   ],
   providers: [
     {

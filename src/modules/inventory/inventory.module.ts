@@ -29,6 +29,6 @@ import { RecipeRepository } from './recipe/recipe.repository';
     RecipeService,
     RecipeRepository,
   ],
-  exports: [InventoryItemService],
+  exports: [InventoryCategoryService, InventoryItemService],
 })
 export class InventoryModule {}

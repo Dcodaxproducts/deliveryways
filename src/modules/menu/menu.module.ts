@@ -35,6 +35,6 @@ import { BranchOverrideRepository } from './branch-override/branch-override.repo
     BranchOverrideService,
     BranchOverrideRepository,
   ],
-  exports: [MenuCategoryService, MenuItemService],
+  exports: [MenuCategoryService, MenuItemService, MenuVariationService],
 })
 export class MenuModule {}

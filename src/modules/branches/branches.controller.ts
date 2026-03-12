@@ -84,7 +84,8 @@ export class BranchesController {
     name: 'restaurantId',
     required: false,
     example: 'clx...',
-    description: 'Optional for business/branch admin; token restaurant scope is used',
+    description:
+      'Optional for business/branch admin; token restaurant scope is used',
   })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 10 })

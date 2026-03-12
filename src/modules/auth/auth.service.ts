@@ -55,7 +55,9 @@ export class AuthService {
       throw new BadRequestException('User already exists');
     }
 
-    const existingTenant = await this.tenantsService.findBySlug(dto.tenant.slug);
+    const existingTenant = await this.tenantsService.findBySlug(
+      dto.tenant.slug,
+    );
     if (existingTenant) {
       throw new ConflictException('Tenant slug already exists');
     }
@@ -147,7 +149,9 @@ export class AuthService {
           tenantId: tenant.id,
           restaurantId: restaurant.id,
           branchId: branch.id,
-          verificationToken: shouldAutoVerifyUser ? undefined : verificationToken,
+          verificationToken: shouldAutoVerifyUser
+            ? undefined
+            : verificationToken,
           isVerified: shouldAutoVerifyUser,
           profile: {
             firstName: dto.user.firstName,
@@ -226,7 +230,9 @@ export class AuthService {
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
           tenantId: restaurant.tenantId,
-          verificationToken: shouldAutoVerifyUser ? undefined : verificationToken,
+          verificationToken: shouldAutoVerifyUser
+            ? undefined
+            : verificationToken,
           isVerified: shouldAutoVerifyUser,
           profile: {
             firstName: dto.firstName,
@@ -717,7 +723,9 @@ export class AuthService {
     });
 
     if (restaurantScopedUsersCount > 0) {
-      throw new BadRequestException('restaurantId is required for this account');
+      throw new BadRequestException(
+        'restaurantId is required for this account',
+      );
     }
   }
 

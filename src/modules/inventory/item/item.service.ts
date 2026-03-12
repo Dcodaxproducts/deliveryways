@@ -45,8 +45,15 @@ export class InventoryItemService {
   }
 
   async list(user: AuthUserContext, query: ListInventoryItemsDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId, true);
-    const { items, total } = await this.itemRepository.list(restaurantId, query);
+    const restaurantId = this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+      true,
+    );
+    const { items, total } = await this.itemRepository.list(
+      restaurantId,
+      query,
+    );
 
     return {
       data: items,
@@ -120,7 +127,9 @@ export class InventoryItemService {
       return requestedRestaurantId;
     }
 
-    throw new ForbiddenException('Insufficient permissions for inventory items');
+    throw new ForbiddenException(
+      'Insufficient permissions for inventory items',
+    );
   }
 
   private ensureWriteAccess(user: AuthUserContext, restaurantId: string) {
@@ -128,8 +137,13 @@ export class InventoryItemService {
       return;
     }
 
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || user.rid !== restaurantId) {
-      throw new ForbiddenException('Insufficient permissions for inventory item write');
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
+      user.rid !== restaurantId
+    ) {
+      throw new ForbiddenException(
+        'Insufficient permissions for inventory item write',
+      );
     }
   }
 }

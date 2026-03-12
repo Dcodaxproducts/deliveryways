@@ -46,9 +46,16 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Get('modifier-groups')
-  listGroups(@CurrentUser() user: AuthUserContext, @Query() query: ListModifierGroupsDto) {
+  listGroups(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListModifierGroupsDto,
+  ) {
     return this.modifierService.listGroups(user, query);
   }
 
@@ -99,7 +106,10 @@ export class ModifierController {
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Delete('modifiers/:id')
-  removeModifier(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+  removeModifier(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
     return this.modifierService.removeModifier(user, id);
   }
 

@@ -46,7 +46,11 @@ export class InventoryCategoryRepository {
     return { items, total };
   }
 
-  async update(id: string, data: Prisma.InventoryCategoryUpdateInput, tx?: PrismaTx) {
+  async update(
+    id: string,
+    data: Prisma.InventoryCategoryUpdateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).inventoryCategory.update({ where: { id }, data });
   }
 

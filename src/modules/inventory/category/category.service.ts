@@ -35,8 +35,15 @@ export class InventoryCategoryService {
   }
 
   async list(user: AuthUserContext, query: ListInventoryCategoriesDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId, true);
-    const { items, total } = await this.categoryRepository.list(restaurantId, query);
+    const restaurantId = this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+      true,
+    );
+    const { items, total } = await this.categoryRepository.list(
+      restaurantId,
+      query,
+    );
 
     return {
       data: items,
@@ -45,7 +52,11 @@ export class InventoryCategoryService {
     };
   }
 
-  async update(user: AuthUserContext, id: string, dto: UpdateInventoryCategoryDto) {
+  async update(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateInventoryCategoryDto,
+  ) {
     const category = await this.categoryRepository.findById(id);
     if (!category || category.deletedAt) {
       throw new NotFoundException('Inventory category not found');
@@ -99,7 +110,9 @@ export class InventoryCategoryService {
       return requestedRestaurantId;
     }
 
-    throw new ForbiddenException('Insufficient permissions for inventory categories');
+    throw new ForbiddenException(
+      'Insufficient permissions for inventory categories',
+    );
   }
 
   private ensureWriteAccess(user: AuthUserContext, restaurantId: string) {
@@ -107,8 +120,13 @@ export class InventoryCategoryService {
       return;
     }
 
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || user.rid !== restaurantId) {
-      throw new ForbiddenException('Insufficient permissions for inventory category write');
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
+      user.rid !== restaurantId
+    ) {
+      throw new ForbiddenException(
+        'Insufficient permissions for inventory category write',
+      );
     }
   }
 }

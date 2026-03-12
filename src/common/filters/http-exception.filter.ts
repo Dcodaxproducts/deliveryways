@@ -20,25 +20,34 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   private mapValidationMessage(rawMessage: string): ValidationErrorDetail {
     const inFieldMatch = rawMessage.match(/ in ([A-Za-z0-9_.[\]-]+)\s+must\b/i);
-    const directFieldMatch = rawMessage.match(/^([A-Za-z0-9_.[\]-]+)\s+must\b/i);
+    const directFieldMatch = rawMessage.match(
+      /^([A-Za-z0-9_.[\]-]+)\s+must\b/i,
+    );
 
     const name = inFieldMatch?.[1] ?? directFieldMatch?.[1] ?? 'field';
     const mustIndex = rawMessage.toLowerCase().indexOf(' must ');
-    const reason = mustIndex >= 0 ? rawMessage.slice(mustIndex + 1).trim() : rawMessage;
-    const message = reason.startsWith('must') ? `${name} ${reason}` : rawMessage;
+    const reason =
+      mustIndex >= 0 ? rawMessage.slice(mustIndex + 1).trim() : rawMessage;
+    const message = reason.startsWith('must')
+      ? `${name} ${reason}`
+      : rawMessage;
 
     return { name, message };
   }
 
-  private mapPrismaError(
-    exception: Prisma.PrismaClientKnownRequestError,
-  ): { status: number; code: string; message: string } {
+  private mapPrismaError(exception: Prisma.PrismaClientKnownRequestError): {
+    status: number;
+    code: string;
+    message: string;
+  } {
     switch (exception.code) {
       case 'P2002': {
         const target = Array.isArray(exception.meta?.target)
           ? (exception.meta?.target as string[])
           : [];
-        const messageTargetMatch = exception.message.match(/fields:\s*\(`([^`]+)`\)/i);
+        const messageTargetMatch = exception.message.match(
+          /fields:\s*\(`([^`]+)`\)/i,
+        );
         const fallbackField = messageTargetMatch?.[1] ?? null;
         const fieldLabel =
           target.length > 0 ? target.join(', ') : (fallbackField ?? 'field');

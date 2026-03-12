@@ -120,7 +120,10 @@ export class RecipeService {
       return;
     }
 
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || user.rid !== restaurantId) {
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
+      user.rid !== restaurantId
+    ) {
       throw new ForbiddenException('Insufficient permissions for recipe write');
     }
   }
