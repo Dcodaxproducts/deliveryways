@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomBytes, randomInt } from 'crypto';
+import { randomInt } from 'crypto';
 import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -601,8 +601,13 @@ export class AuthService {
   async forgotPassword(dto: ForgotPasswordDto) {
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
-    const token = this.generateToken();
-    const result = await this.usersService.setVerificationToken(dto.email, token);
+    const otp = this.generateOtp();
+    const expiresAt = this.generateOtpExpiry();
+    const result = await this.usersService.setPasswordResetOtp(
+      dto.email,
+      otp,
+      expiresAt,
+    );
 
     if (result.count === 0) {
       return {
@@ -612,12 +617,12 @@ export class AuthService {
     }
 
     if (emailEnabled) {
-      await this.mailerService.sendPasswordResetEmail(dto.email, token);
+      await this.mailerService.sendPasswordResetEmail(dto.email, otp);
     }
 
     return {
       data: {
-        resetToken: shouldExposeDevToken ? token : undefined,
+        resetOtp: shouldExposeDevToken ? otp : undefined,
       },
       message: 'If account exists, reset instructions are sent',
     };
@@ -626,11 +631,26 @@ export class AuthService {
   async resetPassword(dto: ResetPasswordDto) {
     const user = await this.usersService.findByEmail(dto.email);
 
-    if (!user || user.verificationToken !== dto.token) {
-      throw new BadRequestException('Invalid reset token');
+    if (!user) {
+      throw new BadRequestException('Invalid or expired OTP');
     }
 
-    await this.usersService.setVerificationToken(dto.email, null);
+    if (user.resetPasswordOtpAttempts >= 5) {
+      throw new BadRequestException('Too many invalid attempts. Please request a new OTP.');
+    }
+
+    const isOtpValid =
+      !!user.resetPasswordOtp &&
+      !!user.resetPasswordOtpExpiresAt &&
+      user.resetPasswordOtp === dto.otp &&
+      user.resetPasswordOtpExpiresAt.getTime() >= Date.now();
+
+    if (!isOtpValid) {
+      await this.usersService.incrementPasswordResetOtpAttempts(user.id);
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    await this.usersService.clearPasswordResetOtp(user.id);
     await this.usersService.setRefreshTokenHash(user.id, null);
     await this.usersService.updatePassword(user.id, dto.newPassword);
 
@@ -766,10 +786,6 @@ export class AuthService {
 
   private shouldExposeDevToken(emailEnabled: boolean): boolean {
     return !emailEnabled && process.env.NODE_ENV !== 'production';
-  }
-
-  private generateToken(): string {
-    return randomBytes(16).toString('hex');
   }
 
   private generateOtp(): string {

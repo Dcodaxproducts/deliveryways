@@ -38,10 +38,10 @@ export class ResetPasswordDto {
   @IsString()
   restaurantId?: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: '6-digit OTP code' })
   @IsString()
   @IsNotEmpty()
-  token!: string;
+  otp!: string;
 
   @ApiProperty()
   @IsString()

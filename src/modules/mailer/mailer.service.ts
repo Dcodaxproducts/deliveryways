@@ -77,7 +77,7 @@ export class MailerService {
     this.logger.log(`Verification email queued for ${email}`);
   }
 
-  async sendPasswordResetEmail(email: string, token: string): Promise<void> {
+  async sendPasswordResetEmail(email: string, otp: string): Promise<void> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(
         `EMAIL_ENABLED=false, skipping password reset email to ${email}`,
@@ -89,7 +89,7 @@ export class MailerService {
       to: email,
       from: this.fromAddress,
       subject: 'Reset your password',
-      text: `Your password reset token is: ${token}`,
+      text: `Your password reset OTP is: ${otp}. It expires in 10 minutes.`,
     });
 
     this.logger.log(`Password reset email queued for ${email}`);

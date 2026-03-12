@@ -143,6 +143,28 @@ export class UsersService {
     );
   }
 
+  async setPasswordResetOtp(email: string, otp: string, expiresAt: Date) {
+    return this.usersRepository.updateByEmail(email, {
+      resetPasswordOtp: otp,
+      resetPasswordOtpExpiresAt: expiresAt,
+      resetPasswordOtpAttempts: 0,
+    });
+  }
+
+  async incrementPasswordResetOtpAttempts(userId: string) {
+    return this.usersRepository.update(userId, {
+      resetPasswordOtpAttempts: { increment: 1 },
+    });
+  }
+
+  async clearPasswordResetOtp(userId: string) {
+    return this.usersRepository.update(userId, {
+      resetPasswordOtp: null,
+      resetPasswordOtpExpiresAt: null,
+      resetPasswordOtpAttempts: 0,
+    });
+  }
+
   async setRefreshTokenHash(userId: string, tokenHash: string | null) {
     return this.usersRepository.update(userId, { refreshTokenHash: tokenHash });
   }
