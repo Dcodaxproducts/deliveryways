@@ -20,6 +20,7 @@ import {
   ChangePasswordDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
+  ForceDeleteUsersDto,
   ForgotPasswordDto,
   ListCustomersDto,
   LoginDto,
@@ -341,6 +342,18 @@ export class AuthService {
         hasNext: query.page * query.limit < total,
         hasPrevious: query.page > 1,
       },
+    };
+  }
+
+  async forceDeleteUsers(_user: AuthUserContext, dto: ForceDeleteUsersDto) {
+    const emails = [
+      ...new Set(dto.emails.map((email) => email.trim().toLowerCase())),
+    ];
+    const result = await this.usersService.forceDeleteUsersByEmails(emails);
+
+    return {
+      data: result,
+      message: 'Force delete users request processed',
     };
   }
 

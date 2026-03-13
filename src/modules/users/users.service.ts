@@ -169,6 +169,10 @@ export class UsersService {
     return this.usersRepository.update(userId, { refreshTokenHash: tokenHash });
   }
 
+  async forceDeleteUsersByEmails(emails: string[]) {
+    return this.usersRepository.forceDeleteUsersByEmails(emails);
+  }
+
   async verifyEmailByOtp(userId: string, otp: string) {
     return this.usersRepository.verifyUserEmailByOtp(userId, otp, new Date());
   }

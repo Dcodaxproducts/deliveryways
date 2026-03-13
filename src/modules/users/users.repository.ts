@@ -138,6 +138,89 @@ export class UsersRepository {
     });
   }
 
+  async forceDeleteUsersByEmails(emails: string[]) {
+    const users = await this.prisma.user.findMany({
+      where: { email: { in: emails } },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        _count: {
+          select: {
+            tenantOwned: true,
+            managedBranches: true,
+            createdMovements: true,
+            customerOrders: true,
+            couponUsages: true,
+          },
+        },
+      },
+    });
+
+    const foundEmails = new Set(users.map((user) => user.email.toLowerCase()));
+    const notFound = emails.filter(
+      (email) => !foundEmails.has(email.toLowerCase()),
+    );
+
+    const deleted: string[] = [];
+    const blocked: Array<{ email: string; reasons: string[] }> = [];
+
+    for (const user of users) {
+      const reasons: string[] = [];
+
+      if (user.role === UserRole.SUPER_ADMIN) {
+        reasons.push('super admin accounts cannot be force deleted');
+      }
+
+      if (user._count.tenantOwned > 0) {
+        reasons.push('user is assigned as tenant owner');
+      }
+
+      if (user._count.managedBranches > 0) {
+        reasons.push('user is assigned as branch manager');
+      }
+
+      if (user._count.createdMovements > 0) {
+        reasons.push('user has inventory movement history');
+      }
+
+      if (user._count.customerOrders > 0) {
+        reasons.push('user has order history');
+      }
+
+      if (user._count.couponUsages > 0) {
+        reasons.push('user has coupon usage history');
+      }
+
+      if (reasons.length > 0) {
+        blocked.push({ email: user.email, reasons });
+        continue;
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.profile.deleteMany({
+          where: { userId: user.id },
+        });
+
+        await tx.user.delete({
+          where: { id: user.id },
+        });
+      });
+
+      deleted.push(user.email);
+    }
+
+    return {
+      requestedCount: emails.length,
+      deletedCount: deleted.length,
+      blockedCount: blocked.length,
+      notFoundCount: notFound.length,
+      deleted,
+      blocked,
+      notFound,
+    };
+  }
+
   async softDeleteUser(userId: string) {
     return this.prisma.user.update({
       where: { id: userId },

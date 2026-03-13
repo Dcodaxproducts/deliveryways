@@ -15,6 +15,7 @@ import {
   ChangePasswordDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
+  ForceDeleteUsersDto,
   ForgotPasswordDto,
   ListCustomersDto,
   LoginDto,
@@ -67,6 +68,17 @@ export class AuthController {
     @Query() query: ListCustomersDto,
   ) {
     return this.authService.listCustomers(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('admin/users/force-delete')
+  forceDeleteUsers(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ForceDeleteUsersDto,
+  ) {
+    return this.authService.forceDeleteUsers(user, dto);
   }
 
   @Public()
