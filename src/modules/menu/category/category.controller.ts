@@ -59,6 +59,7 @@ export class MenuCategoryController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
   )
   @Get()
   list(

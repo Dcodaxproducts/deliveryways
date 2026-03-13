@@ -24,9 +24,9 @@ export class MenuItemRepository {
     return this.prisma.menuItem.findUnique({ where: { id } });
   }
 
-  async list(restaurantId: string, query: ListMenuItemsDto) {
+  async list(restaurantId: string | undefined, query: ListMenuItemsDto) {
     const where: Prisma.MenuItemWhereInput = {
-      restaurantId,
+      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.includeInactive ? {} : { isActive: true }),

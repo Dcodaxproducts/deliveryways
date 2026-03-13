@@ -56,6 +56,7 @@ export class MenuItemController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
   )
   @Get()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListMenuItemsDto) {

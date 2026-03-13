@@ -24,9 +24,9 @@ export class MenuCategoryRepository {
     return this.prisma.menuCategory.findUnique({ where: { id } });
   }
 
-  async list(restaurantId: string, query: ListMenuCategoriesDto) {
+  async list(restaurantId: string | undefined, query: ListMenuCategoriesDto) {
     const where: Prisma.MenuCategoryWhereInput = {
-      restaurantId,
+      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.includeInactive ? {} : { isActive: true }),
       ...(query.search

@@ -50,6 +50,7 @@ export class ModifierController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
   )
   @Get('modifier-groups')
   listGroups(

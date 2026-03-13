@@ -16,9 +16,12 @@ export class ModifierRepository {
     return this.client(tx).modifierGroup.create({ data });
   }
 
-  async listGroups(restaurantId: string, query: ListModifierGroupsDto) {
+  async listGroups(
+    restaurantId: string | undefined,
+    query: ListModifierGroupsDto,
+  ) {
     const where: Prisma.ModifierGroupWhereInput = {
-      restaurantId,
+      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.includeInactive ? {} : { isActive: true }),
       ...(query.search

@@ -77,10 +77,9 @@ export class MenuCategoryService {
   }
 
   async list(user: AuthUserContext, query: ListMenuCategoriesDto) {
-    const restaurantId = this.resolveRestaurantId(
+    const restaurantId = this.resolveRestaurantIdForList(
       user,
       query.restaurantId,
-      true,
     );
     const { items, total } = await this.categoryRepository.list(
       restaurantId,
@@ -139,14 +138,14 @@ export class MenuCategoryService {
   private resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-    allowReadForBranchAdmin = false,
-  ) {
-    if (
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
-      (allowReadForBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)
-    ) {
+  ): string {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.rid) {
         throw new ForbiddenException('Restaurant context is required');
+      }
+
+      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+        throw new ForbiddenException('Cross-restaurant access denied');
       }
 
       return user.rid;
@@ -158,6 +157,35 @@ export class MenuCategoryService {
       }
 
       return requestedRestaurantId;
+    }
+
+    throw new ForbiddenException(
+      'Insufficient permissions for menu category write',
+    );
+  }
+
+  private resolveRestaurantIdForList(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ): string | undefined {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return requestedRestaurantId;
+    }
+
+    if (
+      user.role === UserRoleEnum.BUSINESS_ADMIN ||
+      user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === UserRoleEnum.CUSTOMER
+    ) {
+      if (!user.rid) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+        throw new ForbiddenException('Cross-restaurant access denied');
+      }
+
+      return user.rid;
     }
 
     throw new ForbiddenException(
