@@ -112,4 +112,49 @@ export class RestaurantsRepository {
       },
     });
   }
+
+  async getDeleteSummary(restaurantId: string) {
+    const [
+      branches,
+      users,
+      menuCategories,
+      menuItems,
+      restaurantMenus,
+      inventoryCategories,
+      inventoryItems,
+      coupons,
+      orders,
+      transactions,
+    ] = await this.prisma.$transaction([
+      this.prisma.branch.count({ where: { restaurantId } }),
+      this.prisma.user.count({ where: { restaurantId } }),
+      this.prisma.menuCategory.count({ where: { restaurantId } }),
+      this.prisma.menuItem.count({ where: { restaurantId } }),
+      this.prisma.restaurantMenu.count({ where: { restaurantId } }),
+      this.prisma.inventoryCategory.count({ where: { restaurantId } }),
+      this.prisma.inventoryItem.count({ where: { restaurantId } }),
+      this.prisma.coupon.count({ where: { restaurantId } }),
+      this.prisma.order.count({ where: { restaurantId } }),
+      this.prisma.paymentTransaction.count({ where: { restaurantId } }),
+    ]);
+
+    return {
+      branches,
+      users,
+      menuCategories,
+      menuItems,
+      restaurantMenus,
+      inventoryCategories,
+      inventoryItems,
+      coupons,
+      orders,
+      transactions,
+    };
+  }
+
+  async forceDelete(id: string, tx?: PrismaTx) {
+    return this.client(tx).restaurant.delete({
+      where: { id },
+    });
+  }
 }

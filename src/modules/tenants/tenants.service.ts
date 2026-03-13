@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AdminListQueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
@@ -105,6 +110,37 @@ export class TenantsService {
     return {
       data,
       message: 'Tenant analytics fetched successfully',
+    };
+  }
+
+  async forceDeleteTenant(user: AuthUserContext, tenantId: string) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can force delete tenants');
+    }
+
+    const tenant = await this.tenantsRepository.findById(tenantId);
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const summary = await this.tenantsRepository.getDeleteSummary(tenantId);
+    const blockers = Object.entries(summary)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => ({ resource: key, count }));
+
+    if (blockers.length > 0) {
+      throw new BadRequestException({
+        message:
+          'Tenant cannot be force deleted while related records still exist',
+        blockers,
+      });
+    }
+
+    const data = await this.tenantsRepository.forceDelete(tenantId);
+
+    return {
+      data,
+      message: 'Tenant force deleted successfully',
     };
   }
 }

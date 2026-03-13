@@ -1,11 +1,12 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Query,
   UseGuards,
-  Body,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminListQueryDto } from '../../common/dto';
@@ -68,5 +69,11 @@ export class TenantsController {
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   analytics(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.tenantsService.tenantAnalytics(user, id);
+  }
+
+  @Delete(':id/force')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  forceDelete(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.tenantsService.forceDeleteTenant(user, id);
   }
 }

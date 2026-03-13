@@ -2,10 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
-import {
-  ListRestaurantMenuItemsDto,
-  ListRestaurantMenusDto,
-} from './dto';
+import { ListRestaurantMenuItemsDto, ListRestaurantMenusDto } from './dto';
 
 @Injectable()
 export class RestaurantMenuRepository {
@@ -75,7 +72,11 @@ export class RestaurantMenuRepository {
     return { items, total };
   }
 
-  async update(id: string, data: Prisma.RestaurantMenuUpdateInput, tx?: PrismaTx) {
+  async update(
+    id: string,
+    data: Prisma.RestaurantMenuUpdateInput,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).restaurantMenu.update({ where: { id }, data });
   }
 
@@ -88,6 +89,16 @@ export class RestaurantMenuRepository {
 
   async attachItem(data: Prisma.RestaurantMenuItemCreateInput, tx?: PrismaTx) {
     return this.client(tx).restaurantMenuItem.create({ data });
+  }
+
+  async getNextSortOrder(restaurantMenuId: string) {
+    const latest = await this.prisma.restaurantMenuItem.findFirst({
+      where: { restaurantMenuId },
+      orderBy: [{ sortOrder: 'desc' }, { createdAt: 'desc' }],
+      select: { sortOrder: true },
+    });
+
+    return (latest?.sortOrder ?? -1) + 1;
   }
 
   async findMenuItemLinkById(id: string) {

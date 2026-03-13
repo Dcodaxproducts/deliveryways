@@ -149,4 +149,49 @@ export class BranchesRepository {
       },
     });
   }
+
+  async getDeleteSummary(branchId: string) {
+    const [
+      users,
+      menuItemOverrides,
+      categoryOverrides,
+      inventoryMovements,
+      coupons,
+      orders,
+      transactions,
+    ] = await this.prisma.$transaction([
+      this.prisma.user.count({ where: { branchId } }),
+      this.prisma.branchMenuItemOverride.count({ where: { branchId } }),
+      this.prisma.branchCategoryOverride.count({ where: { branchId } }),
+      this.prisma.inventoryMovement.count({ where: { branchId } }),
+      this.prisma.coupon.count({ where: { branchId } }),
+      this.prisma.order.count({ where: { branchId } }),
+      this.prisma.paymentTransaction.count({ where: { branchId } }),
+    ]);
+
+    return {
+      users,
+      menuItemOverrides,
+      categoryOverrides,
+      inventoryMovements,
+      coupons,
+      orders,
+      transactions,
+    };
+  }
+
+  async forceDelete(id: string, tx?: PrismaTx) {
+    const client = this.client(tx);
+
+    await client.address.deleteMany({
+      where: {
+        refType: AddressRefType.BRANCH,
+        referenceId: id,
+      },
+    });
+
+    return client.branch.delete({
+      where: { id },
+    });
+  }
 }

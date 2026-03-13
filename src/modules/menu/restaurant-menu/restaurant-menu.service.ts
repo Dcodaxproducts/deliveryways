@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
@@ -32,7 +31,10 @@ export class RestaurantMenuService {
       throw new BadRequestException('restaurantId is required');
     }
 
-    const slug = await this.ensureUniqueSlug(restaurantId, dto.slug ?? dto.name);
+    const slug = await this.ensureUniqueSlug(
+      restaurantId,
+      dto.slug ?? dto.name,
+    );
 
     const data = await this.restaurantMenuRepository.create({
       restaurant: { connect: { id: restaurantId } },
@@ -47,7 +49,11 @@ export class RestaurantMenuService {
   }
 
   async list(user: AuthUserContext, query: ListRestaurantMenusDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId, true);
+    const restaurantId = this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+      true,
+    );
     const { items, total } = await this.restaurantMenuRepository.list(
       restaurantId,
       query,
@@ -74,7 +80,11 @@ export class RestaurantMenuService {
     };
   }
 
-  async update(user: AuthUserContext, id: string, dto: UpdateRestaurantMenuDto) {
+  async update(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantMenuDto,
+  ) {
     const menu = await this.restaurantMenuRepository.findById(id);
     if (!menu || menu.deletedAt) {
       throw new NotFoundException('Restaurant menu not found');
@@ -157,13 +167,17 @@ export class RestaurantMenuService {
       );
     }
 
+    const nextSortOrder = await this.restaurantMenuRepository.getNextSortOrder(
+      menu.id,
+    );
+
     const data = await this.prisma.$transaction(
       items.map((item, index) =>
         this.prisma.restaurantMenuItem.create({
           data: {
             restaurantMenuId: menu.id,
             menuItemId: item.id,
-            sortOrder: index,
+            sortOrder: nextSortOrder + index,
             isActive: true,
           },
         }),
@@ -213,15 +227,19 @@ export class RestaurantMenuService {
 
     this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
-    const link = await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
+    const link =
+      await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
     if (!link || link.restaurantMenuId !== menu.id) {
       throw new NotFoundException('Restaurant menu item link not found');
     }
 
-    const data = await this.restaurantMenuRepository.updateMenuItemLink(linkId, {
-      sortOrder: dto.sortOrder,
-      isActive: dto.isActive,
-    });
+    const data = await this.restaurantMenuRepository.updateMenuItemLink(
+      linkId,
+      {
+        sortOrder: dto.sortOrder,
+        isActive: dto.isActive,
+      },
+    );
 
     return { data, message: 'Restaurant menu item updated successfully' };
   }
@@ -234,7 +252,8 @@ export class RestaurantMenuService {
 
     this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
-    const link = await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
+    const link =
+      await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
     if (!link || link.restaurantMenuId !== menu.id) {
       throw new NotFoundException('Restaurant menu item link not found');
     }
@@ -269,7 +288,9 @@ export class RestaurantMenuService {
       return user.rid;
     }
 
-    throw new ForbiddenException('Insufficient permissions for restaurant menus');
+    throw new ForbiddenException(
+      'Insufficient permissions for restaurant menus',
+    );
   }
 
   private ensureCanReadRestaurant(user: AuthUserContext, restaurantId: string) {
@@ -282,7 +303,10 @@ export class RestaurantMenuService {
     }
   }
 
-  private ensureCanWriteRestaurant(user: AuthUserContext, restaurantId: string) {
+  private ensureCanWriteRestaurant(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

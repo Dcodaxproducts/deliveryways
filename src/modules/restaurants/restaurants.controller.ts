@@ -123,4 +123,12 @@ export class RestaurantsController {
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.restaurantsService.remove(user, id);
   }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Delete(':id/force')
+  forceDelete(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.restaurantsService.forceDelete(user, id);
+  }
 }

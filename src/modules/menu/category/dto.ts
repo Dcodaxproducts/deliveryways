@@ -116,9 +116,16 @@ export class ListMenuCategoriesDto extends QueryDto {
 
   @ApiPropertyOptional({ description: 'Optional restaurant menu filter' })
   @IsOptional()
-  @Transform(({ value, obj }) => value ?? obj.menu_id)
   @IsString()
   menuId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Legacy alias for menuId',
+    deprecated: true,
+  })
+  @IsOptional()
+  @IsString()
+  menu_id?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -60,6 +60,19 @@ enum PaymentMethod {
   BANK_TRANSFER
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentTransactionType {
+  CHARGE
+  REFUND
+}
+
 model Tenant {
   id             String    @id @default(cuid())
   name           String
@@ -79,8 +92,9 @@ model Tenant {
   restaurants Restaurant[]
   branches    Branch[]
   users       User[]       @relation("TenantUsers")
-  coupons     Coupon[]
-  orders      Order[]
+  coupons      Coupon[]
+  orders       Order[]
+  transactions PaymentTransaction[]
 
   @@map("tenants")
 }
@@ -114,6 +128,7 @@ model Restaurant {
   inventoryItems      InventoryItem[]
   coupons             Coupon[]
   orders              Order[]
+  transactions        PaymentTransaction[]
 
   @@map("restaurants")
 }
@@ -142,6 +157,7 @@ model Branch {
   inventoryMovements InventoryMovement[]
   coupons            Coupon[]
   orders             Order[]
+  transactions       PaymentTransaction[]
 
   @@map("branches")
 }
@@ -567,6 +583,8 @@ model Order {
   deliveryFee       Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
   discountAmount    Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
   totalAmount       Decimal       @map("total_amount") @db.Decimal(10, 2)
+  paymentStatus     PaymentStatus @default(PENDING) @map("payment_status")
+  paidAt            DateTime?     @map("paid_at") @db.Timestamptz
   customerNote      String?       @map("customer_note")
   cancelledAt       DateTime?     @map("cancelled_at") @db.Timestamptz
   cancelledByUserId String?       @map("cancelled_by_user_id")
@@ -578,9 +596,10 @@ model Order {
   branch          Branch        @relation(fields: [branchId], references: [id])
   customer        User          @relation("OrderCustomer", fields: [customerId], references: [id])
   coupon          Coupon?       @relation(fields: [couponId], references: [id])
-  deliveryAddress Address?      @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  deliveryAddress Address?             @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
   items           OrderItem[]
   couponUsages    CouponUsage[]
+  transactions    PaymentTransaction[]
 
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
@@ -606,4 +625,33 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+model PaymentTransaction {
+  id            String                 @id @default(cuid())
+  orderId       String                 @map("order_id")
+  tenantId      String                 @map("tenant_id")
+  restaurantId  String                 @map("restaurant_id")
+  branchId      String                 @map("branch_id")
+  paymentMethod PaymentMethod          @map("payment_method")
+  type          PaymentTransactionType @default(CHARGE)
+  status        PaymentStatus          @default(PENDING)
+  amount        Decimal                @db.Decimal(10, 2)
+  currency      String                 @default("PKR")
+  providerRef   String?                @map("provider_ref")
+  providerData  Json?                  @map("provider_data")
+  note          String?
+  processedAt   DateTime?              @map("processed_at") @db.Timestamptz
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  order      Order      @relation(fields: [orderId], references: [id])
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  branch     Branch     @relation(fields: [branchId], references: [id])
+
+  @@index([orderId, status, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([restaurantId, branchId, createdAt])
+  @@map("payment_transactions")
 }

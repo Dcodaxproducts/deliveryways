@@ -82,4 +82,31 @@ export class TenantsRepository {
       activeUsers,
     };
   }
+
+  async getDeleteSummary(tenantId: string) {
+    const [restaurants, branches, users, orders, coupons, transactions] =
+      await this.prisma.$transaction([
+        this.prisma.restaurant.count({ where: { tenantId } }),
+        this.prisma.branch.count({ where: { tenantId } }),
+        this.prisma.user.count({ where: { tenantId } }),
+        this.prisma.order.count({ where: { tenantId } }),
+        this.prisma.coupon.count({ where: { tenantId } }),
+        this.prisma.paymentTransaction.count({ where: { tenantId } }),
+      ]);
+
+    return {
+      restaurants,
+      branches,
+      users,
+      orders,
+      coupons,
+      transactions,
+    };
+  }
+
+  async forceDelete(tenantId: string, tx?: PrismaTx) {
+    return this.client(tx).tenant.delete({
+      where: { id: tenantId },
+    });
+  }
 }

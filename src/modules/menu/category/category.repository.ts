@@ -28,7 +28,7 @@ export class MenuCategoryRepository {
     const where: Prisma.MenuCategoryWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
-      ...(query.menuId
+      ...(query.menuId || query.menu_id
         ? {
             items: {
               some: {
@@ -36,7 +36,7 @@ export class MenuCategoryRepository {
                 ...(query.includeInactive ? {} : { isActive: true }),
                 menuLinks: {
                   some: {
-                    restaurantMenuId: query.menuId,
+                    restaurantMenuId: query.menuId ?? query.menu_id,
                     ...(query.includeInactive ? {} : { isActive: true }),
                   },
                 },

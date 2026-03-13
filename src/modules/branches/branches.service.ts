@@ -336,6 +336,53 @@ export class BranchesService {
     };
   }
 
+  async forceDelete(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    if (
+      user.role !== UserRoleEnum.SUPER_ADMIN &&
+      user.role !== UserRoleEnum.BUSINESS_ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only business admin or super admin can force delete branches',
+      );
+    }
+
+    const branch = await this.prisma.branch.findUnique({
+      where: { id },
+      select: { id: true, restaurantId: true },
+    });
+
+    if (!branch) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    if (
+      user.role === UserRoleEnum.BUSINESS_ADMIN &&
+      user.rid !== branch.restaurantId
+    ) {
+      throw new ForbiddenException('Cross-restaurant access denied');
+    }
+
+    const summary = await this.branchesRepository.getDeleteSummary(id);
+    const blockers = Object.entries(summary)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => ({ resource: key, count }));
+
+    if (blockers.length > 0) {
+      throw new BadRequestException({
+        message:
+          'Branch cannot be force deleted while related records still exist',
+        blockers,
+      });
+    }
+
+    const data = await this.branchesRepository.forceDelete(id, tx);
+
+    return {
+      data,
+      message: 'Branch force deleted successfully',
+    };
+  }
+
   private generateBranchAdminPassword(): string {
     return `Br@${randomBytes(4).toString('hex')}2026`;
   }

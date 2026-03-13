@@ -187,6 +187,7 @@ Rules:
 - all items must belong to the same restaurant as menu
 - duplicate attachments to the same menu are blocked
 - links are created in `RestaurantMenuItem`
+- new attachments append after current max `sortOrder` (existing order is preserved)
 
 ---
 

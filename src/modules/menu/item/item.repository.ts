@@ -29,11 +29,11 @@ export class MenuItemRepository {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-      ...(query.menuId
+      ...(query.menuId || query.menu_id
         ? {
             menuLinks: {
               some: {
-                restaurantMenuId: query.menuId,
+                restaurantMenuId: query.menuId ?? query.menu_id,
                 ...(query.includeInactive ? {} : { isActive: true }),
               },
             },

@@ -25,6 +25,7 @@ import { MenuModule } from './modules/menu/menu.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { CouponsModule } from './modules/coupons/coupons.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -76,6 +77,7 @@ import { AppController } from './app.controller';
     InventoryModule,
     CouponsModule,
     OrdersModule,
+    PaymentsModule,
   ],
   providers: [
     {

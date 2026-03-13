@@ -193,6 +193,41 @@ export class RestaurantsService {
     };
   }
 
+  async forceDelete(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    if (
+      user.role !== UserRoleEnum.SUPER_ADMIN &&
+      user.role !== UserRoleEnum.BUSINESS_ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only business admin or super admin can force delete restaurants',
+      );
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN && user.rid !== id) {
+      throw new ForbiddenException('Cross-restaurant access denied');
+    }
+
+    const summary = await this.restaurantsRepository.getDeleteSummary(id);
+    const blockers = Object.entries(summary)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => ({ resource: key, count }));
+
+    if (blockers.length > 0) {
+      throw new BadRequestException({
+        message:
+          'Restaurant cannot be force deleted while related records still exist',
+        blockers,
+      });
+    }
+
+    const data = await this.restaurantsRepository.forceDelete(id, tx);
+
+    return {
+      data,
+      message: 'Restaurant force deleted successfully',
+    };
+  }
+
   private async resolveTenantByRestaurant(
     restaurantId: string,
   ): Promise<string> {

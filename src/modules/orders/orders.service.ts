@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentStatus,
+  PaymentTransactionType,
+  Prisma,
+} from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -108,6 +113,7 @@ export class OrdersService {
           deliveryFee: quote.deliveryFee,
           discountAmount: quote.discountAmount,
           totalAmount: quote.totalAmount,
+          paymentStatus: PaymentStatus.PENDING,
           customerNote: dto.customerNote,
           items: {
             create: quote.lines.map((line) => ({
@@ -126,6 +132,20 @@ export class OrdersService {
         },
         tx,
       );
+
+      await tx.paymentTransaction.create({
+        data: {
+          orderId: order.id,
+          tenantId: quote.branch.tenantId,
+          restaurantId: quote.branch.restaurantId,
+          branchId: quote.branch.id,
+          paymentMethod: dto.paymentMethod,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PENDING,
+          amount: quote.totalAmount,
+          currency: 'PKR',
+        },
+      });
 
       if (quote.couponId) {
         await this.couponsService.registerUsage(
