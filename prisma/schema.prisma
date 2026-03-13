@@ -106,6 +106,7 @@ model Restaurant {
   tenant              Tenant              @relation(fields: [tenantId], references: [id])
   branches            Branch[]
   users               User[]              @relation("RestaurantUsers")
+  restaurantMenus     RestaurantMenu[]
   menuCategories      MenuCategory[]
   menuItems           MenuItem[]
   modifierGroups      ModifierGroup[]
@@ -268,6 +269,7 @@ model MenuItem {
 
   restaurant      Restaurant               @relation(fields: [restaurantId], references: [id])
   category        MenuCategory             @relation(fields: [categoryId], references: [id])
+  menuLinks       RestaurantMenuItem[]
   variations      MenuItemVariation[]
   modifierLinks   MenuItemModifierGroup[]
   branchOverrides BranchMenuItemOverride[]
@@ -278,6 +280,41 @@ model MenuItem {
   @@unique([restaurantId, slug])
   @@unique([restaurantId, sku])
   @@map("menu_items")
+}
+
+model RestaurantMenu {
+  id          String    @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  name        String
+  slug        String
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  restaurant Restaurant         @relation(fields: [restaurantId], references: [id])
+  items      RestaurantMenuItem[]
+
+  @@unique([restaurantId, slug])
+  @@map("restaurant_menus")
+}
+
+model RestaurantMenuItem {
+  id               String    @id @default(cuid())
+  restaurantMenuId String    @map("restaurant_menu_id")
+  menuItemId       String    @map("menu_item_id")
+  sortOrder        Int       @default(0) @map("sort_order")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  restaurantMenu RestaurantMenu @relation(fields: [restaurantMenuId], references: [id])
+  menuItem       MenuItem        @relation(fields: [menuItemId], references: [id])
+
+  @@unique([restaurantMenuId, menuItemId])
+  @@map("restaurant_menu_items")
 }
 
 model MenuItemVariation {

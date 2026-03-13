@@ -14,6 +14,9 @@ import { ModifierRepository } from './modifier/modifier.repository';
 import { BranchOverrideController } from './branch-override/branch-override.controller';
 import { BranchOverrideService } from './branch-override/branch-override.service';
 import { BranchOverrideRepository } from './branch-override/branch-override.repository';
+import { RestaurantMenuController } from './restaurant-menu/restaurant-menu.controller';
+import { RestaurantMenuService } from './restaurant-menu/restaurant-menu.service';
+import { RestaurantMenuRepository } from './restaurant-menu/restaurant-menu.repository';
 
 @Module({
   controllers: [
@@ -22,6 +25,7 @@ import { BranchOverrideRepository } from './branch-override/branch-override.repo
     MenuVariationController,
     ModifierController,
     BranchOverrideController,
+    RestaurantMenuController,
   ],
   providers: [
     MenuCategoryService,
@@ -34,7 +38,14 @@ import { BranchOverrideRepository } from './branch-override/branch-override.repo
     ModifierRepository,
     BranchOverrideService,
     BranchOverrideRepository,
+    RestaurantMenuService,
+    RestaurantMenuRepository,
   ],
-  exports: [MenuCategoryService, MenuItemService, MenuVariationService],
+  exports: [
+    MenuCategoryService,
+    MenuItemService,
+    MenuVariationService,
+    RestaurantMenuService,
+  ],
 })
 export class MenuModule {}
