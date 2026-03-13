@@ -29,6 +29,16 @@ export class MenuItemRepository {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.menuId
+        ? {
+            menuLinks: {
+              some: {
+                restaurantMenuId: query.menuId,
+                ...(query.includeInactive ? {} : { isActive: true }),
+              },
+            },
+          }
+        : {}),
       ...(query.includeInactive ? {} : { isActive: true }),
       ...(query.search
         ? {

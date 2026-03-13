@@ -119,33 +119,61 @@ export class RestaurantMenuService {
 
     this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
-    const item = await this.prisma.menuItem.findUnique({ where: { id: dto.menuItemId } });
-    if (!item || item.deletedAt) {
-      throw new NotFoundException('Menu item not found');
+    const uniqueItemIds = [...new Set(dto.itemIds)];
+    const items = await this.prisma.menuItem.findMany({
+      where: {
+        id: { in: uniqueItemIds },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        restaurantId: true,
+      },
+    });
+
+    if (items.length !== uniqueItemIds.length) {
+      throw new NotFoundException('One or more menu items were not found');
     }
 
-    if (item.restaurantId !== menu.restaurantId) {
+    const crossRestaurantItem = items.find(
+      (item) => item.restaurantId !== menu.restaurantId,
+    );
+
+    if (crossRestaurantItem) {
       throw new BadRequestException(
-        'Menu item must belong to the same restaurant as the menu',
+        'All menu items must belong to the same restaurant as the menu',
       );
     }
 
-    const existing = await this.restaurantMenuRepository.findMenuItemLink(
-      menu.id,
-      item.id,
+    const existingLinks = await Promise.all(
+      uniqueItemIds.map((itemId) =>
+        this.restaurantMenuRepository.findMenuItemLink(menu.id, itemId),
+      ),
     );
-    if (existing) {
-      throw new BadRequestException('Menu item is already attached to this menu');
+
+    if (existingLinks.some(Boolean)) {
+      throw new BadRequestException(
+        'One or more menu items are already attached to this menu',
+      );
     }
 
-    const data = await this.restaurantMenuRepository.attachItem({
-      restaurantMenu: { connect: { id: menu.id } },
-      menuItem: { connect: { id: item.id } },
-      sortOrder: dto.sortOrder ?? 0,
-      isActive: dto.isActive ?? true,
-    });
+    const data = await this.prisma.$transaction(
+      items.map((item, index) =>
+        this.prisma.restaurantMenuItem.create({
+          data: {
+            restaurantMenuId: menu.id,
+            menuItemId: item.id,
+            sortOrder: index,
+            isActive: true,
+          },
+        }),
+      ),
+    );
 
-    return { data, message: 'Menu item attached successfully' };
+    return {
+      data,
+      message: 'Menu items attached successfully',
+    };
   }
 
   async listItems(

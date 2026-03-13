@@ -157,7 +157,7 @@ Behavior:
 
 ---
 
-### Attach item to menu
+### Attach item(s) to menu
 `POST /menus/:id/items`
 
 Roles:
@@ -165,14 +165,28 @@ Roles:
 - `BUSINESS_ADMIN`
 
 Body:
-- `menuItemId`
-- `sortOrder?`
-- `isActive?`
+- `itemIds: string[]`
+
+Examples:
+```json
+{
+  "itemIds": ["item-id-1"]
+}
+```
+
+```json
+{
+  "itemIds": ["item-id-1", "item-id-2", "item-id-3"]
+}
+```
 
 Rules:
-- item must exist
-- item must belong to the same restaurant as menu
-- duplicate attachment is blocked
+- at least one item id is required
+- item ids are always passed as an array, even for a single item
+- all items must exist
+- all items must belong to the same restaurant as menu
+- duplicate attachments to the same menu are blocked
+- links are created in `RestaurantMenuItem`
 
 ---
 
@@ -194,6 +208,21 @@ Query:
 - `includeInactive?`
 
 Returns attached items with category and active variations.
+
+---
+
+### Generic item/category fetch with menu filter
+The generic listing endpoints also support optional filtering by menu:
+
+- `GET /menu/items?menuId=<menuId>`
+- `GET /menu/categories?menuId=<menuId>`
+
+Frontend compatibility:
+- `menu_id` is also accepted and mapped to `menuId`
+
+Behavior:
+- if omitted, generic listing behaves normally
+- if provided, results are filtered to records linked to that restaurant menu
 
 ---
 

@@ -28,6 +28,22 @@ export class MenuCategoryRepository {
     const where: Prisma.MenuCategoryWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
+      ...(query.menuId
+        ? {
+            items: {
+              some: {
+                deletedAt: null,
+                ...(query.includeInactive ? {} : { isActive: true }),
+                menuLinks: {
+                  some: {
+                    restaurantMenuId: query.menuId,
+                    ...(query.includeInactive ? {} : { isActive: true }),
+                  },
+                },
+              },
+            },
+          }
+        : {}),
       ...(query.includeInactive ? {} : { isActive: true }),
       ...(query.search
         ? {

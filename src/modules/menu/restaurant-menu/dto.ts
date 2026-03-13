@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsInt,
   IsOptional,
@@ -89,21 +91,11 @@ export class ListRestaurantMenusDto extends QueryDto {
 }
 
 export class AttachRestaurantMenuItemDto {
-  @ApiProperty()
-  @IsString()
-  menuItemId!: string;
-
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Transform(({ value }) => Number(value))
-  @IsInt()
-  @Min(0)
-  sortOrder?: number;
-
-  @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  itemIds!: string[];
 }
 
 export class UpdateRestaurantMenuItemDto {

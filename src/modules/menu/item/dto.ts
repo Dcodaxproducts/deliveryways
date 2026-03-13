@@ -161,6 +161,12 @@ export class ListMenuItemsDto extends QueryDto {
   @IsString()
   categoryId?: string;
 
+  @ApiPropertyOptional({ description: 'Optional restaurant menu filter' })
+  @IsOptional()
+  @Transform(({ value, obj }) => value ?? obj.menu_id)
+  @IsString()
+  menuId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => value === 'true')
