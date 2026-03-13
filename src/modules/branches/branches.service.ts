@@ -204,22 +204,16 @@ export class BranchesService {
         ? user.rid
         : query.restaurantId;
 
-    if (!effectiveRestaurantId) {
-      throw new BadRequestException(
-        user.role === UserRoleEnum.SUPER_ADMIN
-          ? 'restaurantId is required for super admin'
-          : 'restaurantId is required',
-      );
-    }
-
     const effectiveTenantId =
       user.role === UserRoleEnum.SUPER_ADMIN
-        ? await this.branchesRepository.findTenantIdByRestaurant(
-            effectiveRestaurantId,
-          )
+        ? effectiveRestaurantId
+          ? await this.branchesRepository.findTenantIdByRestaurant(
+              effectiveRestaurantId,
+            )
+          : undefined
         : user.tid;
 
-    if (!effectiveTenantId) {
+    if (effectiveRestaurantId && !effectiveTenantId) {
       throw new ForbiddenException('Restaurant context is invalid');
     }
 

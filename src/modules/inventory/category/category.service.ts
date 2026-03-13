@@ -91,6 +91,10 @@ export class InventoryCategoryService {
     requestedRestaurantId?: string,
     allowReadForBranchAdmin = false,
   ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return requestedRestaurantId;
+    }
+
     if (
       user.role === UserRoleEnum.BUSINESS_ADMIN ||
       (allowReadForBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)
@@ -99,15 +103,11 @@ export class InventoryCategoryService {
         throw new ForbiddenException('Restaurant context is required');
       }
 
-      return user.rid;
-    }
-
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      if (!requestedRestaurantId) {
-        throw new BadRequestException('restaurantId is required');
+      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+        throw new ForbiddenException('Cross-restaurant access denied');
       }
 
-      return requestedRestaurantId;
+      return user.rid;
     }
 
     throw new ForbiddenException(

@@ -24,14 +24,14 @@ export class RestaurantsRepository {
   }
 
   async listByTenant(
-    tenantId: string,
+    tenantId: string | undefined,
     query: QueryDto,
     publicView = false,
     withDeleted = false,
     includeInactive = false,
   ) {
     const where: Prisma.RestaurantWhereInput = {
-      tenantId,
+      ...(tenantId ? { tenantId } : {}),
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(publicView ? { isActive: true, deletedAt: null } : {}),
       ...(!publicView && !includeInactive ? { isActive: true } : {}),

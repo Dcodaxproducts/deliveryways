@@ -47,7 +47,7 @@ export class CouponsService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateCouponDto) {
-    const restaurantId = this.resolveRestaurantId(user);
+    const restaurantId = this.requireRestaurantId(user);
 
     await this.validateScopeReferences(
       restaurantId,
@@ -160,7 +160,7 @@ export class CouponsService {
     code: string,
     dto: SetCouponStatusDto,
   ) {
-    const restaurantId = this.resolveRestaurantId(user);
+    const restaurantId = this.requireRestaurantId(user);
     const coupon = await this.couponsRepository.findByCode(
       restaurantId,
       code.trim().toUpperCase(),
@@ -182,7 +182,7 @@ export class CouponsService {
   }
 
   async validate(user: AuthUserContext, dto: ValidateCouponDto) {
-    const restaurantId = this.resolveRestaurantId(user);
+    const restaurantId = this.requireRestaurantId(user);
     const customerId =
       user.role === UserRoleEnum.CUSTOMER
         ? user.uid
@@ -332,11 +332,8 @@ export class CouponsService {
   private resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string {
+  ): string | undefined {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      if (!requestedRestaurantId) {
-        throw new BadRequestException('restaurantId is required');
-      }
       return requestedRestaurantId;
     }
 
@@ -344,7 +341,21 @@ export class CouponsService {
       throw new ForbiddenException('Restaurant context is required');
     }
 
+    if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+      throw new ForbiddenException('Cross-restaurant access denied');
+    }
+
     return user.rid;
+  }
+
+  private requireRestaurantId(user: AuthUserContext): string {
+    const restaurantId = this.resolveRestaurantId(user);
+
+    if (!restaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
+    return restaurantId;
   }
 
   private ensureRestaurantAccess(user: AuthUserContext, restaurantId: string) {

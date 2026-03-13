@@ -30,9 +30,9 @@ export class CouponsRepository {
     });
   }
 
-  async list(restaurantId: string, query: ListCouponsDto) {
+  async list(restaurantId: string | undefined, query: ListCouponsDto) {
     const where: Prisma.CouponWhereInput = {
-      restaurantId,
+      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),

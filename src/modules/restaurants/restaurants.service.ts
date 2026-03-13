@@ -55,7 +55,7 @@ export class RestaurantsService {
   }
 
   async list(user: AuthUserContext, query: AdminListQueryDto) {
-    if (!user.tid) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
@@ -67,9 +67,11 @@ export class RestaurantsService {
       !!query.includeInactive;
 
     const tenantId =
-      user.role === UserRoleEnum.CUSTOMER && user.rid
-        ? await this.resolveTenantByRestaurant(user.rid)
-        : user.tid;
+      user.role === UserRoleEnum.SUPER_ADMIN
+        ? undefined
+        : user.role === UserRoleEnum.CUSTOMER && user.rid
+          ? await this.resolveTenantByRestaurant(user.rid)
+          : user.tid;
 
     const { items, total } = await this.restaurantsRepository.listByTenant(
       tenantId,

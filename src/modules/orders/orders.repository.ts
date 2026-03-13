@@ -33,9 +33,13 @@ export class OrdersRepository {
     });
   }
 
-  async list(restaurantId: string, query: ListOrdersDto, customerId?: string) {
+  async list(
+    restaurantId: string | undefined,
+    query: ListOrdersDto,
+    customerId?: string,
+  ) {
     const where: Prisma.OrderWhereInput = {
-      restaurantId,
+      ...(restaurantId ? { restaurantId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(customerId ? { customerId } : {}),

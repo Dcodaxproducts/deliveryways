@@ -460,16 +460,17 @@ export class OrdersService {
   private resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string {
+  ): string | undefined {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      if (!requestedRestaurantId) {
-        throw new BadRequestException('restaurantId is required');
-      }
       return requestedRestaurantId;
     }
 
     if (!user.rid) {
       throw new ForbiddenException('Restaurant context is required');
+    }
+
+    if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+      throw new ForbiddenException('Cross-restaurant access denied');
     }
 
     return user.rid;

@@ -20,9 +20,9 @@ export class InventoryItemRepository {
     return this.prisma.inventoryItem.findUnique({ where: { id } });
   }
 
-  async list(restaurantId: string, query: ListInventoryItemsDto) {
+  async list(restaurantId: string | undefined, query: ListInventoryItemsDto) {
     const where: Prisma.InventoryItemWhereInput = {
-      restaurantId,
+      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...(query.inventoryCategoryId
         ? { inventoryCategoryId: query.inventoryCategoryId }
