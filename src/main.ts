@@ -3,10 +3,14 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import compression from 'compression';
+import * as compressionModule from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { ResponseInterceptor } from './common/interceptors';
+
+const compression: typeof import('compression') = (
+  'default' in compressionModule ? compressionModule.default : compressionModule
+) as typeof import('compression');
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
