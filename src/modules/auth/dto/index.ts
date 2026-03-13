@@ -10,6 +10,7 @@ export {
   VerifyEmailDto,
   ResendVerificationDto,
   ForgotPasswordDto,
+  ResendOtpDto,
   ResetPasswordDto,
   ChangePasswordDto,
   CancelDeletionDto,

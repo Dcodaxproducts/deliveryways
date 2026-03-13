@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, OrderType, Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { UserRoleEnum } from '../../common/enums';
+import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
@@ -383,7 +383,7 @@ export class OrdersService {
     }
 
     let deliveryFee = new Prisma.Decimal(0);
-    if (dto.orderType === OrderType.DELIVERY) {
+    if (dto.orderType === OrderTypeEnum.DELIVERY) {
       if (!dto.deliveryAddressId) {
         throw new BadRequestException(
           'deliveryAddressId is required for delivery orders',
@@ -602,7 +602,7 @@ export class OrdersService {
 
   private readBranchSettings(input: unknown): BranchSettings {
     const fallback: BranchSettings = {
-      allowedOrderTypes: [OrderType.DELIVERY, OrderType.TAKEAWAY],
+      allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
       allowedPaymentMethods: ['COD'],
       deliveryConfig: {
         radiusKm: 5,

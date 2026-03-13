@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AddressRefType, Prisma, PrismaClient, UserRole } from '@prisma/client';
+import { AddressRefType, Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';

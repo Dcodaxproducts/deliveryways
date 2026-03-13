@@ -3,7 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import compression = require('compression');
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { ResponseInterceptor } from './common/interceptors';
@@ -30,7 +30,7 @@ async function bootstrap(): Promise<void> {
 
     // CORS
     app.enableCors({
-      origin: configService.get<string>('CORS_ORIGINS', '*').split(','),
+      origin: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       credentials: true,
     });

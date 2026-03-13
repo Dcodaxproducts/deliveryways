@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AdminListQueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { AddressesRepository } from './addresses.repository';
@@ -42,11 +43,12 @@ export class AddressesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const withDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
+    const withDeleted =
+      user.role === UserRoleEnum.SUPER_ADMIN && !!query.withDeleted;
     const includeInactive =
-      (user.role === 'SUPER_ADMIN' ||
-        user.role === 'BUSINESS_ADMIN' ||
-        user.role === 'BRANCH_ADMIN') &&
+      (user.role === UserRoleEnum.SUPER_ADMIN ||
+        user.role === UserRoleEnum.BUSINESS_ADMIN ||
+        user.role === UserRoleEnum.BRANCH_ADMIN) &&
       !!query.includeInactive;
 
     const { items, total } = await this.addressesRepository.listByReference(

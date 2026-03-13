@@ -1,8 +1,9 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { UserRoleEnum } from '../enums';
 
 export interface AuthUserContext {
   uid: string;
-  role: string;
+  role: UserRoleEnum;
   tid?: string;
   rid?: string;
   bid?: string;

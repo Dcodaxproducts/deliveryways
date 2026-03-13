@@ -1,8 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AdminListQueryDto, QueryDto } from '../../common/dto';
-import { buildPaginationMeta } from '../../common/utils';
+import { AdminListQueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
+import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { TenantsRepository } from './tenants.repository';
 import { CreateTenantDto, UpdateTenantDto } from './dto';
@@ -43,7 +44,7 @@ export class TenantsService {
   }
 
   async listTenants(user: AuthUserContext, query: AdminListQueryDto) {
-    if (user.role !== 'SUPER_ADMIN') {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
       throw new ForbiddenException('Only super admin can list all tenants');
     }
 
@@ -66,7 +67,7 @@ export class TenantsService {
     dto: UpdateTenantDto,
     tx?: PrismaTx,
   ) {
-    if (user.role !== 'SUPER_ADMIN' && user.tid !== tenantId) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && user.tid !== tenantId) {
       throw new ForbiddenException('You can only manage your tenant');
     }
 
@@ -91,7 +92,7 @@ export class TenantsService {
   }
 
   async tenantAnalytics(user: AuthUserContext, tenantId: string) {
-    if (user.role !== 'SUPER_ADMIN' && user.tid !== tenantId) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && user.tid !== tenantId) {
       throw new ForbiddenException('You can only view your tenant analytics');
     }
 

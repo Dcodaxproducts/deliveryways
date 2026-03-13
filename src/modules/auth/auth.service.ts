@@ -26,7 +26,7 @@ import {
   RefreshDto,
   RegisterCustomerDto,
   RegisterTenantDto,
-  ResendVerificationDto,
+  ResendOtpDto,
   ResetPasswordDto,
   UpdateMyAvatarDto,
   VerifyEmailDto,
@@ -180,7 +180,10 @@ export class AuthService {
     });
 
     if (emailEnabled && verificationOtp) {
-      await this.mailerService.sendVerificationEmail(dto.user.email, verificationOtp);
+      await this.mailerService.sendVerificationEmail(
+        dto.user.email,
+        verificationOtp,
+      );
     }
 
     const auth = await this.issueAuthTokens({
@@ -266,7 +269,10 @@ export class AuthService {
     });
 
     if (emailEnabled && verificationOtp) {
-      await this.mailerService.sendVerificationEmail(dto.email, verificationOtp);
+      await this.mailerService.sendVerificationEmail(
+        dto.email,
+        verificationOtp,
+      );
     }
 
     const auth = await this.issueAuthTokens({
@@ -458,11 +464,15 @@ export class AuthService {
     }
 
     if (!dbUser.verificationOtp || !dbUser.verificationOtpExpiresAt) {
-      throw new BadRequestException('No active OTP found. Please request a new OTP.');
+      throw new BadRequestException(
+        'No active OTP found. Please request a new OTP.',
+      );
     }
 
     if (dbUser.verificationOtpAttempts >= 5) {
-      throw new BadRequestException('Too many invalid attempts. Please request a new OTP.');
+      throw new BadRequestException(
+        'Too many invalid attempts. Please request a new OTP.',
+      );
     }
 
     const result = await this.usersService.verifyEmailByOtp(user.uid, dto.otp);
@@ -565,7 +575,7 @@ export class AuthService {
     };
   }
 
-  async resendVerification(user: AuthUserContext, _dto: ResendVerificationDto) {
+  async resendVerification(user: AuthUserContext) {
     const dbUser = await this.usersService.findById(user.uid);
 
     if (!dbUser || dbUser.deletedAt) {
@@ -599,33 +609,11 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
-    const otp = this.generateOtp();
-    const expiresAt = this.generateOtpExpiry();
-    const result = await this.usersService.setPasswordResetOtp(
-      dto.email,
-      otp,
-      expiresAt,
-    );
+    return this.issuePasswordResetOtp(dto);
+  }
 
-    if (result.count === 0) {
-      return {
-        data: null,
-        message: 'If account exists, reset instructions are sent',
-      };
-    }
-
-    if (emailEnabled) {
-      await this.mailerService.sendPasswordResetEmail(dto.email, otp);
-    }
-
-    return {
-      data: {
-        resetOtp: shouldExposeDevToken ? otp : undefined,
-      },
-      message: 'If account exists, reset instructions are sent',
-    };
+  async resendOtp(dto: ResendOtpDto) {
+    return this.issuePasswordResetOtp(dto);
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -636,7 +624,9 @@ export class AuthService {
     }
 
     if (user.resetPasswordOtpAttempts >= 5) {
-      throw new BadRequestException('Too many invalid attempts. Please request a new OTP.');
+      throw new BadRequestException(
+        'Too many invalid attempts. Please request a new OTP.',
+      );
     }
 
     const isOtpValid =
@@ -786,6 +776,38 @@ export class AuthService {
 
   private shouldExposeDevToken(emailEnabled: boolean): boolean {
     return !emailEnabled && process.env.NODE_ENV !== 'production';
+  }
+
+  private async issuePasswordResetOtp(
+    dto: Pick<ForgotPasswordDto, 'email' | 'restaurantId'>,
+  ) {
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
+    const otp = this.generateOtp();
+    const expiresAt = this.generateOtpExpiry();
+    const result = await this.usersService.setPasswordResetOtp(
+      dto.email,
+      otp,
+      expiresAt,
+    );
+
+    if (result.count === 0) {
+      return {
+        data: null,
+        message: 'If account exists, reset instructions are sent',
+      };
+    }
+
+    if (emailEnabled) {
+      await this.mailerService.sendPasswordResetEmail(dto.email, otp);
+    }
+
+    return {
+      data: {
+        resetOtp: shouldExposeDevToken ? otp : undefined,
+      },
+      message: 'If account exists, reset instructions are sent',
+    };
   }
 
   private generateOtp(): string {

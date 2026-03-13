@@ -21,7 +21,7 @@ import {
   RefreshDto,
   RegisterCustomerDto,
   RegisterTenantDto,
-  ResendVerificationDto,
+  ResendOtpDto,
   ResetPasswordDto,
   UpdateMyAvatarDto,
   VerifyEmailDto,
@@ -96,7 +96,10 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('verify-email')
-  verifyEmail(@CurrentUser() user: AuthUserContext, @Body() dto: VerifyEmailDto) {
+  verifyEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: VerifyEmailDto,
+  ) {
     return this.authService.verifyEmail(user, dto);
   }
 
@@ -104,11 +107,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Throttle({ default: { ttl: 60_000, limit: 3 } })
   @Post('resend-verification')
-  resendVerification(
-    @CurrentUser() user: AuthUserContext,
-    @Body() dto: ResendVerificationDto,
-  ) {
-    return this.authService.resendVerification(user, dto);
+  resendVerification(@CurrentUser() user: AuthUserContext) {
+    return this.authService.resendVerification(user);
   }
 
   @Public()
@@ -116,6 +116,13 @@ export class AuthController {
   @Post('forgot-password')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Post('resend-otp')
+  resendOtp(@Body() dto: ResendOtpDto) {
+    return this.authService.resendOtp(dto);
   }
 
   @Public()

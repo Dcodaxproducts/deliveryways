@@ -1,8 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
-import { buildPaginationMeta } from '../../common/utils';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
+import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
 import {
@@ -59,13 +60,14 @@ export class RestaurantsService {
     }
 
     const allowedWithDeleted =
-      user.role === 'SUPER_ADMIN' && !!query.withDeleted;
+      user.role === UserRoleEnum.SUPER_ADMIN && !!query.withDeleted;
     const includeInactive =
-      (user.role === 'SUPER_ADMIN' || user.role === 'BUSINESS_ADMIN') &&
+      (user.role === UserRoleEnum.SUPER_ADMIN ||
+        user.role === UserRoleEnum.BUSINESS_ADMIN) &&
       !!query.includeInactive;
 
     const tenantId =
-      user.role === 'CUSTOMER' && user.rid
+      user.role === UserRoleEnum.CUSTOMER && user.rid
         ? await this.resolveTenantByRestaurant(user.rid)
         : user.tid;
 
@@ -104,7 +106,7 @@ export class RestaurantsService {
     dto: UpdateRestaurantDto,
     tx?: PrismaTx,
   ) {
-    if (user.role !== 'SUPER_ADMIN' && !user.tid) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 

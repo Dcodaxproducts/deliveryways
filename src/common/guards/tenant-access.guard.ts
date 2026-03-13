@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { UserRoleEnum } from '../enums';
 import { PrismaService } from '../../database';
 
 @Injectable()
@@ -12,7 +13,7 @@ export class TenantAccessGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{
-      user?: { role?: string; tid?: string; rid?: string; bid?: string };
+      user?: { role?: UserRoleEnum; tid?: string; rid?: string; bid?: string };
       params?: Record<string, string>;
       query?: Record<string, string>;
       body?: Record<string, unknown>;
@@ -24,7 +25,7 @@ export class TenantAccessGuard implements CanActivate {
     const tenantContext = (request as { tenantContext?: { tenantId?: string } })
       .tenantContext;
 
-    if (!user || user.role === 'SUPER_ADMIN') {
+    if (!user || user.role === UserRoleEnum.SUPER_ADMIN) {
       return true;
     }
 
@@ -63,7 +64,7 @@ export class TenantAccessGuard implements CanActivate {
   }
 
   private async validateResourceTenant(
-    user: { role?: string; tid?: string },
+    user: { role?: UserRoleEnum; tid?: string },
     request: {
       params?: Record<string, string>;
       route?: { path?: string };
@@ -114,14 +115,14 @@ export class TenantAccessGuard implements CanActivate {
   }
 
   private validateRoleScope(
-    user: { role?: string; rid?: string; bid?: string },
+    user: { role?: UserRoleEnum; rid?: string; bid?: string },
     request: {
       params?: Record<string, string>;
       query?: Record<string, string>;
       body?: Record<string, unknown>;
     },
   ): void {
-    if (user.role === 'BRANCH_ADMIN') {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
       const requestedBranchId =
         (request.body?.branchId as string | undefined) ??
         request.query?.branchId ??
@@ -134,7 +135,7 @@ export class TenantAccessGuard implements CanActivate {
       }
     }
 
-    if (user.role === 'CUSTOMER') {
+    if (user.role === UserRoleEnum.CUSTOMER) {
       const requestedRestaurantId =
         (request.body?.restaurantId as string | undefined) ??
         request.query?.restaurantId;

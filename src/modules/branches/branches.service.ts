@@ -14,7 +14,6 @@ import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
 import { BranchesRepository } from './branches.repository';
 import {
-  BulkBranchItemDto,
   BulkCreateBranchesDto,
   CreateBranchDto,
   ListBranchesDto,
@@ -183,7 +182,7 @@ export class BranchesService {
   }
 
   async list(user: AuthUserContext, query: ListBranchesDto) {
-    if (user.role === 'BRANCH_ADMIN' && user.bid) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
       return {
         data: items,
@@ -224,11 +223,12 @@ export class BranchesService {
       throw new ForbiddenException('Restaurant context is invalid');
     }
 
-    const allowWithDeleted = user.role === 'SUPER_ADMIN' && !!query.withDeleted;
+    const allowWithDeleted =
+      user.role === UserRoleEnum.SUPER_ADMIN && !!query.withDeleted;
     const includeInactive =
-      (user.role === 'SUPER_ADMIN' ||
-        user.role === 'BUSINESS_ADMIN' ||
-        user.role === 'BRANCH_ADMIN') &&
+      (user.role === UserRoleEnum.SUPER_ADMIN ||
+        user.role === UserRoleEnum.BUSINESS_ADMIN ||
+        user.role === UserRoleEnum.BRANCH_ADMIN) &&
       !!query.includeInactive;
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
