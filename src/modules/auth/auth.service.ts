@@ -159,6 +159,7 @@ export class AuthService {
             : undefined,
           verificationOtpAttempts: 0,
           isVerified: shouldAutoVerifyUser,
+          isApproved: false,
           profile: {
             firstName: dto.user.firstName,
             lastName: dto.user.lastName,
@@ -208,6 +209,7 @@ export class AuthService {
           restaurantId: result.restaurantId,
           branchId: result.branchId,
           isVerified: shouldAutoVerifyUser,
+          isApproved: false,
         },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
@@ -259,6 +261,7 @@ export class AuthService {
             : undefined,
           verificationOtpAttempts: 0,
           isVerified: shouldAutoVerifyUser,
+          isApproved: true,
           profile: {
             firstName: dto.firstName,
             lastName: dto.lastName,
@@ -296,6 +299,7 @@ export class AuthService {
           restaurantId: createdUser.restaurantId,
           branchId: createdUser.branchId,
           isVerified: createdUser.isVerified,
+          isApproved: createdUser.isApproved,
         },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
@@ -369,6 +373,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (user.role === 'BUSINESS_ADMIN' && !user.isApproved) {
+      throw new ForbiddenException(
+        'Your tenant profile is pending super admin approval',
+      );
+    }
+
     const accessToken = await this.jwtService.signAsync({
       uid: user.id,
       role: user.role,
@@ -399,6 +409,8 @@ export class AuthService {
           tenantId: user.tenantId,
           restaurantId: user.restaurantId,
           branchId: user.branchId,
+          isVerified: user.isVerified,
+          isApproved: user.isApproved,
           profile: user.profile,
         },
       },
@@ -550,6 +562,7 @@ export class AuthService {
         password: hashedPassword,
         role: UserRoleEnum.SUPER_ADMIN,
         isVerified: true,
+        isApproved: true,
       });
 
       return {
@@ -569,6 +582,7 @@ export class AuthService {
         password: hashedPassword,
         role: 'SUPER_ADMIN',
         isVerified: true,
+        isApproved: true,
         tenantId: null,
         restaurantId: null,
         branchId: null,
@@ -585,6 +599,43 @@ export class AuthService {
         role: updated.role,
       },
       message: 'Super admin already existed. Credentials refreshed.',
+    };
+  }
+
+  async approveBusinessAdmin(_user: AuthUserContext, targetUserId: string) {
+    const dbUser = await this.usersService.findById(targetUserId);
+
+    if (!dbUser || dbUser.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dbUser.role !== 'BUSINESS_ADMIN') {
+      throw new BadRequestException(
+        'Only business admin accounts can be approved',
+      );
+    }
+
+    if (dbUser.isApproved) {
+      return {
+        data: {
+          id: dbUser.id,
+          isApproved: dbUser.isApproved,
+        },
+        message: 'Business admin already approved',
+      };
+    }
+
+    const updated = await this.usersService.setApprovalStatus(
+      targetUserId,
+      true,
+    );
+
+    return {
+      data: {
+        id: updated.id,
+        isApproved: updated.isApproved,
+      },
+      message: 'Business admin approved successfully',
     };
   }
 
@@ -700,6 +751,8 @@ export class AuthService {
         tenantId: dbUser.tenantId,
         restaurantId: dbUser.restaurantId,
         branchId: dbUser.branchId,
+        isVerified: dbUser.isVerified,
+        isApproved: dbUser.isApproved,
         profile: dbUser.profile,
       },
       message: 'Current user context fetched',

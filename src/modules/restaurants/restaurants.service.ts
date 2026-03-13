@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
@@ -6,6 +11,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
+import { TenantsService } from '../tenants/tenants.service';
 import {
   CreateRestaurantDto,
   UpdateRestaurantDto,
@@ -14,7 +20,10 @@ import {
 
 @Injectable()
 export class RestaurantsService {
-  constructor(private readonly restaurantsRepository: RestaurantsRepository) {}
+  constructor(
+    private readonly restaurantsRepository: RestaurantsRepository,
+    private readonly tenantsService: TenantsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateRestaurantDto, tx?: PrismaTx) {
     const slug = await this.ensureUniqueSlug(dto.slug ?? dto.name);
@@ -42,11 +51,8 @@ export class RestaurantsService {
     dto: CreateRestaurantDto,
     tx?: PrismaTx,
   ) {
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
-
-    const data = await this.create(user.tid, dto, tx);
+    const tenantId = await this.resolveCreateTenantId(user, dto.tenantId);
+    const data = await this.create(tenantId, dto, tx);
 
     return {
       data,
@@ -198,6 +204,30 @@ export class RestaurantsService {
     }
 
     return tenantId;
+  }
+
+  private async resolveCreateTenantId(
+    user: AuthUserContext,
+    requestedTenantId?: string,
+  ): Promise<string> {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      if (!requestedTenantId) {
+        throw new BadRequestException('tenantId is required for super admin');
+      }
+
+      const tenant = await this.tenantsService.findById(requestedTenantId);
+      if (!tenant || tenant.deletedAt) {
+        throw new NotFoundException('Tenant not found');
+      }
+
+      return requestedTenantId;
+    }
+
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    return user.tid;
   }
 
   private async ensureUniqueSlug(

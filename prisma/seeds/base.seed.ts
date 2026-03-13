@@ -24,6 +24,7 @@ export async function seedBase(prisma: PrismaClient): Promise<void> {
         password: passwordHash,
         role: UserRole.SUPER_ADMIN,
         isVerified: true,
+        isApproved: true,
         isActive: true,
         deletedAt: null,
         profile: existing.profile
@@ -50,6 +51,7 @@ export async function seedBase(prisma: PrismaClient): Promise<void> {
         password: passwordHash,
         role: UserRole.SUPER_ADMIN,
         isVerified: true,
+        isApproved: true,
         isActive: true,
         profile: {
           create: {

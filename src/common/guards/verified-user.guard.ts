@@ -54,6 +54,12 @@ export class VerifiedUserGuard implements CanActivate {
       );
     }
 
+    if (user.role === 'BUSINESS_ADMIN' && !user.isApproved) {
+      throw new ForbiddenException(
+        'Your tenant profile is pending super admin approval',
+      );
+    }
+
     return true;
   }
 }

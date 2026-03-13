@@ -23,6 +23,13 @@ export class TenantsRepository {
     });
   }
 
+  async findById(id: string) {
+    return this.prisma.tenant.findUnique({
+      where: { id },
+      select: { id: true, slug: true, isActive: true, deletedAt: true },
+    });
+  }
+
   async list(query: QueryDto, withDeleted = false, includeInactive = false) {
     const where: Prisma.TenantWhereInput = {
       ...(withDeleted ? {} : { deletedAt: null }),

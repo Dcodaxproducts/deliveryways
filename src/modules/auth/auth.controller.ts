@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   Query,
@@ -79,6 +80,17 @@ export class AuthController {
     @Body() dto: ForceDeleteUsersDto,
   ) {
     return this.authService.forceDeleteUsers(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Patch('admin/business-admins/:id/approve')
+  approveBusinessAdmin(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.authService.approveBusinessAdmin(user, id);
   }
 
   @Public()

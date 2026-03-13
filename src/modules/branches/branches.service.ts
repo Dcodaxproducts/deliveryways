@@ -94,6 +94,7 @@ export class BranchesService {
           restaurantId: dto.restaurantId,
           branchId: branch.id,
           isVerified: true,
+          isApproved: true,
           profile: {
             firstName: branchAdminInput.firstName,
             lastName: branchAdminInput.lastName,

@@ -2,6 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class CreateRestaurantDto {
+  @ApiPropertyOptional({
+    description: 'Required when super admin creates a restaurant',
+  })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

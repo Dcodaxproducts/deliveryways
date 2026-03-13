@@ -69,6 +69,7 @@ export async function seedDemo(prisma: PrismaClient): Promise<void> {
         restaurantId: restaurant.id,
         branchId: branch.id,
         isVerified: true,
+        isApproved: true,
         isActive: true,
         deletedAt: null,
         profile: existingAdmin.profile
@@ -96,6 +97,7 @@ export async function seedDemo(prisma: PrismaClient): Promise<void> {
         restaurantId: restaurant.id,
         branchId: branch.id,
         isVerified: true,
+        isApproved: true,
         isActive: true,
         profile: {
           create: {

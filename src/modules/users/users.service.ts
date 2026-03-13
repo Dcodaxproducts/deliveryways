@@ -22,6 +22,7 @@ export class UsersService {
           : undefined,
         verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
+        isApproved: dto.isApproved,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }
@@ -57,6 +58,7 @@ export class UsersService {
           : undefined,
         verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
+        isApproved: dto.isApproved,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }
@@ -167,6 +169,10 @@ export class UsersService {
 
   async setRefreshTokenHash(userId: string, tokenHash: string | null) {
     return this.usersRepository.update(userId, { refreshTokenHash: tokenHash });
+  }
+
+  async setApprovalStatus(userId: string, isApproved: boolean) {
+    return this.usersRepository.update(userId, { isApproved });
   }
 
   async forceDeleteUsersByEmails(emails: string[]) {

@@ -81,6 +81,11 @@ export class CreateUserDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsBoolean()
+  isApproved?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   tenantId?: string;
 
