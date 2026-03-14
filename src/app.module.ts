@@ -26,6 +26,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { CouponsModule } from './modules/coupons/coupons.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -78,6 +79,7 @@ import { AppController } from './app.controller';
     CouponsModule,
     OrdersModule,
     PaymentsModule,
+    NotificationsModule,
   ],
   providers: [
     {

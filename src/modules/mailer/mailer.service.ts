@@ -59,39 +59,36 @@ export class MailerService {
     return this.configService.get<string>('EMAIL_ENABLED', 'false') === 'true';
   }
 
-  async sendVerificationEmail(email: string, otp: string): Promise<void> {
+  async sendEmail(to: string, subject: string, text: string): Promise<void> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(
-        `EMAIL_ENABLED=false, skipping verification email to ${email}`,
+        `EMAIL_ENABLED=false, using json transport for email to ${to}`,
       );
-      return;
     }
 
     await this.transporter.sendMail({
-      to: email,
+      to,
       from: this.fromAddress,
-      subject: 'Verify your account',
-      text: `Your OTP code is: ${otp}. It expires in 10 minutes.`,
+      subject,
+      text,
     });
 
-    this.logger.log(`Verification email queued for ${email}`);
+    this.logger.log(`Email queued for ${to} with subject "${subject}"`);
+  }
+
+  async sendVerificationEmail(email: string, otp: string): Promise<void> {
+    await this.sendEmail(
+      email,
+      'Verify your account',
+      `Your OTP code is: ${otp}. It expires in 10 minutes.`,
+    );
   }
 
   async sendPasswordResetEmail(email: string, otp: string): Promise<void> {
-    if (!this.isEmailEnabled()) {
-      this.logger.warn(
-        `EMAIL_ENABLED=false, skipping password reset email to ${email}`,
-      );
-      return;
-    }
-
-    await this.transporter.sendMail({
-      to: email,
-      from: this.fromAddress,
-      subject: 'Reset your password',
-      text: `Your password reset OTP is: ${otp}. It expires in 10 minutes.`,
-    });
-
-    this.logger.log(`Password reset email queued for ${email}`);
+    await this.sendEmail(
+      email,
+      'Reset your password',
+      `Your password reset OTP is: ${otp}. It expires in 10 minutes.`,
+    );
   }
 }

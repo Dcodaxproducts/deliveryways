@@ -4,7 +4,12 @@ describe('OrdersService - delivery radius', () => {
   let service: OrdersService;
 
   beforeEach(() => {
-    service = new OrdersService({} as never, {} as never, {} as never);
+    service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
   });
 
   it('calculates 0 km for same point', () => {
@@ -43,7 +48,12 @@ describe('OrdersService - status transitions', () => {
   let service: OrdersService;
 
   beforeEach(() => {
-    service = new OrdersService({} as never, {} as never, {} as never);
+    service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
   });
 
   const checkTransition = (current: string, next: string): boolean => {

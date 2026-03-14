@@ -15,6 +15,7 @@ import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   CancelOrderDto,
   CreateOrderDto,
@@ -48,6 +49,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly ordersRepository: OrdersRepository,
     private readonly couponsService: CouponsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -159,6 +161,8 @@ export class OrdersService {
       return order;
     });
 
+    await this.notificationsService.notifyOrderPlaced(data.id);
+
     return {
       data,
       message: 'Order created successfully',
@@ -216,6 +220,8 @@ export class OrdersService {
 
     const data = await this.ordersRepository.updateStatus(id, dto.status);
 
+    await this.notificationsService.notifyOrderStatusChanged(data.id);
+
     return {
       data,
       message: 'Order status updated successfully',
@@ -244,6 +250,8 @@ export class OrdersService {
     }
 
     const data = await this.ordersRepository.cancel(id, user.uid);
+
+    await this.notificationsService.notifyOrderStatusChanged(data.id);
 
     return {
       data,

@@ -15,6 +15,7 @@ import {
   RefundPaymentDto,
   UpdatePaymentStatusDto,
 } from './dto';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class PaymentsService {
   constructor(
     private readonly paymentsRepository: PaymentsRepository,
     private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createAttempt(
@@ -65,6 +67,8 @@ export class PaymentsService {
       currency: dto.currency ?? 'PKR',
       note: dto.note,
     });
+
+    await this.notificationsService.notifyPaymentAttemptCreated(data.id);
 
     return {
       data,
@@ -155,6 +159,8 @@ export class PaymentsService {
       return updatedPayment;
     });
 
+    await this.notificationsService.notifyPaymentStatusChanged(data.id);
+
     return {
       data,
       message: 'Payment marked as paid successfully',
@@ -195,6 +201,8 @@ export class PaymentsService {
 
       return updatedPayment;
     });
+
+    await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
       data,
@@ -245,6 +253,8 @@ export class PaymentsService {
 
       return updatedPayment;
     });
+
+    await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
       data,
@@ -336,6 +346,8 @@ export class PaymentsService {
 
       return refundTransaction;
     });
+
+    await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
       data,
