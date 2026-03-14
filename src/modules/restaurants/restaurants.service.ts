@@ -114,9 +114,7 @@ export class RestaurantsService {
     dto: UpdateRestaurantDto,
     tx?: PrismaTx,
   ) {
-    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
+    this.ensureRestaurantWriteAccess(user, id);
 
     const data = await this.restaurantsRepository.update(
       id,
@@ -141,7 +139,9 @@ export class RestaurantsService {
     };
   }
 
-  async suspend(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async suspend(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    this.ensureRestaurantWriteAccess(user, id);
+
     const data = await this.restaurantsRepository.setActive(id, false, tx);
     await this.restaurantsRepository.setBranchesActiveByRestaurant(
       id,
@@ -155,7 +155,9 @@ export class RestaurantsService {
     };
   }
 
-  async activate(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async activate(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    this.ensureRestaurantWriteAccess(user, id);
+
     const data = await this.restaurantsRepository.setActive(id, true, tx);
 
     return {
@@ -165,11 +167,13 @@ export class RestaurantsService {
   }
 
   async updateImages(
-    _user: AuthUserContext,
+    user: AuthUserContext,
     id: string,
     dto: UpdateRestaurantImagesDto,
     tx?: PrismaTx,
   ) {
+    this.ensureRestaurantWriteAccess(user, id);
+
     const data = await this.restaurantsRepository.update(
       id,
       {
@@ -184,7 +188,9 @@ export class RestaurantsService {
     };
   }
 
-  async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async remove(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    this.ensureRestaurantWriteAccess(user, id);
+
     const data = await this.restaurantsRepository.softDelete(id, tx);
 
     return {
@@ -263,6 +269,26 @@ export class RestaurantsService {
     }
 
     return user.tid;
+  }
+
+  private ensureRestaurantWriteAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
+      user.rid !== restaurantId
+    ) {
+      throw new ForbiddenException('Cross-restaurant access denied');
+    }
   }
 
   private async ensureUniqueSlug(

@@ -9,6 +9,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
 
@@ -22,6 +23,16 @@ export class CreateRestaurantMenuDto {
   @IsString()
   @MaxLength(100)
   name!: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional menu items to attach during menu creation',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  itemIds?: string[];
 
   @ApiProperty()
   @IsString()
@@ -52,6 +63,15 @@ export class UpdateRestaurantMenuDto {
   @IsString()
   @MaxLength(100)
   name?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional full replacement list of menu items for this menu',
+  })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsArray()
+  @IsString({ each: true })
+  itemIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

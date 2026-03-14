@@ -45,7 +45,16 @@ export class RestaurantMenuService {
       isActive: dto.isActive ?? true,
     });
 
-    return { data, message: 'Restaurant menu created successfully' };
+    if (dto.itemIds?.length) {
+      await this.attachItemsToMenu(data.id, restaurantId, dto.itemIds);
+    }
+
+    const menu = await this.restaurantMenuRepository.findById(data.id);
+
+    return {
+      data: menu ?? data,
+      message: 'Restaurant menu created successfully',
+    };
   }
 
   async list(user: AuthUserContext, query: ListRestaurantMenusDto) {
@@ -102,7 +111,16 @@ export class RestaurantMenuService {
       isActive: dto.isActive,
     });
 
-    return { data, message: 'Restaurant menu updated successfully' };
+    if (dto.itemIds !== undefined) {
+      await this.syncMenuItems(menu.id, menu.restaurantId, dto.itemIds);
+    }
+
+    const updatedMenu = await this.restaurantMenuRepository.findById(id);
+
+    return {
+      data: updatedMenu ?? data,
+      message: 'Restaurant menu updated successfully',
+    };
   }
 
   async remove(user: AuthUserContext, id: string) {
@@ -129,59 +147,10 @@ export class RestaurantMenuService {
 
     this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
-    const uniqueItemIds = [...new Set(dto.itemIds)];
-    const items = await this.prisma.menuItem.findMany({
-      where: {
-        id: { in: uniqueItemIds },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        restaurantId: true,
-      },
-    });
-
-    if (items.length !== uniqueItemIds.length) {
-      throw new NotFoundException('One or more menu items were not found');
-    }
-
-    const crossRestaurantItem = items.find(
-      (item) => item.restaurantId !== menu.restaurantId,
-    );
-
-    if (crossRestaurantItem) {
-      throw new BadRequestException(
-        'All menu items must belong to the same restaurant as the menu',
-      );
-    }
-
-    const existingLinks = await Promise.all(
-      uniqueItemIds.map((itemId) =>
-        this.restaurantMenuRepository.findMenuItemLink(menu.id, itemId),
-      ),
-    );
-
-    if (existingLinks.some(Boolean)) {
-      throw new BadRequestException(
-        'One or more menu items are already attached to this menu',
-      );
-    }
-
-    const nextSortOrder = await this.restaurantMenuRepository.getNextSortOrder(
+    const data = await this.attachItemsToMenu(
       menu.id,
-    );
-
-    const data = await this.prisma.$transaction(
-      items.map((item, index) =>
-        this.prisma.restaurantMenuItem.create({
-          data: {
-            restaurantMenuId: menu.id,
-            menuItemId: item.id,
-            sortOrder: nextSortOrder + index,
-            isActive: true,
-          },
-        }),
-      ),
+      menu.restaurantId,
+      dto.itemIds,
     );
 
     return {
@@ -260,6 +229,123 @@ export class RestaurantMenuService {
 
     const data = await this.restaurantMenuRepository.removeMenuItemLink(linkId);
     return { data, message: 'Menu item removed from menu successfully' };
+  }
+
+  private async attachItemsToMenu(
+    menuId: string,
+    restaurantId: string,
+    itemIds: string[],
+  ) {
+    const items = await this.resolveMenuItemsForMenu(restaurantId, itemIds);
+
+    const existingLinks = await Promise.all(
+      items.map((item) =>
+        this.restaurantMenuRepository.findMenuItemLink(menuId, item.id),
+      ),
+    );
+
+    if (existingLinks.some(Boolean)) {
+      throw new BadRequestException(
+        'One or more menu items are already attached to this menu',
+      );
+    }
+
+    const nextSortOrder =
+      await this.restaurantMenuRepository.getNextSortOrder(menuId);
+
+    return this.prisma.$transaction(
+      items.map((item, index) =>
+        this.prisma.restaurantMenuItem.create({
+          data: {
+            restaurantMenuId: menuId,
+            menuItemId: item.id,
+            sortOrder: nextSortOrder + index,
+            isActive: true,
+          },
+        }),
+      ),
+    );
+  }
+
+  private async syncMenuItems(
+    menuId: string,
+    restaurantId: string,
+    itemIds: string[],
+  ) {
+    const uniqueItemIds = [...new Set(itemIds)];
+    const items = uniqueItemIds.length
+      ? await this.resolveMenuItemsForMenu(restaurantId, uniqueItemIds)
+      : [];
+
+    const existingLinks = await this.prisma.restaurantMenuItem.findMany({
+      where: { restaurantMenuId: menuId },
+      select: { id: true, menuItemId: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const existingItemIds = new Set(
+      existingLinks.map((link) => link.menuItemId),
+    );
+    const requestedItemIds = new Set(uniqueItemIds);
+
+    const linksToRemove = existingLinks.filter(
+      (link) => !requestedItemIds.has(link.menuItemId),
+    );
+
+    const itemsToAdd = items.filter((item) => !existingItemIds.has(item.id));
+
+    await this.prisma.$transaction([
+      ...linksToRemove.map((link) =>
+        this.prisma.restaurantMenuItem.delete({ where: { id: link.id } }),
+      ),
+      ...itemsToAdd.map((item, index) =>
+        this.prisma.restaurantMenuItem.create({
+          data: {
+            restaurantMenuId: menuId,
+            menuItemId: item.id,
+            sortOrder: existingLinks.length + index,
+            isActive: true,
+          },
+        }),
+      ),
+    ]);
+  }
+
+  private async resolveMenuItemsForMenu(
+    restaurantId: string,
+    itemIds: string[],
+  ) {
+    const uniqueItemIds = [...new Set(itemIds)];
+    const items = await this.prisma.menuItem.findMany({
+      where: {
+        id: { in: uniqueItemIds },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        restaurantId: true,
+      },
+    });
+
+    if (items.length !== uniqueItemIds.length) {
+      throw new NotFoundException('One or more menu items were not found');
+    }
+
+    if (items.some((item) => item.restaurantId !== restaurantId)) {
+      throw new BadRequestException(
+        'All menu items must belong to the same restaurant as the menu',
+      );
+    }
+
+    return uniqueItemIds.map((itemId) => {
+      const item = items.find((menuItem) => menuItem.id === itemId);
+
+      if (!item) {
+        throw new NotFoundException('One or more menu items were not found');
+      }
+
+      return item;
+    });
   }
 
   private resolveRestaurantId(
