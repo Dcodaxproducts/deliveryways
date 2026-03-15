@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   OrderStatus,
+  OrderType,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -257,6 +258,63 @@ export class OrdersService {
       data,
       message: 'Order cancelled successfully',
     };
+  }
+
+  async assignDeliveryman(
+    user: AuthUserContext,
+    orderId: string,
+    deliverymanId: string,
+    deliverymanBranchId: string,
+    deliverymanRestaurantId: string,
+  ) {
+    const order = await this.ordersRepository.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    this.assertOrderAccess(user, order.restaurantId, order.customerId, true);
+
+    if (order.orderType !== OrderType.DELIVERY) {
+      throw new BadRequestException('Only delivery orders can be assigned');
+    }
+
+    const blockedStatuses: OrderStatus[] = [
+      OrderStatus.CANCELLED,
+      OrderStatus.REJECTED,
+      OrderStatus.DELIVERED,
+    ];
+
+    if (blockedStatuses.includes(order.status)) {
+      throw new BadRequestException(
+        'Order cannot receive a deliveryman in current state',
+      );
+    }
+
+    if (order.restaurantId !== deliverymanRestaurantId) {
+      throw new ForbiddenException('Cross-restaurant assignment denied');
+    }
+
+    if (order.branchId !== deliverymanBranchId) {
+      throw new BadRequestException(
+        'Deliveryman branch does not match order branch',
+      );
+    }
+
+    if (order.deliverymanId && order.deliverymanId !== deliverymanId) {
+      throw new BadRequestException(
+        'Order is already assigned to another deliveryman',
+      );
+    }
+
+    const data = await this.ordersRepository.assignDeliveryman(
+      order.id,
+      deliverymanId,
+    );
+
+    await this.notificationsService.notifyOrderStatusChanged(data.id);
+
+    return data;
   }
 
   private async buildQuote(user: AuthUserContext, dto: QuoteOrderDto) {

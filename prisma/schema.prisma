@@ -94,6 +94,13 @@ enum NotificationType {
   PAYMENT_REFUNDED
 }
 
+enum DeliverymanStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+  INACTIVE
+}
+
 model Tenant {
   id             String    @id @default(cuid())
   name           String
@@ -117,6 +124,7 @@ model Tenant {
   orders        Order[]
   transactions  PaymentTransaction[]
   notifications Notification[]
+  deliverymen   Deliveryman[]
 
   @@map("tenants")
 }
@@ -152,6 +160,7 @@ model Restaurant {
   orders              Order[]
   transactions        PaymentTransaction[]
   notifications       Notification[]
+  deliverymen         Deliveryman[]
 
   @@map("restaurants")
 }
@@ -182,6 +191,7 @@ model Branch {
   orders             Order[]
   transactions       PaymentTransaction[]
   notifications      Notification[]
+  deliverymen        Deliveryman[]
 
   @@map("branches")
 }
@@ -592,6 +602,34 @@ model CouponUsage {
   @@map("coupon_usages")
 }
 
+model Deliveryman {
+  id            String            @id @default(cuid())
+  tenantId      String            @map("tenant_id")
+  restaurantId  String            @map("restaurant_id")
+  branchId      String            @map("branch_id")
+  firstName     String            @map("first_name")
+  lastName      String            @map("last_name")
+  email         String
+  phone         String
+  vehicleType   String?           @map("vehicle_type")
+  vehicleNumber String?           @map("vehicle_number")
+  status        DeliverymanStatus @default(OFFLINE)
+  isActive      Boolean           @default(true) @map("is_active")
+  deletedAt     DateTime?         @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  orders     Order[]
+
+  @@unique([restaurantId, email])
+  @@unique([branchId, phone])
+  @@index([restaurantId, branchId, status, isActive])
+  @@map("deliverymen")
+}
+
 model Order {
   id                String        @id @default(cuid())
   tenantId          String        @map("tenant_id")
@@ -600,6 +638,7 @@ model Order {
   customerId        String        @map("customer_id")
   couponId          String?       @map("coupon_id")
   deliveryAddressId String?       @map("delivery_address_id")
+  deliverymanId     String?       @map("deliveryman_id")
   orderType         OrderType     @map("order_type")
   paymentMethod     PaymentMethod @map("payment_method")
   status            OrderStatus   @default(PLACED)
@@ -610,6 +649,8 @@ model Order {
   totalAmount       Decimal       @map("total_amount") @db.Decimal(10, 2)
   paymentStatus     PaymentStatus @default(PENDING) @map("payment_status")
   paidAt            DateTime?     @map("paid_at") @db.Timestamptz
+  assignedAt        DateTime?     @map("assigned_at") @db.Timestamptz
+  deliveredAt       DateTime?     @map("delivered_at") @db.Timestamptz
   customerNote      String?       @map("customer_note")
   cancelledAt       DateTime?     @map("cancelled_at") @db.Timestamptz
   cancelledByUserId String?       @map("cancelled_by_user_id")
@@ -622,6 +663,7 @@ model Order {
   customer        User                 @relation("OrderCustomer", fields: [customerId], references: [id])
   coupon          Coupon?              @relation(fields: [couponId], references: [id])
   deliveryAddress Address?             @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  deliveryman     Deliveryman?         @relation(fields: [deliverymanId], references: [id])
   items           OrderItem[]
   couponUsages    CouponUsage[]
   transactions    PaymentTransaction[]
@@ -629,6 +671,7 @@ model Order {
 
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
+  @@index([deliverymanId, status, createdAt])
   @@map("orders")
 }
 

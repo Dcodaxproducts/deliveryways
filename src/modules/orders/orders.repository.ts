@@ -29,6 +29,15 @@ export class OrdersRepository {
         items: true,
         coupon: true,
         branch: { select: { id: true, name: true } },
+        deliveryman: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            status: true,
+          },
+        },
       },
     });
   }
@@ -67,7 +76,33 @@ export class OrdersRepository {
   async updateStatus(id: string, status: OrderStatus, tx?: PrismaTx) {
     return this.client(tx).order.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        deliveredAt: status === OrderStatus.DELIVERED ? new Date() : undefined,
+      },
+    });
+  }
+
+  async assignDeliveryman(id: string, deliverymanId: string, tx?: PrismaTx) {
+    return this.client(tx).order.update({
+      where: { id },
+      data: {
+        deliveryman: { connect: { id: deliverymanId } },
+        assignedAt: new Date(),
+        status: OrderStatus.OUT_FOR_DELIVERY,
+      },
+      include: {
+        branch: { select: { id: true, name: true } },
+        deliveryman: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            status: true,
+          },
+        },
+      },
     });
   }
 
