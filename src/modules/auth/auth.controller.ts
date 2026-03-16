@@ -26,6 +26,7 @@ import {
   ResendOtpDto,
   ResetPasswordDto,
   UpdateMyAvatarDto,
+  UpdateMyProfileDto,
   VerifyEmailDto,
 } from './dto';
 import {
@@ -180,6 +181,16 @@ export class AuthController {
     @Body() dto: UpdateMyAvatarDto,
   ) {
     return this.authService.updateMyAvatar(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/profile')
+  updateMyProfile(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateMyProfileDto,
+  ) {
+    return this.authService.updateMyProfile(user, dto);
   }
 
   @ApiBearerAuth()

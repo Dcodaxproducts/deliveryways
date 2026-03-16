@@ -6,6 +6,7 @@ export { DevBootstrapSuperAdminDto } from './dev-bootstrap-super-admin.dto';
 export { ForceDeleteUsersDto } from './force-delete-users.dto';
 export { ListCustomersDto } from './list-customers.dto';
 export { UpdateMyAvatarDto } from './update-my-avatar.dto';
+export { UpdateMyProfileDto } from './update-my-profile.dto';
 export {
   RefreshDto,
   VerifyEmailDto,

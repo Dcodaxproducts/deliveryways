@@ -30,6 +30,7 @@ import {
   ResendOtpDto,
   ResetPasswordDto,
   UpdateMyAvatarDto,
+  UpdateMyProfileDto,
   VerifyEmailDto,
 } from './dto';
 import { TenantsService } from '../tenants/tenants.service';
@@ -760,24 +761,41 @@ export class AuthService {
   }
 
   async updateMyAvatar(user: AuthUserContext, dto: UpdateMyAvatarDto) {
+    return this.updateMyProfile(user, { avatarUrl: dto.avatarUrl }, true);
+  }
+
+  async updateMyProfile(
+    user: AuthUserContext,
+    dto: UpdateMyProfileDto,
+    avatarOnly = false,
+  ) {
     const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
     }
 
+    const emailPrefix = dbUser.email.split('@')[0] || 'user';
+
     if (dbUser.profile) {
       await this.prisma.profile.update({
         where: { id: dbUser.profile.id },
-        data: { avatarUrl: dto.avatarUrl },
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          avatarUrl: dto.avatarUrl,
+          phone: dto.phone,
+          bio: dto.bio,
+        },
       });
     } else {
-      const emailPrefix = dbUser.email.split('@')[0] || 'user';
       await this.prisma.profile.create({
         data: {
           userId: dbUser.id,
-          firstName: emailPrefix,
-          lastName: emailPrefix,
+          firstName: dto.firstName ?? emailPrefix,
+          lastName: dto.lastName ?? emailPrefix,
           avatarUrl: dto.avatarUrl,
+          phone: dto.phone,
+          bio: dto.bio,
         },
       });
     }
@@ -789,7 +807,9 @@ export class AuthService {
         id: updated?.id,
         profile: updated?.profile,
       },
-      message: 'Profile avatar updated successfully',
+      message: avatarOnly
+        ? 'Profile avatar updated successfully'
+        : 'Profile updated successfully',
     };
   }
 
