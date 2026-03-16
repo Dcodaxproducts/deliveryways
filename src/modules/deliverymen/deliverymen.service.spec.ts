@@ -43,6 +43,7 @@ describe('DeliverymenService', () => {
       update: jest
         .fn()
         .mockResolvedValue({ ...deliveryman, status: DeliverymanStatus.BUSY }),
+      create: jest.fn().mockResolvedValue(deliveryman),
     };
 
     ordersService = {
@@ -63,6 +64,9 @@ describe('DeliverymenService', () => {
             restaurantId: 'restaurant-1',
             tenantId: 'tenant-1',
           }),
+        },
+        deliveryman: {
+          findFirst: jest.fn().mockResolvedValue(null),
         },
       } as never,
     );
@@ -110,5 +114,55 @@ describe('DeliverymenService', () => {
         'dm-1',
       ),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rejects duplicate deliveryman email in the same restaurant', async () => {
+    const prisma = (
+      service as unknown as {
+        prisma: { deliveryman: { findFirst: jest.Mock } };
+      }
+    ).prisma;
+    prisma.deliveryman.findFirst.mockResolvedValueOnce({ id: 'dm-2' });
+
+    await expect(
+      service.create(adminUser, {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        firstName: 'Wajih',
+        lastName: 'Hassan',
+        email: 'test10@gmail.com',
+        phone: '03410279181',
+        vehicleType: 'motor',
+        vehicleNumber: '1234',
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate deliveryman phone in the same branch', async () => {
+    const prisma = (
+      service as unknown as {
+        prisma: { deliveryman: { findFirst: jest.Mock } };
+      }
+    ).prisma;
+    prisma.deliveryman.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'dm-3' });
+
+    await expect(
+      service.create(adminUser, {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        firstName: 'Wajih',
+        lastName: 'Hassan',
+        email: 'test11@gmail.com',
+        phone: '03410279181',
+        vehicleType: 'motor',
+        vehicleNumber: '1234',
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(repository.create).not.toHaveBeenCalled();
   });
 });

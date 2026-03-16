@@ -36,6 +36,13 @@ export class DeliverymenService {
       dto.branchId,
     );
 
+    await this.assertUniqueFields(
+      restaurantId,
+      branch.id,
+      dto.email,
+      dto.phone,
+    );
+
     const data = await this.deliverymenRepository.create({
       tenant: { connect: { id: tenantId } },
       restaurant: { connect: { id: restaurantId } },
@@ -91,13 +98,24 @@ export class DeliverymenService {
   async update(user: AuthUserContext, id: string, dto: UpdateDeliverymanDto) {
     const deliveryman = await this.getAccessibleDeliveryman(user, id);
 
+    let targetBranchId = deliveryman.branchId;
+
     if (dto.branchId) {
-      await this.assertBranchAccess(
+      const branch = await this.assertBranchAccess(
         user,
         deliveryman.restaurantId,
         dto.branchId,
       );
+      targetBranchId = branch.id;
     }
+
+    await this.assertUniqueFields(
+      deliveryman.restaurantId,
+      targetBranchId,
+      dto.email,
+      dto.phone,
+      deliveryman.id,
+    );
 
     const data = await this.deliverymenRepository.update(id, {
       firstName: dto.firstName,
@@ -285,5 +303,47 @@ export class DeliverymenService {
     }
 
     return branch;
+  }
+
+  private async assertUniqueFields(
+    restaurantId: string,
+    branchId: string,
+    email?: string,
+    phone?: string,
+    excludeId?: string,
+  ) {
+    if (email) {
+      const existingEmail = await this.prisma.deliveryman.findFirst({
+        where: {
+          restaurantId,
+          email,
+          ...(excludeId ? { id: { not: excludeId } } : {}),
+        },
+        select: { id: true },
+      });
+
+      if (existingEmail) {
+        throw new BadRequestException(
+          'A deliveryman with this email already exists in this restaurant',
+        );
+      }
+    }
+
+    if (phone) {
+      const existingPhone = await this.prisma.deliveryman.findFirst({
+        where: {
+          branchId,
+          phone,
+          ...(excludeId ? { id: { not: excludeId } } : {}),
+        },
+        select: { id: true },
+      });
+
+      if (existingPhone) {
+        throw new BadRequestException(
+          'A deliveryman with this phone already exists in this branch',
+        );
+      }
+    }
   }
 }
