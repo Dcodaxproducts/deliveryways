@@ -226,7 +226,9 @@ export class ModifierService {
       }
 
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('Cross-restaurant access denied');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       return user.rid;
@@ -261,7 +263,9 @@ export class ModifierService {
       }
 
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('Cross-restaurant access denied');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       return user.rid;

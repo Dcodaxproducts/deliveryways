@@ -34,7 +34,9 @@ export class TenantAccessGuard implements CanActivate {
       user.tid &&
       tenantContext.tenantId !== user.tid
     ) {
-      throw new ForbiddenException('Cross-tenant context access denied');
+      throw new ForbiddenException(
+        'You cannot access data outside your tenant context',
+      );
     }
 
     this.validatePayloadTenant(user.tid, request);
@@ -55,11 +57,15 @@ export class TenantAccessGuard implements CanActivate {
     const queryTenantId = request.query?.tenantId;
 
     if (bodyTenantId && userTenantId && bodyTenantId !== userTenantId) {
-      throw new ForbiddenException('Cross-tenant body payload denied');
+      throw new ForbiddenException(
+        'The tenantId in request body does not match your account context',
+      );
     }
 
     if (queryTenantId && userTenantId && queryTenantId !== userTenantId) {
-      throw new ForbiddenException('Cross-tenant query payload denied');
+      throw new ForbiddenException(
+        'The tenantId in query does not match your account context',
+      );
     }
   }
 
@@ -84,7 +90,7 @@ export class TenantAccessGuard implements CanActivate {
 
     if (routePath.includes('tenants')) {
       if (idParam !== user.tid) {
-        throw new ForbiddenException('Cross-tenant tenant access denied');
+        throw new ForbiddenException('You cannot access another tenant record');
       }
       return;
     }
@@ -96,7 +102,9 @@ export class TenantAccessGuard implements CanActivate {
       });
 
       if (restaurant && restaurant.tenantId !== user.tid) {
-        throw new ForbiddenException('Cross-tenant restaurant access denied');
+        throw new ForbiddenException(
+          'You cannot access a restaurant that belongs to another tenant',
+        );
       }
 
       return;
@@ -109,7 +117,9 @@ export class TenantAccessGuard implements CanActivate {
       });
 
       if (branch && branch.tenantId !== user.tid) {
-        throw new ForbiddenException('Cross-tenant branch access denied');
+        throw new ForbiddenException(
+          'You cannot access a branch that belongs to another tenant',
+        );
       }
     }
   }
@@ -130,7 +140,7 @@ export class TenantAccessGuard implements CanActivate {
 
       if (requestedBranchId && user.bid && requestedBranchId !== user.bid) {
         throw new ForbiddenException(
-          'Branch admin cannot access other branches',
+          'Branch admins can only access their own branch',
         );
       }
     }
@@ -146,7 +156,7 @@ export class TenantAccessGuard implements CanActivate {
         requestedRestaurantId !== user.rid
       ) {
         throw new ForbiddenException(
-          'Customer cannot access resources of other restaurants',
+          'Customers can only access resources for their own restaurant account',
         );
       }
     }

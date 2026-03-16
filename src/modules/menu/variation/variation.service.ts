@@ -157,7 +157,9 @@ export class MenuVariationService {
     }
 
     if (user.rid !== restaurantId) {
-      throw new ForbiddenException('Cross-restaurant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
   }
 }

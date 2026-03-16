@@ -210,7 +210,9 @@ export class RestaurantsService {
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN && user.rid !== id) {
-      throw new ForbiddenException('Cross-restaurant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
 
     const summary = await this.restaurantsRepository.getDeleteSummary(id);
@@ -287,7 +289,9 @@ export class RestaurantsService {
       user.role !== UserRoleEnum.BUSINESS_ADMIN ||
       user.rid !== restaurantId
     ) {
-      throw new ForbiddenException('Cross-restaurant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
   }
 

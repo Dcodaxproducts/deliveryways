@@ -14,6 +14,23 @@ type ValidationErrorDetail = {
   message: string;
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  restaurantId: 'restaurant',
+  restaurant_id: 'restaurant',
+  branchId: 'branch',
+  branch_id: 'branch',
+  tenantId: 'tenant',
+  tenant_id: 'tenant',
+  userId: 'user',
+  user_id: 'user',
+  email: 'email',
+  phone: 'phone',
+  slug: 'slug',
+  sku: 'SKU',
+  code: 'code',
+  name: 'name',
+};
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
@@ -35,6 +52,37 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     return { name, message };
   }
 
+  private normalizeFieldLabel(field: string): string {
+    const cleaned = field.replace(/["'`]/g, '').trim();
+    return (
+      FIELD_LABELS[cleaned] ??
+      cleaned
+        .replace(/_id$/i, '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/_/g, ' ')
+        .trim()
+        .toLowerCase()
+    );
+  }
+
+  private buildUniqueConstraintMessage(fields: string[]): string {
+    const normalized = fields.map((field) => this.normalizeFieldLabel(field));
+
+    if (normalized.includes('email') && normalized.includes('restaurant')) {
+      return 'A record with this email already exists in this restaurant';
+    }
+
+    if (normalized.includes('phone') && normalized.includes('branch')) {
+      return 'A record with this phone already exists in this branch';
+    }
+
+    if (normalized.length === 1) {
+      return `A record with this ${normalized[0]} already exists`;
+    }
+
+    return `A record with this combination of ${normalized.join(', ')} already exists`;
+  }
+
   private mapPrismaError(exception: Prisma.PrismaClientKnownRequestError): {
     status: number;
     code: string;
@@ -49,20 +97,25 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           /fields:\s*\(`([^`]+)`\)/i,
         );
         const fallbackField = messageTargetMatch?.[1] ?? null;
-        const fieldLabel =
-          target.length > 0 ? target.join(', ') : (fallbackField ?? 'field');
+        const rawFields =
+          target.length > 0
+            ? target
+            : fallbackField
+              ? fallbackField.split(',').map((field) => field.trim())
+              : ['field'];
 
         return {
           status: HttpStatus.CONFLICT,
           code: 'UNIQUE_CONSTRAINT_VIOLATION',
-          message: `${fieldLabel} already exists`,
+          message: this.buildUniqueConstraintMessage(rawFields),
         };
       }
       case 'P2025':
         return {
           status: HttpStatus.NOT_FOUND,
           code: 'RECORD_NOT_FOUND',
-          message: 'Requested record was not found',
+          message:
+            'The requested resource was not found or may have been deleted',
         };
       case 'P1000':
       case 'P1001':

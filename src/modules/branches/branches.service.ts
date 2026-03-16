@@ -359,7 +359,9 @@ export class BranchesService {
       user.role === UserRoleEnum.BUSINESS_ADMIN &&
       user.rid !== branch.restaurantId
     ) {
-      throw new ForbiddenException('Cross-restaurant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
 
     const summary = await this.branchesRepository.getDeleteSummary(id);

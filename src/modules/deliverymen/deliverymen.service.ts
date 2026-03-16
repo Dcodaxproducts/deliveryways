@@ -224,7 +224,9 @@ export class DeliverymenService {
       user.role === UserRoleEnum.BRANCH_ADMIN &&
       user.bid !== deliveryman.branchId
     ) {
-      throw new ForbiddenException('Cross-branch access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your branch',
+      );
     }
 
     return deliveryman;
@@ -255,7 +257,9 @@ export class DeliverymenService {
     }
 
     if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-      throw new ForbiddenException('Cross-restaurant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
 
     return user.rid;
@@ -277,7 +281,9 @@ export class DeliverymenService {
       user.bid &&
       user.bid !== branchId
     ) {
-      throw new ForbiddenException('Cross-branch access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your branch',
+      );
     }
 
     const branch = await this.prisma.branch.findFirst({
@@ -299,7 +305,9 @@ export class DeliverymenService {
     }
 
     if (user.tid && branch.tenantId !== user.tid) {
-      throw new ForbiddenException('Cross-tenant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant',
+      );
     }
 
     return branch;

@@ -369,7 +369,9 @@ export class PaymentsService {
       }
 
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('Cross-restaurant access denied');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       return user.rid;
@@ -393,7 +395,9 @@ export class PaymentsService {
       }
 
       if (user.rid && user.rid !== restaurantId) {
-        throw new ForbiddenException('Cross-restaurant access denied');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       return;
@@ -423,7 +427,9 @@ export class PaymentsService {
     }
 
     if (restaurantId && restaurantId !== user.rid) {
-      throw new ForbiddenException('Cross-restaurant access denied');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
 
     return user.rid;
