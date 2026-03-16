@@ -11,7 +11,11 @@ export class LoginDto {
   @MinLength(8)
   password!: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({
+    required: false,
+    description:
+      'Required for customer login when account is restaurant-scoped',
+  })
   @IsOptional()
   @IsString()
   restaurantId?: string;

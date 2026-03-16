@@ -363,10 +363,19 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
 
     if (!user || user.deletedAt) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.role === 'CUSTOMER' && !dto.restaurantId) {
+      throw new BadRequestException(
+        'restaurantId is required for customer login',
+      );
     }
 
     const isValidPassword = await bcrypt.compare(dto.password, user.password);
