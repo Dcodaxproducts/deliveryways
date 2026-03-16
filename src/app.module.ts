@@ -28,6 +28,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { DeliverymenModule } from './modules/deliverymen/deliverymen.module';
+import { StorageModule } from './modules/storage/storage.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -82,6 +83,7 @@ import { AppController } from './app.controller';
     PaymentsModule,
     NotificationsModule,
     DeliverymenModule,
+    StorageModule,
   ],
   providers: [
     {

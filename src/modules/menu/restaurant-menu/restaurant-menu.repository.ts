@@ -64,6 +64,29 @@ export class RestaurantMenuRepository {
         ],
         include: {
           _count: { select: { items: true } },
+          items: {
+            where: query.includeInactive
+              ? undefined
+              : {
+                  isActive: true,
+                  menuItem: {
+                    deletedAt: null,
+                    isActive: true,
+                  },
+                },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              menuItem: {
+                include: {
+                  category: { select: { id: true, name: true } },
+                  variations: {
+                    where: { deletedAt: null, isActive: true },
+                    orderBy: { sortOrder: 'asc' },
+                  },
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.restaurantMenu.count({ where }),
