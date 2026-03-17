@@ -1,27 +1,27 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AdminListQueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
-import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { AddressesRepository } from './addresses.repository';
-import { CreateAddressDto, UpdateAddressDto } from './dto';
+import { CreateAddressDto, ListAddressesDto, UpdateAddressDto } from './dto';
 
 @Injectable()
 export class AddressesService {
   constructor(private readonly addressesRepository: AddressesRepository) {}
 
   async create(user: AuthUserContext, dto: CreateAddressDto, tx?: PrismaTx) {
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
+    const tenantId = this.getRequiredTenantId(user);
 
-    return this.addressesRepository.create(
+    const data = await this.addressesRepository.create(
       {
-        tenantId: user.tid,
-        referenceId: dto.referenceId,
-        refType: dto.refType,
+        tenantId,
+        referenceId: user.uid,
+        refType: 'USER',
         street: dto.street,
         area: dto.area,
         city: dto.city,
@@ -32,31 +32,20 @@ export class AddressesService {
       },
       tx,
     );
+
+    return {
+      data,
+      message: 'Address created successfully',
+    };
   }
 
-  async list(
-    user: AuthUserContext,
-    referenceId: string,
-    query: AdminListQueryDto,
-  ) {
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
+  async list(user: AuthUserContext, query: ListAddressesDto) {
+    const tenantId = this.getRequiredTenantId(user);
 
-    const withDeleted =
-      user.role === UserRoleEnum.SUPER_ADMIN && !!query.withDeleted;
-    const includeInactive =
-      (user.role === UserRoleEnum.SUPER_ADMIN ||
-        user.role === UserRoleEnum.BUSINESS_ADMIN ||
-        user.role === UserRoleEnum.BRANCH_ADMIN) &&
-      !!query.includeInactive;
-
-    const { items, total } = await this.addressesRepository.listByReference(
-      user.tid,
-      referenceId,
+    const { items, total } = await this.addressesRepository.listForUser(
+      tenantId,
+      user.uid,
       query,
-      withDeleted,
-      includeInactive,
     );
 
     return {
@@ -72,12 +61,10 @@ export class AddressesService {
     dto: UpdateAddressDto,
     tx?: PrismaTx,
   ) {
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
+    const existingAddress = await this.getOwnedAddressOrThrow(user, id);
 
     const data = await this.addressesRepository.update(
-      id,
+      existingAddress.id,
       {
         street: dto.street,
         area: dto.area,
@@ -97,14 +84,38 @@ export class AddressesService {
   }
 
   async remove(user: AuthUserContext, id: string, tx?: PrismaTx) {
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
+    const existingAddress = await this.getOwnedAddressOrThrow(user, id);
 
-    const data = await this.addressesRepository.softDelete(id, tx);
+    const data = await this.addressesRepository.softDelete(
+      existingAddress.id,
+      tx,
+    );
     return {
       data,
-      message: 'Address soft deleted successfully',
+      message: 'Address deleted successfully',
     };
+  }
+
+  private async getOwnedAddressOrThrow(user: AuthUserContext, id: string) {
+    const tenantId = this.getRequiredTenantId(user);
+    const address = await this.addressesRepository.findUserAddressById(
+      id,
+      tenantId,
+      user.uid,
+    );
+
+    if (!address) {
+      throw new NotFoundException('Address not found');
+    }
+
+    return address;
+  }
+
+  private getRequiredTenantId(user: AuthUserContext) {
+    if (!user.tid) {
+      throw new ForbiddenException('Your account is missing tenant context');
+    }
+
+    return user.tid;
   }
 }

@@ -16,22 +16,29 @@ export class AddressesRepository {
     return this.client(tx).address.create({ data });
   }
 
+  async findUserAddressById(id: string, tenantId: string, userId: string) {
+    return this.prisma.address.findFirst({
+      where: {
+        id,
+        tenantId,
+        referenceId: userId,
+        refType: 'USER',
+        deletedAt: null,
+      },
+    });
+  }
+
   async update(id: string, data: Prisma.AddressUpdateInput, tx?: PrismaTx) {
     return this.client(tx).address.update({ where: { id }, data });
   }
 
-  async listByReference(
-    tenantId: string,
-    referenceId: string,
-    query: QueryDto,
-    withDeleted = false,
-    includeInactive = false,
-  ) {
+  async listForUser(tenantId: string, userId: string, query: QueryDto) {
     const where: Prisma.AddressWhereInput = {
       tenantId,
-      referenceId,
-      ...(withDeleted ? {} : { deletedAt: null }),
-      ...(includeInactive ? {} : { isActive: true }),
+      referenceId: userId,
+      refType: 'USER',
+      deletedAt: null,
+      isActive: true,
     };
 
     const [items, total] = await this.prisma.$transaction([
