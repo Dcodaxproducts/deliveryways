@@ -121,6 +121,7 @@ model Tenant {
   branches      Branch[]
   users         User[]               @relation("TenantUsers")
   coupons       Coupon[]
+  carts         Cart[]
   orders        Order[]
   transactions  PaymentTransaction[]
   notifications Notification[]
@@ -157,6 +158,7 @@ model Restaurant {
   inventoryCategories InventoryCategory[]
   inventoryItems      InventoryItem[]
   coupons             Coupon[]
+  carts               Cart[]
   orders              Order[]
   transactions        PaymentTransaction[]
   notifications       Notification[]
@@ -188,6 +190,7 @@ model Branch {
   categoryOverrides  BranchCategoryOverride[]
   inventoryMovements InventoryMovement[]
   coupons            Coupon[]
+  carts              Cart[]
   orders             Order[]
   transactions       PaymentTransaction[]
   notifications      Notification[]
@@ -212,6 +215,7 @@ model Address {
   deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  carts          Cart[]         @relation("CartDeliveryAddress")
   deliveryOrders Order[]        @relation("OrderDeliveryAddress")
 
   @@index([referenceId, refType])
@@ -248,6 +252,7 @@ model User {
   branch                Branch?             @relation("BranchUsers", fields: [branchId], references: [id])
   managedBranches       Branch[]            @relation("BranchManager")
   profile               Profile?
+  cart                  Cart?               @relation("CustomerCart")
   createdMovements      InventoryMovement[] @relation("MovementCreatedBy")
   customerOrders        Order[]             @relation("OrderCustomer")
   couponUsages          CouponUsage[]
@@ -628,6 +633,48 @@ model Deliveryman {
   @@unique([branchId, phone])
   @@index([restaurantId, branchId, status, isActive])
   @@map("deliverymen")
+}
+
+model Cart {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  restaurantId      String    @map("restaurant_id")
+  branchId          String    @map("branch_id")
+  customerId        String    @unique @map("customer_id")
+  orderType         OrderType @default(DELIVERY) @map("order_type")
+  deliveryAddressId String?   @map("delivery_address_id")
+  couponCode        String?   @map("coupon_code")
+  customerNote      String?   @map("customer_note")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant          Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant      Restaurant @relation(fields: [restaurantId], references: [id])
+  branch          Branch     @relation(fields: [branchId], references: [id])
+  customer        User       @relation("CustomerCart", fields: [customerId], references: [id])
+  deliveryAddress Address?   @relation("CartDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  items           CartItem[]
+
+  @@index([tenantId, branchId])
+  @@index([restaurantId, branchId])
+  @@map("carts")
+}
+
+model CartItem {
+  id          String   @id @default(cuid())
+  cartId      String   @map("cart_id")
+  menuItemId  String   @map("menu_item_id")
+  variationId String?  @map("variation_id")
+  quantity    Int
+  note        String?
+  modifiers   Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@index([cartId, createdAt])
+  @@map("cart_items")
 }
 
 model Order {
