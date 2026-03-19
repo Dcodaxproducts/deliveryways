@@ -87,6 +87,26 @@ export class CartRepository {
     });
   }
 
+  async findActiveCustomer(
+    customerId: string,
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    return this.prisma.user.findFirst({
+      where: {
+        id: customerId,
+        tenantId,
+        restaurantId,
+        role: 'CUSTOMER',
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+  }
+
   async findActiveBranch(branchId: string) {
     return this.prisma.branch.findFirst({
       where: {

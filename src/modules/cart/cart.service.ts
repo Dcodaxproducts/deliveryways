@@ -27,6 +27,21 @@ interface CartSnapshotItem {
   modifiers: Prisma.JsonValue | null;
 }
 
+interface CartSnapshot {
+  id: string;
+  tenantId: string;
+  restaurantId: string;
+  branchId: string;
+  customerId: string;
+  orderType: OrderType;
+  deliveryAddressId: string | null;
+  couponCode: string | null;
+  customerNote: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  items: CartSnapshotItem[];
+}
+
 @Injectable()
 export class CartService {
   constructor(
@@ -34,10 +49,9 @@ export class CartService {
     private readonly ordersService: OrdersService,
   ) {}
 
-  async getCart(user: AuthUserContext) {
-    const cart = await this.cartRepository.findByCustomerId(
-      this.getRequiredCustomerId(user),
-    );
+  async getCart(user: AuthUserContext, requestedCustomerId?: string) {
+    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (!cart) {
       return {
@@ -52,8 +66,12 @@ export class CartService {
     };
   }
 
-  async updateContext(user: AuthUserContext, dto: UpdateCartContextDto) {
-    const customerId = this.getRequiredCustomerId(user);
+  async updateContext(
+    user: AuthUserContext,
+    dto: UpdateCartContextDto,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
     const tenantId = this.getRequiredTenantId(user);
     const existingCart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -124,8 +142,12 @@ export class CartService {
     };
   }
 
-  async addItem(user: AuthUserContext, dto: AddCartItemDto) {
-    const cart = await this.getExistingCartOrThrow(user);
+  async addItem(
+    user: AuthUserContext,
+    dto: AddCartItemDto,
+    requestedCustomerId?: string,
+  ) {
+    const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
     await this.assertValidCartItem(cart.restaurantId, cart.branchId, dto);
 
     await this.cartRepository.createItem({
@@ -137,7 +159,10 @@ export class CartService {
       modifiers: dto.modifiers as unknown as Prisma.InputJsonValue,
     });
 
-    const updatedCart = await this.getExistingCartOrThrow(user);
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+    );
 
     return {
       data: await this.buildCartResponse(user, updatedCart),
@@ -149,10 +174,12 @@ export class CartService {
     user: AuthUserContext,
     itemId: string,
     dto: UpdateCartItemDto,
+    requestedCustomerId?: string,
   ) {
+    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
     const item = await this.cartRepository.findItemByIdForCustomer(
       itemId,
-      this.getRequiredCustomerId(user),
+      customerId,
     );
 
     if (!item) {
@@ -198,7 +225,10 @@ export class CartService {
           : undefined,
     });
 
-    const updatedCart = await this.getExistingCartOrThrow(user);
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+    );
 
     return {
       data: await this.buildCartResponse(user, updatedCart),
@@ -206,10 +236,15 @@ export class CartService {
     };
   }
 
-  async removeItem(user: AuthUserContext, itemId: string) {
+  async removeItem(
+    user: AuthUserContext,
+    itemId: string,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
     const item = await this.cartRepository.findItemByIdForCustomer(
       itemId,
-      this.getRequiredCustomerId(user),
+      customerId,
     );
 
     if (!item) {
@@ -217,9 +252,7 @@ export class CartService {
     }
 
     await this.cartRepository.deleteItem(item.id);
-    const cart = await this.cartRepository.findByCustomerId(
-      item.cart.customerId,
-    );
+    const cart = await this.cartRepository.findByCustomerId(item.cart.customerId);
 
     return {
       data: cart
@@ -229,8 +262,8 @@ export class CartService {
     };
   }
 
-  async clearCart(user: AuthUserContext) {
-    const customerId = this.getRequiredCustomerId(user);
+  async clearCart(user: AuthUserContext, requestedCustomerId?: string) {
+    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (cart) {
@@ -243,26 +276,25 @@ export class CartService {
     };
   }
 
-  async quote(user: AuthUserContext) {
-    const cart = await this.getExistingCartOrThrow(user);
+  async quote(user: AuthUserContext, requestedCustomerId?: string) {
+    const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
     if (!cart.items.length) {
       throw new BadRequestException('Cart is empty');
     }
 
-    const quote = await this.ordersService.quote(
-      user,
-      this.toQuotePayload(cart),
-    );
+    const quote = await this.ordersService.quote(user, this.toQuotePayload(cart));
     return {
       data: quote.data,
       message: 'Cart quote generated successfully',
     };
   }
 
-  private async getExistingCartOrThrow(user: AuthUserContext) {
-    const cart = await this.cartRepository.findByCustomerId(
-      this.getRequiredCustomerId(user),
-    );
+  private async getExistingCartOrThrow(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -271,32 +303,14 @@ export class CartService {
     return cart;
   }
 
-  private async buildCartResponse(
-    user: AuthUserContext,
-    cart: {
-      id: string;
-      tenantId: string;
-      restaurantId: string;
-      branchId: string;
-      customerId: string;
-      orderType: OrderType;
-      deliveryAddressId: string | null;
-      couponCode: string | null;
-      customerNote: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-      items: CartSnapshotItem[];
-    },
-  ) {
-    let quote: Awaited<ReturnType<OrdersService['quote']>>['data'] | null =
-      null;
+  private async buildCartResponse(user: AuthUserContext, cart: CartSnapshot) {
+    let quote: Awaited<ReturnType<OrdersService['quote']>>['data'] | null = null;
     let quoteError: string | null = null;
 
     if (cart.items.length) {
       try {
-        quote = (
-          await this.ordersService.quote(user, this.toQuotePayload(cart))
-        ).data;
+        quote = (await this.ordersService.quote(user, this.toQuotePayload(cart)))
+          .data;
       } catch (error) {
         if (error instanceof HttpException) {
           quoteError = error.message;
@@ -331,15 +345,10 @@ export class CartService {
     };
   }
 
-  private toQuotePayload(cart: {
-    branchId: string;
-    orderType: OrderType;
-    deliveryAddressId: string | null;
-    couponCode: string | null;
-    items: CartSnapshotItem[];
-  }): QuoteOrderDto {
+  private toQuotePayload(cart: CartSnapshot): QuoteOrderDto {
     return {
       branchId: cart.branchId,
+      customerId: cart.customerId,
       orderType: cart.orderType as OrderTypeEnum,
       deliveryAddressId: cart.deliveryAddressId ?? undefined,
       couponCode: cart.couponCode ?? undefined,
@@ -470,15 +479,47 @@ export class CartService {
     }
   }
 
-  private getRequiredCustomerId(user: AuthUserContext) {
-    if (
-      user.role !== UserRoleEnum.CUSTOMER &&
-      user.role !== UserRoleEnum.SUPER_ADMIN
-    ) {
-      throw new ForbiddenException('Only customers can manage cart');
+  private async resolveCartCustomerId(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+  ) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      if (requestedCustomerId && requestedCustomerId !== user.uid) {
+        throw new BadRequestException(
+          'Customers can only manage their own cart',
+        );
+      }
+
+      return user.uid;
     }
 
-    return user.uid;
+    if (!requestedCustomerId) {
+      throw new BadRequestException(
+        'customerId is required when managing cart on behalf of a customer',
+      );
+    }
+
+    const tenantId = this.getRequiredTenantId(user);
+    const restaurantId = this.getRequiredRestaurantId(user);
+    const customer = await this.cartRepository.findActiveCustomer(
+      requestedCustomerId,
+      tenantId,
+      restaurantId,
+    );
+
+    if (!customer) {
+      throw new BadRequestException('Customer not found for this restaurant');
+    }
+
+    return customer.id;
+  }
+
+  private getRequiredRestaurantId(user: AuthUserContext) {
+    if (!user.rid) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    return user.rid;
   }
 
   private getRequiredTenantId(user: AuthUserContext) {

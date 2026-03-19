@@ -76,6 +76,15 @@ export class UpdateCartItemDto {
   note?: string | null;
 }
 
+export class CartCustomerScopeDto {
+  @ApiPropertyOptional({
+    description: 'Target customer id when admin/staff manages a customer cart',
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+}
+
 export class UpdateCartContextDto {
   @ApiPropertyOptional()
   @IsOptional()

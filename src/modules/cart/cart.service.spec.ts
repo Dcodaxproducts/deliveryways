@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { OrderType } from '@prisma/client';
+import { UserRoleEnum } from '../../common/enums';
 import { CartService } from './cart.service';
 
 describe('CartService', () => {
@@ -9,6 +10,7 @@ describe('CartService', () => {
       findActiveBranch: jest.fn(),
       findOwnedAddress: jest.fn(),
       findMenuItemForCart: jest.fn(),
+      findActiveCustomer: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       createItem: jest.fn(),
@@ -38,7 +40,7 @@ describe('CartService', () => {
       uid: 'user-1',
       tid: 'tenant-1',
       rid: 'restaurant-1',
-      role: 'CUSTOMER' as never,
+      role: UserRoleEnum.CUSTOMER,
     });
 
     expect(result.data.items).toEqual([]);
@@ -66,7 +68,7 @@ describe('CartService', () => {
           uid: 'user-1',
           tid: 'tenant-1',
           rid: 'restaurant-1',
-          role: 'CUSTOMER' as never,
+          role: UserRoleEnum.CUSTOMER,
         },
         { branchId: 'branch-2' },
       ),
@@ -108,12 +110,119 @@ describe('CartService', () => {
       uid: 'user-1',
       tid: 'tenant-1',
       rid: 'restaurant-1',
-      role: 'CUSTOMER' as never,
+      role: UserRoleEnum.CUSTOMER,
     });
 
     expect(result.data.quote).toBeNull();
     expect(result.data.quoteError).toBe(
       'deliveryAddressId is required for delivery orders',
     );
+  });
+
+  it('requires customerId for business-admin cart access', async () => {
+    const { service } = makeService();
+
+    await expect(
+      (
+        service as unknown as {
+          resolveCartCustomerId: (
+            user: {
+              uid: string;
+              tid?: string;
+              rid?: string;
+              role: UserRoleEnum;
+            },
+            requestedCustomerId?: string,
+          ) => Promise<string>;
+        }
+      ).resolveCartCustomerId(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('allows business-admin cart access when customer belongs to same restaurant', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findActiveCustomer.mockResolvedValue({ id: 'customer-1' });
+
+    const customerId = await (
+      service as unknown as {
+        resolveCartCustomerId: (
+          user: {
+            uid: string;
+            tid?: string;
+            rid?: string;
+            role: UserRoleEnum;
+          },
+          requestedCustomerId?: string,
+        ) => Promise<string>;
+      }
+    ).resolveCartCustomerId(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'customer-1',
+    );
+
+    expect(customerId).toBe('customer-1');
+    expect(cartRepository.findActiveCustomer).toHaveBeenCalledWith(
+      'customer-1',
+      'tenant-1',
+      'restaurant-1',
+    );
+  });
+
+  it('includes customerId when building order quote payload from cart', () => {
+    const { service } = makeService();
+
+    const payload = (
+      service as unknown as {
+        toQuotePayload: (cart: {
+          branchId: string;
+          customerId: string;
+          orderType: OrderType;
+          deliveryAddressId: string | null;
+          couponCode: string | null;
+          items: {
+            id: string;
+            menuItemId: string;
+            variationId: string | null;
+            quantity: number;
+            note: string | null;
+            modifiers: null;
+          }[];
+        }) => {
+          branchId: string;
+          customerId?: string;
+        };
+      }
+    ).toQuotePayload({
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: OrderType.DELIVERY,
+      deliveryAddressId: null,
+      couponCode: null,
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+
+    expect(payload.customerId).toBe('customer-1');
+    expect(payload.branchId).toBe('branch-1');
   });
 });
