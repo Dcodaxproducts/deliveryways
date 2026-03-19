@@ -108,6 +108,21 @@ export class RestaurantsService {
     };
   }
 
+  async details(user: AuthUserContext, id: string) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    this.ensureRestaurantReadAccess(user, restaurant.id);
+
+    return {
+      data: restaurant,
+      message: 'Restaurant fetched successfully',
+    };
+  }
+
   async update(
     user: AuthUserContext,
     id: string,
@@ -273,7 +288,7 @@ export class RestaurantsService {
     return user.tid;
   }
 
-  private ensureRestaurantWriteAccess(
+  private ensureRestaurantReadAccess(
     user: AuthUserContext,
     restaurantId: string,
   ) {
@@ -293,6 +308,13 @@ export class RestaurantsService {
         'You cannot access resources outside your restaurant',
       );
     }
+  }
+
+  private ensureRestaurantWriteAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    this.ensureRestaurantReadAccess(user, restaurantId);
   }
 
   private async ensureUniqueSlug(

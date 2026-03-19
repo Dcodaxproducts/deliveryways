@@ -70,6 +70,12 @@ export class RestaurantsRepository {
     return restaurant?.tenantId;
   }
 
+  async findById(id: string) {
+    return this.prisma.restaurant.findUnique({
+      where: { id },
+    });
+  }
+
   async update(id: string, data: Prisma.RestaurantUpdateInput, tx?: PrismaTx) {
     return this.client(tx).restaurant.update({
       where: { id },
