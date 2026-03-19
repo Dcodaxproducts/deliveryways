@@ -50,7 +50,10 @@ export class CartService {
   ) {}
 
   async getCart(user: AuthUserContext, requestedCustomerId?: string) {
-    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (!cart) {
@@ -71,7 +74,10 @@ export class CartService {
     dto: UpdateCartContextDto,
     requestedCustomerId?: string,
   ) {
-    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
     const tenantId = this.getRequiredTenantId(user);
     const existingCart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -176,7 +182,10 @@ export class CartService {
     dto: UpdateCartItemDto,
     requestedCustomerId?: string,
   ) {
-    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
     const item = await this.cartRepository.findItemByIdForCustomer(
       itemId,
       customerId,
@@ -241,7 +250,10 @@ export class CartService {
     itemId: string,
     requestedCustomerId?: string,
   ) {
-    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
     const item = await this.cartRepository.findItemByIdForCustomer(
       itemId,
       customerId,
@@ -252,7 +264,9 @@ export class CartService {
     }
 
     await this.cartRepository.deleteItem(item.id);
-    const cart = await this.cartRepository.findByCustomerId(item.cart.customerId);
+    const cart = await this.cartRepository.findByCustomerId(
+      item.cart.customerId,
+    );
 
     return {
       data: cart
@@ -263,7 +277,10 @@ export class CartService {
   }
 
   async clearCart(user: AuthUserContext, requestedCustomerId?: string) {
-    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (cart) {
@@ -282,7 +299,10 @@ export class CartService {
       throw new BadRequestException('Cart is empty');
     }
 
-    const quote = await this.ordersService.quote(user, this.toQuotePayload(cart));
+    const quote = await this.ordersService.quote(
+      user,
+      this.toQuotePayload(cart),
+    );
     return {
       data: quote.data,
       message: 'Cart quote generated successfully',
@@ -293,7 +313,10 @@ export class CartService {
     user: AuthUserContext,
     requestedCustomerId?: string,
   ) {
-    const customerId = await this.resolveCartCustomerId(user, requestedCustomerId);
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (!cart) {
@@ -304,13 +327,15 @@ export class CartService {
   }
 
   private async buildCartResponse(user: AuthUserContext, cart: CartSnapshot) {
-    let quote: Awaited<ReturnType<OrdersService['quote']>>['data'] | null = null;
+    let quote: Awaited<ReturnType<OrdersService['quote']>>['data'] | null =
+      null;
     let quoteError: string | null = null;
 
     if (cart.items.length) {
       try {
-        quote = (await this.ordersService.quote(user, this.toQuotePayload(cart)))
-          .data;
+        quote = (
+          await this.ordersService.quote(user, this.toQuotePayload(cart))
+        ).data;
       } catch (error) {
         if (error instanceof HttpException) {
           quoteError = error.message;

@@ -135,14 +135,12 @@ describe('CartService', () => {
             requestedCustomerId?: string,
           ) => Promise<string>;
         }
-      ).resolveCartCustomerId(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.BUSINESS_ADMIN,
-        },
-      ),
+      ).resolveCartCustomerId({
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
