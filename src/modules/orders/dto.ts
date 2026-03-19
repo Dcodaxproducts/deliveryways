@@ -58,6 +58,13 @@ export class QuoteOrderDto {
   @IsString()
   branchId!: string;
 
+  @ApiPropertyOptional({
+    description: 'Target customer id for admin-created orders',
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
   @ApiProperty({ enum: OrderTypeEnum })
   @IsEnum(OrderTypeEnum)
   orderType!: OrderTypeEnum;

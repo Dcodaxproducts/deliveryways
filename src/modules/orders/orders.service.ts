@@ -44,6 +44,17 @@ type QuoteLine = {
   }[];
 };
 
+type QuoteCustomerContext = {
+  customerId: string;
+};
+
+type QuoteBranchContext = {
+  id: string;
+  tenantId: string;
+  restaurantId: string;
+  settings: unknown;
+};
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -60,6 +71,7 @@ export class OrdersService {
       data: {
         branchId: quote.branch.id,
         restaurantId: quote.branch.restaurantId,
+        customerId: quote.customer.customerId,
         orderType: dto.orderType,
         subtotal: Number(quote.subtotal),
         taxAmount: Number(quote.taxAmount),
@@ -93,7 +105,7 @@ export class OrdersService {
       );
     }
 
-    const customerId = this.resolveCustomerId(user);
+    const customerId = quote.customer.customerId;
 
     const data = await this.prisma.$transaction(async (tx) => {
       const order = await this.ordersRepository.create(
@@ -339,6 +351,11 @@ export class OrdersService {
     this.ensureBranchAccess(user, branch.restaurantId, branch.id);
 
     const settings = this.readBranchSettings(branch.settings);
+    const customer = await this.resolveQuoteCustomer(
+      user,
+      branch,
+      dto.customerId,
+    );
 
     if (!settings.allowedOrderTypes.includes(dto.orderType)) {
       throw new BadRequestException(
@@ -477,7 +494,7 @@ export class OrdersService {
       }
 
       await this.assertAddressWithinRadius(
-        user,
+        customer.customerId,
         dto.deliveryAddressId,
         branch.id,
         settings.deliveryConfig.radiusKm,
@@ -505,11 +522,10 @@ export class OrdersService {
     let appliedCouponCode: string | undefined;
 
     if (dto.couponCode) {
-      const customerId = this.resolveCustomerId(user);
       const couponValidation = await this.couponsService.validateForCheckout({
         restaurantId: branch.restaurantId,
         branchId: branch.id,
-        customerId,
+        customerId: customer.customerId,
         code: dto.couponCode,
         subtotal: Number(subtotal),
         menuItemIds: lines.map((line) => line.menuItemId),
@@ -532,6 +548,7 @@ export class OrdersService {
 
     return {
       branch,
+      customer,
       lines,
       subtotal: subtotal.toDecimalPlaces(2),
       taxAmount,
@@ -564,15 +581,46 @@ export class OrdersService {
     return user.rid;
   }
 
-  private resolveCustomerId(user: AuthUserContext): string {
-    if (
-      user.role !== UserRoleEnum.CUSTOMER &&
-      user.role !== UserRoleEnum.SUPER_ADMIN
-    ) {
-      throw new ForbiddenException('Only customer users can place orders');
+  private async resolveQuoteCustomer(
+    user: AuthUserContext,
+    branch: QuoteBranchContext,
+    requestedCustomerId?: string,
+  ): Promise<QuoteCustomerContext> {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      if (requestedCustomerId && requestedCustomerId !== user.uid) {
+        throw new BadRequestException(
+          'Customers can only place orders for themselves',
+        );
+      }
+
+      return { customerId: user.uid };
     }
 
-    return user.uid;
+    if (!requestedCustomerId) {
+      throw new BadRequestException(
+        'customerId is required when placing an order on behalf of a customer',
+      );
+    }
+
+    const customer = await this.prisma.user.findFirst({
+      where: {
+        id: requestedCustomerId,
+        tenantId: branch.tenantId,
+        restaurantId: branch.restaurantId,
+        role: 'CUSTOMER',
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!customer) {
+      throw new BadRequestException('Customer not found for this restaurant');
+    }
+
+    return { customerId: customer.id };
   }
 
   private ensureBranchAccess(
@@ -745,7 +793,7 @@ export class OrdersService {
   }
 
   private async assertAddressWithinRadius(
-    user: AuthUserContext,
+    customerId: string,
     deliveryAddressId: string,
     branchId: string,
     radiusKm: number,
@@ -754,7 +802,7 @@ export class OrdersService {
       where: {
         id: deliveryAddressId,
         refType: 'USER',
-        referenceId: user.uid,
+        referenceId: customerId,
         deletedAt: null,
         isActive: true,
       },

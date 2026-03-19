@@ -45,7 +45,12 @@ export class OrdersController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.CUSTOMER)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateOrderDto) {
     return this.ordersService.create(user, dto);

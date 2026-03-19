@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+import { UserRoleEnum } from '../../common/enums';
 import { OrdersService } from './orders.service';
 
 describe('OrdersService - delivery radius', () => {
@@ -97,5 +99,225 @@ describe('OrdersService - status transitions', () => {
   it('rejects backwards transitions', () => {
     expect(checkTransition('PREPARING', 'CONFIRMED')).toBe(false);
     expect(checkTransition('CONFIRMED', 'PLACED')).toBe(false);
+  });
+});
+
+describe('OrdersService - admin customer resolution', () => {
+  const branch = {
+    id: 'branch-1',
+    tenantId: 'tenant-1',
+    restaurantId: 'restaurant-1',
+    settings: {},
+  };
+
+  it('lets customers place orders for themselves without lookup', async () => {
+    const prisma = {
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await (
+      service as unknown as {
+        resolveQuoteCustomer: (
+          user: {
+            uid: string;
+            role: UserRoleEnum;
+            rid?: string;
+            tid?: string;
+            bid?: string;
+          },
+          currentBranch: typeof branch,
+          requestedCustomerId?: string,
+        ) => Promise<{ customerId: string }>;
+      }
+    ).resolveQuoteCustomer(
+      {
+        uid: 'customer-1',
+        role: UserRoleEnum.CUSTOMER,
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+      },
+      branch,
+    );
+
+    expect(result).toEqual({ customerId: 'customer-1' });
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects customer override for another customer', async () => {
+    const service = new OrdersService(
+      {
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      (
+        service as unknown as {
+          resolveQuoteCustomer: (
+            user: {
+              uid: string;
+              role: UserRoleEnum;
+              rid?: string;
+              tid?: string;
+              bid?: string;
+            },
+            currentBranch: typeof branch,
+            requestedCustomerId?: string,
+          ) => Promise<{ customerId: string }>;
+        }
+      ).resolveQuoteCustomer(
+        {
+          uid: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          rid: 'restaurant-1',
+          tid: 'tenant-1',
+        },
+        branch,
+        'customer-2',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('requires customerId for business admin orders', async () => {
+    const service = new OrdersService(
+      {
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      (
+        service as unknown as {
+          resolveQuoteCustomer: (
+            user: {
+              uid: string;
+              role: UserRoleEnum;
+              rid?: string;
+              tid?: string;
+              bid?: string;
+            },
+            currentBranch: typeof branch,
+            requestedCustomerId?: string,
+          ) => Promise<{ customerId: string }>;
+        }
+      ).resolveQuoteCustomer(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          rid: 'restaurant-1',
+          tid: 'tenant-1',
+          bid: 'branch-1',
+        },
+        branch,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('allows business admin when customer belongs to same restaurant', async () => {
+    const prisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'customer-1' }),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await (
+      service as unknown as {
+        resolveQuoteCustomer: (
+          user: {
+            uid: string;
+            role: UserRoleEnum;
+            rid?: string;
+            tid?: string;
+            bid?: string;
+          },
+          currentBranch: typeof branch,
+          requestedCustomerId?: string,
+        ) => Promise<{ customerId: string }>;
+      }
+    ).resolveQuoteCustomer(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        bid: 'branch-1',
+      },
+      branch,
+      'customer-1',
+    );
+
+    expect(result).toEqual({ customerId: 'customer-1' });
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        role: 'CUSTOMER',
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+  });
+
+  it('rejects business admin when customer is outside restaurant scope', async () => {
+    const service = new OrdersService(
+      {
+        user: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      (
+        service as unknown as {
+          resolveQuoteCustomer: (
+            user: {
+              uid: string;
+              role: UserRoleEnum;
+              rid?: string;
+              tid?: string;
+              bid?: string;
+            },
+            currentBranch: typeof branch,
+            requestedCustomerId?: string,
+          ) => Promise<{ customerId: string }>;
+        }
+      ).resolveQuoteCustomer(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          rid: 'restaurant-1',
+          tid: 'tenant-1',
+          bid: 'branch-1',
+        },
+        branch,
+        'customer-9',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
