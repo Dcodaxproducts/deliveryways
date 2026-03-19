@@ -178,6 +178,108 @@ describe('CartService', () => {
     );
   });
 
+  it('creates cart on first add-item when cart does not exist', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'cart-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        orderType: OrderType.DELIVERY,
+        deliveryAddressId: null,
+        couponCode: null,
+        customerNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        items: [],
+      });
+    cartRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    cartRepository.create.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: OrderType.DELIVERY,
+      deliveryAddressId: null,
+      couponCode: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    const buildCartResponseSpy = jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    const result = await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        quantity: 2,
+      },
+    );
+
+    expect(cartRepository.create).toHaveBeenCalledWith({
+      tenant: { connect: { id: 'tenant-1' } },
+      restaurant: { connect: { id: 'restaurant-1' } },
+      branch: { connect: { id: 'branch-1' } },
+      customer: { connect: { id: 'user-1' } },
+      orderType: OrderType.DELIVERY,
+    });
+    expect(cartRepository.createItem).toHaveBeenCalledWith({
+      cart: { connect: { id: 'cart-1' } },
+      menuItemId: 'menu-1',
+      variationId: undefined,
+      quantity: 2,
+      note: undefined,
+      modifiers: undefined,
+    });
+    expect(result.message).toBe('Item added to cart successfully');
+    buildCartResponseSpy.mockRestore();
+  });
+
+  it('requires branchId on first add-item when cart does not exist', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue(null);
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          menuItemId: 'menu-1',
+          quantity: 1,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('includes customerId when building order quote payload from cart', () => {
     const { service } = makeService();
 

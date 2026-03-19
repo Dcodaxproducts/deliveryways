@@ -24,6 +24,14 @@ export class CartItemModifierDto {
 }
 
 export class AddCartItemDto {
+  @ApiPropertyOptional({
+    description:
+      'Required when creating a cart from the first add-to-cart action',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
   @ApiProperty()
   @IsString()
   menuItemId!: string;

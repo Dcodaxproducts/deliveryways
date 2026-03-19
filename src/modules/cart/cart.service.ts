@@ -153,7 +153,7 @@ export class CartService {
     dto: AddCartItemDto,
     requestedCustomerId?: string,
   ) {
-    const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
+    const cart = await this.getCartForAddItem(user, dto, requestedCustomerId);
     await this.assertValidCartItem(cart.restaurantId, cart.branchId, dto);
 
     await this.cartRepository.createItem({
@@ -324,6 +324,49 @@ export class CartService {
     }
 
     return cart;
+  }
+
+  private async getCartForAddItem(
+    user: AuthUserContext,
+    dto: AddCartItemDto,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
+    const existingCart = await this.cartRepository.findByCustomerId(customerId);
+
+    if (existingCart) {
+      if (dto.branchId && dto.branchId !== existingCart.branchId) {
+        throw new BadRequestException(
+          'Clear cart before switching to another branch',
+        );
+      }
+
+      return existingCart;
+    }
+
+    if (!dto.branchId) {
+      throw new BadRequestException(
+        'branchId is required when creating cart from add-to-cart',
+      );
+    }
+
+    const branch = await this.cartRepository.findActiveBranch(dto.branchId);
+    if (!branch) {
+      throw new BadRequestException('Branch not found or inactive');
+    }
+
+    this.ensureRestaurantAccess(user, branch.restaurantId);
+
+    return this.cartRepository.create({
+      tenant: { connect: { id: branch.tenantId } },
+      restaurant: { connect: { id: branch.restaurantId } },
+      branch: { connect: { id: branch.id } },
+      customer: { connect: { id: customerId } },
+      orderType: OrderType.DELIVERY,
+    });
   }
 
   private async buildCartResponse(user: AuthUserContext, cart: CartSnapshot) {
