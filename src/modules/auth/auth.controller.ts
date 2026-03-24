@@ -3,10 +3,8 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   Patch,
   Post,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -14,12 +12,9 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
-  CustomerDetailsQueryDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
-  ForceDeleteUsersDto,
   ForgotPasswordDto,
-  ListCustomersDto,
   LoginDto,
   RefreshDto,
   RegisterCustomerDto,
@@ -30,14 +25,8 @@ import {
   UpdateMyProfileDto,
   VerifyEmailDto,
 } from './dto';
-import {
-  AllowUnverified,
-  CurrentUser,
-  Public,
-  Roles,
-} from '../../common/decorators';
+import { AllowUnverified, CurrentUser, Public } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
-import { RolesEnum } from '../../common/enums';
 import { JwtAuthGuard } from '../../common/guards';
 
 @ApiTags('Auth')
@@ -56,59 +45,6 @@ export class AuthController {
   @Post('register-customer')
   registerCustomer(@Body() dto: RegisterCustomerDto) {
     return this.authService.registerCustomer(dto);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Roles(
-    RolesEnum.BUSINESS_ADMIN,
-    RolesEnum.BRANCH_ADMIN,
-    RolesEnum.SUPER_ADMIN,
-  )
-  @Get('customers')
-  listCustomers(
-    @CurrentUser() user: AuthUserContext,
-    @Query() query: ListCustomersDto,
-  ) {
-    return this.authService.listCustomers(user, query);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Roles(
-    RolesEnum.BUSINESS_ADMIN,
-    RolesEnum.BRANCH_ADMIN,
-    RolesEnum.SUPER_ADMIN,
-  )
-  @Get('customers/:id')
-  customerDetails(
-    @CurrentUser() user: AuthUserContext,
-    @Param('id') id: string,
-    @Query() query: CustomerDetailsQueryDto,
-  ) {
-    return this.authService.customerDetails(user, id, query);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
-  @Post('admin/users/force-delete')
-  forceDeleteUsers(
-    @CurrentUser() user: AuthUserContext,
-    @Body() dto: ForceDeleteUsersDto,
-  ) {
-    return this.authService.forceDeleteUsers(user, dto);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
-  @Patch('admin/business-admins/:id/approve')
-  approveBusinessAdmin(
-    @CurrentUser() user: AuthUserContext,
-    @Param('id') id: string,
-  ) {
-    return this.authService.approveBusinessAdmin(user, id);
   }
 
   @Public()

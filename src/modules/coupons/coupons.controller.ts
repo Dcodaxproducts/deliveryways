@@ -9,7 +9,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { CouponStatus } from '@prisma/client';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -61,26 +60,6 @@ export class CouponsController {
     @Body() dto: UpdateCouponDto,
   ) {
     return this.couponsService.update(user, id, dto);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
-  @Post(':code/activate')
-  activate(@CurrentUser() user: AuthUserContext, @Param('code') code: string) {
-    return this.couponsService.setStatus(user, code, {
-      status: CouponStatus.ACTIVE,
-    });
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
-  @Post(':code/suspend')
-  suspend(@CurrentUser() user: AuthUserContext, @Param('code') code: string) {
-    return this.couponsService.setStatus(user, code, {
-      status: CouponStatus.SUSPENDED,
-    });
   }
 
   @ApiBearerAuth()

@@ -54,6 +54,12 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `DELETE /account`
 - `POST /cancel-deletion`
 
+### Admin Users (`/admin/users`)
+- `GET /customers`
+- `GET /customers/:id`
+- `POST /force-delete`
+- `PATCH /business-admins/:id/approve`
+
 ### Tenants (`/tenants`)
 - `GET /` (super admin)
 - `PATCH /:id`
