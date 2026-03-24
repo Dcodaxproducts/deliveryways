@@ -3,6 +3,28 @@ import { UserRoleEnum } from '../../common/enums';
 import { CustomerAppService } from './customer-app.service';
 
 describe('CustomerAppService', () => {
+  const itemFixture = {
+    id: 'item-1',
+    name: 'Zinger Burger',
+    slug: 'zinger-burger',
+    description: 'Crispy chicken burger',
+    imageUrl: 'https://cdn.example.com/zinger.png',
+    basePrice: 799,
+    restaurant: {
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      tagline: 'Fresh food fast',
+    },
+    category: {
+      id: 'category-1',
+      name: 'Burgers',
+      imageUrl: 'https://cdn.example.com/category.png',
+    },
+    variations: [],
+    branchOverrides: [],
+  };
+
   const makeService = () => {
     const repository = {
       findCustomerProfile: jest.fn(),
@@ -102,6 +124,28 @@ describe('CustomerAppService', () => {
     expect(result.data.items).toEqual([
       { question: 'Branch question', answer: 'Branch answer' },
     ]);
+  });
+
+  it('populates restaurant on promotional items', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listPromotionalItems.mockResolvedValue([itemFixture]);
+
+    const result = await service.listPromotionalItems({
+      restaurantId: 'restaurant-1',
+      limit: 10,
+    });
+
+    expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
   });
 
   it('throws when public restaurant is missing', async () => {

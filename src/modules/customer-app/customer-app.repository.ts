@@ -101,6 +101,9 @@ export class CustomerAppRepository {
         take: query.limit,
         orderBy: [{ updatedAt: 'desc' }],
         include: {
+          restaurant: {
+            select: { id: true, name: true, logoUrl: true, tagline: true },
+          },
           category: { select: { id: true, name: true, imageUrl: true } },
           variations: {
             where: { deletedAt: null, isActive: true },
@@ -287,6 +290,9 @@ export class CustomerAppRepository {
         take: query.limit,
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         include: {
+          restaurant: {
+            select: { id: true, name: true, logoUrl: true, tagline: true },
+          },
           category: { select: { id: true, name: true, imageUrl: true } },
           variations: {
             where: { deletedAt: null, isActive: true },
@@ -342,7 +348,10 @@ export class CustomerAppRepository {
       take,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       include: {
-        category: { select: { id: true, name: true } },
+        restaurant: {
+          select: { id: true, name: true, logoUrl: true, tagline: true },
+        },
+        category: { select: { id: true, name: true, imageUrl: true } },
         variations: {
           where: { deletedAt: null, isActive: true },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],

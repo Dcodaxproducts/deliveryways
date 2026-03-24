@@ -707,6 +707,12 @@ export class CustomerAppService {
     description: string | null;
     imageUrl: string | null;
     basePrice: Prisma.Decimal;
+    restaurant: {
+      id: string;
+      name: string;
+      logoUrl?: string | null;
+      tagline?: string | null;
+    };
     category: { id: string; name: string; imageUrl?: string | null };
     variations: Array<{
       id: string;
@@ -728,6 +734,7 @@ export class CustomerAppService {
       description: item.description,
       imageUrl: item.imageUrl,
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
+      restaurant: item.restaurant,
       category: item.category,
       variations: item.variations,
       isAvailable: branchOverride?.isAvailable ?? true,
