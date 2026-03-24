@@ -132,10 +132,7 @@ export class TenantAccessGuard implements CanActivate {
       body?: Record<string, unknown>;
     },
   ): void {
-    if (
-      user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.BRANCH_STAFF
-    ) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
       const requestedBranchId =
         (request.body?.branchId as string | undefined) ??
         request.query?.branchId ??
@@ -143,7 +140,7 @@ export class TenantAccessGuard implements CanActivate {
 
       if (requestedBranchId && user.bid && requestedBranchId !== user.bid) {
         throw new ForbiddenException(
-          'Branch-scoped users can only access their own branch',
+          'Branch admins can only access their own branch',
         );
       }
     }
