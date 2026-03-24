@@ -98,32 +98,6 @@ describe('CartService', () => {
     expect(ordersService.quote).not.toHaveBeenCalled();
   });
 
-  it('rejects branch switch when cart still has items', async () => {
-    const { service, cartRepository } = makeService();
-    cartRepository.findByCustomerId.mockResolvedValue({
-      id: 'cart-1',
-      branchId: 'branch-1',
-      items: [{ id: 'item-1' }],
-    });
-    cartRepository.findActiveBranch.mockResolvedValue({
-      id: 'branch-2',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-    });
-
-    await expect(
-      service.updateContext(
-        {
-          uid: 'user-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.CUSTOMER,
-        },
-        { branchId: 'branch-2' },
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
   it('requires customerId for business-admin cart access', async () => {
     const { service } = makeService();
 

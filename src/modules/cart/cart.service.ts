@@ -13,7 +13,6 @@ import {
   AddCartItemDto,
   CartItemModifierDto,
   QuoteCartDto,
-  UpdateCartContextDto,
   UpdateCartItemDto,
 } from './dto';
 import { CartRepository } from './cart.repository';
@@ -62,58 +61,6 @@ export class CartService {
     return {
       data: await this.buildCartResponse(cart),
       message: 'Cart fetched successfully',
-    };
-  }
-
-  async updateContext(
-    user: AuthUserContext,
-    dto: UpdateCartContextDto,
-    requestedCustomerId?: string,
-  ) {
-    const customerId = await this.resolveCartCustomerId(
-      user,
-      requestedCustomerId,
-    );
-    const existingCart = await this.cartRepository.findByCustomerId(customerId);
-
-    const branchId = dto.branchId ?? existingCart?.branchId;
-    if (!branchId) {
-      throw new BadRequestException('branchId is required to set cart context');
-    }
-
-    const branch = await this.cartRepository.findActiveBranch(branchId);
-    if (!branch) {
-      throw new BadRequestException('Branch not found or inactive');
-    }
-
-    this.ensureRestaurantAccess(user, branch.restaurantId);
-
-    if (
-      existingCart &&
-      existingCart.branchId !== branch.id &&
-      existingCart.items.length > 0
-    ) {
-      throw new BadRequestException(
-        'Clear cart before switching to another branch',
-      );
-    }
-
-    const cart = existingCart
-      ? await this.cartRepository.update(existingCart.id, {
-          tenant: { connect: { id: branch.tenantId } },
-          restaurant: { connect: { id: branch.restaurantId } },
-          branch: { connect: { id: branch.id } },
-        })
-      : await this.cartRepository.create({
-          tenant: { connect: { id: branch.tenantId } },
-          restaurant: { connect: { id: branch.restaurantId } },
-          branch: { connect: { id: branch.id } },
-          customer: { connect: { id: customerId } },
-        });
-
-    return {
-      data: await this.buildCartResponse(cart),
-      message: 'Cart updated successfully',
     };
   }
 

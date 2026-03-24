@@ -94,13 +94,6 @@ export class CartCustomerScopeDto {
   customerId?: string;
 }
 
-export class UpdateCartContextDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  branchId?: string;
-}
-
 export class QuoteCartDto {
   @ApiProperty({ enum: OrderTypeEnum })
   @IsEnum(OrderTypeEnum)
