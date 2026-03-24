@@ -5,14 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import {
+  CreateTableReservationDto,
   HomeScreenQueryDto,
+  ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
+  ListPromotionalItemsQueryDto,
+  ListTableReservationsQueryDto,
   PublicRestaurantQueryDto,
+  RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
@@ -20,7 +26,32 @@ import { CustomerAppRepository } from './customer-app.repository';
 interface FavoriteMetadataShape {
   customerApp?: {
     favoriteMenuItemIds?: string[];
+    loyaltyPoints?: number;
+    loyaltyRedeemedPoints?: number;
+    wallet?: {
+      balance?: number;
+      currency?: string;
+    };
+    tableReservations?: TableReservationRecord[];
+    loyaltyRedemptions?: LoyaltyRedemptionRecord[];
   };
+}
+
+export interface TableReservationRecord {
+  id: string;
+  branchId: string;
+  reservationDate: string;
+  guestCount: number;
+  note: string | null;
+  status: 'REQUESTED';
+  createdAt: string;
+}
+
+export interface LoyaltyRedemptionRecord {
+  id: string;
+  points: number;
+  note: string | null;
+  createdAt: string;
 }
 
 export interface FaqItem {
@@ -216,6 +247,41 @@ export class CustomerAppService {
     };
   }
 
+  async listCuisineItems(cuisineId: string, query: ListCuisineItemsQueryDto) {
+    await this.getPublicContent(query);
+    const cuisine = await this.customerAppRepository.findPublicCuisine(
+      cuisineId,
+      query.restaurantId,
+      query.branchId,
+    );
+
+    if (!cuisine) {
+      throw new NotFoundException('Cuisine not found');
+    }
+
+    const { items, total } =
+      await this.customerAppRepository.listCuisineMenuItems(cuisineId, query);
+
+    return {
+      data: {
+        cuisine,
+        items: items.map((item) => this.mapMenuItem(item)),
+      },
+      message: 'Cuisine items fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async listPromotionalItems(query: ListPromotionalItemsQueryDto) {
+    await this.getPublicContent(query);
+    const items = await this.customerAppRepository.listPromotionalItems(query);
+
+    return {
+      data: items.map((item) => this.mapMenuItem(item)),
+      message: 'Promotional items fetched successfully',
+    };
+  }
+
   async getHomeScreen(query: HomeScreenQueryDto) {
     const { restaurant, branch } = await this.getPublicContent(query);
     const [cuisines, promotionalItems, faqs] = await Promise.all([
@@ -263,6 +329,184 @@ export class CustomerAppService {
     };
   }
 
+  async getLoyaltyPoints(user: AuthUserContext, requestedCustomerId?: string) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const loyaltyPoints = this.readNumberValue(customer.profile?.metadata, [
+      ['customerApp', 'loyaltyPoints'],
+      ['loyaltyPoints'],
+    ]);
+    const redeemedPoints = this.readNumberValue(customer.profile?.metadata, [
+      ['customerApp', 'loyaltyRedeemedPoints'],
+      ['loyaltyRedeemedPoints'],
+    ]);
+
+    return {
+      data: {
+        customerId: customer.id,
+        availablePoints: loyaltyPoints,
+        redeemedPoints,
+      },
+      message: 'Loyalty points fetched successfully',
+    };
+  }
+
+  async redeemLoyaltyPoints(
+    user: AuthUserContext,
+    dto: RedeemLoyaltyPointsDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const availablePoints = this.readNumberValue(customer.profile?.metadata, [
+      ['customerApp', 'loyaltyPoints'],
+      ['loyaltyPoints'],
+    ]);
+
+    if (dto.points > availablePoints) {
+      throw new BadRequestException('Insufficient loyalty points');
+    }
+
+    const redeemedPoints = this.readNumberValue(customer.profile?.metadata, [
+      ['customerApp', 'loyaltyRedeemedPoints'],
+      ['loyaltyRedeemedPoints'],
+    ]);
+    const existingRedemptions = this.readLoyaltyRedemptions(
+      customer.profile?.metadata,
+    );
+    const now = new Date().toISOString();
+    const redemptions: LoyaltyRedemptionRecord[] = [
+      {
+        id: randomUUID(),
+        points: dto.points,
+        note: dto.note?.trim() || null,
+        createdAt: now,
+      },
+      ...existingRedemptions,
+    ].slice(0, 20);
+
+    const nextMetadata = this.writeCustomerAppMetadata(
+      customer.profile?.metadata,
+      {
+        loyaltyPoints: availablePoints - dto.points,
+        loyaltyRedeemedPoints: redeemedPoints + dto.points,
+        loyaltyRedemptions: redemptions,
+      },
+    );
+
+    await this.customerAppRepository.upsertCustomerProfile(
+      customer.id,
+      nextMetadata,
+    );
+
+    return {
+      data: {
+        customerId: customer.id,
+        redeemedPoints: dto.points,
+        remainingPoints: availablePoints - dto.points,
+      },
+      message: 'Loyalty points redeemed successfully',
+    };
+  }
+
+  async getWallet(user: AuthUserContext, requestedCustomerId?: string) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const balance = this.readNumberValue(customer.profile?.metadata, [
+      ['customerApp', 'wallet', 'balance'],
+      ['wallet', 'balance'],
+    ]);
+    const currency =
+      this.readStringValue(customer.profile?.metadata, [
+        ['customerApp', 'wallet', 'currency'],
+        ['wallet', 'currency'],
+      ]) ?? 'PKR';
+
+    return {
+      data: {
+        customerId: customer.id,
+        balance,
+        currency,
+      },
+      message: 'Wallet fetched successfully',
+    };
+  }
+
+  async listTableReservations(
+    user: AuthUserContext,
+    query: ListTableReservationsQueryDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const reservations = this.readTableReservations(customer.profile?.metadata);
+    const start = (query.page - 1) * query.limit;
+    const data = reservations.slice(start, start + query.limit);
+
+    return {
+      data,
+      message: 'Table reservations fetched successfully',
+      meta: buildPaginationMeta(query, reservations.length),
+    };
+  }
+
+  async createTableReservation(
+    user: AuthUserContext,
+    dto: CreateTableReservationDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+
+    if (!customer.restaurantId) {
+      throw new BadRequestException('Customer restaurant context is required');
+    }
+
+    const branch = await this.customerAppRepository.findBranchPublicContent(
+      dto.branchId,
+      customer.restaurantId,
+    );
+
+    if (!branch) {
+      throw new NotFoundException('Branch not found');
+    }
+
+    const reservationDate = new Date(dto.reservationDate);
+    if (Number.isNaN(reservationDate.getTime())) {
+      throw new BadRequestException('Invalid reservation date');
+    }
+
+    if (reservationDate.getTime() <= Date.now()) {
+      throw new BadRequestException('Reservation date must be in the future');
+    }
+
+    const existingReservations = this.readTableReservations(
+      customer.profile?.metadata,
+    );
+    const reservation: TableReservationRecord = {
+      id: randomUUID(),
+      branchId: dto.branchId,
+      reservationDate: reservationDate.toISOString(),
+      guestCount: dto.guestCount,
+      note: dto.note?.trim() || null,
+      status: 'REQUESTED',
+      createdAt: new Date().toISOString(),
+    };
+
+    const reservations = [reservation, ...existingReservations].slice(0, 20);
+    const nextMetadata = this.writeCustomerAppMetadata(
+      customer.profile?.metadata,
+      {
+        tableReservations: reservations,
+      },
+    );
+
+    await this.customerAppRepository.upsertCustomerProfile(
+      customer.id,
+      nextMetadata,
+    );
+
+    return {
+      data: reservation,
+      message: 'Table reservation created successfully',
+    };
+  }
+
   private async getPublicContent(query: PublicRestaurantQueryDto) {
     const restaurant =
       await this.customerAppRepository.findRestaurantPublicContent(
@@ -294,7 +538,7 @@ export class CustomerAppService {
     if (user.role === UserRoleEnum.CUSTOMER) {
       if (requestedCustomerId && requestedCustomerId !== user.uid) {
         throw new BadRequestException(
-          'Customers can only manage their own favorites',
+          'Customers can only manage their own customer app data',
         );
       }
 
@@ -310,7 +554,7 @@ export class CustomerAppService {
 
     if (!requestedCustomerId) {
       throw new BadRequestException(
-        'customerId is required when managing favorites on behalf of a customer',
+        'customerId is required when managing customer app data on behalf of a customer',
       );
     }
 
@@ -361,6 +605,13 @@ export class CustomerAppService {
     metadata: Prisma.JsonValue | null | undefined,
     favoriteMenuItemIds: string[],
   ): Prisma.JsonObject {
+    return this.writeCustomerAppMetadata(metadata, { favoriteMenuItemIds });
+  }
+
+  private writeCustomerAppMetadata(
+    metadata: Prisma.JsonValue | null | undefined,
+    patch: Partial<NonNullable<FavoriteMetadataShape['customerApp']>>,
+  ): Prisma.JsonObject {
     const root: FavoriteMetadataShape = this.asObject(metadata);
     const customerApp = this.asObject(root.customerApp);
 
@@ -368,9 +619,85 @@ export class CustomerAppService {
       ...root,
       customerApp: {
         ...customerApp,
-        favoriteMenuItemIds,
+        ...patch,
       },
-    } as Prisma.JsonObject;
+    } as unknown as Prisma.JsonObject;
+  }
+
+  private readTableReservations(
+    metadata: Prisma.JsonValue | null | undefined,
+  ): TableReservationRecord[] {
+    const value = this.readPath(metadata, ['customerApp', 'tableReservations']);
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return null;
+        }
+
+        const reservation = item as Record<string, unknown>;
+        if (
+          typeof reservation.id !== 'string' ||
+          typeof reservation.branchId !== 'string' ||
+          typeof reservation.reservationDate !== 'string' ||
+          typeof reservation.guestCount !== 'number' ||
+          typeof reservation.createdAt !== 'string'
+        ) {
+          return null;
+        }
+
+        return {
+          id: reservation.id,
+          branchId: reservation.branchId,
+          reservationDate: reservation.reservationDate,
+          guestCount: reservation.guestCount,
+          note: typeof reservation.note === 'string' ? reservation.note : null,
+          status: 'REQUESTED' as const,
+          createdAt: reservation.createdAt,
+        };
+      })
+      .filter((item): item is TableReservationRecord => item !== null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  private readLoyaltyRedemptions(
+    metadata: Prisma.JsonValue | null | undefined,
+  ): LoyaltyRedemptionRecord[] {
+    const value = this.readPath(metadata, [
+      'customerApp',
+      'loyaltyRedemptions',
+    ]);
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return null;
+        }
+
+        const redemption = item as Record<string, unknown>;
+        if (
+          typeof redemption.id !== 'string' ||
+          typeof redemption.points !== 'number' ||
+          typeof redemption.createdAt !== 'string'
+        ) {
+          return null;
+        }
+
+        return {
+          id: redemption.id,
+          points: redemption.points,
+          note: typeof redemption.note === 'string' ? redemption.note : null,
+          createdAt: redemption.createdAt,
+        };
+      })
+      .filter((item): item is LoyaltyRedemptionRecord => item !== null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   private mapMenuItem(item: {
@@ -416,6 +743,17 @@ export class CustomerAppService {
     }
 
     return null;
+  }
+
+  private readNumberValue(source: unknown, paths: string[][]): number {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+    }
+
+    return 0;
   }
 
   private readFaqs(source: unknown, paths: string[][]): FaqItem[] | null {

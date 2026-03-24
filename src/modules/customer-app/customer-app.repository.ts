@@ -3,8 +3,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import {
   HomeScreenQueryDto,
+  ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
+  ListPromotionalItemsQueryDto,
 } from './dto';
 
 @Injectable()
@@ -216,8 +218,100 @@ export class CustomerAppRepository {
     return { items, total };
   }
 
-  async listPromotionalItems(query: HomeScreenQueryDto) {
+  async findPublicCuisine(
+    cuisineId: string,
+    restaurantId: string,
+    branchId?: string,
+  ) {
+    return this.prisma.menuCategory.findFirst({
+      where: {
+        id: cuisineId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+        ...(branchId
+          ? {
+              OR: [
+                { overrides: { none: { branchId } } },
+                { overrides: { some: { branchId, isVisible: true } } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        imageUrl: true,
+      },
+    });
+  }
+
+  async listCuisineMenuItems(
+    cuisineId: string,
+    query: ListCuisineItemsQueryDto,
+  ) {
     const branchId = query.branchId;
+    const where: Prisma.MenuItemWhereInput = {
+      restaurantId: query.restaurantId,
+      categoryId: cuisineId,
+      deletedAt: null,
+      isActive: true,
+      category: {
+        deletedAt: null,
+        isActive: true,
+        ...(branchId
+          ? {
+              OR: [
+                { overrides: { none: { branchId } } },
+                { overrides: { some: { branchId, isVisible: true } } },
+              ],
+            }
+          : {}),
+      },
+      ...(branchId
+        ? {
+            OR: [
+              { branchOverrides: { none: { branchId } } },
+              { branchOverrides: { some: { branchId, isAvailable: true } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.menuItem.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          category: { select: { id: true, name: true, imageUrl: true } },
+          variations: {
+            where: { deletedAt: null, isActive: true },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          },
+          branchOverrides: branchId
+            ? {
+                where: { branchId },
+                select: { priceOverride: true, isAvailable: true },
+                take: 1,
+              }
+            : false,
+        },
+      }),
+      this.prisma.menuItem.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  async listPromotionalItems(
+    query: HomeScreenQueryDto | ListPromotionalItemsQueryDto,
+  ) {
+    const branchId = query.branchId;
+    const take = 'promotionLimit' in query ? query.promotionLimit : query.limit;
 
     return this.prisma.menuItem.findMany({
       where: {
@@ -245,7 +339,7 @@ export class CustomerAppRepository {
             }
           : {}),
       },
-      take: query.promotionLimit,
+      take,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       include: {
         category: { select: { id: true, name: true } },

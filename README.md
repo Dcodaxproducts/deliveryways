@@ -33,6 +33,7 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `restaurants` (create/list/public/update/delete)
 - `branches` (create/list/public/update/delete)
 - `mailer` (verification/reset email dispatch)
+- `customer-app` (customer-facing home, cuisines, favorites, content, wallet/loyalty phase-1 APIs)
 
 ## API Summary
 
@@ -41,6 +42,7 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `POST /register-customer`
 - `POST /login`
 - `POST /refresh`
+- `POST /logout`
 - `POST /dev-token` (development only)
 - `POST /dev-bootstrap-super-admin` (development only)
 - `POST /verify-email`
@@ -70,6 +72,45 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `GET /public`
 - `PATCH /:id`
 - `DELETE /:id`
+
+### Customer App (`/customer-app`)
+- `GET /home`
+- `GET /cuisines`
+- `GET /cuisines/:cuisineId/items`
+- `GET /promotional-items`
+- `GET /privacy-policy`
+- `GET /help-support`
+- `GET /faqs`
+- `GET /favorites`
+- `POST /favorites`
+- `DELETE /favorites/:menuItemId`
+- `GET /loyalty-points`
+- `POST /loyalty-points/redeem`
+- `GET /wallet`
+- `GET /table-reservations`
+- `POST /table-reservations`
+
+## Phase 1 Customer App Notes
+
+The following APIs are intentionally implemented as a **Phase 1 minimal version** using existing restaurant/branch/customer profile data:
+
+- promotional items
+- favorites
+- loyalty points
+- redeem loyalty points
+- wallet
+- privacy policy
+- help & support
+- FAQs
+- table reservations
+
+For a fuller product-grade Phase 2, add dedicated database models + admin APIs for:
+
+- curated promotional sections/items
+- CMS-managed privacy/help/FAQ content
+- wallet ledger / transactions
+- loyalty earn/redeem rules and history
+- branch-managed table inventory and reservation lifecycle
 
 ## Tech Stack
 

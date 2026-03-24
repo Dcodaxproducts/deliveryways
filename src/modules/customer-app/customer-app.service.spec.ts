@@ -12,6 +12,8 @@ describe('CustomerAppService', () => {
       findRestaurantPublicContent: jest.fn(),
       findBranchPublicContent: jest.fn(),
       listCuisineCategories: jest.fn(),
+      findPublicCuisine: jest.fn(),
+      listCuisineMenuItems: jest.fn(),
       listPromotionalItems: jest.fn(),
     };
 
@@ -109,5 +111,104 @@ describe('CustomerAppService', () => {
     await expect(
       service.getPrivacyPolicy({ restaurantId: 'missing-restaurant' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('returns loyalty points from customer profile metadata', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      profile: {
+        metadata: {
+          customerApp: {
+            loyaltyPoints: 240,
+            loyaltyRedeemedPoints: 60,
+          },
+        },
+      },
+    });
+
+    const result = await service.getLoyaltyPoints({
+      uid: 'customer-1',
+      rid: 'restaurant-1',
+      tid: 'tenant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(result.data).toEqual({
+      customerId: 'customer-1',
+      availablePoints: 240,
+      redeemedPoints: 60,
+    });
+  });
+
+  it('redeems loyalty points and updates metadata', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: {
+        metadata: {
+          customerApp: {
+            loyaltyPoints: 300,
+            loyaltyRedeemedPoints: 20,
+          },
+        },
+      },
+    });
+
+    const result = await service.redeemLoyaltyPoints(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { points: 100, note: 'Checkout discount' },
+    );
+
+    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(result.data.remainingPoints).toBe(200);
+    expect(result.message).toBe('Loyalty points redeemed successfully');
+  });
+
+  it('creates a table reservation request in customer metadata', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: {
+        metadata: {
+          customerApp: {
+            tableReservations: [],
+          },
+        },
+      },
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+    });
+
+    const result = await service.createTableReservation(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        reservationDate: '2099-03-30T19:30:00.000Z',
+        guestCount: 4,
+        note: 'Window side',
+      },
+    );
+
+    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(result.data.branchId).toBe('branch-1');
+    expect(result.message).toBe('Table reservation created successfully');
   });
 });
