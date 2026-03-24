@@ -79,14 +79,17 @@ export class BranchesController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.CUSTOMER,
   )
   @ApiQuery({
     name: 'restaurantId',
     required: false,
     example: 'clx...',
     description:
-      'Optional for business/branch admin; token restaurant scope is used',
+      'Super admin may fetch all or filter by restaurant. Business/branch/customer use token restaurant scope.',
   })
+  @ApiQuery({ name: 'lat', required: false, example: 31.5204 })
+  @ApiQuery({ name: 'lng', required: false, example: 74.3587 })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 10 })
   @ApiQuery({ name: 'search', required: false, example: 'islamabad' })
@@ -110,6 +113,8 @@ export class BranchesController {
   }
 
   @Public()
+  @ApiQuery({ name: 'lat', required: false, example: 31.5204 })
+  @ApiQuery({ name: 'lng', required: false, example: 74.3587 })
   @Get('public')
   listPublic(@Query() query: ListPublicBranchesDto) {
     return this.branchesService.listPublic(query);

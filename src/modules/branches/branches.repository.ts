@@ -111,6 +111,43 @@ export class BranchesRepository {
     return { items, total };
   }
 
+  async listAllByRestaurant(
+    tenantId: string | undefined,
+    restaurantId: string | undefined,
+    query: QueryDto,
+    publicView = false,
+    withDeleted = false,
+    includeInactive = false,
+  ) {
+    const where: Prisma.BranchWhereInput = {
+      ...(tenantId ? { tenantId } : {}),
+      ...(restaurantId ? { restaurantId } : {}),
+      ...(withDeleted ? {} : { deletedAt: null }),
+      ...(publicView ? { isActive: true, deletedAt: null } : {}),
+      ...(!publicView && !includeInactive ? { isActive: true } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              { id: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.branch.findMany({
+        where,
+        orderBy: {
+          [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+        },
+      }),
+      this.prisma.branch.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
   async listByBranchId(branchId: string) {
     return this.prisma.branch.findMany({
       where: {
@@ -127,6 +164,31 @@ export class BranchesRepository {
     });
 
     return restaurant?.tenantId;
+  }
+
+  async listBranchAddresses(branchIds: string[]) {
+    if (!branchIds.length) {
+      return [];
+    }
+
+    return this.prisma.address.findMany({
+      where: {
+        refType: AddressRefType.BRANCH,
+        referenceId: { in: branchIds },
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        referenceId: true,
+        lat: true,
+        lng: true,
+        street: true,
+        area: true,
+        city: true,
+        state: true,
+        country: true,
+      },
+    });
   }
 
   async update(id: string, data: Prisma.BranchUpdateInput, tx?: PrismaTx) {

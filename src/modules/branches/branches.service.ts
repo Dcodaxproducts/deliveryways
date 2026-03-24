@@ -22,6 +22,17 @@ import {
   UpdateBranchImagesDto,
 } from './dto';
 
+interface BranchDistanceAddress {
+  referenceId: string;
+  lat: Prisma.Decimal | null;
+  lng: Prisma.Decimal | null;
+  street: string;
+  area: string | null;
+  city: string;
+  state: string;
+  country: string;
+}
+
 @Injectable()
 export class BranchesService {
   constructor(
@@ -149,7 +160,8 @@ export class BranchesService {
 
     const effectiveRestaurantId =
       user.role === UserRoleEnum.BUSINESS_ADMIN ||
-      user.role === UserRoleEnum.BRANCH_ADMIN
+      user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === UserRoleEnum.CUSTOMER
         ? user.rid
         : dto.restaurantId;
 
@@ -185,25 +197,32 @@ export class BranchesService {
   async list(user: AuthUserContext, query: ListBranchesDto) {
     if (user.role === UserRoleEnum.BRANCH_ADMIN && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
+      const data = await this.attachDistanceAndPaginate(items, query);
       return {
-        data: items,
+        data: data.items,
         message: 'Branch admin scope applied',
-        meta: {
-          page: 1,
-          limit: items.length,
-          total: items.length,
-          totalPages: 1,
-          hasNext: false,
-          hasPrevious: false,
-        },
+        meta: buildPaginationMeta(query, data.total),
       };
     }
 
-    const effectiveRestaurantId =
+    const roleScopedRestaurantId =
       user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.BUSINESS_ADMIN
+      user.role === UserRoleEnum.BUSINESS_ADMIN ||
+      user.role === UserRoleEnum.CUSTOMER
         ? user.rid
-        : query.restaurantId;
+        : undefined;
+
+    if (
+      roleScopedRestaurantId &&
+      query.restaurantId &&
+      query.restaurantId !== roleScopedRestaurantId
+    ) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
+
+    const effectiveRestaurantId = roleScopedRestaurantId ?? query.restaurantId;
 
     const effectiveTenantId =
       user.role === UserRoleEnum.SUPER_ADMIN
@@ -213,6 +232,13 @@ export class BranchesService {
             )
           : undefined
         : user.tid;
+
+    if (
+      user.role !== UserRoleEnum.SUPER_ADMIN &&
+      (!effectiveTenantId || !effectiveRestaurantId)
+    ) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
 
     if (effectiveRestaurantId && !effectiveTenantId) {
       throw new ForbiddenException('Restaurant context is invalid');
@@ -225,6 +251,25 @@ export class BranchesService {
         user.role === UserRoleEnum.BUSINESS_ADMIN ||
         user.role === UserRoleEnum.BRANCH_ADMIN) &&
       !!query.includeInactive;
+
+    if (this.hasCoordinates(query)) {
+      const { items, total } =
+        await this.branchesRepository.listAllByRestaurant(
+          effectiveTenantId,
+          effectiveRestaurantId,
+          query,
+          false,
+          allowWithDeleted,
+          includeInactive,
+        );
+      const data = await this.attachDistanceAndPaginate(items, query);
+
+      return {
+        data: data.items,
+        message: 'Branches fetched successfully',
+        meta: buildPaginationMeta(query, total),
+      };
+    }
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
       effectiveTenantId,
@@ -243,16 +288,41 @@ export class BranchesService {
   }
 
   async listPublic(query: ListPublicBranchesDto) {
-    if (!query.tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
     if (!query.restaurantId) {
       throw new BadRequestException('restaurantId is required');
     }
 
+    const tenantId =
+      query.tenantId ??
+      (await this.branchesRepository.findTenantIdByRestaurant(
+        query.restaurantId,
+      ));
+
+    if (!tenantId) {
+      throw new BadRequestException(
+        'tenantId could not be resolved for restaurant',
+      );
+    }
+
+    if (this.hasCoordinates(query)) {
+      const { items, total } =
+        await this.branchesRepository.listAllByRestaurant(
+          tenantId,
+          query.restaurantId,
+          query,
+          true,
+        );
+      const data = await this.attachDistanceAndPaginate(items, query);
+
+      return {
+        data: data.items,
+        message: 'Public branches fetched successfully',
+        meta: buildPaginationMeta(query, total),
+      };
+    }
+
     const { items, total } = await this.branchesRepository.listByRestaurant(
-      query.tenantId,
+      tenantId,
       query.restaurantId,
       query,
       true,
@@ -387,5 +457,95 @@ export class BranchesService {
 
   private generateBranchAdminPassword(): string {
     return `Br@${randomBytes(4).toString('hex')}2026`;
+  }
+
+  private hasCoordinates(query: { lat?: number; lng?: number }) {
+    return typeof query.lat === 'number' && typeof query.lng === 'number';
+  }
+
+  private async attachDistanceAndPaginate(
+    items: Branch[],
+    query: { page: number; limit: number; lat?: number; lng?: number },
+  ) {
+    if (!this.hasCoordinates(query)) {
+      return {
+        items,
+        total: items.length,
+      };
+    }
+
+    const addresses = await this.branchesRepository.listBranchAddresses(
+      items.map((item) => item.id),
+    );
+    const addressMap = new Map<string, BranchDistanceAddress>(
+      addresses.map((address) => [address.referenceId, address]),
+    );
+
+    const enriched = items.map((item) => {
+      const address = addressMap.get(item.id);
+      const distanceKm =
+        address?.lat && address?.lng
+          ? this.calculateDistanceKm(
+              query.lat as number,
+              query.lng as number,
+              Number(address.lat),
+              Number(address.lng),
+            )
+          : null;
+
+      return {
+        ...item,
+        address: address
+          ? {
+              street: address.street,
+              area: address.area,
+              city: address.city,
+              state: address.state,
+              country: address.country,
+              lat: address.lat,
+              lng: address.lng,
+            }
+          : null,
+        distanceKm,
+      };
+    });
+
+    enriched.sort((a, b) => {
+      if (a.distanceKm === null && b.distanceKm === null) {
+        return 0;
+      }
+      if (a.distanceKm === null) {
+        return 1;
+      }
+      if (b.distanceKm === null) {
+        return -1;
+      }
+      return a.distanceKm - b.distanceKm;
+    });
+
+    const start = (query.page - 1) * query.limit;
+    return {
+      items: enriched.slice(start, start + query.limit),
+      total: enriched.length,
+    };
+  }
+
+  private calculateDistanceKm(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Number((earthRadiusKm * c).toFixed(2));
   }
 }
