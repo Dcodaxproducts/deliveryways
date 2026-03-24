@@ -3,7 +3,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { UserRoleEnum } from '../../common/enums';
-import { StorageFolderEnum } from './dto';
+import { StorageResourceTypeEnum } from './dto';
 import { StorageService } from './storage.service';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
@@ -43,7 +43,7 @@ describe('StorageService', () => {
     jest.restoreAllMocks();
   });
 
-  it('creates upload URL for business admin in allowed folder', async () => {
+  it('creates upload URL for business admin using resource type', async () => {
     const result = await service.createPresignedUploadUrl(
       {
         uid: 'user-1',
@@ -54,7 +54,7 @@ describe('StorageService', () => {
       {
         fileName: 'burger.png',
         contentType: 'image/png',
-        folder: StorageFolderEnum.MENU_ITEMS,
+        resourceType: StorageResourceTypeEnum.MENU_ITEM_IMAGE,
       },
     );
 
@@ -66,7 +66,7 @@ describe('StorageService', () => {
     expect(result.fileUrl).toContain(result.key);
   });
 
-  it('rejects customer upload to menu-items folder', async () => {
+  it('rejects customer upload to menu item image resource type', async () => {
     await expect(
       service.createPresignedUploadUrl(
         {
@@ -79,7 +79,7 @@ describe('StorageService', () => {
         {
           fileName: 'burger.png',
           contentType: 'image/png',
-          folder: StorageFolderEnum.MENU_ITEMS,
+          resourceType: StorageResourceTypeEnum.MENU_ITEM_IMAGE,
         },
       ),
     ).rejects.toThrow(ForbiddenException);

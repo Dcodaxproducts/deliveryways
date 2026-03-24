@@ -20,6 +20,7 @@ import {
 import {
   AddCartItemDto,
   CartCustomerScopeDto,
+  QuoteCartDto,
   UpdateCartContextDto,
   UpdateCartItemDto,
 } from './dto';
@@ -94,8 +95,9 @@ export class CartController {
   @Post('quote')
   quote(
     @CurrentUser() user: AuthUserContext,
+    @Body() dto: QuoteCartDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.quote(user, scope.customerId);
+    return this.cartService.quote(user, dto, scope.customerId);
   }
 }

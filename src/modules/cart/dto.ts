@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -98,11 +99,12 @@ export class UpdateCartContextDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+}
 
-  @ApiPropertyOptional({ enum: OrderTypeEnum })
-  @IsOptional()
+export class QuoteCartDto {
+  @ApiProperty({ enum: OrderTypeEnum })
   @IsEnum(OrderTypeEnum)
-  orderType?: OrderTypeEnum;
+  orderType!: OrderTypeEnum;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
@@ -114,8 +116,10 @@ export class UpdateCartContextDto {
   @IsString()
   couponCode?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @IsString()
-  customerNote?: string | null;
+  @ApiProperty({
+    description: 'Requested order time in ISO 8601 format',
+    example: '2026-03-24T19:30:00.000Z',
+  })
+  @IsDateString()
+  orderTime!: string;
 }

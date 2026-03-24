@@ -21,6 +21,7 @@ import {
   CreatePresignedViewUrlDto,
   DeleteStoredFileDto,
   StorageFolderEnum,
+  StorageResourceTypeEnum,
 } from './dto';
 
 interface S3Config {
@@ -44,7 +45,8 @@ export class StorageService {
       throw new BadRequestException('Only image uploads are supported');
     }
 
-    this.ensureFolderAccess(user, dto.folder);
+    const folder = this.resolveFolderFromResourceType(dto.resourceType);
+    this.ensureFolderAccess(user, folder);
 
     const s3Config = this.getS3Config();
     const bucket = s3Config.bucket;
@@ -55,7 +57,7 @@ export class StorageService {
       );
     }
 
-    const key = this.buildObjectKey(user, dto.fileName, dto.folder);
+    const key = this.buildObjectKey(user, dto.fileName, folder);
     const client = this.createS3Client(s3Config);
 
     const command = new PutObjectCommand({
@@ -144,6 +146,23 @@ export class StorageService {
       },
       message: 'File deleted successfully',
     };
+  }
+
+  private resolveFolderFromResourceType(
+    resourceType: StorageResourceTypeEnum,
+  ): StorageFolderEnum {
+    switch (resourceType) {
+      case StorageResourceTypeEnum.MENU_ITEM_IMAGE:
+        return StorageFolderEnum.MENU_ITEMS;
+      case StorageResourceTypeEnum.RESTAURANT_LOGO:
+        return StorageFolderEnum.RESTAURANT_LOGOS;
+      case StorageResourceTypeEnum.BRANCH_COVER:
+        return StorageFolderEnum.BRANCH_COVERS;
+      case StorageResourceTypeEnum.AVATAR:
+        return StorageFolderEnum.AVATARS;
+      default:
+        throw new BadRequestException('Unsupported storage resource type');
+    }
   }
 
   private getS3Config(): S3Config {

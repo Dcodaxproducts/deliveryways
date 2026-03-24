@@ -149,11 +149,19 @@ export class CartRepository {
         isActive: true,
       },
       include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+          },
+        },
         variations: {
           where: {
             deletedAt: null,
             isActive: true,
           },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         },
         modifierLinks: {
           include: {
@@ -173,6 +181,44 @@ export class CartRepository {
           where: {
             branchId,
           },
+        },
+      },
+    });
+  }
+
+  async findMenuItemsForResponse(
+    menuItemIds: string[],
+    restaurantId: string,
+    branchId: string,
+  ) {
+    if (!menuItemIds.length) {
+      return [];
+    }
+
+    return this.prisma.menuItem.findMany({
+      where: {
+        id: { in: menuItemIds },
+        restaurantId,
+      },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+          },
+        },
+        variations: {
+          where: {
+            deletedAt: null,
+            isActive: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        },
+        branchOverrides: {
+          where: { branchId },
+          select: { priceOverride: true, isAvailable: true },
+          take: 1,
         },
       },
     });

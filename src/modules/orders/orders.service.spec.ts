@@ -102,6 +102,39 @@ describe('OrdersService - status transitions', () => {
   });
 });
 
+describe('OrdersService - order time validation', () => {
+  let service: OrdersService;
+
+  beforeEach(() => {
+    service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('accepts valid ISO order time', () => {
+    const fn = (
+      service as unknown as {
+        assertValidOrderTime: (value: string) => void;
+      }
+    ).assertValidOrderTime;
+
+    expect(() => fn.call(service, '2026-03-24T19:30:00.000Z')).not.toThrow();
+  });
+
+  it('rejects invalid order time', () => {
+    const fn = (
+      service as unknown as {
+        assertValidOrderTime: (value: string) => void;
+      }
+    ).assertValidOrderTime;
+
+    expect(() => fn.call(service, 'not-a-date')).toThrow(BadRequestException);
+  });
+});
+
 describe('OrdersService - admin customer resolution', () => {
   const branch = {
     id: 'branch-1',

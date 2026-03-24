@@ -19,6 +19,13 @@ export enum StorageFolderEnum {
   AVATARS = 'avatars',
 }
 
+export enum StorageResourceTypeEnum {
+  MENU_ITEM_IMAGE = 'menuItemImage',
+  RESTAURANT_LOGO = 'restaurantLogo',
+  BRANCH_COVER = 'branchCover',
+  AVATAR = 'avatar',
+}
+
 export class CreatePresignedUploadUrlDto {
   @ApiProperty({
     description: 'Original file name from frontend',
@@ -39,19 +46,19 @@ export class CreatePresignedUploadUrlDto {
   contentType!: string;
 
   @ApiProperty({
-    description: 'Allowed bucket folder/prefix',
-    enum: StorageFolderEnum,
-    example: StorageFolderEnum.MENU_ITEMS,
+    description: 'Frontend-friendly upload target type',
+    enum: StorageResourceTypeEnum,
+    example: StorageResourceTypeEnum.MENU_ITEM_IMAGE,
   })
   @Transform(({ value }): string | undefined => {
     if (typeof value !== 'string') {
       return undefined;
     }
 
-    return value.trim().replace(/^\/+|\/+$/g, '');
+    return value.trim();
   })
-  @IsEnum(StorageFolderEnum)
-  folder!: StorageFolderEnum;
+  @IsEnum(StorageResourceTypeEnum)
+  resourceType!: StorageResourceTypeEnum;
 }
 
 export class CreatePresignedViewUrlDto {

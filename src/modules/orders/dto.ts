@@ -3,6 +3,7 @@ import { OrderStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -84,6 +85,13 @@ export class QuoteOrderDto {
   @IsOptional()
   @IsString()
   couponCode?: string;
+
+  @ApiProperty({
+    description: 'Requested order time in ISO 8601 format',
+    example: '2026-03-24T19:30:00.000Z',
+  })
+  @IsDateString()
+  orderTime!: string;
 }
 
 export class CreateOrderDto extends QuoteOrderDto {

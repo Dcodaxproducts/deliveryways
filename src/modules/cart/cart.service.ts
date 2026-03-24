@@ -1,18 +1,18 @@
 import {
   BadRequestException,
   ForbiddenException,
-  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
+import { UserRoleEnum } from '../../common/enums';
 import { OrdersService } from '../orders/orders.service';
 import { QuoteOrderDto } from '../orders/dto';
 import {
   AddCartItemDto,
   CartItemModifierDto,
+  QuoteCartDto,
   UpdateCartContextDto,
   UpdateCartItemDto,
 } from './dto';
@@ -33,10 +33,6 @@ interface CartSnapshot {
   restaurantId: string;
   branchId: string;
   customerId: string;
-  orderType: OrderType;
-  deliveryAddressId: string | null;
-  couponCode: string | null;
-  customerNote: string | null;
   createdAt: Date;
   updatedAt: Date;
   items: CartSnapshotItem[];
@@ -64,7 +60,7 @@ export class CartService {
     }
 
     return {
-      data: await this.buildCartResponse(user, cart),
+      data: await this.buildCartResponse(cart),
       message: 'Cart fetched successfully',
     };
   }
@@ -78,7 +74,6 @@ export class CartService {
       user,
       requestedCustomerId,
     );
-    const tenantId = this.getRequiredTenantId(user);
     const existingCart = await this.cartRepository.findByCustomerId(customerId);
 
     const branchId = dto.branchId ?? existingCart?.branchId;
@@ -103,47 +98,21 @@ export class CartService {
       );
     }
 
-    const orderType =
-      dto.orderType ?? existingCart?.orderType ?? OrderType.DELIVERY;
-    const deliveryAddressId = this.resolveOptionalString(dto.deliveryAddressId);
-    if (deliveryAddressId) {
-      await this.assertOwnedAddress(tenantId, customerId, deliveryAddressId);
-    }
-
-    const deliveryAddressRelation = deliveryAddressId
-      ? { connect: { id: deliveryAddressId } }
-      : dto.deliveryAddressId !== undefined
-        ? { disconnect: true }
-        : undefined;
-
-    const couponCode = this.resolveOptionalString(dto.couponCode);
-    const customerNote = this.resolveOptionalString(dto.customerNote);
-
     const cart = existingCart
       ? await this.cartRepository.update(existingCart.id, {
           tenant: { connect: { id: branch.tenantId } },
           restaurant: { connect: { id: branch.restaurantId } },
           branch: { connect: { id: branch.id } },
-          orderType,
-          deliveryAddress: deliveryAddressRelation,
-          couponCode,
-          customerNote,
         })
       : await this.cartRepository.create({
           tenant: { connect: { id: branch.tenantId } },
           restaurant: { connect: { id: branch.restaurantId } },
           branch: { connect: { id: branch.id } },
           customer: { connect: { id: customerId } },
-          orderType,
-          deliveryAddress: deliveryAddressId
-            ? { connect: { id: deliveryAddressId } }
-            : undefined,
-          couponCode,
-          customerNote,
         });
 
     return {
-      data: await this.buildCartResponse(user, cart),
+      data: await this.buildCartResponse(cart),
       message: 'Cart updated successfully',
     };
   }
@@ -171,7 +140,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(user, updatedCart),
+      data: await this.buildCartResponse(updatedCart),
       message: 'Item added to cart successfully',
     };
   }
@@ -240,7 +209,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(user, updatedCart),
+      data: await this.buildCartResponse(updatedCart),
       message: 'Cart item updated successfully',
     };
   }
@@ -269,9 +238,7 @@ export class CartService {
     );
 
     return {
-      data: cart
-        ? await this.buildCartResponse(user, cart)
-        : this.buildEmptyCart(),
+      data: cart ? await this.buildCartResponse(cart) : this.buildEmptyCart(),
       message: 'Cart item removed successfully',
     };
   }
@@ -293,7 +260,11 @@ export class CartService {
     };
   }
 
-  async quote(user: AuthUserContext, requestedCustomerId?: string) {
+  async quote(
+    user: AuthUserContext,
+    dto: QuoteCartDto,
+    requestedCustomerId?: string,
+  ) {
     const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
     if (!cart.items.length) {
       throw new BadRequestException('Cart is empty');
@@ -301,7 +272,7 @@ export class CartService {
 
     const quote = await this.ordersService.quote(
       user,
-      this.toQuotePayload(cart),
+      this.toQuotePayload(cart, dto),
     );
     return {
       data: quote.data,
@@ -365,28 +336,16 @@ export class CartService {
       restaurant: { connect: { id: branch.restaurantId } },
       branch: { connect: { id: branch.id } },
       customer: { connect: { id: customerId } },
-      orderType: OrderType.DELIVERY,
     });
   }
 
-  private async buildCartResponse(user: AuthUserContext, cart: CartSnapshot) {
-    let quote: Awaited<ReturnType<OrdersService['quote']>>['data'] | null =
-      null;
-    let quoteError: string | null = null;
-
-    if (cart.items.length) {
-      try {
-        quote = (
-          await this.ordersService.quote(user, this.toQuotePayload(cart))
-        ).data;
-      } catch (error) {
-        if (error instanceof HttpException) {
-          quoteError = error.message;
-        } else {
-          throw error;
-        }
-      }
-    }
+  private async buildCartResponse(cart: CartSnapshot) {
+    const menuItems = await this.cartRepository.findMenuItemsForResponse(
+      [...new Set(cart.items.map((item) => item.menuItemId))],
+      cart.restaurantId,
+      cart.branchId,
+    );
+    const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
 
     return {
       id: cart.id,
@@ -394,32 +353,59 @@ export class CartService {
       restaurantId: cart.restaurantId,
       branchId: cart.branchId,
       customerId: cart.customerId,
-      orderType: cart.orderType,
-      deliveryAddressId: cart.deliveryAddressId,
-      couponCode: cart.couponCode,
-      customerNote: cart.customerNote,
-      items: cart.items.map((item) => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        variationId: item.variationId,
-        quantity: item.quantity,
-        note: item.note,
-        modifiers: this.readModifiers(item.modifiers),
-      })),
-      quote,
-      quoteError,
+      items: cart.items.map((item) => {
+        const menuItem = menuItemMap.get(item.menuItemId);
+        const selectedVariation = menuItem?.variations.find(
+          (variation) => variation.id === item.variationId,
+        );
+        const branchOverride = menuItem?.branchOverrides?.[0];
+        const unitPrice =
+          selectedVariation?.price ??
+          branchOverride?.priceOverride ??
+          menuItem?.basePrice ??
+          null;
+
+        return {
+          id: item.id,
+          menuItemId: item.menuItemId,
+          variationId: item.variationId,
+          quantity: item.quantity,
+          note: item.note,
+          modifiers: this.readModifiers(item.modifiers),
+          menuItem: menuItem
+            ? {
+                id: menuItem.id,
+                name: menuItem.name,
+                slug: menuItem.slug,
+                description: menuItem.description,
+                imageUrl: menuItem.imageUrl,
+                category: menuItem.category,
+                isAvailable: branchOverride?.isAvailable ?? true,
+                unitPrice,
+                selectedVariation: selectedVariation
+                  ? {
+                      id: selectedVariation.id,
+                      name: selectedVariation.name,
+                      price: selectedVariation.price,
+                    }
+                  : null,
+              }
+            : null,
+        };
+      }),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     };
   }
 
-  private toQuotePayload(cart: CartSnapshot): QuoteOrderDto {
+  private toQuotePayload(cart: CartSnapshot, dto: QuoteCartDto): QuoteOrderDto {
     return {
       branchId: cart.branchId,
       customerId: cart.customerId,
-      orderType: cart.orderType as OrderTypeEnum,
-      deliveryAddressId: cart.deliveryAddressId ?? undefined,
-      couponCode: cart.couponCode ?? undefined,
+      orderType: dto.orderType,
+      deliveryAddressId: dto.deliveryAddressId ?? undefined,
+      couponCode: dto.couponCode ?? undefined,
+      orderTime: dto.orderTime,
       items: cart.items.map((item) => ({
         menuItemId: item.menuItemId,
         variationId: item.variationId ?? undefined,
@@ -428,22 +414,6 @@ export class CartService {
         note: item.note ?? undefined,
       })),
     };
-  }
-
-  private async assertOwnedAddress(
-    tenantId: string,
-    customerId: string,
-    deliveryAddressId: string,
-  ) {
-    const address = await this.cartRepository.findOwnedAddress(
-      deliveryAddressId,
-      tenantId,
-      customerId,
-    );
-
-    if (!address) {
-      throw new BadRequestException('Delivery address not found');
-    }
   }
 
   private async assertValidCartItem(
@@ -605,13 +575,7 @@ export class CartService {
       restaurantId: null,
       branchId: null,
       customerId: null,
-      orderType: OrderTypeEnum.DELIVERY,
-      deliveryAddressId: null,
-      couponCode: null,
-      customerNote: null,
       items: [],
-      quote: null,
-      quoteError: null,
       createdAt: null,
       updatedAt: null,
     };

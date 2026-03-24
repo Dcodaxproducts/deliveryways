@@ -1,5 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-import { OrderType } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { CartService } from './cart.service';
 
@@ -10,6 +9,7 @@ describe('CartService', () => {
       findActiveBranch: jest.fn(),
       findOwnedAddress: jest.fn(),
       findMenuItemForCart: jest.fn(),
+      findMenuItemsForResponse: jest.fn(),
       findActiveCustomer: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -44,8 +44,58 @@ describe('CartService', () => {
     });
 
     expect(result.data.items).toEqual([]);
-    expect(result.data.quote).toBeNull();
     expect(cartRepository.findByCustomerId).toHaveBeenCalledWith('user-1');
+  });
+
+  it('returns populated cart item details without auto-quote', async () => {
+    const { service, cartRepository, ordersService } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: 'Beef burger',
+        imageUrl: 'burger.png',
+        basePrice: 450,
+        category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+        variations: [],
+        branchOverrides: [],
+      },
+    ]);
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const firstItem = result.data.items[0] as {
+      menuItemId: string;
+      menuItem: { name: string } | null;
+    };
+    expect(firstItem.menuItem?.name).toBe('Burger');
+    expect(firstItem.menuItemId).toBe('menu-1');
+    expect(ordersService.quote).not.toHaveBeenCalled();
   });
 
   it('rejects branch switch when cart still has items', async () => {
@@ -53,7 +103,6 @@ describe('CartService', () => {
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
       branchId: 'branch-1',
-      orderType: OrderType.DELIVERY,
       items: [{ id: 'item-1' }],
     });
     cartRepository.findActiveBranch.mockResolvedValue({
@@ -73,50 +122,6 @@ describe('CartService', () => {
         { branchId: 'branch-2' },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('returns quote error instead of failing cart fetch when quote is invalid', async () => {
-    const { service, cartRepository, ordersService } = makeService();
-    cartRepository.findByCustomerId.mockResolvedValue({
-      id: 'cart-1',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-      customerId: 'user-1',
-      orderType: OrderType.DELIVERY,
-      deliveryAddressId: null,
-      couponCode: null,
-      customerNote: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      items: [
-        {
-          id: 'item-1',
-          menuItemId: 'menu-1',
-          variationId: null,
-          quantity: 1,
-          note: null,
-          modifiers: null,
-        },
-      ],
-    });
-    ordersService.quote.mockRejectedValue(
-      new BadRequestException(
-        'deliveryAddressId is required for delivery orders',
-      ),
-    );
-
-    const result = await service.getCart({
-      uid: 'user-1',
-      tid: 'tenant-1',
-      rid: 'restaurant-1',
-      role: UserRoleEnum.CUSTOMER,
-    });
-
-    expect(result.data.quote).toBeNull();
-    expect(result.data.quoteError).toBe(
-      'deliveryAddressId is required for delivery orders',
-    );
   });
 
   it('requires customerId for business-admin cart access', async () => {
@@ -188,10 +193,6 @@ describe('CartService', () => {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
         customerId: 'user-1',
-        orderType: OrderType.DELIVERY,
-        deliveryAddressId: null,
-        couponCode: null,
-        customerNote: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         items: [],
@@ -207,10 +208,6 @@ describe('CartService', () => {
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
       customerId: 'user-1',
-      orderType: OrderType.DELIVERY,
-      deliveryAddressId: null,
-      couponCode: null,
-      customerNote: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       items: [],
@@ -223,7 +220,7 @@ describe('CartService', () => {
       branchOverrides: [],
     });
     cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
-    const buildCartResponseSpy = jest
+    jest
       .spyOn(service as never, 'buildCartResponse' as never)
       .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
@@ -246,18 +243,8 @@ describe('CartService', () => {
       restaurant: { connect: { id: 'restaurant-1' } },
       branch: { connect: { id: 'branch-1' } },
       customer: { connect: { id: 'user-1' } },
-      orderType: OrderType.DELIVERY,
-    });
-    expect(cartRepository.createItem).toHaveBeenCalledWith({
-      cart: { connect: { id: 'cart-1' } },
-      menuItemId: 'menu-1',
-      variationId: undefined,
-      quantity: 2,
-      note: undefined,
-      modifiers: undefined,
     });
     expect(result.message).toBe('Item added to cart successfully');
-    buildCartResponseSpy.mockRestore();
   });
 
   it('requires branchId on first add-item when cart does not exist', async () => {
@@ -280,49 +267,63 @@ describe('CartService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('includes customerId when building order quote payload from cart', () => {
+  it('includes checkout-only fields when building cart quote payload', () => {
     const { service } = makeService();
 
     const payload = (
       service as unknown as {
-        toQuotePayload: (cart: {
-          branchId: string;
-          customerId: string;
-          orderType: OrderType;
-          deliveryAddressId: string | null;
-          couponCode: string | null;
-          items: {
-            id: string;
-            menuItemId: string;
-            variationId: string | null;
-            quantity: number;
-            note: string | null;
-            modifiers: null;
-          }[];
-        }) => {
+        toQuotePayload: (
+          cart: {
+            branchId: string;
+            customerId: string;
+            items: {
+              id: string;
+              menuItemId: string;
+              variationId: string | null;
+              quantity: number;
+              note: string | null;
+              modifiers: null;
+            }[];
+          },
+          dto: {
+            orderType: 'DELIVERY';
+            deliveryAddressId?: string | null;
+            couponCode?: string | null;
+            orderTime: string;
+          },
+        ) => {
           branchId: string;
           customerId?: string;
+          deliveryAddressId?: string;
+          orderTime: string;
         };
       }
-    ).toQuotePayload({
-      branchId: 'branch-1',
-      customerId: 'customer-1',
-      orderType: OrderType.DELIVERY,
-      deliveryAddressId: null,
-      couponCode: null,
-      items: [
-        {
-          id: 'item-1',
-          menuItemId: 'menu-1',
-          variationId: null,
-          quantity: 1,
-          note: null,
-          modifiers: null,
-        },
-      ],
-    });
+    ).toQuotePayload(
+      {
+        branchId: 'branch-1',
+        customerId: 'customer-1',
+        items: [
+          {
+            id: 'item-1',
+            menuItemId: 'menu-1',
+            variationId: null,
+            quantity: 1,
+            note: null,
+            modifiers: null,
+          },
+        ],
+      },
+      {
+        orderType: 'DELIVERY',
+        deliveryAddressId: 'address-1',
+        couponCode: 'SAVE10',
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
 
     expect(payload.customerId).toBe('customer-1');
     expect(payload.branchId).toBe('branch-1');
+    expect(payload.deliveryAddressId).toBe('address-1');
+    expect(payload.orderTime).toBe('2026-03-24T19:30:00.000Z');
   });
 });

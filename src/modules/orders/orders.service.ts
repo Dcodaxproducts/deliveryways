@@ -73,6 +73,7 @@ export class OrdersService {
         restaurantId: quote.branch.restaurantId,
         customerId: quote.customer.customerId,
         orderType: dto.orderType,
+        orderTime: dto.orderTime,
         subtotal: Number(quote.subtotal),
         taxAmount: Number(quote.taxAmount),
         deliveryFee: Number(quote.deliveryFee),
@@ -177,7 +178,10 @@ export class OrdersService {
     await this.notificationsService.notifyOrderPlaced(data.id);
 
     return {
-      data,
+      data: {
+        ...data,
+        orderTime: dto.orderTime,
+      },
       message: 'Order created successfully',
     };
   }
@@ -333,6 +337,8 @@ export class OrdersService {
     if (!dto.items.length) {
       throw new BadRequestException('At least one item is required');
     }
+
+    this.assertValidOrderTime(dto.orderTime);
 
     const branch = await this.prisma.branch.findFirst({
       where: { id: dto.branchId, deletedAt: null, isActive: true },
@@ -558,6 +564,13 @@ export class OrdersService {
       couponId,
       appliedCouponCode,
     };
+  }
+
+  private assertValidOrderTime(orderTime: string) {
+    const date = new Date(orderTime);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('orderTime must be a valid ISO datetime');
+    }
   }
 
   private resolveRestaurantId(
