@@ -75,7 +75,6 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 ### Branches (`/branches`)
 - `POST /`
 - `GET /`
-- `GET /public`
 - `PATCH /:id`
 - `DELETE /:id`
 

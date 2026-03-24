@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { CurrentUser, Public, Roles } from '../../common/decorators';
+import { CurrentUser, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -23,7 +23,6 @@ import {
   BulkCreateBranchesDto,
   CreateBranchDto,
   ListBranchesDto,
-  ListPublicBranchesDto,
   UpdateBranchDto,
   UpdateBranchImagesDto,
 } from './dto';
@@ -110,14 +109,6 @@ export class BranchesController {
   @Get()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListBranchesDto) {
     return this.branchesService.list(user, query);
-  }
-
-  @Public()
-  @ApiQuery({ name: 'lat', required: false, example: 31.5204 })
-  @ApiQuery({ name: 'lng', required: false, example: 74.3587 })
-  @Get('public')
-  listPublic(@Query() query: ListPublicBranchesDto) {
-    return this.branchesService.listPublic(query);
   }
 
   @ApiBearerAuth()

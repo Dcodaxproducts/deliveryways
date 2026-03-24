@@ -94,7 +94,7 @@ Recommended direction:
 
 1. ✅ **Move admin-only auth routes into admin structure** (`/admin/users`)
 2. ✅ **Remove coupon status duplicates** and keep canonical `PATCH /coupons/:code/status`
-3. 🔄 Branch fetching flow aligned: super admin can fetch all or filter by restaurant; customer/business/branch roles use token restaurant scope; nearest-branch lookup supports `lat`/`lng`
+3. ✅ Branch fetching unified on `GET /branches`: super admin can fetch all or filter by restaurant; customer/business/branch roles use token restaurant scope; nearest-branch lookup supports `lat`/`lng`; public `/branches/public` removed from main API surface
 4. Review any remaining controller overlaps after Swagger diff
 5. Only then evaluate restaurant/branch action-route consolidation
 
