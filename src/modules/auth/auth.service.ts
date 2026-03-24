@@ -466,6 +466,21 @@ export class AuthService {
     };
   }
 
+  async logout(user: AuthUserContext) {
+    const dbUser = await this.usersService.findById(user.uid);
+
+    if (!dbUser || dbUser.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.usersService.setRefreshTokenHash(user.uid, null);
+
+    return {
+      data: null,
+      message: 'Logout successful',
+    };
+  }
+
   async refreshTokens(dto: RefreshDto) {
     let payload: { uid: string; type?: string };
 

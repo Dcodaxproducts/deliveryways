@@ -123,6 +123,13 @@ export class AuthController {
     return this.authService.refreshTokens(dto);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  logout(@CurrentUser() user: AuthUserContext) {
+    return this.authService.logout(user);
+  }
+
   @Public()
   @Post('dev-token')
   devToken(@Body() dto: DevTokenDto) {

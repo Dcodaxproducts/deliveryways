@@ -281,3 +281,44 @@ describe('AuthService updateMyProfile', () => {
     ).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('AuthService logout', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+
+  beforeEach(() => {
+    usersService = {
+      findById: jest.fn(),
+      setRefreshTokenHash: jest.fn(),
+    };
+
+    service = new AuthService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+    );
+  });
+
+  it('clears refresh token hash for authenticated user', async () => {
+    usersService.findById!.mockResolvedValue({
+      id: 'user-1',
+      deletedAt: null,
+    });
+    usersService.setRefreshTokenHash!.mockResolvedValue({ id: 'user-1' });
+
+    const result = await service.logout({
+      uid: 'user-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(usersService.setRefreshTokenHash).toHaveBeenCalledWith(
+      'user-1',
+      null,
+    );
+    expect(result.message).toBe('Logout successful');
+  });
+});

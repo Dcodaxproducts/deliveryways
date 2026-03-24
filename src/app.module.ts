@@ -30,6 +30,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { DeliverymenModule } from './modules/deliverymen/deliverymen.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { CartModule } from './modules/cart/cart.module';
+import { CustomerAppModule } from './modules/customer-app/customer-app.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -86,6 +87,7 @@ import { AppController } from './app.controller';
     DeliverymenModule,
     StorageModule,
     CartModule,
+    CustomerAppModule,
   ],
   providers: [
     {
