@@ -298,13 +298,11 @@ describe('CartService', () => {
         customerNote: 'Call me',
         deliveryAddressId: 'address-1',
       });
-    cartRepository.findOwnedAddress.mockResolvedValue({ id: 'address-1' });
     cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
     cartRepository.update.mockResolvedValue({
       ...cart,
       couponCode: 'SAVE10',
       customerNote: 'Call me',
-      deliveryAddressId: 'address-1',
     });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
 
@@ -316,7 +314,6 @@ describe('CartService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       {
-        deliveryAddressId: 'address-1',
         couponCode: 'SAVE10',
         customerNote: 'Call me',
       },
@@ -325,12 +322,67 @@ describe('CartService', () => {
     expect(cartRepository.update).toHaveBeenCalledWith(
       'cart-1',
       expect.objectContaining({
-        deliveryAddress: { connect: { id: 'address-1' } },
         couponCode: 'SAVE10',
         customerNote: 'Call me',
       }),
     );
     expect(result.message).toBe('Cart updated successfully');
+  });
+
+  it('updates cart address and returns refreshed quote', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: 'SAVE10',
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({
+        ...cart,
+        deliveryAddressId: 'address-1',
+      });
+    cartRepository.findOwnedAddress.mockResolvedValue({ id: 'address-1' });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: { totalAmount: 900, deliveryFee: 100 },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.updateAddress(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { deliveryAddressId: 'address-1' },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
+      deliveryAddress: { connect: { id: 'address-1' } },
+    });
+    expect(ordersService.quote).toHaveBeenCalled();
+    expect(result.message).toBe('Cart address updated successfully');
   });
 
   it('throws when updating checkout context before cart exists', async () => {
@@ -450,6 +502,7 @@ describe('CartService', () => {
       },
       {
         paymentMethod: PaymentMethodEnum.COD,
+        orderTime: '2026-03-24T19:30:00.000Z',
       },
     );
 
@@ -462,6 +515,7 @@ describe('CartService', () => {
         paymentMethod: PaymentMethodEnum.COD,
         customerNote: 'Please call',
         orderType: OrderTypeEnum.DELIVERY,
+        orderTime: '2026-03-24T19:30:00.000Z',
       }),
     );
     expect(cartRepository.deleteByCustomerId).toHaveBeenCalledWith(

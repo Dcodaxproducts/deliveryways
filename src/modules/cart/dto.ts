@@ -94,17 +94,19 @@ export class UpdateCartDto {
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
-  deliveryAddressId?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @IsString()
   couponCode?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   customerNote?: string | null;
+}
+
+export class UpdateCartAddressDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  deliveryAddressId?: string | null;
 }
 
 export class CartCustomerScopeDto {
@@ -116,18 +118,18 @@ export class CartCustomerScopeDto {
   customerId?: string;
 }
 
-export class QuoteCartDto {
+export class QuoteCartDto {}
+
+export class CheckoutCartDto {
   @ApiPropertyOptional({
     description:
-      'Optional order time in ISO 8601 format. Defaults to current time when omitted.',
+      'Requested order time in ISO 8601 format. Defaults to current time when omitted.',
     example: '2026-03-24T19:30:00.000Z',
   })
   @IsOptional()
   @IsDateString()
   orderTime?: string;
-}
 
-export class CheckoutCartDto extends QuoteCartDto {
   @ApiProperty({ enum: PaymentMethodEnum })
   @IsEnum(PaymentMethodEnum)
   paymentMethod!: PaymentMethodEnum;

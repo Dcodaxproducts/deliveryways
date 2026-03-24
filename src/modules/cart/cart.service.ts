@@ -15,6 +15,7 @@ import {
   CartItemModifierDto,
   CheckoutCartDto,
   QuoteCartDto,
+  UpdateCartAddressDto,
   UpdateCartDto,
   UpdateCartItemDto,
 } from './dto';
@@ -87,22 +88,8 @@ export class CartService {
       throw new NotFoundException('Cart not found');
     }
 
-    const nextOrderType = dto.orderType ?? cart.orderType;
-    const nextDeliveryAddressId = await this.resolveUpdatedDeliveryAddressId(
-      cart,
-      customerId,
-      dto.deliveryAddressId,
-      nextOrderType,
-    );
-
     await this.cartRepository.update(cart.id, {
       orderType: dto.orderType,
-      deliveryAddress:
-        dto.deliveryAddressId !== undefined
-          ? nextDeliveryAddressId
-            ? { connect: { id: nextDeliveryAddressId } }
-            : { disconnect: true }
-          : undefined,
       couponCode:
         dto.couponCode !== undefined
           ? this.resolveOptionalString(dto.couponCode)
@@ -121,6 +108,57 @@ export class CartService {
     return {
       data: await this.buildCartResponse(updatedCart),
       message: 'Cart updated successfully',
+    };
+  }
+
+  async updateAddress(
+    user: AuthUserContext,
+    dto: UpdateCartAddressDto,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
+    const cart = await this.cartRepository.findByCustomerId(customerId);
+
+    if (!cart) {
+      throw new NotFoundException('Cart not found');
+    }
+
+    const nextDeliveryAddressId = await this.resolveUpdatedDeliveryAddressId(
+      cart,
+      customerId,
+      dto.deliveryAddressId,
+      cart.orderType,
+    );
+
+    await this.cartRepository.update(cart.id, {
+      deliveryAddress:
+        dto.deliveryAddressId !== undefined
+          ? nextDeliveryAddressId
+            ? { connect: { id: nextDeliveryAddressId } }
+            : { disconnect: true }
+          : undefined,
+    });
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+    );
+
+    if (!updatedCart.items.length) {
+      throw new BadRequestException('Cart is empty');
+    }
+
+    const quote = await this.ordersService.quote(
+      user,
+      await this.toQuotePayload(updatedCart),
+    );
+
+    return {
+      data: quote.data,
+      message: 'Cart address updated successfully',
     };
   }
 
@@ -271,7 +309,7 @@ export class CartService {
 
   async quote(
     user: AuthUserContext,
-    dto: QuoteCartDto,
+    _dto: QuoteCartDto,
     requestedCustomerId?: string,
   ) {
     const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
@@ -281,7 +319,7 @@ export class CartService {
 
     const quote = await this.ordersService.quote(
       user,
-      await this.toQuotePayload(cart, dto.orderTime),
+      await this.toQuotePayload(cart),
     );
     return {
       data: quote.data,
@@ -438,10 +476,7 @@ export class CartService {
     };
   }
 
-  private async toQuotePayload(
-    cart: CartSnapshot,
-    orderTime?: string,
-  ): Promise<QuoteOrderDto> {
+  private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {
     return {
       branchId: cart.branchId,
       customerId: cart.customerId,
@@ -451,7 +486,7 @@ export class CartService {
           ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
           : undefined,
       couponCode: cart.couponCode ?? undefined,
-      orderTime: orderTime ?? new Date().toISOString(),
+      orderTime: new Date().toISOString(),
       items: cart.items.map((item) => ({
         menuItemId: item.menuItemId,
         variationId: item.variationId ?? undefined,
@@ -467,7 +502,8 @@ export class CartService {
     dto: CheckoutCartDto,
   ): Promise<CreateOrderDto> {
     return {
-      ...(await this.toQuotePayload(cart, dto.orderTime)),
+      ...(await this.toQuotePayload(cart)),
+      orderTime: dto.orderTime ?? new Date().toISOString(),
       paymentMethod: dto.paymentMethod,
       customerNote: cart.customerNote ?? undefined,
     };
