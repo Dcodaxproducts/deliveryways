@@ -32,6 +32,7 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `tenants` (list/update/analytics)
 - `restaurants` (create/list/public/update/delete)
 - `branches` (create/list/public/update/delete)
+- `employees` (branch staff CRUD/status management)
 - `mailer` (verification/reset email dispatch)
 
 ## API Summary
@@ -69,6 +70,14 @@ Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 - `GET /`
 - `GET /public`
 - `PATCH /:id`
+- `DELETE /:id`
+
+### Employees (`/employees`)
+- `POST /`
+- `GET /`
+- `GET /:id`
+- `PATCH /:id`
+- `PATCH /:id/status`
 - `DELETE /:id`
 
 ## Tech Stack

@@ -31,6 +31,7 @@ import { DeliverymenModule } from './modules/deliverymen/deliverymen.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { CartModule } from './modules/cart/cart.module';
 import { CustomerAppModule } from './modules/customer-app/customer-app.module';
+import { EmployeesModule } from './modules/employees/employees.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -88,6 +89,7 @@ import { AppController } from './app.controller';
     StorageModule,
     CartModule,
     CustomerAppModule,
+    EmployeesModule,
   ],
   providers: [
     {
