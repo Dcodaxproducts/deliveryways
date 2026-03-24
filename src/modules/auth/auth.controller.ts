@@ -14,6 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
+  CustomerDetailsQueryDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForceDeleteUsersDto,
@@ -70,6 +71,22 @@ export class AuthController {
     @Query() query: ListCustomersDto,
   ) {
     return this.authService.listCustomers(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @Get('customers/:id')
+  customerDetails(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Query() query: CustomerDetailsQueryDto,
+  ) {
+    return this.authService.customerDetails(user, id, query);
   }
 
   @ApiBearerAuth()

@@ -39,7 +39,7 @@ export class UsersRepository {
   }
 
   async listCustomers(
-    tenantId: string,
+    tenantId: string | undefined,
     query: AdminListQueryDto & {
       restaurantId?: string;
       isVerified?: boolean;
@@ -48,7 +48,7 @@ export class UsersRepository {
     withDeleted = false,
   ) {
     const where: Prisma.UserWhereInput = {
-      tenantId,
+      ...(tenantId ? { tenantId } : {}),
       role: UserRole.CUSTOMER,
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
       ...(query.isVerified !== undefined
@@ -95,6 +95,28 @@ export class UsersRepository {
     ]);
 
     return { items, total };
+  }
+
+  async findCustomerById(
+    id: string,
+    options?: {
+      tenantId?: string;
+      restaurantId?: string;
+      withDeleted?: boolean;
+    },
+  ) {
+    return this.prisma.user.findFirst({
+      where: {
+        id,
+        role: UserRole.CUSTOMER,
+        ...(options?.tenantId ? { tenantId: options.tenantId } : {}),
+        ...(options?.restaurantId
+          ? { restaurantId: options.restaurantId }
+          : {}),
+        ...(options?.withDeleted ? {} : { deletedAt: null }),
+      },
+      include: { profile: true },
+    });
   }
 
   async updateByEmail(

@@ -18,6 +18,7 @@ import {
 } from '../../common/enums';
 import {
   ChangePasswordDto,
+  CustomerDetailsQueryDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForceDeleteUsersDto,
@@ -311,7 +312,7 @@ export class AuthService {
   }
 
   async listCustomers(user: AuthUserContext, query: ListCustomersDto) {
-    if (!user.tid) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
 
@@ -330,8 +331,10 @@ export class AuthService {
 
     const allowWithDeleted =
       user.role === UserRoleEnum.SUPER_ADMIN && !!scopedQuery.withDeleted;
+    const tenantId =
+      user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid;
     const { items, total } = await this.usersService.listCustomers(
-      user.tid,
+      tenantId,
       scopedQuery,
       allowWithDeleted,
     );
@@ -347,6 +350,41 @@ export class AuthService {
         hasNext: query.page * query.limit < total,
         hasPrevious: query.page > 1,
       },
+    };
+  }
+
+  async customerDetails(
+    user: AuthUserContext,
+    id: string,
+    query: CustomerDetailsQueryDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const restaurantId =
+      user.role === UserRoleEnum.SUPER_ADMIN ? query.restaurantId : user.rid;
+
+    if (
+      (user.role === UserRoleEnum.BRANCH_ADMIN ||
+        user.role === UserRoleEnum.BUSINESS_ADMIN) &&
+      !restaurantId
+    ) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    const customer = await this.usersService.findCustomerById(id, {
+      tenantId: user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid,
+      restaurantId,
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    return {
+      data: customer,
+      message: 'Customer fetched successfully',
     };
   }
 

@@ -120,7 +120,7 @@ export class UsersService {
   }
 
   async listCustomers(
-    tenantId: string,
+    tenantId: string | undefined,
     query: AdminListQueryDto & {
       restaurantId?: string;
       isVerified?: boolean;
@@ -129,6 +129,17 @@ export class UsersService {
     withDeleted = false,
   ) {
     return this.usersRepository.listCustomers(tenantId, query, withDeleted);
+  }
+
+  async findCustomerById(
+    id: string,
+    options?: {
+      tenantId?: string;
+      restaurantId?: string;
+      withDeleted?: boolean;
+    },
+  ) {
+    return this.usersRepository.findCustomerById(id, options);
   }
 
   async setVerificationToken(

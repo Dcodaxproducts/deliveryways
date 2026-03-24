@@ -1,7 +1,144 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UserRoleEnum } from '../../common/enums';
 import { UsersService } from '../users/users.service';
+
+describe('AuthService listCustomers and customerDetails', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+
+  beforeEach(() => {
+    usersService = {
+      listCustomers: jest.fn(),
+      findCustomerById: jest.fn(),
+    };
+
+    service = new AuthService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+    );
+  });
+
+  it('allows super admin to list all customers without tenant context', async () => {
+    usersService.listCustomers!.mockResolvedValue({
+      items: [{ id: 'customer-1' }],
+      total: 1,
+    });
+
+    const result = await service.listCustomers(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(usersService.listCustomers).toHaveBeenCalledWith(
+      undefined,
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+      false,
+    );
+    expect(result.message).toBe('Customers fetched successfully');
+  });
+
+  it('scopes business admin customer list to their restaurant', async () => {
+    usersService.listCustomers!.mockResolvedValue({
+      items: [],
+      total: 0,
+    });
+
+    await service.listCustomers(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        page: 1,
+        limit: 10,
+        restaurantId: 'restaurant-2',
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(usersService.listCustomers).toHaveBeenCalledWith(
+      'tenant-1',
+      {
+        page: 1,
+        limit: 10,
+        restaurantId: 'restaurant-1',
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+      false,
+    );
+  });
+
+  it('allows super admin to fetch a customer by id', async () => {
+    usersService.findCustomerById!.mockResolvedValue({ id: 'customer-1' });
+
+    const result = await service.customerDetails(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'customer-1',
+      { restaurantId: 'restaurant-1' },
+    );
+
+    expect(usersService.findCustomerById).toHaveBeenCalledWith('customer-1', {
+      tenantId: undefined,
+      restaurantId: 'restaurant-1',
+    });
+    expect(result.message).toBe('Customer fetched successfully');
+  });
+
+  it('requires restaurant context for business admin customer details', async () => {
+    await expect(
+      service.customerDetails(
+        {
+          uid: 'business-admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'customer-1',
+        {},
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('throws when customer is not found', async () => {
+    usersService.findCustomerById!.mockResolvedValue(null);
+
+    await expect(
+      service.customerDetails(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'missing-customer',
+        {},
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
 
 describe('AuthService updateMyProfile', () => {
   let service: AuthService;
