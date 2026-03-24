@@ -7,11 +7,12 @@ import {
 import { Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
+import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
-import { QuoteOrderDto } from '../orders/dto';
 import {
   AddCartItemDto,
   CartItemModifierDto,
+  CheckoutCartDto,
   QuoteCartDto,
   UpdateCartItemDto,
 } from './dto';
@@ -227,6 +228,29 @@ export class CartService {
     };
   }
 
+  async checkout(
+    user: AuthUserContext,
+    dto: CheckoutCartDto,
+    requestedCustomerId?: string,
+  ) {
+    const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
+    if (!cart.items.length) {
+      throw new BadRequestException('Cart is empty');
+    }
+
+    const order = await this.ordersService.create(
+      user,
+      this.toCreateOrderPayload(cart, dto),
+    );
+
+    await this.cartRepository.deleteByCustomerId(cart.customerId);
+
+    return {
+      data: order.data,
+      message: 'Order created from cart successfully',
+    };
+  }
+
   private async getExistingCartOrThrow(
     user: AuthUserContext,
     requestedCustomerId?: string,
@@ -360,6 +384,17 @@ export class CartService {
         modifiers: this.readModifiers(item.modifiers),
         note: item.note ?? undefined,
       })),
+    };
+  }
+
+  private toCreateOrderPayload(
+    cart: CartSnapshot,
+    dto: CheckoutCartDto,
+  ): CreateOrderDto {
+    return {
+      ...this.toQuotePayload(cart, dto),
+      paymentMethod: dto.paymentMethod,
+      customerNote: dto.customerNote ?? undefined,
     };
   }
 

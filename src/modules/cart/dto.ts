@@ -10,7 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { OrderTypeEnum } from '../../common/enums';
+import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
 
 export class CartItemModifierDto {
   @ApiProperty()
@@ -115,4 +115,15 @@ export class QuoteCartDto {
   })
   @IsDateString()
   orderTime!: string;
+}
+
+export class CheckoutCartDto extends QuoteCartDto {
+  @ApiProperty({ enum: PaymentMethodEnum })
+  @IsEnum(PaymentMethodEnum)
+  paymentMethod!: PaymentMethodEnum;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  customerNote?: string | null;
 }

@@ -20,6 +20,7 @@ import {
 import {
   AddCartItemDto,
   CartCustomerScopeDto,
+  CheckoutCartDto,
   QuoteCartDto,
   UpdateCartItemDto,
 } from './dto';
@@ -89,5 +90,14 @@ export class CartController {
     @Query() scope: CartCustomerScopeDto,
   ) {
     return this.cartService.quote(user, dto, scope.customerId);
+  }
+
+  @Post('checkout')
+  checkout(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CheckoutCartDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.checkout(user, dto, scope.customerId);
   }
 }

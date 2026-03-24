@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateAddressDto {
   @ApiProperty()
@@ -36,4 +37,13 @@ export class CreateAddressDto {
   @IsOptional()
   @IsString()
   lng?: string;
+
+  @ApiPropertyOptional({
+    description: 'Marks this address as the default customer address',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isDefault?: boolean;
 }

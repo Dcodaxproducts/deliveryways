@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
-import { UserRoleEnum } from '../../common/enums';
+import {
+  OrderTypeEnum,
+  PaymentMethodEnum,
+  UserRoleEnum,
+} from '../../common/enums';
 import { CartService } from './cart.service';
 
 describe('CartService', () => {
@@ -7,7 +11,6 @@ describe('CartService', () => {
     const cartRepository = {
       findByCustomerId: jest.fn(),
       findActiveBranch: jest.fn(),
-      findOwnedAddress: jest.fn(),
       findMenuItemForCart: jest.fn(),
       findMenuItemsForResponse: jest.fn(),
       findActiveCustomer: jest.fn(),
@@ -22,6 +25,7 @@ describe('CartService', () => {
 
     const ordersService = {
       quote: jest.fn(),
+      create: jest.fn(),
     };
 
     const service = new CartService(
@@ -299,5 +303,61 @@ describe('CartService', () => {
     expect(payload.branchId).toBe('branch-1');
     expect(payload.deliveryAddressId).toBe('address-1');
     expect(payload.orderTime).toBe('2026-03-24T19:30:00.000Z');
+  });
+
+  it('creates order from cart without frontend resending branchId or items', async () => {
+    const { service, cartRepository, ordersService } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    ordersService.create.mockResolvedValue({
+      data: { id: 'order-1' },
+      message: 'Order created successfully',
+    });
+
+    const result = await service.checkout(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        couponCode: 'SAVE10',
+        orderTime: '2026-03-24T19:30:00.000Z',
+        paymentMethod: PaymentMethodEnum.COD,
+      },
+    );
+
+    expect(ordersService.create).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        items: [expect.objectContaining({ menuItemId: 'menu-1' })],
+        paymentMethod: PaymentMethodEnum.COD,
+      }),
+    );
+    expect(cartRepository.deleteByCustomerId).toHaveBeenCalledWith(
+      'customer-1',
+    );
+    expect(result.message).toBe('Order created from cart successfully');
   });
 });
