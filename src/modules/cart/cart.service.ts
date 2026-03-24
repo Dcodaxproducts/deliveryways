@@ -4,9 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrderType, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { UserRoleEnum } from '../../common/enums';
+import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
+import { ProfilesRepository } from '../profiles/profiles.repository';
 import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
 import {
@@ -14,6 +15,7 @@ import {
   CartItemModifierDto,
   CheckoutCartDto,
   QuoteCartDto,
+  UpdateCartDto,
   UpdateCartItemDto,
 } from './dto';
 import { CartRepository } from './cart.repository';
@@ -33,6 +35,10 @@ interface CartSnapshot {
   restaurantId: string;
   branchId: string;
   customerId: string;
+  orderType: OrderType;
+  deliveryAddressId: string | null;
+  couponCode: string | null;
+  customerNote: string | null;
   createdAt: Date;
   updatedAt: Date;
   items: CartSnapshotItem[];
@@ -43,6 +49,7 @@ export class CartService {
   constructor(
     private readonly cartRepository: CartRepository,
     private readonly ordersService: OrdersService,
+    private readonly profilesRepository: ProfilesRepository,
   ) {}
 
   async getCart(user: AuthUserContext, requestedCustomerId?: string) {
@@ -54,7 +61,7 @@ export class CartService {
 
     if (!cart) {
       return {
-        data: this.buildEmptyCart(),
+        data: await this.buildEmptyCart(customerId),
         message: 'Cart fetched successfully',
       };
     }
@@ -62,6 +69,58 @@ export class CartService {
     return {
       data: await this.buildCartResponse(cart),
       message: 'Cart fetched successfully',
+    };
+  }
+
+  async updateCart(
+    user: AuthUserContext,
+    dto: UpdateCartDto,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
+    const cart = await this.cartRepository.findByCustomerId(customerId);
+
+    if (!cart) {
+      throw new NotFoundException('Cart not found');
+    }
+
+    const nextOrderType = dto.orderType ?? cart.orderType;
+    const nextDeliveryAddressId = await this.resolveUpdatedDeliveryAddressId(
+      cart,
+      customerId,
+      dto.deliveryAddressId,
+      nextOrderType,
+    );
+
+    await this.cartRepository.update(cart.id, {
+      orderType: dto.orderType,
+      deliveryAddress:
+        dto.deliveryAddressId !== undefined
+          ? nextDeliveryAddressId
+            ? { connect: { id: nextDeliveryAddressId } }
+            : { disconnect: true }
+          : undefined,
+      couponCode:
+        dto.couponCode !== undefined
+          ? this.resolveOptionalString(dto.couponCode)
+          : undefined,
+      customerNote:
+        dto.customerNote !== undefined
+          ? this.resolveOptionalString(dto.customerNote)
+          : undefined,
+    });
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+    );
+
+    return {
+      data: await this.buildCartResponse(updatedCart),
+      message: 'Cart updated successfully',
     };
   }
 
@@ -186,7 +245,9 @@ export class CartService {
     );
 
     return {
-      data: cart ? await this.buildCartResponse(cart) : this.buildEmptyCart(),
+      data: cart
+        ? await this.buildCartResponse(cart)
+        : await this.buildEmptyCart(item.cart.customerId),
       message: 'Cart item removed successfully',
     };
   }
@@ -203,7 +264,7 @@ export class CartService {
     }
 
     return {
-      data: this.buildEmptyCart(),
+      data: await this.buildEmptyCart(customerId),
       message: 'Cart cleared successfully',
     };
   }
@@ -220,7 +281,7 @@ export class CartService {
 
     const quote = await this.ordersService.quote(
       user,
-      this.toQuotePayload(cart, dto),
+      await this.toQuotePayload(cart, dto.orderTime),
     );
     return {
       data: quote.data,
@@ -240,7 +301,7 @@ export class CartService {
 
     const order = await this.ordersService.create(
       user,
-      this.toCreateOrderPayload(cart, dto),
+      await this.toCreateOrderPayload(cart, dto),
     );
 
     await this.cartRepository.deleteByCustomerId(cart.customerId);
@@ -317,6 +378,8 @@ export class CartService {
       cart.branchId,
     );
     const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
+    const defaultAddressId = await this.getDefaultAddressId(cart.customerId);
+    const selectedAddressId = cart.deliveryAddressId ?? defaultAddressId;
 
     return {
       id: cart.id,
@@ -324,6 +387,12 @@ export class CartService {
       restaurantId: cart.restaurantId,
       branchId: cart.branchId,
       customerId: cart.customerId,
+      orderType: cart.orderType,
+      deliveryAddressId: cart.deliveryAddressId,
+      selectedAddressId,
+      defaultAddressId,
+      couponCode: cart.couponCode,
+      customerNote: cart.customerNote,
       items: cart.items.map((item) => {
         const menuItem = menuItemMap.get(item.menuItemId);
         const selectedVariation = menuItem?.variations.find(
@@ -369,14 +438,20 @@ export class CartService {
     };
   }
 
-  private toQuotePayload(cart: CartSnapshot, dto: QuoteCartDto): QuoteOrderDto {
+  private async toQuotePayload(
+    cart: CartSnapshot,
+    orderTime?: string,
+  ): Promise<QuoteOrderDto> {
     return {
       branchId: cart.branchId,
       customerId: cart.customerId,
-      orderType: dto.orderType,
-      deliveryAddressId: dto.deliveryAddressId ?? undefined,
-      couponCode: dto.couponCode ?? undefined,
-      orderTime: dto.orderTime,
+      orderType: this.toOrderTypeEnum(cart.orderType),
+      deliveryAddressId:
+        cart.orderType === OrderType.DELIVERY
+          ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
+          : undefined,
+      couponCode: cart.couponCode ?? undefined,
+      orderTime: orderTime ?? new Date().toISOString(),
       items: cart.items.map((item) => ({
         menuItemId: item.menuItemId,
         variationId: item.variationId ?? undefined,
@@ -387,15 +462,91 @@ export class CartService {
     };
   }
 
-  private toCreateOrderPayload(
+  private async toCreateOrderPayload(
     cart: CartSnapshot,
     dto: CheckoutCartDto,
-  ): CreateOrderDto {
+  ): Promise<CreateOrderDto> {
     return {
-      ...this.toQuotePayload(cart, dto),
+      ...(await this.toQuotePayload(cart, dto.orderTime)),
       paymentMethod: dto.paymentMethod,
-      customerNote: dto.customerNote ?? undefined,
+      customerNote: cart.customerNote ?? undefined,
     };
+  }
+
+  private async resolveUpdatedDeliveryAddressId(
+    cart: CartSnapshot,
+    customerId: string,
+    requestedDeliveryAddressId: string | null | undefined,
+    orderType: OrderType,
+  ) {
+    if (requestedDeliveryAddressId === undefined) {
+      return orderType === OrderType.DELIVERY ? cart.deliveryAddressId : null;
+    }
+
+    const nextDeliveryAddressId = this.resolveOptionalString(
+      requestedDeliveryAddressId,
+    );
+
+    if (!nextDeliveryAddressId) {
+      return null;
+    }
+
+    if (orderType !== OrderType.DELIVERY) {
+      return null;
+    }
+
+    const address = await this.cartRepository.findOwnedAddress(
+      nextDeliveryAddressId,
+      cart.tenantId,
+      customerId,
+    );
+
+    if (!address) {
+      throw new BadRequestException('Delivery address not found');
+    }
+
+    return address.id;
+  }
+
+  private async resolveEffectiveDeliveryAddressId(cart: CartSnapshot) {
+    if (cart.orderType !== OrderType.DELIVERY) {
+      return undefined;
+    }
+
+    return (
+      cart.deliveryAddressId ??
+      (await this.getDefaultAddressId(cart.customerId))
+    );
+  }
+
+  private async getDefaultAddressId(customerId: string) {
+    const profile = await this.profilesRepository.findByUserId(customerId);
+    const metadata = this.asObject(profile?.metadata);
+
+    return typeof metadata.defaultAddressId === 'string'
+      ? metadata.defaultAddressId
+      : null;
+  }
+
+  private asObject(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private toOrderTypeEnum(orderType: OrderType): OrderTypeEnum {
+    switch (orderType) {
+      case OrderType.DELIVERY:
+        return OrderTypeEnum.DELIVERY;
+      case OrderType.TAKEAWAY:
+        return OrderTypeEnum.TAKEAWAY;
+      case OrderType.DINE_IN:
+        return OrderTypeEnum.DINE_IN;
+      default:
+        return OrderTypeEnum.DELIVERY;
+    }
   }
 
   private async assertValidCartItem(
@@ -550,13 +701,21 @@ export class CartService {
     return user.tid;
   }
 
-  private buildEmptyCart() {
+  private async buildEmptyCart(customerId: string) {
+    const defaultAddressId = await this.getDefaultAddressId(customerId);
+
     return {
       id: null,
       tenantId: null,
       restaurantId: null,
       branchId: null,
-      customerId: null,
+      customerId,
+      orderType: OrderType.DELIVERY,
+      deliveryAddressId: null,
+      selectedAddressId: defaultAddressId,
+      defaultAddressId,
+      couponCode: null,
+      customerNote: null,
       items: [],
       createdAt: null,
       updatedAt: null,

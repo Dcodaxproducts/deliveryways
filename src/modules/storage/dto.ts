@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -13,17 +12,11 @@ import {
 } from 'class-validator';
 
 export enum StorageFolderEnum {
+  UPLOADS = 'uploads',
   MENU_ITEMS = 'menu-items',
   RESTAURANT_LOGOS = 'restaurant-logos',
   BRANCH_COVERS = 'branch-covers',
   AVATARS = 'avatars',
-}
-
-export enum StorageResourceTypeEnum {
-  MENU_ITEM_IMAGE = 'menuItemImage',
-  RESTAURANT_LOGO = 'restaurantLogo',
-  BRANCH_COVER = 'branchCover',
-  AVATAR = 'avatar',
 }
 
 export class CreatePresignedUploadUrlDto {
@@ -44,27 +37,12 @@ export class CreatePresignedUploadUrlDto {
   @IsNotEmpty()
   @MaxLength(100)
   contentType!: string;
-
-  @ApiProperty({
-    description: 'Frontend-friendly upload target type',
-    enum: StorageResourceTypeEnum,
-    example: StorageResourceTypeEnum.MENU_ITEM_IMAGE,
-  })
-  @Transform(({ value }): string | undefined => {
-    if (typeof value !== 'string') {
-      return undefined;
-    }
-
-    return value.trim();
-  })
-  @IsEnum(StorageResourceTypeEnum)
-  resourceType!: StorageResourceTypeEnum;
 }
 
 export class CreatePresignedViewUrlDto {
   @ApiPropertyOptional({
     description: 'Stored object key inside bucket',
-    example: 'menu-items/tenant-1/restaurant-1/2026-03-16/file.png',
+    example: 'uploads/tenant-1/restaurant-1/2026-03-16/file.png',
   })
   @ValidateIf((dto: CreatePresignedViewUrlDto) => !dto.fileUrl)
   @IsString()
@@ -74,7 +52,7 @@ export class CreatePresignedViewUrlDto {
   @ApiPropertyOptional({
     description: 'Public file URL previously returned by storage upload API',
     example:
-      'https://deliveryway.s3.eu-west-2.amazonaws.com/menu-items/tenant-1/restaurant-1/2026-03-16/file.png',
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/2026-03-16/file.png',
   })
   @ValidateIf((dto: CreatePresignedViewUrlDto) => !dto.key)
   @IsString()
@@ -98,7 +76,7 @@ export class CreatePresignedViewUrlDto {
 export class DeleteStoredFileDto {
   @ApiPropertyOptional({
     description: 'Stored object key inside bucket',
-    example: 'avatars/tenant-1/user-1/2026-03-16/file.png',
+    example: 'uploads/tenant-1/user-1/2026-03-16/file.png',
   })
   @ValidateIf((dto: DeleteStoredFileDto) => !dto.fileUrl)
   @IsString()
@@ -108,7 +86,7 @@ export class DeleteStoredFileDto {
   @ApiPropertyOptional({
     description: 'Public file URL previously returned by storage upload API',
     example:
-      'https://deliveryway.s3.eu-west-2.amazonaws.com/avatars/tenant-1/user-1/2026-03-16/file.png',
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/user-1/2026-03-16/file.png',
   })
   @ValidateIf((dto: DeleteStoredFileDto) => !dto.key)
   @IsString()

@@ -22,6 +22,7 @@ import {
   CartCustomerScopeDto,
   CheckoutCartDto,
   QuoteCartDto,
+  UpdateCartDto,
   UpdateCartItemDto,
 } from './dto';
 import { CartService } from './cart.service';
@@ -45,6 +46,15 @@ export class CartController {
     @Query() scope: CartCustomerScopeDto,
   ) {
     return this.cartService.getCart(user, scope.customerId);
+  }
+
+  @Patch()
+  updateCart(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateCartDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.updateCart(user, dto, scope.customerId);
   }
 
   @Post('items')

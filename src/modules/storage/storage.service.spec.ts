@@ -3,7 +3,6 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { UserRoleEnum } from '../../common/enums';
-import { StorageResourceTypeEnum } from './dto';
 import { StorageService } from './storage.service';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
@@ -43,7 +42,7 @@ describe('StorageService', () => {
     jest.restoreAllMocks();
   });
 
-  it('creates upload URL for business admin using resource type', async () => {
+  it('creates upload URL with only file name and content type', async () => {
     const result = await service.createPresignedUploadUrl(
       {
         uid: 'user-1',
@@ -54,19 +53,18 @@ describe('StorageService', () => {
       {
         fileName: 'burger.png',
         contentType: 'image/png',
-        resourceType: StorageResourceTypeEnum.MENU_ITEM_IMAGE,
       },
     );
 
     expect(result.method).toBe('PUT');
     expect(result.uploadUrl).toBe('https://signed-url.example');
     expect(result.key).toMatch(
-      /^menu-items\/tenant-1\/restaurant-1\/user-1\/\d{4}-\d{2}-\d{2}\//,
+      /^uploads\/tenant-1\/restaurant-1\/user-1\/\d{4}-\d{2}-\d{2}\//,
     );
     expect(result.fileUrl).toContain(result.key);
   });
 
-  it('rejects customer upload to menu item image resource type', async () => {
+  it('rejects non-image upload content types', async () => {
     await expect(
       service.createPresignedUploadUrl(
         {
@@ -77,15 +75,14 @@ describe('StorageService', () => {
           role: UserRoleEnum.CUSTOMER,
         },
         {
-          fileName: 'burger.png',
-          contentType: 'image/png',
-          resourceType: StorageResourceTypeEnum.MENU_ITEM_IMAGE,
+          fileName: 'menu.pdf',
+          contentType: 'application/pdf',
         },
       ),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toThrow('Only image uploads are supported');
   });
 
-  it('creates presigned view URL from fileUrl for customer avatar', async () => {
+  it('creates presigned view URL from fileUrl for customer upload', async () => {
     const result = await service.createPresignedViewUrl(
       {
         uid: 'user-2',
@@ -96,7 +93,7 @@ describe('StorageService', () => {
       },
       {
         fileUrl:
-          'https://deliveryway.s3.eu-west-2.amazonaws.com/avatars/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
+          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
         expiresIn: 180,
       },
     );
@@ -104,30 +101,24 @@ describe('StorageService', () => {
     expect(result.method).toBe('GET');
     expect(result.url).toBe('https://signed-url.example');
     expect(result.key).toBe(
-      'avatars/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
+      'uploads/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
     );
     expect(result.expiresIn).toBe(180);
   });
 
-  it('deletes object within business admin scope', async () => {
-    const sendSpy = jest.spyOn(S3Client.prototype, 'send');
-
-    const result = await service.deleteObject(
-      {
-        uid: 'user-1',
-        tid: 'tenant-1',
-        rid: 'restaurant-1',
-        role: UserRoleEnum.BUSINESS_ADMIN,
-      },
-      {
-        key: 'restaurant-logos/tenant-1/restaurant-1/user-9/2026-03-16/logo.png',
-      },
-    );
-
-    expect(sendSpy).toHaveBeenCalledTimes(1);
-    expect(result.message).toBe('File deleted successfully');
-    expect(result.data.key).toBe(
-      'restaurant-logos/tenant-1/restaurant-1/user-9/2026-03-16/logo.png',
-    );
+  it('blocks cross-scope delete access', async () => {
+    await expect(
+      service.deleteObject(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          key: 'uploads/tenant-2/restaurant-9/user-9/2026-03-16/logo.png',
+        },
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

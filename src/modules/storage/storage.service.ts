@@ -21,7 +21,6 @@ import {
   CreatePresignedViewUrlDto,
   DeleteStoredFileDto,
   StorageFolderEnum,
-  StorageResourceTypeEnum,
 } from './dto';
 
 interface S3Config {
@@ -45,7 +44,7 @@ export class StorageService {
       throw new BadRequestException('Only image uploads are supported');
     }
 
-    const folder = this.resolveFolderFromResourceType(dto.resourceType);
+    const folder = StorageFolderEnum.UPLOADS;
     this.ensureFolderAccess(user, folder);
 
     const s3Config = this.getS3Config();
@@ -146,23 +145,6 @@ export class StorageService {
       },
       message: 'File deleted successfully',
     };
-  }
-
-  private resolveFolderFromResourceType(
-    resourceType: StorageResourceTypeEnum,
-  ): StorageFolderEnum {
-    switch (resourceType) {
-      case StorageResourceTypeEnum.MENU_ITEM_IMAGE:
-        return StorageFolderEnum.MENU_ITEMS;
-      case StorageResourceTypeEnum.RESTAURANT_LOGO:
-        return StorageFolderEnum.RESTAURANT_LOGOS;
-      case StorageResourceTypeEnum.BRANCH_COVER:
-        return StorageFolderEnum.BRANCH_COVERS;
-      case StorageResourceTypeEnum.AVATAR:
-        return StorageFolderEnum.AVATARS;
-      default:
-        throw new BadRequestException('Unsupported storage resource type');
-    }
   }
 
   private getS3Config(): S3Config {
@@ -333,15 +315,16 @@ export class StorageService {
       case UserRoleEnum.SUPER_ADMIN:
       case UserRoleEnum.BUSINESS_ADMIN:
         return [
+          StorageFolderEnum.UPLOADS,
           StorageFolderEnum.MENU_ITEMS,
           StorageFolderEnum.RESTAURANT_LOGOS,
           StorageFolderEnum.BRANCH_COVERS,
           StorageFolderEnum.AVATARS,
         ];
       case UserRoleEnum.BRANCH_ADMIN:
-        return [StorageFolderEnum.AVATARS];
+        return [StorageFolderEnum.UPLOADS, StorageFolderEnum.AVATARS];
       case UserRoleEnum.CUSTOMER:
-        return [StorageFolderEnum.AVATARS];
+        return [StorageFolderEnum.UPLOADS, StorageFolderEnum.AVATARS];
       default:
         return [];
     }
