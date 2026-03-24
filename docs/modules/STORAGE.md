@@ -15,6 +15,20 @@ Add these variables in `.env`:
 - `AWS_PUBLIC_BASE_URL` (optional, for CloudFront/custom public asset base URL)
 - `AWS_PRESIGNED_UPLOAD_EXPIRY_SECONDS` (optional, default `300`)
 
+### Bucket CORS
+For browser-based direct uploads to presigned S3 URLs, the bucket itself must allow CORS. A temporary open policy can be applied with:
+
+```bash
+node scripts/set-s3-cors-open.mjs
+```
+
+This sets:
+- `AllowedOrigins: ["*"]`
+- `AllowedHeaders: ["*"]`
+- `AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"]`
+
+Use this as a temporary broad policy while frontend integration is in progress.
+
 ---
 
 ## API surface
