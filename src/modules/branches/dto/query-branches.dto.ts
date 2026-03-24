@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { AdminListQueryDto, QueryDto } from '../../../common/dto';
 
 export class ListBranchesDto extends AdminListQueryDto {
@@ -12,17 +12,23 @@ export class ListBranchesDto extends AdminListQueryDto {
   @IsString()
   restaurantId?: string;
 
-  @ApiPropertyOptional({ description: 'Latitude for nearest-branch sorting' })
+  @ApiPropertyOptional({
+    description:
+      'Sort branches by nearest distance using the customer default address or a scoped customerId address.',
+    default: false,
+  })
   @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  @IsNumber()
-  lat?: number;
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  nearest?: boolean;
 
-  @ApiPropertyOptional({ description: 'Longitude for nearest-branch sorting' })
+  @ApiPropertyOptional({
+    description:
+      'Target customer id when admin/staff fetch nearest branches on behalf of a customer.',
+  })
   @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  @IsNumber()
-  lng?: number;
+  @IsString()
+  customerId?: string;
 }
 
 export class ListPublicBranchesDto extends QueryDto {
@@ -38,16 +44,4 @@ export class ListPublicBranchesDto extends QueryDto {
   @IsString()
   @IsNotEmpty()
   restaurantId!: string;
-
-  @ApiPropertyOptional({ description: 'Latitude for nearest-branch sorting' })
-  @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  @IsNumber()
-  lat?: number;
-
-  @ApiPropertyOptional({ description: 'Longitude for nearest-branch sorting' })
-  @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  @IsNumber()
-  lng?: number;
 }

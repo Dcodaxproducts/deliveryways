@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AddressRefType, Prisma, PrismaClient } from '@prisma/client';
+import { AddressRefType, Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
@@ -187,6 +187,66 @@ export class BranchesRepository {
         city: true,
         state: true,
         country: true,
+      },
+    });
+  }
+
+  async findActiveCustomer(
+    customerId: string,
+    tenantId: string,
+    restaurantId?: string,
+  ) {
+    return this.prisma.user.findFirst({
+      where: {
+        id: customerId,
+        tenantId,
+        ...(restaurantId ? { restaurantId } : {}),
+        role: UserRole.CUSTOMER,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+      },
+    });
+  }
+
+  async findActiveCustomerById(customerId: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        id: customerId,
+        role: UserRole.CUSTOMER,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+      },
+    });
+  }
+
+  async findOwnedCustomerAddress(
+    addressId: string,
+    tenantId: string,
+    customerId: string,
+  ) {
+    return this.prisma.address.findFirst({
+      where: {
+        id: addressId,
+        tenantId,
+        referenceId: customerId,
+        refType: AddressRefType.USER,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        lat: true,
+        lng: true,
       },
     });
   }

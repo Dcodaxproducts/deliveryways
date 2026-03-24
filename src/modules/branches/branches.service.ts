@@ -11,6 +11,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
+import { ProfilesRepository } from '../profiles/profiles.repository';
 import { UsersService } from '../users/users.service';
 import { BranchesRepository } from './branches.repository';
 import {
@@ -33,12 +34,18 @@ interface BranchDistanceAddress {
   country: string;
 }
 
+interface DistanceOrigin {
+  lat: number;
+  lng: number;
+}
+
 @Injectable()
 export class BranchesService {
   constructor(
     private readonly branchesRepository: BranchesRepository,
     private readonly usersService: UsersService,
     private readonly prisma: PrismaService,
+    private readonly profilesRepository: ProfilesRepository,
   ) {}
 
   async create(tenantId: string, dto: CreateBranchDto, tx?: PrismaTx) {
@@ -195,9 +202,18 @@ export class BranchesService {
   }
 
   async list(user: AuthUserContext, query: ListBranchesDto) {
+    const requestedCustomerScope = query.nearest
+      ? await this.resolveRequestedCustomerScope(user, query.customerId)
+      : null;
+
     if (user.role === UserRoleEnum.BRANCH_ADMIN && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
-      const data = await this.attachDistanceAndPaginate(items, query);
+      const data = await this.attachDistanceAndPaginate(
+        items,
+        { page: query.page, limit: query.limit },
+        requestedCustomerScope?.origin ?? null,
+      );
+
       return {
         data: data.items,
         message: 'Branch admin scope applied',
@@ -222,15 +238,19 @@ export class BranchesService {
       );
     }
 
-    const effectiveRestaurantId = roleScopedRestaurantId ?? query.restaurantId;
+    const effectiveRestaurantId =
+      roleScopedRestaurantId ??
+      query.restaurantId ??
+      requestedCustomerScope?.restaurantId;
 
     const effectiveTenantId =
       user.role === UserRoleEnum.SUPER_ADMIN
-        ? effectiveRestaurantId
-          ? await this.branchesRepository.findTenantIdByRestaurant(
-              effectiveRestaurantId,
-            )
-          : undefined
+        ? (requestedCustomerScope?.tenantId ??
+          (effectiveRestaurantId
+            ? await this.branchesRepository.findTenantIdByRestaurant(
+                effectiveRestaurantId,
+              )
+            : undefined))
         : user.tid;
 
     if (
@@ -252,22 +272,25 @@ export class BranchesService {
         user.role === UserRoleEnum.BRANCH_ADMIN) &&
       !!query.includeInactive;
 
-    if (this.hasCoordinates(query)) {
-      const { items, total } =
-        await this.branchesRepository.listAllByRestaurant(
-          effectiveTenantId,
-          effectiveRestaurantId,
-          query,
-          false,
-          allowWithDeleted,
-          includeInactive,
-        );
-      const data = await this.attachDistanceAndPaginate(items, query);
+    if (query.nearest) {
+      const { items } = await this.branchesRepository.listAllByRestaurant(
+        effectiveTenantId,
+        effectiveRestaurantId,
+        query,
+        false,
+        allowWithDeleted,
+        includeInactive,
+      );
+      const data = await this.attachDistanceAndPaginate(
+        items,
+        { page: query.page, limit: query.limit },
+        requestedCustomerScope?.origin ?? null,
+      );
 
       return {
         data: data.items,
         message: 'Branches fetched successfully',
-        meta: buildPaginationMeta(query, total),
+        meta: buildPaginationMeta(query, data.total),
       };
     }
 
@@ -302,23 +325,6 @@ export class BranchesService {
       throw new BadRequestException(
         'tenantId could not be resolved for restaurant',
       );
-    }
-
-    if (this.hasCoordinates(query)) {
-      const { items, total } =
-        await this.branchesRepository.listAllByRestaurant(
-          tenantId,
-          query.restaurantId,
-          query,
-          true,
-        );
-      const data = await this.attachDistanceAndPaginate(items, query);
-
-      return {
-        data: data.items,
-        message: 'Public branches fetched successfully',
-        meta: buildPaginationMeta(query, total),
-      };
     }
 
     const { items, total } = await this.branchesRepository.listByRestaurant(
@@ -459,15 +465,126 @@ export class BranchesService {
     return `Br@${randomBytes(4).toString('hex')}2026`;
   }
 
-  private hasCoordinates(query: { lat?: number; lng?: number }) {
-    return typeof query.lat === 'number' && typeof query.lng === 'number';
+  private async resolveRequestedCustomerScope(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = this.resolveNearestCustomerId(user, requestedCustomerId);
+
+    const customer =
+      user.role === UserRoleEnum.SUPER_ADMIN
+        ? await this.branchesRepository.findActiveCustomerById(customerId)
+        : await this.branchesRepository.findActiveCustomer(
+            customerId,
+            this.getRequiredTenantId(user),
+            user.role === UserRoleEnum.CUSTOMER ? user.rid : user.rid,
+          );
+
+    if (!customer?.tenantId || !customer.restaurantId) {
+      throw new BadRequestException('Customer not found for this restaurant');
+    }
+
+    const origin = await this.resolveCustomerAddressOrigin(
+      customer.id,
+      customer.tenantId,
+    );
+
+    return {
+      customerId: customer.id,
+      tenantId: customer.tenantId,
+      restaurantId: customer.restaurantId,
+      origin,
+    };
+  }
+
+  private resolveNearestCustomerId(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+  ) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      if (requestedCustomerId && requestedCustomerId !== user.uid) {
+        throw new BadRequestException(
+          'Customers can only fetch nearest branches for themselves',
+        );
+      }
+
+      return user.uid;
+    }
+
+    if (!requestedCustomerId) {
+      throw new BadRequestException(
+        'customerId is required when fetching nearest branches on behalf of a customer',
+      );
+    }
+
+    return requestedCustomerId;
+  }
+
+  private async resolveCustomerAddressOrigin(
+    customerId: string,
+    tenantId: string,
+  ): Promise<DistanceOrigin> {
+    const defaultAddressId = await this.getDefaultAddressId(customerId);
+
+    if (!defaultAddressId) {
+      throw new BadRequestException(
+        'Add address first before fetching nearest branches',
+      );
+    }
+
+    const address = await this.branchesRepository.findOwnedCustomerAddress(
+      defaultAddressId,
+      tenantId,
+      customerId,
+    );
+
+    if (!address) {
+      throw new BadRequestException(
+        'Add address first before fetching nearest branches',
+      );
+    }
+
+    if (!address.lat || !address.lng) {
+      throw new BadRequestException(
+        'Default address must include lat/lng before fetching nearest branches',
+      );
+    }
+
+    return {
+      lat: Number(address.lat),
+      lng: Number(address.lng),
+    };
+  }
+
+  private async getDefaultAddressId(customerId: string) {
+    const profile = await this.profilesRepository.findByUserId(customerId);
+    const metadata = this.asObject(profile?.metadata);
+
+    return typeof metadata.defaultAddressId === 'string'
+      ? metadata.defaultAddressId
+      : null;
+  }
+
+  private asObject(value: Prisma.JsonValue | null | undefined) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private getRequiredTenantId(user: AuthUserContext) {
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    return user.tid;
   }
 
   private async attachDistanceAndPaginate(
     items: Branch[],
-    query: { page: number; limit: number; lat?: number; lng?: number },
+    query: { page: number; limit: number },
+    origin: DistanceOrigin | null,
   ) {
-    if (!this.hasCoordinates(query)) {
+    if (!origin) {
       return {
         items,
         total: items.length,
@@ -486,8 +603,8 @@ export class BranchesService {
       const distanceKm =
         address?.lat && address?.lng
           ? this.calculateDistanceKm(
-              query.lat as number,
-              query.lng as number,
+              origin.lat,
+              origin.lng,
               Number(address.lat),
               Number(address.lng),
             )
