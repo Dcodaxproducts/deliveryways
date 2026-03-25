@@ -31,15 +31,10 @@ describe('BranchesService', () => {
       branch: { findUnique: jest.fn() },
     };
 
-    const profilesRepository = {
-      findByUserId: jest.fn(),
-    };
-
     const service = new BranchesService(
       repository as never,
       usersService as never,
       prisma as never,
-      profilesRepository as never,
     );
 
     return {
@@ -47,7 +42,6 @@ describe('BranchesService', () => {
       repository,
       usersService,
       prisma,
-      profilesRepository,
     };
   };
 
@@ -162,21 +156,8 @@ describe('BranchesService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('sorts branches by nearest distance using the customer default address', async () => {
-    const { service, repository, profilesRepository } = makeService();
-    repository.findActiveCustomer.mockResolvedValue({
-      id: 'customer-1',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-    });
-    profilesRepository.findByUserId.mockResolvedValue({
-      metadata: { defaultAddressId: 'address-1' },
-    });
-    repository.findOwnedCustomerAddress.mockResolvedValue({
-      id: 'address-1',
-      lat: 31.5204,
-      lng: 74.3587,
-    });
+  it('sorts branches by nearest distance using provided lat/lng', async () => {
+    const { service, repository } = makeService();
     repository.listAllByRestaurant.mockResolvedValue({
       items: [
         {
@@ -247,7 +228,8 @@ describe('BranchesService', () => {
         limit: 10,
         sortBy: 'createdAt',
         sortOrder: 'DESC',
-        nearest: true,
+        lat: 31.5204,
+        lng: 74.3587,
       },
     );
 
@@ -260,36 +242,8 @@ describe('BranchesService', () => {
     expect(repository.listAllByRestaurant).toHaveBeenCalled();
   });
 
-  it('requires customerId for admin nearest branch fetch', async () => {
+  it('requires lat and lng together for nearest branch fetch', async () => {
     const { service } = makeService();
-
-    await expect(
-      service.list(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.BUSINESS_ADMIN,
-        },
-        {
-          page: 1,
-          limit: 10,
-          sortBy: 'createdAt',
-          sortOrder: 'DESC',
-          nearest: true,
-        },
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('rejects nearest branch fetch when customer has no default address', async () => {
-    const { service, repository, profilesRepository } = makeService();
-    repository.findActiveCustomer.mockResolvedValue({
-      id: 'customer-1',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-    });
-    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
 
     await expect(
       service.list(
@@ -304,7 +258,7 @@ describe('BranchesService', () => {
           limit: 10,
           sortBy: 'createdAt',
           sortOrder: 'DESC',
-          nearest: true,
+          lat: 31.5204,
         },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);

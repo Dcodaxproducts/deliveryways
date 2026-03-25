@@ -88,18 +88,18 @@ export class BranchesController {
       'Super admin may fetch all or filter by restaurant. Business/branch/customer use token restaurant scope.',
   })
   @ApiQuery({
-    name: 'nearest',
+    name: 'lat',
     required: false,
-    example: true,
+    example: 33.6844,
     description:
-      'When true, uses the customer default address or scoped customerId address to sort nearest branches first.',
+      'When passed together with lng, branches are sorted by nearest distance from this coordinate.',
   })
   @ApiQuery({
-    name: 'customerId',
+    name: 'lng',
     required: false,
-    example: 'clx_customer_id',
+    example: 73.0479,
     description:
-      'Required for admin/staff when fetching nearest branches on behalf of a customer.',
+      'When passed together with lat, branches are sorted by nearest distance from this coordinate.',
   })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 10 })

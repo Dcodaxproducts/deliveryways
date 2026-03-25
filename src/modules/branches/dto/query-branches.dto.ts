@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 import { AdminListQueryDto, QueryDto } from '../../../common/dto';
 
 export class ListBranchesDto extends AdminListQueryDto {
@@ -14,21 +14,23 @@ export class ListBranchesDto extends AdminListQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Sort branches by nearest distance using the customer default address or a scoped customerId address.',
-    default: false,
+      'Latitude used to sort branches by nearest distance. Must be passed with lng.',
+    example: 33.6844,
   })
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  nearest?: boolean;
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  lat?: number;
 
   @ApiPropertyOptional({
     description:
-      'Target customer id when admin/staff fetch nearest branches on behalf of a customer.',
+      'Longitude used to sort branches by nearest distance. Must be passed with lat.',
+    example: 73.0479,
   })
   @IsOptional()
-  @IsString()
-  customerId?: string;
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  lng?: number;
 }
 
 export class ListPublicBranchesDto extends QueryDto {
