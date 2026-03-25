@@ -156,12 +156,21 @@ export class UsersService {
     );
   }
 
-  async setPasswordResetOtp(email: string, otp: string, expiresAt: Date) {
-    return this.usersRepository.updateByEmail(email, {
-      resetPasswordOtp: otp,
-      resetPasswordOtpExpiresAt: expiresAt,
-      resetPasswordOtpAttempts: 0,
-    });
+  async setPasswordResetOtp(
+    email: string,
+    otp: string,
+    expiresAt: Date,
+    restaurantId?: string,
+  ) {
+    return this.usersRepository.updateByEmail(
+      email,
+      {
+        resetPasswordOtp: otp,
+        resetPasswordOtpExpiresAt: expiresAt,
+        resetPasswordOtpAttempts: 0,
+      },
+      restaurantId,
+    );
   }
 
   async incrementPasswordResetOtpAttempts(userId: string) {

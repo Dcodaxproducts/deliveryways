@@ -747,7 +747,10 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
 
     if (!user) {
       throw new BadRequestException('Invalid or expired OTP');
@@ -940,6 +943,7 @@ export class AuthService {
       dto.email,
       otp,
       expiresAt,
+      dto.restaurantId,
     );
 
     if (result.count === 0) {
