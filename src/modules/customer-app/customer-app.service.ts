@@ -17,6 +17,7 @@ import {
   ListCustomerFavoritesQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
+  PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
@@ -282,6 +283,22 @@ export class CustomerAppService {
     return {
       data: items.map((item) => this.mapMenuItem(item)),
       message: 'Promotional items fetched successfully',
+    };
+  }
+
+  async getItemBySlug(slug: string, query: PublicMenuItemBySlugQueryDto) {
+    const item = await this.customerAppRepository.findPublicMenuItemBySlug(
+      slug,
+      query,
+    );
+
+    if (!item) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    return {
+      data: this.mapMenuItem(item),
+      message: 'Menu item fetched successfully',
     };
   }
 

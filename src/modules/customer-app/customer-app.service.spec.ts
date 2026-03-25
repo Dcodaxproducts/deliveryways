@@ -56,6 +56,7 @@ describe('CustomerAppService', () => {
       findPublicCuisine: jest.fn(),
       listCuisineMenuItems: jest.fn(),
       listPromotionalItems: jest.fn(),
+      findPublicMenuItemBySlug: jest.fn(),
     };
 
     const service = new CustomerAppService(repository as never);
@@ -187,6 +188,26 @@ describe('CustomerAppService', () => {
         ],
       },
     ]);
+  });
+
+  it('fetches public item by slug with modifier groups', async () => {
+    const { service, repository } = makeService();
+    repository.findPublicMenuItemBySlug.mockResolvedValue(itemFixture);
+
+    const result = await service.getItemBySlug('zinger-burger', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(repository.findPublicMenuItemBySlug).toHaveBeenCalledWith(
+      'zinger-burger',
+      {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+    );
+    expect(result.data.slug).toBe('zinger-burger');
+    expect(result.data.modifierGroups).toHaveLength(1);
   });
 
   it('includes restaurant cover image on home-screen/public content responses', async () => {

@@ -37,6 +37,8 @@ export class PublicRestaurantQueryDto {
   branchId?: string;
 }
 
+export class PublicMenuItemBySlugQueryDto extends PublicRestaurantQueryDto {}
+
 export class ListCustomerFavoritesQueryDto extends QueryDto {
   @ApiPropertyOptional()
   @IsOptional()

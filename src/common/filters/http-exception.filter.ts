@@ -12,6 +12,7 @@ import { Request, Response } from 'express';
 type ValidationErrorDetail = {
   name: string;
   message: string;
+  allowedValues?: string[];
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -42,6 +43,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     );
 
     const name = inFieldMatch?.[1] ?? directFieldMatch?.[1] ?? 'field';
+    const enumMatch = rawMessage.match(
+      /^([A-Za-z0-9_.[\]-]+) must be one of the following values:\s*(.+)$/i,
+    );
+
+    if (enumMatch) {
+      const allowedValues = enumMatch[2]
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      return {
+        name,
+        message: `${name} must be one of the following values: ${allowedValues.join(', ')}`,
+        allowedValues,
+      };
+    }
+
     const mustIndex = rawMessage.toLowerCase().indexOf(' must ');
     const reason =
       mustIndex >= 0 ? rawMessage.slice(mustIndex + 1).trim() : rawMessage;

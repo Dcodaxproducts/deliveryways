@@ -30,6 +30,7 @@ import {
   ListCustomerFavoritesQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
+  PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
@@ -142,6 +143,16 @@ export class CustomerAppController {
   @ApiOperation({ summary: 'List home-screen promotional menu items' })
   listPromotionalItems(@Query() query: ListPromotionalItemsQueryDto) {
     return this.customerAppService.listPromotionalItems(query);
+  }
+
+  @Public()
+  @Get('items/:slug')
+  @ApiOperation({ summary: 'Fetch single public menu item by slug' })
+  getItemBySlug(
+    @Param('slug') slug: string,
+    @Query() query: PublicMenuItemBySlugQueryDto,
+  ) {
+    return this.customerAppService.getItemBySlug(slug, query);
   }
 
   @Public()

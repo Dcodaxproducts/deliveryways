@@ -7,6 +7,7 @@ import {
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
   ListPromotionalItemsQueryDto,
+  PublicRestaurantQueryDto,
 } from './dto';
 
 @Injectable()
@@ -338,6 +339,72 @@ export class CustomerAppRepository {
     ]);
 
     return { items, total };
+  }
+
+  async findPublicMenuItemBySlug(
+    slug: string,
+    query: PublicRestaurantQueryDto,
+  ) {
+    const branchId = query.branchId;
+
+    return this.prisma.menuItem.findFirst({
+      where: {
+        slug,
+        restaurantId: query.restaurantId,
+        deletedAt: null,
+        isActive: true,
+        category: {
+          deletedAt: null,
+          isActive: true,
+          ...(branchId
+            ? {
+                OR: [
+                  { overrides: { none: { branchId } } },
+                  { overrides: { some: { branchId, isVisible: true } } },
+                ],
+              }
+            : {}),
+        },
+        ...(branchId
+          ? {
+              OR: [
+                { branchOverrides: { none: { branchId } } },
+                { branchOverrides: { some: { branchId, isAvailable: true } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        restaurant: {
+          select: { id: true, name: true, logoUrl: true, tagline: true },
+        },
+        category: { select: { id: true, name: true, imageUrl: true } },
+        variations: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        },
+        modifierLinks: {
+          orderBy: [{ sortOrder: 'asc' }],
+          include: {
+            modifierGroup: {
+              include: {
+                modifiers: {
+                  where: { deletedAt: null, isActive: true },
+                  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                },
+              },
+            },
+          },
+        },
+        branchOverrides: branchId
+          ? {
+              where: { branchId },
+              select: { priceOverride: true, isAvailable: true },
+              take: 1,
+            }
+          : false,
+      },
+    });
   }
 
   async listPromotionalItems(
