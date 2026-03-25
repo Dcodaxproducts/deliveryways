@@ -555,6 +555,19 @@ export class CartService {
                       price: selectedVariation.price,
                     }
                   : null,
+                modifierGroups: menuItem.modifierLinks.map((link) => ({
+                  id: link.modifierGroup.id,
+                  name: link.modifierGroup.name,
+                  minSelect: link.modifierGroup.minSelect,
+                  maxSelect: link.modifierGroup.maxSelect,
+                  isRequired: link.modifierGroup.isRequired,
+                  sortOrder: link.sortOrder,
+                  modifiers: link.modifierGroup.modifiers.map((modifier) => ({
+                    id: modifier.id,
+                    name: modifier.name,
+                    priceDelta: modifier.priceDelta,
+                  })),
+                })),
               }
             : null,
         };

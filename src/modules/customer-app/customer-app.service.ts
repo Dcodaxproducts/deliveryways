@@ -711,18 +711,33 @@ export class CustomerAppService {
     description: string | null;
     imageUrl: string | null;
     basePrice: Prisma.Decimal;
-    restaurant: {
+    restaurant?: {
       id: string;
       name: string;
       logoUrl?: string | null;
       tagline?: string | null;
     };
-    category: { id: string; name: string; imageUrl?: string | null };
-    variations: Array<{
+    category?: { id: string; name: string; imageUrl?: string | null };
+    variations?: Array<{
       id: string;
       name: string;
       price: Prisma.Decimal;
       isDefault: boolean;
+    }>;
+    modifierLinks?: Array<{
+      sortOrder: number;
+      modifierGroup: {
+        id: string;
+        name: string;
+        minSelect: number;
+        maxSelect: number;
+        isRequired: boolean;
+        modifiers: Array<{
+          id: string;
+          name: string;
+          priceDelta: Prisma.Decimal;
+        }>;
+      };
     }>;
     branchOverrides?: Array<{
       priceOverride: Prisma.Decimal | null;
@@ -738,9 +753,22 @@ export class CustomerAppService {
       description: item.description,
       imageUrl: item.imageUrl,
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
-      restaurant: item.restaurant,
-      category: item.category,
-      variations: item.variations,
+      restaurant: item.restaurant ?? null,
+      category: item.category ?? null,
+      variations: item.variations ?? [],
+      modifierGroups: (item.modifierLinks ?? []).map((link) => ({
+        id: link.modifierGroup.id,
+        name: link.modifierGroup.name,
+        minSelect: link.modifierGroup.minSelect,
+        maxSelect: link.modifierGroup.maxSelect,
+        isRequired: link.modifierGroup.isRequired,
+        sortOrder: link.sortOrder,
+        modifiers: link.modifierGroup.modifiers.map((modifier) => ({
+          id: modifier.id,
+          name: modifier.name,
+          priceDelta: modifier.priceDelta,
+        })),
+      })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
   }

@@ -22,6 +22,25 @@ describe('CustomerAppService', () => {
       imageUrl: 'https://cdn.example.com/category.png',
     },
     variations: [],
+    modifierLinks: [
+      {
+        sortOrder: 1,
+        modifierGroup: {
+          id: 'group-1',
+          name: 'Toppings',
+          minSelect: 0,
+          maxSelect: 3,
+          isRequired: false,
+          modifiers: [
+            {
+              id: 'modifier-1',
+              name: 'Extra Cheese',
+              priceDelta: 100,
+            },
+          ],
+        },
+      },
+    ],
     branchOverrides: [],
   };
 
@@ -151,6 +170,23 @@ describe('CustomerAppService', () => {
     });
 
     expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
+    expect(result.data[0].modifierGroups).toEqual([
+      {
+        id: 'group-1',
+        name: 'Toppings',
+        minSelect: 0,
+        maxSelect: 3,
+        isRequired: false,
+        sortOrder: 1,
+        modifiers: [
+          {
+            id: 'modifier-1',
+            name: 'Extra Cheese',
+            priceDelta: 100,
+          },
+        ],
+      },
+    ]);
   });
 
   it('includes restaurant cover image on home-screen/public content responses', async () => {

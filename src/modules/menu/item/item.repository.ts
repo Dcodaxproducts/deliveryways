@@ -65,6 +65,19 @@ export class MenuItemRepository {
             where: { deletedAt: null },
             orderBy: { sortOrder: 'asc' },
           },
+          modifierLinks: {
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              modifierGroup: {
+                include: {
+                  modifiers: {
+                    where: { deletedAt: null },
+                    orderBy: { sortOrder: 'asc' },
+                  },
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.menuItem.count({ where }),

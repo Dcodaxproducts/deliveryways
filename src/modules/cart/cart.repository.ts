@@ -215,6 +215,19 @@ export class CartRepository {
           },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         },
+        modifierLinks: {
+          orderBy: [{ sortOrder: 'asc' }],
+          include: {
+            modifierGroup: {
+              include: {
+                modifiers: {
+                  where: { deletedAt: null, isActive: true },
+                  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                },
+              },
+            },
+          },
+        },
         branchOverrides: {
           where: { branchId },
           select: { priceOverride: true, isAvailable: true },
