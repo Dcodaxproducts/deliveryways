@@ -157,6 +157,11 @@ export class OrdersRepository {
               lineTotal: true,
               note: true,
               snapshotModifiers: true,
+              menuItem: {
+                select: {
+                  imageUrl: true,
+                },
+              },
             },
             orderBy: [{ createdAt: 'asc' }],
           },

@@ -28,6 +28,7 @@ import {
   RefreshDto,
   RegisterCustomerDto,
   RegisterTenantDto,
+  OtpPurposeEnum,
   ResendOtpDto,
   ResetPasswordDto,
   UpdateMyAvatarDto,
@@ -712,30 +713,10 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    if (dbUser.isVerified) {
-      return {
-        data: null,
-        message: 'Email already verified',
-      };
-    }
-
-    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
-    const otp = this.generateOtp();
-    const expiresAt = this.generateOtpExpiry();
-
-    await this.usersService.setVerificationOtp(dbUser.id, otp, expiresAt);
-
-    if (emailEnabled) {
-      await this.mailerService.sendVerificationEmail(dbUser.email, otp);
-    }
-
-    return {
-      data: {
-        verificationOtp: shouldExposeDevToken ? otp : undefined,
-      },
-      message: 'Verification OTP resent',
-    };
+    return this.issueVerificationOtp({
+      email: dbUser.email,
+      restaurantId: dbUser.restaurantId ?? undefined,
+    });
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -743,7 +724,9 @@ export class AuthService {
   }
 
   async resendOtp(dto: ResendOtpDto) {
-    return this.issuePasswordResetOtp(dto);
+    return dto.purpose === OtpPurposeEnum.VERIFICATION
+      ? this.issueVerificationOtp(dto)
+      : this.issuePasswordResetOtp(dto);
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -932,6 +915,45 @@ export class AuthService {
     return !emailEnabled && process.env.NODE_ENV !== 'production';
   }
 
+  private async issueVerificationOtp(
+    dto: Pick<ResendOtpDto, 'email' | 'restaurantId'>,
+  ) {
+    const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+    const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
+    const user = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
+
+    if (!user || user.deletedAt || user.isVerified) {
+      return {
+        data: null,
+        message: 'If account exists, OTP has been sent',
+      };
+    }
+
+    const otp = this.generateOtp();
+    const expiresAt = this.generateOtpExpiry();
+    await this.usersService.setVerificationOtpByEmail(
+      dto.email,
+      otp,
+      expiresAt,
+      dto.restaurantId,
+    );
+
+    if (emailEnabled) {
+      await this.mailerService.sendVerificationEmail(dto.email, otp);
+    }
+
+    return {
+      data: {
+        verificationOtp: shouldExposeDevToken ? otp : undefined,
+        purpose: OtpPurposeEnum.VERIFICATION,
+      },
+      message: 'If account exists, OTP has been sent',
+    };
+  }
+
   private async issuePasswordResetOtp(
     dto: Pick<ForgotPasswordDto, 'email' | 'restaurantId'>,
   ) {
@@ -960,6 +982,7 @@ export class AuthService {
     return {
       data: {
         resetOtp: shouldExposeDevToken ? otp : undefined,
+        purpose: OtpPurposeEnum.PASSWORD_RESET,
       },
       message: 'If account exists, reset instructions are sent',
     };

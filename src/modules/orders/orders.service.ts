@@ -619,6 +619,7 @@ export class OrdersService {
       lineTotal: Prisma.Decimal;
       note: string | null;
       snapshotModifiers: Prisma.JsonValue | null;
+      menuItem: { imageUrl: string | null } | null;
     }>;
   }) {
     return {
@@ -646,6 +647,7 @@ export class OrdersService {
         id: item.id,
         menuItemId: item.menuItemId,
         menuItemName: item.menuItemName,
+        imageUrl: item.menuItem?.imageUrl ?? null,
         variationId: item.variationId,
         variationName: item.variationName,
         quantity: item.quantity,

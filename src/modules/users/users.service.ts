@@ -207,6 +207,23 @@ export class UsersService {
     return this.usersRepository.incrementVerificationOtpAttempts(userId);
   }
 
+  async setVerificationOtpByEmail(
+    email: string,
+    otp: string | null,
+    expiresAt: Date | null,
+    restaurantId?: string,
+  ) {
+    return this.usersRepository.updateByEmail(
+      email,
+      {
+        verificationOtp: otp,
+        verificationOtpExpiresAt: expiresAt,
+        verificationOtpAttempts: 0,
+      },
+      restaurantId,
+    );
+  }
+
   async setVerificationOtp(
     userId: string,
     otp: string | null,

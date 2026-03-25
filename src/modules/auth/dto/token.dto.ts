@@ -1,6 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -34,15 +35,24 @@ export class ForgotPasswordDto {
   restaurantId?: string;
 }
 
+export enum OtpPurposeEnum {
+  VERIFICATION = 'VERIFICATION',
+  PASSWORD_RESET = 'PASSWORD_RESET',
+}
+
 export class ResendOtpDto {
   @ApiProperty()
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ required: false })
   @IsOptional()
   @IsString()
   restaurantId?: string;
+
+  @ApiProperty({ enum: OtpPurposeEnum })
+  @IsEnum(OtpPurposeEnum)
+  purpose!: OtpPurposeEnum;
 }
 
 export class ResetPasswordDto {

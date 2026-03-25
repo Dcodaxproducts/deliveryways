@@ -17,4 +17,5 @@ export {
   ResetPasswordDto,
   ChangePasswordDto,
   CancelDeletionDto,
+  OtpPurposeEnum,
 } from './token.dto';

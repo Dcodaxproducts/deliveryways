@@ -161,6 +161,39 @@ export class BranchesRepository {
     });
   }
 
+  async findById(id: string) {
+    return this.prisma.branch.findUnique({
+      where: { id },
+      include: {
+        manager: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isActive: true,
+            profile: {
+              select: {
+                firstName: true,
+                lastName: true,
+                phone: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            coverImage: true,
+          },
+        },
+      },
+    });
+  }
+
   async findTenantIdByRestaurant(restaurantId: string) {
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: restaurantId },

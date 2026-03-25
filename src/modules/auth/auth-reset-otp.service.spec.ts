@@ -1,15 +1,22 @@
 import { BadRequestException } from '@nestjs/common';
+import { OtpPurposeEnum } from './dto';
 import { AuthService } from './auth.service';
 
 describe('AuthService password reset OTP scoping', () => {
   const makeService = () => {
     const usersService = {
       setPasswordResetOtp: jest.fn(),
+      setVerificationOtpByEmail: jest.fn(),
       findByEmail: jest.fn(),
       incrementPasswordResetOtpAttempts: jest.fn(),
       clearPasswordResetOtp: jest.fn(),
       setRefreshTokenHash: jest.fn(),
       updatePassword: jest.fn(),
+    };
+
+    const mailerService = {
+      sendVerificationEmail: jest.fn(),
+      sendPasswordResetEmail: jest.fn(),
     };
 
     const service = new AuthService(
@@ -19,10 +26,10 @@ describe('AuthService password reset OTP scoping', () => {
       {} as never,
       {} as never,
       usersService as never,
-      {} as never,
+      mailerService as never,
     );
 
-    return { service, usersService };
+    return { service, usersService, mailerService };
   };
 
   it('passes restaurantId when issuing resend/reset OTP', async () => {
@@ -32,9 +39,34 @@ describe('AuthService password reset OTP scoping', () => {
     await service.resendOtp({
       email: 'customer@example.com',
       restaurantId: 'restaurant-1',
+      purpose: OtpPurposeEnum.PASSWORD_RESET,
     });
 
     expect(usersService.setPasswordResetOtp).toHaveBeenCalledWith(
+      'customer@example.com',
+      expect.any(String),
+      expect.any(Date),
+      'restaurant-1',
+    );
+  });
+
+  it('issues verification OTP through resend-otp when purpose is verification', async () => {
+    const { service, usersService } = makeService();
+    usersService.findByEmail.mockResolvedValue({
+      id: 'user-1',
+      email: 'customer@example.com',
+      deletedAt: null,
+      isVerified: false,
+    });
+    usersService.setVerificationOtpByEmail.mockResolvedValue({ count: 1 });
+
+    await service.resendOtp({
+      email: 'customer@example.com',
+      restaurantId: 'restaurant-1',
+      purpose: OtpPurposeEnum.VERIFICATION,
+    });
+
+    expect(usersService.setVerificationOtpByEmail).toHaveBeenCalledWith(
       'customer@example.com',
       expect.any(String),
       expect.any(Date),

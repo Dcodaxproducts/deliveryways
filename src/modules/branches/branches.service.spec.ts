@@ -11,6 +11,7 @@ describe('BranchesService', () => {
       listByRestaurant: jest.fn(),
       listAllByRestaurant: jest.fn(),
       findTenantIdByRestaurant: jest.fn(),
+      findById: jest.fn(),
       listBranchAddresses: jest.fn(),
       findActiveCustomer: jest.fn(),
       findActiveCustomerById: jest.fn(),
@@ -79,6 +80,58 @@ describe('BranchesService', () => {
       undefined,
     );
     expect(result.message).toBe('Branch created successfully');
+  });
+
+  it('fetches branch details with populated address', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+      coverImage: null,
+      description: null,
+      settings: null,
+      isMain: true,
+      isActive: true,
+      deletedAt: null,
+      managerId: null,
+      manager: null,
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+    });
+    repository.listBranchAddresses.mockResolvedValue([
+      {
+        referenceId: 'branch-1',
+        lat: 31.5204,
+        lng: 74.3587,
+        street: 'Street 1',
+        area: null,
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+      },
+    ]);
+
+    const result = await service.details(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'branch-1',
+    );
+
+    expect(repository.findById).toHaveBeenCalledWith('branch-1');
+    expect(
+      (result.data as { address?: { city: string } | null }).address?.city,
+    ).toBe('Lahore');
   });
 
   it('allows super admin to fetch all branches without restaurant filter', async () => {

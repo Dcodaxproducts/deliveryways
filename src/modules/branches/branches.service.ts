@@ -342,6 +342,36 @@ export class BranchesService {
     };
   }
 
+  async details(user: AuthUserContext, id: string) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+
+    const [address] = await this.branchesRepository.listBranchAddresses([id]);
+
+    return {
+      data: {
+        ...branch,
+        address: address
+          ? {
+              street: address.street,
+              area: address.area,
+              city: address.city,
+              state: address.state,
+              country: address.country,
+              lat: address.lat,
+              lng: address.lng,
+            }
+          : null,
+      },
+      message: 'Branch fetched successfully',
+    };
+  }
+
   async update(
     _user: AuthUserContext,
     id: string,
@@ -464,6 +494,35 @@ export class BranchesService {
 
   private generateBranchAdminPassword(): string {
     return `Br@${randomBytes(4).toString('hex')}2026`;
+  }
+
+  private assertBranchAccess(
+    user: AuthUserContext,
+    branch: { restaurantId: string; id: string; isActive: boolean },
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.rid !== branch.restaurantId) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
+
+    if (
+      user.role === UserRoleEnum.BRANCH_ADMIN &&
+      user.bid &&
+      user.bid !== branch.id
+    ) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your branch',
+      );
+    }
+
+    if (user.role === UserRoleEnum.CUSTOMER && !branch.isActive) {
+      throw new ForbiddenException('Branch is not available');
+    }
   }
 
   private resolveScopedRestaurantId(
