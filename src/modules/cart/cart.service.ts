@@ -16,6 +16,7 @@ import {
   CheckoutCartDto,
   QuoteCartDto,
   UpdateCartAddressDto,
+  UpdateCartCouponDto,
   UpdateCartDto,
   UpdateCartItemDto,
 } from './dto';
@@ -88,15 +89,23 @@ export class CartService {
       throw new NotFoundException('Cart not found');
     }
 
+    const nextOrderType = dto.orderType
+      ? this.toOrderTypeModel(dto.orderType)
+      : cart.orderType;
+    const nextDeliveryAddressId = await this.resolveUpdatedDeliveryAddressId(
+      cart,
+      customerId,
+      undefined,
+      nextOrderType,
+    );
+
     await this.cartRepository.update(cart.id, {
       orderType: dto.orderType,
-      couponCode:
-        dto.couponCode !== undefined
-          ? this.resolveOptionalString(dto.couponCode)
-          : undefined,
-      customerNote:
-        dto.customerNote !== undefined
-          ? this.resolveOptionalString(dto.customerNote)
+      deliveryAddress:
+        dto.orderType !== undefined
+          ? nextDeliveryAddressId
+            ? { connect: { id: nextDeliveryAddressId } }
+            : { disconnect: true }
           : undefined,
     });
 
@@ -159,6 +168,62 @@ export class CartService {
     return {
       data: quote.data,
       message: 'Cart address updated successfully',
+    };
+  }
+
+  async applyCoupon(
+    user: AuthUserContext,
+    dto: UpdateCartCouponDto,
+    requestedCustomerId?: string,
+  ) {
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
+    const cart = await this.cartRepository.findByCustomerId(customerId);
+
+    if (!cart) {
+      throw new NotFoundException('Cart not found');
+    }
+
+    await this.cartRepository.update(cart.id, {
+      couponCode: this.resolveOptionalString(dto.couponCode),
+    });
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+    );
+
+    return {
+      data: await this.buildCartResponse(updatedCart),
+      message: 'Cart coupon updated successfully',
+    };
+  }
+
+  async removeCoupon(user: AuthUserContext, requestedCustomerId?: string) {
+    const customerId = await this.resolveCartCustomerId(
+      user,
+      requestedCustomerId,
+    );
+    const cart = await this.cartRepository.findByCustomerId(customerId);
+
+    if (!cart) {
+      throw new NotFoundException('Cart not found');
+    }
+
+    await this.cartRepository.update(cart.id, {
+      couponCode: null,
+    });
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+    );
+
+    return {
+      data: await this.buildCartResponse(updatedCart),
+      message: 'Cart coupon removed successfully',
     };
   }
 
@@ -505,7 +570,10 @@ export class CartService {
       ...(await this.toQuotePayload(cart)),
       orderTime: dto.orderTime ?? new Date().toISOString(),
       paymentMethod: dto.paymentMethod,
-      customerNote: cart.customerNote ?? undefined,
+      customerNote:
+        dto.customerNote !== undefined
+          ? (this.resolveOptionalString(dto.customerNote) ?? undefined)
+          : (cart.customerNote ?? undefined),
     };
   }
 
@@ -582,6 +650,18 @@ export class CartService {
         return OrderTypeEnum.DINE_IN;
       default:
         return OrderTypeEnum.DELIVERY;
+    }
+  }
+
+  private toOrderTypeModel(orderType: OrderTypeEnum): OrderType {
+    switch (orderType) {
+      case OrderTypeEnum.TAKEAWAY:
+        return OrderType.TAKEAWAY;
+      case OrderTypeEnum.DINE_IN:
+        return OrderType.DINE_IN;
+      case OrderTypeEnum.DELIVERY:
+      default:
+        return OrderType.DELIVERY;
     }
   }
 

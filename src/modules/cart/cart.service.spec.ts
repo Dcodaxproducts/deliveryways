@@ -274,7 +274,7 @@ describe('CartService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('updates cart checkout context without cart id in route', async () => {
+  it('updates cart order type without cart id in route', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const cart = {
       id: 'cart-1',
@@ -283,7 +283,7 @@ describe('CartService', () => {
       branchId: 'branch-1',
       customerId: 'customer-1',
       orderType: 'DELIVERY',
-      deliveryAddressId: null,
+      deliveryAddressId: 'address-1',
       couponCode: null,
       customerNote: null,
       createdAt: new Date(),
@@ -294,15 +294,14 @@ describe('CartService', () => {
       .mockResolvedValueOnce(cart)
       .mockResolvedValueOnce({
         ...cart,
-        couponCode: 'SAVE10',
-        customerNote: 'Call me',
-        deliveryAddressId: 'address-1',
+        orderType: 'TAKEAWAY',
+        deliveryAddressId: null,
       });
     cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
     cartRepository.update.mockResolvedValue({
       ...cart,
-      couponCode: 'SAVE10',
-      customerNote: 'Call me',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
     });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
 
@@ -314,16 +313,15 @@ describe('CartService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       {
-        couponCode: 'SAVE10',
-        customerNote: 'Call me',
+        orderType: OrderTypeEnum.TAKEAWAY,
       },
     );
 
     expect(cartRepository.update).toHaveBeenCalledWith(
       'cart-1',
       expect.objectContaining({
-        couponCode: 'SAVE10',
-        customerNote: 'Call me',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        deliveryAddress: { disconnect: true },
       }),
     );
     expect(result.message).toBe('Cart updated successfully');
@@ -385,7 +383,7 @@ describe('CartService', () => {
     expect(result.message).toBe('Cart address updated successfully');
   });
 
-  it('throws when updating checkout context before cart exists', async () => {
+  it('throws when updating order type before cart exists', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue(null);
 
@@ -397,9 +395,96 @@ describe('CartService', () => {
           rid: 'restaurant-1',
           role: UserRoleEnum.CUSTOMER,
         },
-        { couponCode: 'SAVE10' },
+        { orderType: OrderTypeEnum.DELIVERY },
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('applies coupon through dedicated cart coupon action', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({
+        ...cart,
+        couponCode: 'SAVE10',
+      });
+    cartRepository.update.mockResolvedValue({
+      ...cart,
+      couponCode: 'SAVE10',
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.applyCoupon(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { couponCode: 'SAVE10' },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
+      couponCode: 'SAVE10',
+    });
+    expect(result.message).toBe('Cart coupon updated successfully');
+  });
+
+  it('removes coupon through dedicated cart coupon action', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: 'SAVE10',
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({
+        ...cart,
+        couponCode: null,
+      });
+    cartRepository.update.mockResolvedValue({
+      ...cart,
+      couponCode: null,
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.removeCoupon({
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
+      couponCode: null,
+    });
+    expect(result.message).toBe('Cart coupon removed successfully');
   });
 
   it('builds quote payload from cart state and default address', async () => {
@@ -461,7 +546,7 @@ describe('CartService', () => {
     expect(payload.orderTime).toEqual(expect.any(String));
   });
 
-  it('creates order from cart using stored cart state and payment method only', async () => {
+  it('creates order from cart using checkout note, order time, and payment method', async () => {
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -503,6 +588,7 @@ describe('CartService', () => {
       {
         paymentMethod: PaymentMethodEnum.COD,
         orderTime: '2026-03-24T19:30:00.000Z',
+        customerNote: 'Please call before delivery',
       },
     );
 
@@ -513,7 +599,7 @@ describe('CartService', () => {
         items: [expect.objectContaining({ menuItemId: 'menu-1' })],
         deliveryAddressId: 'address-1',
         paymentMethod: PaymentMethodEnum.COD,
-        customerNote: 'Please call',
+        customerNote: 'Please call before delivery',
         orderType: OrderTypeEnum.DELIVERY,
         orderTime: '2026-03-24T19:30:00.000Z',
       }),

@@ -23,6 +23,7 @@ import {
   CheckoutCartDto,
   QuoteCartDto,
   UpdateCartAddressDto,
+  UpdateCartCouponDto,
   UpdateCartDto,
   UpdateCartItemDto,
 } from './dto';
@@ -65,6 +66,23 @@ export class CartController {
     @Query() scope: CartCustomerScopeDto,
   ) {
     return this.cartService.updateAddress(user, dto, scope.customerId);
+  }
+
+  @Patch('coupon')
+  applyCoupon(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateCartCouponDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.applyCoupon(user, dto, scope.customerId);
+  }
+
+  @Delete('coupon')
+  removeCoupon(
+    @CurrentUser() user: AuthUserContext,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.removeCoupon(user, scope.customerId);
   }
 
   @Post('items')

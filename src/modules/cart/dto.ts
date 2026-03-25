@@ -90,16 +90,12 @@ export class UpdateCartDto {
   @IsOptional()
   @IsEnum(OrderTypeEnum)
   orderType?: OrderTypeEnum;
+}
 
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
+export class UpdateCartCouponDto {
+  @ApiProperty()
   @IsString()
-  couponCode?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @IsString()
-  customerNote?: string | null;
+  couponCode!: string;
 }
 
 export class UpdateCartAddressDto {
@@ -133,4 +129,9 @@ export class CheckoutCartDto {
   @ApiProperty({ enum: PaymentMethodEnum })
   @IsEnum(PaymentMethodEnum)
   paymentMethod!: PaymentMethodEnum;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  customerNote?: string | null;
 }
