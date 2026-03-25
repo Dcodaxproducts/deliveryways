@@ -45,6 +45,42 @@ describe('BranchesService', () => {
     };
   };
 
+  it('creates branch for business admin without requiring restaurantId in body', async () => {
+    const { service, repository, usersService } = makeService();
+    repository.create.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+    });
+    usersService.findByEmail.mockResolvedValue(null);
+
+    const result = await service.createFromUser(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        name: 'Main Branch',
+        street: 'Street 12',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: '31.5204',
+        lng: '74.3587',
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      }),
+      undefined,
+    );
+    expect(result.message).toBe('Branch created successfully');
+  });
+
   it('allows super admin to fetch all branches without restaurant filter', async () => {
     const { service, repository } = makeService();
     repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });

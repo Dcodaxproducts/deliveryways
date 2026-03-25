@@ -47,6 +47,10 @@ export class BranchesService {
   ) {}
 
   async create(tenantId: string, dto: CreateBranchDto, tx?: PrismaTx) {
+    if (!dto.restaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
     return this.branchesRepository.create(
       {
         tenantId,
@@ -77,8 +81,17 @@ export class BranchesService {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    const effectiveRestaurantId = this.resolveScopedRestaurantId(
+      user,
+      dto.restaurantId,
+    );
+    const branchDto: CreateBranchDto = {
+      ...dto,
+      restaurantId: effectiveRestaurantId,
+    };
+
     if (!dto.branchAdmin) {
-      const data = await this.create(user.tid, dto, tx);
+      const data = await this.create(user.tid, branchDto, tx);
       return {
         data,
         message: 'Branch created successfully',
@@ -87,7 +100,7 @@ export class BranchesService {
 
     const existingBranchAdmin = await this.usersService.findByEmail(
       dto.branchAdmin.email,
-      dto.restaurantId,
+      effectiveRestaurantId,
     );
 
     if (existingBranchAdmin) {
@@ -101,7 +114,7 @@ export class BranchesService {
       branchAdminInput.password ?? this.generateBranchAdminPassword();
 
     const operation = async (trx: PrismaTx) => {
-      const branch = await this.create(user.tid as string, dto, trx);
+      const branch = await this.create(user.tid as string, branchDto, trx);
 
       const branchAdmin = await this.usersService.create(
         {
@@ -165,16 +178,10 @@ export class BranchesService {
       throw new BadRequestException('At least one branch is required');
     }
 
-    const effectiveRestaurantId =
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
-      user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.CUSTOMER
-        ? user.rid
-        : dto.restaurantId;
-
-    if (!effectiveRestaurantId) {
-      throw new BadRequestException('restaurantId is required');
-    }
+    const effectiveRestaurantId = this.resolveScopedRestaurantId(
+      user,
+      dto.restaurantId,
+    );
 
     const createdBranches = await this.prisma.$transaction(async (trx) => {
       const results: Branch[] = [];
@@ -457,6 +464,35 @@ export class BranchesService {
 
   private generateBranchAdminPassword(): string {
     return `Br@${randomBytes(4).toString('hex')}2026`;
+  }
+
+  private resolveScopedRestaurantId(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ): string {
+    if (
+      user.role === UserRoleEnum.BUSINESS_ADMIN ||
+      user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === UserRoleEnum.CUSTOMER
+    ) {
+      if (!user.rid) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
+      }
+
+      return user.rid;
+    }
+
+    if (!requestedRestaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
+    return requestedRestaurantId;
   }
 
   private resolveNearestOrigin(query: ListBranchesDto): DistanceOrigin | null {

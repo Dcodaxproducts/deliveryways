@@ -131,10 +131,13 @@ export class CreateBranchAdminDto {
 }
 
 export class CreateBranchDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional for scoped logged-in users; token restaurant scope is used when available. Required for super admin.',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  restaurantId!: string;
+  restaurantId?: string;
 
   @ApiProperty()
   @IsString()

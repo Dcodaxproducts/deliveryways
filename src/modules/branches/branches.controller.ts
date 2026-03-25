@@ -38,7 +38,6 @@ export class BranchesController {
   @ApiBody({
     schema: {
       example: {
-        restaurantId: 'clx_restaurant_id',
         name: 'Main Branch',
         street: 'Street 12',
         city: 'Lahore',
