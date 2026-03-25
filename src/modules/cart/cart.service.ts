@@ -4,9 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderType, Prisma } from '@prisma/client';
+import { OrderType, PaymentMethod, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
+import {
+  OrderTypeEnum,
+  PaymentMethodEnum,
+  UserRoleEnum,
+} from '../../common/enums';
 import { ProfilesRepository } from '../profiles/profiles.repository';
 import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
@@ -19,6 +23,7 @@ import {
   UpdateCartCouponDto,
   UpdateCartDto,
   UpdateCartItemDto,
+  UpdateCartOrderTypeDto,
 } from './dto';
 import { CartRepository } from './cart.repository';
 
@@ -40,6 +45,8 @@ interface CartSnapshot {
   orderType: OrderType;
   deliveryAddressId: string | null;
   couponCode: string | null;
+  paymentMethod: PaymentMethod | null;
+  orderTime: Date | null;
   customerNote: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -101,6 +108,12 @@ export class CartService {
 
     await this.cartRepository.update(cart.id, {
       orderType: dto.orderType,
+      paymentMethod: dto.paymentMethod,
+      orderTime: dto.orderTime ? new Date(dto.orderTime) : undefined,
+      customerNote:
+        dto.customerNote !== undefined
+          ? this.resolveOptionalString(dto.customerNote)
+          : undefined,
       deliveryAddress:
         dto.orderType !== undefined
           ? nextDeliveryAddressId
@@ -118,6 +131,14 @@ export class CartService {
       data: await this.buildCartResponse(updatedCart),
       message: 'Cart updated successfully',
     };
+  }
+
+  async updateOrderType(
+    user: AuthUserContext,
+    dto: UpdateCartOrderTypeDto,
+    requestedCustomerId?: string,
+  ) {
+    return this.updateCart(user, dto, requestedCustomerId);
   }
 
   async updateAddress(
@@ -495,6 +516,8 @@ export class CartService {
       selectedAddressId,
       defaultAddressId,
       couponCode: cart.couponCode,
+      paymentMethod: cart.paymentMethod,
+      orderTime: cart.orderTime,
       customerNote: cart.customerNote,
       items: cart.items.map((item) => {
         const menuItem = menuItemMap.get(item.menuItemId);
@@ -568,8 +591,11 @@ export class CartService {
   ): Promise<CreateOrderDto> {
     return {
       ...(await this.toQuotePayload(cart)),
-      orderTime: dto.orderTime ?? new Date().toISOString(),
-      paymentMethod: dto.paymentMethod,
+      orderTime:
+        dto.orderTime ??
+        cart.orderTime?.toISOString() ??
+        new Date().toISOString(),
+      paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
       customerNote:
         dto.customerNote !== undefined
           ? (this.resolveOptionalString(dto.customerNote) ?? undefined)
@@ -651,6 +677,21 @@ export class CartService {
       default:
         return OrderTypeEnum.DELIVERY;
     }
+  }
+
+  private resolveCheckoutPaymentMethod(
+    cart: CartSnapshot,
+    dto: CheckoutCartDto,
+  ): PaymentMethodEnum {
+    const paymentMethod = dto.paymentMethod ?? cart.paymentMethod;
+
+    if (!paymentMethod) {
+      throw new BadRequestException(
+        'paymentMethod is required in cart or checkout',
+      );
+    }
+
+    return paymentMethod as PaymentMethodEnum;
   }
 
   private toOrderTypeModel(orderType: OrderTypeEnum): OrderType {
@@ -831,6 +872,8 @@ export class CartService {
       selectedAddressId: defaultAddressId,
       defaultAddressId,
       couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
       customerNote: null,
       items: [],
       createdAt: null,

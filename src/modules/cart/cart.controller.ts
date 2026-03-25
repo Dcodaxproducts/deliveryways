@@ -26,6 +26,7 @@ import {
   UpdateCartCouponDto,
   UpdateCartDto,
   UpdateCartItemDto,
+  UpdateCartOrderTypeDto,
 } from './dto';
 import { CartService } from './cart.service';
 
@@ -57,6 +58,15 @@ export class CartController {
     @Query() scope: CartCustomerScopeDto,
   ) {
     return this.cartService.updateCart(user, dto, scope.customerId);
+  }
+
+  @Patch('order-type')
+  updateOrderType(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateCartOrderTypeDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.updateOrderType(user, dto, scope.customerId);
   }
 
   @Patch('address')
