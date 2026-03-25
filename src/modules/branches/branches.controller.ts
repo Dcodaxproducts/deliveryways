@@ -44,6 +44,8 @@ export class BranchesController {
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',
+        lat: '31.5204',
+        lng: '74.3587',
         isMain: false,
         area: 'DHA Phase 5',
         branchAdmin: {

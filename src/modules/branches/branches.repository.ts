@@ -23,6 +23,8 @@ export class BranchesRepository {
       city: string;
       state: string;
       country: string;
+      lat: string;
+      lng: string;
       coverImage?: string;
       description?: string;
       settings?: Prisma.InputJsonValue;
@@ -66,6 +68,8 @@ export class BranchesRepository {
         city: payload.city,
         state: payload.state,
         country: payload.country,
+        lat: new Prisma.Decimal(payload.lat),
+        lng: new Prisma.Decimal(payload.lng),
       },
     });
 

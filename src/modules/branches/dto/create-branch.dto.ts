@@ -5,6 +5,8 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsLatitude,
+  IsLongitude,
   IsNotEmpty,
   IsNumber,
   IsObject,
@@ -177,6 +179,18 @@ export class CreateBranchDto {
   @IsString()
   @IsNotEmpty()
   country!: string;
+
+  @ApiProperty({ description: 'Latitude coordinate for the branch address' })
+  @IsString()
+  @IsNotEmpty()
+  @IsLatitude()
+  lat!: string;
+
+  @ApiProperty({ description: 'Longitude coordinate for the branch address' })
+  @IsString()
+  @IsNotEmpty()
+  @IsLongitude()
+  lng!: string;
 
   @ApiPropertyOptional()
   @IsOptional()

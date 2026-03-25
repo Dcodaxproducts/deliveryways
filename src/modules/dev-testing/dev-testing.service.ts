@@ -54,6 +54,8 @@ export class DevTestingService {
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',
+        lat: '31.5204',
+        lng: '74.3587',
       },
     };
 

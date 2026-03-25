@@ -44,6 +44,8 @@ export class AuthRepository {
     city: string;
     state: string;
     country: string;
+    lat: string;
+    lng: string;
     verificationToken: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -92,6 +94,8 @@ export class AuthRepository {
           city: payload.city,
           state: payload.state,
           country: payload.country,
+          lat: new Prisma.Decimal(payload.lat),
+          lng: new Prisma.Decimal(payload.lng),
         },
       });
 

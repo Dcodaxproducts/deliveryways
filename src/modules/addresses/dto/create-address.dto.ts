@@ -1,6 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsLatitude,
+  IsLongitude,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateAddressDto {
   @ApiProperty()
@@ -28,15 +35,17 @@ export class CreateAddressDto {
   @IsNotEmpty()
   country!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ description: 'Latitude coordinate for this address' })
   @IsString()
-  lat?: string;
+  @IsNotEmpty()
+  @IsLatitude()
+  lat!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ description: 'Longitude coordinate for this address' })
   @IsString()
-  lng?: string;
+  @IsNotEmpty()
+  @IsLongitude()
+  lng!: string;
 
   @ApiPropertyOptional({
     description: 'Marks this address as the default customer address',

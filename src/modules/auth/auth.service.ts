@@ -138,6 +138,8 @@ export class AuthService {
           city: dto.branch.city,
           state: dto.branch.state,
           country: dto.branch.country,
+          lat: dto.branch.lat,
+          lng: dto.branch.lng,
           coverImage: dto.branch.coverImage,
           description: dto.branch.description,
           settings: dto.branch.settings

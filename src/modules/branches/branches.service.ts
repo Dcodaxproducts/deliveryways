@@ -58,6 +58,8 @@ export class BranchesService {
         city: dto.city,
         state: dto.state,
         country: dto.country,
+        lat: dto.lat,
+        lng: dto.lng,
         coverImage: dto.coverImage,
         description: dto.description,
         settings: dto.settings as unknown as Prisma.InputJsonValue,
@@ -296,7 +298,7 @@ export class BranchesService {
     );
 
     return {
-      data: items,
+      data: await this.attachBranchAddresses(items, null),
       message: 'Branches fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -327,7 +329,7 @@ export class BranchesService {
     );
 
     return {
-      data: items,
+      data: await this.attachBranchAddresses(items, null),
       message: 'Public branches fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -479,11 +481,36 @@ export class BranchesService {
     query: { page: number; limit: number },
     origin: DistanceOrigin | null,
   ) {
-    if (!origin) {
-      return {
-        items,
-        total: items.length,
-      };
+    const enriched = await this.attachBranchAddresses(items, origin);
+
+    if (origin) {
+      enriched.sort((a, b) => {
+        if (a.distanceKm === null && b.distanceKm === null) {
+          return 0;
+        }
+        if (a.distanceKm === null) {
+          return 1;
+        }
+        if (b.distanceKm === null) {
+          return -1;
+        }
+        return a.distanceKm - b.distanceKm;
+      });
+    }
+
+    const start = (query.page - 1) * query.limit;
+    return {
+      items: enriched.slice(start, start + query.limit),
+      total: enriched.length,
+    };
+  }
+
+  private async attachBranchAddresses(
+    items: Branch[],
+    origin: DistanceOrigin | null,
+  ) {
+    if (!items.length) {
+      return [];
     }
 
     const addresses = await this.branchesRepository.listBranchAddresses(
@@ -493,10 +520,10 @@ export class BranchesService {
       addresses.map((address) => [address.referenceId, address]),
     );
 
-    const enriched = items.map((item) => {
+    return items.map((item) => {
       const address = addressMap.get(item.id);
       const distanceKm =
-        address?.lat && address?.lng
+        origin && address?.lat && address?.lng
           ? this.calculateDistanceKm(
               origin.lat,
               origin.lng,
@@ -521,25 +548,6 @@ export class BranchesService {
         distanceKm,
       };
     });
-
-    enriched.sort((a, b) => {
-      if (a.distanceKm === null && b.distanceKm === null) {
-        return 0;
-      }
-      if (a.distanceKm === null) {
-        return 1;
-      }
-      if (b.distanceKm === null) {
-        return -1;
-      }
-      return a.distanceKm - b.distanceKm;
-    });
-
-    const start = (query.page - 1) * query.limit;
-    return {
-      items: enriched.slice(start, start + query.limit),
-      total: enriched.length,
-    };
   }
 
   private calculateDistanceKm(

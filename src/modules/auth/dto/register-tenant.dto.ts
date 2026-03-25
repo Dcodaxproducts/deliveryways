@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsLatitude,
+  IsLongitude,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -171,6 +173,22 @@ export class RegisterBranchInfoDto {
   @IsString()
   @IsNotEmpty()
   country!: string;
+
+  @ApiProperty({
+    description: 'Latitude coordinate for the main branch address',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsLatitude()
+  lat!: string;
+
+  @ApiProperty({
+    description: 'Longitude coordinate for the main branch address',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsLongitude()
+  lng!: string;
 }
 
 export class RegisterTenantDto {

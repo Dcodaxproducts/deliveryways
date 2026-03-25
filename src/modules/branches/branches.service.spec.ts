@@ -48,6 +48,7 @@ describe('BranchesService', () => {
   it('allows super admin to fetch all branches without restaurant filter', async () => {
     const { service, repository } = makeService();
     repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });
+    repository.listBranchAddresses.mockResolvedValue([]);
 
     const result = await service.list(
       {
@@ -77,6 +78,7 @@ describe('BranchesService', () => {
     const { service, repository } = makeService();
     repository.findTenantIdByRestaurant.mockResolvedValue('tenant-1');
     repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });
+    repository.listBranchAddresses.mockResolvedValue([]);
 
     await service.list(
       {
@@ -107,9 +109,40 @@ describe('BranchesService', () => {
 
   it('forces customer branch list to token restaurant scope', async () => {
     const { service, repository } = makeService();
-    repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });
+    repository.listByRestaurant.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          name: 'Main',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          coverImage: null,
+          description: null,
+          settings: null,
+          isMain: false,
+          isActive: true,
+          deletedAt: null,
+          managerId: null,
+        },
+      ],
+      total: 1,
+    });
+    repository.listBranchAddresses.mockResolvedValue([
+      {
+        referenceId: 'branch-1',
+        lat: 31.5204,
+        lng: 74.3587,
+        street: 'Street 1',
+        area: null,
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+      },
+    ]);
 
-    await service.list(
+    const result = await service.list(
       {
         uid: 'customer-1',
         tid: 'tenant-1',
@@ -132,6 +165,9 @@ describe('BranchesService', () => {
       false,
       false,
     );
+    expect(
+      (result.data[0] as { address?: { city: string } | null }).address?.city,
+    ).toBe('Lahore');
   });
 
   it('rejects customer access to another restaurant', async () => {
@@ -268,6 +304,7 @@ describe('BranchesService', () => {
     const { service, repository } = makeService();
     repository.findTenantIdByRestaurant.mockResolvedValue('tenant-1');
     repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });
+    repository.listBranchAddresses.mockResolvedValue([]);
 
     await service.listPublic({
       page: 1,
