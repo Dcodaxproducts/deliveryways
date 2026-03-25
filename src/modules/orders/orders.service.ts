@@ -197,7 +197,7 @@ export class OrdersService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.toOrderListResponse(item)),
       message: 'Orders fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -213,7 +213,7 @@ export class OrdersService {
     this.assertOrderAccess(user, order.restaurantId, order.customerId);
 
     return {
-      data: order,
+      data: this.toOrderDetailsResponse(order),
       message: 'Order fetched successfully',
     };
   }
@@ -571,6 +571,263 @@ export class OrdersService {
     if (Number.isNaN(date.getTime())) {
       throw new BadRequestException('orderTime must be a valid ISO datetime');
     }
+  }
+
+  private toOrderListResponse(order: {
+    id: string;
+    branchId: string;
+    customerId: string;
+    orderType: OrderType;
+    paymentMethod: string;
+    status: OrderStatus;
+    paymentStatus: PaymentStatus;
+    subtotal: Prisma.Decimal;
+    taxAmount: Prisma.Decimal;
+    deliveryFee: Prisma.Decimal;
+    discountAmount: Prisma.Decimal;
+    totalAmount: Prisma.Decimal;
+    customerNote: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    branch: { id: string; name: string; coverImage: string | null };
+    coupon: { id: string; code: string; title: string } | null;
+    customer: {
+      id: string;
+      email: string;
+      profile: {
+        firstName: string;
+        lastName: string;
+        phone: string | null;
+        avatarUrl: string | null;
+      } | null;
+    };
+    deliveryman: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      status: string;
+    } | null;
+    items: Array<{
+      id: string;
+      menuItemId: string;
+      menuItemName: string;
+      variationId: string | null;
+      variationName: string | null;
+      unitPrice: Prisma.Decimal;
+      quantity: number;
+      lineTotal: Prisma.Decimal;
+      note: string | null;
+      snapshotModifiers: Prisma.JsonValue | null;
+    }>;
+  }) {
+    return {
+      id: order.id,
+      branchId: order.branchId,
+      customerId: order.customerId,
+      orderType: order.orderType,
+      paymentMethod: order.paymentMethod,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      subtotal: Number(order.subtotal),
+      taxAmount: Number(order.taxAmount),
+      deliveryFee: Number(order.deliveryFee),
+      discountAmount: Number(order.discountAmount),
+      totalAmount: Number(order.totalAmount),
+      customerNote: order.customerNote,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      branch: order.branch,
+      coupon: order.coupon,
+      customer: this.toCustomerSummary(order.customer),
+      deliveryman: order.deliveryman,
+      itemCount: order.items.length,
+      itemsPreview: order.items.map((item) => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        menuItemName: item.menuItemName,
+        variationId: item.variationId,
+        variationName: item.variationName,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        lineTotal: Number(item.lineTotal),
+        note: item.note,
+        snapshotModifiers: item.snapshotModifiers,
+      })),
+    };
+  }
+
+  private toOrderDetailsResponse(order: {
+    id: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    customerId: string;
+    couponId: string | null;
+    deliveryAddressId: string | null;
+    deliverymanId: string | null;
+    orderType: OrderType;
+    paymentMethod: string;
+    status: OrderStatus;
+    paymentStatus: PaymentStatus;
+    subtotal: Prisma.Decimal;
+    taxAmount: Prisma.Decimal;
+    deliveryFee: Prisma.Decimal;
+    discountAmount: Prisma.Decimal;
+    totalAmount: Prisma.Decimal;
+    customerNote: string | null;
+    assignedAt: Date | null;
+    deliveredAt: Date | null;
+    paidAt: Date | null;
+    cancelledAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    branch: { id: string; name: string; coverImage: string | null };
+    coupon: { id: string; code: string; title: string } | null;
+    customer: {
+      id: string;
+      email: string;
+      profile: {
+        firstName: string;
+        lastName: string;
+        phone: string | null;
+        avatarUrl: string | null;
+      } | null;
+    };
+    deliveryAddress: {
+      id: string;
+      street: string;
+      area: string | null;
+      city: string;
+      state: string;
+      country: string;
+      lat: Prisma.Decimal | null;
+      lng: Prisma.Decimal | null;
+    } | null;
+    deliveryman: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      status: string;
+      vehicleType: string | null;
+      vehicleNumber: string | null;
+    } | null;
+    transactions: Array<{
+      id: string;
+      paymentMethod: string;
+      type: PaymentTransactionType;
+      status: PaymentStatus;
+      amount: Prisma.Decimal;
+      currency: string;
+      providerRef: string | null;
+      note: string | null;
+      processedAt: Date | null;
+      createdAt: Date;
+    }>;
+    items: Array<{
+      id: string;
+      menuItemId: string;
+      menuItemName: string;
+      variationId: string | null;
+      variationName: string | null;
+      unitPrice: Prisma.Decimal;
+      quantity: number;
+      lineTotal: Prisma.Decimal;
+      note: string | null;
+      snapshotModifiers: Prisma.JsonValue | null;
+      menuItem: {
+        id: string;
+        slug: string;
+        imageUrl: string | null;
+        category: { id: string; name: string; imageUrl: string | null };
+      };
+    }>;
+  }) {
+    return {
+      id: order.id,
+      tenantId: order.tenantId,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      customerId: order.customerId,
+      couponId: order.couponId,
+      deliveryAddressId: order.deliveryAddressId,
+      deliverymanId: order.deliverymanId,
+      orderType: order.orderType,
+      paymentMethod: order.paymentMethod,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      subtotal: Number(order.subtotal),
+      taxAmount: Number(order.taxAmount),
+      deliveryFee: Number(order.deliveryFee),
+      discountAmount: Number(order.discountAmount),
+      totalAmount: Number(order.totalAmount),
+      customerNote: order.customerNote,
+      assignedAt: order.assignedAt,
+      deliveredAt: order.deliveredAt,
+      paidAt: order.paidAt,
+      cancelledAt: order.cancelledAt,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      branch: order.branch,
+      coupon: order.coupon,
+      customer: this.toCustomerSummary(order.customer),
+      deliveryAddress: order.deliveryAddress
+        ? {
+            ...order.deliveryAddress,
+            lat:
+              order.deliveryAddress.lat !== null
+                ? Number(order.deliveryAddress.lat)
+                : null,
+            lng:
+              order.deliveryAddress.lng !== null
+                ? Number(order.deliveryAddress.lng)
+                : null,
+          }
+        : null,
+      deliveryman: order.deliveryman,
+      transactions: order.transactions.map((transaction) => ({
+        ...transaction,
+        amount: Number(transaction.amount),
+      })),
+      items: order.items.map((item) => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        menuItemName: item.menuItemName,
+        variationId: item.variationId,
+        variationName: item.variationName,
+        unitPrice: Number(item.unitPrice),
+        quantity: item.quantity,
+        lineTotal: Number(item.lineTotal),
+        note: item.note,
+        snapshotModifiers: item.snapshotModifiers,
+        menuItem: item.menuItem,
+      })),
+    };
+  }
+
+  private toCustomerSummary(customer: {
+    id: string;
+    email: string;
+    profile: {
+      firstName: string;
+      lastName: string;
+      phone: string | null;
+      avatarUrl: string | null;
+    } | null;
+  }) {
+    return {
+      id: customer.id,
+      email: customer.email,
+      firstName: customer.profile?.firstName ?? null,
+      lastName: customer.profile?.lastName ?? null,
+      fullName:
+        customer.profile?.firstName || customer.profile?.lastName
+          ? `${customer.profile?.firstName ?? ''} ${customer.profile?.lastName ?? ''}`.trim()
+          : null,
+      phone: customer.profile?.phone ?? null,
+      avatarUrl: customer.profile?.avatarUrl ?? null,
+    };
   }
 
   private resolveRestaurantId(

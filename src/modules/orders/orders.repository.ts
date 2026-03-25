@@ -26,9 +26,49 @@ export class OrdersRepository {
     return this.prisma.order.findUnique({
       where: { id },
       include: {
-        items: true,
-        coupon: true,
-        branch: { select: { id: true, name: true } },
+        items: {
+          include: {
+            menuItem: {
+              select: {
+                id: true,
+                slug: true,
+                imageUrl: true,
+                category: {
+                  select: { id: true, name: true, imageUrl: true },
+                },
+              },
+            },
+          },
+          orderBy: [{ createdAt: 'asc' }],
+        },
+        coupon: { select: { id: true, code: true, title: true } },
+        branch: { select: { id: true, name: true, coverImage: true } },
+        customer: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: {
+                firstName: true,
+                lastName: true,
+                phone: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        deliveryAddress: {
+          select: {
+            id: true,
+            street: true,
+            area: true,
+            city: true,
+            state: true,
+            country: true,
+            lat: true,
+            lng: true,
+          },
+        },
         deliveryman: {
           select: {
             id: true,
@@ -36,6 +76,23 @@ export class OrdersRepository {
             lastName: true,
             phone: true,
             status: true,
+            vehicleType: true,
+            vehicleNumber: true,
+          },
+        },
+        transactions: {
+          orderBy: [{ createdAt: 'desc' }],
+          select: {
+            id: true,
+            paymentMethod: true,
+            type: true,
+            status: true,
+            amount: true,
+            currency: true,
+            providerRef: true,
+            note: true,
+            processedAt: true,
+            createdAt: true,
           },
         },
       },
@@ -63,8 +120,46 @@ export class OrdersRepository {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
         include: {
-          branch: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true, coverImage: true } },
           coupon: { select: { id: true, code: true, title: true } },
+          customer: {
+            select: {
+              id: true,
+              email: true,
+              profile: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  phone: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+          deliveryman: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              status: true,
+            },
+          },
+          items: {
+            select: {
+              id: true,
+              menuItemId: true,
+              menuItemName: true,
+              variationId: true,
+              variationName: true,
+              unitPrice: true,
+              quantity: true,
+              lineTotal: true,
+              note: true,
+              snapshotModifiers: true,
+            },
+            orderBy: [{ createdAt: 'asc' }],
+          },
         },
       }),
       this.prisma.order.count({ where }),
