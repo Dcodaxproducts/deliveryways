@@ -14,6 +14,7 @@ import { RestaurantsRepository } from './restaurants.repository';
 import { TenantsService } from '../tenants/tenants.service';
 import {
   CreateRestaurantDto,
+  UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
 } from './dto';
@@ -34,6 +35,7 @@ export class RestaurantsService {
         name: dto.name,
         slug,
         logoUrl: dto.logoUrl,
+        coverImage: dto.coverImage,
         customDomain: dto.customDomain,
         tagline: dto.tagline,
         bio: dto.bio,
@@ -137,6 +139,7 @@ export class RestaurantsService {
         name: dto.name,
         slug: dto.slug ? await this.ensureUniqueSlug(dto.slug, id) : undefined,
         logoUrl: dto.logoUrl,
+        coverImage: dto.coverImage,
         customDomain: dto.customDomain,
         tagline: dto.tagline,
         bio: dto.bio,
@@ -181,6 +184,53 @@ export class RestaurantsService {
     };
   }
 
+  async customerAppContent(user: AuthUserContext, id: string) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    this.ensureRestaurantReadAccess(user, id);
+
+    return {
+      data: this.extractCustomerAppContent(restaurant),
+      message: 'Restaurant customer app content fetched successfully',
+    };
+  }
+
+  async updateCustomerAppContent(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantCustomerAppContentDto,
+    tx?: PrismaTx,
+  ) {
+    this.ensureRestaurantWriteAccess(user, id);
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const nextSettings = this.mergeCustomerAppContent(restaurant.settings, dto);
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        settings: nextSettings as Prisma.InputJsonValue,
+        supportContact:
+          dto.supportContact !== undefined
+            ? (dto.supportContact as Prisma.InputJsonValue)
+            : undefined,
+      },
+      tx,
+    );
+
+    return {
+      data: this.extractCustomerAppContent(data),
+      message: 'Restaurant customer app content updated successfully',
+    };
+  }
+
   async updateImages(
     user: AuthUserContext,
     id: string,
@@ -193,6 +243,7 @@ export class RestaurantsService {
       id,
       {
         logoUrl: dto.logoUrl,
+        coverImage: dto.coverImage,
       },
       tx,
     );
@@ -249,6 +300,131 @@ export class RestaurantsService {
       data,
       message: 'Restaurant force deleted successfully',
     };
+  }
+
+  private extractCustomerAppContent(restaurant: {
+    id: string;
+    settings: Prisma.JsonValue | null;
+    supportContact: Prisma.JsonValue | null;
+  }) {
+    return {
+      restaurantId: restaurant.id,
+      privacyPolicy: this.readStringValue(restaurant.settings, [
+        ['customerApp', 'privacyPolicy'],
+        ['publicContent', 'privacyPolicy'],
+        ['privacyPolicy'],
+      ]),
+      helpSupport: this.readStringValue(restaurant.settings, [
+        ['customerApp', 'helpSupport'],
+        ['publicContent', 'helpSupport'],
+        ['helpSupport'],
+      ]),
+      faqs: this.readFaqs(restaurant.settings, [
+        ['customerApp', 'faqs'],
+        ['publicContent', 'faqs'],
+        ['faqs'],
+      ]),
+      supportContact: this.asObject(restaurant.supportContact),
+    };
+  }
+
+  private mergeCustomerAppContent(
+    currentSettings: Prisma.JsonValue | null,
+    dto: UpdateRestaurantCustomerAppContentDto,
+  ): Prisma.JsonObject {
+    const root = this.asObject(currentSettings);
+    const customerApp = this.asObject(root.customerApp);
+
+    return {
+      ...root,
+      customerApp: {
+        ...customerApp,
+        ...(dto.privacyPolicy !== undefined
+          ? { privacyPolicy: dto.privacyPolicy }
+          : {}),
+        ...(dto.helpSupport !== undefined
+          ? { helpSupport: dto.helpSupport }
+          : {}),
+        ...(dto.faqs !== undefined
+          ? {
+              faqs: dto.faqs.map((item) => ({
+                question: item.question ?? '',
+                answer: item.answer ?? '',
+              })),
+            }
+          : {}),
+      },
+    } as Prisma.JsonObject;
+  }
+
+  private readStringValue(source: unknown, paths: string[][]): string | null {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private readFaqs(
+    source: unknown,
+    paths: string[][],
+  ): Array<{ question: string; answer: string }> {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (!Array.isArray(value)) {
+        continue;
+      }
+
+      const items = value
+        .map((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            return null;
+          }
+
+          const faq = item as Record<string, unknown>;
+          if (
+            typeof faq.question !== 'string' ||
+            typeof faq.answer !== 'string'
+          ) {
+            return null;
+          }
+
+          return {
+            question: faq.question,
+            answer: faq.answer,
+          };
+        })
+        .filter(
+          (item): item is { question: string; answer: string } => item !== null,
+        );
+
+      return items;
+    }
+
+    return [];
+  }
+
+  private readPath(source: unknown, path: string[]) {
+    let current = source;
+
+    for (const segment of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return undefined;
+      }
+
+      current = (current as Record<string, unknown>)[segment];
+    }
+
+    return current;
+  }
+
+  private asObject(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   }
 
   private async resolveTenantByRestaurant(

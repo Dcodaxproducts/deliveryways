@@ -136,6 +136,7 @@ export class CustomerAppRepository {
         tenantId: true,
         name: true,
         logoUrl: true,
+        coverImage: true,
         tagline: true,
         bio: true,
         supportContact: true,

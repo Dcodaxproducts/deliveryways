@@ -8,4 +8,11 @@ export class UpdateRestaurantImagesDto {
   @IsOptional()
   @IsString()
   logoUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Restaurant cover image URL (uploaded by frontend)',
+  })
+  @IsOptional()
+  @IsString()
+  coverImage?: string;
 }

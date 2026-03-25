@@ -27,6 +27,11 @@ export class CreateRestaurantDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  coverImage?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   customDomain?: string;
 
   @ApiPropertyOptional()

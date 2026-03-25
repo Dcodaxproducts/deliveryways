@@ -159,6 +159,7 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
+        restaurantCoverImage: restaurant.coverImage ?? null,
         title: 'Privacy Policy',
         content: privacyPolicy,
       },
@@ -173,6 +174,7 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
+        restaurantCoverImage: restaurant.coverImage ?? null,
         branchId: branch?.id ?? null,
         title: 'Help & Support',
         content:
@@ -220,6 +222,7 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
+        restaurantCoverImage: restaurant.coverImage ?? null,
         branchId: branch?.id ?? null,
         items: faqs,
       },
@@ -302,6 +305,7 @@ export class CustomerAppService {
           id: restaurant.id,
           name: restaurant.name,
           logoUrl: restaurant.logoUrl,
+          coverImage: restaurant.coverImage,
           tagline: restaurant.tagline,
           bio: restaurant.bio,
         },

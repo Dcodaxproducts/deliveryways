@@ -22,6 +22,7 @@ import {
 import { RestaurantsService } from './restaurants.service';
 import {
   CreateRestaurantDto,
+  UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
 } from './dto';
@@ -110,6 +111,29 @@ export class RestaurantsController {
   @Patch(':id/activate')
   activate(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.restaurantsService.activate(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get(':id/customer-app-content')
+  customerAppContent(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.customerAppContent(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/customer-app-content')
+  updateCustomerAppContent(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantCustomerAppContentDto,
+  ) {
+    return this.restaurantsService.updateCustomerAppContent(user, id, dto);
   }
 
   @ApiBearerAuth()

@@ -103,6 +103,7 @@ describe('CustomerAppService', () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
       settings: {
         faqs: [
           { question: 'Restaurant question', answer: 'Restaurant answer' },
@@ -124,6 +125,9 @@ describe('CustomerAppService', () => {
     expect(result.data.items).toEqual([
       { question: 'Branch question', answer: 'Branch answer' },
     ]);
+    expect(result.data.restaurantCoverImage).toBe(
+      'https://cdn.example.com/restaurant-cover.png',
+    );
   });
 
   it('populates restaurant on promotional items', async () => {
@@ -133,6 +137,7 @@ describe('CustomerAppService', () => {
       tenantId: 'tenant-1',
       name: 'DeliveryWays Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
       tagline: 'Fresh food fast',
       bio: null,
       supportContact: null,
@@ -146,6 +151,34 @@ describe('CustomerAppService', () => {
     });
 
     expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
+  });
+
+  it('includes restaurant cover image on home-screen/public content responses', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
+      tagline: 'Fresh food fast',
+      bio: 'Test bio',
+      supportContact: null,
+      settings: {},
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    repository.findBranchPublicContent.mockResolvedValue(null);
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(result.data.restaurant.coverImage).toBe(
+      'https://cdn.example.com/restaurant-cover.png',
+    );
   });
 
   it('throws when public restaurant is missing', async () => {
