@@ -691,6 +691,8 @@ model Order {
   deliverymanId     String?       @map("deliveryman_id")
   orderType         OrderType     @map("order_type")
   paymentMethod     PaymentMethod @map("payment_method")
+  orderTime         DateTime?     @map("order_time") @db.Timestamptz
+  isScheduled       Boolean       @default(false) @map("is_scheduled")
   status            OrderStatus   @default(PLACED)
   subtotal          Decimal       @db.Decimal(10, 2)
   taxAmount         Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)

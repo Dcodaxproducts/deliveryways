@@ -133,6 +133,26 @@ describe('OrdersService - order time validation', () => {
 
     expect(() => fn.call(service, 'not-a-date')).toThrow(BadRequestException);
   });
+
+  it('marks future order time as scheduled', () => {
+    const fn = (
+      service as unknown as {
+        isScheduledOrderTime: (value: string) => boolean;
+      }
+    ).isScheduledOrderTime;
+
+    expect(fn.call(service, '2999-03-24T19:30:00.000Z')).toBe(true);
+  });
+
+  it('marks past order time as not scheduled', () => {
+    const fn = (
+      service as unknown as {
+        isScheduledOrderTime: (value: string) => boolean;
+      }
+    ).isScheduledOrderTime;
+
+    expect(fn.call(service, '2020-03-24T19:30:00.000Z')).toBe(false);
+  });
 });
 
 describe('OrdersService - admin customer resolution', () => {

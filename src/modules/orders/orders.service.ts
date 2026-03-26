@@ -74,6 +74,7 @@ export class OrdersService {
         customerId: quote.customer.customerId,
         orderType: dto.orderType,
         orderTime: dto.orderTime,
+        isScheduled: this.isScheduledOrderTime(dto.orderTime),
         subtotal: Number(quote.subtotal),
         taxAmount: Number(quote.taxAmount),
         deliveryFee: Number(quote.deliveryFee),
@@ -123,6 +124,8 @@ export class OrdersService {
             : undefined,
           orderType: dto.orderType,
           paymentMethod: dto.paymentMethod,
+          orderTime: new Date(dto.orderTime),
+          isScheduled: this.isScheduledOrderTime(dto.orderTime),
           status: OrderStatus.PLACED,
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
@@ -180,7 +183,8 @@ export class OrdersService {
     return {
       data: {
         ...data,
-        orderTime: dto.orderTime,
+        orderTime: data.orderTime,
+        isScheduled: data.isScheduled,
       },
       message: 'Order created successfully',
     };
@@ -573,12 +577,20 @@ export class OrdersService {
     }
   }
 
+  private isScheduledOrderTime(orderTime: string | Date) {
+    const scheduledAt =
+      orderTime instanceof Date ? orderTime : new Date(orderTime);
+    return scheduledAt.getTime() > Date.now();
+  }
+
   private toOrderListResponse(order: {
     id: string;
     branchId: string;
     customerId: string;
     orderType: OrderType;
     paymentMethod: string;
+    orderTime?: Date | null;
+    isScheduled?: boolean;
     status: OrderStatus;
     paymentStatus: PaymentStatus;
     subtotal: Prisma.Decimal;
@@ -628,6 +640,10 @@ export class OrdersService {
       customerId: order.customerId,
       orderType: order.orderType,
       paymentMethod: order.paymentMethod,
+      orderTime: order.orderTime ?? null,
+      isScheduled:
+        order.isScheduled ??
+        (order.orderTime ? this.isScheduledOrderTime(order.orderTime) : false),
       status: order.status,
       paymentStatus: order.paymentStatus,
       subtotal: Number(order.subtotal),
@@ -670,6 +686,8 @@ export class OrdersService {
     deliverymanId: string | null;
     orderType: OrderType;
     paymentMethod: string;
+    orderTime?: Date | null;
+    isScheduled?: boolean;
     status: OrderStatus;
     paymentStatus: PaymentStatus;
     subtotal: Prisma.Decimal;
@@ -757,6 +775,10 @@ export class OrdersService {
       deliverymanId: order.deliverymanId,
       orderType: order.orderType,
       paymentMethod: order.paymentMethod,
+      orderTime: order.orderTime ?? null,
+      isScheduled:
+        order.isScheduled ??
+        (order.orderTime ? this.isScheduledOrderTime(order.orderTime) : false),
       status: order.status,
       paymentStatus: order.paymentStatus,
       subtotal: Number(order.subtotal),

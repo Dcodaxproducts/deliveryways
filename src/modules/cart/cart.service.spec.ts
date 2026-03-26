@@ -99,6 +99,7 @@ describe('CartService', () => {
         basePrice: 450,
         category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
         variations: [],
+        modifierLinks: [],
         branchOverrides: [],
       },
     ]);

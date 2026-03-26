@@ -1,0 +1,3 @@
+ALTER TABLE "orders"
+ADD COLUMN "order_time" TIMESTAMPTZ,
+ADD COLUMN "is_scheduled" BOOLEAN NOT NULL DEFAULT false;
