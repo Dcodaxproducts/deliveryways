@@ -54,6 +54,7 @@ export class RestaurantsRepository {
         orderBy: {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
+        include: this.includeConfig,
       }),
       this.prisma.restaurant.count({ where }),
     ]);
@@ -73,6 +74,7 @@ export class RestaurantsRepository {
   async findById(id: string) {
     return this.prisma.restaurant.findUnique({
       where: { id },
+      include: this.includeConfig,
     });
   }
 
@@ -80,8 +82,20 @@ export class RestaurantsRepository {
     return this.client(tx).restaurant.update({
       where: { id },
       data,
+      include: this.includeConfig,
     });
   }
+
+  private readonly includeConfig = {
+    tenant: { select: { id: true, name: true, slug: true } },
+    _count: {
+      select: {
+        branches: true,
+        users: true,
+        orders: true,
+      },
+    },
+  } satisfies Prisma.RestaurantInclude;
 
   async setActive(id: string, isActive: boolean, tx?: PrismaTx) {
     return this.client(tx).restaurant.update({

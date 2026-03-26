@@ -108,6 +108,7 @@ export class BranchesRepository {
         orderBy: {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
+        include: this.listIncludeConfig,
       }),
       this.prisma.branch.count({ where }),
     ]);
@@ -145,12 +146,48 @@ export class BranchesRepository {
         orderBy: {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
+        include: this.listIncludeConfig,
       }),
       this.prisma.branch.count({ where }),
     ]);
 
     return { items, total };
   }
+
+  private readonly listIncludeConfig = {
+    restaurant: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        coverImage: true,
+      },
+    },
+    manager: {
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true,
+            phone: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    },
+    _count: {
+      select: {
+        users: true,
+        orders: true,
+        deliverymen: true,
+      },
+    },
+  } satisfies Prisma.BranchInclude;
 
   async listByBranchId(branchId: string) {
     return this.prisma.branch.findMany({

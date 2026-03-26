@@ -66,8 +66,28 @@ export class StaffManagementRepository {
 
   private readonly includeConfig = {
     profile: true,
+    tenant: { select: { id: true, name: true, slug: true } },
+    restaurant: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        coverImage: true,
+      },
+    },
+    branch: {
+      select: {
+        id: true,
+        name: true,
+        coverImage: true,
+      },
+    },
     staffRole: {
       include: {
+        tenant: { select: { id: true, name: true } },
+        restaurant: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
         permissions: {
           orderBy: [{ access: 'asc' }],
         },

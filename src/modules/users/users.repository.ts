@@ -98,7 +98,7 @@ export class UsersRepository {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,
-        include: { profile: true },
+        include: this.customerIncludeConfig,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: {
@@ -129,7 +129,7 @@ export class UsersRepository {
           : {}),
         ...(options?.withDeleted ? {} : { deletedAt: null }),
       },
-      include: { profile: true },
+      include: this.customerIncludeConfig,
     });
   }
 
@@ -164,6 +164,27 @@ export class UsersRepository {
       },
     });
   }
+
+  private readonly customerIncludeConfig = {
+    profile: true,
+    tenant: { select: { id: true, name: true, slug: true } },
+    restaurant: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        coverImage: true,
+      },
+    },
+    branch: {
+      select: {
+        id: true,
+        name: true,
+        coverImage: true,
+      },
+    },
+  } satisfies Prisma.UserInclude;
 
   async incrementVerificationOtpAttempts(userId: string) {
     return this.prisma.user.update({

@@ -54,6 +54,7 @@ export class CouponsRepository {
         orderBy: {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
+        include: this.includeConfig,
       }),
       this.prisma.coupon.count({ where }),
     ]);
@@ -62,7 +63,11 @@ export class CouponsRepository {
   }
 
   async update(id: string, data: Prisma.CouponUpdateInput, tx?: PrismaTx) {
-    return this.client(tx).coupon.update({ where: { id }, data });
+    return this.client(tx).coupon.update({
+      where: { id },
+      data,
+      include: this.includeConfig,
+    });
   }
 
   async countCustomerUsage(
@@ -76,6 +81,21 @@ export class CouponsRepository {
       },
     });
   }
+
+  private readonly includeConfig = {
+    branch: { select: { id: true, name: true, coverImage: true } },
+    restaurant: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        coverImage: true,
+      },
+    },
+    scopeMenuItem: { select: { id: true, name: true, imageUrl: true } },
+    scopeCategory: { select: { id: true, name: true, imageUrl: true } },
+  } satisfies Prisma.CouponInclude;
 
   async incrementUsage(
     couponId: string,
