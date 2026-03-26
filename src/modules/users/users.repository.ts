@@ -306,8 +306,6 @@ export class UsersRepository {
       password: string;
       verificationToken: string;
       tenantId: string;
-      restaurantId: string;
-      branchId: string;
     },
     tx?: PrismaTx,
   ) {
@@ -319,8 +317,6 @@ export class UsersRepository {
         isVerified: false,
         verificationToken: payload.verificationToken,
         tenant: { connect: { id: payload.tenantId } },
-        restaurant: { connect: { id: payload.restaurantId } },
-        branch: { connect: { id: payload.branchId } },
       },
       tx,
     );

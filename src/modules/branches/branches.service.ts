@@ -228,7 +228,6 @@ export class BranchesService {
 
     const roleScopedRestaurantId =
       user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
       user.role === UserRoleEnum.CUSTOMER
         ? user.rid
         : undefined;
@@ -256,9 +255,18 @@ export class BranchesService {
 
     if (
       user.role !== UserRoleEnum.SUPER_ADMIN &&
+      user.role !== UserRoleEnum.BUSINESS_ADMIN &&
       (!effectiveTenantId || !effectiveRestaurantId)
     ) {
       throw new ForbiddenException('Restaurant context is required');
+    }
+
+    if (
+      user.role === UserRoleEnum.BUSINESS_ADMIN &&
+      effectiveRestaurantId &&
+      !effectiveTenantId
+    ) {
+      throw new ForbiddenException('Restaurant context is invalid');
     }
 
     if (effectiveRestaurantId && !effectiveTenantId) {
@@ -462,13 +470,21 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    if (
-      user.role === UserRoleEnum.BUSINESS_ADMIN &&
-      user.rid !== branch.restaurantId
-    ) {
-      throw new ForbiddenException(
-        'You cannot access resources outside your restaurant',
-      );
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: { id: branch.restaurantId, tenantId: user.tid, deletedAt: null },
+        select: { id: true },
+      });
+
+      if (!restaurant) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
+      }
     }
 
     const summary = await this.branchesRepository.getDeleteSummary(id);
@@ -504,6 +520,14 @@ export class BranchesService {
       return;
     }
 
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      return;
+    }
+
     if (user.rid !== branch.restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
@@ -529,8 +553,23 @@ export class BranchesService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): string {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        return requestedRestaurantId;
+      }
+
+      if (user.rid) {
+        return user.rid;
+      }
+
+      throw new BadRequestException('restaurantId is required');
+    }
+
     if (
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
       user.role === UserRoleEnum.BRANCH_ADMIN ||
       user.role === UserRoleEnum.CUSTOMER
     ) {

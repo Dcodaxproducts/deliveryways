@@ -187,7 +187,10 @@ export class OrdersService {
   }
 
   async list(user: AuthUserContext, query: ListOrdersDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+    );
     const customerId =
       user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
     const { items, total } = await this.ordersRepository.list(
@@ -210,7 +213,7 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
 
     return {
       data: this.toOrderDetailsResponse(order),
@@ -229,7 +232,12 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    this.assertOrderAccess(user, order.restaurantId, order.customerId, true);
+    await this.assertOrderAccess(
+      user,
+      order.restaurantId,
+      order.customerId,
+      true,
+    );
 
     if (
       !this.isValidStatusTransition(order.orderType, order.status, dto.status)
@@ -255,7 +263,7 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
 
     const terminalStatuses: OrderStatus[] = [
       OrderStatus.DELIVERED,
@@ -293,7 +301,12 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    this.assertOrderAccess(user, order.restaurantId, order.customerId, true);
+    await this.assertOrderAccess(
+      user,
+      order.restaurantId,
+      order.customerId,
+      true,
+    );
 
     if (order.orderType !== OrderType.DELIVERY) {
       throw new BadRequestException('Only delivery orders can be assigned');
@@ -360,7 +373,7 @@ export class OrdersService {
       throw new BadRequestException('Branch not found or inactive');
     }
 
-    this.ensureBranchAccess(user, branch.restaurantId, branch.id);
+    await this.ensureBranchAccess(user, branch.restaurantId, branch.id);
 
     const settings = this.readBranchSettings(branch.settings);
     const customer = await this.resolveQuoteCustomer(
@@ -879,11 +892,23 @@ export class OrdersService {
     };
   }
 
-  private resolveRestaurantId(
+  private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return requestedRestaurantId;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      }
+
       return requestedRestaurantId;
     }
 
@@ -942,7 +967,7 @@ export class OrdersService {
     return { customerId: customer.id };
   }
 
-  private ensureBranchAccess(
+  private async ensureBranchAccess(
     user: AuthUserContext,
     restaurantId: string,
     branchId: string,
@@ -951,7 +976,13 @@ export class OrdersService {
       return;
     }
 
-    if (user.rid !== restaurantId) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+    } else if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
@@ -968,7 +999,7 @@ export class OrdersService {
     }
   }
 
-  private assertOrderAccess(
+  private async assertOrderAccess(
     user: AuthUserContext,
     restaurantId: string,
     customerId: string,
@@ -990,9 +1021,34 @@ export class OrdersService {
       return;
     }
 
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
+    }
+
     if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
+      );
+    }
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }

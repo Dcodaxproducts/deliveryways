@@ -159,9 +159,9 @@ export class StaffRolesService {
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid || role.restaurantId !== user.rid) {
+      if (!user.tid || role.tenantId !== user.tid) {
         throw new ForbiddenException(
-          'You cannot access staff roles outside your restaurant',
+          'You cannot access staff roles outside your tenant',
         );
       }
 
@@ -212,13 +212,14 @@ export class StaffRolesService {
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
       }
 
       return {
         ...baseWhere,
-        restaurantId: user.rid,
+        tenantId: user.tid,
+        ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
       };
     }
@@ -288,26 +289,22 @@ export class StaffRolesService {
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid || !user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
-      }
-
-      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot create staff roles outside your restaurant',
-        );
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
       }
 
       if (requestedBranchId) {
         const branch = await this.prisma.branch.findFirst({
           where: {
             id: requestedBranchId,
-            restaurantId: user.rid,
             tenantId: user.tid,
+            ...(requestedRestaurantId
+              ? { restaurantId: requestedRestaurantId }
+              : {}),
             deletedAt: null,
             isActive: true,
           },
-          select: { id: true },
+          select: { id: true, restaurantId: true },
         });
 
         if (!branch) {
@@ -317,15 +314,33 @@ export class StaffRolesService {
         return {
           scope: StaffRoleScope.BRANCH,
           tenantId: user.tid,
-          restaurantId: user.rid,
+          restaurantId: branch.restaurantId,
           branchId: branch.id,
         };
+      }
+
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: {
+          id: requestedRestaurantId,
+          tenantId: user.tid,
+          deletedAt: null,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (!restaurant) {
+        throw new BadRequestException('Restaurant not found');
       }
 
       return {
         scope: StaffRoleScope.RESTAURANT,
         tenantId: user.tid,
-        restaurantId: user.rid,
+        restaurantId: restaurant.id,
         branchId: null,
       };
     }

@@ -25,7 +25,7 @@ export class MenuItemService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
-    const restaurantId = this.resolveRestaurantId(user, dto.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     await this.validateCategory(restaurantId, dto.categoryId);
 
     const data = await this.itemRepository.create({
@@ -47,7 +47,7 @@ export class MenuItemService {
   }
 
   async createBulk(user: AuthUserContext, dto: BulkCreateMenuItemsDto) {
-    const restaurantId = this.resolveRestaurantId(user, dto.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
 
     if (!dto.items.length) {
       throw new BadRequestException('At least one item is required');
@@ -81,7 +81,7 @@ export class MenuItemService {
   }
 
   async list(user: AuthUserContext, query: ListMenuItemsDto) {
-    const restaurantId = this.resolveRestaurantIdForList(
+    const restaurantId = await this.resolveRestaurantIdForList(
       user,
       query.restaurantId,
     );
@@ -103,7 +103,7 @@ export class MenuItemService {
       throw new NotFoundException('Menu item not found');
     }
 
-    this.ensureCanAccessRestaurant(user, item.restaurantId);
+    await this.ensureCanAccessRestaurant(user, item.restaurantId);
 
     if (dto.categoryId) {
       await this.validateCategory(item.restaurantId, dto.categoryId);
@@ -137,28 +137,27 @@ export class MenuItemService {
       throw new NotFoundException('Menu item not found');
     }
 
-    this.ensureCanAccessRestaurant(user, item.restaurantId);
+    await this.ensureCanAccessRestaurant(user, item.restaurantId);
 
     const data = await this.itemRepository.softDelete(id);
     return { data, message: 'Menu item deleted successfully' };
   }
 
-  private resolveRestaurantId(
+  private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string {
+  ): Promise<string> {
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
       }
 
-      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot access resources outside your restaurant',
-        );
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
       }
 
-      return user.rid;
+      await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      return requestedRestaurantId;
     }
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
@@ -174,16 +173,27 @@ export class MenuItemService {
     );
   }
 
-  private resolveRestaurantIdForList(
+  private async resolveRestaurantIdForList(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
 
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      }
+
+      return requestedRestaurantId;
+    }
+
     if (
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
       user.role === UserRoleEnum.BRANCH_ADMIN ||
       user.role === UserRoleEnum.CUSTOMER
     ) {
@@ -203,7 +213,7 @@ export class MenuItemService {
     throw new ForbiddenException('Insufficient permissions for menu items');
   }
 
-  private ensureCanAccessRestaurant(
+  private async ensureCanAccessRestaurant(
     user: AuthUserContext,
     restaurantId: string,
   ) {
@@ -211,9 +221,34 @@ export class MenuItemService {
       return;
     }
 
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
+    }
+
     if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
+      );
+    }
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }

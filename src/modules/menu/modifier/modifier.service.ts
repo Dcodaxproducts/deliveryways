@@ -27,7 +27,7 @@ export class ModifierService {
   ) {}
 
   async createGroup(user: AuthUserContext, dto: CreateModifierGroupDto) {
-    const restaurantId = this.resolveRestaurantId(user, dto.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
 
     if ((dto.maxSelect ?? 1) < (dto.minSelect ?? 0)) {
       throw new BadRequestException('maxSelect cannot be less than minSelect');
@@ -48,7 +48,7 @@ export class ModifierService {
   }
 
   async listGroups(user: AuthUserContext, query: ListModifierGroupsDto) {
-    const restaurantId = this.resolveRestaurantIdForList(
+    const restaurantId = await this.resolveRestaurantIdForList(
       user,
       query.restaurantId,
     );
@@ -74,7 +74,7 @@ export class ModifierService {
       throw new NotFoundException('Modifier group not found');
     }
 
-    this.ensureWriteAccess(user, group.restaurantId);
+    await this.ensureWriteAccess(user, group.restaurantId);
 
     if (
       dto.minSelect !== undefined &&
@@ -103,7 +103,7 @@ export class ModifierService {
       throw new NotFoundException('Modifier group not found');
     }
 
-    this.ensureWriteAccess(user, group.restaurantId);
+    await this.ensureWriteAccess(user, group.restaurantId);
 
     const data = await this.modifierRepository.softDeleteGroup(id);
     return { data, message: 'Modifier group deleted successfully' };
@@ -117,7 +117,7 @@ export class ModifierService {
       throw new NotFoundException('Modifier group not found');
     }
 
-    this.ensureWriteAccess(user, group.restaurantId);
+    await this.ensureWriteAccess(user, group.restaurantId);
 
     const data = await this.modifierRepository.createModifier({
       modifierGroup: { connect: { id: dto.modifierGroupId } },
@@ -147,7 +147,7 @@ export class ModifierService {
       throw new NotFoundException('Modifier group not found');
     }
 
-    this.ensureWriteAccess(user, group.restaurantId);
+    await this.ensureWriteAccess(user, group.restaurantId);
 
     const data = await this.modifierRepository.updateModifier(id, {
       name: dto.name,
@@ -175,7 +175,7 @@ export class ModifierService {
       throw new NotFoundException('Modifier group not found');
     }
 
-    this.ensureWriteAccess(user, group.restaurantId);
+    await this.ensureWriteAccess(user, group.restaurantId);
 
     const data = await this.modifierRepository.softDeleteModifier(id);
     return { data, message: 'Modifier deleted successfully' };
@@ -205,7 +205,7 @@ export class ModifierService {
       );
     }
 
-    this.ensureWriteAccess(user, item.restaurantId);
+    await this.ensureWriteAccess(user, item.restaurantId);
 
     const data = await this.modifierRepository.attachGroupToItem(
       itemId,
@@ -216,22 +216,21 @@ export class ModifierService {
     return { data, message: 'Modifier group attached to item successfully' };
   }
 
-  private resolveRestaurantId(
+  private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string {
+  ): Promise<string> {
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
       }
 
-      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot access resources outside your restaurant',
-        );
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
       }
 
-      return user.rid;
+      await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      return requestedRestaurantId;
     }
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
@@ -245,16 +244,27 @@ export class ModifierService {
     throw new ForbiddenException('Insufficient permissions for modifier write');
   }
 
-  private resolveRestaurantIdForList(
+  private async resolveRestaurantIdForList(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
 
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      }
+
+      return requestedRestaurantId;
+    }
+
     if (
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
       user.role === UserRoleEnum.BRANCH_ADMIN ||
       user.role === UserRoleEnum.CUSTOMER
     ) {
@@ -274,17 +284,35 @@ export class ModifierService {
     throw new ForbiddenException('Insufficient permissions for modifiers');
   }
 
-  private ensureWriteAccess(user: AuthUserContext, restaurantId: string) {
+  private async ensureWriteAccess(user: AuthUserContext, restaurantId: string) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
 
-    if (
-      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
-      user.rid !== restaurantId
-    ) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
+    }
+
+    throw new ForbiddenException('Insufficient permissions for modifier write');
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!restaurant) {
       throw new ForbiddenException(
-        'Insufficient permissions for modifier write',
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }

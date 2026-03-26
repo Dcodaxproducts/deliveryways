@@ -215,9 +215,9 @@ export class StaffManagementService {
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid || staff.restaurantId !== user.rid) {
+      if (!user.tid || staff.tenantId !== user.tid) {
         throw new ForbiddenException(
-          'You cannot access staff accounts outside your restaurant',
+          'You cannot access staff accounts outside your tenant',
         );
       }
 
@@ -283,13 +283,13 @@ export class StaffManagementService {
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
       }
 
       return {
         ...baseWhere,
-        restaurantId: user.rid,
+        tenantId: user.tid,
       };
     }
 

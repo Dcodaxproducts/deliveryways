@@ -65,6 +65,9 @@ describe('DeliverymenService', () => {
             tenantId: 'tenant-1',
           }),
         },
+        restaurant: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
+        },
         deliveryman: {
           findFirst: jest.fn().mockResolvedValue(null),
         },

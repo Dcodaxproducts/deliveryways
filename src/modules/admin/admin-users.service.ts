@@ -28,10 +28,7 @@ export class AdminUsersService {
 
     const scopedQuery: AdminListCustomersDto = { ...query };
 
-    if (
-      user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.BUSINESS_ADMIN
-    ) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
       if (!user.rid) {
         throw new ForbiddenException('Restaurant context is required');
       }
@@ -73,13 +70,9 @@ export class AdminUsersService {
     }
 
     const restaurantId =
-      user.role === UserRoleEnum.SUPER_ADMIN ? query.restaurantId : user.rid;
+      user.role === UserRoleEnum.BRANCH_ADMIN ? user.rid : query.restaurantId;
 
-    if (
-      (user.role === UserRoleEnum.BRANCH_ADMIN ||
-        user.role === UserRoleEnum.BUSINESS_ADMIN) &&
-      !restaurantId
-    ) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
       throw new ForbiddenException('Restaurant context is required');
     }
 

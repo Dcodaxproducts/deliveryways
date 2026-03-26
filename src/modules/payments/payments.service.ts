@@ -49,7 +49,7 @@ export class PaymentsService {
       throw new NotFoundException('Order not found');
     }
 
-    this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
 
     if (order.paymentStatus === PaymentStatus.PAID) {
       throw new BadRequestException('Order is already paid');
@@ -77,7 +77,10 @@ export class PaymentsService {
   }
 
   async list(user: AuthUserContext, query: ListPaymentsDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+    );
     const customerId =
       user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
     const { items, total } = await this.paymentsRepository.list(
@@ -100,7 +103,7 @@ export class PaymentsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
-    this.assertOrderAccess(
+    await this.assertOrderAccess(
       user,
       payment.order.restaurantId,
       payment.order.customerId,
@@ -123,7 +126,7 @@ export class PaymentsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
-    this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
+    await this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
 
     if (payment.type !== PaymentTransactionType.CHARGE) {
       throw new BadRequestException(
@@ -174,7 +177,7 @@ export class PaymentsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
-    this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
+    await this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
 
     if (payment.status === PaymentStatus.REFUNDED) {
       throw new BadRequestException('Refunded transactions cannot be failed');
@@ -219,13 +222,17 @@ export class PaymentsService {
 
     const isCustomer = user.role === UserRoleEnum.CUSTOMER;
     if (isCustomer) {
-      this.assertOrderAccess(
+      await this.assertOrderAccess(
         user,
         payment.order.restaurantId,
         payment.order.customerId,
       );
     } else {
-      this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
+      await this.assertAdminPaymentAccess(
+        user,
+        payment.order.restaurantId,
+        true,
+      );
     }
 
     if (payment.status === PaymentStatus.PAID) {
@@ -269,7 +276,7 @@ export class PaymentsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
-    this.assertAdminPaymentAccess(user, payment.order.restaurantId);
+    await this.assertAdminPaymentAccess(user, payment.order.restaurantId);
 
     if (payment.type !== PaymentTransactionType.CHARGE) {
       throw new BadRequestException('Only charge transactions can be refunded');
@@ -355,10 +362,10 @@ export class PaymentsService {
     };
   }
 
-  private resolveRestaurantId(
+  private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
@@ -377,10 +384,14 @@ export class PaymentsService {
       return user.rid;
     }
 
-    return this.assertAdminPaymentAccess(user, requestedRestaurantId, true);
+    return await this.assertAdminPaymentAccess(
+      user,
+      requestedRestaurantId,
+      true,
+    );
   }
 
-  private assertOrderAccess(
+  private async assertOrderAccess(
     user: AuthUserContext,
     restaurantId: string,
     customerId: string,
@@ -403,22 +414,40 @@ export class PaymentsService {
       return;
     }
 
-    this.assertAdminPaymentAccess(user, restaurantId, true);
+    await this.assertAdminPaymentAccess(user, restaurantId, true);
   }
 
-  private assertAdminPaymentAccess(
+  private async assertAdminPaymentAccess(
     user: AuthUserContext,
     restaurantId?: string,
     allowBranchAdmin = false,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return restaurantId;
     }
 
-    if (
-      user.role !== UserRoleEnum.BUSINESS_ADMIN &&
-      !(allowBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)
-    ) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (restaurantId) {
+        const restaurant = await this.prisma.restaurant.findFirst({
+          where: { id: restaurantId, tenantId: user.tid, deletedAt: null },
+          select: { id: true },
+        });
+
+        if (!restaurant) {
+          throw new ForbiddenException(
+            'You cannot access resources outside your tenant restaurants',
+          );
+        }
+      }
+
+      return restaurantId;
+    }
+
+    if (!(allowBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)) {
       throw new ForbiddenException('Insufficient permissions for payments');
     }
 

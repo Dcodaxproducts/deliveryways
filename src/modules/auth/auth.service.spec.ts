@@ -56,7 +56,7 @@ describe('AuthService listCustomers and customerDetails', () => {
     expect(result.message).toBe('Customers fetched successfully');
   });
 
-  it('scopes business admin customer list to their restaurant', async () => {
+  it('allows business admin customer list across tenant and preserves explicit restaurant filter', async () => {
     usersService.listCustomers!.mockResolvedValue({
       items: [],
       total: 0,
@@ -83,7 +83,7 @@ describe('AuthService listCustomers and customerDetails', () => {
       {
         page: 1,
         limit: 10,
-        restaurantId: 'restaurant-1',
+        restaurantId: 'restaurant-2',
         sortBy: 'createdAt',
         sortOrder: 'DESC',
       },

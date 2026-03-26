@@ -157,8 +157,6 @@ export class AuthService {
           password: await bcrypt.hash(dto.user.password, 10),
           role: UserRoleEnum.BUSINESS_ADMIN,
           tenantId: tenant.id,
-          restaurantId: restaurant.id,
-          branchId: branch.id,
           verificationOtp: verificationOtp ?? undefined,
           verificationOtpExpiresAt: verificationOtpExpiresAt
             ? verificationOtpExpiresAt.toISOString()
@@ -194,13 +192,15 @@ export class AuthService {
       );
     }
 
-    const auth = await this.issueAuthTokens({
-      uid: result.ownerId,
-      role: UserRoleEnum.BUSINESS_ADMIN,
-      tid: result.tenantId,
-      rid: result.restaurantId,
-      bid: result.branchId,
-    });
+    const auth = await this.issueAuthTokens(
+      this.normalizeAuthScope({
+        uid: result.ownerId,
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: result.tenantId,
+        rid: result.restaurantId,
+        bid: result.branchId,
+      }),
+    );
 
     return {
       data: {
@@ -212,8 +212,8 @@ export class AuthService {
           email: result.email,
           role: UserRoleEnum.BUSINESS_ADMIN,
           tenantId: result.tenantId,
-          restaurantId: result.restaurantId,
-          branchId: result.branchId,
+          restaurantId: null,
+          branchId: null,
           isVerified: shouldAutoVerifyUser,
           isApproved: false,
         },
@@ -285,13 +285,15 @@ export class AuthService {
       );
     }
 
-    const auth = await this.issueAuthTokens({
-      uid: createdUser.id,
-      role: createdUser.role,
-      tid: createdUser.tenantId,
-      rid: createdUser.restaurantId,
-      bid: createdUser.branchId,
-    });
+    const auth = await this.issueAuthTokens(
+      this.normalizeAuthScope({
+        uid: createdUser.id,
+        role: createdUser.role,
+        tid: createdUser.tenantId,
+        rid: createdUser.restaurantId,
+        bid: createdUser.branchId,
+      }),
+    );
 
     return {
       data: {
@@ -322,10 +324,7 @@ export class AuthService {
 
     const scopedQuery: ListCustomersDto = { ...query };
 
-    if (
-      user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.BUSINESS_ADMIN
-    ) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
       if (!user.rid) {
         throw new ForbiddenException('Restaurant context is required');
       }
@@ -442,13 +441,15 @@ export class AuthService {
       throw new ForbiddenException('Your assigned staff role is inactive');
     }
 
-    const accessToken = await this.jwtService.signAsync({
-      uid: user.id,
-      role: user.role,
-      tid: user.tenantId,
-      rid: user.restaurantId,
-      bid: user.branchId,
-    });
+    const accessToken = await this.jwtService.signAsync(
+      this.normalizeAuthScope({
+        uid: user.id,
+        role: user.role,
+        tid: user.tenantId,
+        rid: user.restaurantId,
+        bid: user.branchId,
+      }),
+    );
 
     const refreshToken = await this.jwtService.signAsync(
       { uid: user.id, type: 'refresh' },
@@ -470,8 +471,9 @@ export class AuthService {
           email: user.email,
           role: user.role,
           tenantId: user.tenantId,
-          restaurantId: user.restaurantId,
-          branchId: user.branchId,
+          restaurantId:
+            user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
+          branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
           isVerified: user.isVerified,
           isApproved: user.isApproved,
           profile: user.profile,
@@ -528,13 +530,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const accessToken = await this.jwtService.signAsync({
-      uid: dbUser.id,
-      role: dbUser.role,
-      tid: dbUser.tenantId,
-      rid: dbUser.restaurantId,
-      bid: dbUser.branchId,
-    });
+    const accessToken = await this.jwtService.signAsync(
+      this.normalizeAuthScope({
+        uid: dbUser.id,
+        role: dbUser.role,
+        tid: dbUser.tenantId,
+        rid: dbUser.restaurantId,
+        bid: dbUser.branchId,
+      }),
+    );
 
     const refreshToken = await this.jwtService.signAsync(
       { uid: dbUser.id, type: 'refresh' },
@@ -917,6 +921,24 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  private normalizeAuthScope(payload: {
+    uid: string;
+    role: string;
+    tid: string | null | undefined;
+    rid: string | null | undefined;
+    bid: string | null | undefined;
+  }) {
+    if (payload.role === 'BUSINESS_ADMIN') {
+      return {
+        ...payload,
+        rid: null,
+        bid: null,
+      };
+    }
+
+    return payload;
   }
 
   private shouldAutoVerifyUser(emailEnabled: boolean): boolean {

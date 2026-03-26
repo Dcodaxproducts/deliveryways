@@ -47,7 +47,7 @@ export class CouponsService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateCouponDto) {
-    const restaurantId = this.requireRestaurantId(user);
+    const restaurantId = await this.requireRestaurantId(user);
 
     await this.validateScopeReferences(
       restaurantId,
@@ -91,7 +91,10 @@ export class CouponsService {
   }
 
   async list(user: AuthUserContext, query: ListCouponsDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(
+      user,
+      query.restaurantId,
+    );
     const { items, total } = await this.couponsRepository.list(
       restaurantId,
       query,
@@ -110,7 +113,7 @@ export class CouponsService {
       throw new NotFoundException('Coupon not found');
     }
 
-    this.ensureRestaurantAccess(user, coupon.restaurantId);
+    await this.ensureRestaurantAccess(user, coupon.restaurantId);
 
     await this.validateScopeReferences(
       coupon.restaurantId,
@@ -160,7 +163,7 @@ export class CouponsService {
     code: string,
     dto: SetCouponStatusDto,
   ) {
-    const restaurantId = this.requireRestaurantId(user);
+    const restaurantId = await this.requireRestaurantId(user);
     const coupon = await this.couponsRepository.findByCode(
       restaurantId,
       code.trim().toUpperCase(),
@@ -182,7 +185,7 @@ export class CouponsService {
   }
 
   async validate(user: AuthUserContext, dto: ValidateCouponDto) {
-    const restaurantId = this.requireRestaurantId(user);
+    const restaurantId = await this.requireRestaurantId(user);
     const customerId =
       user.role === UserRoleEnum.CUSTOMER
         ? user.uid
@@ -329,11 +332,21 @@ export class CouponsService {
     );
   }
 
-  private resolveRestaurantId(
+  private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return requestedRestaurantId;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      const tenantId = this.requireTenantId(user);
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(tenantId, requestedRestaurantId);
+      }
+
       return requestedRestaurantId;
     }
 
@@ -350,8 +363,8 @@ export class CouponsService {
     return user.rid;
   }
 
-  private requireRestaurantId(user: AuthUserContext): string {
-    const restaurantId = this.resolveRestaurantId(user);
+  private async requireRestaurantId(user: AuthUserContext): Promise<string> {
+    const restaurantId = await this.resolveRestaurantId(user);
 
     if (!restaurantId) {
       throw new BadRequestException('restaurantId is required');
@@ -360,14 +373,41 @@ export class CouponsService {
     return restaurantId;
   }
 
-  private ensureRestaurantAccess(user: AuthUserContext, restaurantId: string) {
+  private async ensureRestaurantAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      await this.assertRestaurantInTenant(
+        this.requireTenantId(user),
+        restaurantId,
+      );
       return;
     }
 
     if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
+      );
+    }
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }

@@ -26,7 +26,7 @@ export class RestaurantMenuService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateRestaurantMenuDto) {
-    const restaurantId = this.resolveRestaurantId(user, dto.restaurantId);
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     if (!restaurantId) {
       throw new BadRequestException('restaurantId is required');
     }
@@ -58,7 +58,7 @@ export class RestaurantMenuService {
   }
 
   async list(user: AuthUserContext, query: ListRestaurantMenusDto) {
-    const restaurantId = this.resolveRestaurantId(
+    const restaurantId = await this.resolveRestaurantId(
       user,
       query.restaurantId,
       true,
@@ -81,7 +81,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanReadRestaurant(user, menu.restaurantId);
+    await this.ensureCanReadRestaurant(user, menu.restaurantId);
 
     return {
       data: menu,
@@ -99,7 +99,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanWriteRestaurant(user, menu.restaurantId);
+    await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
     const data = await this.restaurantMenuRepository.update(id, {
       name: dto.name,
@@ -129,7 +129,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanWriteRestaurant(user, menu.restaurantId);
+    await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
     const data = await this.restaurantMenuRepository.softDelete(id);
     return { data, message: 'Restaurant menu deleted successfully' };
@@ -145,7 +145,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanWriteRestaurant(user, menu.restaurantId);
+    await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
     const data = await this.attachItemsToMenu(
       menu.id,
@@ -169,7 +169,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanReadRestaurant(user, menu.restaurantId);
+    await this.ensureCanReadRestaurant(user, menu.restaurantId);
 
     const { items, total } = await this.restaurantMenuRepository.listMenuItems(
       menu.id,
@@ -194,7 +194,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanWriteRestaurant(user, menu.restaurantId);
+    await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
     const link =
       await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
@@ -219,7 +219,7 @@ export class RestaurantMenuService {
       throw new NotFoundException('Restaurant menu not found');
     }
 
-    this.ensureCanWriteRestaurant(user, menu.restaurantId);
+    await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
     const link =
       await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
@@ -348,7 +348,7 @@ export class RestaurantMenuService {
     });
   }
 
-  private resolveRestaurantId(
+  private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
     allowReadFromToken = false,
@@ -357,8 +357,19 @@ export class RestaurantMenuService {
       return requestedRestaurantId;
     }
 
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      }
+
+      return requestedRestaurantId;
+    }
+
     const canReadFromToken =
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
       (allowReadFromToken && user.role === UserRoleEnum.BRANCH_ADMIN) ||
       (allowReadFromToken && user.role === UserRoleEnum.CUSTOMER);
 
@@ -381,8 +392,20 @@ export class RestaurantMenuService {
     );
   }
 
-  private ensureCanReadRestaurant(user: AuthUserContext, restaurantId: string) {
+  private async ensureCanReadRestaurant(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
       return;
     }
 
@@ -393,7 +416,7 @@ export class RestaurantMenuService {
     }
   }
 
-  private ensureCanWriteRestaurant(
+  private async ensureCanWriteRestaurant(
     user: AuthUserContext,
     restaurantId: string,
   ) {
@@ -401,12 +424,32 @@ export class RestaurantMenuService {
       return;
     }
 
-    if (
-      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
-      user.rid !== restaurantId
-    ) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Insufficient permissions for restaurant menu write',
+    );
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!restaurant) {
       throw new ForbiddenException(
-        'Insufficient permissions for restaurant menu write',
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }
