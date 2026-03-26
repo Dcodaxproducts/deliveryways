@@ -181,11 +181,7 @@ export class OrdersService {
     await this.notificationsService.notifyOrderPlaced(data.id);
 
     return {
-      data: {
-        ...data,
-        orderTime: data.orderTime,
-        isScheduled: data.isScheduled,
-      },
+      data: this.toOrderMutationResponse(data),
       message: 'Order created successfully',
     };
   }
@@ -244,7 +240,7 @@ export class OrdersService {
     await this.notificationsService.notifyOrderStatusChanged(data.id);
 
     return {
-      data,
+      data: this.toOrderMutationResponse(data),
       message: 'Order status updated successfully',
     };
   }
@@ -275,7 +271,7 @@ export class OrdersService {
     await this.notificationsService.notifyOrderStatusChanged(data.id);
 
     return {
-      data,
+      data: this.toOrderMutationResponse(data),
       message: 'Order cancelled successfully',
     };
   }
@@ -334,7 +330,7 @@ export class OrdersService {
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
 
-    return data;
+    return this.toOrderMutationResponse(data);
   }
 
   private async buildQuote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -583,6 +579,14 @@ export class OrdersService {
     return scheduledAt.getTime() > Date.now();
   }
 
+  private toOrderMutationResponse<T extends { tenantId?: string | null }>(
+    order: T,
+  ): Omit<T, 'tenantId'> {
+    const rest = { ...order } as T & { tenantId?: string | null };
+    delete rest.tenantId;
+    return rest;
+  }
+
   private toOrderListResponse(order: {
     id: string;
     branchId: string;
@@ -766,7 +770,6 @@ export class OrdersService {
   }) {
     return {
       id: order.id,
-      tenantId: order.tenantId,
       restaurantId: order.restaurantId,
       branchId: order.branchId,
       customerId: order.customerId,

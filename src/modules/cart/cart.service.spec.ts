@@ -57,7 +57,10 @@ describe('CartService', () => {
     });
 
     expect(result.data.items).toEqual([]);
-    expect(result.data.selectedAddressId).toBe('address-1');
+    expect(result.data.deliveryAddressId).toBe('address-1');
+    expect(result.data).not.toHaveProperty('selectedAddressId');
+    expect(result.data).not.toHaveProperty('defaultAddressId');
+    expect(result.data).not.toHaveProperty('tenantId');
     expect(cartRepository.findByCustomerId).toHaveBeenCalledWith('user-1');
   });
 
@@ -120,7 +123,10 @@ describe('CartService', () => {
     };
     expect(firstItem.menuItem?.name).toBe('Burger');
     expect(firstItem.menuItemId).toBe('menu-1');
-    expect(result.data.selectedAddressId).toBe('address-1');
+    expect(result.data.deliveryAddressId).toBe('address-1');
+    expect(result.data).not.toHaveProperty('selectedAddressId');
+    expect(result.data).not.toHaveProperty('defaultAddressId');
+    expect(result.data).not.toHaveProperty('tenantId');
     expect(result.data.couponCode).toBe('SAVE10');
     expect(ordersService.quote).not.toHaveBeenCalled();
   });
@@ -467,8 +473,9 @@ describe('CartService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('applies coupon through dedicated cart coupon action', async () => {
-    const { service, cartRepository, profilesRepository } = makeService();
+  it('validates coupon before saving it to cart', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
     const cart = {
       id: 'cart-1',
       tenantId: 'tenant-1',
@@ -476,12 +483,23 @@ describe('CartService', () => {
       branchId: 'branch-1',
       customerId: 'customer-1',
       orderType: 'DELIVERY',
-      deliveryAddressId: null,
+      deliveryAddressId: 'address-1',
       couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
       customerNote: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      items: [],
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
     };
     cartRepository.findByCustomerId
       .mockResolvedValueOnce(cart)
@@ -495,6 +513,14 @@ describe('CartService', () => {
     });
     cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        couponCode: 'SAVE10',
+        discountAmount: 100,
+        totalAmount: 400,
+      },
+      message: 'Order quote generated successfully',
+    });
 
     const result = await service.applyCoupon(
       {
@@ -506,9 +532,19 @@ describe('CartService', () => {
       { couponCode: 'SAVE10' },
     );
 
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        couponCode: 'SAVE10',
+        branchId: 'branch-1',
+        deliveryAddressId: 'address-1',
+      }),
+    );
     expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
       couponCode: 'SAVE10',
     });
+    expect(result.data.quote.discountAmount).toBe(100);
+    expect(result.data.cart.couponCode).toBe('SAVE10');
     expect(result.message).toBe('Cart coupon updated successfully');
   });
 

@@ -207,8 +207,23 @@ export class CartService {
       throw new NotFoundException('Cart not found');
     }
 
+    if (!cart.items.length) {
+      throw new BadRequestException('Cart is empty');
+    }
+
+    const couponCode = this.resolveOptionalString(dto.couponCode);
+
+    if (!couponCode) {
+      throw new BadRequestException('couponCode is required');
+    }
+
+    const quote = await this.ordersService.quote(user, {
+      ...(await this.toQuotePayload(cart)),
+      couponCode,
+    });
+
     await this.cartRepository.update(cart.id, {
-      couponCode: this.resolveOptionalString(dto.couponCode),
+      couponCode,
     });
 
     const updatedCart = await this.getExistingCartOrThrow(
@@ -217,7 +232,10 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart),
+      data: {
+        cart: await this.buildCartResponse(updatedCart),
+        quote: quote.data,
+      },
       message: 'Cart coupon updated successfully',
     };
   }
@@ -503,18 +521,16 @@ export class CartService {
     );
     const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
     const defaultAddressId = await this.getDefaultAddressId(cart.customerId);
-    const selectedAddressId = cart.deliveryAddressId ?? defaultAddressId;
+    const effectiveDeliveryAddressId =
+      cart.deliveryAddressId ?? defaultAddressId;
 
     return {
       id: cart.id,
-      tenantId: cart.tenantId,
       restaurantId: cart.restaurantId,
       branchId: cart.branchId,
       customerId: cart.customerId,
       orderType: cart.orderType,
-      deliveryAddressId: cart.deliveryAddressId,
-      selectedAddressId,
-      defaultAddressId,
+      deliveryAddressId: effectiveDeliveryAddressId,
       couponCode: cart.couponCode,
       paymentMethod: cart.paymentMethod,
       orderTime: cart.orderTime,
@@ -876,14 +892,11 @@ export class CartService {
 
     return {
       id: null,
-      tenantId: null,
       restaurantId: null,
       branchId: null,
       customerId,
       orderType: OrderType.DELIVERY,
-      deliveryAddressId: null,
-      selectedAddressId: defaultAddressId,
-      defaultAddressId,
+      deliveryAddressId: defaultAddressId,
       couponCode: null,
       paymentMethod: null,
       orderTime: null,
