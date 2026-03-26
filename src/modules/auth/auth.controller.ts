@@ -54,6 +54,12 @@ export class AuthController {
   }
 
   @Public()
+  @Post('staff/login')
+  staffLogin(@Body() dto: LoginDto) {
+    return this.authService.loginStaff(dto);
+  }
+
+  @Public()
   @Post('refresh')
   refresh(@Body() dto: RefreshDto) {
     return this.authService.refreshTokens(dto);

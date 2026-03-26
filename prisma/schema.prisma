@@ -14,10 +14,10 @@ enum UserRole {
   STAFF
 }
 
-enum StaffRoleScope {
+enum StaffPanelType {
   SUPER_ADMIN
-  RESTAURANT
-  BRANCH
+  BUSINESS_ADMIN
+  BRANCH_ADMIN
 }
 
 enum AddressRefType {
@@ -132,6 +132,7 @@ model Tenant {
   branches      Branch[]
   users         User[]               @relation("TenantUsers")
   staffRoles    StaffRole[]
+  staffUsers    StaffUser[]
   coupons       Coupon[]
   carts         Cart[]
   orders        Order[]
@@ -165,6 +166,7 @@ model Restaurant {
   branches            Branch[]
   users               User[]               @relation("RestaurantUsers")
   staffRoles          StaffRole[]
+  staffUsers          StaffUser[]
   restaurantMenus     RestaurantMenu[]
   menuCategories      MenuCategory[]
   menuItems           MenuItem[]
@@ -201,6 +203,7 @@ model Branch {
   manager            User?                    @relation("BranchManager", fields: [managerId], references: [id])
   users              User[]                   @relation("BranchUsers")
   staffRoles         StaffRole[]
+  staffUsers         StaffUser[]
   menuItemOverrides  BranchMenuItemOverride[]
   categoryOverrides  BranchCategoryOverride[]
   inventoryMovements InventoryMovement[]
@@ -256,7 +259,6 @@ model User {
   tenantId                  String?   @map("tenant_id")
   restaurantId              String?   @map("restaurant_id")
   branchId                  String?   @map("branch_id")
-  staffRoleId               String?   @map("staff_role_id")
   isActive                  Boolean   @default(true) @map("is_active")
   deletedAt                 DateTime? @map("deleted_at") @db.Timestamptz
   createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz
@@ -266,8 +268,9 @@ model User {
   tenant                Tenant?             @relation("TenantUsers", fields: [tenantId], references: [id])
   restaurant            Restaurant?         @relation("RestaurantUsers", fields: [restaurantId], references: [id])
   branch                Branch?             @relation("BranchUsers", fields: [branchId], references: [id])
-  staffRole             StaffRole?          @relation("UserStaffRole", fields: [staffRoleId], references: [id])
   managedBranches       Branch[]            @relation("BranchManager")
+  ownedStaffRoles       StaffRole[]         @relation("StaffRoleOwner")
+  ownedStaffUsers       StaffUser[]         @relation("StaffUserOwner")
   profile               Profile?
   cart                  Cart?               @relation("CustomerCart")
   createdMovements      InventoryMovement[] @relation("MovementCreatedBy")
@@ -626,39 +629,63 @@ model CouponUsage {
 
 model StaffRole {
   id           String         @id @default(cuid())
+  ownerUserId  String         @map("owner_user_id")
+  panelType    StaffPanelType @map("panel_type")
   tenantId     String?        @map("tenant_id")
   restaurantId String?        @map("restaurant_id")
   branchId     String?        @map("branch_id")
   name         String
   description  String?
-  scope        StaffRoleScope
+  permissions  Json
   isActive     Boolean        @default(true) @map("is_active")
   deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant       Tenant?                 @relation(fields: [tenantId], references: [id])
-  restaurant   Restaurant?             @relation(fields: [restaurantId], references: [id])
-  branch       Branch?                 @relation(fields: [branchId], references: [id])
-  permissions  StaffRolePermission[]
-  staffMembers User[]                  @relation("UserStaffRole")
+  ownerUser    User           @relation("StaffRoleOwner", fields: [ownerUserId], references: [id])
+  tenant       Tenant?        @relation(fields: [tenantId], references: [id])
+  restaurant   Restaurant?    @relation(fields: [restaurantId], references: [id])
+  branch       Branch?        @relation(fields: [branchId], references: [id])
+  staffUsers   StaffUser[]
 
+  @@index([ownerUserId, panelType, isActive])
   @@index([tenantId, restaurantId, branchId, isActive])
   @@map("staff_roles")
 }
 
-model StaffRolePermission {
-  id          String    @id @default(cuid())
-  staffRoleId String    @map("staff_role_id")
-  access      String
-  operations  String[]
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+model StaffUser {
+  id               String         @id @default(cuid())
+  ownerUserId      String         @map("owner_user_id")
+  staffRoleId      String         @map("staff_role_id")
+  panelType        StaffPanelType @map("panel_type")
+  email            String
+  password         String
+  firstName        String         @map("first_name")
+  lastName         String         @map("last_name")
+  phone            String?
+  avatarUrl        String?        @map("avatar_url")
+  bio              String?
+  refreshTokenHash String?        @map("refresh_token_hash")
+  tenantId         String?        @map("tenant_id")
+  restaurantId     String?        @map("restaurant_id")
+  branchId         String?        @map("branch_id")
+  isVerified       Boolean        @default(true) @map("is_verified")
+  isApproved       Boolean        @default(true) @map("is_approved")
+  isActive         Boolean        @default(true) @map("is_active")
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
-  staffRole StaffRole @relation(fields: [staffRoleId], references: [id], onDelete: Cascade)
+  ownerUser   User        @relation("StaffUserOwner", fields: [ownerUserId], references: [id])
+  staffRole   StaffRole   @relation(fields: [staffRoleId], references: [id])
+  tenant      Tenant?     @relation(fields: [tenantId], references: [id])
+  restaurant  Restaurant? @relation(fields: [restaurantId], references: [id])
+  branch      Branch?     @relation(fields: [branchId], references: [id])
 
-  @@index([staffRoleId, access])
-  @@map("staff_role_permissions")
+  @@unique([email])
+  @@index([ownerUserId, panelType, isActive])
+  @@index([tenantId, restaurantId, branchId, isActive])
+  @@map("staff_users")
 }
 
 model Deliveryman {

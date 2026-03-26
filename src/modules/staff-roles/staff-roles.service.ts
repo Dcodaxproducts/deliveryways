@@ -4,20 +4,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, StaffRoleScope } from '@prisma/client';
+import { Prisma, StaffPanelType } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
-import { PrismaService } from '../../database';
 import {
   CreateStaffRoleDto,
   ListStaffRolesDto,
+  StaffRolePermissionDto,
   UpdateStaffRoleDto,
 } from './dto';
 import { StaffRolesRepository } from './staff-roles.repository';
 
-interface ResolvedStaffRoleScope {
-  scope: StaffRoleScope;
+interface ResolvedStaffScope {
+  ownerUserId: string;
+  panelType: StaffPanelType;
   tenantId: string | null;
   restaurantId: string | null;
   branchId: string | null;
@@ -25,37 +26,23 @@ interface ResolvedStaffRoleScope {
 
 @Injectable()
 export class StaffRolesService {
-  constructor(
-    private readonly staffRolesRepository: StaffRolesRepository,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly staffRolesRepository: StaffRolesRepository) {}
 
   async create(user: AuthUserContext, dto: CreateStaffRoleDto) {
-    const scope = await this.resolveScopeForCreation(
-      user,
-      dto.restaurantId,
-      dto.branchId,
-    );
-
+    const scope = this.resolveScopeForUser(user);
     await this.assertUniqueRoleName(scope, dto.name);
 
     const data = await this.staffRolesRepository.create({
+      ownerUser: { connect: { id: scope.ownerUserId } },
+      panelType: scope.panelType,
       name: dto.name.trim(),
       description: this.resolveOptionalString(dto.description),
-      scope: scope.scope,
+      permissions: this.normalizePermissions(dto.permissions),
       tenant: scope.tenantId ? { connect: { id: scope.tenantId } } : undefined,
       restaurant: scope.restaurantId
         ? { connect: { id: scope.restaurantId } }
         : undefined,
       branch: scope.branchId ? { connect: { id: scope.branchId } } : undefined,
-      permissions: {
-        create: dto.permissions.map((permission) => ({
-          access: permission.access.trim(),
-          operations: [
-            ...new Set(permission.operations.map((item) => item.trim())),
-          ],
-        })),
-      },
     });
 
     return {
@@ -90,7 +77,8 @@ export class StaffRolesService {
     if (dto.name) {
       await this.assertUniqueRoleName(
         {
-          scope: role.scope,
+          ownerUserId: role.ownerUserId,
+          panelType: role.panelType,
           tenantId: role.tenantId,
           restaurantId: role.restaurantId,
           branchId: role.branchId,
@@ -109,15 +97,7 @@ export class StaffRolesService {
       isActive: dto.isActive,
       permissions:
         dto.permissions !== undefined
-          ? {
-              deleteMany: {},
-              create: dto.permissions.map((permission) => ({
-                access: permission.access.trim(),
-                operations: [
-                  ...new Set(permission.operations.map((item) => item.trim())),
-                ],
-              })),
-            }
+          ? this.normalizePermissions(dto.permissions)
           : undefined,
     });
 
@@ -154,38 +134,31 @@ export class StaffRolesService {
       throw new NotFoundException('Staff role not found');
     }
 
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return role;
+    const scope = this.resolveScopeForUser(user);
+
+    if (role.ownerUserId !== scope.ownerUserId) {
+      throw new ForbiddenException(
+        'You cannot access staff roles created by another admin',
+      );
     }
 
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid || role.tenantId !== user.tid) {
-        throw new ForbiddenException(
-          'You cannot access staff roles outside your tenant',
-        );
-      }
+    this.assertRoleMatchesScope(role, scope);
 
-      return role;
-    }
-
-    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.bid || role.branchId !== user.bid) {
-        throw new ForbiddenException(
-          'You cannot access staff roles outside your branch',
-        );
-      }
-
-      return role;
-    }
-
-    throw new ForbiddenException('You do not have access to staff roles');
+    return role;
   }
 
   private buildListWhere(
     user: AuthUserContext,
     query: ListStaffRolesDto,
   ): Prisma.StaffRoleWhereInput {
-    const baseWhere: Prisma.StaffRoleWhereInput = {
+    const scope = this.resolveScopeForUser(user);
+
+    return {
+      ownerUserId: scope.ownerUserId,
+      panelType: scope.panelType,
+      tenantId: scope.tenantId,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
       deletedAt: null,
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.search
@@ -202,86 +175,13 @@ export class StaffRolesService {
           }
         : {}),
     };
-
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return {
-        ...baseWhere,
-        ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
-      };
-    }
-
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid) {
-        throw new ForbiddenException('Tenant context is required');
-      }
-
-      return {
-        ...baseWhere,
-        tenantId: user.tid,
-        ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
-        ...(query.branchId ? { branchId: query.branchId } : {}),
-      };
-    }
-
-    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.bid) {
-        throw new ForbiddenException('Branch context is required');
-      }
-
-      return {
-        ...baseWhere,
-        branchId: user.bid,
-      };
-    }
-
-    throw new ForbiddenException('You do not have access to staff roles');
   }
 
-  private async resolveScopeForCreation(
-    user: AuthUserContext,
-    requestedRestaurantId?: string,
-    requestedBranchId?: string,
-  ): Promise<ResolvedStaffRoleScope> {
+  private resolveScopeForUser(user: AuthUserContext): ResolvedStaffScope {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      if (requestedBranchId) {
-        const branch = await this.prisma.branch.findFirst({
-          where: { id: requestedBranchId, deletedAt: null, isActive: true },
-          select: { id: true, tenantId: true, restaurantId: true },
-        });
-
-        if (!branch) {
-          throw new BadRequestException('Branch not found');
-        }
-
-        return {
-          scope: StaffRoleScope.BRANCH,
-          tenantId: branch.tenantId,
-          restaurantId: branch.restaurantId,
-          branchId: branch.id,
-        };
-      }
-
-      if (requestedRestaurantId) {
-        const restaurant = await this.prisma.restaurant.findFirst({
-          where: { id: requestedRestaurantId, deletedAt: null, isActive: true },
-          select: { id: true, tenantId: true },
-        });
-
-        if (!restaurant) {
-          throw new BadRequestException('Restaurant not found');
-        }
-
-        return {
-          scope: StaffRoleScope.RESTAURANT,
-          tenantId: restaurant.tenantId,
-          restaurantId: restaurant.id,
-          branchId: null,
-        };
-      }
-
       return {
-        scope: StaffRoleScope.SUPER_ADMIN,
+        ownerUserId: user.uid,
+        panelType: StaffPanelType.SUPER_ADMIN,
         tenantId: null,
         restaurantId: null,
         branchId: null,
@@ -293,54 +193,11 @@ export class StaffRolesService {
         throw new ForbiddenException('Tenant context is required');
       }
 
-      if (requestedBranchId) {
-        const branch = await this.prisma.branch.findFirst({
-          where: {
-            id: requestedBranchId,
-            tenantId: user.tid,
-            ...(requestedRestaurantId
-              ? { restaurantId: requestedRestaurantId }
-              : {}),
-            deletedAt: null,
-            isActive: true,
-          },
-          select: { id: true, restaurantId: true },
-        });
-
-        if (!branch) {
-          throw new BadRequestException('Branch not found');
-        }
-
-        return {
-          scope: StaffRoleScope.BRANCH,
-          tenantId: user.tid,
-          restaurantId: branch.restaurantId,
-          branchId: branch.id,
-        };
-      }
-
-      if (!requestedRestaurantId) {
-        throw new BadRequestException('restaurantId is required');
-      }
-
-      const restaurant = await this.prisma.restaurant.findFirst({
-        where: {
-          id: requestedRestaurantId,
-          tenantId: user.tid,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-      });
-
-      if (!restaurant) {
-        throw new BadRequestException('Restaurant not found');
-      }
-
       return {
-        scope: StaffRoleScope.RESTAURANT,
+        ownerUserId: user.uid,
+        panelType: StaffPanelType.BUSINESS_ADMIN,
         tenantId: user.tid,
-        restaurantId: restaurant.id,
+        restaurantId: null,
         branchId: null,
       };
     }
@@ -350,31 +207,47 @@ export class StaffRolesService {
         throw new ForbiddenException('Branch context is required');
       }
 
-      if (requestedBranchId && requestedBranchId !== user.bid) {
-        throw new ForbiddenException(
-          'You cannot create staff roles outside your branch',
-        );
-      }
-
       return {
-        scope: StaffRoleScope.BRANCH,
+        ownerUserId: user.uid,
+        panelType: StaffPanelType.BRANCH_ADMIN,
         tenantId: user.tid,
         restaurantId: user.rid,
         branchId: user.bid,
       };
     }
 
-    throw new ForbiddenException(
-      'You do not have access to create staff roles',
-    );
+    throw new ForbiddenException('You do not have access to staff roles');
+  }
+
+  private assertRoleMatchesScope(
+    role: {
+      panelType: StaffPanelType;
+      tenantId: string | null;
+      restaurantId: string | null;
+      branchId: string | null;
+    },
+    scope: ResolvedStaffScope,
+  ) {
+    if (
+      role.panelType !== scope.panelType ||
+      role.tenantId !== scope.tenantId ||
+      role.restaurantId !== scope.restaurantId ||
+      role.branchId !== scope.branchId
+    ) {
+      throw new ForbiddenException(
+        'You cannot access staff roles outside your admin scope',
+      );
+    }
   }
 
   private async assertUniqueRoleName(
-    scope: ResolvedStaffRoleScope,
+    scope: ResolvedStaffScope,
     name: string,
     excludeId?: string,
   ) {
     const existing = await this.staffRolesRepository.findByNameWithinScope({
+      ownerUserId: scope.ownerUserId,
+      panelType: scope.panelType,
       name: name.trim(),
       tenantId: scope.tenantId,
       restaurantId: scope.restaurantId,
@@ -384,9 +257,20 @@ export class StaffRolesService {
 
     if (existing) {
       throw new BadRequestException(
-        'A staff role with this name already exists in the selected scope',
+        'A staff role with this name already exists for your admin scope',
       );
     }
+  }
+
+  private normalizePermissions(permissions: StaffRolePermissionDto[]) {
+    const normalized = permissions.map((permission) => ({
+      access: permission.access.trim(),
+      operations: [
+        ...new Set(permission.operations.map((operation) => operation.trim())),
+      ],
+    }));
+
+    return normalized as Prisma.InputJsonValue;
   }
 
   private resolveOptionalString(value: string | undefined) {

@@ -4,8 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRoleEnum } from '../../common/enums';
+import * as bcrypt from 'bcrypt';
+import { StaffPanelType } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { StaffRolesService } from '../staff-roles/staff-roles.service';
 import { StaffManagementRepository } from './staff-management.repository';
@@ -15,8 +17,6 @@ import {
   UpdateStaffDto,
   UpdateStaffStatusDto,
 } from './dto';
-import * as bcrypt from 'bcrypt';
-import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class StaffManagementService {
@@ -27,7 +27,7 @@ export class StaffManagementService {
 
   async create(user: AuthUserContext, dto: CreateStaffDto) {
     const existing = await this.staffManagementRepository.findByEmail(
-      dto.email,
+      dto.email.trim().toLowerCase(),
     );
     if (existing && !existing.deletedAt) {
       throw new BadRequestException('Email already exists');
@@ -41,7 +41,17 @@ export class StaffManagementService {
     const data = await this.staffManagementRepository.create({
       email: dto.email.trim().toLowerCase(),
       password: await bcrypt.hash(dto.password, 10),
-      role: UserRole.STAFF,
+      firstName: dto.firstName.trim(),
+      lastName: dto.lastName.trim(),
+      phone: this.resolveOptionalString(dto.phone),
+      avatarUrl: this.resolveOptionalString(dto.avatarUrl),
+      bio: this.resolveOptionalString(dto.bio),
+      isVerified: true,
+      isApproved: true,
+      isActive: dto.isActive ?? true,
+      panelType: staffRole.panelType,
+      ownerUser: { connect: { id: user.uid } },
+      staffRole: { connect: { id: staffRole.id } },
       tenant: staffRole.tenantId
         ? { connect: { id: staffRole.tenantId } }
         : undefined,
@@ -51,19 +61,6 @@ export class StaffManagementService {
       branch: staffRole.branchId
         ? { connect: { id: staffRole.branchId } }
         : undefined,
-      staffRole: { connect: { id: staffRole.id } },
-      isVerified: true,
-      isApproved: true,
-      isActive: dto.isActive ?? true,
-      profile: {
-        create: {
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          phone: dto.phone,
-          avatarUrl: dto.avatarUrl,
-          bio: dto.bio,
-        },
-      },
     });
 
     return {
@@ -100,7 +97,7 @@ export class StaffManagementService {
 
     if (dto.email) {
       const existing = await this.staffManagementRepository.findByEmail(
-        dto.email,
+        dto.email.trim().toLowerCase(),
       );
       if (existing && existing.id !== staff.id && !existing.deletedAt) {
         throw new BadRequestException('Email already exists');
@@ -114,14 +111,28 @@ export class StaffManagementService {
         )
       : staff.staffRole;
 
-    if (!nextRole) {
-      throw new BadRequestException('Staff role is required');
+    if (!nextRole || nextRole.deletedAt || !nextRole.isActive) {
+      throw new BadRequestException('Staff role is inactive');
     }
 
     const data = await this.staffManagementRepository.update(id, {
       email: dto.email?.trim().toLowerCase(),
       password: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
+      firstName: dto.firstName?.trim(),
+      lastName: dto.lastName?.trim(),
+      phone:
+        dto.phone !== undefined
+          ? this.resolveOptionalString(dto.phone)
+          : undefined,
+      avatarUrl:
+        dto.avatarUrl !== undefined
+          ? this.resolveOptionalString(dto.avatarUrl)
+          : undefined,
+      bio:
+        dto.bio !== undefined ? this.resolveOptionalString(dto.bio) : undefined,
       isActive: dto.isActive,
+      panelType: nextRole.panelType,
+      staffRole: { connect: { id: nextRole.id } },
       tenant:
         nextRole.tenantId !== undefined
           ? nextRole.tenantId
@@ -139,33 +150,6 @@ export class StaffManagementService {
           ? nextRole.branchId
             ? { connect: { id: nextRole.branchId } }
             : { disconnect: true }
-          : undefined,
-      staffRole: { connect: { id: nextRole.id } },
-      profile:
-        dto.firstName !== undefined ||
-        dto.lastName !== undefined ||
-        dto.phone !== undefined ||
-        dto.avatarUrl !== undefined ||
-        dto.bio !== undefined
-          ? {
-              upsert: {
-                create: {
-                  firstName:
-                    dto.firstName ?? staff.profile?.firstName ?? 'Staff',
-                  lastName: dto.lastName ?? staff.profile?.lastName ?? 'User',
-                  phone: dto.phone ?? staff.profile?.phone ?? null,
-                  avatarUrl: dto.avatarUrl ?? staff.profile?.avatarUrl ?? null,
-                  bio: dto.bio ?? staff.profile?.bio ?? null,
-                },
-                update: {
-                  firstName: dto.firstName,
-                  lastName: dto.lastName,
-                  phone: dto.phone,
-                  avatarUrl: dto.avatarUrl,
-                  bio: dto.bio,
-                },
-              },
-            }
           : undefined,
     });
 
@@ -210,36 +194,39 @@ export class StaffManagementService {
       throw new NotFoundException('Staff account not found');
     }
 
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return staff;
+    if (staff.ownerUserId !== user.uid) {
+      throw new ForbiddenException(
+        'You cannot access staff accounts created by another admin',
+      );
     }
 
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid || staff.tenantId !== user.tid) {
-        throw new ForbiddenException(
-          'You cannot access staff accounts outside your tenant',
-        );
-      }
-
-      return staff;
+    const expectedPanelType = this.resolvePanelType(user);
+    if (staff.panelType !== expectedPanelType) {
+      throw new ForbiddenException(
+        'You cannot access staff accounts outside your admin scope',
+      );
     }
 
-    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.bid || staff.branchId !== user.bid) {
-        throw new ForbiddenException(
-          'You cannot access staff accounts outside your branch',
-        );
-      }
-
-      return staff;
+    if (
+      staff.tenantId !== (user.tid ?? null) ||
+      staff.restaurantId !== (user.rid ?? null) ||
+      staff.branchId !== (user.bid ?? null)
+    ) {
+      throw new ForbiddenException(
+        'You cannot access staff accounts outside your admin scope',
+      );
     }
 
-    throw new ForbiddenException('You do not have access to staff accounts');
+    return staff;
   }
 
   private buildListWhere(user: AuthUserContext, query: ListStaffDto) {
-    const baseWhere = {
-      role: UserRole.STAFF,
+    return {
+      ownerUserId: user.uid,
+      panelType: this.resolvePanelType(user),
+      tenantId: user.tid ?? null,
+      restaurantId: user.rid ?? null,
+      branchId: user.bid ?? null,
       deletedAt: null,
       ...(query.staffRoleId ? { staffRoleId: query.staffRoleId } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
@@ -250,36 +237,32 @@ export class StaffManagementService {
                 email: { contains: query.search, mode: 'insensitive' as const },
               },
               {
-                profile: {
-                  OR: [
-                    {
-                      firstName: {
-                        contains: query.search,
-                        mode: 'insensitive' as const,
-                      },
-                    },
-                    {
-                      lastName: {
-                        contains: query.search,
-                        mode: 'insensitive' as const,
-                      },
-                    },
-                    {
-                      phone: {
-                        contains: query.search,
-                        mode: 'insensitive' as const,
-                      },
-                    },
-                  ],
+                firstName: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                lastName: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                phone: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
                 },
               },
             ],
           }
         : {}),
     };
+  }
 
+  private resolvePanelType(user: AuthUserContext) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return baseWhere;
+      return StaffPanelType.SUPER_ADMIN;
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
@@ -287,31 +270,31 @@ export class StaffManagementService {
         throw new ForbiddenException('Tenant context is required');
       }
 
-      return {
-        ...baseWhere,
-        tenantId: user.tid,
-      };
+      return StaffPanelType.BUSINESS_ADMIN;
     }
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.bid) {
+      if (!user.tid || !user.rid || !user.bid) {
         throw new ForbiddenException('Branch context is required');
       }
 
-      return {
-        ...baseWhere,
-        branchId: user.bid,
-      };
+      return StaffPanelType.BRANCH_ADMIN;
     }
 
     throw new ForbiddenException('You do not have access to staff accounts');
   }
 
+  private resolveOptionalString(value: string | undefined) {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
   private toStaffResponse(
-    staff: {
-      password?: string;
-      staffRole?: unknown;
-    } & Record<string, unknown>,
+    staff: { password?: string } & Record<string, unknown>,
   ) {
     const rest = { ...staff };
     delete rest.password;

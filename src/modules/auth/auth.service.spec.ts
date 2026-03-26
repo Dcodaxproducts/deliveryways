@@ -21,6 +21,7 @@ describe('AuthService listCustomers and customerDetails', () => {
       {} as never,
       usersService as unknown as UsersService,
       {} as never,
+      {} as never,
     );
   });
 
@@ -170,6 +171,7 @@ describe('AuthService updateMyProfile', () => {
       {} as never,
       usersService as unknown as UsersService,
       {} as never,
+      {} as never,
     );
   });
 
@@ -299,6 +301,7 @@ describe('AuthService logout', () => {
       {} as never,
       {} as never,
       usersService as unknown as UsersService,
+      {} as never,
       {} as never,
     );
   });

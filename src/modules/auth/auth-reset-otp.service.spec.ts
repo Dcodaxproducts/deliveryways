@@ -27,6 +27,7 @@ describe('AuthService password reset OTP scoping', () => {
       {} as never,
       usersService as never,
       mailerService as never,
+      {} as never,
     );
 
     return { service, usersService, mailerService };

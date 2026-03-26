@@ -22,6 +22,8 @@ export class StaffRolesRepository {
   }
 
   async findByNameWithinScope(input: {
+    ownerUserId: string;
+    panelType: 'SUPER_ADMIN' | 'BUSINESS_ADMIN' | 'BRANCH_ADMIN';
     name: string;
     tenantId?: string | null;
     restaurantId?: string | null;
@@ -30,6 +32,8 @@ export class StaffRolesRepository {
   }) {
     return this.prisma.staffRole.findFirst({
       where: {
+        ownerUserId: input.ownerUserId,
+        panelType: input.panelType,
         name: { equals: input.name, mode: 'insensitive' },
         tenantId: input.tenantId ?? null,
         restaurantId: input.restaurantId ?? null,
@@ -37,6 +41,7 @@ export class StaffRolesRepository {
         deletedAt: null,
         ...(input.excludeId ? { id: { not: input.excludeId } } : {}),
       },
+      include: this.includeConfig,
     });
   }
 
@@ -74,26 +79,24 @@ export class StaffRolesRepository {
   }
 
   async countAssignedUsers(id: string) {
-    return this.prisma.user.count({
+    return this.prisma.staffUser.count({
       where: {
         staffRoleId: id,
-        role: 'STAFF',
         deletedAt: null,
       },
     });
   }
 
   private readonly includeConfig = {
-    tenant: { select: { id: true, name: true } },
-    restaurant: { select: { id: true, name: true } },
-    branch: { select: { id: true, name: true } },
-    permissions: {
-      orderBy: [{ access: 'asc' }],
-    },
-    _count: {
+    ownerUser: {
       select: {
-        staffMembers: true,
+        id: true,
+        email: true,
+        role: true,
       },
     },
+    tenant: { select: { id: true, name: true, slug: true } },
+    restaurant: { select: { id: true, name: true, slug: true } },
+    branch: { select: { id: true, name: true } },
   } satisfies Prisma.StaffRoleInclude;
 }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { ListStaffDto } from './dto';
 
@@ -7,30 +7,32 @@ import { ListStaffDto } from './dto';
 export class StaffManagementRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.UserCreateInput) {
-    return this.prisma.user.create({
+  async create(data: Prisma.StaffUserCreateInput) {
+    return this.prisma.staffUser.create({
       data,
       include: this.includeConfig,
     });
   }
 
   async findById(id: string) {
-    return this.prisma.user.findFirst({
-      where: { id, role: UserRole.STAFF },
+    return this.prisma.staffUser.findUnique({
+      where: { id },
       include: this.includeConfig,
     });
   }
 
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email },
+    return this.prisma.staffUser.findFirst({
+      where: {
+        email: { equals: email, mode: 'insensitive' },
+      },
       include: this.includeConfig,
     });
   }
 
-  async list(where: Prisma.UserWhereInput, query: ListStaffDto) {
+  async list(where: Prisma.StaffUserWhereInput, query: ListStaffDto) {
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.user.findMany({
+      this.prisma.staffUser.findMany({
         where,
         include: this.includeConfig,
         skip: (query.page - 1) * query.limit,
@@ -39,14 +41,14 @@ export class StaffManagementRepository {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
       }),
-      this.prisma.user.count({ where }),
+      this.prisma.staffUser.count({ where }),
     ]);
 
     return { items, total };
   }
 
-  async update(id: string, data: Prisma.UserUpdateInput) {
-    return this.prisma.user.update({
+  async update(id: string, data: Prisma.StaffUserUpdateInput) {
+    return this.prisma.staffUser.update({
       where: { id },
       data,
       include: this.includeConfig,
@@ -54,18 +56,25 @@ export class StaffManagementRepository {
   }
 
   async softDelete(id: string) {
-    return this.prisma.user.update({
+    return this.prisma.staffUser.update({
       where: { id },
       data: {
         deletedAt: new Date(),
         isActive: false,
+        refreshTokenHash: null,
       },
       include: this.includeConfig,
     });
   }
 
   private readonly includeConfig = {
-    profile: true,
+    ownerUser: {
+      select: {
+        id: true,
+        email: true,
+        role: true,
+      },
+    },
     tenant: { select: { id: true, name: true, slug: true } },
     restaurant: {
       select: {
@@ -84,14 +93,21 @@ export class StaffManagementRepository {
       },
     },
     staffRole: {
-      include: {
-        tenant: { select: { id: true, name: true } },
-        restaurant: { select: { id: true, name: true } },
-        branch: { select: { id: true, name: true } },
-        permissions: {
-          orderBy: [{ access: 'asc' }],
-        },
+      select: {
+        id: true,
+        ownerUserId: true,
+        panelType: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        name: true,
+        description: true,
+        permissions: true,
+        isActive: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
       },
     },
-  } satisfies Prisma.UserInclude;
+  } satisfies Prisma.StaffUserInclude;
 }

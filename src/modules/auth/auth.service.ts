@@ -40,6 +40,7 @@ import { RestaurantsService } from '../restaurants/restaurants.service';
 import { BranchesService } from '../branches/branches.service';
 import { UsersService } from '../users/users.service';
 import { MailerService } from '../mailer/mailer.service';
+import { StaffManagementRepository } from '../staff-management/staff-management.repository';
 
 @Injectable()
 export class AuthService {
@@ -51,6 +52,7 @@ export class AuthService {
     private readonly branchesService: BranchesService,
     private readonly usersService: UsersService,
     private readonly mailerService: MailerService,
+    private readonly staffManagementRepository: StaffManagementRepository,
   ) {}
 
   async registerTenant(dto: RegisterTenantDto) {
@@ -192,15 +194,14 @@ export class AuthService {
       );
     }
 
-    const auth = await this.issueAuthTokens(
-      this.normalizeAuthScope({
-        uid: result.ownerId,
-        role: UserRoleEnum.BUSINESS_ADMIN,
-        tid: result.tenantId,
-        rid: result.restaurantId,
-        bid: result.branchId,
-      }),
-    );
+    const auth = await this.issueAuthTokens({
+      uid: result.ownerId,
+      actorType: 'USER',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      tid: result.tenantId,
+      rid: result.restaurantId,
+      bid: result.branchId,
+    });
 
     return {
       data: {
@@ -285,15 +286,14 @@ export class AuthService {
       );
     }
 
-    const auth = await this.issueAuthTokens(
-      this.normalizeAuthScope({
-        uid: createdUser.id,
-        role: createdUser.role,
-        tid: createdUser.tenantId,
-        rid: createdUser.restaurantId,
-        bid: createdUser.branchId,
-      }),
-    );
+    const auth = await this.issueAuthTokens({
+      uid: createdUser.id,
+      actorType: 'USER',
+      role: createdUser.role,
+      tid: createdUser.tenantId,
+      rid: createdUser.restaurantId,
+      bid: createdUser.branchId,
+    });
 
     return {
       data: {
@@ -434,42 +434,24 @@ export class AuthService {
       throw new ForbiddenException('Your account is inactive');
     }
 
-    if (
-      user.role === 'STAFF' &&
-      (!user.staffRole || user.staffRole.deletedAt || !user.staffRole.isActive)
-    ) {
-      throw new ForbiddenException('Your assigned staff role is inactive');
-    }
-
-    const accessToken = await this.jwtService.signAsync(
-      this.normalizeAuthScope({
-        uid: user.id,
-        role: user.role,
-        tid: user.tenantId,
-        rid: user.restaurantId,
-        bid: user.branchId,
-      }),
-    );
-
-    const refreshToken = await this.jwtService.signAsync(
-      { uid: user.id, type: 'refresh' },
-      {
-        expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
-        secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
-      },
-    );
-
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-    await this.usersService.setRefreshTokenHash(user.id, refreshTokenHash);
+    const auth = await this.issueAuthTokens({
+      uid: user.id,
+      actorType: 'USER',
+      role: user.role,
+      tid: user.tenantId,
+      rid: user.restaurantId,
+      bid: user.branchId,
+    });
 
     return {
       data: {
-        accessToken,
-        refreshToken,
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
         user: {
           id: user.id,
           email: user.email,
           role: user.role,
+          actorType: 'USER',
           tenantId: user.tenantId,
           restaurantId:
             user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
@@ -477,14 +459,99 @@ export class AuthService {
           isVerified: user.isVerified,
           isApproved: user.isApproved,
           profile: user.profile,
-          staffRole: user.staffRole,
         },
       },
       message: 'Login successful',
     };
   }
 
+  async loginStaff(dto: LoginDto) {
+    const staff = await this.staffManagementRepository.findByEmail(
+      dto.email.trim().toLowerCase(),
+    );
+
+    if (!staff || staff.deletedAt) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isValidPassword = await bcrypt.compare(dto.password, staff.password);
+    if (!isValidPassword) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!staff.isActive) {
+      throw new ForbiddenException('Your account is inactive');
+    }
+
+    if (
+      !staff.staffRole ||
+      staff.staffRole.deletedAt ||
+      !staff.staffRole.isActive
+    ) {
+      throw new ForbiddenException('Your assigned staff role is inactive');
+    }
+
+    const auth = await this.issueAuthTokens({
+      uid: staff.id,
+      actorType: 'STAFF',
+      role: UserRoleEnum.STAFF,
+      tid: staff.tenantId,
+      rid: staff.restaurantId,
+      bid: staff.branchId,
+      ownerUserId: staff.ownerUserId,
+      staffRoleId: staff.staffRoleId,
+      panelType: staff.panelType,
+    });
+
+    return {
+      data: {
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: staff.id,
+          email: staff.email,
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          ownerUserId: staff.ownerUserId,
+          staffRoleId: staff.staffRoleId,
+          panelType: staff.panelType,
+          tenantId: staff.tenantId,
+          restaurantId: staff.restaurantId,
+          branchId: staff.branchId,
+          isVerified: staff.isVerified,
+          isApproved: staff.isApproved,
+          profile: {
+            firstName: staff.firstName,
+            lastName: staff.lastName,
+            phone: staff.phone,
+            avatarUrl: staff.avatarUrl,
+            bio: staff.bio,
+          },
+          staffRole: staff.staffRole,
+        },
+      },
+      message: 'Staff login successful',
+    };
+  }
+
   async logout(user: AuthUserContext) {
+    if (user.actorType === 'STAFF') {
+      const staff = await this.staffManagementRepository.findById(user.uid);
+
+      if (!staff || staff.deletedAt) {
+        throw new NotFoundException('Staff account not found');
+      }
+
+      await this.staffManagementRepository.update(user.uid, {
+        refreshTokenHash: null,
+      });
+
+      return {
+        data: null,
+        message: 'Logout successful',
+      };
+    }
+
     const dbUser = await this.usersService.findById(user.uid);
 
     if (!dbUser || dbUser.deletedAt) {
@@ -500,12 +567,13 @@ export class AuthService {
   }
 
   async refreshTokens(dto: RefreshDto) {
-    let payload: { uid: string; type?: string };
+    let payload: { uid: string; type?: string; actorType?: 'USER' | 'STAFF' };
 
     try {
       payload = await this.jwtService.verifyAsync<{
         uid: string;
         type?: string;
+        actorType?: 'USER' | 'STAFF';
       }>(dto.refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
       });
@@ -515,6 +583,41 @@ export class AuthService {
 
     if (!payload?.uid) {
       throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (payload.actorType === 'STAFF') {
+      const staff = await this.staffManagementRepository.findById(payload.uid);
+      if (!staff || !staff.refreshTokenHash || staff.deletedAt) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const isValid = await bcrypt.compare(
+        dto.refreshToken,
+        staff.refreshTokenHash,
+      );
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const auth = await this.issueAuthTokens({
+        uid: staff.id,
+        actorType: 'STAFF',
+        role: UserRoleEnum.STAFF,
+        tid: staff.tenantId,
+        rid: staff.restaurantId,
+        bid: staff.branchId,
+        ownerUserId: staff.ownerUserId,
+        staffRoleId: staff.staffRoleId,
+        panelType: staff.panelType,
+      });
+
+      return {
+        data: {
+          accessToken: auth.accessToken,
+          refreshToken: auth.refreshToken,
+        },
+        message: 'Token refreshed',
+      };
     }
 
     const dbUser = await this.usersService.findById(payload.uid);
@@ -530,29 +633,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const accessToken = await this.jwtService.signAsync(
-      this.normalizeAuthScope({
-        uid: dbUser.id,
-        role: dbUser.role,
-        tid: dbUser.tenantId,
-        rid: dbUser.restaurantId,
-        bid: dbUser.branchId,
-      }),
-    );
-
-    const refreshToken = await this.jwtService.signAsync(
-      { uid: dbUser.id, type: 'refresh' },
-      {
-        expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
-        secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
-      },
-    );
-
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-    await this.usersService.setRefreshTokenHash(dbUser.id, refreshTokenHash);
+    const auth = await this.issueAuthTokens({
+      uid: dbUser.id,
+      actorType: 'USER',
+      role: dbUser.role,
+      tid: dbUser.tenantId,
+      rid: dbUser.restaurantId,
+      bid: dbUser.branchId,
+    });
 
     return {
-      data: { accessToken, refreshToken },
+      data: { accessToken: auth.accessToken, refreshToken: auth.refreshToken },
       message: 'Token refreshed',
     };
   }
@@ -783,6 +874,31 @@ export class AuthService {
   }
 
   async changePassword(user: AuthUserContext, dto: ChangePasswordDto) {
+    if (user.actorType === 'STAFF') {
+      const staff = await this.staffManagementRepository.findById(user.uid);
+      if (!staff || staff.deletedAt) {
+        throw new NotFoundException('Staff account not found');
+      }
+
+      const isValidPassword = await bcrypt.compare(
+        dto.currentPassword,
+        staff.password,
+      );
+
+      if (!isValidPassword) {
+        throw new UnauthorizedException('Current password is invalid');
+      }
+
+      await this.staffManagementRepository.update(staff.id, {
+        password: await bcrypt.hash(dto.newPassword, 10),
+      });
+
+      return {
+        data: null,
+        message: 'Password changed successfully',
+      };
+    }
+
     const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
@@ -806,6 +922,39 @@ export class AuthService {
   }
 
   async me(user: AuthUserContext) {
+    if (user.actorType === 'STAFF') {
+      const staff = await this.staffManagementRepository.findById(user.uid);
+      if (!staff || staff.deletedAt) {
+        throw new NotFoundException('Staff account not found');
+      }
+
+      return {
+        data: {
+          id: staff.id,
+          email: staff.email,
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          ownerUserId: staff.ownerUserId,
+          staffRoleId: staff.staffRoleId,
+          panelType: staff.panelType,
+          tenantId: staff.tenantId,
+          restaurantId: staff.restaurantId,
+          branchId: staff.branchId,
+          isVerified: staff.isVerified,
+          isApproved: staff.isApproved,
+          profile: {
+            firstName: staff.firstName,
+            lastName: staff.lastName,
+            phone: staff.phone,
+            avatarUrl: staff.avatarUrl,
+            bio: staff.bio,
+          },
+          staffRole: staff.staffRole,
+        },
+        message: 'Current user context fetched',
+      };
+    }
+
     const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
@@ -816,13 +965,13 @@ export class AuthService {
         id: dbUser.id,
         email: dbUser.email,
         role: dbUser.role,
+        actorType: 'USER',
         tenantId: dbUser.tenantId,
         restaurantId: dbUser.restaurantId,
         branchId: dbUser.branchId,
         isVerified: dbUser.isVerified,
         isApproved: dbUser.isApproved,
         profile: dbUser.profile,
-        staffRole: dbUser.staffRole,
       },
       message: 'Current user context fetched',
     };
@@ -837,6 +986,38 @@ export class AuthService {
     dto: UpdateMyProfileDto,
     avatarOnly = false,
   ) {
+    if (user.actorType === 'STAFF') {
+      const staff = await this.staffManagementRepository.findById(user.uid);
+      if (!staff || staff.deletedAt) {
+        throw new NotFoundException('Staff account not found');
+      }
+
+      const emailPrefix = staff.email.split('@')[0] || 'staff';
+      const updated = await this.staffManagementRepository.update(staff.id, {
+        firstName: dto.firstName ?? staff.firstName ?? emailPrefix,
+        lastName: dto.lastName ?? staff.lastName ?? emailPrefix,
+        avatarUrl: dto.avatarUrl,
+        phone: dto.phone,
+        bio: dto.bio,
+      });
+
+      return {
+        data: {
+          id: updated.id,
+          profile: {
+            firstName: updated.firstName,
+            lastName: updated.lastName,
+            phone: updated.phone,
+            avatarUrl: updated.avatarUrl,
+            bio: updated.bio,
+          },
+        },
+        message: avatarOnly
+          ? 'Profile avatar updated successfully'
+          : 'Profile updated successfully',
+      };
+    }
+
     const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
@@ -882,6 +1063,14 @@ export class AuthService {
   }
 
   async deleteAccount(user: AuthUserContext) {
+    if (user.actorType === 'STAFF') {
+      await this.staffManagementRepository.softDelete(user.uid);
+      return {
+        data: null,
+        message: 'Account deleted successfully',
+      };
+    }
+
     await this.usersService.softDeleteUser(user.uid);
     return {
       data: null,
@@ -890,6 +1079,10 @@ export class AuthService {
   }
 
   async cancelDeletion(user: AuthUserContext) {
+    if (user.actorType === 'STAFF') {
+      throw new ForbiddenException('Staff accounts cannot cancel deletion');
+    }
+
     await this.usersService.cancelDeleteUser(user.uid);
     return {
       data: null,
@@ -899,15 +1092,20 @@ export class AuthService {
 
   private async issueAuthTokens(payload: {
     uid: string;
+    actorType: 'USER' | 'STAFF';
     role: string;
     tid: string | null | undefined;
     rid: string | null | undefined;
     bid: string | null | undefined;
+    ownerUserId?: string;
+    staffRoleId?: string;
+    panelType?: string;
   }) {
-    const accessToken = await this.jwtService.signAsync(payload);
+    const normalizedPayload = this.normalizeAuthPayload(payload);
+    const accessToken = await this.jwtService.signAsync(normalizedPayload);
 
     const refreshToken = await this.jwtService.signAsync(
-      { uid: payload.uid, type: 'refresh' },
+      { uid: payload.uid, type: 'refresh', actorType: payload.actorType },
       {
         expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
         secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
@@ -915,7 +1113,17 @@ export class AuthService {
     );
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-    await this.usersService.setRefreshTokenHash(payload.uid, refreshTokenHash);
+
+    if (payload.actorType === 'STAFF') {
+      await this.staffManagementRepository.update(payload.uid, {
+        refreshTokenHash,
+      });
+    } else {
+      await this.usersService.setRefreshTokenHash(
+        payload.uid,
+        refreshTokenHash,
+      );
+    }
 
     return {
       accessToken,
@@ -923,13 +1131,21 @@ export class AuthService {
     };
   }
 
-  private normalizeAuthScope(payload: {
+  private normalizeAuthPayload(payload: {
     uid: string;
+    actorType: 'USER' | 'STAFF';
     role: string;
     tid: string | null | undefined;
     rid: string | null | undefined;
     bid: string | null | undefined;
+    ownerUserId?: string;
+    staffRoleId?: string;
+    panelType?: string;
   }) {
+    if (payload.actorType === 'STAFF') {
+      return payload;
+    }
+
     if (payload.role === 'BUSINESS_ADMIN') {
       return {
         ...payload,

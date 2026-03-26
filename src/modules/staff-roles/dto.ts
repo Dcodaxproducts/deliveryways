@@ -32,22 +32,6 @@ export class CreateStaffRoleDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({
-    description:
-      'Optional for scoped admins; token restaurant scope is used when omitted',
-  })
-  @IsOptional()
-  @IsString()
-  restaurantId?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Optional for branch-scoped role creation; branch admins use token branch scope',
-  })
-  @IsOptional()
-  @IsString()
-  branchId?: string;
-
   @ApiProperty({ type: [StaffRolePermissionDto] })
   @IsArray()
   @ArrayMinSize(1)
@@ -82,16 +66,6 @@ export class UpdateStaffRoleDto {
 }
 
 export class ListStaffRolesDto extends QueryDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  restaurantId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  branchId?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

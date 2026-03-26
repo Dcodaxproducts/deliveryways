@@ -8,5 +8,6 @@ import { StaffManagementService } from './staff-management.service';
   imports: [StaffRolesModule],
   controllers: [StaffManagementController],
   providers: [StaffManagementService, StaffManagementRepository],
+  exports: [StaffManagementService, StaffManagementRepository],
 })
 export class StaffManagementModule {}

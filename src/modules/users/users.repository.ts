@@ -29,11 +29,6 @@ export class UsersRepository {
       },
       include: {
         profile: true,
-        staffRole: {
-          include: {
-            permissions: true,
-          },
-        },
       },
     });
   }
@@ -43,11 +38,6 @@ export class UsersRepository {
       where: { id },
       include: {
         profile: true,
-        staffRole: {
-          include: {
-            permissions: true,
-          },
-        },
       },
     });
   }
@@ -165,6 +155,61 @@ export class UsersRepository {
     });
   }
 
+  async incrementVerificationOtpAttempts(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        verificationOtpAttempts: { increment: 1 },
+      },
+    });
+  }
+
+  async forceDeleteUsersByEmails(emails: string[]) {
+    return this.prisma.user.deleteMany({
+      where: {
+        email: { in: emails },
+      },
+    });
+  }
+
+  async createBusinessAdmin(
+    payload: {
+      email: string;
+      password: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      verificationToken: string;
+    },
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).user.create({
+      data: {
+        email: payload.email,
+        password: payload.password,
+        role: UserRole.BUSINESS_ADMIN,
+        tenant: { connect: { id: payload.tenantId } },
+        verificationToken: payload.verificationToken,
+      },
+    });
+  }
+
+  async softDeleteUser(id: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        deleteAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+  }
+
+  async cancelDeleteUser(id: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { deleteAfter: null },
+    });
+  }
+
   private readonly customerIncludeConfig = {
     profile: true,
     tenant: { select: { id: true, name: true, slug: true } },
@@ -184,141 +229,26 @@ export class UsersRepository {
         coverImage: true,
       },
     },
-  } satisfies Prisma.UserInclude;
-
-  async incrementVerificationOtpAttempts(userId: string) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        verificationOtpAttempts: { increment: 1 },
-      },
-    });
-  }
-
-  async forceDeleteUsersByEmails(emails: string[]) {
-    const users = await this.prisma.user.findMany({
-      where: { email: { in: emails } },
+    cart: {
       select: {
         id: true,
-        email: true,
-        role: true,
-        _count: {
-          select: {
-            tenantOwned: true,
-            managedBranches: true,
-            createdMovements: true,
-            customerOrders: true,
-            couponUsages: true,
-          },
-        },
       },
-    });
-
-    const foundEmails = new Set(users.map((user) => user.email.toLowerCase()));
-    const notFound = emails.filter(
-      (email) => !foundEmails.has(email.toLowerCase()),
-    );
-
-    const deleted: string[] = [];
-    const blocked: Array<{ email: string; reasons: string[] }> = [];
-
-    for (const user of users) {
-      const reasons: string[] = [];
-
-      if (user.role === UserRole.SUPER_ADMIN) {
-        reasons.push('super admin accounts cannot be force deleted');
-      }
-
-      if (user._count.tenantOwned > 0) {
-        reasons.push('user is assigned as tenant owner');
-      }
-
-      if (user._count.managedBranches > 0) {
-        reasons.push('user is assigned as branch manager');
-      }
-
-      if (user._count.createdMovements > 0) {
-        reasons.push('user has inventory movement history');
-      }
-
-      if (user._count.customerOrders > 0) {
-        reasons.push('user has order history');
-      }
-
-      if (user._count.couponUsages > 0) {
-        reasons.push('user has coupon usage history');
-      }
-
-      if (reasons.length > 0) {
-        blocked.push({ email: user.email, reasons });
-        continue;
-      }
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.profile.deleteMany({
-          where: { userId: user.id },
-        });
-
-        await tx.user.delete({
-          where: { id: user.id },
-        });
-      });
-
-      deleted.push(user.email);
-    }
-
-    return {
-      requestedCount: emails.length,
-      deletedCount: deleted.length,
-      blockedCount: blocked.length,
-      notFoundCount: notFound.length,
-      deleted,
-      blocked,
-      notFound,
-    };
-  }
-
-  async softDeleteUser(userId: string) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        deletedAt: new Date(),
-        isActive: false,
-        deleteAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
-  }
-
-  async cancelDeleteUser(userId: string) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        deletedAt: null,
-        isActive: true,
-        deleteAfter: null,
-      },
-    });
-  }
-
-  async createBusinessAdmin(
-    payload: {
-      email: string;
-      password: string;
-      verificationToken: string;
-      tenantId: string;
     },
-    tx?: PrismaTx,
-  ) {
-    return this.create(
-      {
-        email: payload.email,
-        password: payload.password,
-        role: UserRole.BUSINESS_ADMIN,
-        isVerified: false,
-        verificationToken: payload.verificationToken,
-        tenant: { connect: { id: payload.tenantId } },
+    customerOrders: {
+      select: {
+        id: true,
       },
-      tx,
-    );
-  }
+    },
+    couponUsages: {
+      select: {
+        id: true,
+      },
+    },
+    _count: {
+      select: {
+        couponUsages: true,
+        customerOrders: true,
+      },
+    },
+  } satisfies Prisma.UserInclude;
 }
