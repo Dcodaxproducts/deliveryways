@@ -178,7 +178,12 @@ export class OrdersRepository {
       where: { id },
       data: {
         status,
-        deliveredAt: status === OrderStatus.DELIVERED ? new Date() : undefined,
+        deliveredAt:
+          status === OrderStatus.DELIVERED ||
+          status === OrderStatus.PICKED_UP ||
+          status === OrderStatus.SERVED
+            ? new Date()
+            : undefined,
       },
     });
   }

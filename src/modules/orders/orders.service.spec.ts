@@ -58,47 +58,89 @@ describe('OrdersService - status transitions', () => {
     );
   });
 
-  const checkTransition = (current: string, next: string): boolean => {
+  const checkTransition = (
+    orderType: string,
+    current: string,
+    next: string,
+  ): boolean => {
     const fn = (
       service as unknown as {
-        isValidStatusTransition: (a: string, b: string) => boolean;
+        isValidStatusTransition: (a: string, b: string, c: string) => boolean;
       }
     ).isValidStatusTransition;
-    return fn.call(service, current, next);
+    return fn.call(service, orderType, current, next);
   };
 
   it('allows PLACED -> CONFIRMED', () => {
-    expect(checkTransition('PLACED', 'CONFIRMED')).toBe(true);
+    expect(checkTransition('DELIVERY', 'PLACED', 'CONFIRMED')).toBe(true);
   });
 
   it('allows PLACED -> REJECTED', () => {
-    expect(checkTransition('PLACED', 'REJECTED')).toBe(true);
+    expect(checkTransition('DELIVERY', 'PLACED', 'REJECTED')).toBe(true);
   });
 
   it('allows CONFIRMED -> PREPARING', () => {
-    expect(checkTransition('CONFIRMED', 'PREPARING')).toBe(true);
+    expect(checkTransition('DELIVERY', 'CONFIRMED', 'PREPARING')).toBe(true);
   });
 
-  it('allows PREPARING -> OUT_FOR_DELIVERY', () => {
-    expect(checkTransition('PREPARING', 'OUT_FOR_DELIVERY')).toBe(true);
+  it('allows delivery PREPARING -> OUT_FOR_DELIVERY', () => {
+    expect(checkTransition('DELIVERY', 'PREPARING', 'OUT_FOR_DELIVERY')).toBe(
+      true,
+    );
   });
 
   it('allows OUT_FOR_DELIVERY -> DELIVERED', () => {
-    expect(checkTransition('OUT_FOR_DELIVERY', 'DELIVERED')).toBe(true);
+    expect(checkTransition('DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED')).toBe(
+      true,
+    );
+  });
+
+  it('allows takeaway PREPARING -> READY_FOR_PICKUP', () => {
+    expect(checkTransition('TAKEAWAY', 'PREPARING', 'READY_FOR_PICKUP')).toBe(
+      true,
+    );
+  });
+
+  it('allows READY_FOR_PICKUP -> PICKED_UP', () => {
+    expect(checkTransition('TAKEAWAY', 'READY_FOR_PICKUP', 'PICKED_UP')).toBe(
+      true,
+    );
+  });
+
+  it('allows dine-in PREPARING -> READY_TO_SERVE', () => {
+    expect(checkTransition('DINE_IN', 'PREPARING', 'READY_TO_SERVE')).toBe(
+      true,
+    );
+  });
+
+  it('allows READY_TO_SERVE -> SERVED', () => {
+    expect(checkTransition('DINE_IN', 'READY_TO_SERVE', 'SERVED')).toBe(true);
   });
 
   it('rejects DELIVERED -> anything', () => {
-    expect(checkTransition('DELIVERED', 'PLACED')).toBe(false);
-    expect(checkTransition('DELIVERED', 'CANCELLED')).toBe(false);
+    expect(checkTransition('DELIVERY', 'DELIVERED', 'PLACED')).toBe(false);
+    expect(checkTransition('DELIVERY', 'DELIVERED', 'CANCELLED')).toBe(false);
   });
 
   it('rejects CANCELLED -> anything', () => {
-    expect(checkTransition('CANCELLED', 'PLACED')).toBe(false);
+    expect(checkTransition('DELIVERY', 'CANCELLED', 'PLACED')).toBe(false);
   });
 
   it('rejects backwards transitions', () => {
-    expect(checkTransition('PREPARING', 'CONFIRMED')).toBe(false);
-    expect(checkTransition('CONFIRMED', 'PLACED')).toBe(false);
+    expect(checkTransition('DELIVERY', 'PREPARING', 'CONFIRMED')).toBe(false);
+    expect(checkTransition('DELIVERY', 'CONFIRMED', 'PLACED')).toBe(false);
+  });
+
+  it('rejects takeaway PREPARING -> OUT_FOR_DELIVERY', () => {
+    expect(checkTransition('TAKEAWAY', 'PREPARING', 'OUT_FOR_DELIVERY')).toBe(
+      false,
+    );
+  });
+
+  it('rejects dine-in PREPARING -> OUT_FOR_DELIVERY', () => {
+    expect(checkTransition('DINE_IN', 'PREPARING', 'OUT_FOR_DELIVERY')).toBe(
+      false,
+    );
   });
 });
 

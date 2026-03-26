@@ -231,7 +231,9 @@ export class OrdersService {
 
     this.assertOrderAccess(user, order.restaurantId, order.customerId, true);
 
-    if (!this.isValidStatusTransition(order.status, dto.status)) {
+    if (
+      !this.isValidStatusTransition(order.orderType, order.status, dto.status)
+    ) {
       throw new BadRequestException('Invalid order status transition');
     }
 
@@ -257,6 +259,8 @@ export class OrdersService {
 
     const terminalStatuses: OrderStatus[] = [
       OrderStatus.DELIVERED,
+      OrderStatus.PICKED_UP,
+      OrderStatus.SERVED,
       OrderStatus.CANCELLED,
       OrderStatus.REJECTED,
     ];
@@ -299,6 +303,8 @@ export class OrdersService {
       OrderStatus.CANCELLED,
       OrderStatus.REJECTED,
       OrderStatus.DELIVERED,
+      OrderStatus.PICKED_UP,
+      OrderStatus.SERVED,
     ];
 
     if (blockedStatuses.includes(order.status)) {
@@ -976,10 +982,11 @@ export class OrdersService {
   }
 
   private isValidStatusTransition(
+    orderType: OrderType,
     current: OrderStatus,
     next: OrderStatus,
   ): boolean {
-    const transitions: Record<OrderStatus, OrderStatus[]> = {
+    const baseTransitions: Record<OrderStatus, OrderStatus[]> = {
       PLACED: [
         OrderStatus.CONFIRMED,
         OrderStatus.CANCELLED,
@@ -990,14 +997,30 @@ export class OrdersService {
         OrderStatus.CANCELLED,
         OrderStatus.REJECTED,
       ],
-      PREPARING: [OrderStatus.OUT_FOR_DELIVERY, OrderStatus.CANCELLED],
+      PREPARING: this.getPreparingTransitions(orderType),
+      READY_FOR_PICKUP: [OrderStatus.PICKED_UP, OrderStatus.CANCELLED],
+      PICKED_UP: [],
+      READY_TO_SERVE: [OrderStatus.SERVED, OrderStatus.CANCELLED],
+      SERVED: [],
       OUT_FOR_DELIVERY: [OrderStatus.DELIVERED, OrderStatus.CANCELLED],
       DELIVERED: [],
       CANCELLED: [],
       REJECTED: [],
     };
 
-    return transitions[current].includes(next);
+    return (baseTransitions[current] ?? []).includes(next);
+  }
+
+  private getPreparingTransitions(orderType: OrderType): OrderStatus[] {
+    if (orderType === OrderType.TAKEAWAY) {
+      return [OrderStatus.READY_FOR_PICKUP, OrderStatus.CANCELLED];
+    }
+
+    if (orderType === OrderType.DINE_IN) {
+      return [OrderStatus.READY_TO_SERVE, OrderStatus.CANCELLED];
+    }
+
+    return [OrderStatus.OUT_FOR_DELIVERY, OrderStatus.CANCELLED];
   }
 
   private isPaymentAllowed(
