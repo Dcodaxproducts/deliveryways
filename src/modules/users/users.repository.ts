@@ -27,14 +27,28 @@ export class UsersRepository {
         deletedAt: null,
         ...(restaurantId !== undefined ? { restaurantId } : {}),
       },
-      include: { profile: true },
+      include: {
+        profile: true,
+        staffRole: {
+          include: {
+            permissions: true,
+          },
+        },
+      },
     });
   }
 
   async findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      include: { profile: true },
+      include: {
+        profile: true,
+        staffRole: {
+          include: {
+            permissions: true,
+          },
+        },
+      },
     });
   }
 

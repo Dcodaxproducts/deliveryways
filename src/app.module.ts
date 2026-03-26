@@ -32,6 +32,8 @@ import { StorageModule } from './modules/storage/storage.module';
 import { CartModule } from './modules/cart/cart.module';
 import { CustomerAppModule } from './modules/customer-app/customer-app.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { StaffRolesModule } from './modules/staff-roles/staff-roles.module';
+import { StaffManagementModule } from './modules/staff-management/staff-management.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -90,6 +92,8 @@ import { AppController } from './app.controller';
     CartModule,
     CustomerAppModule,
     AdminModule,
+    StaffRolesModule,
+    StaffManagementModule,
   ],
   providers: [
     {

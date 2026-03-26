@@ -51,6 +51,7 @@ describe('AuthService login', () => {
       branchId: null,
       isVerified: true,
       isApproved: true,
+      isActive: true,
       profile: null,
     });
 
@@ -78,6 +79,7 @@ describe('AuthService login', () => {
       branchId: null,
       isVerified: true,
       isApproved: true,
+      isActive: true,
       profile: null,
     });
 

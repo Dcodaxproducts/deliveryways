@@ -3,4 +3,5 @@ export enum RolesEnum {
   BUSINESS_ADMIN = 'BUSINESS_ADMIN',
   BRANCH_ADMIN = 'BRANCH_ADMIN',
   CUSTOMER = 'CUSTOMER',
+  STAFF = 'STAFF',
 }

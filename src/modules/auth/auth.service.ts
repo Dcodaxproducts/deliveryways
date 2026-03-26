@@ -431,6 +431,17 @@ export class AuthService {
       );
     }
 
+    if (!user.isActive) {
+      throw new ForbiddenException('Your account is inactive');
+    }
+
+    if (
+      user.role === 'STAFF' &&
+      (!user.staffRole || user.staffRole.deletedAt || !user.staffRole.isActive)
+    ) {
+      throw new ForbiddenException('Your assigned staff role is inactive');
+    }
+
     const accessToken = await this.jwtService.signAsync({
       uid: user.id,
       role: user.role,
@@ -464,6 +475,7 @@ export class AuthService {
           isVerified: user.isVerified,
           isApproved: user.isApproved,
           profile: user.profile,
+          staffRole: user.staffRole,
         },
       },
       message: 'Login successful',
@@ -806,6 +818,7 @@ export class AuthService {
         isVerified: dbUser.isVerified,
         isApproved: dbUser.isApproved,
         profile: dbUser.profile,
+        staffRole: dbUser.staffRole,
       },
       message: 'Current user context fetched',
     };
