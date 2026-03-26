@@ -611,6 +611,13 @@ export class OrdersService {
     customerNote: string | null;
     createdAt: Date;
     updatedAt: Date;
+    restaurant: {
+      id: string;
+      name: string;
+      slug: string;
+      logoUrl: string | null;
+      coverImage: string | null;
+    };
     branch: { id: string; name: string; coverImage: string | null };
     coupon: { id: string; code: string; title: string } | null;
     customer: {
@@ -664,6 +671,7 @@ export class OrdersService {
       customerNote: order.customerNote,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      restaurant: order.restaurant,
       branch: order.branch,
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),
@@ -712,6 +720,13 @@ export class OrdersService {
     cancelledAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
+    restaurant: {
+      id: string;
+      name: string;
+      slug: string;
+      logoUrl: string | null;
+      coverImage: string | null;
+    };
     branch: { id: string; name: string; coverImage: string | null };
     coupon: { id: string; code: string; title: string } | null;
     customer: {
@@ -802,6 +817,7 @@ export class OrdersService {
       cancelledAt: order.cancelledAt,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      restaurant: order.restaurant,
       branch: order.branch,
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),

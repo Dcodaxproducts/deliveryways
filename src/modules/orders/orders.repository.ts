@@ -42,6 +42,15 @@ export class OrdersRepository {
           orderBy: [{ createdAt: 'asc' }],
         },
         coupon: { select: { id: true, code: true, title: true } },
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            coverImage: true,
+          },
+        },
         branch: { select: { id: true, name: true, coverImage: true } },
         customer: {
           select: {
@@ -120,6 +129,15 @@ export class OrdersRepository {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
         include: {
+          restaurant: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              logoUrl: true,
+              coverImage: true,
+            },
+          },
           branch: { select: { id: true, name: true, coverImage: true } },
           coupon: { select: { id: true, code: true, title: true } },
           customer: {

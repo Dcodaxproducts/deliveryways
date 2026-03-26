@@ -60,7 +60,32 @@ export class MenuItemRepository {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
         include: {
-          category: { select: { id: true, name: true } },
+          restaurant: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              logoUrl: true,
+              coverImage: true,
+            },
+          },
+          category: {
+            select: { id: true, name: true, slug: true, imageUrl: true },
+          },
+          menuLinks: {
+            where: { ...(query.includeInactive ? {} : { isActive: true }) },
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              restaurantMenu: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  isActive: true,
+                },
+              },
+            },
+          },
           variations: {
             where: { deletedAt: null },
             orderBy: { sortOrder: 'asc' },
@@ -76,6 +101,13 @@ export class MenuItemRepository {
                   },
                 },
               },
+            },
+          },
+          _count: {
+            select: {
+              variations: true,
+              modifierLinks: true,
+              menuLinks: true,
             },
           },
         },
