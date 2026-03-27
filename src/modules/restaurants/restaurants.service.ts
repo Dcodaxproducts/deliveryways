@@ -199,6 +199,23 @@ export class RestaurantsService {
     };
   }
 
+  async customerAppContentFromContext(user: AuthUserContext) {
+    if (!user.rid) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    const restaurant = await this.restaurantsRepository.findById(user.rid);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    return {
+      data: this.extractCustomerAppContent(restaurant),
+      message: 'Restaurant customer app content fetched successfully',
+    };
+  }
+
   async updateCustomerAppContent(
     user: AuthUserContext,
     id: string,

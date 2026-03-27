@@ -79,6 +79,14 @@ export class RestaurantsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.CUSTOMER)
+  @Get('customer-app-content')
+  customerAppContentFromContext(@CurrentUser() user: AuthUserContext) {
+    return this.restaurantsService.customerAppContentFromContext(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
