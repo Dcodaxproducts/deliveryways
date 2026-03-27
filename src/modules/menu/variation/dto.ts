@@ -13,10 +13,6 @@ import { QueryDto } from '../../../common/dto';
 export class CreateMenuVariationDto {
   @ApiProperty()
   @IsString()
-  restaurantId!: string;
-
-  @ApiProperty()
-  @IsString()
   menuItemId!: string;
 
   @ApiProperty()

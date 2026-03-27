@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -32,13 +31,7 @@ export class MenuVariationService {
       throw new NotFoundException('Menu item not found');
     }
 
-    if (dto.restaurantId !== item.restaurantId) {
-      throw new BadRequestException(
-        'restaurantId must match the menu item restaurant',
-      );
-    }
-
-    await this.ensureRestaurantWriteAccess(user, dto.restaurantId);
+    await this.ensureRestaurantWriteAccess(user, item.restaurantId);
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {

@@ -93,7 +93,6 @@ export class DevTestingService {
     });
 
     await this.menuVariationService.create(ownerContext, {
-      restaurantId: tenantResult.data.restaurantId,
       menuItemId: zingerItem.data.id,
       name: 'Large',
       price: 740,
