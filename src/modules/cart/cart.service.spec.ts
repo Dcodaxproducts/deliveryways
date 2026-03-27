@@ -161,9 +161,13 @@ describe('CartService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('allows business-admin cart access when customer belongs to query restaurant scope', async () => {
+  it('allows business-admin cart access with customerId only', async () => {
     const { service, cartRepository } = makeService();
-    cartRepository.findActiveCustomer.mockResolvedValue({ id: 'customer-1' });
+    cartRepository.findActiveCustomer.mockResolvedValue({
+      id: 'customer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
 
     const customerId = await (
       service as unknown as {
@@ -186,19 +190,22 @@ describe('CartService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       'customer-1',
-      'restaurant-1',
     );
 
     expect(customerId).toBe('customer-1');
     expect(cartRepository.findActiveCustomer).toHaveBeenCalledWith(
       'customer-1',
       'tenant-1',
-      'restaurant-1',
     );
   });
 
-  it('requires restaurantId query when admin token has no restaurant scope', async () => {
-    const { service } = makeService();
+  it('blocks branch-admin cart access for customers outside the branch restaurant scope', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findActiveCustomer.mockResolvedValue({
+      id: 'customer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-2',
+    });
 
     await expect(
       (
@@ -208,6 +215,7 @@ describe('CartService', () => {
               uid: string;
               tid?: string;
               rid?: string | null;
+              bid?: string | null;
               role: UserRoleEnum;
             },
             requestedCustomerId?: string,
@@ -216,10 +224,11 @@ describe('CartService', () => {
         }
       ).resolveCartCustomerId(
         {
-          uid: 'admin-1',
+          uid: 'branch-admin-1',
           tid: 'tenant-1',
-          rid: null,
-          role: UserRoleEnum.BUSINESS_ADMIN,
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
         },
         'customer-1',
       ),

@@ -53,6 +53,12 @@ interface CartSnapshot {
   items: CartSnapshotItem[];
 }
 
+interface ResolvedCartCustomerScope {
+  id: string;
+  tenantId: string | null;
+  restaurantId: string | null;
+}
+
 @Injectable()
 export class CartService {
   constructor(
@@ -527,12 +533,15 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
-    const customerId = await this.resolveCartCustomerId(
+    void requestedRestaurantId;
+
+    const customer = await this.resolveCartCustomerScope(
       user,
       requestedCustomerId,
-      requestedRestaurantId,
     );
-    const existingCart = await this.cartRepository.findByCustomerId(customerId);
+    const existingCart = await this.cartRepository.findByCustomerId(
+      customer.id,
+    );
 
     if (existingCart) {
       if (dto.branchId && dto.branchId !== existingCart.branchId) {
@@ -555,18 +564,10 @@ export class CartService {
       throw new BadRequestException('Branch not found or inactive');
     }
 
-    const tenantId = this.getRequiredTenantId(user);
-    const restaurantId = this.resolveRequestedRestaurantId(
-      user,
-      requestedRestaurantId,
-    );
-    this.ensureRestaurantAccess(
-      user,
-      branch.restaurantId,
-      requestedRestaurantId,
-    );
-
-    if (branch.tenantId !== tenantId || branch.restaurantId !== restaurantId) {
+    if (
+      branch.tenantId !== customer.tenantId ||
+      branch.restaurantId !== customer.restaurantId
+    ) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
@@ -576,7 +577,7 @@ export class CartService {
       tenant: { connect: { id: branch.tenantId } },
       restaurant: { connect: { id: branch.restaurantId } },
       branch: { connect: { id: branch.id } },
-      customer: { connect: { id: customerId } },
+      customer: { connect: { id: customer.id } },
     });
   }
 
@@ -891,32 +892,25 @@ export class CartService {
     return trimmed.length ? trimmed : null;
   }
 
-  private ensureRestaurantAccess(
-    user: AuthUserContext,
-    restaurantId: string,
-    requestedRestaurantId?: string,
-  ) {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return;
-    }
-
-    const allowedRestaurantId = this.resolveRequestedRestaurantId(
-      user,
-      requestedRestaurantId,
-    );
-
-    if (allowedRestaurantId !== restaurantId) {
-      throw new ForbiddenException(
-        'You cannot access resources outside your restaurant',
-      );
-    }
-  }
-
   private async resolveCartCustomerId(
     user: AuthUserContext,
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
+    void requestedRestaurantId;
+
+    const customer = await this.resolveCartCustomerScope(
+      user,
+      requestedCustomerId,
+    );
+
+    return customer.id;
+  }
+
+  private async resolveCartCustomerScope(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+  ): Promise<ResolvedCartCustomerScope> {
     if (user.role === UserRoleEnum.CUSTOMER) {
       if (requestedCustomerId && requestedCustomerId !== user.uid) {
         throw new BadRequestException(
@@ -924,7 +918,11 @@ export class CartService {
         );
       }
 
-      return user.uid;
+      return {
+        id: user.uid,
+        tenantId: user.tid ?? null,
+        restaurantId: user.rid ?? null,
+      };
     }
 
     if (!requestedCustomerId) {
@@ -933,37 +931,28 @@ export class CartService {
       );
     }
 
-    const tenantId = this.getRequiredTenantId(user);
-    const restaurantId = this.resolveRequestedRestaurantId(
-      user,
-      requestedRestaurantId,
-    );
     const customer = await this.cartRepository.findActiveCustomer(
       requestedCustomerId,
-      tenantId,
-      restaurantId,
+      user.role === UserRoleEnum.SUPER_ADMIN
+        ? undefined
+        : this.getRequiredTenantId(user),
     );
 
-    if (!customer) {
-      throw new BadRequestException('Customer not found for this restaurant');
+    if (!customer?.tenantId || !customer.restaurantId) {
+      throw new BadRequestException('Customer not found');
     }
 
-    return customer.id;
-  }
-
-  private resolveRequestedRestaurantId(
-    user: AuthUserContext,
-    requestedRestaurantId?: string,
-  ) {
-    if (user.rid) {
-      return user.rid;
+    if (
+      user.role === UserRoleEnum.BRANCH_ADMIN &&
+      user.rid &&
+      customer.restaurantId !== user.rid
+    ) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
 
-    if (requestedRestaurantId) {
-      return requestedRestaurantId;
-    }
-
-    throw new ForbiddenException('Restaurant context is required');
+    return customer;
   }
 
   private getRequiredTenantId(user: AuthUserContext) {
