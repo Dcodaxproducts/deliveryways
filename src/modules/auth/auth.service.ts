@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -27,6 +27,7 @@ import {
   LoginDto,
   RefreshDto,
   RegisterCustomerDto,
+  RegisterGuestCustomerDto,
   RegisterTenantDto,
   OtpPurposeEnum,
   ResendOtpDto,
@@ -217,6 +218,7 @@ export class AuthService {
           branchId: null,
           isVerified: shouldAutoVerifyUser,
           isApproved: false,
+          isGuest: false,
         },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
@@ -308,12 +310,89 @@ export class AuthService {
           branchId: createdUser.branchId,
           isVerified: createdUser.isVerified,
           isApproved: createdUser.isApproved,
+          isGuest: createdUser.isGuest,
         },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
       message: shouldAutoVerifyUser
         ? 'Customer registration completed. Email verification is disabled.'
         : 'Customer registration completed. Verify email with OTP.',
+    };
+  }
+
+  async registerGuestCustomer(dto: RegisterGuestCustomerDto) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: dto.restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        tenantId: true,
+      },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const guestEmail = this.generateGuestEmail(dto.restaurantId);
+    const guestPassword = await bcrypt.hash(
+      randomBytes(24).toString('hex'),
+      10,
+    );
+
+    const createdUser = await this.prisma.$transaction(async (tx) => {
+      return this.usersService.create(
+        {
+          email: guestEmail,
+          password: guestPassword,
+          role: UserRoleEnum.CUSTOMER,
+          restaurantId: dto.restaurantId,
+          tenantId: restaurant.tenantId,
+          isVerified: false,
+          isApproved: true,
+          isGuest: true,
+          profile: {
+            firstName: dto.firstName?.trim() || 'Guest',
+            lastName: dto.lastName?.trim() || 'Customer',
+            phone: dto.phone,
+          },
+        },
+        tx,
+      );
+    });
+
+    const auth = await this.issueAuthTokens({
+      uid: createdUser.id,
+      actorType: 'USER',
+      role: createdUser.role,
+      tid: createdUser.tenantId,
+      rid: createdUser.restaurantId,
+      bid: createdUser.branchId,
+    });
+
+    return {
+      data: {
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: createdUser.id,
+          email: createdUser.email,
+          role: createdUser.role,
+          tenantId: createdUser.tenantId,
+          restaurantId: createdUser.restaurantId,
+          branchId: createdUser.branchId,
+          isVerified: createdUser.isVerified,
+          isApproved: createdUser.isApproved,
+          isGuest: createdUser.isGuest,
+          profile: {
+            firstName: dto.firstName?.trim() || 'Guest',
+            lastName: dto.lastName?.trim() || 'Customer',
+            phone: dto.phone,
+          },
+        },
+      },
+      message: 'Guest customer session created successfully',
     };
   }
 
@@ -458,6 +537,7 @@ export class AuthService {
           branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
           isVerified: user.isVerified,
           isApproved: user.isApproved,
+          isGuest: user.isGuest,
           profile: user.profile,
         },
       },
@@ -520,6 +600,7 @@ export class AuthService {
           branchId: staff.branchId,
           isVerified: staff.isVerified,
           isApproved: staff.isApproved,
+          isGuest: false,
           profile: {
             firstName: staff.firstName,
             lastName: staff.lastName,
@@ -942,6 +1023,7 @@ export class AuthService {
           branchId: staff.branchId,
           isVerified: staff.isVerified,
           isApproved: staff.isApproved,
+          isGuest: false,
           profile: {
             firstName: staff.firstName,
             lastName: staff.lastName,
@@ -971,6 +1053,7 @@ export class AuthService {
         branchId: dbUser.branchId,
         isVerified: dbUser.isVerified,
         isApproved: dbUser.isApproved,
+        isGuest: dbUser.isGuest,
         profile: dbUser.profile,
       },
       message: 'Current user context fetched',
@@ -1237,6 +1320,10 @@ export class AuthService {
       },
       message: 'If account exists, reset instructions are sent',
     };
+  }
+
+  private generateGuestEmail(restaurantId: string): string {
+    return `guest+${restaurantId}+${Date.now()}-${randomBytes(4).toString('hex')}@guest.deliveryways.local`;
   }
 
   private generateOtp(): string {

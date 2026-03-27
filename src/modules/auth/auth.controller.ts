@@ -18,6 +18,7 @@ import {
   LoginDto,
   RefreshDto,
   RegisterCustomerDto,
+  RegisterGuestCustomerDto,
   RegisterTenantDto,
   ResendOtpDto,
   ResetPasswordDto,
@@ -45,6 +46,12 @@ export class AuthController {
   @Post('register-customer')
   registerCustomer(@Body() dto: RegisterCustomerDto) {
     return this.authService.registerCustomer(dto);
+  }
+
+  @Public()
+  @Post('register-guest')
+  registerGuest(@Body() dto: RegisterGuestCustomerDto) {
+    return this.authService.registerGuestCustomer(dto);
   }
 
   @Public()

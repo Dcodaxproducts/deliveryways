@@ -23,6 +23,7 @@ export class UsersService {
         verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
         isApproved: dto.isApproved,
+        isGuest: dto.isGuest,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }
@@ -59,6 +60,7 @@ export class UsersService {
         verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
         isApproved: dto.isApproved,
+        isGuest: dto.isGuest,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }

@@ -48,7 +48,7 @@ export class VerifiedUserGuard implements CanActivate {
       return true;
     }
 
-    if (!user.isVerified) {
+    if (!user.isVerified && !user.isGuest) {
       throw new ForbiddenException(
         'Please verify your email before performing this operation',
       );

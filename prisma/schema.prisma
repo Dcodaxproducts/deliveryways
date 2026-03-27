@@ -253,6 +253,7 @@ model User {
   role                      UserRole
   isVerified                Boolean   @default(false) @map("is_verified")
   isApproved                Boolean   @default(false) @map("is_approved")
+  isGuest                   Boolean   @default(false) @map("is_guest")
   verificationToken         String?   @map("verification_token")
   verificationOtp           String?   @map("verification_otp")
   verificationOtpExpiresAt  DateTime? @map("verification_otp_expires_at") @db.Timestamptz
