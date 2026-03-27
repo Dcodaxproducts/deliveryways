@@ -137,6 +137,14 @@ export class CartCustomerScopeDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Restaurant scope override when the admin token does not carry restaurantId',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
 }
 
 export class QuoteCartDto {}

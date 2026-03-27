@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   OrderTypeEnum,
   PaymentMethodEnum,
@@ -141,22 +145,23 @@ describe('CartService', () => {
             user: {
               uid: string;
               tid?: string;
-              rid?: string;
+              rid?: string | null;
               role: UserRoleEnum;
             },
             requestedCustomerId?: string,
+            requestedRestaurantId?: string,
           ) => Promise<string>;
         }
       ).resolveCartCustomerId({
         uid: 'admin-1',
         tid: 'tenant-1',
-        rid: 'restaurant-1',
+        rid: null,
         role: UserRoleEnum.BUSINESS_ADMIN,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('allows business-admin cart access when customer belongs to same restaurant', async () => {
+  it('allows business-admin cart access when customer belongs to query restaurant scope', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findActiveCustomer.mockResolvedValue({ id: 'customer-1' });
 
@@ -166,20 +171,22 @@ describe('CartService', () => {
           user: {
             uid: string;
             tid?: string;
-            rid?: string;
+            rid?: string | null;
             role: UserRoleEnum;
           },
           requestedCustomerId?: string,
+          requestedRestaurantId?: string,
         ) => Promise<string>;
       }
     ).resolveCartCustomerId(
       {
         uid: 'admin-1',
         tid: 'tenant-1',
-        rid: 'restaurant-1',
+        rid: null,
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       'customer-1',
+      'restaurant-1',
     );
 
     expect(customerId).toBe('customer-1');
@@ -188,6 +195,35 @@ describe('CartService', () => {
       'tenant-1',
       'restaurant-1',
     );
+  });
+
+  it('requires restaurantId query when admin token has no restaurant scope', async () => {
+    const { service } = makeService();
+
+    await expect(
+      (
+        service as unknown as {
+          resolveCartCustomerId: (
+            user: {
+              uid: string;
+              tid?: string;
+              rid?: string | null;
+              role: UserRoleEnum;
+            },
+            requestedCustomerId?: string,
+            requestedRestaurantId?: string,
+          ) => Promise<string>;
+        }
+      ).resolveCartCustomerId(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          rid: null,
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'customer-1',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('creates cart on first add-item when cart does not exist', async () => {

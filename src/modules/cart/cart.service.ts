@@ -61,10 +61,15 @@ export class CartService {
     private readonly profilesRepository: ProfilesRepository,
   ) {}
 
-  async getCart(user: AuthUserContext, requestedCustomerId?: string) {
+  async getCart(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -85,10 +90,12 @@ export class CartService {
     user: AuthUserContext,
     dto: UpdateCartDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -125,6 +132,7 @@ export class CartService {
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
 
     return {
@@ -137,18 +145,26 @@ export class CartService {
     user: AuthUserContext,
     dto: UpdateCartOrderTypeDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
-    return this.updateCart(user, dto, requestedCustomerId);
+    return this.updateCart(
+      user,
+      dto,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
   }
 
   async updateAddress(
     user: AuthUserContext,
     dto: UpdateCartAddressDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -175,6 +191,7 @@ export class CartService {
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
 
     if (!updatedCart.items.length) {
@@ -196,10 +213,12 @@ export class CartService {
     user: AuthUserContext,
     dto: UpdateCartCouponDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -229,6 +248,7 @@ export class CartService {
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
 
     return {
@@ -240,10 +260,15 @@ export class CartService {
     };
   }
 
-  async removeCoupon(user: AuthUserContext, requestedCustomerId?: string) {
+  async removeCoupon(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -258,6 +283,7 @@ export class CartService {
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
 
     return {
@@ -270,6 +296,7 @@ export class CartService {
     user: AuthUserContext,
     dto: AddCartItemDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const cart = await this.getCartForAddItem(user, dto, requestedCustomerId);
     await this.assertValidCartItem(cart.restaurantId, cart.branchId, dto);
@@ -286,6 +313,7 @@ export class CartService {
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
 
     return {
@@ -299,10 +327,12 @@ export class CartService {
     itemId: string,
     dto: UpdateCartItemDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const item = await this.cartRepository.findItemByIdForCustomer(
       itemId,
@@ -355,6 +385,7 @@ export class CartService {
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
 
     return {
@@ -367,10 +398,12 @@ export class CartService {
     user: AuthUserContext,
     itemId: string,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const item = await this.cartRepository.findItemByIdForCustomer(
       itemId,
@@ -394,10 +427,15 @@ export class CartService {
     };
   }
 
-  async clearCart(user: AuthUserContext, requestedCustomerId?: string) {
+  async clearCart(
+    user: AuthUserContext,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -415,8 +453,13 @@ export class CartService {
     user: AuthUserContext,
     _dto: QuoteCartDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
-    const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
+    const cart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
     if (!cart.items.length) {
       throw new BadRequestException('Cart is empty');
     }
@@ -435,8 +478,13 @@ export class CartService {
     user: AuthUserContext,
     dto: CheckoutCartDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
-    const cart = await this.getExistingCartOrThrow(user, requestedCustomerId);
+    const cart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
     if (!cart.items.length) {
       throw new BadRequestException('Cart is empty');
     }
@@ -457,10 +505,12 @@ export class CartService {
   private async getExistingCartOrThrow(
     user: AuthUserContext,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -475,10 +525,12 @@ export class CartService {
     user: AuthUserContext,
     dto: AddCartItemDto,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     const customerId = await this.resolveCartCustomerId(
       user,
       requestedCustomerId,
+      requestedRestaurantId,
     );
     const existingCart = await this.cartRepository.findByCustomerId(customerId);
 
@@ -503,7 +555,22 @@ export class CartService {
       throw new BadRequestException('Branch not found or inactive');
     }
 
-    this.ensureRestaurantAccess(user, branch.restaurantId);
+    const tenantId = this.getRequiredTenantId(user);
+    const restaurantId = this.resolveRequestedRestaurantId(
+      user,
+      requestedRestaurantId,
+    );
+    this.ensureRestaurantAccess(
+      user,
+      branch.restaurantId,
+      requestedRestaurantId,
+    );
+
+    if (branch.tenantId !== tenantId || branch.restaurantId !== restaurantId) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
 
     return this.cartRepository.create({
       tenant: { connect: { id: branch.tenantId } },
@@ -824,12 +891,21 @@ export class CartService {
     return trimmed.length ? trimmed : null;
   }
 
-  private ensureRestaurantAccess(user: AuthUserContext, restaurantId: string) {
+  private ensureRestaurantAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+    requestedRestaurantId?: string,
+  ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
 
-    if (!user.rid || user.rid !== restaurantId) {
+    const allowedRestaurantId = this.resolveRequestedRestaurantId(
+      user,
+      requestedRestaurantId,
+    );
+
+    if (allowedRestaurantId !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
@@ -839,6 +915,7 @@ export class CartService {
   private async resolveCartCustomerId(
     user: AuthUserContext,
     requestedCustomerId?: string,
+    requestedRestaurantId?: string,
   ) {
     if (user.role === UserRoleEnum.CUSTOMER) {
       if (requestedCustomerId && requestedCustomerId !== user.uid) {
@@ -857,7 +934,10 @@ export class CartService {
     }
 
     const tenantId = this.getRequiredTenantId(user);
-    const restaurantId = this.getRequiredRestaurantId(user);
+    const restaurantId = this.resolveRequestedRestaurantId(
+      user,
+      requestedRestaurantId,
+    );
     const customer = await this.cartRepository.findActiveCustomer(
       requestedCustomerId,
       tenantId,
@@ -871,12 +951,19 @@ export class CartService {
     return customer.id;
   }
 
-  private getRequiredRestaurantId(user: AuthUserContext) {
-    if (!user.rid) {
-      throw new ForbiddenException('Restaurant context is required');
+  private resolveRequestedRestaurantId(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    if (user.rid) {
+      return user.rid;
     }
 
-    return user.rid;
+    if (requestedRestaurantId) {
+      return requestedRestaurantId;
+    }
+
+    throw new ForbiddenException('Restaurant context is required');
   }
 
   private getRequiredTenantId(user: AuthUserContext) {

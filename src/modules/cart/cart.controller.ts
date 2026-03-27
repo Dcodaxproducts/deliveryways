@@ -48,7 +48,7 @@ export class CartController {
     @CurrentUser() user: AuthUserContext,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.getCart(user, scope.customerId);
+    return this.cartService.getCart(user, scope.customerId, scope.restaurantId);
   }
 
   @Patch()
@@ -57,7 +57,12 @@ export class CartController {
     @Body() dto: UpdateCartDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.updateCart(user, dto, scope.customerId);
+    return this.cartService.updateCart(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Patch('order-type')
@@ -66,7 +71,12 @@ export class CartController {
     @Body() dto: UpdateCartOrderTypeDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.updateOrderType(user, dto, scope.customerId);
+    return this.cartService.updateOrderType(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Patch('address')
@@ -75,7 +85,12 @@ export class CartController {
     @Body() dto: UpdateCartAddressDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.updateAddress(user, dto, scope.customerId);
+    return this.cartService.updateAddress(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Patch('coupon')
@@ -84,7 +99,12 @@ export class CartController {
     @Body() dto: UpdateCartCouponDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.applyCoupon(user, dto, scope.customerId);
+    return this.cartService.applyCoupon(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Delete('coupon')
@@ -92,7 +112,11 @@ export class CartController {
     @CurrentUser() user: AuthUserContext,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.removeCoupon(user, scope.customerId);
+    return this.cartService.removeCoupon(
+      user,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Post('items')
@@ -101,7 +125,12 @@ export class CartController {
     @Body() dto: AddCartItemDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.addItem(user, dto, scope.customerId);
+    return this.cartService.addItem(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Patch('items/:itemId')
@@ -111,7 +140,13 @@ export class CartController {
     @Body() dto: UpdateCartItemDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.updateItem(user, itemId, dto, scope.customerId);
+    return this.cartService.updateItem(
+      user,
+      itemId,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Delete('items/:itemId')
@@ -120,7 +155,12 @@ export class CartController {
     @Param('itemId') itemId: string,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.removeItem(user, itemId, scope.customerId);
+    return this.cartService.removeItem(
+      user,
+      itemId,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Delete()
@@ -128,7 +168,11 @@ export class CartController {
     @CurrentUser() user: AuthUserContext,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.clearCart(user, scope.customerId);
+    return this.cartService.clearCart(
+      user,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Post('quote')
@@ -137,7 +181,12 @@ export class CartController {
     @Body() dto: QuoteCartDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.quote(user, dto, scope.customerId);
+    return this.cartService.quote(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 
   @Post('checkout')
@@ -146,6 +195,11 @@ export class CartController {
     @Body() dto: CheckoutCartDto,
     @Query() scope: CartCustomerScopeDto,
   ) {
-    return this.cartService.checkout(user, dto, scope.customerId);
+    return this.cartService.checkout(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
   }
 }
