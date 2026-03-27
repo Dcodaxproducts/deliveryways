@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  NotificationAudience,
   NotificationChannel,
   NotificationStatus,
   NotificationType,
@@ -17,6 +18,25 @@ import { MailerService } from '../mailer/mailer.service';
 import { ListNotificationsDto } from './dto';
 import { NotificationsRepository } from './notifications.repository';
 
+const CUSTOMER_NOTIFICATION_TYPES: NotificationType[] = [
+  NotificationType.ORDER_PLACED,
+  NotificationType.ORDER_STATUS_CHANGED,
+  NotificationType.ORDER_CANCELLED,
+  NotificationType.PAYMENT_PAID,
+  NotificationType.PAYMENT_FAILED,
+  NotificationType.PAYMENT_CANCELLED,
+  NotificationType.PAYMENT_REFUNDED,
+];
+
+const ADMIN_NOTIFICATION_TYPES: NotificationType[] = [
+  NotificationType.ORDER_PLACED,
+  NotificationType.ORDER_CANCELLED,
+  NotificationType.PAYMENT_PAID,
+  NotificationType.PAYMENT_FAILED,
+  NotificationType.PAYMENT_CANCELLED,
+  NotificationType.PAYMENT_REFUNDED,
+];
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -26,19 +46,42 @@ export class NotificationsService {
   ) {}
 
   async list(user: AuthUserContext, query: ListNotificationsDto) {
-    const restaurantId = this.resolveRestaurantId(user, query.restaurantId);
-    const recipientUserId =
-      user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
-    const { items, total } = await this.notificationsRepository.list(
-      restaurantId,
+    const scope = this.resolveFeedScope(user, query);
+    const where = this.notificationsRepository.buildWhere({
+      audience: scope.audience,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
+      recipientUserId: scope.recipientUserId,
+      allowedTypes: scope.allowedTypes,
       query,
-      recipientUserId,
+    });
+    const { items, total } = await this.notificationsRepository.list(
+      where,
+      query,
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.toFeedItem(item, scope.audience)),
       message: 'Notifications fetched successfully',
       meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async summary(user: AuthUserContext, query: ListNotificationsDto) {
+    const scope = this.resolveFeedScope(user, query);
+    const where = this.notificationsRepository.buildWhere({
+      audience: scope.audience,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
+      recipientUserId: scope.recipientUserId,
+      allowedTypes: scope.allowedTypes,
+      query,
+    });
+    const summary = await this.notificationsRepository.countSummary(where);
+
+    return {
+      data: summary,
+      message: 'Notification summary fetched successfully',
     };
   }
 
@@ -52,8 +95,49 @@ export class NotificationsService {
     this.assertNotificationAccess(user, notification);
 
     return {
-      data: notification,
+      data: this.toFeedItem(notification, notification.audience),
       message: 'Notification fetched successfully',
+    };
+  }
+
+  async markSeen(user: AuthUserContext, id: string) {
+    const notification = await this.notificationsRepository.findById(id);
+
+    if (!notification) {
+      throw new NotFoundException('Notification not found');
+    }
+
+    this.assertNotificationAccess(user, notification);
+
+    const data = await this.notificationsRepository.markSeen(id);
+
+    return {
+      data: {
+        id: data.id,
+        seenAt: data.seenAt,
+        isSeen: !!data.seenAt,
+      },
+      message: 'Notification marked as seen successfully',
+    };
+  }
+
+  async markAllSeen(user: AuthUserContext, query: ListNotificationsDto) {
+    const scope = this.resolveFeedScope(user, query);
+    const where = this.notificationsRepository.buildWhere({
+      audience: scope.audience,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
+      recipientUserId: scope.recipientUserId,
+      allowedTypes: scope.allowedTypes,
+      query,
+    });
+    const data = await this.notificationsRepository.markAllSeen(where);
+
+    return {
+      data: {
+        count: data.count,
+      },
+      message: 'Notifications marked as seen successfully',
     };
   }
 
@@ -65,6 +149,14 @@ export class NotificationsService {
     }
 
     this.assertNotificationAccess(user, notification);
+
+    if (notification.channel !== NotificationChannel.EMAIL) {
+      throw new ForbiddenException('Only email notifications can be retried');
+    }
+
+    if (!notification.recipientEmail) {
+      throw new ForbiddenException('Notification has no email recipient');
+    }
 
     const data = await this.dispatchNotification(notification);
 
@@ -96,7 +188,7 @@ export class NotificationsService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.createAndDispatch({
+    await this.createAndDispatchCustomerEmail({
       tenantId: order.tenantId,
       restaurantId: order.restaurantId,
       branchId: order.branchId,
@@ -115,6 +207,22 @@ export class NotificationsService {
         orderId: order.id,
         branchName: order.branch.name,
         totalAmount: Number(order.totalAmount),
+      },
+    });
+
+    await this.createAdminInAppNotification({
+      tenantId: order.tenantId,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      orderId: order.id,
+      type: NotificationType.ORDER_PLACED,
+      subject: `New order ${order.id}`,
+      body: `${order.branch.name} received a new order for PKR ${Number(order.totalAmount).toFixed(2)}.`,
+      payload: {
+        orderId: order.id,
+        branchName: order.branch.name,
+        totalAmount: Number(order.totalAmount),
+        customerId: order.customerId,
       },
     });
   }
@@ -146,7 +254,7 @@ export class NotificationsService {
         ? NotificationType.ORDER_CANCELLED
         : NotificationType.ORDER_STATUS_CHANGED;
 
-    await this.createAndDispatch({
+    await this.createAndDispatchCustomerEmail({
       tenantId: order.tenantId,
       restaurantId: order.restaurantId,
       branchId: order.branchId,
@@ -168,6 +276,24 @@ export class NotificationsService {
         paymentStatus: order.paymentStatus,
       },
     });
+
+    if (type === NotificationType.ORDER_CANCELLED) {
+      await this.createAdminInAppNotification({
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
+        orderId: order.id,
+        type,
+        subject: `Order ${order.id} cancelled`,
+        body: `${order.branch.name} order ${order.id} has been cancelled.`,
+        payload: {
+          orderId: order.id,
+          branchName: order.branch.name,
+          status: order.status,
+          customerId: order.customerId,
+        },
+      });
+    }
   }
 
   async notifyPaymentAttemptCreated(
@@ -198,7 +324,7 @@ export class NotificationsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
-    await this.createAndDispatch({
+    await this.createAndDispatchCustomerEmail({
       tenantId: payment.tenantId,
       restaurantId: payment.restaurantId,
       branchId: payment.branchId,
@@ -257,7 +383,7 @@ export class NotificationsService {
     const type = this.mapPaymentType(payment.status);
     const summary = this.mapPaymentSummary(payment.status);
 
-    await this.createAndDispatch({
+    await this.createAndDispatchCustomerEmail({
       tenantId: payment.tenantId,
       restaurantId: payment.restaurantId,
       branchId: payment.branchId,
@@ -284,9 +410,31 @@ export class NotificationsService {
         type: payment.type,
       },
     });
+
+    if (ADMIN_NOTIFICATION_TYPES.includes(type)) {
+      await this.createAdminInAppNotification({
+        tenantId: payment.tenantId,
+        restaurantId: payment.restaurantId,
+        branchId: payment.branchId,
+        orderId: payment.orderId,
+        paymentTransactionId: payment.id,
+        type,
+        subject: `Payment ${payment.status.toLowerCase()} for order ${payment.orderId}`,
+        body: `${payment.order.branch.name} payment is now ${payment.status}. Amount: ${payment.currency} ${Number(payment.amount).toFixed(2)}.`,
+        payload: {
+          paymentTransactionId: payment.id,
+          orderId: payment.orderId,
+          amount: Number(payment.amount),
+          currency: payment.currency,
+          status: payment.status,
+          paymentType: payment.type,
+          customerId: payment.order.customerId,
+        },
+      });
+    }
   }
 
-  private async createAndDispatch(input: {
+  private async createAndDispatchCustomerEmail(input: {
     tenantId: string;
     restaurantId: string;
     branchId: string;
@@ -311,6 +459,7 @@ export class NotificationsService {
         ? { connect: { id: input.recipientUserId } }
         : undefined,
       recipientEmail: input.recipientEmail,
+      audience: NotificationAudience.CUSTOMER,
       channel: NotificationChannel.EMAIL,
       type: input.type,
       subject: input.subject,
@@ -321,12 +470,47 @@ export class NotificationsService {
     return this.dispatchNotification(notification);
   }
 
+  private async createAdminInAppNotification(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    orderId?: string;
+    paymentTransactionId?: string;
+    type: NotificationType;
+    subject: string;
+    body: string;
+    payload?: Record<string, unknown>;
+  }) {
+    return this.notificationsRepository.create({
+      tenant: { connect: { id: input.tenantId } },
+      restaurant: { connect: { id: input.restaurantId } },
+      branch: { connect: { id: input.branchId } },
+      order: input.orderId ? { connect: { id: input.orderId } } : undefined,
+      paymentTransaction: input.paymentTransactionId
+        ? { connect: { id: input.paymentTransactionId } }
+        : undefined,
+      recipientEmail: null,
+      audience: NotificationAudience.ADMIN,
+      channel: NotificationChannel.IN_APP,
+      status: NotificationStatus.SENT,
+      sentAt: new Date(),
+      type: input.type,
+      subject: input.subject,
+      body: input.body,
+      payload: input.payload as Prisma.InputJsonValue | undefined,
+    });
+  }
+
   private async dispatchNotification(notification: {
     id: string;
-    recipientEmail: string;
+    recipientEmail: string | null;
     subject: string;
     body: string;
   }) {
+    if (!notification.recipientEmail) {
+      throw new ForbiddenException('Notification has no email recipient');
+    }
+
     try {
       await this.mailerService.sendEmail(
         notification.recipientEmail,
@@ -354,7 +538,9 @@ export class NotificationsService {
   private assertNotificationAccess(
     user: AuthUserContext,
     notification: {
+      audience: NotificationAudience;
       restaurantId: string;
+      branchId: string;
       recipientUserId: string | null;
     },
   ) {
@@ -362,7 +548,13 @@ export class NotificationsService {
       return;
     }
 
-    if (user.role === UserRoleEnum.CUSTOMER) {
+    if (notification.audience === NotificationAudience.CUSTOMER) {
+      if (user.role !== UserRoleEnum.CUSTOMER) {
+        throw new ForbiddenException(
+          'You do not have access to this notification',
+        );
+      }
+
       if (notification.recipientUserId !== user.uid) {
         throw new ForbiddenException(
           'You do not have access to this notification',
@@ -372,44 +564,148 @@ export class NotificationsService {
       return;
     }
 
-    if (user.rid !== notification.restaurantId) {
+    if (
+      user.role === UserRoleEnum.CUSTOMER ||
+      user.role === UserRoleEnum.STAFF
+    ) {
       throw new ForbiddenException(
         'You do not have access to this notification',
       );
     }
-  }
 
-  private resolveRestaurantId(
-    user: AuthUserContext,
-    restaurantId?: string,
-  ): string | undefined {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return restaurantId;
-    }
-
-    if (user.role === UserRoleEnum.CUSTOMER) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant access is required');
-      }
-
-      if (restaurantId && restaurantId !== user.rid) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      if (user.bid && user.bid !== notification.branchId) {
         throw new ForbiddenException(
-          'You do not have access to this restaurant',
+          'You do not have access to this notification',
         );
       }
 
-      return user.rid;
+      if (user.rid && user.rid !== notification.restaurantId) {
+        throw new ForbiddenException(
+          'You do not have access to this notification',
+        );
+      }
+
+      return;
     }
 
-    if (!user.rid) {
-      throw new ForbiddenException('Restaurant access is required');
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      return;
+    }
+  }
+
+  private resolveFeedScope(user: AuthUserContext, query: ListNotificationsDto) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      return {
+        audience: NotificationAudience.CUSTOMER,
+        restaurantId: user.rid,
+        branchId: query.branchId,
+        recipientUserId: user.uid,
+        allowedTypes: CUSTOMER_NOTIFICATION_TYPES,
+      };
     }
 
-    if (restaurantId && restaurantId !== user.rid) {
-      throw new ForbiddenException('You do not have access to this restaurant');
+    if (user.role === UserRoleEnum.STAFF) {
+      throw new ForbiddenException('Notification access is not available');
     }
 
-    return user.rid;
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return {
+        audience: NotificationAudience.ADMIN,
+        restaurantId: query.restaurantId,
+        branchId: query.branchId,
+        recipientUserId: undefined,
+        allowedTypes: ADMIN_NOTIFICATION_TYPES,
+      };
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      if (!user.rid || !user.bid) {
+        throw new ForbiddenException('Branch context is required');
+      }
+
+      return {
+        audience: NotificationAudience.ADMIN,
+        restaurantId: user.rid,
+        branchId: user.bid,
+        recipientUserId: undefined,
+        allowedTypes: ADMIN_NOTIFICATION_TYPES,
+      };
+    }
+
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (query.restaurantId) {
+      return {
+        audience: NotificationAudience.ADMIN,
+        restaurantId: query.restaurantId,
+        branchId: query.branchId,
+        recipientUserId: undefined,
+        allowedTypes: ADMIN_NOTIFICATION_TYPES,
+      };
+    }
+
+    throw new ForbiddenException('restaurantId is required');
+  }
+
+  private toFeedItem(
+    notification: {
+      id: string;
+      audience: NotificationAudience;
+      type: NotificationType;
+      subject: string;
+      body: string;
+      payload: Prisma.JsonValue | null;
+      createdAt: Date;
+      seenAt: Date | null;
+      order?: {
+        id: string;
+        status: string;
+        paymentStatus: string;
+      } | null;
+      paymentTransaction?: {
+        id: string;
+        status: string;
+        type: string;
+        amount: Prisma.Decimal;
+        currency: string;
+      } | null;
+    },
+    audience: NotificationAudience,
+  ) {
+    return {
+      id: notification.id,
+      audience,
+      type: notification.type,
+      title: notification.subject,
+      message: notification.body,
+      isSeen: !!notification.seenAt,
+      seenAt: notification.seenAt,
+      createdAt: notification.createdAt,
+      order: notification.order
+        ? {
+            id: notification.order.id,
+            status: notification.order.status,
+            paymentStatus: notification.order.paymentStatus,
+          }
+        : null,
+      paymentTransaction: notification.paymentTransaction
+        ? {
+            id: notification.paymentTransaction.id,
+            status: notification.paymentTransaction.status,
+            type: notification.paymentTransaction.type,
+            amount: Number(notification.paymentTransaction.amount),
+            currency: notification.paymentTransaction.currency,
+          }
+        : null,
+      payload: notification.payload,
+    };
   }
 
   private mapPaymentType(status: string): NotificationType {
@@ -452,7 +748,7 @@ export class NotificationsService {
   ): string {
     const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
 
-    return `${greeting}\n\nYour order ${orderId} has been placed successfully at ${branchName}. Total payable amount: PKR ${totalAmount.toFixed(2)}.\n\nWe will keep you updated on the next status changes.`;
+    return `${greeting}\n\nYour order ${orderId} has been placed successfully at ${branchName}. Total payable amount: PKR ${totalAmount.toFixed(2)}.`;
   }
 
   private buildOrderStatusBody(

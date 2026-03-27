@@ -86,6 +86,12 @@ enum PaymentTransactionType {
 
 enum NotificationChannel {
   EMAIL
+  IN_APP
+}
+
+enum NotificationAudience {
+  CUSTOMER
+  ADMIN
 }
 
 enum NotificationStatus {
@@ -865,17 +871,19 @@ model Notification {
   branchId             String              @map("branch_id")
   orderId              String?             @map("order_id")
   paymentTransactionId String?             @map("payment_transaction_id")
-  recipientUserId      String?             @map("recipient_user_id")
-  recipientEmail       String              @map("recipient_email")
-  channel              NotificationChannel @default(EMAIL)
-  type                 NotificationType    @map("type")
+  recipientUserId      String?               @map("recipient_user_id")
+  recipientEmail       String?               @map("recipient_email")
+  channel              NotificationChannel   @default(EMAIL)
+  audience             NotificationAudience  @default(CUSTOMER)
+  type                 NotificationType      @map("type")
   subject              String
   body                 String
   payload              Json?
-  status               NotificationStatus  @default(PENDING)
-  sentAt               DateTime?           @map("sent_at") @db.Timestamptz
-  failedAt             DateTime?           @map("failed_at") @db.Timestamptz
-  errorMessage         String?             @map("error_message")
+  status               NotificationStatus    @default(PENDING)
+  sentAt               DateTime?             @map("sent_at") @db.Timestamptz
+  failedAt             DateTime?             @map("failed_at") @db.Timestamptz
+  seenAt               DateTime?             @map("seen_at") @db.Timestamptz
+  errorMessage         String?               @map("error_message")
   createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -889,6 +897,9 @@ model Notification {
   @@index([tenantId, status, createdAt])
   @@index([restaurantId, branchId, createdAt])
   @@index([recipientUserId, createdAt])
+  @@index([audience, recipientUserId, createdAt])
+  @@index([audience, restaurantId, branchId, createdAt])
+  @@index([audience, seenAt, createdAt])
   @@index([orderId, createdAt])
   @@index([paymentTransactionId, createdAt])
   @@map("notifications")

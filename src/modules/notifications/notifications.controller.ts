@@ -23,6 +23,22 @@ export class NotificationsController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
   )
+  @Get('summary')
+  summary(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListNotificationsDto,
+  ) {
+    return this.notificationsService.summary(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
   @Get()
   list(
     @CurrentUser() user: AuthUserContext,
@@ -42,6 +58,35 @@ export class NotificationsController {
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.notificationsService.details(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Post(':id/seen')
+  markSeen(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.notificationsService.markSeen(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Post('seen-all')
+  markAllSeen(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListNotificationsDto,
+  ) {
+    return this.notificationsService.markAllSeen(user, query);
   }
 
   @ApiBearerAuth()

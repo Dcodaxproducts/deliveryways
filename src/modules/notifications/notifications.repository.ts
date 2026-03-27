@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import {
+  Notification,
+  NotificationAudience,
   NotificationStatus,
+  NotificationType,
   Prisma,
   PrismaClient,
-  Notification,
 } from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
@@ -69,14 +71,27 @@ export class NotificationsRepository {
     });
   }
 
-  async list(
-    restaurantId: string | undefined,
-    query: ListNotificationsDto,
-    recipientUserId?: string,
-  ) {
-    const where: Prisma.NotificationWhereInput = {
+  buildWhere(input: {
+    audience: NotificationAudience;
+    restaurantId?: string;
+    branchId?: string;
+    recipientUserId?: string;
+    allowedTypes?: NotificationType[];
+    query: ListNotificationsDto;
+  }): Prisma.NotificationWhereInput {
+    const {
+      audience,
+      restaurantId,
+      branchId,
+      recipientUserId,
+      allowedTypes,
+      query,
+    } = input;
+
+    return {
+      audience,
       ...(restaurantId ? { restaurantId } : {}),
-      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...(branchId ? { branchId } : {}),
       ...(query.orderId ? { orderId: query.orderId } : {}),
       ...(query.paymentTransactionId
         ? { paymentTransactionId: query.paymentTransactionId }
@@ -85,6 +100,12 @@ export class NotificationsRepository {
       ...(query.type ? { type: query.type } : {}),
       ...(query.channel ? { channel: query.channel } : {}),
       ...(recipientUserId ? { recipientUserId } : {}),
+      ...(allowedTypes?.length ? { type: { in: allowedTypes } } : {}),
+      ...(query.seen === undefined
+        ? {}
+        : query.seen
+          ? { seenAt: { not: null } }
+          : { seenAt: null }),
       ...(query.search
         ? {
             OR: [
@@ -97,7 +118,12 @@ export class NotificationsRepository {
           }
         : {}),
     };
+  }
 
+  async list(
+    where: Prisma.NotificationWhereInput,
+    query: ListNotificationsDto,
+  ) {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where,
@@ -133,6 +159,40 @@ export class NotificationsRepository {
     ]);
 
     return { items, total };
+  }
+
+  async countSummary(where: Prisma.NotificationWhereInput) {
+    const [total, unseen] = await this.prisma.$transaction([
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.count({ where: { ...where, seenAt: null } }),
+    ]);
+
+    return {
+      total,
+      unseen,
+      seen: total - unseen,
+    };
+  }
+
+  async markSeen(id: string, tx?: PrismaTx) {
+    return this.client(tx).notification.update({
+      where: { id },
+      data: {
+        seenAt: new Date(),
+      },
+    });
+  }
+
+  async markAllSeen(where: Prisma.NotificationWhereInput, tx?: PrismaTx) {
+    return this.client(tx).notification.updateMany({
+      where: {
+        ...where,
+        seenAt: null,
+      },
+      data: {
+        seenAt: new Date(),
+      },
+    });
   }
 
   async updateDelivery(
