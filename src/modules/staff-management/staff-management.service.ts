@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { StaffPanelType } from '@prisma/client';
+import { Prisma, StaffPanelType } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -17,6 +17,13 @@ import {
   UpdateStaffDto,
   UpdateStaffStatusDto,
 } from './dto';
+
+interface ResolvedStaffManagementScope {
+  panelType: StaffPanelType;
+  tenantId: string | null;
+  restaurantId: string | null;
+  branchId: string | null;
+}
 
 @Injectable()
 export class StaffManagementService {
@@ -200,17 +207,17 @@ export class StaffManagementService {
       );
     }
 
-    const expectedPanelType = this.resolvePanelType(user);
-    if (staff.panelType !== expectedPanelType) {
+    const scope = this.resolveScopeForUser(user);
+    if (staff.panelType !== scope.panelType) {
       throw new ForbiddenException(
         'You cannot access staff accounts outside your admin scope',
       );
     }
 
     if (
-      staff.tenantId !== (user.tid ?? null) ||
-      staff.restaurantId !== (user.rid ?? null) ||
-      staff.branchId !== (user.bid ?? null)
+      staff.tenantId !== scope.tenantId ||
+      staff.restaurantId !== scope.restaurantId ||
+      staff.branchId !== scope.branchId
     ) {
       throw new ForbiddenException(
         'You cannot access staff accounts outside your admin scope',
@@ -220,13 +227,18 @@ export class StaffManagementService {
     return staff;
   }
 
-  private buildListWhere(user: AuthUserContext, query: ListStaffDto) {
+  private buildListWhere(
+    user: AuthUserContext,
+    query: ListStaffDto,
+  ): Prisma.StaffUserWhereInput {
+    const scope = this.resolveScopeForUser(user);
+
     return {
       ownerUserId: user.uid,
-      panelType: this.resolvePanelType(user),
-      tenantId: user.tid ?? null,
-      restaurantId: user.rid ?? null,
-      branchId: user.bid ?? null,
+      panelType: scope.panelType,
+      tenantId: scope.tenantId,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
       deletedAt: null,
       ...(query.staffRoleId ? { staffRoleId: query.staffRoleId } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
@@ -260,9 +272,16 @@ export class StaffManagementService {
     };
   }
 
-  private resolvePanelType(user: AuthUserContext) {
+  private resolveScopeForUser(
+    user: AuthUserContext,
+  ): ResolvedStaffManagementScope {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return StaffPanelType.SUPER_ADMIN;
+      return {
+        panelType: StaffPanelType.SUPER_ADMIN,
+        tenantId: null,
+        restaurantId: null,
+        branchId: null,
+      };
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
@@ -270,7 +289,12 @@ export class StaffManagementService {
         throw new ForbiddenException('Tenant context is required');
       }
 
-      return StaffPanelType.BUSINESS_ADMIN;
+      return {
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: user.tid,
+        restaurantId: null,
+        branchId: null,
+      };
     }
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
@@ -278,7 +302,12 @@ export class StaffManagementService {
         throw new ForbiddenException('Branch context is required');
       }
 
-      return StaffPanelType.BRANCH_ADMIN;
+      return {
+        panelType: StaffPanelType.BRANCH_ADMIN,
+        tenantId: user.tid,
+        restaurantId: user.rid,
+        branchId: user.bid,
+      };
     }
 
     throw new ForbiddenException('You do not have access to staff accounts');
