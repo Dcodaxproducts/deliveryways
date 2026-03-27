@@ -6,3 +6,8 @@ export {
   BulkCreateBranchesDto,
   BulkBranchItemDto,
 } from './bulk-create-branches.dto';
+export {
+  BranchScheduleDayEnum,
+  BranchOpeningHourItemDto,
+  UpdateBranchOpeningHoursDto,
+} from './branch-opening-hours.dto';

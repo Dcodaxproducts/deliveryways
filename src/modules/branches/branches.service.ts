@@ -14,12 +14,15 @@ import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
 import { BranchesRepository } from './branches.repository';
 import {
+  BranchOpeningHourItemDto,
+  BranchScheduleDayEnum,
   BulkCreateBranchesDto,
   CreateBranchDto,
   ListBranchesDto,
   ListPublicBranchesDto,
   UpdateBranchDto,
   UpdateBranchImagesDto,
+  UpdateBranchOpeningHoursDto,
 } from './dto';
 
 interface BranchDistanceAddress {
@@ -37,6 +40,21 @@ interface DistanceOrigin {
   lat: number;
   lng: number;
 }
+
+interface BranchSettingsLike {
+  openingHours?: BranchOpeningHourItemDto[];
+  [key: string]: unknown;
+}
+
+const BRANCH_OPENING_DAY_ORDER: BranchScheduleDayEnum[] = [
+  BranchScheduleDayEnum.MONDAY,
+  BranchScheduleDayEnum.TUESDAY,
+  BranchScheduleDayEnum.WEDNESDAY,
+  BranchScheduleDayEnum.THURSDAY,
+  BranchScheduleDayEnum.FRIDAY,
+  BranchScheduleDayEnum.SATURDAY,
+  BranchScheduleDayEnum.SUNDAY,
+];
 
 @Injectable()
 export class BranchesService {
@@ -380,6 +398,58 @@ export class BranchesService {
     };
   }
 
+  async getOpeningHours(user: AuthUserContext, id: string) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+
+    return {
+      data: this.readOpeningHours(branch.settings),
+      message: 'Branch opening hours fetched successfully',
+    };
+  }
+
+  async updateOpeningHours(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchOpeningHoursDto,
+    tx?: PrismaTx,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
+    const openingHours = this.normalizeOpeningHours(dto.openingHours);
+    const settings = this.readSettings(branch.settings);
+
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        settings: {
+          ...settings,
+          openingHours,
+        } as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: {
+        branchId: data.id,
+        openingHours,
+      },
+      message: 'Branch opening hours updated successfully',
+    };
+  }
+
   async update(
     _user: AuthUserContext,
     id: string,
@@ -514,7 +584,12 @@ export class BranchesService {
 
   private assertBranchAccess(
     user: AuthUserContext,
-    branch: { restaurantId: string; id: string; isActive: boolean },
+    branch: {
+      tenantId: string;
+      restaurantId: string;
+      id: string;
+      isActive: boolean;
+    },
   ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
@@ -523,6 +598,12 @@ export class BranchesService {
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (branch.tenantId !== user.tid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
       }
 
       return;
@@ -547,6 +628,49 @@ export class BranchesService {
     if (user.role === UserRoleEnum.CUSTOMER && !branch.isActive) {
       throw new ForbiddenException('Branch is not available');
     }
+  }
+
+  private assertBranchWriteAccess(
+    user: AuthUserContext,
+    branch: { tenantId: string; restaurantId: string; id: string },
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (branch.tenantId !== user.tid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
+      }
+
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      if (user.rid !== branch.restaurantId) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
+      }
+
+      if (user.bid && user.bid !== branch.id) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your branch',
+        );
+      }
+
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Insufficient permissions for branch opening hours write',
+    );
   }
 
   private resolveScopedRestaurantId(
@@ -682,6 +806,80 @@ export class BranchesService {
         distanceKm,
       };
     });
+  }
+
+  private readSettings(value: unknown): BranchSettingsLike {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as BranchSettingsLike;
+  }
+
+  private readOpeningHours(value: unknown): BranchOpeningHourItemDto[] {
+    const settings = this.readSettings(value);
+    const openingHours = settings.openingHours;
+
+    if (!Array.isArray(openingHours)) {
+      return [];
+    }
+
+    return this.normalizeOpeningHours(openingHours);
+  }
+
+  private normalizeOpeningHours(
+    openingHours: BranchOpeningHourItemDto[],
+  ): BranchOpeningHourItemDto[] {
+    const seenDays = new Set<BranchScheduleDayEnum>();
+    const normalized = openingHours.map((item) => {
+      if (seenDays.has(item.dayOfWeek)) {
+        throw new BadRequestException(
+          `Duplicate opening-hours entry for ${item.dayOfWeek}`,
+        );
+      }
+      seenDays.add(item.dayOfWeek);
+
+      const note =
+        item.note === undefined || item.note === null
+          ? undefined
+          : item.note.trim() || undefined;
+
+      if (item.isClosed) {
+        return {
+          dayOfWeek: item.dayOfWeek,
+          isClosed: true,
+          openTime: null,
+          closeTime: null,
+          ...(note ? { note } : {}),
+        };
+      }
+
+      if (!item.openTime || !item.closeTime) {
+        throw new BadRequestException(
+          `openTime and closeTime are required for ${item.dayOfWeek}`,
+        );
+      }
+
+      if (item.openTime >= item.closeTime) {
+        throw new BadRequestException(
+          `closeTime must be later than openTime for ${item.dayOfWeek}`,
+        );
+      }
+
+      return {
+        dayOfWeek: item.dayOfWeek,
+        isClosed: false,
+        openTime: item.openTime,
+        closeTime: item.closeTime,
+        ...(note ? { note } : {}),
+      };
+    });
+
+    return normalized.sort(
+      (a, b) =>
+        BRANCH_OPENING_DAY_ORDER.indexOf(a.dayOfWeek) -
+        BRANCH_OPENING_DAY_ORDER.indexOf(b.dayOfWeek),
+    );
   }
 
   private calculateDistanceKm(

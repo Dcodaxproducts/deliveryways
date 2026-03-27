@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserRoleEnum } from '../../common/enums';
+import { BranchScheduleDayEnum } from './dto';
 import { BranchesService } from './branches.service';
 
 describe('BranchesService', () => {
@@ -387,6 +388,143 @@ describe('BranchesService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('gets branch opening hours from branch settings', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        openingHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.MONDAY,
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '22:00',
+          },
+        ],
+      },
+    });
+
+    const result = await service.getOpeningHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+    );
+
+    expect(result.data).toEqual([
+      {
+        dayOfWeek: BranchScheduleDayEnum.MONDAY,
+        isClosed: false,
+        openTime: '09:00',
+        closeTime: '22:00',
+      },
+    ]);
+  });
+
+  it('updates branch opening hours for business admin within tenant scope', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: { contact: { phone: '123' } },
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    const result = await service.updateOpeningHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        openingHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.TUESDAY,
+            isClosed: false,
+            openTime: '10:00',
+            closeTime: '21:00',
+          },
+          {
+            dayOfWeek: BranchScheduleDayEnum.MONDAY,
+            isClosed: true,
+          },
+        ],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({
+        settings: {
+          contact: { phone: '123' },
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.MONDAY,
+              isClosed: true,
+              openTime: null,
+              closeTime: null,
+            },
+            {
+              dayOfWeek: BranchScheduleDayEnum.TUESDAY,
+              isClosed: false,
+              openTime: '10:00',
+              closeTime: '21:00',
+            },
+          ],
+        },
+      }),
+      undefined,
+    );
+    expect(
+      (result.data as { openingHours: unknown[] }).openingHours,
+    ).toHaveLength(2);
+  });
+
+  it('blocks branch admin from updating another branch opening hours', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: null,
+    });
+
+    await expect(
+      service.updateOpeningHours(
+        {
+          uid: 'branch-admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+        },
+        'branch-2',
+        {
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.MONDAY,
+              isClosed: false,
+              openTime: '09:00',
+              closeTime: '18:00',
+            },
+          ],
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('resolves tenant automatically for public branch listing', async () => {

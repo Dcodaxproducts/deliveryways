@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +26,7 @@ import {
   ListBranchesDto,
   UpdateBranchDto,
   UpdateBranchImagesDto,
+  UpdateBranchOpeningHoursDto,
 } from './dto';
 
 @ApiTags('Branches')
@@ -135,6 +137,35 @@ export class BranchesController {
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.details(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get(':id/opening-hours')
+  openingHours(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.branchesService.getOpeningHours(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @Put(':id/opening-hours')
+  updateOpeningHours(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchOpeningHoursDto,
+  ) {
+    return this.branchesService.updateOpeningHours(user, id, dto);
   }
 
   @ApiBearerAuth()
