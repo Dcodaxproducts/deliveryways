@@ -46,6 +46,7 @@ describe('MenuVariationService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       {
+        restaurantId: 'restaurant-1',
         menuItemId: 'item-1',
         name: 'Large',
         price: 100,
@@ -77,12 +78,38 @@ describe('MenuVariationService', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
         },
         {
+          restaurantId: 'restaurant-2',
           menuItemId: 'item-1',
           name: 'Large',
           price: 100,
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects variation create when restaurantId does not match the menu item restaurant', async () => {
+    const { service, prisma } = makeService();
+    prisma.menuItem.findUnique.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          restaurantId: 'restaurant-2',
+          menuItemId: 'item-1',
+          name: 'Large',
+          price: 100,
+        },
+      ),
+    ).rejects.toThrow('restaurantId must match the menu item restaurant');
   });
 
   it('throws when menu item is missing', async () => {
@@ -97,6 +124,7 @@ describe('MenuVariationService', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
         },
         {
+          restaurantId: 'restaurant-1',
           menuItemId: 'missing-item',
           name: 'Large',
           price: 100,
