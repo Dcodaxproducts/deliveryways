@@ -31,7 +31,7 @@ export class MenuVariationService {
       throw new NotFoundException('Menu item not found');
     }
 
-    this.ensureRestaurantWriteAccess(user, item.restaurantId);
+    await this.ensureRestaurantWriteAccess(user, item.restaurantId);
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {
@@ -63,7 +63,7 @@ export class MenuVariationService {
       throw new NotFoundException('Menu item not found');
     }
 
-    this.ensureRestaurantReadAccess(user, item.restaurantId);
+    await this.ensureRestaurantReadAccess(user, item.restaurantId);
 
     const { items, total } = await this.variationRepository.list(query);
     return {
@@ -86,7 +86,7 @@ export class MenuVariationService {
       throw new NotFoundException('Menu item not found');
     }
 
-    this.ensureRestaurantWriteAccess(user, item.restaurantId);
+    await this.ensureRestaurantWriteAccess(user, item.restaurantId);
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {
@@ -124,13 +124,13 @@ export class MenuVariationService {
       throw new NotFoundException('Menu item not found');
     }
 
-    this.ensureRestaurantWriteAccess(user, item.restaurantId);
+    await this.ensureRestaurantWriteAccess(user, item.restaurantId);
 
     const data = await this.variationRepository.softDelete(id);
     return { data, message: 'Menu variation deleted successfully' };
   }
 
-  private ensureRestaurantWriteAccess(
+  private async ensureRestaurantWriteAccess(
     user: AuthUserContext,
     restaurantId: string,
   ) {
@@ -138,27 +138,56 @@ export class MenuVariationService {
       return;
     }
 
-    if (
-      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
-      user.rid !== restaurantId
-    ) {
-      throw new ForbiddenException(
-        'Insufficient permissions for menu variation write',
-      );
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
     }
+
+    throw new ForbiddenException(
+      'Insufficient permissions for menu variation write',
+    );
   }
 
-  private ensureRestaurantReadAccess(
+  private async ensureRestaurantReadAccess(
     user: AuthUserContext,
     restaurantId: string,
   ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
       return;
     }
 
     if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
+      );
+    }
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }
