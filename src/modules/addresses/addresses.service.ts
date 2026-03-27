@@ -1,15 +1,22 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { ProfilesRepository } from '../profiles/profiles.repository';
 import { AddressesRepository } from './addresses.repository';
 import { CreateAddressDto, ListAddressesDto, UpdateAddressDto } from './dto';
+
+interface ResolvedAddressListScope {
+  userId: string;
+  tenantId: string;
+}
 
 @Injectable()
 export class AddressesService {
@@ -52,12 +59,12 @@ export class AddressesService {
   }
 
   async list(user: AuthUserContext, query: ListAddressesDto) {
-    const tenantId = this.getRequiredTenantId(user);
-    const defaultAddressId = await this.getDefaultAddressId(user.uid);
+    const scope = await this.resolveListScope(user, query);
+    const defaultAddressId = await this.getDefaultAddressId(scope.userId);
 
     const { items, total } = await this.addressesRepository.listForUser(
-      tenantId,
-      user.uid,
+      scope.tenantId,
+      scope.userId,
       query,
     );
 
@@ -140,6 +147,77 @@ export class AddressesService {
     }
 
     return address;
+  }
+
+  private async resolveListScope(
+    user: AuthUserContext,
+    query: ListAddressesDto,
+  ): Promise<ResolvedAddressListScope> {
+    if (!query.customerId || query.customerId === user.uid) {
+      return {
+        userId: user.uid,
+        tenantId: this.getRequiredTenantId(user),
+      };
+    }
+
+    if (
+      user.role === UserRoleEnum.CUSTOMER ||
+      user.role === UserRoleEnum.STAFF
+    ) {
+      throw new ForbiddenException(
+        "You cannot access another customer's addresses",
+      );
+    }
+
+    const tenantId =
+      user.role === UserRoleEnum.SUPER_ADMIN
+        ? undefined
+        : this.getRequiredTenantId(user);
+
+    const customer = await this.addressesRepository.findActiveCustomer(
+      query.customerId,
+      tenantId,
+    );
+
+    if (!customer?.tenantId || !customer.restaurantId) {
+      throw new BadRequestException('Customer not found');
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      if (!user.rid || customer.restaurantId !== user.rid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
+      }
+
+      if (query.branchId && user.bid && query.branchId !== user.bid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your branch',
+        );
+      }
+    }
+
+    if (query.branchId) {
+      const branch = await this.addressesRepository.findActiveBranch(
+        query.branchId,
+        user.role === UserRoleEnum.SUPER_ADMIN ? undefined : customer.tenantId,
+      );
+
+      if (!branch) {
+        throw new BadRequestException('Branch not found');
+      }
+
+      if (branch.restaurantId !== customer.restaurantId) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
+      }
+    }
+
+    return {
+      userId: customer.id,
+      tenantId: customer.tenantId,
+    };
   }
 
   private async getDefaultAddressId(userId: string) {

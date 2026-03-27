@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { AddressesService } from './addresses.service';
 
 describe('AddressesService', () => {
@@ -6,6 +7,8 @@ describe('AddressesService', () => {
       create: jest.fn(),
       listForUser: jest.fn(),
       findUserAddressById: jest.fn(),
+      findActiveCustomer: jest.fn(),
+      findActiveBranch: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
     };
@@ -78,6 +81,80 @@ describe('AddressesService', () => {
       { id: 'address-1', isDefault: false },
       { id: 'address-2', isDefault: true },
     ]);
+  });
+
+  it('allows business admin to fetch customer addresses by customerId', async () => {
+    const { service, addressesRepository, profilesRepository } = makeService();
+    addressesRepository.findActiveCustomer.mockResolvedValue({
+      id: 'customer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    profilesRepository.findByUserId.mockResolvedValue({
+      metadata: { defaultAddressId: 'address-2' },
+    });
+    addressesRepository.listForUser.mockResolvedValue({
+      items: [{ id: 'address-1' }, { id: 'address-2' }],
+      total: 2,
+    });
+
+    const result = await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        customerId: 'customer-1',
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(addressesRepository.findActiveCustomer).toHaveBeenCalledWith(
+      'customer-1',
+      'tenant-1',
+    );
+    expect(addressesRepository.listForUser).toHaveBeenCalledWith(
+      'tenant-1',
+      'customer-1',
+      expect.objectContaining({ customerId: 'customer-1' }),
+    );
+    expect(result.data[1]).toEqual({ id: 'address-2', isDefault: true });
+  });
+
+  it('enforces optional branch scope for business admin customer address fetch', async () => {
+    const { service, addressesRepository } = makeService();
+    addressesRepository.findActiveCustomer.mockResolvedValue({
+      id: 'customer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    addressesRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-2',
+    });
+
+    await expect(
+      service.list(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {
+          customerId: 'customer-1',
+          branchId: 'branch-1',
+          page: 1,
+          limit: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('clears defaultAddressId when deleting the default address', async () => {

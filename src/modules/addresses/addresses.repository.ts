@@ -56,6 +56,39 @@ export class AddressesRepository {
     return { items, total };
   }
 
+  async findActiveCustomer(customerId: string, tenantId?: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        id: customerId,
+        ...(tenantId ? { tenantId } : {}),
+        role: 'CUSTOMER',
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+      },
+    });
+  }
+
+  async findActiveBranch(branchId: string, tenantId?: string) {
+    return this.prisma.branch.findFirst({
+      where: {
+        id: branchId,
+        ...(tenantId ? { tenantId } : {}),
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+      },
+    });
+  }
+
   async softDelete(id: string, tx?: PrismaTx) {
     return this.client(tx).address.update({
       where: { id },
