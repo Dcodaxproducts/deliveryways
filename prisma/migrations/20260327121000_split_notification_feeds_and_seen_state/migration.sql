@@ -24,6 +24,9 @@ ALTER TABLE "notifications"
   ALTER COLUMN "recipient_email" DROP NOT NULL;
 
 ALTER TABLE "notifications"
+  ALTER COLUMN "channel" DROP DEFAULT;
+
+ALTER TABLE "notifications"
   ALTER COLUMN "channel" TYPE "NotificationChannel_new"
   USING ("channel"::text::"NotificationChannel_new");
 
@@ -37,6 +40,9 @@ BEGIN
 END $$;
 
 ALTER TYPE "NotificationChannel_new" RENAME TO "NotificationChannel";
+
+ALTER TABLE "notifications"
+  ALTER COLUMN "channel" SET DEFAULT 'EMAIL'::"NotificationChannel";
 
 DO $$
 BEGIN
