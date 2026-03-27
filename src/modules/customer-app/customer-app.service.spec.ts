@@ -238,6 +238,61 @@ describe('CustomerAppService', () => {
     );
   });
 
+  it('uses customer token restaurant scope for privacy policy when query restaurantId is omitted', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
+      settings: { privacyPolicy: 'Privacy text' },
+    });
+
+    const result = await service.getPrivacyPolicy(
+      {},
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+    );
+
+    expect(repository.findRestaurantPublicContent).toHaveBeenCalledWith(
+      'restaurant-1',
+    );
+    expect(result.data.content).toBe('Privacy text');
+  });
+
+  it('uses customer token restaurant scope for promotional items when query restaurantId is omitted', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listPromotionalItems.mockResolvedValue([itemFixture]);
+
+    const result = await service.listPromotionalItems(
+      { limit: 10 },
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+    );
+
+    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+      expect.objectContaining({ restaurantId: 'restaurant-1', limit: 10 }),
+    );
+    expect(result.data).toHaveLength(1);
+  });
+
   it('throws when public restaurant is missing', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue(null);

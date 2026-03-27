@@ -27,9 +27,13 @@ export class ToggleFavoriteDto {
 }
 
 export class PublicRestaurantQueryDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional for authenticated customers; token restaurant scope is used when available',
+  })
+  @IsOptional()
   @IsString()
-  restaurantId!: string;
+  restaurantId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -50,9 +54,13 @@ export class ListCustomerFavoritesQueryDto extends QueryDto {
 }
 
 export class ListCuisinesQueryDto extends QueryDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional for authenticated customers; token restaurant scope is used when available',
+  })
+  @IsOptional()
   @IsString()
-  restaurantId!: string;
+  restaurantId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -69,9 +77,13 @@ export class ListCuisinesQueryDto extends QueryDto {
 }
 
 export class ListCuisineItemsQueryDto extends QueryDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional for authenticated customers; token restaurant scope is used when available',
+  })
+  @IsOptional()
   @IsString()
-  restaurantId!: string;
+  restaurantId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

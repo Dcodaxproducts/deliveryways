@@ -148,8 +148,11 @@ export class CustomerAppService {
     };
   }
 
-  async getPrivacyPolicy(query: PublicRestaurantQueryDto) {
-    const { restaurant } = await this.getPublicContent(query);
+  async getPrivacyPolicy(
+    query: PublicRestaurantQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const { restaurant } = await this.getPublicContent(query, user);
     const privacyPolicy = this.readStringValue(restaurant.settings, [
       ['customerApp', 'privacyPolicy'],
       ['publicContent', 'privacyPolicy'],
@@ -168,8 +171,11 @@ export class CustomerAppService {
     };
   }
 
-  async getHelpSupport(query: PublicRestaurantQueryDto) {
-    const { restaurant, branch } = await this.getPublicContent(query);
+  async getHelpSupport(
+    query: PublicRestaurantQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const { restaurant, branch } = await this.getPublicContent(query, user);
     const branchSettings = branch?.settings;
 
     return {
@@ -205,8 +211,8 @@ export class CustomerAppService {
     };
   }
 
-  async getFaqs(query: PublicRestaurantQueryDto) {
-    const { restaurant, branch } = await this.getPublicContent(query);
+  async getFaqs(query: PublicRestaurantQueryDto, user?: AuthUserContext) {
+    const { restaurant, branch } = await this.getPublicContent(query, user);
     const faqs =
       this.readFaqs(branch?.settings, [
         ['customerApp', 'faqs'],
@@ -231,10 +237,11 @@ export class CustomerAppService {
     };
   }
 
-  async listCuisines(query: ListCuisinesQueryDto) {
-    await this.getPublicContent(query);
+  async listCuisines(query: ListCuisinesQueryDto, user?: AuthUserContext) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
     const { items, total } =
-      await this.customerAppRepository.listCuisineCategories(query);
+      await this.customerAppRepository.listCuisineCategories(resolvedQuery);
 
     return {
       data: items.map((item) => ({
@@ -251,12 +258,17 @@ export class CustomerAppService {
     };
   }
 
-  async listCuisineItems(cuisineId: string, query: ListCuisineItemsQueryDto) {
-    await this.getPublicContent(query);
+  async listCuisineItems(
+    cuisineId: string,
+    query: ListCuisineItemsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
     const cuisine = await this.customerAppRepository.findPublicCuisine(
       cuisineId,
-      query.restaurantId,
-      query.branchId,
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
     );
 
     if (!cuisine) {
@@ -264,7 +276,10 @@ export class CustomerAppService {
     }
 
     const { items, total } =
-      await this.customerAppRepository.listCuisineMenuItems(cuisineId, query);
+      await this.customerAppRepository.listCuisineMenuItems(
+        cuisineId,
+        resolvedQuery,
+      );
 
     return {
       data: {
@@ -276,9 +291,14 @@ export class CustomerAppService {
     };
   }
 
-  async listPromotionalItems(query: ListPromotionalItemsQueryDto) {
-    await this.getPublicContent(query);
-    const items = await this.customerAppRepository.listPromotionalItems(query);
+  async listPromotionalItems(
+    query: ListPromotionalItemsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const items =
+      await this.customerAppRepository.listPromotionalItems(resolvedQuery);
 
     return {
       data: items.map((item) => this.mapMenuItem(item)),
@@ -286,10 +306,15 @@ export class CustomerAppService {
     };
   }
 
-  async getItemBySlug(slug: string, query: PublicMenuItemBySlugQueryDto) {
+  async getItemBySlug(
+    slug: string,
+    query: PublicMenuItemBySlugQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     const item = await this.customerAppRepository.findPublicMenuItemBySlug(
       slug,
-      query,
+      resolvedQuery,
     );
 
     if (!item) {
@@ -302,18 +327,22 @@ export class CustomerAppService {
     };
   }
 
-  async getHomeScreen(query: HomeScreenQueryDto) {
-    const { restaurant, branch } = await this.getPublicContent(query);
+  async getHomeScreen(query: HomeScreenQueryDto, user?: AuthUserContext) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    const { restaurant, branch } = await this.getPublicContent(
+      resolvedQuery,
+      user,
+    );
     const [cuisines, promotionalItems, faqs] = await Promise.all([
       this.customerAppRepository.listCuisineCategories({
-        ...query,
+        ...resolvedQuery,
         page: 1,
         limit: query.cuisineLimit,
         sortBy: 'sortOrder',
         sortOrder: 'ASC',
       }),
-      this.customerAppRepository.listPromotionalItems(query),
-      this.getFaqs(query),
+      this.customerAppRepository.listPromotionalItems(resolvedQuery),
+      this.getFaqs(resolvedQuery, user),
     ]);
 
     return {
@@ -528,28 +557,48 @@ export class CustomerAppService {
     };
   }
 
-  private async getPublicContent(query: PublicRestaurantQueryDto) {
+  private async getPublicContent(
+    query: PublicRestaurantQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     const restaurant =
       await this.customerAppRepository.findRestaurantPublicContent(
-        query.restaurantId,
+        resolvedQuery.restaurantId,
       );
 
     if (!restaurant) {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const branch = query.branchId
+    const branch = resolvedQuery.branchId
       ? await this.customerAppRepository.findBranchPublicContent(
-          query.branchId,
+          resolvedQuery.branchId,
           restaurant.id,
         )
       : null;
 
-    if (query.branchId && !branch) {
+    if (resolvedQuery.branchId && !branch) {
       throw new NotFoundException('Branch not found');
     }
 
     return { restaurant, branch };
+  }
+
+  private resolvePublicRestaurantQuery<T extends PublicRestaurantQueryDto>(
+    query: T,
+    user?: AuthUserContext,
+  ): T & { restaurantId: string } {
+    const restaurantId = query.restaurantId ?? user?.rid;
+
+    if (!restaurantId) {
+      throw new BadRequestException('restaurantId is required');
+    }
+
+    return {
+      ...query,
+      restaurantId,
+    };
   }
 
   private async resolveCustomer(

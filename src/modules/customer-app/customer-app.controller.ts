@@ -18,6 +18,7 @@ import {
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
+  OptionalJwtAuthGuard,
   RolesGuard,
   TenantAccessGuard,
 } from '../../common/guards';
@@ -101,65 +102,93 @@ export class CustomerAppController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('privacy-policy')
   @ApiOperation({ summary: 'Fetch public privacy policy content' })
-  getPrivacyPolicy(@Query() query: PublicRestaurantQueryDto) {
-    return this.customerAppService.getPrivacyPolicy(query);
+  getPrivacyPolicy(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: PublicRestaurantQueryDto,
+  ) {
+    return this.customerAppService.getPrivacyPolicy(query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('help-support')
   @ApiOperation({ summary: 'Fetch public help and support content' })
-  getHelpSupport(@Query() query: PublicRestaurantQueryDto) {
-    return this.customerAppService.getHelpSupport(query);
+  getHelpSupport(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: PublicRestaurantQueryDto,
+  ) {
+    return this.customerAppService.getHelpSupport(query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('faqs')
   @ApiOperation({ summary: 'Fetch public FAQ content' })
-  getFaqs(@Query() query: PublicRestaurantQueryDto) {
-    return this.customerAppService.getFaqs(query);
+  getFaqs(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: PublicRestaurantQueryDto,
+  ) {
+    return this.customerAppService.getFaqs(query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('cuisines')
   @ApiOperation({ summary: 'List public cuisines/categories' })
-  listCuisines(@Query() query: ListCuisinesQueryDto) {
-    return this.customerAppService.listCuisines(query);
+  listCuisines(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListCuisinesQueryDto,
+  ) {
+    return this.customerAppService.listCuisines(query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('cuisines/:cuisineId/items')
   @ApiOperation({ summary: 'List public menu items for a cuisine/category' })
   listCuisineItems(
+    @CurrentUser() user: AuthUserContext | undefined,
     @Param('cuisineId') cuisineId: string,
     @Query() query: ListCuisineItemsQueryDto,
   ) {
-    return this.customerAppService.listCuisineItems(cuisineId, query);
+    return this.customerAppService.listCuisineItems(cuisineId, query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('promotional-items')
   @ApiOperation({ summary: 'List home-screen promotional menu items' })
-  listPromotionalItems(@Query() query: ListPromotionalItemsQueryDto) {
-    return this.customerAppService.listPromotionalItems(query);
+  listPromotionalItems(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListPromotionalItemsQueryDto,
+  ) {
+    return this.customerAppService.listPromotionalItems(query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('items/:slug')
   @ApiOperation({ summary: 'Fetch single public menu item by slug' })
   getItemBySlug(
+    @CurrentUser() user: AuthUserContext | undefined,
     @Param('slug') slug: string,
     @Query() query: PublicMenuItemBySlugQueryDto,
   ) {
-    return this.customerAppService.getItemBySlug(slug, query);
+    return this.customerAppService.getItemBySlug(slug, query, user);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('home')
   @ApiOperation({ summary: 'Fetch home-screen data bundle for customer app' })
-  getHomeScreen(@Query() query: HomeScreenQueryDto) {
-    return this.customerAppService.getHomeScreen(query);
+  getHomeScreen(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: HomeScreenQueryDto,
+  ) {
+    return this.customerAppService.getHomeScreen(query, user);
   }
 
   @ApiBearerAuth()
