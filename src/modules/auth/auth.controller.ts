@@ -30,6 +30,22 @@ import { AllowUnverified, CurrentUser, Public } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { JwtAuthGuard } from '../../common/guards';
 
+const getGuestRegistrationTracker = (req: Record<string, unknown>): string => {
+  const ipAddress =
+    typeof req.ip === 'string' && req.ip.trim() ? req.ip.trim() : 'unknown-ip';
+  const body = req.body;
+  const restaurantId =
+    typeof body === 'object' &&
+    body !== null &&
+    'restaurantId' in body &&
+    typeof body.restaurantId === 'string' &&
+    body.restaurantId.trim()
+      ? body.restaurantId.trim()
+      : 'unknown-restaurant';
+
+  return `${ipAddress}:${restaurantId}`;
+};
+
 @ApiTags('Auth')
 @AllowUnverified()
 @Controller('auth')
@@ -49,6 +65,14 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({
+    default: {
+      ttl: 10 * 60_000,
+      limit: 5,
+      blockDuration: 30 * 60_000,
+      getTracker: getGuestRegistrationTracker,
+    },
+  })
   @Post('register-guest')
   registerGuest(@Body() dto: RegisterGuestCustomerDto) {
     return this.authService.registerGuestCustomer(dto);
