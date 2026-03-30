@@ -6,12 +6,14 @@ import {
 } from '@nestjs/common';
 import { ChatThreadStatus, StaffPanelType } from '@prisma/client';
 import { ChatService } from './chat.service';
+import { ChatRealtimeService } from './chat.realtime.service';
 import { ChatRepository } from './chat.repository';
 
 describe('ChatService', () => {
   let service: ChatService;
   let prisma: any;
   let chatRepository: jest.Mocked<ChatRepository>;
+  let chatRealtimeService: jest.Mocked<ChatRealtimeService>;
 
   beforeEach(() => {
     prisma = {
@@ -42,7 +44,22 @@ describe('ChatService', () => {
       count: jest.fn(),
     } as unknown as jest.Mocked<ChatRepository>;
 
-    service = new ChatService(prisma, chatRepository);
+    chatRealtimeService = {
+      registerServer: jest.fn(),
+      getInboxRoomsForUser: jest.fn(),
+      getThreadRoom: jest.fn(),
+      getUserRoom: jest.fn(),
+      getTenantRoom: jest.fn(),
+      getBranchRoom: jest.fn(),
+      getGlobalRoom: jest.fn(),
+      emitInitialSummary: jest.fn(),
+      emitThreadCreated: jest.fn(),
+      emitThreadUpdated: jest.fn(),
+      emitMessageCreated: jest.fn(),
+      emitThreadRead: jest.fn(),
+    } as unknown as jest.Mocked<ChatRealtimeService>;
+
+    service = new ChatService(prisma, chatRepository, chatRealtimeService);
   });
 
   it('creates an order-linked customer support thread', async () => {

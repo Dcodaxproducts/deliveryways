@@ -24,6 +24,7 @@ import {
   UpdateChatThreadStatusDto,
 } from './dto';
 import { ChatRepository } from './chat.repository';
+import { ChatRealtimeService } from './chat.realtime.service';
 
 type StaffPermissionOperation = 'read' | 'reply' | 'assign' | 'resolve';
 
@@ -32,6 +33,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatRepository: ChatRepository,
+    private readonly chatRealtimeService: ChatRealtimeService,
   ) {}
 
   async createThread(user: AuthUserContext, dto: CreateChatThreadDto) {
@@ -103,8 +105,11 @@ export class ChatService {
       return thread;
     });
 
+    const payload = await this.getThreadPayloadOrThrow(data.id);
+    await this.chatRealtimeService.emitThreadCreated(payload);
+
     return {
-      data: await this.getThreadPayloadOrThrow(data.id),
+      data: payload,
       message: 'Support conversation created successfully',
     };
   }
@@ -189,8 +194,12 @@ export class ChatService {
       );
     });
 
+    const payload = await this.getThreadPayloadOrThrow(id);
+    await this.chatRealtimeService.emitMessageCreated(payload);
+    await this.chatRealtimeService.emitThreadUpdated(payload);
+
     return {
-      data: await this.getThreadPayloadOrThrow(id),
+      data: payload,
       message: 'Support conversation updated successfully',
     };
   }
@@ -211,6 +220,10 @@ export class ChatService {
       customerUnreadCount: user.role === UserRoleEnum.CUSTOMER ? 0 : undefined,
       staffUnreadCount: user.role === UserRoleEnum.CUSTOMER ? undefined : 0,
     });
+
+    const payload = await this.getThreadPayloadOrThrow(data.id);
+    await this.chatRealtimeService.emitThreadRead(payload);
+    await this.chatRealtimeService.emitThreadUpdated(payload);
 
     return {
       data: {
@@ -251,8 +264,11 @@ export class ChatService {
         thread.status === ChatThreadStatus.RESOLVED ? null : undefined,
     });
 
+    const payload = await this.getThreadPayloadOrThrow(id);
+    await this.chatRealtimeService.emitThreadUpdated(payload);
+
     return {
-      data: await this.getThreadPayloadOrThrow(id),
+      data: payload,
       message: assignedStaffUserId
         ? 'Support conversation assigned successfully'
         : 'Support conversation unassigned successfully',
@@ -282,8 +298,11 @@ export class ChatService {
       staffUnreadCount: 0,
     });
 
+    const payload = await this.getThreadPayloadOrThrow(id);
+    await this.chatRealtimeService.emitThreadUpdated(payload);
+
     return {
-      data: await this.getThreadPayloadOrThrow(id),
+      data: payload,
       message: 'Support conversation status updated successfully',
     };
   }
