@@ -118,6 +118,23 @@ enum DeliverymanStatus {
   INACTIVE
 }
 
+enum ChatThreadStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum ChatThreadSource {
+  SUPPORT
+  ORDER
+}
+
+enum ChatMessageSenderType {
+  CUSTOMER
+  ADMIN
+  STAFF
+}
+
 model Tenant {
   id             String    @id @default(cuid())
   name           String
@@ -145,6 +162,7 @@ model Tenant {
   transactions  PaymentTransaction[]
   notifications Notification[]
   deliverymen   Deliveryman[]
+  chatThreads   ChatThread[]
 
   @@map("tenants")
 }
@@ -185,6 +203,7 @@ model Restaurant {
   transactions        PaymentTransaction[]
   notifications       Notification[]
   deliverymen         Deliveryman[]
+  chatThreads         ChatThread[]
 
   @@map("restaurants")
 }
@@ -219,6 +238,7 @@ model Branch {
   transactions       PaymentTransaction[]
   notifications      Notification[]
   deliverymen        Deliveryman[]
+  chatThreads        ChatThread[]
 
   @@map("branches")
 }
@@ -284,6 +304,8 @@ model User {
   customerOrders        Order[]             @relation("OrderCustomer")
   couponUsages          CouponUsage[]
   receivedNotifications Notification[]      @relation("NotificationRecipient")
+  customerChatThreads   ChatThread[]        @relation("ChatThreadCustomer")
+  sentChatMessages      ChatMessage[]       @relation("ChatMessageUserSender")
 
   @@unique([email])
   @@map("users")
@@ -649,11 +671,11 @@ model StaffRole {
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
-  ownerUser    User           @relation("StaffRoleOwner", fields: [ownerUserId], references: [id])
-  tenant       Tenant?        @relation(fields: [tenantId], references: [id])
-  restaurant   Restaurant?    @relation(fields: [restaurantId], references: [id])
-  branch       Branch?        @relation(fields: [branchId], references: [id])
-  staffUsers   StaffUser[]
+  ownerUser  User        @relation("StaffRoleOwner", fields: [ownerUserId], references: [id])
+  tenant              Tenant?       @relation(fields: [tenantId], references: [id])
+  restaurant          Restaurant?   @relation(fields: [restaurantId], references: [id])
+  branch              Branch?       @relation(fields: [branchId], references: [id])
+  staffUsers StaffUser[]
 
   @@index([ownerUserId, panelType, isActive])
   @@index([tenantId, restaurantId, branchId, isActive])
@@ -683,11 +705,13 @@ model StaffUser {
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
-  ownerUser   User        @relation("StaffUserOwner", fields: [ownerUserId], references: [id])
-  staffRole   StaffRole   @relation(fields: [staffRoleId], references: [id])
-  tenant      Tenant?     @relation(fields: [tenantId], references: [id])
-  restaurant  Restaurant? @relation(fields: [restaurantId], references: [id])
-  branch      Branch?     @relation(fields: [branchId], references: [id])
+  ownerUser  User        @relation("StaffUserOwner", fields: [ownerUserId], references: [id])
+  staffRole  StaffRole   @relation(fields: [staffRoleId], references: [id])
+  tenant              Tenant?       @relation(fields: [tenantId], references: [id])
+  restaurant          Restaurant?   @relation(fields: [restaurantId], references: [id])
+  branch              Branch?       @relation(fields: [branchId], references: [id])
+  assignedChatThreads ChatThread[]  @relation("ChatThreadAssignedStaff")
+  sentChatMessages    ChatMessage[] @relation("ChatMessageStaffSender")
 
   @@unique([email])
   @@index([ownerUserId, panelType, isActive])
@@ -807,6 +831,7 @@ model Order {
   couponUsages    CouponUsage[]
   transactions    PaymentTransaction[]
   notifications   Notification[]
+  chatThreads     ChatThread[]
 
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
@@ -865,28 +890,84 @@ model PaymentTransaction {
   @@map("payment_transactions")
 }
 
+model ChatThread {
+  id                  String           @id @default(cuid())
+  tenantId            String           @map("tenant_id")
+  restaurantId        String           @map("restaurant_id")
+  branchId            String?          @map("branch_id")
+  customerId          String           @map("customer_id")
+  orderId             String?          @map("order_id")
+  source              ChatThreadSource @default(SUPPORT)
+  subject             String?
+  status              ChatThreadStatus @default(OPEN)
+  assignedStaffUserId String?          @map("assigned_staff_user_id")
+  lastMessagePreview  String?          @map("last_message_preview")
+  lastMessageAt       DateTime         @map("last_message_at") @db.Timestamptz
+  customerUnreadCount Int              @default(0) @map("customer_unread_count")
+  staffUnreadCount    Int              @default(0) @map("staff_unread_count")
+  customerLastReadAt  DateTime?        @map("customer_last_read_at") @db.Timestamptz
+  staffLastReadAt     DateTime?        @map("staff_last_read_at") @db.Timestamptz
+  resolvedAt          DateTime?        @map("resolved_at") @db.Timestamptz
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id])
+  branch        Branch?     @relation(fields: [branchId], references: [id])
+  customer      User        @relation("ChatThreadCustomer", fields: [customerId], references: [id])
+  order         Order?      @relation(fields: [orderId], references: [id])
+  assignedStaff StaffUser?  @relation("ChatThreadAssignedStaff", fields: [assignedStaffUserId], references: [id])
+  messages      ChatMessage[]
+
+  @@index([tenantId, restaurantId, status, lastMessageAt])
+  @@index([branchId, status, lastMessageAt])
+  @@index([customerId, status, lastMessageAt])
+  @@index([orderId, status, lastMessageAt])
+  @@index([assignedStaffUserId, status, lastMessageAt])
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id                String                @id @default(cuid())
+  threadId          String                @map("thread_id")
+  senderType        ChatMessageSenderType @map("sender_type")
+  senderUserId      String?               @map("sender_user_id")
+  senderStaffUserId String?               @map("sender_staff_user_id")
+  body              String
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz
+
+  thread          ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderUser      User?      @relation("ChatMessageUserSender", fields: [senderUserId], references: [id])
+  senderStaffUser StaffUser? @relation("ChatMessageStaffSender", fields: [senderStaffUserId], references: [id])
+
+  @@index([threadId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@index([senderStaffUserId, createdAt])
+  @@map("chat_messages")
+}
+
 model Notification {
-  id                   String              @id @default(cuid())
-  tenantId             String              @map("tenant_id")
-  restaurantId         String              @map("restaurant_id")
-  branchId             String              @map("branch_id")
-  orderId              String?             @map("order_id")
-  paymentTransactionId String?             @map("payment_transaction_id")
-  recipientUserId      String?               @map("recipient_user_id")
-  recipientEmail       String?               @map("recipient_email")
-  channel              NotificationChannel   @default(EMAIL)
-  audience             NotificationAudience  @default(CUSTOMER)
-  type                 NotificationType      @map("type")
+  id                   String               @id @default(cuid())
+  tenantId             String               @map("tenant_id")
+  restaurantId         String               @map("restaurant_id")
+  branchId             String               @map("branch_id")
+  orderId              String?              @map("order_id")
+  paymentTransactionId String?              @map("payment_transaction_id")
+  recipientUserId      String?              @map("recipient_user_id")
+  recipientEmail       String?              @map("recipient_email")
+  channel              NotificationChannel  @default(EMAIL)
+  audience             NotificationAudience @default(CUSTOMER)
+  type                 NotificationType     @map("type")
   subject              String
   body                 String
   payload              Json?
-  status               NotificationStatus    @default(PENDING)
-  sentAt               DateTime?             @map("sent_at") @db.Timestamptz
-  failedAt             DateTime?             @map("failed_at") @db.Timestamptz
-  seenAt               DateTime?             @map("seen_at") @db.Timestamptz
-  errorMessage         String?               @map("error_message")
-  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  status               NotificationStatus   @default(PENDING)
+  sentAt               DateTime?            @map("sent_at") @db.Timestamptz
+  failedAt             DateTime?            @map("failed_at") @db.Timestamptz
+  seenAt               DateTime?            @map("seen_at") @db.Timestamptz
+  errorMessage         String?              @map("error_message")
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
   restaurant         Restaurant          @relation(fields: [restaurantId], references: [id])

@@ -34,6 +34,7 @@ import { CustomerAppModule } from './modules/customer-app/customer-app.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { StaffRolesModule } from './modules/staff-roles/staff-roles.module';
 import { StaffManagementModule } from './modules/staff-management/staff-management.module';
+import { ChatModule } from './modules/chat/chat.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -94,6 +95,7 @@ import { AppController } from './app.controller';
     AdminModule,
     StaffRolesModule,
     StaffManagementModule,
+    ChatModule,
   ],
   providers: [
     {
