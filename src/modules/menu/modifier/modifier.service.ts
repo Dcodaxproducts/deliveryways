@@ -14,6 +14,7 @@ import {
   CreateModifierDto,
   CreateModifierGroupDto,
   ListModifierGroupsDto,
+  ListModifiersDto,
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
@@ -60,6 +61,23 @@ export class ModifierService {
     return {
       data: items,
       message: 'Modifier groups fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async listModifiers(user: AuthUserContext, query: ListModifiersDto) {
+    const restaurantId = await this.resolveRestaurantIdForList(
+      user,
+      query.restaurantId,
+    );
+    const { items, total } = await this.modifierRepository.listModifiers(
+      restaurantId,
+      query,
+    );
+
+    return {
+      data: items,
+      message: 'Modifiers fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
   }

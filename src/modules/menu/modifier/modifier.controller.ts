@@ -23,6 +23,7 @@ import {
   CreateModifierDto,
   CreateModifierGroupDto,
   ListModifierGroupsDto,
+  ListModifiersDto,
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
@@ -78,6 +79,22 @@ export class ModifierController {
   @Delete('modifier-groups/:id')
   removeGroup(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.modifierService.removeGroup(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('modifiers')
+  listModifiers(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListModifiersDto,
+  ) {
+    return this.modifierService.listModifiers(user, query);
   }
 
   @ApiBearerAuth()

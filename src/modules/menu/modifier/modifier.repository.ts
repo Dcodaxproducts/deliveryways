@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
-import { ListModifierGroupsDto } from './dto';
+import { ListModifierGroupsDto, ListModifiersDto } from './dto';
 
 @Injectable()
 export class ModifierRepository {
@@ -43,6 +43,56 @@ export class ModifierRepository {
         },
       }),
       this.prisma.modifierGroup.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  async listModifiers(
+    restaurantId: string | undefined,
+    query: ListModifiersDto,
+  ) {
+    const where: Prisma.ModifierWhereInput = {
+      deletedAt: null,
+      ...(query.includeInactive ? {} : { isActive: true }),
+      ...(query.modifierGroupId
+        ? { modifierGroupId: query.modifierGroupId }
+        : {}),
+      ...(restaurantId
+        ? {
+            modifierGroup: {
+              restaurantId,
+            },
+          }
+        : {}),
+      ...(query.search
+        ? { name: { contains: query.search, mode: 'insensitive' } }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.modifier.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        include: {
+          modifierGroup: {
+            select: {
+              id: true,
+              restaurantId: true,
+              name: true,
+              description: true,
+              minSelect: true,
+              maxSelect: true,
+              isRequired: true,
+              sortOrder: true,
+              isActive: true,
+            },
+          },
+        },
+      }),
+      this.prisma.modifier.count({ where }),
     ]);
 
     return { items, total };

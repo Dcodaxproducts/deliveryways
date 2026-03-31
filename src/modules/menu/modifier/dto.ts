@@ -108,6 +108,24 @@ export class ListModifierGroupsDto extends QueryDto {
   includeInactive?: boolean;
 }
 
+export class ListModifiersDto extends QueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  modifierGroupId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  includeInactive?: boolean;
+}
+
 export class CreateModifierDto {
   @ApiProperty()
   @IsString()
