@@ -181,12 +181,26 @@ export class GroupOrdersService {
   ) {
     const session = await this.getSessionForHostOrThrow(user, id);
     this.assertSessionMutable(session.status, session.expiresAt);
+    const effectiveDeliveryAddressId =
+      dto.deliveryAddressId !== undefined
+        ? dto.deliveryAddressId
+        : session.deliveryAddressId;
+
     await this.assertDeliveryAddress(
       user,
       session.tenantId,
       session.orderType,
-      dto.deliveryAddressId,
+      effectiveDeliveryAddressId,
     );
+
+    const couponCode =
+      dto.couponCode !== undefined
+        ? this.resolveOptionalString(dto.couponCode)
+        : undefined;
+
+    if (couponCode) {
+      await this.validateSessionCouponCode(user, session, couponCode);
+    }
 
     await this.groupOrdersRepository.updateSession(id, {
       deliveryAddress:
@@ -205,10 +219,7 @@ export class GroupOrdersService {
         dto.hostNote !== undefined
           ? this.resolveOptionalString(dto.hostNote)
           : undefined,
-      couponCode:
-        dto.couponCode !== undefined
-          ? this.resolveOptionalString(dto.couponCode)
-          : undefined,
+      couponCode,
     });
 
     return {
@@ -409,7 +420,15 @@ export class GroupOrdersService {
       throw new BadRequestException('Group order is empty');
     }
 
-    const payload = this.toOrderCreatePayload(session, dto);
+    const couponCode = this.resolveOptionalString(dto.couponCode);
+    if (couponCode) {
+      await this.validateSessionCouponCode(user, session, couponCode);
+    }
+
+    const payload = this.toOrderCreatePayload(session, {
+      ...dto,
+      couponCode,
+    });
     const order = await this.ordersService.create(user, payload);
 
     await this.groupOrdersRepository.updateSession(id, {
@@ -692,6 +711,26 @@ export class GroupOrdersService {
       phone: user.profile?.phone ?? null,
       avatarUrl: user.profile?.avatarUrl ?? null,
     };
+  }
+
+  private async validateSessionCouponCode(
+    user: AuthUserContext,
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+    couponCode: string,
+  ) {
+    if (!session.items.length) {
+      throw new BadRequestException('Add items before applying a coupon');
+    }
+
+    await this.ordersService.quoteForCouponValidation(user, {
+      ...this.toOrderQuotePayload({
+        ...session,
+        couponCode,
+      }),
+      couponCode,
+    });
   }
 
   private toOrderQuotePayload(

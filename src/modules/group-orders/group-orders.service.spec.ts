@@ -10,6 +10,7 @@ describe('GroupOrdersService', () => {
       findActiveSessionByHost: jest.fn(),
       findOwnedAddress: jest.fn(),
       createSession: jest.fn(),
+      updateSession: jest.fn(),
       findSessionByInviteCode: jest.fn(),
       findParticipant: jest.fn(),
       createParticipant: jest.fn(),
@@ -119,5 +120,173 @@ describe('GroupOrdersService', () => {
 
     expect(groupOrdersRepository.createParticipant).not.toHaveBeenCalled();
     expect(groupOrdersRepository.updateParticipant).not.toHaveBeenCalled();
+  });
+
+  it('rejects saving a group-order coupon before items exist', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [],
+    };
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findOwnedAddress.mockResolvedValue({
+      id: 'address-1',
+    });
+
+    await expect(
+      service.updateSettings(customerUser, 'session-1', {
+        couponCode: 'SAVE10',
+      }),
+    ).rejects.toThrow('Add items before applying a coupon');
+
+    expect(ordersService.quoteForCouponValidation).not.toHaveBeenCalled();
+    expect(groupOrdersRepository.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('validates group-order coupon before saving it', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 2,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    groupOrdersRepository.findSessionById
+      .mockResolvedValueOnce(session)
+      .mockResolvedValueOnce({ ...session, couponCode: 'SAVE10' });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        couponCode: 'SAVE10',
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.updateSettings(customerUser, 'session-1', {
+      couponCode: ' SAVE10 ',
+    });
+
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
+      customerUser,
+      expect.objectContaining({
+        branchId: 'branch-1',
+        couponCode: 'SAVE10',
+      }),
+    );
+    expect(groupOrdersRepository.updateSession).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({
+        couponCode: 'SAVE10',
+      }),
+    );
+    expect(result.message).toBe('Group order updated successfully');
   });
 });
