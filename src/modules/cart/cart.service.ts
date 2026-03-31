@@ -242,7 +242,7 @@ export class CartService {
       throw new BadRequestException('couponCode is required');
     }
 
-    const quote = await this.ordersService.quote(user, {
+    const quote = await this.ordersService.quoteForCouponValidation(user, {
       ...(await this.toQuotePayload(cart)),
       couponCode,
     });

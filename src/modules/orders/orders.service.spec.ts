@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { UserRoleEnum } from '../../common/enums';
+import { Prisma } from '@prisma/client';
+import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
 import { OrdersService } from './orders.service';
 
 describe('OrdersService - delivery radius', () => {
@@ -194,6 +195,99 @@ describe('OrdersService - order time validation', () => {
     ).isScheduledOrderTime;
 
     expect(fn.call(service, '2020-03-24T19:30:00.000Z')).toBe(false);
+  });
+});
+
+describe('OrdersService - coupon quote validation', () => {
+  it('skips delivery address checks when validating coupon application', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 150,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: {
+              taxPercentage: 0,
+            },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(500),
+          category: { id: 'cat-1' },
+          variations: [],
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+      },
+      address: {
+        findFirst: jest.fn(),
+      },
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const couponsService = {
+      validateForCheckout: jest.fn().mockResolvedValue({
+        coupon: { id: 'coupon-1', code: 'SAVE10' },
+        discountAmount: new Prisma.Decimal(100),
+        eligibleSubtotal: new Prisma.Decimal(500),
+      }),
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+    );
+
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            quantity: 1,
+          },
+        ],
+        couponCode: 'SAVE10',
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(prisma.address.findFirst).not.toHaveBeenCalled();
+    expect(couponsService.validateForCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 'branch-1',
+        customerId: 'customer-1',
+        code: 'SAVE10',
+        subtotal: 500,
+      }),
+    );
+    expect(result.data.deliveryFee).toBe(150);
+    expect(result.data.discountAmount).toBe(100);
+    expect(result.data.totalAmount).toBe(550);
   });
 });
 

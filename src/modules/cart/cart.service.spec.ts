@@ -30,6 +30,7 @@ describe('CartService', () => {
 
     const ordersService = {
       quote: jest.fn(),
+      quoteForCouponValidation: jest.fn(),
       create: jest.fn(),
     };
 
@@ -518,7 +519,7 @@ describe('CartService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('validates coupon before saving it to cart', async () => {
+  it('validates coupon before saving it to cart without requiring delivery coordinates', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();
     const cart = {
@@ -528,7 +529,7 @@ describe('CartService', () => {
       branchId: 'branch-1',
       customerId: 'customer-1',
       orderType: 'DELIVERY',
-      deliveryAddressId: 'address-1',
+      deliveryAddressId: null,
       couponCode: null,
       paymentMethod: null,
       orderTime: null,
@@ -558,7 +559,7 @@ describe('CartService', () => {
     });
     cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
-    ordersService.quote.mockResolvedValue({
+    ordersService.quoteForCouponValidation.mockResolvedValue({
       data: {
         couponCode: 'SAVE10',
         discountAmount: 100,
@@ -577,14 +578,15 @@ describe('CartService', () => {
       { couponCode: 'SAVE10' },
     );
 
-    expect(ordersService.quote).toHaveBeenCalledWith(
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
         couponCode: 'SAVE10',
         branchId: 'branch-1',
-        deliveryAddressId: 'address-1',
+        deliveryAddressId: undefined,
       }),
     );
+    expect(ordersService.quote).not.toHaveBeenCalled();
     expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
       couponCode: 'SAVE10',
     });

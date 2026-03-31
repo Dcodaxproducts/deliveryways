@@ -55,6 +55,10 @@ type QuoteBranchContext = {
   settings: unknown;
 };
 
+type BuildQuoteOptions = {
+  skipDeliveryAddressValidation?: boolean;
+};
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -68,31 +72,18 @@ export class OrdersService {
     const quote = await this.buildQuote(user, dto);
 
     return {
-      data: {
-        branchId: quote.branch.id,
-        restaurantId: quote.branch.restaurantId,
-        customerId: quote.customer.customerId,
-        orderType: dto.orderType,
-        orderTime: dto.orderTime,
-        isScheduled: this.isScheduledOrderTime(dto.orderTime),
-        subtotal: Number(quote.subtotal),
-        taxAmount: Number(quote.taxAmount),
-        deliveryFee: Number(quote.deliveryFee),
-        discountAmount: Number(quote.discountAmount),
-        totalAmount: Number(quote.totalAmount),
-        couponCode: quote.appliedCouponCode,
-        items: quote.lines.map((line) => ({
-          menuItemId: line.menuItemId,
-          menuItemName: line.menuItemName,
-          variationId: line.variationId,
-          variationName: line.variationName,
-          quantity: line.quantity,
-          unitPrice: Number(line.unitPrice),
-          lineTotal: Number(line.lineTotal),
-          note: line.note,
-          snapshotModifiers: line.snapshotModifiers,
-        })),
-      },
+      data: this.toQuoteResponseData(quote, dto),
+      message: 'Order quote generated successfully',
+    };
+  }
+
+  async quoteForCouponValidation(user: AuthUserContext, dto: QuoteOrderDto) {
+    const quote = await this.buildQuote(user, dto, {
+      skipDeliveryAddressValidation: true,
+    });
+
+    return {
+      data: this.toQuoteResponseData(quote, dto),
       message: 'Order quote generated successfully',
     };
   }
@@ -352,7 +343,11 @@ export class OrdersService {
     return this.toOrderMutationResponse(data);
   }
 
-  private async buildQuote(user: AuthUserContext, dto: QuoteOrderDto) {
+  private async buildQuote(
+    user: AuthUserContext,
+    dto: QuoteOrderDto,
+    options: BuildQuoteOptions = {},
+  ) {
     if (!dto.items.length) {
       throw new BadRequestException('At least one item is required');
     }
@@ -512,18 +507,20 @@ export class OrdersService {
 
     let deliveryFee = new Prisma.Decimal(0);
     if (dto.orderType === OrderTypeEnum.DELIVERY) {
-      if (!dto.deliveryAddressId) {
+      if (!options.skipDeliveryAddressValidation && !dto.deliveryAddressId) {
         throw new BadRequestException(
           'deliveryAddressId is required for delivery orders',
         );
       }
 
-      await this.assertAddressWithinRadius(
-        customer.customerId,
-        dto.deliveryAddressId,
-        branch.id,
-        settings.deliveryConfig.radiusKm,
-      );
+      if (!options.skipDeliveryAddressValidation && dto.deliveryAddressId) {
+        await this.assertAddressWithinRadius(
+          customer.customerId,
+          dto.deliveryAddressId,
+          branch.id,
+          settings.deliveryConfig.radiusKm,
+        );
+      }
 
       deliveryFee = new Prisma.Decimal(settings.deliveryConfig.deliveryFee);
       if (
@@ -582,6 +579,37 @@ export class OrdersService {
       totalAmount: totalAmount.toDecimalPlaces(2),
       couponId,
       appliedCouponCode,
+    };
+  }
+
+  private toQuoteResponseData(
+    quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
+    dto: QuoteOrderDto,
+  ) {
+    return {
+      branchId: quote.branch.id,
+      restaurantId: quote.branch.restaurantId,
+      customerId: quote.customer.customerId,
+      orderType: dto.orderType,
+      orderTime: dto.orderTime,
+      isScheduled: this.isScheduledOrderTime(dto.orderTime),
+      subtotal: Number(quote.subtotal),
+      taxAmount: Number(quote.taxAmount),
+      deliveryFee: Number(quote.deliveryFee),
+      discountAmount: Number(quote.discountAmount),
+      totalAmount: Number(quote.totalAmount),
+      couponCode: quote.appliedCouponCode,
+      items: quote.lines.map((line) => ({
+        menuItemId: line.menuItemId,
+        menuItemName: line.menuItemName,
+        variationId: line.variationId,
+        variationName: line.variationName,
+        quantity: line.quantity,
+        unitPrice: Number(line.unitPrice),
+        lineTotal: Number(line.lineTotal),
+        note: line.note,
+        snapshotModifiers: line.snapshotModifiers,
+      })),
     };
   }
 
