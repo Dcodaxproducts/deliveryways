@@ -49,6 +49,14 @@ export class GroupOrdersService {
       );
     }
 
+    const existingActiveSession =
+      await this.groupOrdersRepository.findActiveSessionByHost(user.uid);
+    if (existingActiveSession) {
+      throw new BadRequestException(
+        'You already have an active group order session',
+      );
+    }
+
     const orderType = this.toOrderType(dto.orderType);
     await this.assertDeliveryAddress(
       user,
@@ -104,6 +112,10 @@ export class GroupOrdersService {
       );
     }
 
+    if (session.hostUserId === user.uid) {
+      throw new BadRequestException('Host is already part of this group order');
+    }
+
     const existingParticipant =
       await this.groupOrdersRepository.findParticipant(session.id, user.uid);
     if (!existingParticipant) {
@@ -113,8 +125,14 @@ export class GroupOrdersService {
         status: GroupOrderParticipantStatus.ACTIVE,
       });
     } else if (
-      existingParticipant.status !== GroupOrderParticipantStatus.ACTIVE
+      existingParticipant.status === GroupOrderParticipantStatus.ACTIVE
     ) {
+      throw new BadRequestException('You are already part of this group order');
+    } else if (
+      existingParticipant.status === GroupOrderParticipantStatus.REMOVED
+    ) {
+      throw new BadRequestException('You cannot rejoin this group order');
+    } else {
       await this.groupOrdersRepository.updateParticipant(
         existingParticipant.id,
         {

@@ -119,6 +119,24 @@ export class GroupOrdersRepository {
     });
   }
 
+  async findActiveSessionByHost(hostUserId: string, now = new Date()) {
+    return this.prisma.groupOrderSession.findFirst({
+      where: {
+        hostUserId,
+        status: {
+          in: ['OPEN', 'LOCKED'],
+        },
+        expiresAt: {
+          gt: now,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: this.sessionInclude,
+    });
+  }
+
   async createParticipant(
     data: Prisma.GroupOrderParticipantCreateInput,
     tx?: PrismaTx,
