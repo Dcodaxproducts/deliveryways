@@ -104,6 +104,14 @@ export class OrdersRepository {
             createdAt: true,
           },
         },
+        sourceGroupOrder: {
+          select: {
+            id: true,
+            inviteCode: true,
+            hostUserId: true,
+            status: true,
+          },
+        },
       },
     });
   }
@@ -182,6 +190,14 @@ export class OrdersRepository {
               },
             },
             orderBy: [{ createdAt: 'asc' }],
+          },
+          sourceGroupOrder: {
+            select: {
+              id: true,
+              inviteCode: true,
+              hostUserId: true,
+              status: true,
+            },
           },
         },
       }),

@@ -691,6 +691,12 @@ export class OrdersService {
       snapshotModifiers: Prisma.JsonValue | null;
       menuItem: { imageUrl: string | null } | null;
     }>;
+    sourceGroupOrder?: {
+      id: string;
+      inviteCode: string;
+      hostUserId: string;
+      status: string;
+    } | null;
   }) {
     return {
       id: order.id,
@@ -717,6 +723,9 @@ export class OrdersService {
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),
       deliveryman: order.deliveryman,
+      isGroupOrder: Boolean(order.sourceGroupOrder),
+      groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
+      groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
       itemCount: order.items.length,
       itemsPreview: order.items.map((item) => ({
         id: item.id,
@@ -811,6 +820,12 @@ export class OrdersService {
       processedAt: Date | null;
       createdAt: Date;
     }>;
+    sourceGroupOrder?: {
+      id: string;
+      inviteCode: string;
+      hostUserId: string;
+      status: string;
+    } | null;
     items: Array<{
       id: string;
       menuItemId: string;
@@ -862,6 +877,9 @@ export class OrdersService {
       branch: order.branch,
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),
+      isGroupOrder: Boolean(order.sourceGroupOrder),
+      groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
+      groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
       deliveryAddress: order.deliveryAddress
         ? {
             ...order.deliveryAddress,

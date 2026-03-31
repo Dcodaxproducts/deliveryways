@@ -291,6 +291,133 @@ describe('OrdersService - coupon quote validation', () => {
   });
 });
 
+describe('OrdersService - response mapping', () => {
+  let service: OrdersService;
+
+  beforeEach(() => {
+    service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('marks list responses originating from group orders', () => {
+    const result = (
+      service as unknown as {
+        toOrderListResponse: (
+          order: Record<string, unknown>,
+        ) => Record<string, unknown>;
+      }
+    ).toOrderListResponse({
+      id: 'order-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      paymentMethod: 'COD',
+      orderTime: null,
+      isScheduled: false,
+      status: 'PLACED',
+      paymentStatus: 'PENDING',
+      subtotal: new Prisma.Decimal(500),
+      taxAmount: new Prisma.Decimal(0),
+      deliveryFee: new Prisma.Decimal(100),
+      discountAmount: new Prisma.Decimal(50),
+      totalAmount: new Prisma.Decimal(550),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      coupon: null,
+      customer: {
+        id: 'customer-1',
+        email: 'customer@test.com',
+        profile: null,
+      },
+      deliveryman: null,
+      sourceGroupOrder: {
+        id: 'group-session-1',
+        inviteCode: 'INVITE123',
+        hostUserId: 'customer-1',
+        status: 'CHECKED_OUT',
+      },
+      items: [],
+    });
+
+    expect(result.isGroupOrder).toBe(true);
+    expect(result.groupOrderSessionId).toBe('group-session-1');
+    expect(result.groupOrderInviteCode).toBe('INVITE123');
+  });
+
+  it('marks details responses for normal orders as non-group orders', () => {
+    const result = (
+      service as unknown as {
+        toOrderDetailsResponse: (
+          order: Record<string, unknown>,
+        ) => Record<string, unknown>;
+      }
+    ).toOrderDetailsResponse({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      couponId: null,
+      deliveryAddressId: null,
+      deliverymanId: null,
+      orderType: 'TAKEAWAY',
+      paymentMethod: 'COD',
+      orderTime: null,
+      isScheduled: false,
+      status: 'PLACED',
+      paymentStatus: 'PENDING',
+      subtotal: new Prisma.Decimal(500),
+      taxAmount: new Prisma.Decimal(0),
+      deliveryFee: new Prisma.Decimal(0),
+      discountAmount: new Prisma.Decimal(0),
+      totalAmount: new Prisma.Decimal(500),
+      customerNote: null,
+      assignedAt: null,
+      deliveredAt: null,
+      paidAt: null,
+      cancelledAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      coupon: null,
+      customer: {
+        id: 'customer-1',
+        email: 'customer@test.com',
+        profile: null,
+      },
+      deliveryAddress: null,
+      deliveryman: null,
+      transactions: [],
+      sourceGroupOrder: null,
+      items: [],
+    });
+
+    expect(result.isGroupOrder).toBe(false);
+    expect(result.groupOrderSessionId).toBeNull();
+    expect(result.groupOrderInviteCode).toBeNull();
+  });
+});
+
 describe('OrdersService - admin customer resolution', () => {
   const branch = {
     id: 'branch-1',
