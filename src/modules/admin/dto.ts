@@ -5,6 +5,7 @@ import {
   IsEmail,
   IsOptional,
   IsString,
+  MaxLength,
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
 
@@ -22,6 +23,45 @@ export class AdminCustomerDetailsQueryDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
+}
+
+export class UpdateAdminCustomerDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  firstName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  lastName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Profile avatar URL (uploaded by frontend)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  avatarUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  bio?: string;
 }
 
 export class UpdateAdminCustomerStatusDto {

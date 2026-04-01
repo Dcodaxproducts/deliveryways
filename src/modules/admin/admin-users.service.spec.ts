@@ -117,6 +117,122 @@ describe('AdminUsersService', () => {
     });
   });
 
+  describe('updateCustomer', () => {
+    it('updates customer profile details for business admin', async () => {
+      const usersService = {
+        findCustomerById: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          email: 'old@test.com',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          profile: {
+            firstName: 'Old',
+            lastName: 'Name',
+            avatarUrl: null,
+            phone: '03000000000',
+            bio: null,
+          },
+        }),
+        findByEmail: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          email: 'new@test.com',
+          profile: {
+            firstName: 'Bilal',
+            lastName: 'Shah',
+            avatarUrl: null,
+            phone: '03001234567',
+            bio: 'VIP customer',
+          },
+        }),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      const result = await service.updateCustomer(
+        {
+          uid: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'customer-1',
+        {
+          email: 'new@test.com',
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '03001234567',
+          bio: 'VIP customer',
+        },
+      );
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith(
+        'new@test.com',
+        'restaurant-1',
+      );
+      expect(usersService.update).toHaveBeenCalledWith('customer-1', {
+        email: 'new@test.com',
+        profile: {
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          avatarUrl: undefined,
+          phone: '03001234567',
+          bio: 'VIP customer',
+        },
+      });
+      expect(result).toEqual({
+        data: {
+          id: 'customer-1',
+          email: 'new@test.com',
+          profile: {
+            firstName: 'Bilal',
+            lastName: 'Shah',
+            avatarUrl: null,
+            phone: '03001234567',
+            bio: 'VIP customer',
+          },
+        },
+        message: 'Customer updated successfully',
+      });
+    });
+
+    it('rejects duplicate email inside same restaurant', async () => {
+      const usersService = {
+        findCustomerById: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          email: 'old@test.com',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          profile: {
+            firstName: 'Old',
+            lastName: 'Name',
+            avatarUrl: null,
+            phone: null,
+            bio: null,
+          },
+        }),
+        findByEmail: jest.fn().mockResolvedValue({
+          id: 'customer-2',
+        }),
+        update: jest.fn(),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await expect(
+        service.updateCustomer(
+          {
+            uid: 'business-admin-1',
+            role: UserRoleEnum.BUSINESS_ADMIN,
+            tid: 'tenant-1',
+          } as never,
+          'customer-1',
+          { email: 'duplicate@test.com' },
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(usersService.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('removeUser', () => {
     it('allows business admin to soft delete a tenant customer', async () => {
       const usersService = {

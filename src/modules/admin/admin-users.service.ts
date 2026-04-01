@@ -12,6 +12,7 @@ import {
   AdminCustomerDetailsQueryDto,
   AdminForceDeleteUsersDto,
   AdminListCustomersDto,
+  UpdateAdminCustomerDto,
   UpdateAdminCustomerStatusDto,
 } from './dto';
 
@@ -92,30 +93,57 @@ export class AdminUsersService {
     };
   }
 
+  async updateCustomer(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateAdminCustomerDto,
+  ) {
+    const customer = await this.getAccessibleCustomerOrThrow(user, id);
+
+    if (dto.email && dto.email !== customer.email) {
+      const existing = await this.usersService.findByEmail(
+        dto.email,
+        customer.restaurantId ?? undefined,
+      );
+
+      if (existing && existing.id !== customer.id) {
+        throw new BadRequestException(
+          'A customer with this email already exists in this restaurant',
+        );
+      }
+    }
+
+    const updated = await this.usersService.update(customer.id, {
+      email: dto.email,
+      profile:
+        dto.firstName !== undefined ||
+        dto.lastName !== undefined ||
+        dto.avatarUrl !== undefined ||
+        dto.phone !== undefined ||
+        dto.bio !== undefined
+          ? {
+              firstName: dto.firstName ?? customer.profile?.firstName ?? '',
+              lastName: dto.lastName ?? customer.profile?.lastName ?? '',
+              avatarUrl:
+                dto.avatarUrl ?? customer.profile?.avatarUrl ?? undefined,
+              phone: dto.phone ?? customer.profile?.phone ?? undefined,
+              bio: dto.bio ?? customer.profile?.bio ?? undefined,
+            }
+          : undefined,
+    });
+
+    return {
+      data: updated,
+      message: 'Customer updated successfully',
+    };
+  }
+
   async updateCustomerStatus(
     user: AuthUserContext,
     id: string,
     dto: UpdateAdminCustomerStatusDto,
   ) {
-    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
-
-    const restaurantId =
-      user.role === UserRoleEnum.BRANCH_ADMIN ? user.rid : undefined;
-
-    if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
-      throw new ForbiddenException('Restaurant context is required');
-    }
-
-    const customer = await this.usersService.findCustomerById(id, {
-      tenantId: user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid,
-      restaurantId,
-    });
-
-    if (!customer) {
-      throw new NotFoundException('Customer not found');
-    }
+    const customer = await this.getAccessibleCustomerOrThrow(user, id);
 
     if (customer.isActive === dto.isActive) {
       return {
@@ -219,30 +247,53 @@ export class AdminUsersService {
     };
   }
 
+  private async getAccessibleCustomerOrThrow(
+    user: AuthUserContext,
+    id: string,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const restaurantId =
+      user.role === UserRoleEnum.BRANCH_ADMIN ? user.rid : undefined;
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    const customer = await this.usersService.findCustomerById(id, {
+      tenantId: user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid,
+      restaurantId,
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    return customer;
+  }
+
   private canSoftDeleteUser(
     user: AuthUserContext,
     targetUser: {
       id: string;
-      role: UserRoleEnum;
+      role: string;
       tenantId: string | null;
       restaurantId: string | null;
     },
   ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return [
-        UserRoleEnum.BUSINESS_ADMIN,
-        UserRoleEnum.BRANCH_ADMIN,
-        UserRoleEnum.CUSTOMER,
-      ].includes(targetUser.role);
+      return ['BUSINESS_ADMIN', 'BRANCH_ADMIN', 'CUSTOMER'].includes(
+        targetUser.role,
+      );
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       return (
         !!user.tid &&
         targetUser.tenantId === user.tid &&
-        [UserRoleEnum.BRANCH_ADMIN, UserRoleEnum.CUSTOMER].includes(
-          targetUser.role,
-        )
+        ['BRANCH_ADMIN', 'CUSTOMER'].includes(targetUser.role)
       );
     }
 
@@ -250,7 +301,7 @@ export class AdminUsersService {
       return (
         !!user.rid &&
         targetUser.restaurantId === user.rid &&
-        targetUser.role === UserRoleEnum.CUSTOMER
+        targetUser.role === 'CUSTOMER'
       );
     }
 

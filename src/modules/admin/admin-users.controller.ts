@@ -21,6 +21,7 @@ import {
   AdminCustomerDetailsQueryDto,
   AdminForceDeleteUsersDto,
   AdminListCustomersDto,
+  UpdateAdminCustomerDto,
   UpdateAdminCustomerStatusDto,
 } from './dto';
 import { AdminUsersService } from './admin-users.service';
@@ -59,6 +60,23 @@ export class AdminUsersController {
     @Query() query: AdminCustomerDetailsQueryDto,
   ) {
     return this.adminUsersService.customerDetails(user, id, query);
+  }
+
+  @Patch('customers/:id')
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Update customer details for admin/staff management',
+  })
+  updateCustomer(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminCustomerDto,
+  ) {
+    return this.adminUsersService.updateCustomer(user, id, dto);
   }
 
   @Patch('customers/:id/status')
