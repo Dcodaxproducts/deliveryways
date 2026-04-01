@@ -145,6 +145,43 @@ export class AdminUsersService {
     };
   }
 
+  async removeUser(user: AuthUserContext, id: string) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const targetUser = await this.usersService.findById(id);
+
+    if (!targetUser || targetUser.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (targetUser.id === user.uid) {
+      throw new BadRequestException(
+        'Use the self delete endpoint to delete your own account',
+      );
+    }
+
+    if (!this.canSoftDeleteUser(user, targetUser)) {
+      throw new ForbiddenException(
+        'You do not have permission to delete this user',
+      );
+    }
+
+    const deletedUser = await this.usersService.softDeleteUser(targetUser.id);
+
+    return {
+      data: {
+        id: deletedUser.id,
+        role: deletedUser.role,
+        isActive: deletedUser.isActive,
+        deletedAt: deletedUser.deletedAt,
+        deleteAfter: deletedUser.deleteAfter,
+      },
+      message: 'User scheduled for deletion in 30 days',
+    };
+  }
+
   async approveBusinessAdmin(_user: AuthUserContext, targetUserId: string) {
     const dbUser = await this.usersService.findById(targetUserId);
 
@@ -180,6 +217,44 @@ export class AdminUsersService {
       },
       message: 'Business admin approved successfully',
     };
+  }
+
+  private canSoftDeleteUser(
+    user: AuthUserContext,
+    targetUser: {
+      id: string;
+      role: UserRoleEnum;
+      tenantId: string | null;
+      restaurantId: string | null;
+    },
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return [
+        UserRoleEnum.BUSINESS_ADMIN,
+        UserRoleEnum.BRANCH_ADMIN,
+        UserRoleEnum.CUSTOMER,
+      ].includes(targetUser.role);
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      return (
+        !!user.tid &&
+        targetUser.tenantId === user.tid &&
+        [UserRoleEnum.BRANCH_ADMIN, UserRoleEnum.CUSTOMER].includes(
+          targetUser.role,
+        )
+      );
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      return (
+        !!user.rid &&
+        targetUser.restaurantId === user.rid &&
+        targetUser.role === UserRoleEnum.CUSTOMER
+      );
+    }
+
+    return false;
   }
 
   async forceDeleteUsers(

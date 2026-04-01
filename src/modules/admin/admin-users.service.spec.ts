@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserRoleEnum } from '../../common/enums';
 import { AdminUsersService } from './admin-users.service';
 
@@ -110,6 +114,174 @@ describe('AdminUsersService', () => {
         },
         message: 'Customer is already active',
       });
+    });
+  });
+
+  describe('removeUser', () => {
+    it('allows business admin to soft delete a tenant customer', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          deletedAt: null,
+        }),
+        softDeleteUser: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          isActive: false,
+          deletedAt: new Date('2026-04-01T11:00:00.000Z'),
+          deleteAfter: new Date('2026-05-01T11:00:00.000Z'),
+        }),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      const result = await service.removeUser(
+        {
+          uid: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'customer-1',
+      );
+
+      expect(usersService.softDeleteUser).toHaveBeenCalledWith('customer-1');
+      expect(result).toEqual({
+        data: {
+          id: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          isActive: false,
+          deletedAt: new Date('2026-04-01T11:00:00.000Z'),
+          deleteAfter: new Date('2026-05-01T11:00:00.000Z'),
+        },
+        message: 'User scheduled for deletion in 30 days',
+      });
+    });
+
+    it('allows business admin to soft delete a tenant branch admin', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'branch-admin-2',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          deletedAt: null,
+        }),
+        softDeleteUser: jest.fn().mockResolvedValue({
+          id: 'branch-admin-2',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          isActive: false,
+          deletedAt: new Date('2026-04-01T11:00:00.000Z'),
+          deleteAfter: new Date('2026-05-01T11:00:00.000Z'),
+        }),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await service.removeUser(
+        {
+          uid: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'branch-admin-2',
+      );
+
+      expect(usersService.softDeleteUser).toHaveBeenCalledWith(
+        'branch-admin-2',
+      );
+    });
+
+    it('allows branch admin to soft delete a customer in the same restaurant', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          deletedAt: null,
+        }),
+        softDeleteUser: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          isActive: false,
+          deletedAt: new Date('2026-04-01T11:00:00.000Z'),
+          deleteAfter: new Date('2026-05-01T11:00:00.000Z'),
+        }),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await service.removeUser(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        'customer-1',
+      );
+
+      expect(usersService.softDeleteUser).toHaveBeenCalledWith('customer-1');
+    });
+
+    it('prevents branch admin from deleting a branch admin user', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'branch-admin-2',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          deletedAt: null,
+        }),
+        softDeleteUser: jest.fn(),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await expect(
+        service.removeUser(
+          {
+            uid: 'branch-admin-1',
+            role: UserRoleEnum.BRANCH_ADMIN,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            bid: 'branch-1',
+          } as never,
+          'branch-admin-2',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(usersService.softDeleteUser).not.toHaveBeenCalled();
+    });
+
+    it('prevents deleting own account through admin delete route', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tenantId: 'tenant-1',
+          restaurantId: null,
+          deletedAt: null,
+        }),
+        softDeleteUser: jest.fn(),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await expect(
+        service.removeUser(
+          {
+            uid: 'business-admin-1',
+            role: UserRoleEnum.BUSINESS_ADMIN,
+            tid: 'tenant-1',
+          } as never,
+          'business-admin-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(usersService.softDeleteUser).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -73,6 +74,17 @@ export class AdminUsersController {
     @Body() dto: UpdateAdminCustomerStatusDto,
   ) {
     return this.adminUsersService.updateCustomerStatus(user, id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @ApiOperation({ summary: 'Soft delete a lower-scope user account' })
+  removeUser(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.adminUsersService.removeUser(user, id);
   }
 
   @Post('force-delete')

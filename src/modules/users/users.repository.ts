@@ -198,6 +198,9 @@ export class UsersRepository {
     return this.prisma.user.update({
       where: { id },
       data: {
+        deletedAt: new Date(),
+        isActive: false,
+        refreshTokenHash: null,
         deleteAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     });
@@ -206,7 +209,11 @@ export class UsersRepository {
   async cancelDeleteUser(id: string) {
     return this.prisma.user.update({
       where: { id },
-      data: { deleteAfter: null },
+      data: {
+        deletedAt: null,
+        isActive: true,
+        deleteAfter: null,
+      },
     });
   }
 
