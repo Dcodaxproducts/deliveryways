@@ -696,6 +696,25 @@ export class OrdersService {
       inviteCode: string;
       hostUserId: string;
       status: string;
+      participants: Array<{
+        id: string;
+        userId: string;
+        isHost: boolean;
+        status: string;
+        joinedAt: Date;
+        leftAt: Date | null;
+        user: {
+          id: string;
+          email: string;
+          isGuest: boolean;
+          profile: {
+            firstName: string;
+            lastName: string;
+            phone: string | null;
+            avatarUrl: string | null;
+          } | null;
+        };
+      }>;
     } | null;
   }) {
     return {
@@ -726,6 +745,11 @@ export class OrdersService {
       isGroupOrder: Boolean(order.sourceGroupOrder),
       groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
       groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
+      participantCount: order.sourceGroupOrder?.participants.length ?? 0,
+      participants:
+        order.sourceGroupOrder?.participants.map((participant) =>
+          this.toGroupOrderParticipantSummary(participant),
+        ) ?? [],
       itemCount: order.items.length,
       itemsPreview: order.items.map((item) => ({
         id: item.id,
@@ -914,6 +938,36 @@ export class OrdersService {
     };
   }
 
+  private toGroupOrderParticipantSummary(participant: {
+    id: string;
+    userId: string;
+    isHost: boolean;
+    status: string;
+    joinedAt: Date;
+    leftAt: Date | null;
+    user: {
+      id: string;
+      email: string;
+      isGuest: boolean;
+      profile: {
+        firstName: string;
+        lastName: string;
+        phone: string | null;
+        avatarUrl: string | null;
+      } | null;
+    };
+  }) {
+    return {
+      id: participant.id,
+      userId: participant.userId,
+      isHost: participant.isHost,
+      status: participant.status,
+      joinedAt: participant.joinedAt,
+      leftAt: participant.leftAt,
+      user: this.toUserSummary(participant.user),
+    };
+  }
+
   private toCustomerSummary(customer: {
     id: string;
     email: string;
@@ -935,6 +989,28 @@ export class OrdersService {
           : null,
       phone: customer.profile?.phone ?? null,
       avatarUrl: customer.profile?.avatarUrl ?? null,
+    };
+  }
+
+  private toUserSummary(user: {
+    id: string;
+    email: string;
+    isGuest: boolean;
+    profile: {
+      firstName: string;
+      lastName: string;
+      phone: string | null;
+      avatarUrl: string | null;
+    } | null;
+  }) {
+    return {
+      id: user.id,
+      email: user.email,
+      isGuest: user.isGuest,
+      firstName: user.profile?.firstName ?? null,
+      lastName: user.profile?.lastName ?? null,
+      phone: user.profile?.phone ?? null,
+      avatarUrl: user.profile?.avatarUrl ?? null,
     };
   }
 

@@ -5,6 +5,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -105,6 +106,8 @@ export class CreateOrderDto extends QuoteOrderDto {
   customerNote?: string;
 }
 
+export const ORDER_LIST_KIND_VALUES = ['order', 'group-orders'] as const;
+
 export class ListOrdersDto extends QueryDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -120,6 +123,15 @@ export class ListOrdersDto extends QueryDto {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+
+  @ApiPropertyOptional({
+    enum: ORDER_LIST_KIND_VALUES,
+    description:
+      'Filter orders list to only regular orders or only group-checkout orders',
+  })
+  @IsOptional()
+  @IsIn(ORDER_LIST_KIND_VALUES)
+  kind?: (typeof ORDER_LIST_KIND_VALUES)[number];
 }
 
 export class UpdateOrderStatusDto {

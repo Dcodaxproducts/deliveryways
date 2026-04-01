@@ -348,6 +348,27 @@ describe('OrdersService - response mapping', () => {
         inviteCode: 'INVITE123',
         hostUserId: 'customer-1',
         status: 'CHECKED_OUT',
+        participants: [
+          {
+            id: 'participant-1',
+            userId: 'customer-1',
+            isHost: true,
+            status: 'ACTIVE',
+            joinedAt: new Date('2026-04-01T06:00:00.000Z'),
+            leftAt: null,
+            user: {
+              id: 'customer-1',
+              email: 'customer@test.com',
+              isGuest: false,
+              profile: {
+                firstName: 'Bilal',
+                lastName: 'Shah',
+                phone: '03001234567',
+                avatarUrl: null,
+              },
+            },
+          },
+        ],
       },
       items: [],
     });
@@ -355,6 +376,26 @@ describe('OrdersService - response mapping', () => {
     expect(result.isGroupOrder).toBe(true);
     expect(result.groupOrderSessionId).toBe('group-session-1');
     expect(result.groupOrderInviteCode).toBe('INVITE123');
+    expect(result.participantCount).toBe(1);
+    expect(result.participants).toEqual([
+      {
+        id: 'participant-1',
+        userId: 'customer-1',
+        isHost: true,
+        status: 'ACTIVE',
+        joinedAt: new Date('2026-04-01T06:00:00.000Z'),
+        leftAt: null,
+        user: {
+          id: 'customer-1',
+          email: 'customer@test.com',
+          isGuest: false,
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '03001234567',
+          avatarUrl: null,
+        },
+      },
+    ]);
   });
 
   it('marks details responses for normal orders as non-group orders', () => {
