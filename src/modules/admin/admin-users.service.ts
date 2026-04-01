@@ -12,6 +12,7 @@ import {
   AdminCustomerDetailsQueryDto,
   AdminForceDeleteUsersDto,
   AdminListCustomersDto,
+  UpdateAdminCustomerStatusDto,
 } from './dto';
 
 @Injectable()
@@ -88,6 +89,59 @@ export class AdminUsersService {
     return {
       data: customer,
       message: 'Customer fetched successfully',
+    };
+  }
+
+  async updateCustomerStatus(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateAdminCustomerStatusDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const restaurantId =
+      user.role === UserRoleEnum.BRANCH_ADMIN ? user.rid : undefined;
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    const customer = await this.usersService.findCustomerById(id, {
+      tenantId: user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid,
+      restaurantId,
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    if (customer.isActive === dto.isActive) {
+      return {
+        data: {
+          id: customer.id,
+          isActive: customer.isActive,
+        },
+        message: customer.isActive
+          ? 'Customer is already active'
+          : 'Customer is already inactive',
+      };
+    }
+
+    const updated = await this.usersService.setActiveStatus(
+      customer.id,
+      dto.isActive,
+    );
+
+    return {
+      data: {
+        id: updated.id,
+        isActive: updated.isActive,
+      },
+      message: updated.isActive
+        ? 'Customer activated successfully'
+        : 'Customer blocked successfully',
     };
   }
 

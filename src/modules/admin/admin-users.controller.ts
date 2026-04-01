@@ -20,6 +20,7 @@ import {
   AdminCustomerDetailsQueryDto,
   AdminForceDeleteUsersDto,
   AdminListCustomersDto,
+  UpdateAdminCustomerStatusDto,
 } from './dto';
 import { AdminUsersService } from './admin-users.service';
 
@@ -57,6 +58,21 @@ export class AdminUsersController {
     @Query() query: AdminCustomerDetailsQueryDto,
   ) {
     return this.adminUsersService.customerDetails(user, id, query);
+  }
+
+  @Patch('customers/:id/status')
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @ApiOperation({ summary: 'Block or unblock a customer account' })
+  updateCustomerStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminCustomerStatusDto,
+  ) {
+    return this.adminUsersService.updateCustomerStatus(user, id, dto);
   }
 
   @Post('force-delete')

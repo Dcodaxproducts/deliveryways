@@ -197,6 +197,10 @@ export class UsersService {
     return this.usersRepository.update(userId, { isApproved });
   }
 
+  async setActiveStatus(userId: string, isActive: boolean) {
+    return this.usersRepository.update(userId, { isActive });
+  }
+
   async forceDeleteUsersByEmails(emails: string[]) {
     return this.usersRepository.forceDeleteUsersByEmails(emails);
   }

@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsEmail, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
 
 export class AdminListCustomersDto extends AdminListQueryDto {
@@ -16,6 +22,14 @@ export class AdminCustomerDetailsQueryDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
+}
+
+export class UpdateAdminCustomerStatusDto {
+  @ApiProperty({
+    description: 'Set customer account active/inactive state',
+  })
+  @IsBoolean()
+  isActive!: boolean;
 }
 
 export class AdminForceDeleteUsersDto {
