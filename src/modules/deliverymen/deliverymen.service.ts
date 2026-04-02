@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DeliverymanStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -53,6 +54,7 @@ export class DeliverymenService {
       phone: dto.phone,
       vehicleType: dto.vehicleType,
       vehicleNumber: dto.vehicleNumber,
+      password: await bcrypt.hash(dto.password ?? dto.phone, 10),
       status: dto.status ?? DeliverymanStatus.OFFLINE,
       isActive: true,
     });
@@ -127,6 +129,7 @@ export class DeliverymenService {
       phone: dto.phone,
       vehicleType: dto.vehicleType,
       vehicleNumber: dto.vehicleNumber,
+      password: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
       isActive: dto.isActive,
       branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
     });

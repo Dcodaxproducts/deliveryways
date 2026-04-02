@@ -6,8 +6,8 @@ import { UserRoleEnum } from '../../../common/enums';
 
 interface JwtPayload {
   uid: string;
-  role: UserRoleEnum;
-  actorType?: 'USER' | 'STAFF';
+  role: UserRoleEnum | 'DELIVERYMAN';
+  actorType?: 'USER' | 'STAFF' | 'DELIVERYMAN';
   tid?: string | null;
   rid?: string | null;
   bid?: string | null;

@@ -13,6 +13,7 @@ type ThreadPayload = {
   branchId: string | null;
   customerId: string;
   orderId: string | null;
+  deliverymanId: string | null;
   source: string;
   subject: string | null;
   status: string;
@@ -30,12 +31,20 @@ type ThreadPayload = {
   branch: Record<string, unknown> | null;
   order: Record<string, unknown> | null;
   assignedStaff: Record<string, unknown> | null;
+  deliveryman: Record<string, unknown> | null;
   latestMessage?: Record<string, unknown> | null;
   messages?: Record<string, unknown>[];
 };
 
 type SummaryScope =
   | { type: 'customer'; room: string; customerId: string; restaurantId: string }
+  | {
+      type: 'deliveryman';
+      room: string;
+      deliverymanId: string;
+      restaurantId: string;
+      branchId: string | null;
+    }
   | { type: 'tenant'; room: string; tenantId: string }
   | { type: 'branch'; room: string; restaurantId: string; branchId: string }
   | { type: 'global'; room: string };
@@ -54,6 +63,10 @@ export class ChatRealtimeService {
   getInboxRoomsForUser(user: AuthUserContext): string[] {
     if (user.role === UserRoleEnum.CUSTOMER) {
       return [this.getUserRoom(user.uid)];
+    }
+
+    if (user.role === 'DELIVERYMAN') {
+      return [this.getDeliverymanRoom(user.uid)];
     }
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
@@ -85,6 +98,10 @@ export class ChatRealtimeService {
 
   getUserRoom(customerId: string): string {
     return `chat:user:${customerId}`;
+  }
+
+  getDeliverymanRoom(deliverymanId: string): string {
+    return `chat:deliveryman:${deliverymanId}`;
   }
 
   getTenantRoom(tenantId: string): string {
@@ -178,6 +195,10 @@ export class ChatRealtimeService {
       this.getGlobalRoom(),
     ]);
 
+    if (threadPayload.deliverymanId) {
+      rooms.add(this.getDeliverymanRoom(threadPayload.deliverymanId));
+    }
+
     if (threadPayload.branchId) {
       rooms.add(this.getBranchRoom(threadPayload.branchId));
     }
@@ -199,6 +220,17 @@ export class ChatRealtimeService {
         customerId: thread.customerId,
         restaurantId: thread.restaurantId,
       },
+      ...(thread.deliverymanId
+        ? [
+            {
+              type: 'deliveryman' as const,
+              room: this.getDeliverymanRoom(thread.deliverymanId),
+              deliverymanId: thread.deliverymanId,
+              restaurantId: thread.restaurantId,
+              branchId: thread.branchId,
+            },
+          ]
+        : []),
       {
         type: 'tenant',
         room: this.getTenantRoom(thread.tenantId),
@@ -230,6 +262,18 @@ export class ChatRealtimeService {
           room: this.getUserRoom(user.uid),
           customerId: user.uid,
           restaurantId: user.rid,
+        },
+      ];
+    }
+
+    if (user.role === 'DELIVERYMAN' && user.rid) {
+      return [
+        {
+          type: 'deliveryman',
+          room: this.getDeliverymanRoom(user.uid),
+          deliverymanId: user.uid,
+          restaurantId: user.rid,
+          branchId: user.bid ?? null,
         },
       ];
     }
@@ -317,18 +361,25 @@ export class ChatRealtimeService {
             restaurantId: scope.restaurantId,
             customerId: scope.customerId,
           })
-        : scope.type === 'tenant'
+        : scope.type === 'deliveryman'
           ? this.chatRepository.buildWhere({
               query,
-              tenantId: scope.tenantId,
+              restaurantId: scope.restaurantId,
+              branchId: scope.branchId ?? undefined,
+              deliverymanId: scope.deliverymanId,
             })
-          : scope.type === 'branch'
+          : scope.type === 'tenant'
             ? this.chatRepository.buildWhere({
                 query,
-                restaurantId: scope.restaurantId,
-                branchId: scope.branchId,
+                tenantId: scope.tenantId,
               })
-            : this.chatRepository.buildWhere({ query });
+            : scope.type === 'branch'
+              ? this.chatRepository.buildWhere({
+                  query,
+                  restaurantId: scope.restaurantId,
+                  branchId: scope.branchId,
+                })
+              : this.chatRepository.buildWhere({ query });
 
     const unreadWhere =
       scope.type === 'customer'
@@ -338,23 +389,31 @@ export class ChatRealtimeService {
             customerId: scope.customerId,
             unreadOnlyFor: 'customer',
           })
-        : scope.type === 'tenant'
+        : scope.type === 'deliveryman'
           ? this.chatRepository.buildWhere({
               query: { ...query, unreadOnly: true },
-              tenantId: scope.tenantId,
+              restaurantId: scope.restaurantId,
+              branchId: scope.branchId ?? undefined,
+              deliverymanId: scope.deliverymanId,
               unreadOnlyFor: 'staff',
             })
-          : scope.type === 'branch'
+          : scope.type === 'tenant'
             ? this.chatRepository.buildWhere({
                 query: { ...query, unreadOnly: true },
-                restaurantId: scope.restaurantId,
-                branchId: scope.branchId,
+                tenantId: scope.tenantId,
                 unreadOnlyFor: 'staff',
               })
-            : this.chatRepository.buildWhere({
-                query: { ...query, unreadOnly: true },
-                unreadOnlyFor: 'staff',
-              });
+            : scope.type === 'branch'
+              ? this.chatRepository.buildWhere({
+                  query: { ...query, unreadOnly: true },
+                  restaurantId: scope.restaurantId,
+                  branchId: scope.branchId,
+                  unreadOnlyFor: 'staff',
+                })
+              : this.chatRepository.buildWhere({
+                  query: { ...query, unreadOnly: true },
+                  unreadOnlyFor: 'staff',
+                });
 
     const [total, open, inProgress, resolved, unread] = await Promise.all([
       this.chatRepository.count(baseWhere),

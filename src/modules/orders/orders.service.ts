@@ -14,6 +14,7 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
+import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -66,6 +67,7 @@ export class OrdersService {
     private readonly ordersRepository: OrdersRepository,
     private readonly couponsService: CouponsService,
     private readonly notificationsService: NotificationsService,
+    private readonly chatService: ChatService,
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -239,6 +241,10 @@ export class OrdersService {
     const data = await this.ordersRepository.updateStatus(id, dto.status);
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
+    await this.chatService.syncDeliveryThreadForOrderLifecycle(
+      data.id,
+      dto.status,
+    );
 
     return {
       data: this.toOrderMutationResponse(data),
@@ -272,6 +278,10 @@ export class OrdersService {
     const data = await this.ordersRepository.cancel(id, user.uid);
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
+    await this.chatService.syncDeliveryThreadForOrderLifecycle(
+      data.id,
+      OrderStatus.CANCELLED,
+    );
 
     return {
       data: this.toOrderMutationResponse(data),
@@ -339,6 +349,7 @@ export class OrdersService {
     );
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
+    await this.chatService.ensureDeliveryThreadForOrder(data.id, deliverymanId);
 
     return this.toOrderMutationResponse(data);
   }

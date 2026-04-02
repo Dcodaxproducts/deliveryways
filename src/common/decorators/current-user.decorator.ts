@@ -1,11 +1,11 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { UserRoleEnum } from '../enums';
 
-export type AuthActorType = 'USER' | 'STAFF';
+export type AuthActorType = 'USER' | 'STAFF' | 'DELIVERYMAN';
 
 export interface AuthUserContext {
   uid: string;
-  role: UserRoleEnum;
+  role: UserRoleEnum | 'DELIVERYMAN';
   actorType?: AuthActorType;
   tid?: string;
   rid?: string;

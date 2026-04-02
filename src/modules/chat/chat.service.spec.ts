@@ -38,6 +38,7 @@ describe('ChatService', () => {
       createMessage: jest.fn(),
       findThreadById: jest.fn(),
       findOpenOrderThread: jest.fn(),
+      findDeliveryThreadByOrder: jest.fn(),
       buildWhere: jest.fn(),
       list: jest.fn(),
       updateThread: jest.fn(),

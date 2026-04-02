@@ -91,6 +91,12 @@ export class AuthController {
   }
 
   @Public()
+  @Post('deliveryman/login')
+  deliverymanLogin(@Body() dto: LoginDto) {
+    return this.authService.loginDeliveryman(dto);
+  }
+
+  @Public()
   @Post('refresh')
   refresh(@Body() dto: RefreshDto) {
     return this.authService.refreshTokens(dto);

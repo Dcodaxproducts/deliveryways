@@ -12,6 +12,7 @@ describe('OrdersService - delivery radius', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
   });
 
@@ -52,6 +53,7 @@ describe('OrdersService - status transitions', () => {
 
   beforeEach(() => {
     service = new OrdersService(
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -150,6 +152,7 @@ describe('OrdersService - order time validation', () => {
 
   beforeEach(() => {
     service = new OrdersService(
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -253,6 +256,7 @@ describe('OrdersService - coupon quote validation', () => {
       {} as never,
       couponsService as never,
       {} as never,
+      {} as never,
     );
 
     const result = await service.quoteForCouponValidation(
@@ -296,6 +300,7 @@ describe('OrdersService - response mapping', () => {
 
   beforeEach(() => {
     service = new OrdersService(
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -478,6 +483,7 @@ describe('OrdersService - admin customer resolution', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     const result = await (
@@ -513,6 +519,7 @@ describe('OrdersService - admin customer resolution', () => {
       {
         user: { findFirst: jest.fn() },
       } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -554,6 +561,7 @@ describe('OrdersService - admin customer resolution', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -592,6 +600,7 @@ describe('OrdersService - admin customer resolution', () => {
     };
     const service = new OrdersService(
       prisma as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -644,6 +653,7 @@ describe('OrdersService - admin customer resolution', () => {
       {
         user: { findFirst: jest.fn().mockResolvedValue(null) },
       } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

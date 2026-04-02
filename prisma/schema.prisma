@@ -127,12 +127,14 @@ enum ChatThreadStatus {
 enum ChatThreadSource {
   SUPPORT
   ORDER
+  DELIVERY
 }
 
 enum ChatMessageSenderType {
   CUSTOMER
   ADMIN
   STAFF
+  DELIVERYMAN
 }
 
 enum GroupOrderStatus {
@@ -740,26 +742,30 @@ model StaffUser {
 }
 
 model Deliveryman {
-  id            String            @id @default(cuid())
-  tenantId      String            @map("tenant_id")
-  restaurantId  String            @map("restaurant_id")
-  branchId      String            @map("branch_id")
-  firstName     String            @map("first_name")
-  lastName      String            @map("last_name")
-  email         String
-  phone         String
-  vehicleType   String?           @map("vehicle_type")
-  vehicleNumber String?           @map("vehicle_number")
-  status        DeliverymanStatus @default(OFFLINE)
-  isActive      Boolean           @default(true) @map("is_active")
-  deletedAt     DateTime?         @map("deleted_at") @db.Timestamptz
-  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  id               String            @id @default(cuid())
+  tenantId         String            @map("tenant_id")
+  restaurantId     String            @map("restaurant_id")
+  branchId         String            @map("branch_id")
+  firstName        String            @map("first_name")
+  lastName         String            @map("last_name")
+  email            String
+  phone            String
+  vehicleType      String?           @map("vehicle_type")
+  vehicleNumber    String?           @map("vehicle_number")
+  password         String?
+  refreshTokenHash String?           @map("refresh_token_hash")
+  status           DeliverymanStatus @default(OFFLINE)
+  isActive         Boolean           @default(true) @map("is_active")
+  deletedAt        DateTime?         @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant     Tenant     @relation(fields: [tenantId], references: [id])
-  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
-  branch     Branch     @relation(fields: [branchId], references: [id])
-  orders     Order[]
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])
+  branch           Branch        @relation(fields: [branchId], references: [id])
+  orders           Order[]
+  chatThreads      ChatThread[]  @relation("ChatThreadDeliveryman")
+  sentChatMessages ChatMessage[] @relation("ChatMessageDeliverymanSender")
 
   @@unique([restaurantId, email])
   @@unique([branchId, phone])
@@ -993,6 +999,7 @@ model ChatThread {
   branchId            String?          @map("branch_id")
   customerId          String           @map("customer_id")
   orderId             String?          @map("order_id")
+  deliverymanId       String?          @map("deliveryman_id")
   source              ChatThreadSource @default(SUPPORT)
   subject             String?
   status              ChatThreadStatus @default(OPEN)
@@ -1007,38 +1014,43 @@ model ChatThread {
   createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
-  branch        Branch?       @relation(fields: [branchId], references: [id])
-  customer      User          @relation("ChatThreadCustomer", fields: [customerId], references: [id])
-  order         Order?        @relation(fields: [orderId], references: [id])
-  assignedStaff StaffUser?    @relation("ChatThreadAssignedStaff", fields: [assignedStaffUserId], references: [id])
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  restaurant    Restaurant   @relation(fields: [restaurantId], references: [id])
+  branch        Branch?      @relation(fields: [branchId], references: [id])
+  customer      User         @relation("ChatThreadCustomer", fields: [customerId], references: [id])
+  order         Order?       @relation(fields: [orderId], references: [id])
+  deliveryman   Deliveryman? @relation("ChatThreadDeliveryman", fields: [deliverymanId], references: [id])
+  assignedStaff StaffUser?   @relation("ChatThreadAssignedStaff", fields: [assignedStaffUserId], references: [id])
   messages      ChatMessage[]
 
   @@index([tenantId, restaurantId, status, lastMessageAt])
   @@index([branchId, status, lastMessageAt])
   @@index([customerId, status, lastMessageAt])
   @@index([orderId, status, lastMessageAt])
+  @@index([deliverymanId, status, lastMessageAt])
   @@index([assignedStaffUserId, status, lastMessageAt])
   @@map("chat_threads")
 }
 
 model ChatMessage {
-  id                String                @id @default(cuid())
-  threadId          String                @map("thread_id")
-  senderType        ChatMessageSenderType @map("sender_type")
-  senderUserId      String?               @map("sender_user_id")
-  senderStaffUserId String?               @map("sender_staff_user_id")
-  body              String
-  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  id                  String                @id @default(cuid())
+  threadId            String                @map("thread_id")
+  senderType          ChatMessageSenderType @map("sender_type")
+  senderUserId        String?               @map("sender_user_id")
+  senderStaffUserId   String?               @map("sender_staff_user_id")
+  senderDeliverymanId String?               @map("sender_deliveryman_id")
+  body                String
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz
 
-  thread          ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  senderUser      User?      @relation("ChatMessageUserSender", fields: [senderUserId], references: [id])
-  senderStaffUser StaffUser? @relation("ChatMessageStaffSender", fields: [senderStaffUserId], references: [id])
+  thread            ChatThread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderUser        User?        @relation("ChatMessageUserSender", fields: [senderUserId], references: [id])
+  senderStaffUser   StaffUser?   @relation("ChatMessageStaffSender", fields: [senderStaffUserId], references: [id])
+  senderDeliveryman Deliveryman? @relation("ChatMessageDeliverymanSender", fields: [senderDeliverymanId], references: [id])
 
   @@index([threadId, createdAt])
   @@index([senderUserId, createdAt])
   @@index([senderStaffUserId, createdAt])
+  @@index([senderDeliverymanId, createdAt])
   @@map("chat_messages")
 }
 

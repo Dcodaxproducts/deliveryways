@@ -8,6 +8,7 @@ import {
   ChatMessageSenderType,
   ChatThreadSource,
   ChatThreadStatus,
+  OrderStatus,
   Prisma,
   StaffPanelType,
   UserRole,
@@ -122,6 +123,7 @@ export class ChatService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
       customerId: scope.customerId,
+      deliverymanId: scope.deliverymanId,
       allowAssignedStaffUserId: scope.allowAssignedStaffUserId,
       unreadOnlyFor: scope.unreadOnlyFor,
     });
@@ -315,6 +317,7 @@ export class ChatService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
       customerId: scope.customerId,
+      deliverymanId: scope.deliverymanId,
       allowAssignedStaffUserId: scope.allowAssignedStaffUserId,
     });
 
@@ -339,6 +342,7 @@ export class ChatService {
           restaurantId: scope.restaurantId,
           branchId: scope.branchId,
           customerId: scope.customerId,
+          deliverymanId: scope.deliverymanId,
           allowAssignedStaffUserId: scope.allowAssignedStaffUserId,
           unreadOnlyFor: scope.unreadOnlyFor,
         }),
@@ -401,6 +405,101 @@ export class ChatService {
     };
   }
 
+  async ensureDeliveryThreadForOrder(orderId: string, deliverymanId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        customerId: true,
+        deliverymanId: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const existingThread = await this.chatRepository.findDeliveryThreadByOrder(
+      order.id,
+    );
+
+    if (existingThread) {
+      const updated = await this.chatRepository.updateThread(
+        existingThread.id,
+        {
+          deliveryman: { connect: { id: deliverymanId } },
+          status:
+            existingThread.status === ChatThreadStatus.RESOLVED
+              ? ChatThreadStatus.OPEN
+              : undefined,
+          resolvedAt:
+            existingThread.status === ChatThreadStatus.RESOLVED
+              ? null
+              : undefined,
+        },
+      );
+      const thread = await this.requireThread(updated.id);
+      await this.chatRealtimeService.emitThreadUpdated(
+        this.toThreadDetails(thread),
+      );
+      return thread;
+    }
+
+    const thread = await this.chatRepository.createThread({
+      tenant: { connect: { id: order.tenantId } },
+      restaurant: { connect: { id: order.restaurantId } },
+      branch: order.branchId ? { connect: { id: order.branchId } } : undefined,
+      customer: { connect: { id: order.customerId } },
+      order: { connect: { id: order.id } },
+      deliveryman: { connect: { id: deliverymanId } },
+      source: ChatThreadSource.DELIVERY,
+      subject: 'Delivery chat',
+      status: ChatThreadStatus.OPEN,
+      lastMessageAt: new Date(),
+      customerUnreadCount: 0,
+      staffUnreadCount: 0,
+    });
+    const fullThread = await this.requireThread(thread.id);
+    await this.chatRealtimeService.emitThreadCreated(
+      this.toThreadDetails(fullThread),
+    );
+    return fullThread;
+  }
+
+  async syncDeliveryThreadForOrderLifecycle(
+    orderId: string,
+    orderStatus: OrderStatus,
+  ) {
+    if (
+      orderStatus !== OrderStatus.DELIVERED &&
+      orderStatus !== OrderStatus.CANCELLED
+    ) {
+      return;
+    }
+
+    const existingThread =
+      await this.chatRepository.findDeliveryThreadByOrder(orderId);
+
+    if (
+      !existingThread ||
+      existingThread.status === ChatThreadStatus.RESOLVED
+    ) {
+      return;
+    }
+
+    const updated = await this.chatRepository.updateThread(existingThread.id, {
+      status: ChatThreadStatus.RESOLVED,
+      resolvedAt: new Date(),
+    });
+    const thread = await this.requireThread(updated.id);
+    await this.chatRealtimeService.emitThreadUpdated(
+      this.toThreadDetails(thread),
+    );
+  }
+
   private async resolveSupportThreadContext(
     user: AuthUserContext,
     requestedBranchId?: string,
@@ -451,6 +550,7 @@ export class ChatService {
         branchId: query.branchId,
         customerId: user.uid,
         allowAssignedStaffUserId: false,
+        deliverymanId: undefined,
         unreadOnlyFor: 'customer' as const,
       };
     }
@@ -460,6 +560,18 @@ export class ChatService {
       return this.resolveStaffScope(user, query);
     }
 
+    if (user.role === 'DELIVERYMAN') {
+      return {
+        tenantId: undefined,
+        restaurantId: user.rid,
+        branchId: user.bid,
+        customerId: undefined,
+        deliverymanId: user.uid,
+        allowAssignedStaffUserId: false,
+        unreadOnlyFor: 'staff' as const,
+      };
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return {
         tenantId: undefined,
@@ -467,6 +579,7 @@ export class ChatService {
         branchId: query.branchId,
         customerId: undefined,
         allowAssignedStaffUserId: true,
+        deliverymanId: undefined,
         unreadOnlyFor: 'staff' as const,
       };
     }
@@ -482,6 +595,7 @@ export class ChatService {
         branchId: user.bid,
         customerId: undefined,
         allowAssignedStaffUserId: true,
+        deliverymanId: undefined,
         unreadOnlyFor: 'staff' as const,
       };
     }
@@ -500,6 +614,7 @@ export class ChatService {
       branchId: query.branchId,
       customerId: undefined,
       allowAssignedStaffUserId: true,
+      deliverymanId: undefined,
       unreadOnlyFor: 'staff' as const,
     };
   }
@@ -519,6 +634,7 @@ export class ChatService {
         branchId: user.bid,
         customerId: undefined,
         allowAssignedStaffUserId: true,
+        deliverymanId: undefined,
         unreadOnlyFor: 'staff' as const,
       };
     }
@@ -538,6 +654,7 @@ export class ChatService {
         branchId: query.branchId,
         customerId: undefined,
         allowAssignedStaffUserId: true,
+        deliverymanId: undefined,
         unreadOnlyFor: 'staff' as const,
       };
     }
@@ -548,6 +665,7 @@ export class ChatService {
       branchId: query.branchId,
       customerId: undefined,
       allowAssignedStaffUserId: true,
+      deliverymanId: undefined,
       unreadOnlyFor: 'staff' as const,
     };
   }
@@ -560,6 +678,7 @@ export class ChatService {
       restaurantId: string;
       branchId: string | null;
       customerId: string;
+      deliverymanId?: string | null;
     },
     operation: StaffPermissionOperation | 'customer',
   ) {
@@ -581,6 +700,26 @@ export class ChatService {
         operation === 'customer' ? 'reply' : operation,
       );
       this.assertStaffThreadScope(user, thread);
+      return;
+    }
+
+    if (user.role === 'DELIVERYMAN') {
+      if (thread.deliverymanId !== user.uid) {
+        throw new ForbiddenException('Cross-deliveryman chat access denied');
+      }
+
+      if (user.rid && user.rid !== thread.restaurantId) {
+        throw new ForbiddenException(
+          'You cannot access conversations outside your restaurant',
+        );
+      }
+
+      if (user.bid && user.bid !== thread.branchId) {
+        throw new ForbiddenException(
+          'You cannot access conversations outside your branch',
+        );
+      }
+
       return;
     }
 
@@ -780,6 +919,15 @@ export class ChatService {
       };
     }
 
+    if (user.role === 'DELIVERYMAN') {
+      return {
+        thread: { connect: { id: threadId } },
+        senderType: ChatMessageSenderType.DELIVERYMAN,
+        senderDeliveryman: { connect: { id: user.uid } },
+        body,
+      };
+    }
+
     return {
       thread: { connect: { id: threadId } },
       senderType: ChatMessageSenderType.ADMIN,
@@ -795,6 +943,7 @@ export class ChatService {
     branchId: string | null;
     customerId: string;
     orderId: string | null;
+    deliverymanId: string | null;
     source: ChatThreadSource;
     subject: string | null;
     status: ChatThreadStatus;
@@ -835,6 +984,14 @@ export class ChatService {
       email: string;
       panelType: StaffPanelType;
     } | null;
+    deliveryman: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      status: string;
+    } | null;
     messages: Array<{
       id: string;
       threadId: string;
@@ -843,6 +1000,7 @@ export class ChatService {
       createdAt: Date;
       senderUserId: string | null;
       senderStaffUserId: string | null;
+      senderDeliverymanId: string | null;
       senderUser: {
         id: string;
         role: UserRole;
@@ -862,6 +1020,14 @@ export class ChatService {
         avatarUrl: string | null;
         panelType: StaffPanelType;
       } | null;
+      senderDeliveryman: {
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        phone: string;
+        status: string;
+      } | null;
     }>;
   }) {
     const latestMessage = thread.messages[0] ?? null;
@@ -873,6 +1039,7 @@ export class ChatService {
       branchId: thread.branchId,
       customerId: thread.customerId,
       orderId: thread.orderId,
+      deliverymanId: thread.deliverymanId,
       source: thread.source,
       subject: thread.subject,
       status: thread.status,
@@ -895,6 +1062,7 @@ export class ChatService {
           }
         : null,
       assignedStaff: thread.assignedStaff,
+      deliveryman: thread.deliveryman,
       latestMessage: latestMessage ? this.toMessageItem(latestMessage) : null,
       unreadForCustomer: this.isUnreadForCustomer(thread),
       unreadForStaff: this.isUnreadForStaff(thread),
@@ -919,6 +1087,7 @@ export class ChatService {
       createdAt: message.createdAt,
       senderUserId: message.senderUserId,
       senderStaffUserId: message.senderStaffUserId,
+      senderDeliverymanId: message.senderDeliverymanId,
       sender:
         message.senderType === ChatMessageSenderType.STAFF
           ? message.senderStaffUser
@@ -931,18 +1100,39 @@ export class ChatService {
                 panelType: message.senderStaffUser.panelType,
               }
             : null
-          : message.senderUser
-            ? {
-                id: message.senderUser.id,
-                email: message.senderUser.email,
-                role: message.senderUser.role,
-                isGuest: message.senderUser.isGuest,
-                firstName: message.senderUser.profile?.firstName ?? null,
-                lastName: message.senderUser.profile?.lastName ?? null,
-                avatarUrl: message.senderUser.profile?.avatarUrl ?? null,
-              }
-            : null,
+          : message.senderType === ChatMessageSenderType.DELIVERYMAN
+            ? message.senderDeliveryman
+              ? {
+                  id: message.senderDeliveryman.id,
+                  email: message.senderDeliveryman.email,
+                  firstName: message.senderDeliveryman.firstName,
+                  lastName: message.senderDeliveryman.lastName,
+                  phone: message.senderDeliveryman.phone,
+                  status: message.senderDeliveryman.status,
+                }
+              : null
+            : message.senderUser
+              ? {
+                  id: message.senderUser.id,
+                  email: message.senderUser.email,
+                  role: message.senderUser.role,
+                  isGuest: message.senderUser.isGuest,
+                  firstName: message.senderUser.profile?.firstName ?? null,
+                  lastName: message.senderUser.profile?.lastName ?? null,
+                  avatarUrl: message.senderUser.profile?.avatarUrl ?? null,
+                }
+              : null,
     };
+  }
+
+  private async requireThread(id: string) {
+    const thread = await this.chatRepository.findThreadById(id);
+
+    if (!thread) {
+      throw new NotFoundException('Chat thread not found');
+    }
+
+    return thread;
   }
 
   private toCustomerSummary(

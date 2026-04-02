@@ -49,6 +49,7 @@ export class ChatController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.STAFF,
+    RolesEnum.DELIVERYMAN,
   )
   @Get('summary')
   summary(
@@ -66,6 +67,7 @@ export class ChatController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.STAFF,
+    RolesEnum.DELIVERYMAN,
   )
   @Get()
   list(
@@ -83,6 +85,7 @@ export class ChatController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.STAFF,
+    RolesEnum.DELIVERYMAN,
   )
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -97,6 +100,7 @@ export class ChatController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.STAFF,
+    RolesEnum.DELIVERYMAN,
   )
   @Post(':id/messages')
   reply(
@@ -115,6 +119,7 @@ export class ChatController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.STAFF,
+    RolesEnum.DELIVERYMAN,
   )
   @Post(':id/read')
   markRead(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {

@@ -48,6 +48,14 @@ export class CreateDeliverymanDto {
   vehicleNumber?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Temporary password for deliveryman app login. Falls back to phone when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @ApiPropertyOptional({
     enum: DeliverymanStatus,
     default: DeliverymanStatus.OFFLINE,
   })
@@ -91,6 +99,11 @@ export class UpdateDeliverymanDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  password?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

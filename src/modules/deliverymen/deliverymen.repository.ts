@@ -8,6 +8,24 @@ import { PrismaService } from '../../database';
 export class DeliverymenRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly deliverymanSelect = {
+    id: true,
+    tenantId: true,
+    restaurantId: true,
+    branchId: true,
+    firstName: true,
+    lastName: true,
+    email: true,
+    phone: true,
+    vehicleType: true,
+    vehicleNumber: true,
+    status: true,
+    isActive: true,
+    deletedAt: true,
+    createdAt: true,
+    updatedAt: true,
+  } satisfies Prisma.DeliverymanSelect;
+
   private client(tx?: PrismaTx): PrismaClient | PrismaTx {
     return tx ?? this.prisma;
   }
@@ -15,7 +33,8 @@ export class DeliverymenRepository {
   async create(data: Prisma.DeliverymanCreateInput, tx?: PrismaTx) {
     return this.client(tx).deliveryman.create({
       data,
-      include: {
+      select: {
+        ...this.deliverymanSelect,
         branch: { select: { id: true, name: true } },
       },
     });
@@ -24,7 +43,8 @@ export class DeliverymenRepository {
   async findById(id: string) {
     return this.prisma.deliveryman.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...this.deliverymanSelect,
         branch: { select: { id: true, name: true } },
         orders: {
           where: { status: 'OUT_FOR_DELIVERY' },
@@ -83,7 +103,8 @@ export class DeliverymenRepository {
         orderBy: {
           [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
         },
-        include: {
+        select: {
+          ...this.deliverymanSelect,
           branch: { select: { id: true, name: true } },
           _count: {
             select: {
@@ -106,7 +127,8 @@ export class DeliverymenRepository {
     return this.client(tx).deliveryman.update({
       where: { id },
       data,
-      include: {
+      select: {
+        ...this.deliverymanSelect,
         branch: { select: { id: true, name: true } },
       },
     });
@@ -120,6 +142,7 @@ export class DeliverymenRepository {
         isActive: false,
         status: 'INACTIVE',
       },
+      select: this.deliverymanSelect,
     });
   }
 }

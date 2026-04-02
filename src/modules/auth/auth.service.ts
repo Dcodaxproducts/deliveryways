@@ -615,6 +615,67 @@ export class AuthService {
     };
   }
 
+  async loginDeliveryman(dto: LoginDto) {
+    const deliveryman = await this.prisma.deliveryman.findFirst({
+      where: {
+        email: dto.email.trim().toLowerCase(),
+        deletedAt: null,
+      },
+    });
+
+    if (!deliveryman?.password) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isValidPassword = await bcrypt.compare(
+      dto.password,
+      deliveryman.password,
+    );
+    if (!isValidPassword) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!deliveryman.isActive) {
+      throw new ForbiddenException('Your account is inactive');
+    }
+
+    const auth = await this.issueAuthTokens({
+      uid: deliveryman.id,
+      actorType: 'DELIVERYMAN',
+      role: 'DELIVERYMAN',
+      tid: deliveryman.tenantId,
+      rid: deliveryman.restaurantId,
+      bid: deliveryman.branchId,
+    });
+
+    return {
+      data: {
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: deliveryman.id,
+          email: deliveryman.email,
+          role: 'DELIVERYMAN',
+          actorType: 'DELIVERYMAN',
+          tenantId: deliveryman.tenantId,
+          restaurantId: deliveryman.restaurantId,
+          branchId: deliveryman.branchId,
+          isVerified: true,
+          isApproved: true,
+          isGuest: false,
+          profile: {
+            firstName: deliveryman.firstName,
+            lastName: deliveryman.lastName,
+            phone: deliveryman.phone,
+            avatarUrl: null,
+            bio: null,
+          },
+        },
+      },
+      message: 'Deliveryman login successful',
+    };
+  }
+
   async logout(user: AuthUserContext) {
     if (user.actorType === 'STAFF') {
       const staff = await this.staffManagementRepository.findById(user.uid);
@@ -625,6 +686,26 @@ export class AuthService {
 
       await this.staffManagementRepository.update(user.uid, {
         refreshTokenHash: null,
+      });
+
+      return {
+        data: null,
+        message: 'Logout successful',
+      };
+    }
+
+    if (user.actorType === 'DELIVERYMAN') {
+      const deliveryman = await this.prisma.deliveryman.findUnique({
+        where: { id: user.uid },
+      });
+
+      if (!deliveryman || deliveryman.deletedAt) {
+        throw new NotFoundException('Deliveryman account not found');
+      }
+
+      await this.prisma.deliveryman.update({
+        where: { id: user.uid },
+        data: { refreshTokenHash: null },
       });
 
       return {
@@ -648,13 +729,17 @@ export class AuthService {
   }
 
   async refreshTokens(dto: RefreshDto) {
-    let payload: { uid: string; type?: string; actorType?: 'USER' | 'STAFF' };
+    let payload: {
+      uid: string;
+      type?: string;
+      actorType?: 'USER' | 'STAFF' | 'DELIVERYMAN';
+    };
 
     try {
       payload = await this.jwtService.verifyAsync<{
         uid: string;
         type?: string;
-        actorType?: 'USER' | 'STAFF';
+        actorType?: 'USER' | 'STAFF' | 'DELIVERYMAN';
       }>(dto.refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
       });
@@ -980,6 +1065,34 @@ export class AuthService {
       };
     }
 
+    if (user.actorType === 'DELIVERYMAN') {
+      const deliveryman = await this.prisma.deliveryman.findUnique({
+        where: { id: user.uid },
+      });
+      if (!deliveryman?.password || deliveryman.deletedAt) {
+        throw new NotFoundException('Deliveryman account not found');
+      }
+
+      const isValidPassword = await bcrypt.compare(
+        dto.currentPassword,
+        deliveryman.password,
+      );
+
+      if (!isValidPassword) {
+        throw new UnauthorizedException('Current password is invalid');
+      }
+
+      await this.prisma.deliveryman.update({
+        where: { id: deliveryman.id },
+        data: { password: await bcrypt.hash(dto.newPassword, 10) },
+      });
+
+      return {
+        data: null,
+        message: 'Password changed successfully',
+      };
+    }
+
     const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
@@ -1032,6 +1145,38 @@ export class AuthService {
             bio: staff.bio,
           },
           staffRole: staff.staffRole,
+        },
+        message: 'Current user context fetched',
+      };
+    }
+
+    if (user.actorType === 'DELIVERYMAN') {
+      const deliveryman = await this.prisma.deliveryman.findUnique({
+        where: { id: user.uid },
+      });
+      if (!deliveryman || deliveryman.deletedAt) {
+        throw new NotFoundException('Deliveryman account not found');
+      }
+
+      return {
+        data: {
+          id: deliveryman.id,
+          email: deliveryman.email,
+          role: 'DELIVERYMAN',
+          actorType: 'DELIVERYMAN',
+          tenantId: deliveryman.tenantId,
+          restaurantId: deliveryman.restaurantId,
+          branchId: deliveryman.branchId,
+          isVerified: true,
+          isApproved: true,
+          isGuest: false,
+          profile: {
+            firstName: deliveryman.firstName,
+            lastName: deliveryman.lastName,
+            phone: deliveryman.phone,
+            avatarUrl: null,
+            bio: null,
+          },
         },
         message: 'Current user context fetched',
       };
@@ -1101,6 +1246,12 @@ export class AuthService {
       };
     }
 
+    if (user.actorType === 'DELIVERYMAN') {
+      throw new ForbiddenException(
+        'Deliveryman profile updates are not supported here',
+      );
+    }
+
     const dbUser = await this.usersService.findById(user.uid);
     if (!dbUser) {
       throw new NotFoundException('User not found');
@@ -1154,6 +1305,12 @@ export class AuthService {
       };
     }
 
+    if (user.actorType === 'DELIVERYMAN') {
+      throw new ForbiddenException(
+        'Deliveryman accounts must be managed by admins',
+      );
+    }
+
     await this.usersService.softDeleteUser(user.uid);
     return {
       data: null,
@@ -1166,6 +1323,12 @@ export class AuthService {
       throw new ForbiddenException('Staff accounts cannot cancel deletion');
     }
 
+    if (user.actorType === 'DELIVERYMAN') {
+      throw new ForbiddenException(
+        'Deliveryman accounts cannot cancel deletion',
+      );
+    }
+
     await this.usersService.cancelDeleteUser(user.uid);
     return {
       data: null,
@@ -1175,7 +1338,7 @@ export class AuthService {
 
   private async issueAuthTokens(payload: {
     uid: string;
-    actorType: 'USER' | 'STAFF';
+    actorType: 'USER' | 'STAFF' | 'DELIVERYMAN';
     role: string;
     tid: string | null | undefined;
     rid: string | null | undefined;
@@ -1201,6 +1364,11 @@ export class AuthService {
       await this.staffManagementRepository.update(payload.uid, {
         refreshTokenHash,
       });
+    } else if (payload.actorType === 'DELIVERYMAN') {
+      await this.prisma.deliveryman.update({
+        where: { id: payload.uid },
+        data: { refreshTokenHash },
+      });
     } else {
       await this.usersService.setRefreshTokenHash(
         payload.uid,
@@ -1216,7 +1384,7 @@ export class AuthService {
 
   private normalizeAuthPayload(payload: {
     uid: string;
-    actorType: 'USER' | 'STAFF';
+    actorType: 'USER' | 'STAFF' | 'DELIVERYMAN';
     role: string;
     tid: string | null | undefined;
     rid: string | null | undefined;

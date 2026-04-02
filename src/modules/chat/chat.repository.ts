@@ -53,6 +53,16 @@ export class ChatRepository {
         panelType: true,
       },
     },
+    deliveryman: {
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        status: true,
+      },
+    },
   } satisfies Prisma.ChatThreadInclude;
 
   readonly messageInclude = {
@@ -79,6 +89,16 @@ export class ChatRepository {
         lastName: true,
         avatarUrl: true,
         panelType: true,
+      },
+    },
+    senderDeliveryman: {
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        status: true,
       },
     },
   } satisfies Prisma.ChatMessageInclude;
@@ -123,12 +143,23 @@ export class ChatRepository {
     });
   }
 
+  async findDeliveryThreadByOrder(orderId: string) {
+    return this.prisma.chatThread.findFirst({
+      where: {
+        orderId,
+        source: 'DELIVERY',
+      },
+      include: this.threadInclude,
+    });
+  }
+
   buildWhere(input: {
     query: ListChatThreadsDto;
     tenantId?: string;
     restaurantId?: string;
     branchId?: string;
     customerId?: string;
+    deliverymanId?: string;
     allowAssignedStaffUserId?: boolean;
     unreadOnlyFor?: 'customer' | 'staff';
   }): Prisma.ChatThreadWhereInput {
@@ -138,6 +169,7 @@ export class ChatRepository {
       restaurantId,
       branchId,
       customerId,
+      deliverymanId,
       allowAssignedStaffUserId,
       unreadOnlyFor,
     } = input;
@@ -154,6 +186,7 @@ export class ChatRepository {
       ...(restaurantId ? { restaurantId } : {}),
       ...(branchId ? { branchId } : {}),
       ...(customerId ? { customerId } : {}),
+      ...(deliverymanId ? { deliverymanId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.orderId ? { orderId: query.orderId } : {}),
