@@ -21,6 +21,7 @@ describe('GroupOrdersService', () => {
 
     const ordersService = {
       create: jest.fn(),
+      quote: jest.fn(),
       quoteForCouponValidation: jest.fn(),
     };
 
@@ -263,6 +264,107 @@ describe('GroupOrdersService', () => {
     );
   });
 
+  it('includes live order summary on group-order details', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    groupOrdersRepository.findSessionById.mockResolvedValue({
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: new Date('2099-03-30T19:30:00.000Z'),
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 2,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quote.mockResolvedValue({
+      data: {
+        branchId: 'branch-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        orderType: 'TAKEAWAY',
+        orderTime: '2099-03-30T19:30:00.000Z',
+        isScheduled: true,
+        subtotal: 500,
+        taxAmount: 50,
+        deliveryFee: 0,
+        discountAmount: 0,
+        totalAmount: 550,
+        couponCode: null,
+        items: [],
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.details(customerUser, 'session-1');
+
+    expect(result.data.summary).toEqual(
+      expect.objectContaining({
+        source: 'quote',
+        orderType: 'TAKEAWAY',
+        subtotal: 500,
+        taxAmount: 50,
+        totalAmount: 550,
+        itemCount: 1,
+      }),
+    );
+  });
+
   it('validates group-order coupon before saving it', async () => {
     const { service, groupOrdersRepository, ordersService } = makeService();
     const session = {
@@ -334,6 +436,24 @@ describe('GroupOrdersService', () => {
       .mockResolvedValueOnce(session)
       .mockResolvedValueOnce({ ...session, couponCode: 'SAVE10' });
     groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quote.mockResolvedValue({
+      data: {
+        branchId: 'branch-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        orderType: 'TAKEAWAY',
+        orderTime: new Date().toISOString(),
+        isScheduled: false,
+        subtotal: 500,
+        taxAmount: 0,
+        deliveryFee: 0,
+        discountAmount: 100,
+        totalAmount: 400,
+        couponCode: 'SAVE10',
+        items: [],
+      },
+      message: 'Order quote generated successfully',
+    });
     ordersService.quoteForCouponValidation.mockResolvedValue({
       data: {
         couponCode: 'SAVE10',

@@ -54,6 +54,13 @@ export class GroupOrdersRepository {
       select: {
         id: true,
         status: true,
+        orderType: true,
+        paymentMethod: true,
+        orderTime: true,
+        subtotal: true,
+        taxAmount: true,
+        deliveryFee: true,
+        discountAmount: true,
         totalAmount: true,
         paymentStatus: true,
       },

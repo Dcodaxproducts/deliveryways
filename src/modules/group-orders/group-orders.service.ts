@@ -90,7 +90,7 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(session.id),
+      data: await this.buildSessionResponseOrThrow(user, session.id),
       message: 'Group order created successfully',
     };
   }
@@ -143,7 +143,7 @@ export class GroupOrdersService {
     }
 
     return {
-      data: await this.buildSessionResponseOrThrow(session.id),
+      data: await this.buildSessionResponseOrThrow(user, session.id),
       message: 'Joined group order successfully',
     };
   }
@@ -157,7 +157,7 @@ export class GroupOrdersService {
 
     return {
       data: await Promise.all(
-        items.map(async (item) => this.buildSessionResponse(item)),
+        items.map(async (item) => this.buildSessionResponse(user, item)),
       ),
       message: 'Group orders fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -169,7 +169,7 @@ export class GroupOrdersService {
     const session = await this.getSessionForMemberOrThrow(user, id);
 
     return {
-      data: await this.buildSessionResponse(session),
+      data: await this.buildSessionResponse(user, session),
       message: 'Group order fetched successfully',
     };
   }
@@ -223,7 +223,7 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(id),
+      data: await this.buildSessionResponseOrThrow(user, id),
       message: 'Group order updated successfully',
     };
   }
@@ -253,7 +253,7 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(id),
+      data: await this.buildSessionResponseOrThrow(user, id),
       message: 'Group order item added successfully',
     };
   }
@@ -319,7 +319,7 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(id),
+      data: await this.buildSessionResponseOrThrow(user, id),
       message: 'Group order item updated successfully',
     };
   }
@@ -342,7 +342,7 @@ export class GroupOrdersService {
     await this.groupOrdersRepository.deleteItem(itemId);
 
     return {
-      data: await this.buildSessionResponseOrThrow(id),
+      data: await this.buildSessionResponseOrThrow(user, id),
       message: 'Group order item removed successfully',
     };
   }
@@ -364,7 +364,7 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(id),
+      data: await this.buildSessionResponseOrThrow(user, id),
       message: 'Left group order successfully',
     };
   }
@@ -395,7 +395,7 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(id),
+      data: await this.buildSessionResponseOrThrow(user, id),
       message: 'Group order status updated successfully',
     };
   }
@@ -407,7 +407,7 @@ export class GroupOrdersService {
 
     return {
       data: {
-        session: await this.buildSessionResponse(session),
+        session: await this.buildSessionResponse(user, session),
         quote: quote.data,
       },
       message: 'Group order quote generated successfully',
@@ -445,7 +445,7 @@ export class GroupOrdersService {
     return {
       data: {
         order: order.data,
-        session: await this.buildSessionResponseOrThrow(id),
+        session: await this.buildSessionResponseOrThrow(user, id),
       },
       message: 'Group order checked out successfully',
     };
@@ -624,15 +624,16 @@ export class GroupOrdersService {
     }
   }
 
-  private async buildSessionResponseOrThrow(id: string) {
+  private async buildSessionResponseOrThrow(user: AuthUserContext, id: string) {
     const session = await this.groupOrdersRepository.findSessionById(id);
     if (!session) {
       throw new NotFoundException('Group order not found');
     }
-    return this.buildSessionResponse(session);
+    return this.buildSessionResponse(user, session);
   }
 
   private async buildSessionResponse(
+    user: AuthUserContext,
     session: NonNullable<
       Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
     >,
@@ -651,6 +652,7 @@ export class GroupOrdersService {
         )
         .map((participant) => participant.id),
     );
+    const summary = await this.buildSessionSummary(user, session);
 
     return {
       id: session.id,
@@ -678,9 +680,14 @@ export class GroupOrdersService {
       finalOrder: session.finalOrder
         ? {
             ...session.finalOrder,
+            subtotal: Number(session.finalOrder.subtotal),
+            taxAmount: Number(session.finalOrder.taxAmount),
+            deliveryFee: Number(session.finalOrder.deliveryFee),
+            discountAmount: Number(session.finalOrder.discountAmount),
             totalAmount: Number(session.finalOrder.totalAmount),
           }
         : null,
+      summary,
       participants: session.participants.map((participant) => ({
         id: participant.id,
         userId: participant.userId,
@@ -704,6 +711,71 @@ export class GroupOrdersService {
           })),
       })),
       participantCount: participantIds.size,
+      itemCount: session.items.length,
+    };
+  }
+
+  private async buildSessionSummary(
+    user: AuthUserContext,
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+  ) {
+    if (session.finalOrder) {
+      return {
+        source: 'final_order' as const,
+        branchId: session.branchId,
+        restaurantId: session.restaurantId,
+        customerId: session.hostUserId,
+        orderType: this.toOrderTypeEnum(session.finalOrder.orderType),
+        orderTime:
+          (session.finalOrder.orderTime ?? session.orderTime)?.toISOString() ??
+          null,
+        isScheduled: Boolean(
+          session.finalOrder.orderTime
+            ? session.finalOrder.orderTime.getTime() > Date.now()
+            : false,
+        ),
+        subtotal: Number(session.finalOrder.subtotal),
+        taxAmount: Number(session.finalOrder.taxAmount),
+        deliveryFee: Number(session.finalOrder.deliveryFee),
+        discountAmount: Number(session.finalOrder.discountAmount),
+        totalAmount: Number(session.finalOrder.totalAmount),
+        couponCode: session.couponCode,
+        itemCount: session.items.length,
+      };
+    }
+
+    if (!session.items.length) {
+      return {
+        source: 'session' as const,
+        branchId: session.branchId,
+        restaurantId: session.restaurantId,
+        customerId: session.hostUserId,
+        orderType: this.toOrderTypeEnum(session.orderType),
+        orderTime: (session.orderTime ?? new Date()).toISOString(),
+        isScheduled: Boolean(
+          session.orderTime ? session.orderTime.getTime() > Date.now() : false,
+        ),
+        subtotal: 0,
+        taxAmount: 0,
+        deliveryFee: 0,
+        discountAmount: 0,
+        totalAmount: 0,
+        couponCode: session.couponCode,
+        itemCount: 0,
+      };
+    }
+
+    const quote = await this.ordersService.quote(
+      user,
+      this.toOrderQuotePayload(session),
+    );
+
+    return {
+      source: 'quote' as const,
+      ...quote.data,
+      couponCode: quote.data.couponCode ?? session.couponCode,
       itemCount: session.items.length,
     };
   }
