@@ -44,8 +44,9 @@ export interface TableReservationRecord {
   reservationDate: string;
   guestCount: number;
   note: string | null;
-  status: 'REQUESTED';
+  status: 'REQUESTED' | 'CANCELLED';
   createdAt: string;
+  cancelledAt: string | null;
 }
 
 export interface LoyaltyRedemptionRecord {
@@ -536,6 +537,7 @@ export class CustomerAppService {
       note: dto.note?.trim() || null,
       status: 'REQUESTED',
       createdAt: new Date().toISOString(),
+      cancelledAt: null,
     };
 
     const reservations = [reservation, ...existingReservations].slice(0, 20);
@@ -554,6 +556,57 @@ export class CustomerAppService {
     return {
       data: reservation,
       message: 'Table reservation created successfully',
+    };
+  }
+
+  async cancelTableReservation(
+    user: AuthUserContext,
+    reservationId: string,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const existingReservations = this.readTableReservations(
+      customer.profile?.metadata,
+    );
+
+    const reservation = existingReservations.find(
+      (item) => item.id === reservationId,
+    );
+
+    if (!reservation) {
+      throw new NotFoundException('Table reservation not found');
+    }
+
+    if (reservation.status === 'CANCELLED') {
+      throw new BadRequestException('Table reservation is already cancelled');
+    }
+
+    const cancelledAt = new Date().toISOString();
+    const reservations = existingReservations.map((item) =>
+      item.id === reservationId
+        ? {
+            ...item,
+            status: 'CANCELLED' as const,
+            cancelledAt,
+          }
+        : item,
+    );
+
+    const nextMetadata = this.writeCustomerAppMetadata(
+      customer.profile?.metadata,
+      {
+        tableReservations: reservations,
+      },
+    );
+
+    await this.customerAppRepository.upsertCustomerProfile(
+      customer.id,
+      nextMetadata,
+    );
+
+    return {
+      data: reservations.find((item) => item.id === reservationId) ?? null,
+      message: 'Table reservation cancelled successfully',
     };
   }
 
@@ -725,8 +778,15 @@ export class CustomerAppService {
           reservationDate: reservation.reservationDate,
           guestCount: reservation.guestCount,
           note: typeof reservation.note === 'string' ? reservation.note : null,
-          status: 'REQUESTED' as const,
+          status:
+            reservation.status === 'CANCELLED'
+              ? 'CANCELLED'
+              : ('REQUESTED' as const),
           createdAt: reservation.createdAt,
+          cancelledAt:
+            typeof reservation.cancelledAt === 'string'
+              ? reservation.cancelledAt
+              : null,
         };
       })
       .filter((item): item is TableReservationRecord => item !== null)

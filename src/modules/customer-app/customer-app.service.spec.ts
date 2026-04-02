@@ -400,4 +400,44 @@ describe('CustomerAppService', () => {
     expect(result.data.branchId).toBe('branch-1');
     expect(result.message).toBe('Table reservation created successfully');
   });
+
+  it('cancels a table reservation in customer metadata', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: {
+        metadata: {
+          customerApp: {
+            tableReservations: [
+              {
+                id: 'reservation-1',
+                branchId: 'branch-1',
+                reservationDate: '2099-03-30T19:30:00.000Z',
+                guestCount: 4,
+                note: 'Window side',
+                status: 'REQUESTED',
+                createdAt: '2099-03-29T10:00:00.000Z',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const result = await service.cancelTableReservation(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'reservation-1',
+    );
+
+    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(result.data?.status).toBe('CANCELLED');
+    expect(result.message).toBe('Table reservation cancelled successfully');
+  });
 });

@@ -290,4 +290,26 @@ export class CustomerAppController {
       scope.customerId,
     );
   }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Post('table-reservations/:reservationId/cancel')
+  @ApiOperation({ summary: 'Cancel customer table reservation request' })
+  cancelTableReservation(
+    @CurrentUser() user: AuthUserContext,
+    @Param('reservationId') reservationId: string,
+    @Query() scope: CustomerAppCustomerScopeDto,
+  ) {
+    return this.customerAppService.cancelTableReservation(
+      user,
+      reservationId,
+      scope.customerId,
+    );
+  }
 }
