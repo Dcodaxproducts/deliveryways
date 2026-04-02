@@ -45,6 +45,18 @@ describe('CustomerAppService', () => {
   };
 
   const makeService = () => {
+    const findBranchesPublicContent = jest.fn<
+      Promise<
+        Array<{
+          id: string;
+          name: string;
+          coverImage: string | null;
+          description: string | null;
+        }>
+      >,
+      [string[], string]
+    >();
+
     const repository = {
       findCustomerProfile: jest.fn(),
       findActiveCustomer: jest.fn(),
@@ -52,6 +64,7 @@ describe('CustomerAppService', () => {
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
       findBranchPublicContent: jest.fn(),
+      findBranchesPublicContent,
       listCuisineCategories: jest.fn(),
       findPublicCuisine: jest.fn(),
       listCuisineMenuItems: jest.fn(),
@@ -360,6 +373,62 @@ describe('CustomerAppService', () => {
     expect(repository.upsertCustomerProfile).toHaveBeenCalled();
     expect(result.data.remainingPoints).toBe(200);
     expect(result.message).toBe('Loyalty points redeemed successfully');
+  });
+
+  it('populates branch details in table reservations list', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: {
+        metadata: {
+          customerApp: {
+            tableReservations: [
+              {
+                id: 'reservation-1',
+                branchId: 'branch-1',
+                reservationDate: '2099-03-30T19:30:00.000Z',
+                guestCount: 4,
+                note: 'Window side',
+                status: 'REQUESTED',
+                createdAt: '2099-03-29T10:00:00.000Z',
+                cancelledAt: null,
+              },
+            ],
+          },
+        },
+      },
+    });
+    repository.findBranchesPublicContent.mockResolvedValue([
+      {
+        id: 'branch-1',
+        name: 'Main Branch',
+        coverImage: 'cover.jpg',
+        description: 'Downtown branch',
+      },
+    ]);
+
+    const result = await service.listTableReservations(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'DESC' } as never,
+    );
+
+    expect(repository.findBranchesPublicContent).toHaveBeenCalledWith(
+      ['branch-1'],
+      'restaurant-1',
+    );
+    expect(result.data[0]?.branch).toEqual({
+      id: 'branch-1',
+      name: 'Main Branch',
+      coverImage: 'cover.jpg',
+      description: 'Downtown branch',
+    });
   });
 
   it('creates a table reservation request in customer metadata', async () => {

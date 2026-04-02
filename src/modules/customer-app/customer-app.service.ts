@@ -49,6 +49,15 @@ export interface TableReservationRecord {
   cancelledAt: string | null;
 }
 
+export interface TableReservationResponse extends TableReservationRecord {
+  branch: {
+    id: string;
+    name: string;
+    coverImage: string | null;
+    description: string | null;
+  } | null;
+}
+
 export interface LoyaltyRedemptionRecord {
   id: string;
   points: number;
@@ -487,8 +496,21 @@ export class CustomerAppService {
   ) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
     const reservations = this.readTableReservations(customer.profile?.metadata);
+    const branchIds = [...new Set(reservations.map((item) => item.branchId))];
+    const branches = customer.restaurantId
+      ? await this.customerAppRepository.findBranchesPublicContent(
+          branchIds,
+          customer.restaurantId,
+        )
+      : [];
+    const branchMap = new Map(branches.map((branch) => [branch.id, branch]));
     const start = (query.page - 1) * query.limit;
-    const data = reservations.slice(start, start + query.limit);
+    const data = reservations
+      .slice(start, start + query.limit)
+      .map((reservation) => ({
+        ...reservation,
+        branch: branchMap.get(reservation.branchId) ?? null,
+      }));
 
     return {
       data,

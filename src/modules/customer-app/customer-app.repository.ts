@@ -177,6 +177,27 @@ export class CustomerAppRepository {
     });
   }
 
+  async findBranchesPublicContent(branchIds: string[], restaurantId: string) {
+    if (!branchIds.length) {
+      return [];
+    }
+
+    return this.prisma.branch.findMany({
+      where: {
+        id: { in: branchIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        coverImage: true,
+        description: true,
+      },
+    });
+  }
+
   async listCuisineCategories(query: ListCuisinesQueryDto) {
     const branchId = query.branchId;
     const where: Prisma.MenuCategoryWhereInput = {
