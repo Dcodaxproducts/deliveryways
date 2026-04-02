@@ -192,6 +192,77 @@ describe('GroupOrdersService', () => {
     expect(groupOrdersRepository.updateSession).not.toHaveBeenCalled();
   });
 
+  it('allows host to cancel an expired group order', async () => {
+    const { service, groupOrdersRepository } = makeService();
+    groupOrdersRepository.findSessionById.mockResolvedValue({
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() - 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [],
+    });
+    groupOrdersRepository.updateSession.mockResolvedValue({ id: 'session-1' });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+
+    await service.updateStatus(customerUser, 'session-1', {
+      status: 'CANCELLED' as never,
+    });
+
+    expect(groupOrdersRepository.updateSession).toHaveBeenCalledWith(
+      'session-1',
+      {
+        status: 'CANCELLED',
+        lockedAt: null,
+      },
+    );
+  });
+
   it('validates group-order coupon before saving it', async () => {
     const { service, groupOrdersRepository, ordersService } = makeService();
     const session = {

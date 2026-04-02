@@ -375,7 +375,12 @@ export class GroupOrdersService {
     dto: UpdateGroupOrderStatusDto,
   ) {
     const session = await this.getSessionForHostOrThrow(user, id);
-    this.assertSessionMutable(session.status, session.expiresAt);
+
+    if (dto.status === GroupOrderStatus.CANCELLED) {
+      this.assertSessionHostCancellable(session.status);
+    } else {
+      this.assertSessionMutable(session.status, session.expiresAt);
+    }
 
     if (
       dto.status === GroupOrderStatus.CHECKED_OUT ||
@@ -530,6 +535,18 @@ export class GroupOrdersService {
 
   private assertSessionMutable(status: GroupOrderStatus, expiresAt: Date) {
     this.assertSessionAvailable(status, expiresAt);
+  }
+
+  private assertSessionHostCancellable(status: GroupOrderStatus) {
+    if (status === GroupOrderStatus.CANCELLED) {
+      throw new BadRequestException('Group order is already cancelled');
+    }
+
+    if (status === GroupOrderStatus.CHECKED_OUT) {
+      throw new BadRequestException(
+        'Checked out group order cannot be cancelled',
+      );
+    }
   }
 
   private assertSessionOpenForContribution(
