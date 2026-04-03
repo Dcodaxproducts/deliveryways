@@ -325,6 +325,78 @@ export class BranchesRepository {
     });
   }
 
+  async findActiveBranchAddress(branchId: string, tx?: PrismaTx) {
+    return this.client(tx).address.findFirst({
+      where: {
+        refType: AddressRefType.BRANCH,
+        referenceId: branchId,
+        deletedAt: null,
+        isActive: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        street: true,
+        area: true,
+        city: true,
+        state: true,
+        country: true,
+        lat: true,
+        lng: true,
+      },
+    });
+  }
+
+  async updateBranchAddress(
+    branchId: string,
+    data: Prisma.AddressUpdateInput,
+    tx?: PrismaTx,
+  ) {
+    const address = await this.findActiveBranchAddress(branchId, tx);
+
+    if (!address) {
+      return null;
+    }
+
+    return this.client(tx).address.update({
+      where: { id: address.id },
+      data,
+    });
+  }
+
+  async createBranchAddress(
+    payload: {
+      tenantId: string;
+      branchId: string;
+      street: string;
+      area?: string;
+      city: string;
+      state: string;
+      country: string;
+      lat: string;
+      lng: string;
+    },
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).address.create({
+      data: {
+        tenantId: payload.tenantId,
+        referenceId: payload.branchId,
+        refType: AddressRefType.BRANCH,
+        street: payload.street,
+        area: payload.area,
+        city: payload.city,
+        state: payload.state,
+        country: payload.country,
+        lat: new Prisma.Decimal(payload.lat),
+        lng: new Prisma.Decimal(payload.lng),
+      },
+    });
+  }
+
   async update(id: string, data: Prisma.BranchUpdateInput, tx?: PrismaTx) {
     return this.client(tx).branch.update({ where: { id }, data });
   }

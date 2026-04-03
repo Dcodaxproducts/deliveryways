@@ -17,6 +17,9 @@ describe('BranchesService', () => {
       findActiveCustomer: jest.fn(),
       findActiveCustomerById: jest.fn(),
       findOwnedCustomerAddress: jest.fn(),
+      findActiveBranchAddress: jest.fn(),
+      updateBranchAddress: jest.fn(),
+      createBranchAddress: jest.fn(),
       setActive: jest.fn(),
       softDelete: jest.fn(),
       getDeleteSummary: jest.fn(),
@@ -46,6 +49,67 @@ describe('BranchesService', () => {
       prisma,
     };
   };
+
+  it('updates branch address fields through branch update endpoint', async () => {
+    const { service, repository, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Updated Branch',
+    });
+    repository.updateBranchAddress.mockResolvedValue({
+      id: 'address-1',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        name: 'Updated Branch',
+        street: 'Street 99',
+        area: 'Phase 8',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: '31.5700',
+        lng: '74.3300',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({
+        name: 'Updated Branch',
+      }),
+      expect.any(Object),
+    );
+    expect(repository.updateBranchAddress).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({
+        street: 'Street 99',
+        area: 'Phase 8',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+      }),
+      expect.any(Object),
+    );
+    expect(repository.createBranchAddress).not.toHaveBeenCalled();
+    expect(result.message).toBe('Branch updated successfully');
+  });
 
   it('creates branch for business admin without requiring restaurantId in body', async () => {
     const { service, repository, usersService } = makeService();

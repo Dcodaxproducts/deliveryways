@@ -451,22 +451,66 @@ export class BranchesService {
   }
 
   async update(
-    _user: AuthUserContext,
+    user: AuthUserContext,
     id: string,
     dto: UpdateBranchDto,
     tx?: PrismaTx,
   ) {
-    const data = await this.branchesRepository.update(
-      id,
-      {
-        name: dto.name,
-        isMain: dto.isMain,
-        coverImage: dto.coverImage,
-        description: dto.description,
-        settings: dto.settings as unknown as Prisma.InputJsonValue,
-      },
-      tx,
-    );
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
+    const operation = async (trx: PrismaTx) => {
+      const data = await this.branchesRepository.update(
+        id,
+        {
+          name: dto.name,
+          isMain: dto.isMain,
+          coverImage: dto.coverImage,
+          description: dto.description,
+          settings: dto.settings as unknown as Prisma.InputJsonValue,
+        },
+        trx,
+      );
+
+      if (this.hasBranchAddressPayload(dto)) {
+        const updatedAddress =
+          await this.branchesRepository.updateBranchAddress(
+            id,
+            this.toBranchAddressUpdateInput(dto),
+            trx,
+          );
+
+        if (!updatedAddress) {
+          this.assertCompleteBranchAddress(dto);
+
+          await this.branchesRepository.createBranchAddress(
+            {
+              tenantId: branch.tenantId,
+              branchId: id,
+              street: dto.street,
+              area: dto.area,
+              city: dto.city,
+              state: dto.state,
+              country: dto.country,
+              lat: dto.lat,
+              lng: dto.lng,
+            },
+            trx,
+          );
+        }
+      }
+
+      return data;
+    };
+
+    const data = tx
+      ? await operation(tx)
+      : await this.prisma.$transaction(async (trx) => operation(trx));
 
     return {
       data,
@@ -580,6 +624,56 @@ export class BranchesService {
 
   private generateBranchAdminPassword(): string {
     return `Br@${randomBytes(4).toString('hex')}2026`;
+  }
+
+  private hasBranchAddressPayload(dto: UpdateBranchDto) {
+    return [
+      dto.street,
+      dto.area,
+      dto.city,
+      dto.state,
+      dto.country,
+      dto.lat,
+      dto.lng,
+    ].some((value) => value !== undefined);
+  }
+
+  private toBranchAddressUpdateInput(
+    dto: UpdateBranchDto,
+  ): Prisma.AddressUpdateInput {
+    return {
+      street: dto.street,
+      area: dto.area,
+      city: dto.city,
+      state: dto.state,
+      country: dto.country,
+      lat: dto.lat !== undefined ? new Prisma.Decimal(dto.lat) : undefined,
+      lng: dto.lng !== undefined ? new Prisma.Decimal(dto.lng) : undefined,
+    };
+  }
+
+  private assertCompleteBranchAddress(
+    dto: UpdateBranchDto,
+  ): asserts dto is UpdateBranchDto & {
+    street: string;
+    city: string;
+    state: string;
+    country: string;
+    lat: string;
+    lng: string;
+  } {
+    if (
+      !dto.street ||
+      !dto.city ||
+      !dto.state ||
+      !dto.country ||
+      !dto.lat ||
+      !dto.lng
+    ) {
+      throw new BadRequestException(
+        'street, city, state, country, lat and lng are required when creating a missing branch address',
+      );
+    }
   }
 
   private assertBranchAccess(
