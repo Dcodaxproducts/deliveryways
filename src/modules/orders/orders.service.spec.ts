@@ -295,6 +295,76 @@ describe('OrdersService - coupon quote validation', () => {
   });
 });
 
+describe('OrdersService - branch address lookup', () => {
+  it('prefers active branch addresses that already have coordinates', async () => {
+    const addressFindFirstCalls: unknown[] = [];
+    const addressFindFirst = jest.fn().mockImplementation((args: unknown) => {
+      addressFindFirstCalls.push(args);
+
+      return addressFindFirstCalls.length === 1
+        ? {
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }
+        : {
+            lat: new Prisma.Decimal('31.5205'),
+            lng: new Prisma.Decimal('74.3588'),
+          };
+    });
+    const prisma = {
+      address: {
+        findFirst: addressFindFirst,
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const fn = (
+      service as unknown as {
+        assertAddressWithinRadius: (
+          customerId: string,
+          deliveryAddressId: string,
+          branchId: string,
+          radiusKm: number,
+        ) => Promise<void>;
+      }
+    ).assertAddressWithinRadius;
+
+    await expect(
+      fn.call(service, 'customer-1', 'address-1', 'branch-1', 10),
+    ).resolves.toBeUndefined();
+
+    const secondCall = addressFindFirstCalls[1] as {
+      where: {
+        refType: string;
+        referenceId: string;
+        isActive: boolean;
+        deletedAt: null;
+        lat: { not: null };
+        lng: { not: null };
+      };
+      orderBy: { updatedAt: 'desc' };
+    };
+
+    expect(secondCall).toMatchObject({
+      where: {
+        refType: 'BRANCH',
+        referenceId: 'branch-1',
+        isActive: true,
+        deletedAt: null,
+        lat: { not: null },
+        lng: { not: null },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  });
+});
+
 describe('OrdersService - response mapping', () => {
   let service: OrdersService;
 

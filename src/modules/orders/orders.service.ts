@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AddressRefType,
   OrderStatus,
   OrderType,
   PaymentStatus,
@@ -1343,14 +1344,19 @@ export class OrdersService {
 
     const branchAddress = await this.prisma.address.findFirst({
       where: {
-        refType: 'BRANCH',
+        refType: AddressRefType.BRANCH,
         referenceId: branchId,
         deletedAt: null,
         isActive: true,
+        lat: { not: null },
+        lng: { not: null },
       },
       select: {
         lat: true,
         lng: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
       },
     });
 
