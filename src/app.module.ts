@@ -36,6 +36,7 @@ import { StaffRolesModule } from './modules/staff-roles/staff-roles.module';
 import { StaffManagementModule } from './modules/staff-management/staff-management.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
+import { PosModule } from './modules/pos/pos.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -98,6 +99,7 @@ import { AppController } from './app.controller';
     StaffManagementModule,
     ChatModule,
     GroupOrdersModule,
+    PosModule,
   ],
   providers: [
     {
