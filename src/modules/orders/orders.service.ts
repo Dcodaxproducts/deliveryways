@@ -861,6 +861,25 @@ export class OrdersService {
       inviteCode: string;
       hostUserId: string;
       status: string;
+      participants: Array<{
+        id: string;
+        userId: string;
+        isHost: boolean;
+        status: string;
+        joinedAt: Date;
+        leftAt: Date | null;
+        user: {
+          id: string;
+          email: string;
+          isGuest: boolean;
+          profile: {
+            firstName: string;
+            lastName: string;
+            phone: string | null;
+            avatarUrl: string | null;
+          } | null;
+        };
+      }>;
     } | null;
     items: Array<{
       id: string;
@@ -916,6 +935,25 @@ export class OrdersService {
       isGroupOrder: Boolean(order.sourceGroupOrder),
       groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
       groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
+      participantCount: order.sourceGroupOrder?.participants.length ?? 0,
+      participants:
+        order.sourceGroupOrder?.participants.map((participant) =>
+          this.toGroupOrderParticipantSummary(participant),
+        ) ?? [],
+      itemCount: order.items.length,
+      itemsPreview: order.items.map((item) => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        menuItemName: item.menuItemName,
+        imageUrl: item.menuItem?.imageUrl ?? null,
+        variationId: item.variationId ?? '',
+        variationName: item.variationName,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        lineTotal: Number(item.lineTotal),
+        note: item.note,
+        snapshotModifiers: item.snapshotModifiers,
+      })),
       deliveryAddress: order.deliveryAddress
         ? {
             ...order.deliveryAddress,

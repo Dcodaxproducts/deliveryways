@@ -473,6 +473,147 @@ describe('OrdersService - response mapping', () => {
     ]);
   });
 
+  it('includes group-order participants and list-compatible preview fields in details responses', () => {
+    const result = (
+      service as unknown as {
+        toOrderDetailsResponse: (
+          order: Record<string, unknown>,
+        ) => Record<string, unknown>;
+      }
+    ).toOrderDetailsResponse({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      couponId: null,
+      deliveryAddressId: null,
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      paymentMethod: 'COD',
+      orderTime: null,
+      isScheduled: false,
+      status: 'PLACED',
+      paymentStatus: 'PENDING',
+      subtotal: new Prisma.Decimal(500),
+      taxAmount: new Prisma.Decimal(0),
+      deliveryFee: new Prisma.Decimal(100),
+      discountAmount: new Prisma.Decimal(50),
+      totalAmount: new Prisma.Decimal(550),
+      customerNote: null,
+      assignedAt: null,
+      deliveredAt: null,
+      paidAt: null,
+      cancelledAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      coupon: null,
+      customer: {
+        id: 'customer-1',
+        email: 'customer@test.com',
+        profile: null,
+      },
+      deliveryAddress: null,
+      deliveryman: null,
+      transactions: [],
+      sourceGroupOrder: {
+        id: 'group-session-1',
+        inviteCode: 'INVITE123',
+        hostUserId: 'customer-1',
+        status: 'CHECKED_OUT',
+        participants: [
+          {
+            id: 'participant-1',
+            userId: 'customer-1',
+            isHost: true,
+            status: 'ACTIVE',
+            joinedAt: new Date('2026-04-01T06:00:00.000Z'),
+            leftAt: null,
+            user: {
+              id: 'customer-1',
+              email: 'customer@test.com',
+              isGuest: false,
+              profile: {
+                firstName: 'Bilal',
+                lastName: 'Shah',
+                phone: '03001234567',
+                avatarUrl: null,
+              },
+            },
+          },
+        ],
+      },
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          menuItemName: 'Burger',
+          variationId: null,
+          variationName: null,
+          unitPrice: new Prisma.Decimal(500),
+          quantity: 1,
+          lineTotal: new Prisma.Decimal(500),
+          note: null,
+          snapshotModifiers: [],
+          menuItem: {
+            id: 'menu-1',
+            slug: 'burger',
+            imageUrl: 'https://example.com/burger.png',
+            category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+          },
+        },
+      ],
+    });
+
+    expect(result.isGroupOrder).toBe(true);
+    expect(result.groupOrderSessionId).toBe('group-session-1');
+    expect(result.groupOrderInviteCode).toBe('INVITE123');
+    expect(result.participantCount).toBe(1);
+    expect(result.itemCount).toBe(1);
+    expect(result.participants).toEqual([
+      {
+        id: 'participant-1',
+        userId: 'customer-1',
+        isHost: true,
+        status: 'ACTIVE',
+        joinedAt: new Date('2026-04-01T06:00:00.000Z'),
+        leftAt: null,
+        user: {
+          id: 'customer-1',
+          email: 'customer@test.com',
+          isGuest: false,
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '03001234567',
+          avatarUrl: null,
+        },
+      },
+    ]);
+    expect(result.itemsPreview).toEqual([
+      {
+        id: 'item-1',
+        menuItemId: 'menu-1',
+        menuItemName: 'Burger',
+        imageUrl: 'https://example.com/burger.png',
+        variationId: '',
+        variationName: null,
+        quantity: 1,
+        unitPrice: 500,
+        lineTotal: 500,
+        note: null,
+        snapshotModifiers: [],
+      },
+    ]);
+  });
+
   it('marks details responses for normal orders as non-group orders', () => {
     const result = (
       service as unknown as {

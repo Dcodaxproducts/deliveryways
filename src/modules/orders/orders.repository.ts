@@ -110,6 +110,32 @@ export class OrdersRepository {
             inviteCode: true,
             hostUserId: true,
             status: true,
+            participants: {
+              orderBy: [{ joinedAt: 'asc' }],
+              select: {
+                id: true,
+                userId: true,
+                isHost: true,
+                status: true,
+                joinedAt: true,
+                leftAt: true,
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    isGuest: true,
+                    profile: {
+                      select: {
+                        firstName: true,
+                        lastName: true,
+                        phone: true,
+                        avatarUrl: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
