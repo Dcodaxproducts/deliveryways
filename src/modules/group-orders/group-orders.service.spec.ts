@@ -264,6 +264,121 @@ describe('GroupOrdersService', () => {
     );
   });
 
+  it('does not require delivery coordinates when fetching group-order details', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    groupOrdersRepository.findSessionById.mockResolvedValue({
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      orderTime: new Date('2099-03-30T19:30:00.000Z'),
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: {
+        id: 'address-1',
+        street: 'Street 1',
+        area: null,
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: null,
+        lng: null,
+      },
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        branchId: 'branch-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        orderType: 'DELIVERY',
+        orderTime: '2099-03-30T19:30:00.000Z',
+        isScheduled: true,
+        subtotal: 500,
+        taxAmount: 50,
+        deliveryFee: 100,
+        discountAmount: 0,
+        totalAmount: 650,
+        couponCode: null,
+        items: [],
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.details(customerUser, 'session-1');
+
+    expect(ordersService.quote).not.toHaveBeenCalled();
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
+      customerUser,
+      expect.objectContaining({
+        branchId: 'branch-1',
+        deliveryAddressId: 'address-1',
+        orderType: OrderTypeEnum.DELIVERY,
+      }),
+    );
+    expect(result.data.summary).toEqual(
+      expect.objectContaining({
+        source: 'quote',
+        totalAmount: 650,
+      }),
+    );
+  });
+
   it('includes live order summary on group-order details', async () => {
     const { service, groupOrdersRepository, ordersService } = makeService();
     groupOrdersRepository.findSessionById.mockResolvedValue({
@@ -332,7 +447,7 @@ describe('GroupOrdersService', () => {
       ],
     });
     groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
-    ordersService.quote.mockResolvedValue({
+    ordersService.quoteForCouponValidation.mockResolvedValue({
       data: {
         branchId: 'branch-1',
         restaurantId: 'restaurant-1',

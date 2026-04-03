@@ -403,7 +403,10 @@ export class GroupOrdersService {
   async quote(user: AuthUserContext, id: string) {
     const session = await this.getSessionForMemberOrThrow(user, id);
     const quotePayload = this.toOrderQuotePayload(session);
-    const quote = await this.ordersService.quote(user, quotePayload);
+    const quote = await this.ordersService.quoteForCouponValidation(
+      user,
+      quotePayload,
+    );
 
     return {
       data: {
@@ -767,7 +770,7 @@ export class GroupOrdersService {
       };
     }
 
-    const quote = await this.ordersService.quote(
+    const quote = await this.ordersService.quoteForCouponValidation(
       user,
       this.toOrderQuotePayload(session),
     );
