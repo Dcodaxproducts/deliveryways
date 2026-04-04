@@ -95,6 +95,24 @@ enum PosOrderDraftStatus {
   CANCELLED
 }
 
+enum VatHandlingRule {
+  INCLUSIVE
+  EXCLUSIVE
+  COMPLETED_TRANSACTIONS_ONLY
+}
+
+enum CurrencyDisplayFormat {
+  SYMBOL_AMOUNT
+  AMOUNT_CODE
+  CODE_AMOUNT
+}
+
+enum PlatformDateFormat {
+  DD_MM_YYYY
+  MM_DD_YYYY
+  YYYY_MM_DD
+}
+
 enum NotificationChannel {
   EMAIL
   IN_APP
@@ -1119,6 +1137,33 @@ model ChatMessage {
   @@index([senderStaffUserId, createdAt])
   @@index([senderDeliverymanId, createdAt])
   @@map("chat_messages")
+}
+
+model GlobalSetting {
+  id                          String                @id @default(cuid())
+  scopeKey                    String                @unique @default("GLOBAL") @map("scope_key") @db.VarChar(20)
+  globalTaxPercentage         Decimal               @default(0) @map("global_tax_percentage") @db.Decimal(5, 2)
+  vatHandlingRule             VatHandlingRule       @default(EXCLUSIVE) @map("vat_handling_rule")
+  defaultCommissionPercentage Decimal               @default(0) @map("default_commission_percentage") @db.Decimal(5, 2)
+  defaultHybridFeePercentage  Decimal               @default(0) @map("default_hybrid_fee_percentage") @db.Decimal(5, 2)
+  defaultCurrency             String                @default("PKR") @map("default_currency") @db.VarChar(10)
+  currencyDisplayFormat       CurrencyDisplayFormat @default(SYMBOL_AMOUNT) @map("currency_display_format")
+  defaultLanguage             String                @default("en") @map("default_language") @db.VarChar(16)
+  dateFormat                  PlatformDateFormat    @default(DD_MM_YYYY) @map("date_format")
+  timezone                    String                @default("Asia/Karachi") @db.VarChar(100)
+  primaryColor                String?               @map("primary_color") @db.VarChar(20)
+  secondaryColor              String?               @map("secondary_color") @db.VarChar(20)
+  fontFamily                  String?               @map("font_family") @db.VarChar(100)
+  isTaxEnforced               Boolean               @default(false) @map("is_tax_enforced")
+  isCommissionEnforced        Boolean               @default(false) @map("is_commission_enforced")
+  isCurrencyEnforced          Boolean               @default(false) @map("is_currency_enforced")
+  isLocalizationEnforced      Boolean               @default(false) @map("is_localization_enforced")
+  createdBy                   String?               @map("created_by") @db.VarChar(191)
+  updatedBy                   String?               @map("updated_by") @db.VarChar(191)
+  createdAt                   DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                   DateTime              @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("global_settings")
 }
 
 model Notification {
