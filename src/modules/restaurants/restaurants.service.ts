@@ -255,28 +255,21 @@ export class RestaurantsService {
     };
   }
 
-  async notificationSettings(user: AuthUserContext, id: string) {
-    const restaurant = await this.getRestaurantForNotificationSettings(
-      user,
-      id,
-    );
+  async notificationSettings(user: AuthUserContext) {
+    const restaurant = await this.getRestaurantForNotificationSettings(user);
 
     return {
       data: this.extractNotificationSettings(restaurant),
-      message: 'Restaurant notification settings fetched successfully',
+      message: 'Notification settings fetched successfully',
     };
   }
 
   async updateNotificationSettings(
     user: AuthUserContext,
-    id: string,
     dto: UpdateRestaurantNotificationSettingsDto,
     tx?: PrismaTx,
   ) {
-    const restaurant = await this.getRestaurantForNotificationSettings(
-      user,
-      id,
-    );
+    const restaurant = await this.getRestaurantForNotificationSettings(user);
     const nextSettings = this.mergeNotificationSettings(
       restaurant.settings,
       dto,
@@ -284,7 +277,7 @@ export class RestaurantsService {
     this.validateNotificationSettings(nextSettings);
 
     const data = await this.restaurantsRepository.update(
-      id,
+      restaurant.id,
       {
         settings: nextSettings as Prisma.InputJsonValue,
       },
@@ -293,7 +286,7 @@ export class RestaurantsService {
 
     return {
       data: this.extractNotificationSettings(data),
-      message: 'Restaurant notification settings updated successfully',
+      message: 'Notification settings updated successfully',
     };
   }
 
@@ -731,30 +724,26 @@ export class RestaurantsService {
       : {};
   }
 
-  private async getRestaurantForNotificationSettings(
-    user: AuthUserContext,
-    id: string,
-  ) {
-    const restaurant = await this.restaurantsRepository.findById(id);
-
-    if (!restaurant || restaurant.deletedAt) {
-      throw new NotFoundException('Restaurant not found');
-    }
-
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return restaurant;
-    }
-
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || !user.tid) {
+  private async getRestaurantForNotificationSettings(user: AuthUserContext) {
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN &&
+      user.role !== UserRoleEnum.SUPER_ADMIN
+    ) {
       throw new ForbiddenException(
         'Only business admin or super admin can manage notification settings',
       );
     }
 
-    if (restaurant.tenantId !== user.tid) {
-      throw new ForbiddenException(
-        'You cannot access resources outside your tenant',
-      );
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const restaurant = await this.restaurantsRepository.findFirstByTenantId(
+      user.tid,
+    );
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
     }
 
     return restaurant;

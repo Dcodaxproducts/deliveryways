@@ -148,24 +148,20 @@ export class RestaurantsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
-  @Get(':id/notification-settings')
-  notificationSettings(
-    @CurrentUser() user: AuthUserContext,
-    @Param('id') id: string,
-  ) {
-    return this.restaurantsService.notificationSettings(user, id);
+  @Get('notification-settings')
+  notificationSettings(@CurrentUser() user: AuthUserContext) {
+    return this.restaurantsService.notificationSettings(user);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
-  @Patch(':id/notification-settings')
+  @Patch('notification-settings')
   updateNotificationSettings(
     @CurrentUser() user: AuthUserContext,
-    @Param('id') id: string,
     @Body() dto: UpdateRestaurantNotificationSettingsDto,
   ) {
-    return this.restaurantsService.updateNotificationSettings(user, id, dto);
+    return this.restaurantsService.updateNotificationSettings(user, dto);
   }
 
   @ApiBearerAuth()

@@ -78,6 +78,17 @@ export class RestaurantsRepository {
     });
   }
 
+  async findFirstByTenantId(tenantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        tenantId,
+        deletedAt: null,
+      },
+      orderBy: [{ createdAt: 'asc' }],
+      include: this.includeConfig,
+    });
+  }
+
   async update(id: string, data: Prisma.RestaurantUpdateInput, tx?: PrismaTx) {
     return this.client(tx).restaurant.update({
       where: { id },
