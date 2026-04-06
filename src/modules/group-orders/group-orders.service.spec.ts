@@ -680,11 +680,7 @@ describe('GroupOrdersService', () => {
     });
     const detailsResult = await service.details(customerUser, 'session-1');
 
-    expect(
-      Object.keys(listResult.data[0] as Record<string, unknown>).sort(),
-    ).toEqual(
-      Object.keys(detailsResult.data as Record<string, unknown>).sort(),
-    );
+    expect(listResult.data[0]).toEqual(detailsResult.data);
   });
 
   it('validates group-order coupon before saving it', async () => {
