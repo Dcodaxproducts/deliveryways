@@ -210,7 +210,7 @@ export class OrdersService {
     await this.assertOrderAccess(user, order.restaurantId, order.customerId);
 
     return {
-      data: this.toOrderDetailsResponse(order),
+      data: await this.toOrderDetailsResponse(order),
       message: 'Order fetched successfully',
     };
   }
@@ -779,7 +779,7 @@ export class OrdersService {
     };
   }
 
-  private toOrderDetailsResponse(order: {
+  private async toOrderDetailsResponse(order: {
     id: string;
     tenantId: string;
     restaurantId: string;
@@ -880,6 +880,17 @@ export class OrdersService {
           } | null;
         };
       }>;
+      items: Array<{
+        id: string;
+        participantId: string;
+        menuItemId: string;
+        variationId: string | null;
+        quantity: number;
+        note: string | null;
+        modifiers: Prisma.JsonValue | null;
+        createdAt: Date;
+        updatedAt: Date;
+      }>;
     } | null;
     items: Array<{
       id: string;
@@ -900,6 +911,11 @@ export class OrdersService {
       };
     }>;
   }) {
+    const groupParticipants = await this.toGroupOrderParticipantsWithItems(
+      order.sourceGroupOrder,
+      order.branchId,
+    );
+
     return {
       id: order.id,
       restaurantId: order.restaurantId,
@@ -935,11 +951,8 @@ export class OrdersService {
       isGroupOrder: Boolean(order.sourceGroupOrder),
       groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
       groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
-      participantCount: order.sourceGroupOrder?.participants.length ?? 0,
-      participants:
-        order.sourceGroupOrder?.participants.map((participant) =>
-          this.toGroupOrderParticipantSummary(participant),
-        ) ?? [],
+      participantCount: groupParticipants.length,
+      participants: groupParticipants,
       itemCount: order.items.length,
       itemsPreview: order.items.map((item) => ({
         id: item.id,
@@ -986,6 +999,107 @@ export class OrdersService {
         menuItem: item.menuItem,
       })),
     };
+  }
+
+  private async toGroupOrderParticipantsWithItems(
+    sourceGroupOrder:
+      | {
+          participants: Array<{
+            id: string;
+            userId: string;
+            isHost: boolean;
+            status: string;
+            joinedAt: Date;
+            leftAt: Date | null;
+            user: {
+              id: string;
+              email: string;
+              isGuest: boolean;
+              profile: {
+                firstName: string;
+                lastName: string;
+                phone: string | null;
+                avatarUrl: string | null;
+              } | null;
+            };
+          }>;
+          items: Array<{
+            id: string;
+            participantId: string;
+            menuItemId: string;
+            variationId: string | null;
+            quantity: number;
+            note: string | null;
+            modifiers: Prisma.JsonValue | null;
+            createdAt: Date;
+            updatedAt: Date;
+          }>;
+        }
+      | null
+      | undefined,
+    branchId: string,
+  ) {
+    if (!sourceGroupOrder) {
+      return [];
+    }
+
+    const menuItemIds = [
+      ...new Set(sourceGroupOrder.items.map((item) => item.menuItemId)),
+    ];
+
+    const menuItems = menuItemIds.length
+      ? await this.prisma.menuItem.findMany({
+          where: {
+            id: { in: menuItemIds },
+          },
+          include: {
+            category: {
+              select: { id: true, name: true, imageUrl: true },
+            },
+            variations: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+            modifierLinks: {
+              orderBy: [{ sortOrder: 'asc' }],
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifiers: {
+                      where: { deletedAt: null, isActive: true },
+                      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                    },
+                  },
+                },
+              },
+            },
+            branchOverrides: {
+              where: { branchId },
+            },
+          },
+        })
+      : [];
+
+    const menuItemMap = new Map(
+      menuItems.map((menuItem) => [menuItem.id, menuItem]),
+    );
+
+    return sourceGroupOrder.participants.map((participant) => ({
+      ...this.toGroupOrderParticipantSummary(participant),
+      items: sourceGroupOrder.items
+        .filter((item) => item.participantId === participant.id)
+        .map((item) => ({
+          id: item.id,
+          menuItemId: item.menuItemId,
+          variationId: item.variationId ?? '',
+          quantity: item.quantity,
+          note: item.note,
+          modifiers: item.modifiers ?? [],
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          menuItem: menuItemMap.get(item.menuItemId) ?? null,
+        })),
+    }));
   }
 
   private toGroupOrderParticipantSummary(participant: {

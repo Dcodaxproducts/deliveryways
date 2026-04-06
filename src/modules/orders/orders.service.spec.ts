@@ -370,7 +370,11 @@ describe('OrdersService - response mapping', () => {
 
   beforeEach(() => {
     service = new OrdersService(
-      {} as never,
+      {
+        menuItem: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+      } as never,
       {} as never,
       {} as never,
       {} as never,
@@ -473,12 +477,43 @@ describe('OrdersService - response mapping', () => {
     ]);
   });
 
-  it('includes group-order participants and list-compatible preview fields in details responses', () => {
-    const result = (
+  it('includes group-order participants with nested participant items in details responses', async () => {
+    const menuItemFindMany = (
+      service as unknown as {
+        prisma: { menuItem: { findMany: jest.Mock } };
+      }
+    ).prisma.menuItem.findMany;
+
+    menuItemFindMany.mockResolvedValue([
+      {
+        id: 'menu-1',
+        restaurantId: 'restaurant-1',
+        categoryId: 'cat-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: null,
+        imageUrl: 'https://example.com/burger.png',
+        sku: 'SKU-1',
+        basePrice: new Prisma.Decimal(500),
+        prepTimeMinutes: 10,
+        dietaryFlags: [],
+        allergenFlags: [],
+        isActive: true,
+        deletedAt: null,
+        createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+        category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+
+    const result = await (
       service as unknown as {
         toOrderDetailsResponse: (
           order: Record<string, unknown>,
-        ) => Record<string, unknown>;
+        ) => Promise<Record<string, unknown>>;
       }
     ).toOrderDetailsResponse({
       id: 'order-1',
@@ -550,6 +585,19 @@ describe('OrdersService - response mapping', () => {
             },
           },
         ],
+        items: [
+          {
+            id: 'group-item-1',
+            participantId: 'participant-1',
+            menuItemId: 'menu-1',
+            variationId: null,
+            quantity: 1,
+            note: 'no mayo',
+            modifiers: [],
+            createdAt: new Date('2026-04-01T06:05:00.000Z'),
+            updatedAt: new Date('2026-04-01T06:05:00.000Z'),
+          },
+        ],
       },
       items: [
         {
@@ -595,6 +643,44 @@ describe('OrdersService - response mapping', () => {
           phone: '03001234567',
           avatarUrl: null,
         },
+        items: [
+          {
+            id: 'group-item-1',
+            menuItemId: 'menu-1',
+            variationId: '',
+            quantity: 1,
+            note: 'no mayo',
+            modifiers: [],
+            createdAt: new Date('2026-04-01T06:05:00.000Z'),
+            updatedAt: new Date('2026-04-01T06:05:00.000Z'),
+            menuItem: {
+              id: 'menu-1',
+              restaurantId: 'restaurant-1',
+              categoryId: 'cat-1',
+              name: 'Burger',
+              slug: 'burger',
+              description: null,
+              imageUrl: 'https://example.com/burger.png',
+              sku: 'SKU-1',
+              basePrice: new Prisma.Decimal(500),
+              prepTimeMinutes: 10,
+              dietaryFlags: [],
+              allergenFlags: [],
+              isActive: true,
+              deletedAt: null,
+              createdAt: new Date('2026-04-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+              category: {
+                id: 'cat-1',
+                name: 'Burgers',
+                imageUrl: null,
+              },
+              variations: [],
+              modifierLinks: [],
+              branchOverrides: [],
+            },
+          },
+        ],
       },
     ]);
     expect(result.itemsPreview).toEqual([
@@ -614,12 +700,12 @@ describe('OrdersService - response mapping', () => {
     ]);
   });
 
-  it('marks details responses for normal orders as non-group orders', () => {
-    const result = (
+  it('marks details responses for normal orders as non-group orders', async () => {
+    const result = await (
       service as unknown as {
         toOrderDetailsResponse: (
           order: Record<string, unknown>,
-        ) => Record<string, unknown>;
+        ) => Promise<Record<string, unknown>>;
       }
     ).toOrderDetailsResponse({
       id: 'order-1',

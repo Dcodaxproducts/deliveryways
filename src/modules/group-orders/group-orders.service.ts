@@ -808,22 +808,52 @@ export class GroupOrdersService {
       };
     }
 
-    const quote = await this.ordersService.quoteForCouponValidation(
-      user,
-      this.toOrderQuotePayload(session),
-    );
+    try {
+      const quote = await this.ordersService.quoteForCouponValidation(
+        user,
+        this.toOrderQuotePayload(session),
+      );
 
-    const quoteSummary = {
-      ...quote.data,
-    };
-    delete (quoteSummary as { items?: unknown }).items;
+      const quoteSummary = {
+        ...quote.data,
+      };
+      delete (quoteSummary as { items?: unknown }).items;
 
-    return {
-      source: 'quote' as const,
-      ...quoteSummary,
-      couponCode: quote.data.couponCode ?? session.couponCode,
-      itemCount: session.items.length,
-    };
+      return {
+        source: 'quote' as const,
+        ...quoteSummary,
+        couponCode: quote.data.couponCode ?? session.couponCode,
+        itemCount: session.items.length,
+      };
+    } catch (error) {
+      if (
+        error instanceof BadRequestException &&
+        error.message === 'Order type is not supported by this branch'
+      ) {
+        return {
+          source: 'session' as const,
+          branchId: session.branchId,
+          restaurantId: session.restaurantId,
+          customerId: session.hostUserId,
+          orderType: this.toOrderTypeEnum(session.orderType),
+          orderTime: (session.orderTime ?? new Date()).toISOString(),
+          isScheduled: Boolean(
+            session.orderTime
+              ? session.orderTime.getTime() > Date.now()
+              : false,
+          ),
+          subtotal: 0,
+          taxAmount: 0,
+          deliveryFee: 0,
+          discountAmount: 0,
+          totalAmount: 0,
+          couponCode: session.couponCode,
+          itemCount: session.items.length,
+        };
+      }
+
+      throw error;
+    }
   }
 
   private toUserSummary(user: {

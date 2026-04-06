@@ -606,6 +606,91 @@ describe('GroupOrdersService', () => {
     expect(result.data.summary).not.toHaveProperty('items');
   });
 
+  it('does not fail details when branch no longer supports the session order type', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quoteForCouponValidation.mockRejectedValue(
+      new BadRequestException('Order type is not supported by this branch'),
+    );
+
+    const result = await service.details(customerUser, 'session-1');
+
+    expect(result.data.summary).toEqual(
+      expect.objectContaining({
+        source: 'session',
+        orderType: 'DELIVERY',
+        itemCount: 1,
+      }),
+    );
+  });
+
   it('returns the same session schema for list items and details', async () => {
     const { service, groupOrdersRepository, ordersService } = makeService();
     const session = {
