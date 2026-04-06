@@ -423,30 +423,18 @@ export class RestaurantsService {
   }) {
     return {
       restaurantId: restaurant.id,
-      email: {
-        enabled: this.readBooleanValue(restaurant.settings, [
-          ['notificationSettings', 'email', 'enabled'],
-        ]),
-        emailAddress: this.readStringValue(restaurant.settings, [
-          ['notificationSettings', 'email', 'emailAddress'],
-        ]),
-      },
-      sms: {
-        enabled: this.readBooleanValue(restaurant.settings, [
-          ['notificationSettings', 'sms', 'enabled'],
-        ]),
-        phoneNumber: this.readStringValue(restaurant.settings, [
-          ['notificationSettings', 'sms', 'phoneNumber'],
-        ]),
-      },
-      whatsapp: {
-        enabled: this.readBooleanValue(restaurant.settings, [
-          ['notificationSettings', 'whatsapp', 'enabled'],
-        ]),
-        phoneNumber: this.readStringValue(restaurant.settings, [
-          ['notificationSettings', 'whatsapp', 'phoneNumber'],
-        ]),
-      },
+      emailAddress: this.readStringValue(restaurant.settings, [
+        ['notificationSettings', 'emailAddress'],
+      ]),
+      phoneNumber: this.readStringValue(restaurant.settings, [
+        ['notificationSettings', 'phoneNumber'],
+      ]),
+      whatsappNumber: this.readStringValue(restaurant.settings, [
+        ['notificationSettings', 'whatsappNumber'],
+      ]),
+      notificationTypes: this.extractNotificationTypeMatrix(
+        restaurant.settings,
+      ),
     };
   }
 
@@ -456,51 +444,29 @@ export class RestaurantsService {
   ): Prisma.JsonObject {
     const root = this.asObject(currentSettings);
     const notificationSettings = this.asObject(root.notificationSettings);
-    const email = this.asObject(notificationSettings.email);
-    const sms = this.asObject(notificationSettings.sms);
-    const whatsapp = this.asObject(notificationSettings.whatsapp);
+    const notificationTypes = this.asObject(
+      notificationSettings.notificationTypes,
+    );
 
     return {
       ...root,
       notificationSettings: {
         ...notificationSettings,
-        ...(dto.email !== undefined
-          ? {
-              email: {
-                ...email,
-                ...(dto.email.enabled !== undefined
-                  ? { enabled: dto.email.enabled }
-                  : {}),
-                ...(dto.email.emailAddress !== undefined
-                  ? { emailAddress: dto.email.emailAddress }
-                  : {}),
-              },
-            }
+        ...(dto.emailAddress !== undefined
+          ? { emailAddress: dto.emailAddress }
           : {}),
-        ...(dto.sms !== undefined
-          ? {
-              sms: {
-                ...sms,
-                ...(dto.sms.enabled !== undefined
-                  ? { enabled: dto.sms.enabled }
-                  : {}),
-                ...(dto.sms.phoneNumber !== undefined
-                  ? { phoneNumber: dto.sms.phoneNumber }
-                  : {}),
-              },
-            }
+        ...(dto.phoneNumber !== undefined
+          ? { phoneNumber: dto.phoneNumber }
           : {}),
-        ...(dto.whatsapp !== undefined
+        ...(dto.whatsappNumber !== undefined
+          ? { whatsappNumber: dto.whatsappNumber }
+          : {}),
+        ...(dto.notificationTypes !== undefined
           ? {
-              whatsapp: {
-                ...whatsapp,
-                ...(dto.whatsapp.enabled !== undefined
-                  ? { enabled: dto.whatsapp.enabled }
-                  : {}),
-                ...(dto.whatsapp.phoneNumber !== undefined
-                  ? { phoneNumber: dto.whatsapp.phoneNumber }
-                  : {}),
-              },
+              notificationTypes: this.mergeNotificationTypeMatrix(
+                notificationTypes,
+                dto.notificationTypes as Record<string, unknown>,
+              ),
             }
           : {}),
       },
@@ -513,23 +479,119 @@ export class RestaurantsService {
       settings,
     });
 
-    if (current.email.enabled && !current.email.emailAddress) {
+    if (
+      this.isChannelUsed(current.notificationTypes, 'email') &&
+      !current.emailAddress
+    ) {
       throw new BadRequestException(
-        'email.emailAddress is required when email notifications are enabled',
+        'emailAddress is required when email notifications are selected',
       );
     }
 
-    if (current.sms.enabled && !current.sms.phoneNumber) {
+    if (
+      this.isChannelUsed(current.notificationTypes, 'sms') &&
+      !current.phoneNumber
+    ) {
       throw new BadRequestException(
-        'sms.phoneNumber is required when SMS notifications are enabled',
+        'phoneNumber is required when SMS notifications are selected',
       );
     }
 
-    if (current.whatsapp.enabled && !current.whatsapp.phoneNumber) {
+    if (
+      this.isChannelUsed(current.notificationTypes, 'whatsapp') &&
+      !current.whatsappNumber
+    ) {
       throw new BadRequestException(
-        'whatsapp.phoneNumber is required when WhatsApp notifications are enabled',
+        'whatsappNumber is required when WhatsApp notifications are selected',
       );
     }
+  }
+
+  private extractNotificationTypeMatrix(source: unknown) {
+    const paths = [
+      'newOrder',
+      'orderCancelled',
+      'printerError',
+      'dailyReport',
+      'payoutUpdate',
+    ] as const;
+
+    const result = Object.fromEntries(
+      paths.map((key) => [
+        key,
+        {
+          email: this.readBooleanValue(source, [
+            ['notificationSettings', 'notificationTypes', key, 'email'],
+          ]),
+          sms: this.readBooleanValue(source, [
+            ['notificationSettings', 'notificationTypes', key, 'sms'],
+          ]),
+          whatsapp: this.readBooleanValue(source, [
+            ['notificationSettings', 'notificationTypes', key, 'whatsapp'],
+          ]),
+        },
+      ]),
+    );
+
+    return result as Record<
+      | 'newOrder'
+      | 'orderCancelled'
+      | 'printerError'
+      | 'dailyReport'
+      | 'payoutUpdate',
+      { email: boolean; sms: boolean; whatsapp: boolean }
+    >;
+  }
+
+  private mergeNotificationTypeMatrix(
+    current: Record<string, unknown>,
+    updates: Record<string, unknown>,
+  ): Prisma.JsonObject {
+    const keys = [
+      'newOrder',
+      'orderCancelled',
+      'printerError',
+      'dailyReport',
+      'payoutUpdate',
+    ] as const;
+
+    return Object.fromEntries(
+      keys.map((key) => {
+        const existingRow = this.asObject(current[key]);
+        const updateRow = this.asObject(updates[key]);
+
+        return [
+          key,
+          {
+            email:
+              typeof updateRow.email === 'boolean'
+                ? updateRow.email
+                : typeof existingRow.email === 'boolean'
+                  ? existingRow.email
+                  : false,
+            sms:
+              typeof updateRow.sms === 'boolean'
+                ? updateRow.sms
+                : typeof existingRow.sms === 'boolean'
+                  ? existingRow.sms
+                  : false,
+            whatsapp:
+              typeof updateRow.whatsapp === 'boolean'
+                ? updateRow.whatsapp
+                : typeof existingRow.whatsapp === 'boolean'
+                  ? existingRow.whatsapp
+                  : false,
+          },
+        ];
+      }),
+    ) as Prisma.JsonObject;
+  }
+
+  private isChannelUsed(
+    matrix: Record<string, { email: boolean; sms: boolean; whatsapp: boolean }>,
+    channel: 'email' | 'sms' | 'whatsapp',
+  ) {
+    return Object.values(matrix).some((row) => row[channel]);
   }
 
   private readStringValue(source: unknown, paths: string[][]): string | null {

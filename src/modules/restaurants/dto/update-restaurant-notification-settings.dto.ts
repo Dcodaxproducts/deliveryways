@@ -21,48 +21,77 @@ const normalizeOptionalString = ({ value }: { value: unknown }) => {
   return trimmed.length ? trimmed : '';
 };
 
-class EmailNotificationChannelDto {
+class NotificationChannelPreferenceDto {
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
-  enabled?: boolean;
+  email?: boolean;
 
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  sms?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  whatsapp?: boolean;
+}
+
+class NotificationTypesDto {
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  newOrder?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  orderCancelled?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  printerError?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  dailyReport?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  payoutUpdate?: NotificationChannelPreferenceDto;
+}
+
+export class UpdateRestaurantNotificationSettingsDto {
   @ApiPropertyOptional({ example: 'jhondoe@example.com' })
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsEmail()
   emailAddress?: string;
-}
-
-class PhoneNotificationChannelDto {
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  enabled?: boolean;
 
   @ApiPropertyOptional({ example: '+923001234567' })
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsString()
   phoneNumber?: string;
-}
 
-export class UpdateRestaurantNotificationSettingsDto {
-  @ApiPropertyOptional({ type: EmailNotificationChannelDto })
+  @ApiPropertyOptional({ example: '+923001234567' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  whatsappNumber?: string;
+
+  @ApiPropertyOptional({ type: NotificationTypesDto })
   @IsOptional()
   @ValidateNested()
-  @Type(() => EmailNotificationChannelDto)
-  email?: EmailNotificationChannelDto;
-
-  @ApiPropertyOptional({ type: PhoneNotificationChannelDto })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => PhoneNotificationChannelDto)
-  sms?: PhoneNotificationChannelDto;
-
-  @ApiPropertyOptional({ type: PhoneNotificationChannelDto })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => PhoneNotificationChannelDto)
-  whatsapp?: PhoneNotificationChannelDto;
+  @Type(() => NotificationTypesDto)
+  notificationTypes?: NotificationTypesDto;
 }

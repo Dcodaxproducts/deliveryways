@@ -44,9 +44,16 @@ describe('RestaurantsService notification settings', () => {
       deletedAt: null,
       settings: {
         notificationSettings: {
-          email: { enabled: true, emailAddress: 'ops@example.com' },
-          sms: { enabled: false, phoneNumber: '+923001234567' },
-          whatsapp: { enabled: true, phoneNumber: '+923009876543' },
+          emailAddress: 'ops@example.com',
+          phoneNumber: '+923001234567',
+          whatsappNumber: '+923009876543',
+          notificationTypes: {
+            newOrder: { email: true, sms: true, whatsapp: false },
+            orderCancelled: { email: true, sms: false, whatsapp: true },
+            printerError: { email: true, sms: false, whatsapp: true },
+            dailyReport: { email: true, sms: true, whatsapp: false },
+            payoutUpdate: { email: true, sms: false, whatsapp: true },
+          },
         },
       },
     });
@@ -61,21 +68,35 @@ describe('RestaurantsService notification settings', () => {
 
     expect(result.data).toEqual({
       restaurantId: 'restaurant-1',
-      email: { enabled: true, emailAddress: 'ops@example.com' },
-      sms: { enabled: false, phoneNumber: '+923001234567' },
-      whatsapp: { enabled: true, phoneNumber: '+923009876543' },
+      emailAddress: 'ops@example.com',
+      phoneNumber: '+923001234567',
+      whatsappNumber: '+923009876543',
+      notificationTypes: {
+        newOrder: { email: true, sms: true, whatsapp: false },
+        orderCancelled: { email: true, sms: false, whatsapp: true },
+        printerError: { email: true, sms: false, whatsapp: true },
+        dailyReport: { email: true, sms: true, whatsapp: false },
+        payoutUpdate: { email: true, sms: false, whatsapp: true },
+      },
     });
   });
 
-  it('updates notification settings and preserves existing channels', async () => {
+  it('updates notification settings and preserves existing matrix values', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       deletedAt: null,
       settings: {
         notificationSettings: {
-          email: { enabled: true, emailAddress: 'old@example.com' },
-          sms: { enabled: false, phoneNumber: '+923001234567' },
+          emailAddress: 'old@example.com',
+          phoneNumber: '+923001234567',
+          notificationTypes: {
+            newOrder: { email: true, sms: true, whatsapp: false },
+            orderCancelled: { email: true, sms: false, whatsapp: false },
+            printerError: { email: false, sms: false, whatsapp: false },
+            dailyReport: { email: true, sms: false, whatsapp: false },
+            payoutUpdate: { email: false, sms: false, whatsapp: false },
+          },
         },
       },
     });
@@ -83,9 +104,16 @@ describe('RestaurantsService notification settings', () => {
       id: 'restaurant-1',
       settings: {
         notificationSettings: {
-          email: { enabled: true, emailAddress: 'ops@example.com' },
-          sms: { enabled: false, phoneNumber: '+923001234567' },
-          whatsapp: { enabled: true, phoneNumber: '+923009876543' },
+          emailAddress: 'ops@example.com',
+          phoneNumber: '+923001234567',
+          whatsappNumber: '+923009876543',
+          notificationTypes: {
+            newOrder: { email: true, sms: true, whatsapp: false },
+            orderCancelled: { email: true, sms: false, whatsapp: true },
+            printerError: { email: false, sms: false, whatsapp: false },
+            dailyReport: { email: true, sms: false, whatsapp: false },
+            payoutUpdate: { email: false, sms: false, whatsapp: true },
+          },
         },
       },
     });
@@ -97,8 +125,12 @@ describe('RestaurantsService notification settings', () => {
       } as never,
       'restaurant-1',
       {
-        email: { emailAddress: 'ops@example.com' },
-        whatsapp: { enabled: true, phoneNumber: '+923009876543' },
+        emailAddress: 'ops@example.com',
+        whatsappNumber: '+923009876543',
+        notificationTypes: {
+          orderCancelled: { whatsapp: true },
+          payoutUpdate: { whatsapp: true },
+        },
       },
     );
 
@@ -107,21 +139,29 @@ describe('RestaurantsService notification settings', () => {
       {
         settings: {
           notificationSettings: {
-            email: { enabled: true, emailAddress: 'ops@example.com' },
-            sms: { enabled: false, phoneNumber: '+923001234567' },
-            whatsapp: { enabled: true, phoneNumber: '+923009876543' },
+            emailAddress: 'ops@example.com',
+            phoneNumber: '+923001234567',
+            whatsappNumber: '+923009876543',
+            notificationTypes: {
+              newOrder: { email: true, sms: true, whatsapp: false },
+              orderCancelled: { email: true, sms: false, whatsapp: true },
+              printerError: { email: false, sms: false, whatsapp: false },
+              dailyReport: { email: true, sms: false, whatsapp: false },
+              payoutUpdate: { email: false, sms: false, whatsapp: true },
+            },
           },
         },
       },
       undefined,
     );
-    expect(result.data.whatsapp).toEqual({
-      enabled: true,
-      phoneNumber: '+923009876543',
+    expect(result.data.notificationTypes.payoutUpdate).toEqual({
+      email: false,
+      sms: false,
+      whatsapp: true,
     });
   });
 
-  it('rejects enabled email notifications without an email address', async () => {
+  it('rejects email channel selection without an email address', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -137,7 +177,9 @@ describe('RestaurantsService notification settings', () => {
         } as never,
         'restaurant-1',
         {
-          email: { enabled: true },
+          notificationTypes: {
+            newOrder: { email: true },
+          },
         },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
