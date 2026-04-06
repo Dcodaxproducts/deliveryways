@@ -447,11 +447,9 @@ export class RestaurantsService {
   }
 
   private extractNotificationSettings(restaurant: {
-    id: string;
     settings: Prisma.JsonValue | null;
   }) {
     return {
-      restaurantId: restaurant.id,
       emailAddress: this.readStringValue(restaurant.settings, [
         ['notificationSettings', 'emailAddress'],
       ]),
@@ -504,7 +502,6 @@ export class RestaurantsService {
 
   private validateNotificationSettings(settings: Prisma.JsonObject) {
     const current = this.extractNotificationSettings({
-      id: '',
       settings,
     });
 

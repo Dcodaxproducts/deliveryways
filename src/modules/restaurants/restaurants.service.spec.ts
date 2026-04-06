@@ -206,7 +206,6 @@ describe('RestaurantsService notification settings', () => {
     );
 
     expect(result.data).toEqual({
-      restaurantId: 'restaurant-1',
       emailAddress: 'ops@example.com',
       phoneNumber: '+923001234567',
       whatsappNumber: '+923009876543',
