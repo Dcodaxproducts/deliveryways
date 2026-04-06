@@ -382,12 +382,43 @@ describe('OrdersService - response mapping', () => {
     );
   });
 
-  it('marks list responses originating from group orders', () => {
-    const result = (
+  it('marks list responses originating from group orders with nested participant items', async () => {
+    const menuItemFindMany = (
+      service as unknown as {
+        prisma: { menuItem: { findMany: jest.Mock } };
+      }
+    ).prisma.menuItem.findMany;
+
+    menuItemFindMany.mockResolvedValue([
+      {
+        id: 'menu-1',
+        restaurantId: 'restaurant-1',
+        categoryId: 'cat-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: null,
+        imageUrl: 'https://example.com/burger.png',
+        sku: 'SKU-1',
+        basePrice: new Prisma.Decimal(500),
+        prepTimeMinutes: 10,
+        dietaryFlags: [],
+        allergenFlags: [],
+        isActive: true,
+        deletedAt: null,
+        createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+        category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+
+    const result = await (
       service as unknown as {
         toOrderListResponse: (
           order: Record<string, unknown>,
-        ) => Record<string, unknown>;
+        ) => Promise<Record<string, unknown>>;
       }
     ).toOrderListResponse({
       id: 'order-1',
@@ -448,6 +479,19 @@ describe('OrdersService - response mapping', () => {
             },
           },
         ],
+        items: [
+          {
+            id: 'group-item-1',
+            participantId: 'participant-1',
+            menuItemId: 'menu-1',
+            variationId: null,
+            quantity: 1,
+            note: 'no mayo',
+            modifiers: [],
+            createdAt: new Date('2026-04-01T06:05:00.000Z'),
+            updatedAt: new Date('2026-04-01T06:05:00.000Z'),
+          },
+        ],
       },
       items: [],
     });
@@ -473,6 +517,44 @@ describe('OrdersService - response mapping', () => {
           phone: '03001234567',
           avatarUrl: null,
         },
+        items: [
+          {
+            id: 'group-item-1',
+            menuItemId: 'menu-1',
+            variationId: '',
+            quantity: 1,
+            note: 'no mayo',
+            modifiers: [],
+            createdAt: new Date('2026-04-01T06:05:00.000Z'),
+            updatedAt: new Date('2026-04-01T06:05:00.000Z'),
+            menuItem: {
+              id: 'menu-1',
+              restaurantId: 'restaurant-1',
+              categoryId: 'cat-1',
+              name: 'Burger',
+              slug: 'burger',
+              description: null,
+              imageUrl: 'https://example.com/burger.png',
+              sku: 'SKU-1',
+              basePrice: new Prisma.Decimal(500),
+              prepTimeMinutes: 10,
+              dietaryFlags: [],
+              allergenFlags: [],
+              isActive: true,
+              deletedAt: null,
+              createdAt: new Date('2026-04-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+              category: {
+                id: 'cat-1',
+                name: 'Burgers',
+                imageUrl: null,
+              },
+              variations: [],
+              modifierLinks: [],
+              branchOverrides: [],
+            },
+          },
+        ],
       },
     ]);
   });

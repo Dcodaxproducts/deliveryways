@@ -194,7 +194,9 @@ export class OrdersService {
     );
 
     return {
-      data: items.map((item) => this.toOrderListResponse(item)),
+      data: await Promise.all(
+        items.map((item) => this.toOrderListResponse(item)),
+      ),
       message: 'Orders fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -646,7 +648,7 @@ export class OrdersService {
     return rest;
   }
 
-  private toOrderListResponse(order: {
+  private async toOrderListResponse(order: {
     id: string;
     branchId: string;
     customerId: string;
@@ -727,8 +729,24 @@ export class OrdersService {
           } | null;
         };
       }>;
+      items: Array<{
+        id: string;
+        participantId: string;
+        menuItemId: string;
+        variationId: string | null;
+        quantity: number;
+        note: string | null;
+        modifiers: Prisma.JsonValue | null;
+        createdAt: Date;
+        updatedAt: Date;
+      }>;
     } | null;
   }) {
+    const groupParticipants = await this.toGroupOrderParticipantsWithItems(
+      order.sourceGroupOrder,
+      order.branchId,
+    );
+
     return {
       id: order.id,
       branchId: order.branchId,
@@ -757,11 +775,8 @@ export class OrdersService {
       isGroupOrder: Boolean(order.sourceGroupOrder),
       groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
       groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
-      participantCount: order.sourceGroupOrder?.participants.length ?? 0,
-      participants:
-        order.sourceGroupOrder?.participants.map((participant) =>
-          this.toGroupOrderParticipantSummary(participant),
-        ) ?? [],
+      participantCount: groupParticipants.length,
+      participants: groupParticipants,
       itemCount: order.items.length,
       itemsPreview: order.items.map((item) => ({
         id: item.id,
