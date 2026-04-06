@@ -35,8 +35,8 @@ export class RestaurantsService {
         tenant: { connect: { id: tenantId } },
         name: dto.name,
         slug,
-        logoUrl: dto.logoUrl,
-        coverImage: dto.coverImage,
+        logoUrl: this.normalizeMediaUrl(dto.logoUrl),
+        coverImage: this.normalizeMediaUrl(dto.coverImage),
         customDomain: dto.customDomain,
         tagline: dto.tagline,
         bio: dto.bio,
@@ -139,8 +139,14 @@ export class RestaurantsService {
       {
         name: dto.name,
         slug: dto.slug ? await this.ensureUniqueSlug(dto.slug, id) : undefined,
-        logoUrl: dto.logoUrl,
-        coverImage: dto.coverImage,
+        logoUrl:
+          dto.logoUrl !== undefined
+            ? this.normalizeMediaUrl(dto.logoUrl)
+            : undefined,
+        coverImage:
+          dto.coverImage !== undefined
+            ? this.normalizeMediaUrl(dto.coverImage)
+            : undefined,
         customDomain: dto.customDomain,
         tagline: dto.tagline,
         bio: dto.bio,
@@ -302,8 +308,14 @@ export class RestaurantsService {
     const data = await this.restaurantsRepository.update(
       id,
       {
-        logoUrl: dto.logoUrl,
-        coverImage: dto.coverImage,
+        logoUrl:
+          dto.logoUrl !== undefined
+            ? this.normalizeMediaUrl(dto.logoUrl)
+            : undefined,
+        coverImage:
+          dto.coverImage !== undefined
+            ? this.normalizeMediaUrl(dto.coverImage)
+            : undefined,
       },
       tx,
     );
@@ -379,8 +391,8 @@ export class RestaurantsService {
         id: restaurant.id,
         name: restaurant.name ?? null,
         slug: restaurant.slug ?? null,
-        logoUrl: restaurant.logoUrl ?? null,
-        coverImage: restaurant.coverImage ?? null,
+        logoUrl: this.normalizeMediaUrl(restaurant.logoUrl),
+        coverImage: this.normalizeMediaUrl(restaurant.coverImage),
         tagline: restaurant.tagline ?? null,
         bio: restaurant.bio ?? null,
       },
@@ -609,6 +621,29 @@ export class RestaurantsService {
     channel: 'email' | 'sms' | 'whatsapp',
   ) {
     return Object.values(matrix).some((row) => row[channel]);
+  }
+
+  private normalizeMediaUrl(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const invalidPlaceholders = new Set([
+      '[object Object]',
+      'undefined',
+      'null',
+    ]);
+
+    if (invalidPlaceholders.has(normalized)) {
+      return null;
+    }
+
+    return normalized;
   }
 
   private readStringValue(source: unknown, paths: string[][]): string | null {

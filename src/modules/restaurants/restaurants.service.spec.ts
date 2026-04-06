@@ -121,6 +121,61 @@ describe('RestaurantsService notification settings', () => {
     });
   });
 
+  it('normalizes invalid media placeholders in customer app content output', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      name: 'Demo Restaurant',
+      slug: 'demo-restaurant',
+      logoUrl: '[object Object]',
+      coverImage: ' undefined ',
+      tagline: null,
+      bio: null,
+      settings: {},
+      supportContact: null,
+    });
+
+    const result = await service.customerAppContentFromContext({
+      role: UserRoleEnum.CUSTOMER,
+      rid: 'restaurant-1',
+    } as never);
+
+    expect(result.data.restaurant.logoUrl).toBeNull();
+    expect(result.data.restaurant.coverImage).toBeNull();
+  });
+
+  it('normalizes invalid media placeholders before restaurant updates', async () => {
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: null,
+    });
+
+    await service.updateImages(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      {
+        logoUrl: '[object Object]',
+        coverImage: ' https://cdn.example.com/cover.png ',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'restaurant-1',
+      {
+        logoUrl: null,
+        coverImage: 'https://cdn.example.com/cover.png',
+      },
+      undefined,
+    );
+  });
+
   it('returns notification settings from restaurant settings json', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
