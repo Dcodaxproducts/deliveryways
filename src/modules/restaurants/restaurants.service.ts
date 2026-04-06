@@ -364,11 +364,26 @@ export class RestaurantsService {
 
   private extractCustomerAppContent(restaurant: {
     id: string;
+    name?: string;
+    slug?: string | null;
+    logoUrl?: string | null;
+    coverImage?: string | null;
+    tagline?: string | null;
+    bio?: string | null;
     settings: Prisma.JsonValue | null;
     supportContact: Prisma.JsonValue | null;
   }) {
     return {
       restaurantId: restaurant.id,
+      restaurant: {
+        id: restaurant.id,
+        name: restaurant.name ?? null,
+        slug: restaurant.slug ?? null,
+        logoUrl: restaurant.logoUrl ?? null,
+        coverImage: restaurant.coverImage ?? null,
+        tagline: restaurant.tagline ?? null,
+        bio: restaurant.bio ?? null,
+      },
       privacyPolicy: this.readStringValue(restaurant.settings, [
         ['customerApp', 'privacyPolicy'],
         ['publicContent', 'privacyPolicy'],

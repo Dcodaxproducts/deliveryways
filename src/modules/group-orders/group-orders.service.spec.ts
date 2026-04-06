@@ -41,12 +41,38 @@ describe('GroupOrdersService', () => {
     role: UserRoleEnum.CUSTOMER,
   };
 
+  it('rejects creating a group order when the branch does not support the selected order type', async () => {
+    const { service, groupOrdersRepository } = makeService();
+    groupOrdersRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: {
+        allowedOrderTypes: [OrderTypeEnum.TAKEAWAY],
+      },
+    });
+    groupOrdersRepository.findActiveSessionByHost.mockResolvedValue(null);
+
+    await expect(
+      service.create(customerUser, {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+      }),
+    ).rejects.toThrow('Order type is not supported by this branch');
+
+    expect(groupOrdersRepository.createSession).not.toHaveBeenCalled();
+  });
+
   it('blocks creating a new group order when host already has an active session', async () => {
     const { service, groupOrdersRepository } = makeService();
     groupOrdersRepository.findActiveBranch.mockResolvedValue({
       id: 'branch-1',
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
+      settings: {
+        allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
+      },
     });
     groupOrdersRepository.findActiveSessionByHost.mockResolvedValue({
       id: 'session-1',

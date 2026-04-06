@@ -37,6 +37,46 @@ describe('RestaurantsService notification settings', () => {
     service = moduleRef.get(RestaurantsService);
   });
 
+  it('returns populated restaurant details in customer app content', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      name: 'Demo Restaurant',
+      slug: 'demo-restaurant',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: 'https://cdn.example.com/cover.png',
+      tagline: 'Best food in town',
+      bio: 'Longer restaurant bio',
+      settings: {
+        customerApp: {
+          privacyPolicy: 'privacy',
+          helpSupport: 'help',
+          faqs: [{ question: 'Q1', answer: 'A1' }],
+        },
+      },
+      supportContact: {
+        email: 'support@example.com',
+      },
+    });
+
+    const result = await service.customerAppContentFromContext({
+      role: UserRoleEnum.CUSTOMER,
+      rid: 'restaurant-1',
+    } as never);
+
+    expect(result.data.restaurant).toEqual({
+      id: 'restaurant-1',
+      name: 'Demo Restaurant',
+      slug: 'demo-restaurant',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: 'https://cdn.example.com/cover.png',
+      tagline: 'Best food in town',
+      bio: 'Longer restaurant bio',
+    });
+    expect(result.data.restaurantId).toBe('restaurant-1');
+  });
+
   it('returns notification settings from restaurant settings json', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',

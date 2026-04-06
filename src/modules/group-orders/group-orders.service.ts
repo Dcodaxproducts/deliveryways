@@ -58,6 +58,7 @@ export class GroupOrdersService {
     }
 
     const orderType = this.toOrderType(dto.orderType);
+    this.assertSupportedOrderType(branch.settings, dto.orderType);
     await this.assertDeliveryAddress(
       user,
       branch.tenantId,
@@ -479,6 +480,43 @@ export class GroupOrdersService {
       throw new ForbiddenException('Only the host can perform this action');
     }
     return session;
+  }
+
+  private assertSupportedOrderType(
+    branchSettings: unknown,
+    orderType: OrderType,
+  ) {
+    const allowedOrderTypes = this.readAllowedOrderTypes(branchSettings);
+
+    if (!allowedOrderTypes.includes(orderType)) {
+      throw new BadRequestException(
+        'Order type is not supported by this branch',
+      );
+    }
+  }
+
+  private readAllowedOrderTypes(settings: unknown): OrderType[] {
+    const fallback: OrderType[] = [OrderType.DELIVERY, OrderType.TAKEAWAY];
+
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return fallback;
+    }
+
+    const rawAllowedOrderTypes = (settings as Record<string, unknown>)
+      .allowedOrderTypes;
+
+    if (!Array.isArray(rawAllowedOrderTypes)) {
+      return fallback;
+    }
+
+    const allowedOrderTypes = rawAllowedOrderTypes.filter(
+      (value): value is OrderType =>
+        value === OrderType.DELIVERY ||
+        value === OrderType.TAKEAWAY ||
+        value === OrderType.DINE_IN,
+    );
+
+    return allowedOrderTypes.length ? allowedOrderTypes : fallback;
   }
 
   private assertCustomerUser(user: AuthUserContext) {
