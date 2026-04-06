@@ -74,7 +74,51 @@ describe('RestaurantsService notification settings', () => {
       tagline: 'Best food in town',
       bio: 'Longer restaurant bio',
     });
+    expect(result.data.privacyPolicy).toBe('privacy');
+    expect(result.data.helpSupport).toBe('help');
+    expect(result.data.faqs).toEqual([{ question: 'Q1', answer: 'A1' }]);
     expect(result.data.restaurantId).toBe('restaurant-1');
+  });
+
+  it('reads legacy top-level customer app content keys too', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      name: 'Demo Restaurant',
+      slug: 'demo-restaurant',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      settings: {
+        privacy_policy: 'Legacy privacy',
+        help_support: 'Legacy help',
+        faqs: [
+          { question: '  Legacy Q  ', answer: '  Legacy A  ' },
+          { question: '   ', answer: 'Ignored' },
+        ],
+      },
+      supportContact: {
+        email: 'support@example.com',
+        phone: '1234567898',
+      },
+    });
+
+    const result = await service.customerAppContentFromContext({
+      role: UserRoleEnum.CUSTOMER,
+      rid: 'restaurant-1',
+    } as never);
+
+    expect(result.data.privacyPolicy).toBe('Legacy privacy');
+    expect(result.data.helpSupport).toBe('Legacy help');
+    expect(result.data.faqs).toEqual([
+      { question: 'Legacy Q', answer: 'Legacy A' },
+    ]);
+    expect(result.data.supportContact).toEqual({
+      email: 'support@example.com',
+      phone: '1234567898',
+    });
   });
 
   it('returns notification settings from restaurant settings json', async () => {

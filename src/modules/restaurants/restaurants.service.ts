@@ -388,11 +388,13 @@ export class RestaurantsService {
         ['customerApp', 'privacyPolicy'],
         ['publicContent', 'privacyPolicy'],
         ['privacyPolicy'],
+        ['privacy_policy'],
       ]),
       helpSupport: this.readStringValue(restaurant.settings, [
         ['customerApp', 'helpSupport'],
         ['publicContent', 'helpSupport'],
         ['helpSupport'],
+        ['help_support'],
       ]),
       faqs: this.readFaqs(restaurant.settings, [
         ['customerApp', 'faqs'],
@@ -655,9 +657,16 @@ export class RestaurantsService {
             return null;
           }
 
+          const question = faq.question.trim();
+          const answer = faq.answer.trim();
+
+          if (!question || !answer) {
+            return null;
+          }
+
           return {
-            question: faq.question,
-            answer: faq.answer,
+            question,
+            answer,
           };
         })
         .filter(
