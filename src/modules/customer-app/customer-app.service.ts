@@ -371,6 +371,9 @@ export class CustomerAppService {
               name: branch.name,
               coverImage: branch.coverImage,
               description: branch.description,
+              tableReservationsEnabled: this.readBooleanValue(branch.settings, [
+                ['tableReservationsEnabled'],
+              ]),
             }
           : null,
         cuisines: cuisines.items.map((item) => ({
@@ -537,6 +540,16 @@ export class CustomerAppService {
 
     if (!branch) {
       throw new NotFoundException('Branch not found');
+    }
+
+    const tableReservationsEnabled = this.readBooleanValue(branch.settings, [
+      ['tableReservationsEnabled'],
+    ]);
+
+    if (!tableReservationsEnabled) {
+      throw new BadRequestException(
+        'Table reservations are not enabled for this branch',
+      );
     }
 
     const reservationDate = new Date(dto.reservationDate);
@@ -930,6 +943,17 @@ export class CustomerAppService {
     }
 
     return null;
+  }
+
+  private readBooleanValue(source: unknown, paths: string[][]): boolean {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (typeof value === 'boolean') {
+        return value;
+      }
+    }
+
+    return false;
   }
 
   private readNumberValue(source: unknown, paths: string[][]): number {

@@ -194,6 +194,7 @@ export class CustomerAppRepository {
         name: true,
         coverImage: true,
         description: true,
+        settings: true,
       },
     });
   }

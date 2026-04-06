@@ -108,6 +108,7 @@ export class AuthService {
       );
 
       const defaultMainBranchSettings = {
+        tableReservationsEnabled: false,
         allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
         allowedPaymentMethods: [PaymentMethodEnum.COD],
         deliveryConfig: {

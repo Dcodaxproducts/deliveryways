@@ -238,10 +238,19 @@ describe('CustomerAppService', () => {
     });
     repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
     repository.listPromotionalItems.mockResolvedValue([]);
-    repository.findBranchPublicContent.mockResolvedValue(null);
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      coverImage: 'branch-cover.jpg',
+      description: 'Downtown branch',
+      settings: {
+        tableReservationsEnabled: true,
+      },
+    });
 
     const result = await service.getHomeScreen({
       restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
       promotionLimit: 8,
       cuisineLimit: 12,
     });
@@ -249,6 +258,13 @@ describe('CustomerAppService', () => {
     expect(result.data.restaurant.coverImage).toBe(
       'https://cdn.example.com/restaurant-cover.png',
     );
+    expect(result.data.branch).toEqual({
+      id: 'branch-1',
+      name: 'Main Branch',
+      coverImage: 'branch-cover.jpg',
+      description: 'Downtown branch',
+      tableReservationsEnabled: true,
+    });
   });
 
   it('uses customer token restaurant scope for privacy policy when query restaurantId is omitted', async () => {
@@ -448,6 +464,9 @@ describe('CustomerAppService', () => {
     repository.findBranchPublicContent.mockResolvedValue({
       id: 'branch-1',
       name: 'Main Branch',
+      settings: {
+        tableReservationsEnabled: true,
+      },
     });
 
     const result = await service.createTableReservation(
@@ -468,6 +487,46 @@ describe('CustomerAppService', () => {
     expect(repository.upsertCustomerProfile).toHaveBeenCalled();
     expect(result.data.branchId).toBe('branch-1');
     expect(result.message).toBe('Table reservation created successfully');
+  });
+
+  it('blocks table reservation creation when branch reservations are disabled', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: {
+        metadata: {
+          customerApp: {
+            tableReservations: [],
+          },
+        },
+      },
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      settings: {
+        tableReservationsEnabled: false,
+      },
+    });
+
+    await expect(
+      service.createTableReservation(
+        {
+          uid: 'customer-1',
+          rid: 'restaurant-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          reservationDate: '2099-03-30T19:30:00.000Z',
+          guestCount: 4,
+          note: 'Window side',
+        },
+      ),
+    ).rejects.toThrow('Table reservations are not enabled for this branch');
   });
 
   it('cancels a table reservation in customer metadata', async () => {

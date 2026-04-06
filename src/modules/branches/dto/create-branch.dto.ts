@@ -69,6 +69,14 @@ class BranchContactDto {
 }
 
 export class BranchSettingsDto {
+  @ApiPropertyOptional({
+    description: 'Whether customers can create table reservations for this branch',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  tableReservationsEnabled?: boolean;
+
   @ApiProperty({ enum: OrderTypeEnum, isArray: true })
   @IsArray()
   @IsEnum(OrderTypeEnum, { each: true })
