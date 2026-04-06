@@ -1154,6 +1154,7 @@ model GlobalSetting {
   primaryColor                String?               @map("primary_color") @db.VarChar(20)
   secondaryColor              String?               @map("secondary_color") @db.VarChar(20)
   fontFamily                  String?               @map("font_family") @db.VarChar(100)
+  notificationSettings        Json?                 @map("notification_settings")
   isTaxEnforced               Boolean               @default(false) @map("is_tax_enforced")
   isCommissionEnforced        Boolean               @default(false) @map("is_commission_enforced")
   isCurrencyEnforced          Boolean               @default(false) @map("is_currency_enforced")

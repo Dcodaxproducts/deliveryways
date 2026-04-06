@@ -10,6 +10,7 @@ It currently supports:
 - currency display defaults
 - localization defaults
 - basic branding defaults
+- super-admin notification settings
 - optional enforcement flags for future downstream override rules
 
 ---
@@ -46,6 +47,7 @@ Accepted fields:
 - `primaryColor`
 - `secondaryColor`
 - `fontFamily`
+- `notificationSettings`
 - `isTaxEnforced`
 - `isCommissionEnforced`
 - `isCurrencyEnforced`
@@ -61,6 +63,7 @@ Key design notes:
 - no tenant foreign key on purpose
 - audit fields: `createdBy`, `updatedBy`
 - percentages stored as decimals
+- notification settings stored in `notification_settings` JSONB
 - timezone validated at service layer
 
 ---

@@ -4,9 +4,10 @@ import {
   PlatformDateFormat,
   VatHandlingRule,
 } from '@prisma/client';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -14,6 +15,7 @@ import {
   Matches,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 const HEX_COLOR_REGEX = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
@@ -30,6 +32,81 @@ const normalizeOptionalString = ({ value }: { value: unknown }) => {
   const trimmed = value.trim();
   return trimmed.length ? trimmed : '';
 };
+
+class NotificationChannelPreferenceDto {
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  email?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  sms?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  whatsapp?: boolean;
+}
+
+class NotificationTypesDto {
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  newOrder?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  orderCancelled?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  printerError?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  dailyReport?: NotificationChannelPreferenceDto;
+
+  @ApiPropertyOptional({ type: NotificationChannelPreferenceDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationChannelPreferenceDto)
+  payoutUpdate?: NotificationChannelPreferenceDto;
+}
+
+class NotificationSettingsDto {
+  @ApiPropertyOptional({ example: 'jhondoe@example.com' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsEmail()
+  emailAddress?: string;
+
+  @ApiPropertyOptional({ example: '+923001234567' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  phoneNumber?: string;
+
+  @ApiPropertyOptional({ example: '+923001234567' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  whatsappNumber?: string;
+
+  @ApiPropertyOptional({ type: NotificationTypesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationTypesDto)
+  notificationTypes?: NotificationTypesDto;
+}
 
 export class UpdateGlobalSettingsDto {
   @ApiPropertyOptional({ minimum: 0, maximum: 100, example: 5 })
@@ -130,4 +207,10 @@ export class UpdateGlobalSettingsDto {
   @IsOptional()
   @IsBoolean()
   isLocalizationEnforced?: boolean;
+
+  @ApiPropertyOptional({ type: NotificationSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationSettingsDto)
+  notificationSettings?: NotificationSettingsDto;
 }

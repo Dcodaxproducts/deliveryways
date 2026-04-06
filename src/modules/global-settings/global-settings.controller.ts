@@ -20,7 +20,7 @@ export class GlobalSettingsController {
 
   @Get()
   @ApiOperation({ summary: 'Get platform-wide global settings' })
-  getSettings() {
+  getSettings(): Promise<unknown> {
     return this.globalSettingsService.getSettings();
   }
 
@@ -29,7 +29,7 @@ export class GlobalSettingsController {
   updateSettings(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: UpdateGlobalSettingsDto,
-  ) {
+  ): Promise<unknown> {
     return this.globalSettingsService.updateSettings(user, dto);
   }
 }
