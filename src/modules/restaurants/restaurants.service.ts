@@ -17,6 +17,7 @@ import {
   UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
+  UpdateRestaurantNotificationSettingsDto,
 } from './dto';
 
 @Injectable()
@@ -248,6 +249,48 @@ export class RestaurantsService {
     };
   }
 
+  async notificationSettings(user: AuthUserContext, id: string) {
+    const restaurant = await this.getRestaurantForNotificationSettings(
+      user,
+      id,
+    );
+
+    return {
+      data: this.extractNotificationSettings(restaurant),
+      message: 'Restaurant notification settings fetched successfully',
+    };
+  }
+
+  async updateNotificationSettings(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantNotificationSettingsDto,
+    tx?: PrismaTx,
+  ) {
+    const restaurant = await this.getRestaurantForNotificationSettings(
+      user,
+      id,
+    );
+    const nextSettings = this.mergeNotificationSettings(
+      restaurant.settings,
+      dto,
+    );
+    this.validateNotificationSettings(nextSettings);
+
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        settings: nextSettings as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: this.extractNotificationSettings(data),
+      message: 'Restaurant notification settings updated successfully',
+    };
+  }
+
   async updateImages(
     user: AuthUserContext,
     id: string,
@@ -374,6 +417,121 @@ export class RestaurantsService {
     } as Prisma.JsonObject;
   }
 
+  private extractNotificationSettings(restaurant: {
+    id: string;
+    settings: Prisma.JsonValue | null;
+  }) {
+    return {
+      restaurantId: restaurant.id,
+      email: {
+        enabled: this.readBooleanValue(restaurant.settings, [
+          ['notificationSettings', 'email', 'enabled'],
+        ]),
+        emailAddress: this.readStringValue(restaurant.settings, [
+          ['notificationSettings', 'email', 'emailAddress'],
+        ]),
+      },
+      sms: {
+        enabled: this.readBooleanValue(restaurant.settings, [
+          ['notificationSettings', 'sms', 'enabled'],
+        ]),
+        phoneNumber: this.readStringValue(restaurant.settings, [
+          ['notificationSettings', 'sms', 'phoneNumber'],
+        ]),
+      },
+      whatsapp: {
+        enabled: this.readBooleanValue(restaurant.settings, [
+          ['notificationSettings', 'whatsapp', 'enabled'],
+        ]),
+        phoneNumber: this.readStringValue(restaurant.settings, [
+          ['notificationSettings', 'whatsapp', 'phoneNumber'],
+        ]),
+      },
+    };
+  }
+
+  private mergeNotificationSettings(
+    currentSettings: Prisma.JsonValue | null,
+    dto: UpdateRestaurantNotificationSettingsDto,
+  ): Prisma.JsonObject {
+    const root = this.asObject(currentSettings);
+    const notificationSettings = this.asObject(root.notificationSettings);
+    const email = this.asObject(notificationSettings.email);
+    const sms = this.asObject(notificationSettings.sms);
+    const whatsapp = this.asObject(notificationSettings.whatsapp);
+
+    return {
+      ...root,
+      notificationSettings: {
+        ...notificationSettings,
+        ...(dto.email !== undefined
+          ? {
+              email: {
+                ...email,
+                ...(dto.email.enabled !== undefined
+                  ? { enabled: dto.email.enabled }
+                  : {}),
+                ...(dto.email.emailAddress !== undefined
+                  ? { emailAddress: dto.email.emailAddress }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(dto.sms !== undefined
+          ? {
+              sms: {
+                ...sms,
+                ...(dto.sms.enabled !== undefined
+                  ? { enabled: dto.sms.enabled }
+                  : {}),
+                ...(dto.sms.phoneNumber !== undefined
+                  ? { phoneNumber: dto.sms.phoneNumber }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(dto.whatsapp !== undefined
+          ? {
+              whatsapp: {
+                ...whatsapp,
+                ...(dto.whatsapp.enabled !== undefined
+                  ? { enabled: dto.whatsapp.enabled }
+                  : {}),
+                ...(dto.whatsapp.phoneNumber !== undefined
+                  ? { phoneNumber: dto.whatsapp.phoneNumber }
+                  : {}),
+              },
+            }
+          : {}),
+      },
+    } as Prisma.JsonObject;
+  }
+
+  private validateNotificationSettings(settings: Prisma.JsonObject) {
+    const current = this.extractNotificationSettings({
+      id: '',
+      settings,
+    });
+
+    if (current.email.enabled && !current.email.emailAddress) {
+      throw new BadRequestException(
+        'email.emailAddress is required when email notifications are enabled',
+      );
+    }
+
+    if (current.sms.enabled && !current.sms.phoneNumber) {
+      throw new BadRequestException(
+        'sms.phoneNumber is required when SMS notifications are enabled',
+      );
+    }
+
+    if (current.whatsapp.enabled && !current.whatsapp.phoneNumber) {
+      throw new BadRequestException(
+        'whatsapp.phoneNumber is required when WhatsApp notifications are enabled',
+      );
+    }
+  }
+
   private readStringValue(source: unknown, paths: string[][]): string | null {
     for (const path of paths) {
       const value = this.readPath(source, path);
@@ -383,6 +541,17 @@ export class RestaurantsService {
     }
 
     return null;
+  }
+
+  private readBooleanValue(source: unknown, paths: string[][]): boolean {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (typeof value === 'boolean') {
+        return value;
+      }
+    }
+
+    return false;
   }
 
   private readFaqs(
@@ -442,6 +611,35 @@ export class RestaurantsService {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private async getRestaurantForNotificationSettings(
+    user: AuthUserContext,
+    id: string,
+  ) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return restaurant;
+    }
+
+    if (user.role !== UserRoleEnum.BUSINESS_ADMIN || !user.tid) {
+      throw new ForbiddenException(
+        'Only business admin or super admin can manage notification settings',
+      );
+    }
+
+    if (restaurant.tenantId !== user.tid) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant',
+      );
+    }
+
+    return restaurant;
   }
 
   private async resolveTenantByRestaurant(

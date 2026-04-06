@@ -25,6 +25,7 @@ import {
   UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
+  UpdateRestaurantNotificationSettingsDto,
 } from './dto';
 
 @ApiTags('Restaurants')
@@ -142,6 +143,29 @@ export class RestaurantsController {
     @Body() dto: UpdateRestaurantCustomerAppContentDto,
   ) {
     return this.restaurantsService.updateCustomerAppContent(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get(':id/notification-settings')
+  notificationSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.notificationSettings(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/notification-settings')
+  updateNotificationSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantNotificationSettingsDto,
+  ) {
+    return this.restaurantsService.updateNotificationSettings(user, id, dto);
   }
 
   @ApiBearerAuth()
