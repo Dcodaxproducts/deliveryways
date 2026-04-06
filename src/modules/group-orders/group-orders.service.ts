@@ -775,9 +775,14 @@ export class GroupOrdersService {
       this.toOrderQuotePayload(session),
     );
 
+    const quoteSummary = {
+      ...quote.data,
+    };
+    delete (quoteSummary as { items?: unknown }).items;
+
     return {
       source: 'quote' as const,
-      ...quote.data,
+      ...quoteSummary,
       couponCode: quote.data.couponCode ?? session.couponCode,
       itemCount: session.items.length,
     };
