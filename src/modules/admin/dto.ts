@@ -1,11 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsIn,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
+  Min,
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
 
@@ -80,4 +85,44 @@ export class AdminForceDeleteUsersDto {
   @IsArray()
   @IsEmail({}, { each: true })
   emails!: string[];
+}
+
+export const ADMIN_DASHBOARD_TREND_RANGE_VALUES = ['daily', 'weekly'] as const;
+export type AdminDashboardTrendRange =
+  (typeof ADMIN_DASHBOARD_TREND_RANGE_VALUES)[number];
+
+export const ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES = [
+  'all-time',
+  'daily',
+  'weekly',
+] as const;
+export type AdminDashboardTopRestaurantsRange =
+  (typeof ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES)[number];
+
+export class AdminDashboardRestaurantTrendQueryDto {
+  @ApiPropertyOptional({
+    enum: ADMIN_DASHBOARD_TREND_RANGE_VALUES,
+    default: 'daily',
+  })
+  @IsOptional()
+  @IsIn(ADMIN_DASHBOARD_TREND_RANGE_VALUES)
+  range?: AdminDashboardTrendRange;
+}
+
+export class AdminDashboardTopRestaurantsQueryDto {
+  @ApiPropertyOptional({
+    enum: ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES,
+    default: 'all-time',
+  })
+  @IsOptional()
+  @IsIn(ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES)
+  range?: AdminDashboardTopRestaurantsRange;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 10, default: 5 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  limit = 5;
 }

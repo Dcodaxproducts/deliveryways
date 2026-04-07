@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -8,6 +8,10 @@ import {
   TenantAccessGuard,
 } from '../../common/guards';
 import { AdminDashboardService } from './admin-dashboard.service';
+import {
+  AdminDashboardTopRestaurantsQueryDto,
+  AdminDashboardRestaurantTrendQueryDto,
+} from './dto';
 
 @ApiTags('Admin Dashboard')
 @ApiBearerAuth()
@@ -24,5 +28,24 @@ export class AdminDashboardController {
   })
   getOverview() {
     return this.adminDashboardService.getOverview();
+  }
+
+  @Get('restaurants/trend')
+  @ApiOperation({
+    summary: 'Get super-admin restaurant trend data for the dashboard graph',
+  })
+  getRestaurantTrend(@Query() query: AdminDashboardRestaurantTrendQueryDto) {
+    return this.adminDashboardService.getRestaurantTrend(query);
+  }
+
+  @Get('restaurants/top-performing')
+  @ApiOperation({
+    summary:
+      'Get top-performing restaurants ranked by order count for the dashboard',
+  })
+  getTopPerformingRestaurants(
+    @Query() query: AdminDashboardTopRestaurantsQueryDto,
+  ) {
+    return this.adminDashboardService.getTopPerformingRestaurants(query);
   }
 }

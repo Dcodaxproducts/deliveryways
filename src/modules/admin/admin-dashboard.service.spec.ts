@@ -23,4 +23,87 @@ describe('AdminDashboardService', () => {
       message: 'Admin dashboard overview fetched successfully',
     });
   });
+
+  it('returns restaurant trend data', async () => {
+    const repository = {
+      getOverview: jest.fn(),
+      getRestaurantTrend: jest.fn().mockResolvedValue({
+        range: 'daily',
+        totalCreatedInRange: 6,
+        points: [
+          { key: '2026-04-01', label: 'Mon', value: 1, cumulativeTotal: 11 },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getRestaurantTrend({ range: 'daily' }),
+    ).resolves.toEqual({
+      data: {
+        range: 'daily',
+        totalCreatedInRange: 6,
+        points: [
+          {
+            key: '2026-04-01',
+            label: 'Mon',
+            value: 1,
+            cumulativeTotal: 11,
+          },
+        ],
+      },
+      message: 'Admin dashboard restaurant trend fetched successfully',
+    });
+    expect(repository.getRestaurantTrend).toHaveBeenCalledWith('daily');
+  });
+
+  it('returns top performing restaurants data', async () => {
+    const repository = {
+      getOverview: jest.fn(),
+      getRestaurantTrend: jest.fn(),
+      getTopPerformingRestaurants: jest.fn().mockResolvedValue({
+        range: 'all-time',
+        items: [
+          {
+            rank: 1,
+            restaurantId: 'restaurant-1',
+            name: 'Dragon Wok',
+            slug: 'dragon-wok',
+            logoUrl: null,
+            coverImage: null,
+            ordersCount: 342,
+            customersCount: 180,
+          },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getTopPerformingRestaurants({ range: 'all-time', limit: 5 }),
+    ).resolves.toEqual({
+      data: {
+        range: 'all-time',
+        items: [
+          {
+            rank: 1,
+            restaurantId: 'restaurant-1',
+            name: 'Dragon Wok',
+            slug: 'dragon-wok',
+            logoUrl: null,
+            coverImage: null,
+            ordersCount: 342,
+            customersCount: 180,
+          },
+        ],
+      },
+      message: 'Admin dashboard top restaurants fetched successfully',
+    });
+    expect(repository.getTopPerformingRestaurants).toHaveBeenCalledWith(
+      'all-time',
+      5,
+    );
+  });
 });
