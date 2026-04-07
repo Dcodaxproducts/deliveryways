@@ -14,9 +14,11 @@ describe('GroupOrdersService', () => {
       findSessionByInviteCode: jest.fn(),
       findParticipant: jest.fn(),
       listForUser: jest.fn(),
+      listForAdmin: jest.fn(),
       createParticipant: jest.fn(),
       updateParticipant: jest.fn(),
       findSessionById: jest.fn(),
+      findRestaurantInTenant: jest.fn(),
       findMenuItemsForResponse: jest.fn(),
     };
 
@@ -39,6 +41,12 @@ describe('GroupOrdersService', () => {
     tid: 'tenant-1',
     rid: 'restaurant-1',
     role: UserRoleEnum.CUSTOMER,
+  };
+
+  const businessAdminUser = {
+    uid: 'business-admin-1',
+    tid: 'tenant-1',
+    role: UserRoleEnum.BUSINESS_ADMIN,
   };
 
   it('rejects creating a group order when the branch does not support the selected order type', async () => {
@@ -792,6 +800,143 @@ describe('GroupOrdersService', () => {
     const detailsResult = await service.details(customerUser, 'session-1');
 
     expect(listResult.data[0]).toEqual(detailsResult.data);
+  });
+
+  it('lists tenant group orders for business admin and forwards optional restaurant scope', async () => {
+    const { service, groupOrdersRepository } = makeService();
+    groupOrdersRepository.findRestaurantInTenant.mockResolvedValue({
+      id: 'restaurant-2',
+    });
+    groupOrdersRepository.listForAdmin.mockResolvedValue({
+      items: [],
+      total: 0,
+    });
+
+    const result = await service.list(businessAdminUser, {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      restaurantId: 'restaurant-2',
+    });
+
+    expect(groupOrdersRepository.findRestaurantInTenant).toHaveBeenCalledWith(
+      'restaurant-2',
+      'tenant-1',
+    );
+    expect(groupOrdersRepository.listForAdmin).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-2',
+      },
+      expect.objectContaining({ restaurantId: 'restaurant-2' }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        data: [],
+        message: 'Group orders fetched successfully',
+      }),
+    );
+  });
+
+  it('allows business admin to fetch group-order details for tenant restaurants', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: new Date('2099-03-30T19:30:00.000Z'),
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findRestaurantInTenant.mockResolvedValue({
+      id: 'restaurant-1',
+    });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        branchId: 'branch-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        orderType: 'TAKEAWAY',
+        orderTime: '2099-03-30T19:30:00.000Z',
+        isScheduled: true,
+        subtotal: 500,
+        taxAmount: 50,
+        deliveryFee: 0,
+        discountAmount: 0,
+        totalAmount: 550,
+        couponCode: null,
+        items: [],
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.details(businessAdminUser, 'session-1');
+
+    expect(groupOrdersRepository.findRestaurantInTenant).toHaveBeenCalledWith(
+      'restaurant-1',
+      'tenant-1',
+    );
+    expect(result.data.id).toBe('session-1');
   });
 
   it('validates group-order coupon before saving it', async () => {

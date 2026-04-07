@@ -32,11 +32,11 @@ import { GroupOrdersService } from './group-orders.service';
 @ApiTags('Group Orders')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-@Roles(RolesEnum.CUSTOMER)
 @Controller('group-orders')
 export class GroupOrdersController {
   constructor(private readonly groupOrdersService: GroupOrdersService) {}
 
+  @Roles(RolesEnum.CUSTOMER)
   @Post()
   create(
     @CurrentUser() user: AuthUserContext,
@@ -45,11 +45,13 @@ export class GroupOrdersController {
     return this.groupOrdersService.create(user, dto);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Post('join')
   join(@CurrentUser() user: AuthUserContext, @Body() dto: JoinGroupOrderDto) {
     return this.groupOrdersService.join(user, dto);
   }
 
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.CUSTOMER)
   @Get()
   list(
     @CurrentUser() user: AuthUserContext,
@@ -58,11 +60,13 @@ export class GroupOrdersController {
     return this.groupOrdersService.list(user, query);
   }
 
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.CUSTOMER)
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.groupOrdersService.details(user, id);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Patch(':id/settings')
   updateSettings(
     @CurrentUser() user: AuthUserContext,
@@ -72,6 +76,7 @@ export class GroupOrdersController {
     return this.groupOrdersService.updateSettings(user, id, dto);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Post(':id/items')
   addItem(
     @CurrentUser() user: AuthUserContext,
@@ -81,6 +86,7 @@ export class GroupOrdersController {
     return this.groupOrdersService.addItem(user, id, dto);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Patch(':id/items/:itemId')
   updateItem(
     @CurrentUser() user: AuthUserContext,
@@ -91,6 +97,7 @@ export class GroupOrdersController {
     return this.groupOrdersService.updateItem(user, id, itemId, dto);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Delete(':id/items/:itemId')
   removeItem(
     @CurrentUser() user: AuthUserContext,
@@ -100,11 +107,13 @@ export class GroupOrdersController {
     return this.groupOrdersService.removeItem(user, id, itemId);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Post(':id/leave')
   leave(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.groupOrdersService.leave(user, id);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Patch(':id/status')
   updateStatus(
     @CurrentUser() user: AuthUserContext,
@@ -114,11 +123,13 @@ export class GroupOrdersController {
     return this.groupOrdersService.updateStatus(user, id, dto);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Post(':id/quote')
   quote(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.groupOrdersService.quote(user, id);
   }
 
+  @Roles(RolesEnum.CUSTOMER)
   @Post(':id/checkout')
   checkout(
     @CurrentUser() user: AuthUserContext,

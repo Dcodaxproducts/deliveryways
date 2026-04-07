@@ -200,6 +200,29 @@ export class GroupOrdersRepository {
       ...(query.status ? { status: query.status } : {}),
     };
 
+    return this.listByWhere(where, query);
+  }
+
+  async listForAdmin(
+    scope: {
+      tenantId?: string;
+      restaurantId?: string;
+    },
+    query: ListGroupOrdersDto,
+  ) {
+    const where: Prisma.GroupOrderSessionWhereInput = {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+    };
+
+    return this.listByWhere(where, query);
+  }
+
+  private async listByWhere(
+    where: Prisma.GroupOrderSessionWhereInput,
+    query: ListGroupOrdersDto,
+  ) {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.groupOrderSession.findMany({
         where,
@@ -229,6 +252,17 @@ export class GroupOrdersRepository {
         restaurantId: true,
         settings: true,
       },
+    });
+  }
+
+  async findRestaurantInTenant(restaurantId: string, tenantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        tenantId,
+        deletedAt: null,
+      },
+      select: { id: true },
     });
   }
 

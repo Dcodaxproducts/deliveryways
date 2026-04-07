@@ -166,6 +166,11 @@ export class CheckoutGroupOrderDto {
 }
 
 export class ListGroupOrdersDto extends QueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
   @ApiPropertyOptional({ enum: GroupOrderStatus })
   @IsOptional()
   @IsEnum(GroupOrderStatus)

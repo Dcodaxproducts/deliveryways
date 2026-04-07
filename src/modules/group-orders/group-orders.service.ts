@@ -150,11 +150,12 @@ export class GroupOrdersService {
   }
 
   async list(user: AuthUserContext, query: ListGroupOrdersDto) {
-    this.assertCustomerUser(user);
-    const { items, total } = await this.groupOrdersRepository.listForUser(
-      user.uid,
-      query,
-    );
+    const { items, total } = this.isCustomerUser(user)
+      ? await this.groupOrdersRepository.listForUser(user.uid, query)
+      : await this.groupOrdersRepository.listForAdmin(
+          await this.resolveAdminListScope(user, query.restaurantId),
+          query,
+        );
 
     return {
       data: await Promise.all(
@@ -166,8 +167,7 @@ export class GroupOrdersService {
   }
 
   async details(user: AuthUserContext, id: string) {
-    this.assertCustomerUser(user);
-    const session = await this.getSessionForMemberOrThrow(user, id);
+    const session = await this.getSessionForReadOrThrow(user, id);
 
     return {
       data: await this.buildSessionResponse(user, session),
@@ -474,6 +474,21 @@ export class GroupOrdersService {
     return session;
   }
 
+  private async getSessionForReadOrThrow(user: AuthUserContext, id: string) {
+    if (this.isCustomerUser(user)) {
+      return this.getSessionForMemberOrThrow(user, id);
+    }
+
+    const session = await this.groupOrdersRepository.findSessionById(id);
+    if (!session) {
+      throw new NotFoundException('Group order not found');
+    }
+
+    await this.assertAdminSessionReadAccess(user, session.restaurantId);
+
+    return session;
+  }
+
   private async getSessionForHostOrThrow(user: AuthUserContext, id: string) {
     const session = await this.getSessionForMemberOrThrow(user, id);
     if (session.hostUserId !== user.uid) {
@@ -519,15 +534,85 @@ export class GroupOrdersService {
     return allowedOrderTypes.length ? allowedOrderTypes : fallback;
   }
 
+  private isCustomerUser(user: AuthUserContext) {
+    return (
+      user.role === UserRoleEnum.CUSTOMER &&
+      Boolean(user.uid) &&
+      Boolean(user.tid) &&
+      Boolean(user.rid)
+    );
+  }
+
   private assertCustomerUser(user: AuthUserContext) {
-    if (
-      user.role !== UserRoleEnum.CUSTOMER ||
-      !user.uid ||
-      !user.tid ||
-      !user.rid
-    ) {
+    if (!this.isCustomerUser(user)) {
       throw new ForbiddenException(
         'Only authenticated customers can use group orders',
+      );
+    }
+  }
+
+  private async resolveAdminListScope(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return { restaurantId: requestedRestaurantId };
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      }
+
+      return {
+        tenantId: user.tid,
+        restaurantId: requestedRestaurantId,
+      };
+    }
+
+    throw new ForbiddenException(
+      'Only admins can list group orders by restaurant',
+    );
+  }
+
+  private async assertAdminSessionReadAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Only admins can access group orders outside participation',
+    );
+  }
+
+  private async assertRestaurantInTenant(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.groupOrdersRepository.findRestaurantInTenant(
+      restaurantId,
+      tenantId,
+    );
+
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant restaurants',
       );
     }
   }
