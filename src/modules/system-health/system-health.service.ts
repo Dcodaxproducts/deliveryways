@@ -34,6 +34,13 @@ export class SystemHealthService {
         server,
         database,
         platform,
+        persistence: {
+          mode: 'file',
+          durableAcrossRestarts: true,
+          affectsExistingFlows: false,
+          affectsDatabaseSchema: false,
+          affectsExistingApis: false,
+        },
         api: this.systemHealthMetricsService.getRequestOverview('hour'),
         integrations: this.systemHealthMetricsService.getIntegrationOverview(),
       },

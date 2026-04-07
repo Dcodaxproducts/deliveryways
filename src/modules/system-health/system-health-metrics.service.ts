@@ -1,4 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { SystemHealthIntegrationType, SystemHealthRange } from './dto';
 
 type RequestMetricRecord = {
@@ -19,8 +26,16 @@ type IntegrationLogRecord = {
   meta?: Record<string, unknown>;
 };
 
+type PersistedMetricsState = {
+  requestMetrics: RequestMetricRecord[];
+  integrationLogs: Record<SystemHealthIntegrationType, IntegrationLogRecord[]>;
+};
+
 @Injectable()
-export class SystemHealthMetricsService {
+export class SystemHealthMetricsService
+  implements OnModuleInit, OnModuleDestroy
+{
+  private readonly logger = new Logger(SystemHealthMetricsService.name);
   private readonly requestMetrics: RequestMetricRecord[] = [];
   private readonly integrationLogs: Record<
     SystemHealthIntegrationType,
@@ -30,8 +45,26 @@ export class SystemHealthMetricsService {
     printer: [],
   };
 
-  private readonly maxRequestMetrics = 5000;
-  private readonly maxIntegrationLogs = 500;
+  private readonly maxRequestMetrics = 20000;
+  private readonly maxIntegrationLogs = 1000;
+  private flushTimer: NodeJS.Timeout | null = null;
+  private flushPromise: Promise<void> | null = null;
+  private readonly storePath =
+    process.env.SYSTEM_HEALTH_STORE_PATH?.trim() ||
+    join(process.cwd(), 'storage', 'system-health', 'metrics-store.json');
+
+  async onModuleInit() {
+    await this.loadStateFromDisk();
+  }
+
+  async onModuleDestroy() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    await this.flushToDisk();
+  }
 
   recordRequest(
     input: Omit<RequestMetricRecord, 'timestamp'> & { timestamp?: string },
@@ -43,6 +76,7 @@ export class SystemHealthMetricsService {
     });
 
     this.trimArray(this.requestMetrics, this.maxRequestMetrics);
+    this.scheduleFlush();
   }
 
   recordIntegrationLog(
@@ -61,6 +95,7 @@ export class SystemHealthMetricsService {
     });
 
     this.trimArray(this.integrationLogs[type], this.maxIntegrationLogs);
+    this.scheduleFlush();
   }
 
   getRequestOverview(range: SystemHealthRange = 'hour') {
@@ -68,6 +103,10 @@ export class SystemHealthMetricsService {
 
     return {
       range,
+      persistence: {
+        mode: 'file',
+        durableAcrossRestarts: true,
+      },
       ...this.buildSummary(records),
     };
   }
@@ -78,6 +117,10 @@ export class SystemHealthMetricsService {
 
     return {
       range,
+      persistence: {
+        mode: 'file',
+        durableAcrossRestarts: true,
+      },
       summary: this.buildSummary(records),
       buckets,
     };
@@ -91,6 +134,10 @@ export class SystemHealthMetricsService {
     return {
       webhook: this.buildIntegrationTypeSummary('webhook'),
       printer: this.buildIntegrationTypeSummary('printer'),
+      persistence: {
+        mode: 'file',
+        durableAcrossRestarts: true,
+      },
     };
   }
 
@@ -100,6 +147,10 @@ export class SystemHealthMetricsService {
   ) {
     return {
       type,
+      persistence: {
+        mode: 'file',
+        durableAcrossRestarts: true,
+      },
       items: this.integrationLogs[type].slice(-limit).reverse(),
     };
   }
@@ -213,5 +264,80 @@ export class SystemHealthMetricsService {
     }
 
     items.splice(0, items.length - maxSize);
+  }
+
+  private scheduleFlush() {
+    if (this.flushTimer) {
+      return;
+    }
+
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flushToDisk();
+    }, 500);
+  }
+
+  private async loadStateFromDisk() {
+    try {
+      const raw = await readFile(this.storePath, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<PersistedMetricsState>;
+
+      if (Array.isArray(parsed.requestMetrics)) {
+        this.requestMetrics.push(...parsed.requestMetrics);
+        this.trimArray(this.requestMetrics, this.maxRequestMetrics);
+      }
+
+      if (parsed.integrationLogs) {
+        for (const type of ['webhook', 'printer'] as const) {
+          const items = parsed.integrationLogs[type];
+          if (Array.isArray(items)) {
+            this.integrationLogs[type].push(...items);
+            this.trimArray(this.integrationLogs[type], this.maxIntegrationLogs);
+          }
+        }
+      }
+    } catch (error) {
+      const errorCode = (error as NodeJS.ErrnoException | undefined)?.code;
+
+      if (errorCode !== 'ENOENT') {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.warn(
+          `Failed to load persisted system-health metrics: ${message}`,
+        );
+      }
+    }
+  }
+
+  private async flushToDisk() {
+    if (this.flushPromise) {
+      return this.flushPromise;
+    }
+
+    this.flushPromise = (async () => {
+      try {
+        await mkdir(dirname(this.storePath), { recursive: true });
+        await writeFile(
+          this.storePath,
+          JSON.stringify(
+            {
+              requestMetrics: this.requestMetrics,
+              integrationLogs: this.integrationLogs,
+            } satisfies PersistedMetricsState,
+            null,
+            2,
+          ),
+          'utf8',
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.warn(`Failed to persist system-health metrics: ${message}`);
+      } finally {
+        this.flushPromise = null;
+      }
+    })();
+
+    return this.flushPromise;
   }
 }
