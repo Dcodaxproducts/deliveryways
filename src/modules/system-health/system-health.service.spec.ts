@@ -1,9 +1,13 @@
+import { SystemHealthMetricsService } from './system-health-metrics.service';
 import { SystemHealthService } from './system-health.service';
 import { SystemHealthRepository } from './system-health.repository';
 
 describe('SystemHealthService', () => {
   let service: SystemHealthService;
   let repository: Partial<Record<keyof SystemHealthRepository, jest.Mock>>;
+  let metricsService: Partial<
+    Record<keyof SystemHealthMetricsService, jest.Mock>
+  >;
 
   beforeEach(() => {
     repository = {
@@ -20,8 +24,34 @@ describe('SystemHealthService', () => {
       }),
     };
 
+    metricsService = {
+      getRequestOverview: jest.fn().mockReturnValue({ totalRequests: 0 }),
+      getIntegrationOverview: jest.fn().mockReturnValue({
+        webhook: {
+          status: 'tracking_pending',
+          totalEvents: 0,
+          failedCount: 0,
+          latest: null,
+        },
+        printer: {
+          status: 'tracking_pending',
+          totalEvents: 0,
+          failedCount: 0,
+          latest: null,
+        },
+      }),
+      getRequestMetrics: jest
+        .fn()
+        .mockReturnValue({ range: 'hour', summary: {}, buckets: [] }),
+      getRecentRequestLogs: jest.fn().mockReturnValue([]),
+      getIntegrationLogs: jest
+        .fn()
+        .mockReturnValue({ type: 'webhook', items: [] }),
+    };
+
     service = new SystemHealthService(
       repository as unknown as SystemHealthRepository,
+      metricsService as unknown as SystemHealthMetricsService,
     );
   });
 
@@ -48,6 +78,7 @@ describe('SystemHealthService', () => {
     const result = await service.getOverview();
 
     expect(result.data.status).toBe('healthy');
+    expect(result.data.api).toEqual({ totalRequests: 0 });
     expect(result.message).toBe('System health fetched successfully');
   });
 
@@ -79,5 +110,14 @@ describe('SystemHealthService', () => {
 
     expect(result.data.status).toBe('down');
     expect(result.data.database.status).toBe('down');
+  });
+
+  it('returns request metrics payload', () => {
+    const result = service.getRequestMetrics({ range: 'day' });
+
+    expect(metricsService.getRequestMetrics).toHaveBeenCalledWith('day');
+    expect(result.message).toBe(
+      'System health request metrics fetched successfully',
+    );
   });
 });

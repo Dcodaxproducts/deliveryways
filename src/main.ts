@@ -7,6 +7,7 @@ import * as compressionModule from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { ResponseInterceptor } from './common/interceptors';
+import { RequestMetricsInterceptor } from './modules/system-health/request-metrics.interceptor';
 
 const compression: typeof import('compression') = (
   'default' in compressionModule ? compressionModule.default : compressionModule
@@ -54,7 +55,12 @@ async function bootstrap(): Promise<void> {
       }),
     );
 
-    app.useGlobalInterceptors(new ResponseInterceptor());
+    const requestMetricsInterceptor = app.get(RequestMetricsInterceptor);
+
+    app.useGlobalInterceptors(
+      requestMetricsInterceptor,
+      new ResponseInterceptor(),
+    );
     app.useGlobalFilters(new GlobalExceptionFilter());
 
     // Swagger

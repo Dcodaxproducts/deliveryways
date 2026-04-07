@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { cpus, freemem, loadavg, totalmem, uptime } from 'node:os';
 import { statfsSync } from 'node:fs';
+import {
+  SystemHealthIntegrationLogsQueryDto,
+  SystemHealthLogsQueryDto,
+  SystemHealthMetricsQueryDto,
+} from './dto';
+import { SystemHealthMetricsService } from './system-health-metrics.service';
 import { SystemHealthRepository } from './system-health.repository';
 
 type HealthStatus = 'healthy' | 'degraded' | 'down';
@@ -9,6 +15,7 @@ type HealthStatus = 'healthy' | 'degraded' | 'down';
 export class SystemHealthService {
   constructor(
     private readonly systemHealthRepository: SystemHealthRepository,
+    private readonly systemHealthMetricsService: SystemHealthMetricsService,
   ) {}
 
   async getOverview() {
@@ -27,20 +34,36 @@ export class SystemHealthService {
         server,
         database,
         platform,
-        integrations: {
-          webhooks: {
-            status: 'tracking_pending',
-            message:
-              'Webhook delivery logs are not instrumented yet. Phase 2 will expose live stats.',
-          },
-          printer: {
-            status: 'tracking_pending',
-            message:
-              'Printer connectivity logs are not instrumented yet. Phase 2 will expose live stats.',
-          },
-        },
+        api: this.systemHealthMetricsService.getRequestOverview('hour'),
+        integrations: this.systemHealthMetricsService.getIntegrationOverview(),
       },
       message: 'System health fetched successfully',
+    };
+  }
+
+  getRequestMetrics(query: SystemHealthMetricsQueryDto) {
+    return {
+      data: this.systemHealthMetricsService.getRequestMetrics(query.range),
+      message: 'System health request metrics fetched successfully',
+    };
+  }
+
+  getRequestLogs(query: SystemHealthLogsQueryDto) {
+    return {
+      data: this.systemHealthMetricsService.getRecentRequestLogs(query.limit),
+      message: 'System health request logs fetched successfully',
+    };
+  }
+
+  getIntegrationLogs(query: SystemHealthIntegrationLogsQueryDto) {
+    const result = this.systemHealthMetricsService.getIntegrationLogs(
+      query.type,
+      query.limit,
+    );
+
+    return {
+      data: result,
+      message: 'System health integration logs fetched successfully',
     };
   }
 
