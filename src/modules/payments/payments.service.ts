@@ -17,6 +17,7 @@ import {
 } from './dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
+import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 
 @Injectable()
 export class PaymentsService {
@@ -24,6 +25,7 @@ export class PaymentsService {
     private readonly paymentsRepository: PaymentsRepository,
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly loyaltyWalletService?: LoyaltyWalletService,
   ) {}
 
   async createAttempt(
@@ -159,9 +161,15 @@ export class PaymentsService {
         tx,
       );
 
+
       return updatedPayment;
     });
 
+    await this.loyaltyWalletService!.awardPointsForPaidOrder(
+      payment.orderId,
+      data.id,
+      user.uid,
+    );
     await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
@@ -202,9 +210,15 @@ export class PaymentsService {
         tx,
       );
 
+
       return updatedPayment;
     });
 
+    await this.loyaltyWalletService!.restoreOrderBenefits(
+      payment.orderId,
+      'PAYMENT_REVERSAL',
+      user.uid,
+    );
     await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
@@ -258,9 +272,15 @@ export class PaymentsService {
         tx,
       );
 
+
       return updatedPayment;
     });
 
+    await this.loyaltyWalletService!.restoreOrderBenefits(
+      payment.orderId,
+      'PAYMENT_REVERSAL',
+      user.uid,
+    );
     await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
@@ -349,11 +369,19 @@ export class PaymentsService {
           },
           tx,
         );
+
       }
 
       return refundTransaction;
     });
 
+    if (data.status === PaymentStatus.REFUNDED) {
+      await this.loyaltyWalletService!.restoreOrderBenefits(
+        payment.orderId,
+        'REFUND',
+        user.uid,
+      );
+    }
     await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {

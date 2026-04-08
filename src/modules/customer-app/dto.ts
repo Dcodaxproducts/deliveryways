@@ -134,6 +134,14 @@ export class RedeemLoyaltyPointsDto {
   @Min(1)
   points!: number;
 
+  @ApiPropertyOptional({
+    enum: ['WALLET'],
+    description: 'Current supported target is wallet credit',
+  })
+  @IsOptional()
+  @IsString()
+  target?: 'WALLET';
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -173,4 +181,19 @@ export class ListTableReservationsQueryDto extends QueryDto {
   @Min(1)
   @Max(50)
   limit = 20;
+}
+
+export class WalletLoyaltyQuoteDto {
+  @ApiPropertyOptional({ minimum: 0, example: 250 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @Min(0)
+  walletAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 1, example: 100 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  loyaltyPoints?: number;
 }

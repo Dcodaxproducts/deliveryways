@@ -23,6 +23,7 @@ import {
   ToggleFavoriteDto,
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
+import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 
 interface FavoriteMetadataShape {
   customerApp?: {
@@ -72,7 +73,10 @@ export interface FaqItem {
 
 @Injectable()
 export class CustomerAppService {
-  constructor(private readonly customerAppRepository: CustomerAppRepository) {}
+  constructor(
+    private readonly customerAppRepository: CustomerAppRepository,
+    private readonly loyaltyWalletService?: LoyaltyWalletService,
+  ) {}
 
   async listFavorites(
     user: AuthUserContext,
@@ -394,21 +398,15 @@ export class CustomerAppService {
 
   async getLoyaltyPoints(user: AuthUserContext, requestedCustomerId?: string) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
-    const loyaltyPoints = this.readNumberValue(customer.profile?.metadata, [
-      ['customerApp', 'loyaltyPoints'],
-      ['loyaltyPoints'],
-    ]);
-    const redeemedPoints = this.readNumberValue(customer.profile?.metadata, [
-      ['customerApp', 'loyaltyRedeemedPoints'],
-      ['loyaltyRedeemedPoints'],
-    ]);
+    const data = await this.loyaltyWalletService!.getLoyaltySummary({
+      customerId: customer.id,
+      tenantId: customer.tenantId!,
+      restaurantId: customer.restaurantId!,
+      branchId: customer.branchId ?? undefined,
+    });
 
     return {
-      data: {
-        customerId: customer.id,
-        availablePoints: loyaltyPoints,
-        redeemedPoints,
-      },
+      data,
       message: 'Loyalty points fetched successfully',
     };
   }
@@ -419,75 +417,35 @@ export class CustomerAppService {
     requestedCustomerId?: string,
   ) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
-    const availablePoints = this.readNumberValue(customer.profile?.metadata, [
-      ['customerApp', 'loyaltyPoints'],
-      ['loyaltyPoints'],
-    ]);
-
-    if (dto.points > availablePoints) {
-      throw new BadRequestException('Insufficient loyalty points');
-    }
-
-    const redeemedPoints = this.readNumberValue(customer.profile?.metadata, [
-      ['customerApp', 'loyaltyRedeemedPoints'],
-      ['loyaltyRedeemedPoints'],
-    ]);
-    const existingRedemptions = this.readLoyaltyRedemptions(
-      customer.profile?.metadata,
-    );
-    const now = new Date().toISOString();
-    const redemptions: LoyaltyRedemptionRecord[] = [
+    const data = await this.loyaltyWalletService!.redeemPointsToWallet(
       {
-        id: randomUUID(),
-        points: dto.points,
-        note: dto.note?.trim() || null,
-        createdAt: now,
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: customer.branchId ?? undefined,
       },
-      ...existingRedemptions,
-    ].slice(0, 20);
-
-    const nextMetadata = this.writeCustomerAppMetadata(
-      customer.profile?.metadata,
-      {
-        loyaltyPoints: availablePoints - dto.points,
-        loyaltyRedeemedPoints: redeemedPoints + dto.points,
-        loyaltyRedemptions: redemptions,
-      },
-    );
-
-    await this.customerAppRepository.upsertCustomerProfile(
-      customer.id,
-      nextMetadata,
+      dto.points,
+      dto.note,
+      user.uid,
     );
 
     return {
-      data: {
-        customerId: customer.id,
-        redeemedPoints: dto.points,
-        remainingPoints: availablePoints - dto.points,
-      },
+      data,
       message: 'Loyalty points redeemed successfully',
     };
   }
 
   async getWallet(user: AuthUserContext, requestedCustomerId?: string) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
-    const balance = this.readNumberValue(customer.profile?.metadata, [
-      ['customerApp', 'wallet', 'balance'],
-      ['wallet', 'balance'],
-    ]);
-    const currency =
-      this.readStringValue(customer.profile?.metadata, [
-        ['customerApp', 'wallet', 'currency'],
-        ['wallet', 'currency'],
-      ]) ?? 'PKR';
+    const data = await this.loyaltyWalletService!.getWalletSummary({
+      customerId: customer.id,
+      tenantId: customer.tenantId!,
+      restaurantId: customer.restaurantId!,
+      branchId: customer.branchId ?? undefined,
+    });
 
     return {
-      data: {
-        customerId: customer.id,
-        balance,
-        currency,
-      },
+      data,
       message: 'Wallet fetched successfully',
     };
   }

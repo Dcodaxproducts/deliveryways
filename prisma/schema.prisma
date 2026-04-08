@@ -84,6 +84,28 @@ enum PaymentTransactionType {
   REFUND
 }
 
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+  ADJUSTMENT
+  REFUND
+  PAYMENT_REVERSAL
+  LOYALTY_REDEMPTION
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+  RESTORE
+  ADJUSTMENT
+  EXPIRE
+}
+
+enum LoyaltyRedemptionTarget {
+  WALLET
+  ORDER_DISCOUNT
+}
+
 enum PosActorType {
   USER
   STAFF
@@ -204,8 +226,13 @@ model Tenant {
   coupons       Coupon[]
   carts         Cart[]
   orders        Order[]
-  transactions  PaymentTransaction[]
-  notifications Notification[]
+  transactions        PaymentTransaction[]
+  walletAccounts      WalletAccount[]
+  walletTransactions  WalletTransaction[]
+  loyaltyPrograms     LoyaltyProgram[]
+  loyaltyAccounts     LoyaltyAccount[]
+  loyaltyTransactions LoyaltyTransaction[]
+  notifications       Notification[]
   deliverymen   Deliveryman[]
   chatThreads   ChatThread[]
   groupOrders   GroupOrderSession[]
@@ -248,6 +275,11 @@ model Restaurant {
   carts               Cart[]
   orders              Order[]
   transactions        PaymentTransaction[]
+  walletAccounts      WalletAccount[]
+  walletTransactions  WalletTransaction[]
+  loyaltyPrograms     LoyaltyProgram[]
+  loyaltyAccounts     LoyaltyAccount[]
+  loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
   deliverymen         Deliveryman[]
   chatThreads         ChatThread[]
@@ -284,8 +316,10 @@ model Branch {
   coupons            Coupon[]
   carts              Cart[]
   orders             Order[]
-  transactions       PaymentTransaction[]
-  notifications      Notification[]
+  transactions        PaymentTransaction[]
+  walletTransactions  WalletTransaction[]
+  loyaltyTransactions LoyaltyTransaction[]
+  notifications       Notification[]
   deliverymen        Deliveryman[]
   chatThreads        ChatThread[]
   groupOrders        GroupOrderSession[]
@@ -356,6 +390,10 @@ model User {
   customerOrders         Order[]                 @relation("OrderCustomer")
   posOrderDrafts         PosOrderDraft[]         @relation("PosDraftCustomer")
   couponUsages           CouponUsage[]
+  walletAccounts         WalletAccount[]
+  walletTransactions     WalletTransaction[]
+  loyaltyAccounts        LoyaltyAccount[]
+  loyaltyTransactions    LoyaltyTransaction[]
   receivedNotifications  Notification[]          @relation("NotificationRecipient")
   customerChatThreads    ChatThread[]            @relation("ChatThreadCustomer")
   sentChatMessages       ChatMessage[]           @relation("ChatMessageUserSender")
@@ -867,8 +905,12 @@ model Order {
   subtotal          Decimal       @db.Decimal(10, 2)
   taxAmount         Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
   deliveryFee       Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
-  discountAmount    Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
-  totalAmount       Decimal       @map("total_amount") @db.Decimal(10, 2)
+  discountAmount       Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  walletAppliedAmount  Decimal       @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
+  loyaltyDiscountAmount Decimal      @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
+  loyaltyPointsRedeemed Int          @default(0) @map("loyalty_points_redeemed")
+  loyaltyPointsAwarded  Int          @default(0) @map("loyalty_points_awarded")
+  totalAmount          Decimal       @map("total_amount") @db.Decimal(10, 2)
   paymentStatus     PaymentStatus @default(PENDING) @map("payment_status")
   paidAt            DateTime?     @map("paid_at") @db.Timestamptz
   assignedAt        DateTime?     @map("assigned_at") @db.Timestamptz
@@ -887,9 +929,11 @@ model Order {
   deliveryAddress  Address?             @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
   deliveryman      Deliveryman?         @relation(fields: [deliverymanId], references: [id])
   items            OrderItem[]
-  couponUsages     CouponUsage[]
-  transactions     PaymentTransaction[]
-  notifications    Notification[]
+  couponUsages        CouponUsage[]
+  transactions        PaymentTransaction[]
+  walletTransactions  WalletTransaction[]
+  loyaltyTransactions LoyaltyTransaction[]
+  notifications       Notification[]
   chatThreads      ChatThread[]
   sourceGroupOrder GroupOrderSession?   @relation("GroupOrderFinalOrder")
 
@@ -938,16 +982,157 @@ model PaymentTransaction {
   createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  order         Order          @relation(fields: [orderId], references: [id])
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id])
-  branch        Branch         @relation(fields: [branchId], references: [id])
-  notifications Notification[]
+  order               Order                @relation(fields: [orderId], references: [id])
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  restaurant          Restaurant           @relation(fields: [restaurantId], references: [id])
+  branch              Branch               @relation(fields: [branchId], references: [id])
+  walletTransactions  WalletTransaction[]
+  loyaltyTransactions LoyaltyTransaction[]
+  notifications       Notification[]
 
   @@index([orderId, status, createdAt])
   @@index([tenantId, createdAt])
   @@index([restaurantId, branchId, createdAt])
   @@map("payment_transactions")
+}
+
+model WalletAccount {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  restaurantId String   @map("restaurant_id")
+  customerId   String   @map("customer_id")
+  balance      Decimal  @default(0) @db.Decimal(10, 2)
+  currency     String   @default("PKR")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  restaurant   Restaurant          @relation(fields: [restaurantId], references: [id])
+  customer     User                @relation(fields: [customerId], references: [id])
+  transactions WalletTransaction[]
+
+  @@unique([restaurantId, customerId])
+  @@index([tenantId, restaurantId])
+  @@map("wallet_accounts")
+}
+
+model WalletTransaction {
+  id                   String                @id @default(cuid())
+  walletAccountId      String                @map("wallet_account_id")
+  tenantId             String                @map("tenant_id")
+  restaurantId         String                @map("restaurant_id")
+  branchId             String?               @map("branch_id")
+  customerId           String                @map("customer_id")
+  orderId              String?               @map("order_id")
+  paymentTransactionId String?               @map("payment_transaction_id")
+  type                 WalletTransactionType
+  amount               Decimal               @db.Decimal(10, 2)
+  balanceAfter         Decimal               @map("balance_after") @db.Decimal(10, 2)
+  currency             String                @default("PKR")
+  note                 String?
+  metadata             Json?
+  createdBy            String?               @map("created_by")
+  updatedBy            String?               @map("updated_by")
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz
+
+  walletAccount      WalletAccount       @relation(fields: [walletAccountId], references: [id])
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  restaurant         Restaurant          @relation(fields: [restaurantId], references: [id])
+  branch             Branch?             @relation(fields: [branchId], references: [id])
+  customer           User                @relation(fields: [customerId], references: [id])
+  order              Order?              @relation(fields: [orderId], references: [id])
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
+
+  @@index([walletAccountId, createdAt])
+  @@index([customerId, createdAt])
+  @@index([orderId, createdAt])
+  @@map("wallet_transactions")
+}
+
+model LoyaltyProgram {
+  id                      String   @id @default(cuid())
+  tenantId                String   @map("tenant_id")
+  restaurantId            String   @unique @map("restaurant_id")
+  isActive                Boolean  @default(true) @map("is_active")
+  pointsPerCurrencyUnit   Decimal  @default(0) @map("points_per_currency_unit") @db.Decimal(10, 2)
+  currencyAmountPerPoint  Decimal  @default(1) @map("currency_amount_per_point") @db.Decimal(10, 2)
+  redemptionValuePerPoint Decimal  @default(1) @map("redemption_value_per_point") @db.Decimal(10, 2)
+  minimumRedeemPoints     Int      @default(0) @map("minimum_redeem_points")
+  allowWalletConversion   Boolean  @default(true) @map("allow_wallet_conversion")
+  allowOrderDiscount      Boolean  @default(true) @map("allow_order_discount")
+  pointsExpiryDays        Int?     @map("points_expiry_days")
+  createdBy               String?  @map("created_by")
+  updatedBy               String?  @map("updated_by")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  restaurant   Restaurant           @relation(fields: [restaurantId], references: [id])
+  transactions LoyaltyTransaction[]
+
+  @@index([tenantId, restaurantId])
+  @@map("loyalty_programs")
+}
+
+model LoyaltyAccount {
+  id                     String   @id @default(cuid())
+  tenantId               String   @map("tenant_id")
+  restaurantId           String   @map("restaurant_id")
+  customerId             String   @map("customer_id")
+  availablePoints        Int      @default(0) @map("available_points")
+  lifetimeEarnedPoints   Int      @default(0) @map("lifetime_earned_points")
+  lifetimeRedeemedPoints Int      @default(0) @map("lifetime_redeemed_points")
+  manualAdjustedPoints   Int      @default(0) @map("manual_adjusted_points")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  restaurant   Restaurant           @relation(fields: [restaurantId], references: [id])
+  customer     User                 @relation(fields: [customerId], references: [id])
+  transactions LoyaltyTransaction[]
+
+  @@unique([restaurantId, customerId])
+  @@index([tenantId, restaurantId])
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyTransaction {
+  id                   String                   @id @default(cuid())
+  loyaltyAccountId     String                   @map("loyalty_account_id")
+  loyaltyProgramId     String?                  @map("loyalty_program_id")
+  tenantId             String                   @map("tenant_id")
+  restaurantId         String                   @map("restaurant_id")
+  branchId             String?                  @map("branch_id")
+  customerId           String                   @map("customer_id")
+  orderId              String?                  @map("order_id")
+  paymentTransactionId String?                  @map("payment_transaction_id")
+  type                 LoyaltyTransactionType
+  points               Int
+  balanceAfter         Int                      @map("balance_after")
+  monetaryValue        Decimal?                 @map("monetary_value") @db.Decimal(10, 2)
+  redemptionTarget     LoyaltyRedemptionTarget? @map("redemption_target")
+  note                 String?
+  metadata             Json?
+  expiresAt            DateTime?                @map("expires_at") @db.Timestamptz
+  createdBy            String?                  @map("created_by")
+  updatedBy            String?                  @map("updated_by")
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  loyaltyAccount     LoyaltyAccount       @relation(fields: [loyaltyAccountId], references: [id])
+  loyaltyProgram     LoyaltyProgram?      @relation(fields: [loyaltyProgramId], references: [id])
+  tenant             Tenant               @relation(fields: [tenantId], references: [id])
+  restaurant         Restaurant           @relation(fields: [restaurantId], references: [id])
+  branch             Branch?              @relation(fields: [branchId], references: [id])
+  customer           User                 @relation(fields: [customerId], references: [id])
+  order              Order?               @relation(fields: [orderId], references: [id])
+  paymentTransaction PaymentTransaction?  @relation(fields: [paymentTransactionId], references: [id])
+
+  @@index([loyaltyAccountId, createdAt])
+  @@index([customerId, createdAt])
+  @@index([orderId, createdAt])
+  @@map("loyalty_transactions")
 }
 
 model GroupOrderSession {

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
@@ -163,6 +163,19 @@ export class CheckoutCartDto {
   @IsOptional()
   @IsEnum(PaymentMethodEnum)
   paymentMethod?: PaymentMethodEnum;
+
+  @ApiPropertyOptional({ minimum: 0, example: 250 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @Min(0)
+  walletAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 1, example: 100 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  loyaltyPoints?: number;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

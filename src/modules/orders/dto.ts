@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
@@ -86,6 +86,19 @@ export class QuoteOrderDto {
   @IsOptional()
   @IsString()
   couponCode?: string;
+
+  @ApiPropertyOptional({ minimum: 0, example: 250 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @Min(0)
+  walletAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 1, example: 100 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  loyaltyPoints?: number;
 
   @ApiProperty({
     description: 'Requested order time in ISO 8601 format',

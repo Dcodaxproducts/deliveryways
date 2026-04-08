@@ -693,6 +693,8 @@ export class CartService {
         cart.orderTime?.toISOString() ??
         new Date().toISOString(),
       paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
+      walletAmount: dto.walletAmount,
+      loyaltyPoints: dto.loyaltyPoints,
       customerNote:
         dto.customerNote !== undefined
           ? (this.resolveOptionalString(dto.customerNote) ?? undefined)

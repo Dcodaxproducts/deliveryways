@@ -19,6 +19,7 @@ import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import {
   CancelOrderDto,
   CreateOrderDto,
@@ -69,6 +70,7 @@ export class OrdersService {
     private readonly couponsService: CouponsService,
     private readonly notificationsService: NotificationsService,
     private readonly chatService: ChatService,
+    private readonly loyaltyWalletService?: LoyaltyWalletService,
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -125,6 +127,9 @@ export class OrdersService {
           taxAmount: quote.taxAmount,
           deliveryFee: quote.deliveryFee,
           discountAmount: quote.discountAmount,
+          walletAppliedAmount: quote.walletAppliedAmount,
+          loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
+          loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
           totalAmount: quote.totalAmount,
           paymentStatus: PaymentStatus.PENDING,
           customerNote: dto.customerNote,
@@ -144,6 +149,23 @@ export class OrdersService {
           },
         },
         tx,
+      );
+
+      await this.loyaltyWalletService!.applyOrderBenefits(
+        tx,
+        {
+          customerId,
+          tenantId: quote.branch.tenantId,
+          restaurantId: quote.branch.restaurantId,
+          branchId: quote.branch.id,
+        },
+        {
+          id: order.id,
+          walletAppliedAmount: quote.walletAppliedAmount,
+          loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
+          loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
+        },
+        user.uid,
       );
 
       await tx.paymentTransaction.create({
@@ -573,14 +595,25 @@ export class OrdersService {
       appliedCouponCode = couponValidation.coupon.code;
     }
 
-    let totalAmount = subtotal
+    let totalBeforeBenefits = subtotal
       .plus(taxAmount)
       .plus(deliveryFee)
       .minus(discountAmount);
 
-    if (totalAmount.lessThan(new Prisma.Decimal(0))) {
-      totalAmount = new Prisma.Decimal(0);
+    if (totalBeforeBenefits.lessThan(new Prisma.Decimal(0))) {
+      totalBeforeBenefits = new Prisma.Decimal(0);
     }
+
+    const benefits = await this.loyaltyWalletService!.calculateQuoteBenefits({
+      customerId: customer.customerId,
+      tenantId: branch.tenantId,
+      restaurantId: branch.restaurantId,
+      branchId: branch.id,
+      subtotal,
+      totalBeforeBenefits,
+      requestedWalletAmount: dto.walletAmount,
+      requestedLoyaltyPoints: dto.loyaltyPoints,
+    });
 
     return {
       branch,
@@ -590,7 +623,10 @@ export class OrdersService {
       taxAmount,
       deliveryFee: deliveryFee.toDecimalPlaces(2),
       discountAmount: discountAmount.toDecimalPlaces(2),
-      totalAmount: totalAmount.toDecimalPlaces(2),
+      walletAppliedAmount: benefits.walletAppliedAmount,
+      loyaltyDiscountAmount: benefits.loyaltyDiscountAmount,
+      loyaltyPointsRedeemed: benefits.loyaltyPointsRedeemed,
+      totalAmount: benefits.totalAmount,
       couponId,
       appliedCouponCode,
     };
@@ -611,6 +647,9 @@ export class OrdersService {
       taxAmount: Number(quote.taxAmount),
       deliveryFee: Number(quote.deliveryFee),
       discountAmount: Number(quote.discountAmount),
+      walletAppliedAmount: Number(quote.walletAppliedAmount),
+      loyaltyDiscountAmount: Number(quote.loyaltyDiscountAmount),
+      loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
       totalAmount: Number(quote.totalAmount),
       couponCode: quote.appliedCouponCode,
       items: quote.lines.map((line) => ({
