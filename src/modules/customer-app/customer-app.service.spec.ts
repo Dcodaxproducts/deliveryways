@@ -57,9 +57,17 @@ describe('CustomerAppService', () => {
       [string[], string]
     >();
 
+    const loyaltyWalletService = {
+      getLoyaltySummary: jest.fn(),
+      redeemPointsToWallet: jest.fn(),
+      getWalletSummary: jest.fn(),
+    };
+
     const repository = {
       findCustomerProfile: jest.fn(),
       findActiveCustomer: jest.fn(),
+      findCustomersForTableReservations: jest.fn(),
+      findRestaurantScope: jest.fn(),
       upsertCustomerProfile: jest.fn(),
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
@@ -72,8 +80,11 @@ describe('CustomerAppService', () => {
       findPublicMenuItemBySlug: jest.fn(),
     };
 
-    const service = new CustomerAppService(repository as never);
-    return { service, repository };
+    const service = new CustomerAppService(
+      repository as never,
+      loyaltyWalletService as never,
+    );
+    return { service, repository, loyaltyWalletService };
   };
 
   it('adds favorite item to customer metadata', async () => {
@@ -331,19 +342,20 @@ describe('CustomerAppService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('returns loyalty points from customer profile metadata', async () => {
-    const { service, repository } = makeService();
+  it('returns loyalty points from loyalty wallet service', async () => {
+    const { service, repository, loyaltyWalletService } = makeService();
     repository.findCustomerProfile.mockResolvedValue({
       id: 'customer-1',
       deletedAt: null,
-      profile: {
-        metadata: {
-          customerApp: {
-            loyaltyPoints: 240,
-            loyaltyRedeemedPoints: 60,
-          },
-        },
-      },
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      profile: { metadata: {} },
+    });
+    loyaltyWalletService.getLoyaltySummary.mockResolvedValue({
+      customerId: 'customer-1',
+      availablePoints: 240,
+      redeemedPoints: 60,
     });
 
     const result = await service.getLoyaltyPoints({
@@ -353,6 +365,12 @@ describe('CustomerAppService', () => {
       role: UserRoleEnum.CUSTOMER,
     });
 
+    expect(loyaltyWalletService.getLoyaltySummary).toHaveBeenCalledWith({
+      customerId: 'customer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
     expect(result.data).toEqual({
       customerId: 'customer-1',
       availablePoints: 240,
@@ -360,20 +378,18 @@ describe('CustomerAppService', () => {
     });
   });
 
-  it('redeems loyalty points and updates metadata', async () => {
-    const { service, repository } = makeService();
+  it('redeems loyalty points through loyalty wallet service', async () => {
+    const { service, repository, loyaltyWalletService } = makeService();
     repository.findCustomerProfile.mockResolvedValue({
       id: 'customer-1',
       deletedAt: null,
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
-      profile: {
-        metadata: {
-          customerApp: {
-            loyaltyPoints: 300,
-            loyaltyRedeemedPoints: 20,
-          },
-        },
-      },
+      branchId: 'branch-1',
+      profile: { metadata: {} },
+    });
+    loyaltyWalletService.redeemPointsToWallet.mockResolvedValue({
+      remainingPoints: 200,
     });
 
     const result = await service.redeemLoyaltyPoints(
@@ -386,9 +402,153 @@ describe('CustomerAppService', () => {
       { points: 100, note: 'Checkout discount' },
     );
 
-    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(loyaltyWalletService.redeemPointsToWallet).toHaveBeenCalledWith(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      100,
+      'Checkout discount',
+      'customer-1',
+    );
     expect(result.data.remainingPoints).toBe(200);
     expect(result.message).toBe('Loyalty points redeemed successfully');
+  });
+
+  it('lists admin table reservations with customer and branch details', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomersForTableReservations.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        profile: {
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '03001234567',
+          avatarUrl: 'avatar.jpg',
+          metadata: {
+            customerApp: {
+              tableReservations: [
+                {
+                  id: 'reservation-1',
+                  branchId: 'branch-1',
+                  reservationDate: '2099-03-30T19:30:00.000Z',
+                  guestCount: 4,
+                  note: 'Window side',
+                  status: 'REQUESTED',
+                  createdAt: '2099-03-29T10:00:00.000Z',
+                  cancelledAt: null,
+                },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    repository.findBranchesPublicContent.mockResolvedValue([
+      {
+        id: 'branch-1',
+        name: 'Main Branch',
+        coverImage: 'cover.jpg',
+        description: 'Downtown branch',
+      },
+    ]);
+
+    const result = await service.listAdminTableReservations(
+      {
+        uid: 'admin-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'DESC' } as never,
+    );
+
+    expect(repository.findCustomersForTableReservations).toHaveBeenCalledWith({
+      restaurantId: 'restaurant-1',
+      customerId: undefined,
+      search: undefined,
+    });
+    expect(result.data[0]?.customer).toEqual({
+      id: 'customer-1',
+      email: 'customer@example.com',
+      firstName: 'Bilal',
+      lastName: 'Shah',
+      phone: '03001234567',
+      avatarUrl: 'avatar.jpg',
+    });
+    expect(result.data[0]?.branch).toEqual({
+      id: 'branch-1',
+      name: 'Main Branch',
+      coverImage: 'cover.jpg',
+      description: 'Downtown branch',
+    });
+  });
+
+  it('forces branch-admin reservation fetches to stay within assigned branch', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomersForTableReservations.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        profile: {
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '03001234567',
+          avatarUrl: null,
+          metadata: {
+            customerApp: {
+              tableReservations: [
+                {
+                  id: 'reservation-1',
+                  branchId: 'branch-1',
+                  reservationDate: '2099-03-30T19:30:00.000Z',
+                  guestCount: 4,
+                  note: null,
+                  status: 'REQUESTED',
+                  createdAt: '2099-03-29T10:00:00.000Z',
+                  cancelledAt: null,
+                },
+                {
+                  id: 'reservation-2',
+                  branchId: 'branch-2',
+                  reservationDate: '2099-03-31T19:30:00.000Z',
+                  guestCount: 2,
+                  note: null,
+                  status: 'REQUESTED',
+                  createdAt: '2099-03-29T11:00:00.000Z',
+                  cancelledAt: null,
+                },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    repository.findBranchesPublicContent.mockResolvedValue([
+      {
+        id: 'branch-1',
+        name: 'Main Branch',
+        coverImage: 'cover.jpg',
+        description: 'Downtown branch',
+      },
+    ]);
+
+    const result = await service.listAdminTableReservations(
+      {
+        uid: 'branch-admin-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'DESC' } as never,
+    );
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.branchId).toBe('branch-1');
   });
 
   it('populates branch details in table reservations list', async () => {

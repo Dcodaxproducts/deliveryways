@@ -165,6 +165,7 @@ export class OrdersRepository {
       ...(restaurantId ? { restaurantId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(customerId ? { customerId } : {}),
       ...(query.kind === 'group-orders'
         ? { sourceGroupOrder: { isNot: null } }

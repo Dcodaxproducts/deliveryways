@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsDateString,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -173,6 +174,11 @@ export class CreateTableReservationDto {
   note?: string;
 }
 
+export const TABLE_RESERVATION_STATUS_VALUES = [
+  'REQUESTED',
+  'CANCELLED',
+] as const;
+
 export class ListTableReservationsQueryDto extends QueryDto {
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
   @IsOptional()
@@ -181,6 +187,31 @@ export class ListTableReservationsQueryDto extends QueryDto {
   @Min(1)
   @Max(50)
   limit = 20;
+}
+
+export class ListAdminTableReservationsQueryDto extends ListTableReservationsQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Required for super admin/business admin tokens without restaurant scope',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @ApiPropertyOptional({ enum: TABLE_RESERVATION_STATUS_VALUES })
+  @IsOptional()
+  @IsIn(TABLE_RESERVATION_STATUS_VALUES)
+  status?: (typeof TABLE_RESERVATION_STATUS_VALUES)[number];
 }
 
 export class WalletLoyaltyQuoteDto {

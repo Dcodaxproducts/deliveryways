@@ -12,6 +12,7 @@ import { buildPaginationMeta } from '../../common/utils';
 import {
   CreateTableReservationDto,
   HomeScreenQueryDto,
+  ListAdminTableReservationsQueryDto,
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
@@ -57,6 +58,17 @@ export interface TableReservationResponse extends TableReservationRecord {
     coverImage: string | null;
     description: string | null;
   } | null;
+}
+
+export interface AdminTableReservationResponse extends TableReservationResponse {
+  customer: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+    avatarUrl: string | null;
+  };
 }
 
 export interface LoyaltyRedemptionRecord {
@@ -450,6 +462,70 @@ export class CustomerAppService {
     };
   }
 
+  async listAdminTableReservations(
+    user: AuthUserContext,
+    query: ListAdminTableReservationsQueryDto,
+  ) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      throw new ForbiddenException('Customers cannot access reservation admin data');
+    }
+
+    const restaurantId = await this.resolveAdminReservationRestaurantId(
+      user,
+      query.restaurantId,
+    );
+    const branchId = this.resolveAdminReservationBranchId(user, query.branchId);
+    const customers = await this.customerAppRepository.findCustomersForTableReservations({
+      restaurantId,
+      customerId: query.customerId,
+      search: query.search,
+    });
+    const reservations = customers.flatMap((customer) =>
+      this.readTableReservations(customer.profile?.metadata)
+        .filter((reservation) =>
+          branchId ? reservation.branchId === branchId : true,
+        )
+        .filter((reservation) =>
+          query.status ? reservation.status === query.status : true,
+        )
+        .map((reservation) => ({
+          ...reservation,
+          customer: {
+            id: customer.id,
+            email: customer.email,
+            firstName: customer.profile?.firstName ?? null,
+            lastName: customer.profile?.lastName ?? null,
+            phone: customer.profile?.phone ?? null,
+            avatarUrl: customer.profile?.avatarUrl ?? null,
+          },
+        })),
+    );
+    const branchIds = [...new Set(reservations.map((item) => item.branchId))];
+    const branches = await this.customerAppRepository.findBranchesPublicContent(
+      branchIds,
+      restaurantId,
+    );
+    const branchMap = new Map(branches.map((branch) => [branch.id, branch]));
+    const sortedReservations = this.sortAdminTableReservations(
+      reservations,
+      query.sortBy,
+      query.sortOrder,
+    );
+    const start = (query.page - 1) * query.limit;
+    const data = sortedReservations.slice(start, start + query.limit).map(
+      (reservation) => ({
+        ...reservation,
+        branch: branchMap.get(reservation.branchId) ?? null,
+      }),
+    );
+
+    return {
+      data,
+      message: 'Table reservations fetched successfully',
+      meta: buildPaginationMeta(query, sortedReservations.length),
+    };
+  }
+
   async listTableReservations(
     user: AuthUserContext,
     query: ListTableReservationsQueryDto,
@@ -647,6 +723,75 @@ export class CustomerAppService {
     };
   }
 
+  private async resolveAdminReservationRestaurantId(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ): Promise<string> {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      return requestedRestaurantId;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (user.rid) {
+        return user.rid;
+      }
+
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      const restaurant = await this.customerAppRepository.findRestaurantScope(
+        requestedRestaurantId,
+        user.tid,
+      );
+
+      if (!restaurant) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
+      }
+
+      return restaurant.id;
+    }
+
+    if (!user.rid) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
+
+    return user.rid;
+  }
+
+  private resolveAdminReservationBranchId(
+    user: AuthUserContext,
+    requestedBranchId?: string,
+  ) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && user.bid) {
+      if (requestedBranchId && requestedBranchId !== user.bid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your branch',
+        );
+      }
+
+      return user.bid;
+    }
+
+    return requestedBranchId;
+  }
+
   private async resolveCustomer(
     user: AuthUserContext,
     requestedCustomerId?: string,
@@ -738,6 +883,30 @@ export class CustomerAppService {
         ...patch,
       },
     } as unknown as Prisma.JsonObject;
+  }
+
+  private sortAdminTableReservations(
+    reservations: Array<
+      TableReservationRecord & {
+        customer: AdminTableReservationResponse['customer'];
+      }
+    >,
+    sortBy: string,
+    sortOrder: string,
+  ) {
+    const multiplier = sortOrder.toUpperCase() === 'ASC' ? 1 : -1;
+
+    return [...reservations].sort((a, b) => {
+      if (sortBy === 'guestCount') {
+        return (a.guestCount - b.guestCount) * multiplier;
+      }
+
+      const left = sortBy === 'reservationDate' ? a.reservationDate : a.createdAt;
+      const right =
+        sortBy === 'reservationDate' ? b.reservationDate : b.createdAt;
+
+      return left.localeCompare(right) * multiplier;
+    });
   }
 
   private readTableReservations(

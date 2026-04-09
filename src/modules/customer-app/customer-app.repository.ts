@@ -39,6 +39,55 @@ export class CustomerAppRepository {
     });
   }
 
+  async findCustomersForTableReservations(params: {
+    restaurantId: string;
+    customerId?: string;
+    search?: string;
+  }) {
+    const search = params.search?.trim();
+
+    return this.prisma.user.findMany({
+      where: {
+        role: 'CUSTOMER',
+        restaurantId: params.restaurantId,
+        deletedAt: null,
+        isActive: true,
+        ...(params.customerId ? { id: params.customerId } : {}),
+        ...(search
+          ? {
+              OR: [
+                { email: { contains: search, mode: 'insensitive' } },
+                {
+                  profile: {
+                    is: {
+                      OR: [
+                        { firstName: { contains: search, mode: 'insensitive' } },
+                        { lastName: { contains: search, mode: 'insensitive' } },
+                        { phone: { contains: search, mode: 'insensitive' } },
+                      ],
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true,
+            phone: true,
+            avatarUrl: true,
+            metadata: true,
+          },
+        },
+      },
+    });
+  }
+
   async upsertCustomerProfile(userId: string, metadata: Prisma.JsonObject) {
     const existing = await this.prisma.profile.findUnique({
       where: { userId },
@@ -136,6 +185,17 @@ export class CustomerAppRepository {
     ]);
 
     return { items, total };
+  }
+
+  async findRestaurantScope(restaurantId: string, tenantId?: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      select: { id: true },
+    });
   }
 
   async findRestaurantPublicContent(restaurantId: string) {

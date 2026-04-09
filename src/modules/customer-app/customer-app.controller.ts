@@ -26,6 +26,7 @@ import {
   CreateTableReservationDto,
   CustomerAppCustomerScopeDto,
   HomeScreenQueryDto,
+  ListAdminTableReservationsQueryDto,
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
@@ -245,6 +246,22 @@ export class CustomerAppController {
     @Query() scope: CustomerAppCustomerScopeDto,
   ) {
     return this.customerAppService.getWallet(user, scope.customerId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Get('admin/table-reservations')
+  @ApiOperation({ summary: 'List table reservations for admin/branch-admin panels' })
+  listAdminTableReservations(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListAdminTableReservationsQueryDto,
+  ) {
+    return this.customerAppService.listAdminTableReservations(user, query);
   }
 
   @ApiBearerAuth()

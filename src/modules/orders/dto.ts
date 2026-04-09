@@ -137,6 +137,11 @@ export class ListOrdersDto extends QueryDto {
   @IsEnum(OrderStatus)
   status?: OrderStatus;
 
+  @ApiPropertyOptional({ enum: OrderTypeEnum })
+  @IsOptional()
+  @IsEnum(OrderTypeEnum)
+  orderType?: OrderTypeEnum;
+
   @ApiPropertyOptional({
     enum: ORDER_LIST_KIND_VALUES,
     description:
