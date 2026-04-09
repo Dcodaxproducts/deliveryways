@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaymentStatus, PaymentTransactionType, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentTransactionType,
+  Prisma,
+} from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -18,6 +24,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
+import { StripePaymentsService } from './stripe-payments.service';
 
 @Injectable()
 export class PaymentsService {
@@ -25,6 +32,7 @@ export class PaymentsService {
     private readonly paymentsRepository: PaymentsRepository,
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly stripePaymentsService: StripePaymentsService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
   ) {}
 
@@ -57,18 +65,66 @@ export class PaymentsService {
       throw new BadRequestException('Order is already paid');
     }
 
-    const data = await this.paymentsRepository.create({
-      order: { connect: { id: order.id } },
-      tenant: { connect: { id: order.tenantId } },
-      restaurant: { connect: { id: order.restaurantId } },
-      branch: { connect: { id: order.branchId } },
-      paymentMethod: dto.paymentMethod ?? order.paymentMethod,
-      type: PaymentTransactionType.CHARGE,
-      status: PaymentStatus.PENDING,
-      amount: order.totalAmount,
-      currency: dto.currency ?? 'PKR',
-      note: dto.note,
-    });
+    const paymentMethod = dto.paymentMethod ?? order.paymentMethod;
+    const currency = dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
+
+    const data = await this.paymentsRepository.create(
+      {
+        order: { connect: { id: order.id } },
+        tenant: { connect: { id: order.tenantId } },
+        restaurant: { connect: { id: order.restaurantId } },
+        branch: { connect: { id: order.branchId } },
+        paymentMethod,
+        type: PaymentTransactionType.CHARGE,
+        status: PaymentStatus.PENDING,
+        amount: order.totalAmount,
+        currency,
+        note: dto.note,
+      },
+    );
+
+    let providerPayload: Record<string, unknown> | undefined;
+
+    if (paymentMethod === PaymentMethod.STRIPE) {
+      const intent = await this.stripePaymentsService.createPaymentIntent({
+        amount: Number(order.totalAmount),
+        currency,
+        description: `DeliveryWays order ${order.id}`,
+        metadata: {
+          paymentTransactionId: data.id,
+          orderId: order.id,
+          customerId: order.customerId,
+          restaurantId: order.restaurantId,
+        },
+      });
+
+      const updated = await this.paymentsRepository.updateStatus(data.id, {
+        status: PaymentStatus.PENDING,
+        providerRef: intent.id,
+        providerData: {
+          provider: 'stripe',
+          clientSecret: intent.client_secret,
+          publishableKey: this.stripePaymentsService.getPublishableKey(),
+          paymentIntentId: intent.id,
+        } as Prisma.InputJsonValue,
+        note: dto.note,
+      });
+
+      providerPayload = {
+        provider: 'stripe',
+        clientSecret: intent.client_secret,
+        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        paymentIntentId: intent.id,
+      };
+
+      await this.notificationsService.notifyPaymentAttemptCreated(updated.id);
+
+      return {
+        data: updated,
+        paymentSession: providerPayload,
+        message: 'Stripe payment intent created successfully',
+      };
+    }
 
     await this.notificationsService.notifyPaymentAttemptCreated(data.id);
 
@@ -253,35 +309,22 @@ export class PaymentsService {
       throw new BadRequestException('Paid transactions cannot be cancelled');
     }
 
-    const data = await this.prisma.$transaction(async (tx) => {
-      const updatedPayment = await this.paymentsRepository.updateStatus(
-        id,
-        {
-          status: PaymentStatus.CANCELLED,
-          providerRef: dto.providerRef,
-          providerData: dto.providerData as Prisma.InputJsonValue,
-          note: dto.note,
-          processedAt: new Date(),
-        },
-        tx,
-      );
+    if (payment.paymentMethod === PaymentMethod.STRIPE && payment.providerRef) {
+      await this.stripePaymentsService.cancelPaymentIntent(payment.providerRef);
+    }
 
-      await this.paymentsRepository.updateOrderPaymentStatus(
-        payment.orderId,
-        PaymentStatus.CANCELLED,
-        tx,
-      );
-
-
-      return updatedPayment;
-    });
-
-    await this.loyaltyWalletService!.restoreOrderBenefits(
+    const data = await this.applyPaymentTerminalStatus(
+      payment.id,
       payment.orderId,
-      'PAYMENT_REVERSAL',
+      PaymentStatus.CANCELLED,
+      {
+        providerRef: dto.providerRef ?? payment.providerRef ?? undefined,
+        providerData: dto.providerData,
+        note: dto.note,
+      },
       user.uid,
+      payment.paymentMethod === PaymentMethod.STRIPE,
     );
-    await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
       data,
@@ -326,6 +369,13 @@ export class PaymentsService {
       );
     }
 
+    if (payment.paymentMethod === PaymentMethod.STRIPE && payment.providerRef) {
+      await this.stripePaymentsService.refundPaymentIntent(
+        payment.providerRef,
+        Number(refundAmount),
+      );
+    }
+
     const currency = dto.currency ?? payment.currency;
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -340,7 +390,7 @@ export class PaymentsService {
           status: PaymentStatus.REFUNDED,
           amount: refundAmount,
           currency,
-          providerRef: dto.providerRef,
+          providerRef: dto.providerRef ?? payment.providerRef,
           providerData: dto.providerData as Prisma.InputJsonValue,
           note: dto.note,
           processedAt: new Date(),
@@ -369,7 +419,15 @@ export class PaymentsService {
           },
           tx,
         );
-
+        await this.paymentsRepository.updateOrderState(
+          payment.orderId,
+          {
+            status: OrderStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelledByUserId: user.uid,
+          },
+          tx,
+        );
       }
 
       return refundTransaction;
@@ -388,6 +446,176 @@ export class PaymentsService {
       data,
       message: 'Payment refunded successfully',
     };
+  }
+
+  async handleStripeWebhook(rawBody: Buffer | string | undefined, signature?: string) {
+    if (!rawBody) {
+      throw new BadRequestException('Stripe webhook payload is required');
+    }
+
+    const event = this.stripePaymentsService.constructWebhookEvent(
+      rawBody,
+      signature,
+    );
+
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        await this.handleStripePaymentIntentSucceeded(
+          event.data.object as unknown as Record<string, unknown>,
+        );
+        break;
+      }
+      case 'payment_intent.payment_failed': {
+        await this.handleStripePaymentIntentFailed(
+          event.data.object as unknown as Record<string, unknown>,
+          'Stripe payment failed',
+        );
+        break;
+      }
+      case 'payment_intent.canceled': {
+        await this.handleStripePaymentIntentFailed(
+          event.data.object as unknown as Record<string, unknown>,
+          'Stripe payment cancelled',
+          PaymentStatus.CANCELLED,
+        );
+        break;
+      }
+      default:
+        break;
+    }
+
+    return {
+      received: true,
+      eventType: event.type,
+    };
+  }
+
+  private async handleStripePaymentIntentSucceeded(
+    paymentIntent: Record<string, unknown>,
+  ) {
+    const providerRef = this.readStripeIntentId(paymentIntent);
+    const payment = await this.paymentsRepository.findByProviderRef(providerRef);
+
+    if (!payment || payment.status === PaymentStatus.PAID) {
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.paymentsRepository.updateStatus(
+        payment.id,
+        {
+          status: PaymentStatus.PAID,
+          providerRef,
+          providerData: paymentIntent as Prisma.InputJsonValue,
+          processedAt: new Date(),
+        },
+        tx,
+      );
+      await this.paymentsRepository.updateOrderPaymentStatus(
+        payment.orderId,
+        PaymentStatus.PAID,
+        tx,
+      );
+    });
+
+    await this.loyaltyWalletService!.awardPointsForPaidOrder(
+      payment.orderId,
+      payment.id,
+      'stripe:webhook',
+    );
+    await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+  }
+
+  private async handleStripePaymentIntentFailed(
+    paymentIntent: Record<string, unknown>,
+    note: string,
+    status: PaymentStatus = PaymentStatus.FAILED,
+  ) {
+    const providerRef = this.readStripeIntentId(paymentIntent);
+    const payment = await this.paymentsRepository.findByProviderRef(providerRef);
+
+    if (
+      !payment ||
+      payment.status === PaymentStatus.PAID ||
+      payment.status === PaymentStatus.REFUNDED
+    ) {
+      return;
+    }
+
+    await this.applyPaymentTerminalStatus(
+      payment.id,
+      payment.orderId,
+      status,
+      {
+        providerRef,
+        providerData: paymentIntent as Prisma.InputJsonValue,
+        note,
+      },
+      'stripe:webhook',
+      true,
+    );
+  }
+
+  private async applyPaymentTerminalStatus(
+    paymentId: string,
+    orderId: string,
+    status: PaymentStatus,
+    details: {
+      providerRef?: string;
+      providerData?: Record<string, unknown> | Prisma.InputJsonValue;
+      note?: string;
+    },
+    actorId: string,
+    cancelOrder = false,
+  ) {
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updatedPayment = await this.paymentsRepository.updateStatus(
+        paymentId,
+        {
+          status,
+          providerRef: details.providerRef,
+          providerData: details.providerData as Prisma.InputJsonValue,
+          note: details.note,
+          processedAt: new Date(),
+        },
+        tx,
+      );
+
+      await this.paymentsRepository.updateOrderPaymentStatus(orderId, status, tx);
+
+      if (cancelOrder) {
+        await this.paymentsRepository.updateOrderState(
+          orderId,
+          {
+            status: OrderStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelledByUserId: actorId,
+          },
+          tx,
+        );
+      }
+
+      return updatedPayment;
+    });
+
+    await this.loyaltyWalletService!.restoreOrderBenefits(
+      orderId,
+      'PAYMENT_REVERSAL',
+      actorId,
+    );
+    await this.notificationsService.notifyPaymentStatusChanged(data.id);
+
+    return data;
+  }
+
+  private readStripeIntentId(paymentIntent: Record<string, unknown>) {
+    const id = paymentIntent.id;
+
+    if (typeof id !== 'string' || !id.length) {
+      throw new BadRequestException('Stripe payment intent id is missing');
+    }
+
+    return id;
   }
 
   private async resolveRestaurantId(

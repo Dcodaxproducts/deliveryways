@@ -56,6 +56,26 @@ export class PaymentsRepository {
     });
   }
 
+  async findByProviderRef(providerRef: string) {
+    return this.prisma.paymentTransaction.findFirst({
+      where: { providerRef },
+      include: {
+        order: {
+          select: {
+            id: true,
+            customerId: true,
+            restaurantId: true,
+            branchId: true,
+            totalAmount: true,
+            paymentStatus: true,
+            paymentMethod: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+
   async list(
     restaurantId: string | undefined,
     query: ListPaymentsDto,
@@ -169,6 +189,17 @@ export class PaymentsRepository {
         paymentStatus: status,
         paidAt: status === PaymentStatus.PAID ? new Date() : null,
       },
+    });
+  }
+
+  async updateOrderState(
+    orderId: string,
+    data: Prisma.OrderUpdateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).order.update({
+      where: { id: orderId },
+      data,
     });
   }
 

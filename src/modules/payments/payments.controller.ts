@@ -2,13 +2,20 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  AuthUserContext,
+  CurrentUser,
+  Public,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -21,12 +28,23 @@ import {
   RefundPaymentDto,
   UpdatePaymentStatusDto,
 } from './dto';
+import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
 
 @ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Public()
+  @Post('webhooks/stripe')
+  @ApiOperation({ summary: 'Stripe webhook receiver' })
+  handleStripeWebhook(
+    @Req() request: Request & { rawBody?: Buffer },
+    @Headers('stripe-signature') signature?: string,
+  ) {
+    return this.paymentsService.handleStripeWebhook(request.rawBody, signature);
+  }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
