@@ -17,6 +17,7 @@ import {
   UserRoleEnum,
 } from '../../common/enums';
 import {
+  CancelDeletionByLoginDto,
   ChangePasswordDto,
   CustomerDetailsQueryDto,
   DevBootstrapSuperAdminDto,
@@ -485,12 +486,12 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(
+    const user = await this.usersService.findByEmailIncludingDeleted(
       dto.email,
       dto.restaurantId,
     );
 
-    if (!user || user.deletedAt) {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -504,6 +505,8 @@ export class AuthService {
     if (!isValidPassword) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    this.assertDeletionStateForLogin(user);
 
     if (user.role === 'BUSINESS_ADMIN' && !user.isApproved) {
       throw new ForbiddenException(
@@ -541,9 +544,72 @@ export class AuthService {
           isApproved: user.isApproved,
           isGuest: user.isGuest,
           profile: user.profile,
+          deletionScheduled: false,
+          deleteAfter: null,
         },
       },
       message: 'Login successful',
+    };
+  }
+
+  async cancelDeletionByLogin(dto: CancelDeletionByLoginDto) {
+    const user = await this.usersService.findByEmailIncludingDeleted(
+      dto.email,
+      dto.restaurantId,
+    );
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.role === 'CUSTOMER' && !dto.restaurantId) {
+      throw new BadRequestException(
+        'restaurantId is required for customer login',
+      );
+    }
+
+    const isValidPassword = await bcrypt.compare(dto.password, user.password);
+    if (!isValidPassword) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.deletedAt || !user.deleteAfter || user.deleteAfter <= new Date()) {
+      throw new BadRequestException('Account is not scheduled for deletion');
+    }
+
+    await this.usersService.cancelDeleteUser(user.id);
+
+    const auth = await this.issueAuthTokens({
+      uid: user.id,
+      actorType: 'USER',
+      role: user.role,
+      tid: user.tenantId,
+      rid: user.restaurantId,
+      bid: user.branchId,
+    });
+
+    return {
+      data: {
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          actorType: 'USER',
+          tenantId: user.tenantId,
+          restaurantId:
+            user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
+          branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
+          isVerified: user.isVerified,
+          isApproved: user.isApproved,
+          isGuest: user.isGuest,
+          profile: user.profile,
+          deletionScheduled: false,
+          deleteAfter: null,
+        },
+      },
+      message: 'Account deletion cancelled successfully',
     };
   }
 
@@ -1336,6 +1402,29 @@ export class AuthService {
       data: null,
       message: 'Account deletion canceled',
     };
+  }
+
+  private assertDeletionStateForLogin(user: {
+    deletedAt: Date | null;
+    deleteAfter?: Date | null;
+  }) {
+    if (!user.deletedAt) {
+      return;
+    }
+
+    if (user.deleteAfter && user.deleteAfter > new Date()) {
+      throw new ForbiddenException({
+        message: 'Account scheduled for deletion',
+        error: 'ACCOUNT_DELETION_SCHEDULED',
+        details: {
+          deletionScheduled: true,
+          canCancelDeletion: true,
+          deleteAfter: user.deleteAfter.toISOString(),
+        },
+      });
+    }
+
+    throw new UnauthorizedException('Invalid credentials');
   }
 
   private async issueAuthTokens(payload: {

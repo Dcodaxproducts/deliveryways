@@ -11,6 +11,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
+  CancelDeletionByLoginDto,
   ChangePasswordDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
@@ -94,6 +95,12 @@ export class AuthController {
   @Post('deliveryman/login')
   deliverymanLogin(@Body() dto: LoginDto) {
     return this.authService.loginDeliveryman(dto);
+  }
+
+  @Public()
+  @Post('cancel-deletion-login')
+  cancelDeletionByLogin(@Body() dto: CancelDeletionByLoginDto) {
+    return this.authService.cancelDeletionByLogin(dto);
   }
 
   @Public()

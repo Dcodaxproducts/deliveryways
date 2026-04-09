@@ -117,6 +117,10 @@ export class UsersService {
     return this.usersRepository.findByEmail(email, restaurantId);
   }
 
+  async findByEmailIncludingDeleted(email: string, restaurantId?: string) {
+    return this.usersRepository.findByEmailIncludingDeleted(email, restaurantId);
+  }
+
   async findById(id: string) {
     return this.usersRepository.findById(id);
   }

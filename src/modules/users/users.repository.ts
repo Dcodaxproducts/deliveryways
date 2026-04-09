@@ -33,6 +33,18 @@ export class UsersRepository {
     });
   }
 
+  async findByEmailIncludingDeleted(email: string, restaurantId?: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        email,
+        ...(restaurantId !== undefined ? { restaurantId } : {}),
+      },
+      include: {
+        profile: true,
+      },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },

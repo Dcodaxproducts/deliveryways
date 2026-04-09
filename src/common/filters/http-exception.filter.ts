@@ -15,6 +15,8 @@ type ValidationErrorDetail = {
   allowedValues?: string[];
 };
 
+type ErrorDetails = ValidationErrorDetail[] | Record<string, unknown> | undefined;
+
 const FIELD_LABELS: Record<string, string> = {
   restaurantId: 'restaurant',
   restaurant_id: 'restaurant',
@@ -163,7 +165,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let code = 'INTERNAL_ERROR';
-    let details: ValidationErrorDetail[] | undefined;
+    let details: ErrorDetails;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -186,6 +188,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           }
         } else if (typeof responseMessage === 'string') {
           message = responseMessage;
+        }
+
+        if ('details' in resp) {
+          const responseDetails = resp.details;
+          if (
+            Array.isArray(responseDetails) ||
+            (typeof responseDetails === 'object' && responseDetails !== null)
+          ) {
+            details = responseDetails as ErrorDetails;
+          }
         }
 
         if (code !== 'VALIDATION_ERROR') {

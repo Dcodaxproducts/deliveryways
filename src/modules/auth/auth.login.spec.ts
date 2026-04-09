@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import {
   BadRequestException,
   ForbiddenException,
@@ -20,6 +21,8 @@ describe('AuthService login', () => {
   beforeEach(() => {
     usersService = {
       findByEmail: jest.fn(),
+      findByEmailIncludingDeleted: jest.fn(),
+      cancelDeleteUser: jest.fn(),
       setRefreshTokenHash: jest.fn(),
     };
 
@@ -32,7 +35,9 @@ describe('AuthService login', () => {
       signAsync: jest
         .fn()
         .mockResolvedValueOnce('access-token')
-        .mockResolvedValueOnce('refresh-token'),
+        .mockResolvedValueOnce('refresh-token')
+        .mockResolvedValueOnce('access-token-2')
+        .mockResolvedValueOnce('refresh-token-2'),
     };
 
     service = new AuthService(
@@ -55,7 +60,7 @@ describe('AuthService login', () => {
   });
 
   it('requires restaurantId for customer login', async () => {
-    usersService.findByEmail!.mockResolvedValue({
+    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
       id: 'customer-1',
       email: 'customer@example.com',
       password: 'hashed-password',
@@ -66,6 +71,9 @@ describe('AuthService login', () => {
       isVerified: true,
       isApproved: true,
       isActive: true,
+      isGuest: false,
+      deletedAt: null,
+      deleteAfter: null,
       profile: null,
     });
 
@@ -76,14 +84,14 @@ describe('AuthService login', () => {
       }),
     ).rejects.toThrow(BadRequestException);
 
-    expect(usersService.findByEmail).toHaveBeenCalledWith(
+    expect(usersService.findByEmailIncludingDeleted).toHaveBeenCalledWith(
       'customer@example.com',
       undefined,
     );
   });
 
   it('uses restaurantId when customer logs in', async () => {
-    usersService.findByEmail!.mockResolvedValue({
+    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
       id: 'customer-1',
       email: 'customer@example.com',
       password: 'hashed-password',
@@ -94,6 +102,9 @@ describe('AuthService login', () => {
       isVerified: true,
       isApproved: true,
       isActive: true,
+      isGuest: false,
+      deletedAt: null,
+      deleteAfter: null,
       profile: null,
     });
 
@@ -103,19 +114,86 @@ describe('AuthService login', () => {
       restaurantId: 'restaurant-1',
     });
 
-    expect(usersService.findByEmail).toHaveBeenCalledWith(
+    expect(usersService.findByEmailIncludingDeleted).toHaveBeenCalledWith(
       'customer@example.com',
       'restaurant-1',
     );
     expect(result.data.accessToken).toBe('access-token');
+    expect(result.data.user.deletionScheduled).toBe(false);
     expect(usersService.setRefreshTokenHash).toHaveBeenCalledWith(
       'customer-1',
       'hashed-refresh',
     );
   });
 
+  it('returns a dedicated deletion-scheduled response trigger on login', async () => {
+    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
+      id: 'customer-1',
+      email: 'customer@example.com',
+      password: 'hashed-password',
+      role: UserRoleEnum.CUSTOMER,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      isVerified: true,
+      isApproved: true,
+      isActive: false,
+      isGuest: false,
+      deletedAt: new Date('2026-04-09T00:00:00.000Z'),
+      deleteAfter: new Date('2099-05-09T00:00:00.000Z'),
+      profile: null,
+    });
+
+    await expect(
+      service.login({
+        email: 'customer@example.com',
+        password: 'Password@123',
+        restaurantId: 'restaurant-1',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        message: 'Account scheduled for deletion',
+        error: 'ACCOUNT_DELETION_SCHEDULED',
+        details: expect.objectContaining({
+          deletionScheduled: true,
+          canCancelDeletion: true,
+        }),
+      },
+      status: 403,
+    });
+  });
+
+  it('allows account deletion cancellation by login credentials', async () => {
+    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
+      id: 'customer-1',
+      email: 'customer@example.com',
+      password: 'hashed-password',
+      role: UserRoleEnum.CUSTOMER,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      isVerified: true,
+      isApproved: true,
+      isActive: false,
+      isGuest: false,
+      deletedAt: new Date('2026-04-09T00:00:00.000Z'),
+      deleteAfter: new Date('2099-05-09T00:00:00.000Z'),
+      profile: null,
+    });
+
+    const result = await service.cancelDeletionByLogin({
+      email: 'customer@example.com',
+      password: 'Password@123',
+      restaurantId: 'restaurant-1',
+    });
+
+    expect(usersService.cancelDeleteUser).toHaveBeenCalledWith('customer-1');
+    expect(result.data.accessToken).toBe('access-token');
+    expect(result.message).toBe('Account deletion cancelled successfully');
+  });
+
   it('rejects invalid credentials', async () => {
-    usersService.findByEmail!.mockResolvedValue(null);
+    usersService.findByEmailIncludingDeleted!.mockResolvedValue(null);
 
     await expect(
       service.login({
