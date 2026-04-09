@@ -43,9 +43,21 @@ export interface AdminDashboardRestaurantTrend {
   points: AdminDashboardTrendPoint[];
 }
 
+export interface AdminDashboardOrdersTrend {
+  range: AdminDashboardTrendRange;
+  totalOrdersInRange: number;
+  points: AdminDashboardTrendPoint[];
+}
+
 export interface AdminDashboardTopPerformingRestaurants {
   range: AdminDashboardTopRestaurantsRange;
   items: TopPerformingRestaurantItem[];
+}
+
+export interface AdminDashboardScope {
+  tenantId?: string;
+  restaurantId?: string;
+  branchId?: string;
 }
 
 @Injectable()
@@ -98,10 +110,7 @@ export class AdminDashboardRepository {
   async getRestaurantTrend(
     range: AdminDashboardTrendRange = 'daily',
   ): Promise<AdminDashboardRestaurantTrend> {
-    const buckets =
-      range === 'weekly'
-        ? this.buildWeeklyRestaurantTrendBuckets()
-        : this.buildDailyRestaurantTrendBuckets();
+    const buckets = this.buildTrendBuckets(range);
     const startAt = buckets[0]?.start ?? new Date();
 
     const [countBeforeRange, restaurantsInRange] =
@@ -126,22 +135,11 @@ export class AdminDashboardRepository {
         }),
       ]);
 
-    let cumulativeTotal = countBeforeRange;
-    const points = buckets.map((bucket) => {
-      const value = restaurantsInRange.filter((restaurant) => {
-        const createdAt = restaurant.createdAt;
-        return createdAt >= bucket.start && createdAt < bucket.end;
-      }).length;
-
-      cumulativeTotal += value;
-
-      return {
-        key: bucket.key,
-        label: bucket.label,
-        value,
-        cumulativeTotal,
-      };
-    });
+    const points = this.buildTrendPoints(
+      buckets,
+      countBeforeRange,
+      restaurantsInRange.map((restaurant) => restaurant.createdAt),
+    );
 
     return {
       range,
@@ -150,43 +148,67 @@ export class AdminDashboardRepository {
     };
   }
 
+  async getOrdersTrend(
+    scope: AdminDashboardScope,
+    range: AdminDashboardTrendRange = 'daily',
+  ): Promise<AdminDashboardOrdersTrend> {
+    const buckets = this.buildTrendBuckets(range);
+    const startAt = buckets[0]?.start ?? new Date();
+    const where = this.buildOrderWhere(scope);
+
+    const [countBeforeRange, ordersInRange] = await this.prisma.$transaction([
+      this.prisma.order.count({
+        where: {
+          ...where,
+          createdAt: { lt: startAt },
+        },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          ...where,
+          createdAt: { gte: startAt },
+        },
+        select: {
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+    ]);
+
+    const points = this.buildTrendPoints(
+      buckets,
+      countBeforeRange,
+      ordersInRange.map((order) => order.createdAt),
+    );
+
+    return {
+      range,
+      totalOrdersInRange: points.reduce((sum, point) => sum + point.value, 0),
+      points,
+    };
+  }
+
   async getTopPerformingRestaurants(
+    scope: AdminDashboardScope,
     range: AdminDashboardTopRestaurantsRange = 'all-time',
     limit = 5,
   ): Promise<AdminDashboardTopPerformingRestaurants> {
     const startAt = this.resolveTopRestaurantsStartAt(range);
+    const restaurantWhere = {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { id: scope.restaurantId } : {}),
+      deletedAt: null,
+    };
     const ordersWhere = {
+      ...this.buildOrderWhere(scope),
       ...(startAt ? { createdAt: { gte: startAt } } : {}),
     };
 
-    const groupedOrders = await this.prisma.order.groupBy({
-      by: ['restaurantId'],
-      where: ordersWhere,
-      _count: {
-        _all: true,
-      },
-      orderBy: {
-        _count: {
-          restaurantId: 'desc',
-        },
-      },
-      take: limit,
-    });
-
-    if (!groupedOrders.length) {
-      return {
-        range,
-        items: [],
-      };
-    }
-
-    const restaurantIds = groupedOrders.map((item) => item.restaurantId);
-    const [restaurants, customers] = await this.prisma.$transaction([
+    const [restaurants, orders, customers] = await this.prisma.$transaction([
       this.prisma.restaurant.findMany({
-        where: {
-          id: { in: restaurantIds },
-          deletedAt: null,
-        },
+        where: restaurantWhere,
         select: {
           id: true,
           name: true,
@@ -195,11 +217,18 @@ export class AdminDashboardRepository {
           coverImage: true,
         },
       }),
+      this.prisma.order.findMany({
+        where: ordersWhere,
+        select: {
+          restaurantId: true,
+        },
+      }),
       this.prisma.user.findMany({
         where: {
           deletedAt: null,
           role: UserRole.CUSTOMER,
-          restaurantId: { in: restaurantIds },
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+          ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
         },
         select: {
           restaurantId: true,
@@ -207,7 +236,10 @@ export class AdminDashboardRepository {
       }),
     ]);
 
-    const restaurantMap = new Map(restaurants.map((item) => [item.id, item]));
+    const orderCountMap = orders.reduce<Map<string, number>>((acc, item) => {
+      acc.set(item.restaurantId, (acc.get(item.restaurantId) ?? 0) + 1);
+      return acc;
+    }, new Map<string, number>());
     const customerCountMap = customers.reduce<Map<string, number>>(
       (acc, item) => {
         if (!item.restaurantId) {
@@ -220,28 +252,67 @@ export class AdminDashboardRepository {
       new Map<string, number>(),
     );
 
+    const items = restaurants
+      .map((restaurant) => ({
+        restaurantId: restaurant.id,
+        name: restaurant.name,
+        slug: restaurant.slug,
+        logoUrl: restaurant.logoUrl,
+        coverImage: restaurant.coverImage,
+        ordersCount: orderCountMap.get(restaurant.id) ?? 0,
+        customersCount: customerCountMap.get(restaurant.id) ?? 0,
+      }))
+      .sort((left, right) => {
+        if (right.ordersCount !== left.ordersCount) {
+          return right.ordersCount - left.ordersCount;
+        }
+
+        if (right.customersCount !== left.customersCount) {
+          return right.customersCount - left.customersCount;
+        }
+
+        return left.name.localeCompare(right.name);
+      })
+      .slice(0, limit)
+      .map((item, index) => ({
+        rank: index + 1,
+        ...item,
+      }));
+
     return {
       range,
-      items: groupedOrders
-        .map((item, index) => {
-          const restaurant = restaurantMap.get(item.restaurantId);
-          if (!restaurant) {
-            return null;
-          }
-
-          return {
-            rank: index + 1,
-            restaurantId: restaurant.id,
-            name: restaurant.name,
-            slug: restaurant.slug,
-            logoUrl: restaurant.logoUrl,
-            coverImage: restaurant.coverImage,
-            ordersCount: item._count._all,
-            customersCount: customerCountMap.get(restaurant.id) ?? 0,
-          };
-        })
-        .filter((item): item is TopPerformingRestaurantItem => item !== null),
+      items,
     };
+  }
+
+  findRestaurantScope(restaurantId: string, tenantId?: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      select: {
+        id: true,
+        tenantId: true,
+      },
+    });
+  }
+
+  findBranchScope(branchId: string, tenantId?: string, restaurantId?: string) {
+    return this.prisma.branch.findFirst({
+      where: {
+        id: branchId,
+        deletedAt: null,
+        ...(tenantId ? { tenantId } : {}),
+        ...(restaurantId ? { restaurantId } : {}),
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+      },
+    });
   }
 
   private buildCounts(total: number, active: number): EntityOverviewCounts {
@@ -252,7 +323,42 @@ export class AdminDashboardRepository {
     };
   }
 
-  private buildDailyRestaurantTrendBuckets() {
+  private buildTrendBuckets(range: AdminDashboardTrendRange) {
+    if (range === 'weekly') {
+      return this.buildWeeklyTrendBuckets();
+    }
+
+    if (range === 'monthly') {
+      return this.buildMonthlyTrendBuckets();
+    }
+
+    return this.buildDailyTrendBuckets();
+  }
+
+  private buildTrendPoints(
+    buckets: Array<{ key: string; label: string; start: Date; end: Date }>,
+    countBeforeRange: number,
+    values: Date[],
+  ) {
+    let cumulativeTotal = countBeforeRange;
+
+    return buckets.map((bucket) => {
+      const value = values.filter(
+        (createdAt) => createdAt >= bucket.start && createdAt < bucket.end,
+      ).length;
+
+      cumulativeTotal += value;
+
+      return {
+        key: bucket.key,
+        label: bucket.label,
+        value,
+        cumulativeTotal,
+      };
+    });
+  }
+
+  private buildDailyTrendBuckets() {
     const today = this.startOfUtcDay(new Date());
 
     return Array.from({ length: 7 }, (_, index) => {
@@ -274,7 +380,7 @@ export class AdminDashboardRepository {
     });
   }
 
-  private buildWeeklyRestaurantTrendBuckets() {
+  private buildWeeklyTrendBuckets() {
     const today = this.startOfUtcDay(new Date());
     const currentWeekStart = new Date(today);
     currentWeekStart.setUTCDate(
@@ -308,6 +414,35 @@ export class AdminDashboardRepository {
     });
   }
 
+  private buildMonthlyTrendBuckets() {
+    const today = this.startOfUtcDay(new Date());
+
+    return Array.from({ length: 12 }, (_, index) => {
+      const start = new Date(
+        Date.UTC(
+          today.getUTCFullYear(),
+          today.getUTCMonth() - (11 - index),
+          1,
+        ),
+      );
+      const end = new Date(
+        Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1),
+      );
+
+      return {
+        key: `${start.getUTCFullYear()}-${String(
+          start.getUTCMonth() + 1,
+        ).padStart(2, '0')}`,
+        label: start.toLocaleDateString('en-US', {
+          month: 'short',
+          timeZone: 'UTC',
+        }),
+        start,
+        end,
+      };
+    });
+  }
+
   private resolveTopRestaurantsStartAt(
     range: AdminDashboardTopRestaurantsRange,
   ) {
@@ -325,7 +460,21 @@ export class AdminDashboardRepository {
       return start;
     }
 
+    if (range === 'monthly') {
+      return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1),
+      );
+    }
+
     return undefined;
+  }
+
+  private buildOrderWhere(scope: AdminDashboardScope) {
+    return {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      ...(scope.branchId ? { branchId: scope.branchId } : {}),
+    };
   }
 
   private startOfUtcDay(value: Date) {

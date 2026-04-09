@@ -87,7 +87,11 @@ export class AdminForceDeleteUsersDto {
   emails!: string[];
 }
 
-export const ADMIN_DASHBOARD_TREND_RANGE_VALUES = ['daily', 'weekly'] as const;
+export const ADMIN_DASHBOARD_TREND_RANGE_VALUES = [
+  'daily',
+  'weekly',
+  'monthly',
+] as const;
 export type AdminDashboardTrendRange =
   (typeof ADMIN_DASHBOARD_TREND_RANGE_VALUES)[number];
 
@@ -95,9 +99,22 @@ export const ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES = [
   'all-time',
   'daily',
   'weekly',
+  'monthly',
 ] as const;
 export type AdminDashboardTopRestaurantsRange =
   (typeof ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES)[number];
+
+export class AdminDashboardScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+}
 
 export class AdminDashboardRestaurantTrendQueryDto {
   @ApiPropertyOptional({
@@ -109,7 +126,17 @@ export class AdminDashboardRestaurantTrendQueryDto {
   range?: AdminDashboardTrendRange;
 }
 
-export class AdminDashboardTopRestaurantsQueryDto {
+export class AdminDashboardOrdersTrendQueryDto extends AdminDashboardScopedQueryDto {
+  @ApiPropertyOptional({
+    enum: ADMIN_DASHBOARD_TREND_RANGE_VALUES,
+    default: 'daily',
+  })
+  @IsOptional()
+  @IsIn(ADMIN_DASHBOARD_TREND_RANGE_VALUES)
+  range?: AdminDashboardTrendRange;
+}
+
+export class AdminDashboardTopRestaurantsQueryDto extends AdminDashboardScopedQueryDto {
   @ApiPropertyOptional({
     enum: ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES,
     default: 'all-time',
@@ -118,11 +145,11 @@ export class AdminDashboardTopRestaurantsQueryDto {
   @IsIn(ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES)
   range?: AdminDashboardTopRestaurantsRange;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 10, default: 5 })
+  @ApiPropertyOptional({ minimum: 1, maximum: 20, default: 5 })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
   @Min(1)
-  @Max(10)
+  @Max(20)
   limit = 5;
 }

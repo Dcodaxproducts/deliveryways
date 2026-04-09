@@ -58,6 +58,92 @@ describe('AdminDashboardService', () => {
     expect(repository.getRestaurantTrend).toHaveBeenCalledWith('daily');
   });
 
+  it('returns scoped orders trend data for business admin', async () => {
+    const repository = {
+      getOverview: jest.fn(),
+      getRestaurantTrend: jest.fn(),
+      findRestaurantScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+      }),
+      getOrdersTrend: jest.fn().mockResolvedValue({
+        range: 'monthly',
+        totalOrdersInRange: 28,
+        points: [
+          { key: '2026-04', label: 'Apr', value: 28, cumulativeTotal: 140 },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getOrdersTrend(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        { range: 'monthly', restaurantId: 'restaurant-1' },
+      ),
+    ).resolves.toEqual({
+      data: {
+        range: 'monthly',
+        totalOrdersInRange: 28,
+        points: [
+          {
+            key: '2026-04',
+            label: 'Apr',
+            value: 28,
+            cumulativeTotal: 140,
+          },
+        ],
+      },
+      message: 'Admin dashboard orders trend fetched successfully',
+    });
+    expect(repository.getOrdersTrend).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      },
+      'monthly',
+    );
+  });
+
+  it('locks branch admin trend queries to own branch', async () => {
+    const repository = {
+      getOverview: jest.fn(),
+      getRestaurantTrend: jest.fn(),
+      getOrdersTrend: jest.fn().mockResolvedValue({
+        range: 'daily',
+        totalOrdersInRange: 10,
+        points: [],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await service.getOrdersTrend(
+      {
+        uid: 'branch-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: 'BRANCH_ADMIN',
+      } as never,
+      { range: 'daily', branchId: 'branch-1' },
+    );
+
+    expect(repository.getOrdersTrend).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      'daily',
+    );
+  });
+
   it('returns top performing restaurants data', async () => {
     const repository = {
       getOverview: jest.fn(),
@@ -75,6 +161,16 @@ describe('AdminDashboardService', () => {
             ordersCount: 342,
             customersCount: 180,
           },
+          {
+            rank: 2,
+            restaurantId: 'restaurant-2',
+            name: 'KFC',
+            slug: 'kfc',
+            logoUrl: null,
+            coverImage: null,
+            ordersCount: 0,
+            customersCount: 12,
+          },
         ],
       }),
     };
@@ -82,7 +178,13 @@ describe('AdminDashboardService', () => {
     const service = new AdminDashboardService(repository as never);
 
     await expect(
-      service.getTopPerformingRestaurants({ range: 'all-time', limit: 5 }),
+      service.getTopPerformingRestaurants(
+        {
+          uid: 'super-1',
+          role: 'SUPER_ADMIN',
+        } as never,
+        { range: 'all-time', limit: 5 },
+      ),
     ).resolves.toEqual({
       data: {
         range: 'all-time',
@@ -97,11 +199,22 @@ describe('AdminDashboardService', () => {
             ordersCount: 342,
             customersCount: 180,
           },
+          {
+            rank: 2,
+            restaurantId: 'restaurant-2',
+            name: 'KFC',
+            slug: 'kfc',
+            logoUrl: null,
+            coverImage: null,
+            ordersCount: 0,
+            customersCount: 12,
+          },
         ],
       },
       message: 'Admin dashboard top restaurants fetched successfully',
     });
     expect(repository.getTopPerformingRestaurants).toHaveBeenCalledWith(
+      {},
       'all-time',
       5,
     );
