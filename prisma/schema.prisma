@@ -294,6 +294,7 @@ model Branch {
   restaurantId String    @map("restaurant_id")
   tenantId     String    @map("tenant_id")
   name         String
+  logoUrl      String?   @map("logo_url")
   coverImage   String?   @map("cover_image")
   description  String?
   settings     Json?

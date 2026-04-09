@@ -70,7 +70,8 @@ class BranchContactDto {
 
 export class BranchSettingsDto {
   @ApiPropertyOptional({
-    description: 'Whether customers can create table reservations for this branch',
+    description:
+      'Whether customers can create table reservations for this branch',
     example: false,
   })
   @IsOptional()
@@ -202,6 +203,11 @@ export class CreateBranchDto {
   @IsNotEmpty()
   @IsLongitude()
   lng!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

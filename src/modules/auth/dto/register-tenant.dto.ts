@@ -141,6 +141,11 @@ export class RegisterBranchInfoDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  logoUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   coverImage?: string;
 
   @ApiPropertyOptional()

@@ -230,6 +230,7 @@ export class CustomerAppRepository {
       select: {
         id: true,
         name: true,
+        logoUrl: true,
         coverImage: true,
         description: true,
         settings: true,
@@ -252,6 +253,7 @@ export class CustomerAppRepository {
       select: {
         id: true,
         name: true,
+        logoUrl: true,
         coverImage: true,
         description: true,
         settings: true,

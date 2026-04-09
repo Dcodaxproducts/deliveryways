@@ -25,7 +25,8 @@ export class BranchesRepository {
       country: string;
       lat: string;
       lng: string;
-      coverImage?: string;
+      logoUrl?: string | null;
+      coverImage?: string | null;
       description?: string;
       settings?: Prisma.InputJsonValue;
     },
@@ -52,6 +53,7 @@ export class BranchesRepository {
         restaurantId: payload.restaurantId,
         name: payload.name,
         isMain: payload.isMain ?? false,
+        logoUrl: payload.logoUrl,
         coverImage: payload.coverImage,
         description: payload.description,
         settings: payload.settings,

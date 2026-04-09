@@ -82,7 +82,8 @@ export class BranchesService {
         country: dto.country,
         lat: dto.lat,
         lng: dto.lng,
-        coverImage: dto.coverImage,
+        logoUrl: this.normalizeMediaUrl(dto.logoUrl),
+        coverImage: this.normalizeMediaUrl(dto.coverImage),
         description: dto.description,
         settings: dto.settings as unknown as Prisma.InputJsonValue,
       },
@@ -470,7 +471,14 @@ export class BranchesService {
         {
           name: dto.name,
           isMain: dto.isMain,
-          coverImage: dto.coverImage,
+          logoUrl:
+            dto.logoUrl !== undefined
+              ? this.normalizeMediaUrl(dto.logoUrl)
+              : undefined,
+          coverImage:
+            dto.coverImage !== undefined
+              ? this.normalizeMediaUrl(dto.coverImage)
+              : undefined,
           description: dto.description,
           settings: dto.settings as unknown as Prisma.InputJsonValue,
         },
@@ -545,7 +553,14 @@ export class BranchesService {
     const data = await this.branchesRepository.update(
       id,
       {
-        coverImage: dto.coverImage,
+        logoUrl:
+          dto.logoUrl !== undefined
+            ? this.normalizeMediaUrl(dto.logoUrl)
+            : undefined,
+        coverImage:
+          dto.coverImage !== undefined
+            ? this.normalizeMediaUrl(dto.coverImage)
+            : undefined,
       },
       tx,
     );
@@ -900,6 +915,25 @@ export class BranchesService {
         distanceKm,
       };
     });
+  }
+
+  private normalizeMediaUrl(value: string | null | undefined) {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    const trimmed = value.trim();
+
+    if (
+      !trimmed ||
+      trimmed === 'undefined' ||
+      trimmed === 'null' ||
+      trimmed === '[object Object]'
+    ) {
+      return null;
+    }
+
+    return trimmed;
   }
 
   private readSettings(value: unknown): BranchSettingsLike {

@@ -30,7 +30,7 @@ export class PosRepository {
       },
     },
     branch: {
-      select: { id: true, name: true, coverImage: true },
+      select: { id: true, name: true, logoUrl: true, coverImage: true },
     },
     customer: {
       select: {

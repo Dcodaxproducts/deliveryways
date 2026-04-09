@@ -51,7 +51,9 @@ export class OrdersRepository {
             coverImage: true,
           },
         },
-        branch: { select: { id: true, name: true, coverImage: true } },
+        branch: {
+          select: { id: true, name: true, logoUrl: true, coverImage: true },
+        },
         customer: {
           select: {
             id: true,
@@ -192,7 +194,9 @@ export class OrdersRepository {
               coverImage: true,
             },
           },
-          branch: { select: { id: true, name: true, coverImage: true } },
+          branch: {
+            select: { id: true, name: true, logoUrl: true, coverImage: true },
+          },
           coupon: { select: { id: true, code: true, title: true } },
           customer: {
             select: {

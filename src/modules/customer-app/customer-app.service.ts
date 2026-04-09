@@ -55,6 +55,7 @@ export interface TableReservationResponse extends TableReservationRecord {
   branch: {
     id: string;
     name: string;
+    logoUrl: string | null;
     coverImage: string | null;
     description: string | null;
   } | null;
@@ -385,6 +386,7 @@ export class CustomerAppService {
           ? {
               id: branch.id,
               name: branch.name,
+              logoUrl: branch.logoUrl ?? null,
               coverImage: branch.coverImage,
               description: branch.description,
               tableReservationsEnabled: this.readBooleanValue(branch.settings, [

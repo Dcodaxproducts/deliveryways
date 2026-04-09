@@ -614,7 +614,12 @@ export class PosService {
       logoUrl: string | null;
       coverImage: string | null;
     };
-    branch: { id: string; name: string; coverImage: string | null };
+    branch: {
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      coverImage: string | null;
+    };
     customer: {
       id: string;
       email: string;

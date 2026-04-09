@@ -712,7 +712,12 @@ export class OrdersService {
       logoUrl: string | null;
       coverImage: string | null;
     };
-    branch: { id: string; name: string; coverImage: string | null };
+    branch: {
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      coverImage: string | null;
+    };
     coupon: { id: string; code: string; title: string } | null;
     customer: {
       id: string;
@@ -867,7 +872,12 @@ export class OrdersService {
       logoUrl: string | null;
       coverImage: string | null;
     };
-    branch: { id: string; name: string; coverImage: string | null };
+    branch: {
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      coverImage: string | null;
+    };
     coupon: { id: string; code: string; title: string } | null;
     customer: {
       id: string;

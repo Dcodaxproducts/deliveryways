@@ -28,7 +28,9 @@ export class GroupOrdersRepository {
         },
       },
     },
-    branch: { select: { id: true, name: true, coverImage: true } },
+    branch: {
+      select: { id: true, name: true, logoUrl: true, coverImage: true },
+    },
     restaurant: {
       select: {
         id: true,

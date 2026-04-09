@@ -272,6 +272,7 @@ describe('CustomerAppService', () => {
     expect(result.data.branch).toEqual({
       id: 'branch-1',
       name: 'Main Branch',
+      logoUrl: null,
       coverImage: 'branch-cover.jpg',
       description: 'Downtown branch',
       tableReservationsEnabled: true,
