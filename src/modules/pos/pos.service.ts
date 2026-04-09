@@ -4,6 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import {
   OrderType,
   PaymentMethod,
@@ -14,12 +16,24 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
+import { OrdersService } from '../orders/orders.service';
+import { UsersService } from '../users/users.service';
+import {
+  CreatePosDraftItemDto,
+  CreatePosOrderDto,
+  ListPosOrdersDto,
+  UpdatePosDraftItemDto,
+  UpdatePosOrderDto,
+} from './dto';
 import { PosRepository } from './pos.repository';
-import { CreatePosOrderDto, ListPosOrdersDto, UpdatePosOrderDto } from './dto';
 
 @Injectable()
 export class PosService {
-  constructor(private readonly posRepository: PosRepository) {}
+  constructor(
+    private readonly posRepository: PosRepository,
+    private readonly ordersService: OrdersService,
+    private readonly usersService: UsersService,
+  ) {}
 
   async create(user: AuthUserContext, dto: CreatePosOrderDto) {
     this.assertPosActor(user);
@@ -166,6 +180,155 @@ export class PosService {
     };
   }
 
+  async addItem(
+    user: AuthUserContext,
+    draftId: string,
+    dto: CreatePosDraftItemDto,
+  ) {
+    this.assertPosActor(user);
+    const draft = await this.getScopedDraftOrThrow(user, draftId);
+    this.assertDraftMutable(draft.status);
+
+    await this.posRepository.createDraftItem({
+      draft: { connect: { id: draft.id } },
+      menuItemId: dto.menuItemId,
+      variationId: dto.variationId,
+      quantity: dto.quantity,
+      note: this.resolveOptionalString(dto.note),
+      modifiers: this.normalizeModifiers(dto.modifiers),
+    });
+
+    const refreshed = await this.getScopedDraftOrThrow(user, draftId);
+
+    return {
+      data: this.toDraftResponse(refreshed),
+      message: 'POS draft item added successfully',
+    };
+  }
+
+  async updateItem(
+    user: AuthUserContext,
+    draftId: string,
+    itemId: string,
+    dto: UpdatePosDraftItemDto,
+  ) {
+    this.assertPosActor(user);
+    const draft = await this.getScopedDraftOrThrow(user, draftId);
+    this.assertDraftMutable(draft.status);
+
+    const item = await this.posRepository.findDraftItem(itemId, draft.id);
+    if (!item) {
+      throw new NotFoundException('POS draft item not found');
+    }
+
+    await this.posRepository.updateDraftItem(itemId, {
+      quantity: dto.quantity,
+      note:
+        dto.note === undefined
+          ? undefined
+          : dto.note === null
+            ? { set: null }
+            : dto.note,
+      modifiers:
+        dto.modifiers === undefined
+          ? undefined
+          : this.normalizeModifiers(dto.modifiers),
+    });
+
+    const refreshed = await this.getScopedDraftOrThrow(user, draftId);
+
+    return {
+      data: this.toDraftResponse(refreshed),
+      message: 'POS draft item updated successfully',
+    };
+  }
+
+  async removeItem(user: AuthUserContext, draftId: string, itemId: string) {
+    this.assertPosActor(user);
+    const draft = await this.getScopedDraftOrThrow(user, draftId);
+    this.assertDraftMutable(draft.status);
+
+    const item = await this.posRepository.findDraftItem(itemId, draft.id);
+    if (!item) {
+      throw new NotFoundException('POS draft item not found');
+    }
+
+    await this.posRepository.deleteDraftItem(itemId);
+    const refreshed = await this.getScopedDraftOrThrow(user, draftId);
+
+    return {
+      data: this.toDraftResponse(refreshed),
+      message: 'POS draft item removed successfully',
+    };
+  }
+
+  async quote(user: AuthUserContext, draftId: string) {
+    this.assertPosActor(user);
+    const draft = await this.getScopedDraftOrThrow(user, draftId);
+    this.assertDraftMutable(draft.status);
+    this.assertDraftHasItems(draft.items.length);
+
+    const checkoutCustomerId = await this.ensureDraftCheckoutCustomer(draft);
+
+    return this.ordersService.quote(user, {
+      branchId: draft.branchId,
+      customerId: checkoutCustomerId,
+      orderType: draft.orderType as never,
+      items: draft.items.map((item) => ({
+        menuItemId: item.menuItemId,
+        variationId: item.variationId ?? undefined,
+        quantity: item.quantity,
+        modifiers: this.toOrderModifiers(item.modifiers),
+        note: item.note ?? undefined,
+      })),
+      couponCode: draft.couponCode ?? undefined,
+      orderTime: new Date().toISOString(),
+    });
+  }
+
+  async checkout(user: AuthUserContext, draftId: string) {
+    this.assertPosActor(user);
+    const draft = await this.getScopedDraftOrThrow(user, draftId);
+    this.assertDraftMutable(draft.status);
+    this.assertDraftHasItems(draft.items.length);
+
+    if (!draft.paymentMethod) {
+      throw new BadRequestException('paymentMethod is required for POS checkout');
+    }
+
+    const checkoutCustomerId = await this.ensureDraftCheckoutCustomer(draft);
+    const orderResult = await this.ordersService.create(user, {
+      branchId: draft.branchId,
+      customerId: checkoutCustomerId,
+      orderType: draft.orderType as never,
+      items: draft.items.map((item) => ({
+        menuItemId: item.menuItemId,
+        variationId: item.variationId ?? undefined,
+        quantity: item.quantity,
+        modifiers: this.toOrderModifiers(item.modifiers),
+        note: item.note ?? undefined,
+      })),
+      couponCode: draft.couponCode ?? undefined,
+      orderTime: new Date().toISOString(),
+      paymentMethod: draft.paymentMethod as never,
+      customerNote: draft.note ?? undefined,
+    });
+
+    const updatedDraft = await this.posRepository.updateDraft(draft.id, {
+      status: PosOrderDraftStatus.CHECKED_OUT,
+      checkedOutAt: new Date(),
+      finalOrderId: orderResult.data.id,
+    });
+
+    return {
+      data: {
+        draft: this.toDraftResponse(updatedDraft),
+        order: orderResult.data,
+      },
+      message: 'POS order checked out successfully',
+    };
+  }
+
   async cancel(user: AuthUserContext, id: string) {
     this.assertPosActor(user);
     const draft = await this.getScopedDraftOrThrow(user, id);
@@ -225,6 +388,12 @@ export class PosService {
     }
   }
 
+  private assertDraftHasItems(itemCount: number) {
+    if (!itemCount) {
+      throw new BadRequestException('Add at least one item before checkout');
+    }
+  }
+
   private async assertScopedCustomer(
     customerId: string | undefined,
     tenantId: string,
@@ -244,6 +413,92 @@ export class PosService {
         'Customer not found for current branch scope',
       );
     }
+  }
+
+  private async ensureDraftCheckoutCustomer(draft: {
+    id: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    customerId: string | null;
+    guestName: string | null;
+    guestPhone: string | null;
+  }) {
+    if (draft.customerId) {
+      return draft.customerId;
+    }
+
+    const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
+    const guestName = draft.guestName?.trim() || 'Walk-in';
+    const nameParts = guestName.split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || 'Walk-in';
+    const lastName = nameParts.slice(1).join(' ') || 'Customer';
+
+    const guestCustomer = await this.usersService.create({
+      email: this.generateGuestEmail(draft.restaurantId, draft.branchId),
+      password,
+      role: UserRoleEnum.CUSTOMER,
+      tenantId: draft.tenantId,
+      restaurantId: draft.restaurantId,
+      branchId: draft.branchId,
+      isVerified: false,
+      isApproved: true,
+      isGuest: true,
+      profile: {
+        firstName,
+        lastName,
+        phone: draft.guestPhone ?? undefined,
+      },
+    });
+
+    await this.posRepository.updateDraft(draft.id, {
+      customer: { connect: { id: guestCustomer.id } },
+    });
+
+    return guestCustomer.id;
+  }
+
+  private generateGuestEmail(restaurantId: string, branchId: string) {
+    const token = randomBytes(6).toString('hex');
+    return `pos-guest-${restaurantId}-${branchId}-${Date.now()}-${token}@deliveryways.local`;
+  }
+
+  private normalizeModifiers(
+    modifiers:
+      | Array<{ modifierId: string; quantity?: number }>
+      | undefined,
+  ): Prisma.InputJsonValue | undefined {
+    if (!modifiers) {
+      return undefined;
+    }
+
+    return modifiers.map((modifier) => ({
+      modifierId: modifier.modifierId,
+      quantity: modifier.quantity ?? 1,
+    })) as Prisma.InputJsonValue;
+  }
+
+  private toOrderModifiers(
+    modifiers: Prisma.JsonValue | null,
+  ): Array<{ modifierId: string; quantity?: number }> | undefined {
+    if (!Array.isArray(modifiers)) {
+      return undefined;
+    }
+
+    return modifiers
+      .filter((modifier): modifier is Prisma.JsonObject =>
+        typeof modifier === 'object' && modifier !== null && !Array.isArray(modifier),
+      )
+      .map((modifier) => {
+        const modifierId = modifier['modifierId'];
+        const quantity = modifier['quantity'];
+
+        return {
+          modifierId: typeof modifierId === 'string' ? modifierId : '',
+          quantity: typeof quantity === 'number' ? quantity : undefined,
+        };
+      })
+      .filter((modifier) => modifier.modifierId.length > 0);
   }
 
   private assertBranchAccess(

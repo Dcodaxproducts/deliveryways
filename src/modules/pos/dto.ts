@@ -1,9 +1,81 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PosOrderDraftStatus } from '@prisma/client';
-import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { QueryDto } from '../../common/dto';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
+
+export class PosDraftItemModifierDto {
+  @ApiProperty()
+  @IsString()
+  modifierId!: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  quantity?: number;
+}
+
+export class CreatePosDraftItemDto {
+  @ApiProperty()
+  @IsString()
+  menuItemId!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  variationId?: string;
+
+  @ApiProperty({ minimum: 1 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+
+  @ApiPropertyOptional({ type: [PosDraftItemModifierDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosDraftItemModifierDto)
+  modifiers?: PosDraftItemModifierDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
+export class UpdatePosDraftItemDto {
+  @ApiPropertyOptional({ minimum: 1 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  quantity?: number;
+
+  @ApiPropertyOptional({ type: [PosDraftItemModifierDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosDraftItemModifierDto)
+  modifiers?: PosDraftItemModifierDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string | null;
+}
 
 export class CreatePosOrderDto {
   @ApiProperty()

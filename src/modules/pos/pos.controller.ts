@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -16,7 +17,13 @@ import {
   RolesGuard,
   TenantAccessGuard,
 } from '../../common/guards';
-import { CreatePosOrderDto, ListPosOrdersDto, UpdatePosOrderDto } from './dto';
+import {
+  CreatePosDraftItemDto,
+  CreatePosOrderDto,
+  ListPosOrdersDto,
+  UpdatePosDraftItemDto,
+  UpdatePosOrderDto,
+} from './dto';
 import { PosService } from './pos.service';
 
 @ApiTags('POS')
@@ -54,6 +61,44 @@ export class PosController {
     @Body() dto: UpdatePosOrderDto,
   ) {
     return this.posService.update(user, id, dto);
+  }
+
+  @Post(':id/items')
+  addItem(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: CreatePosDraftItemDto,
+  ) {
+    return this.posService.addItem(user, id, dto);
+  }
+
+  @Patch(':id/items/:itemId')
+  updateItem(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdatePosDraftItemDto,
+  ) {
+    return this.posService.updateItem(user, id, itemId, dto);
+  }
+
+  @Delete(':id/items/:itemId')
+  removeItem(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.posService.removeItem(user, id, itemId);
+  }
+
+  @Post(':id/quote')
+  quote(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.posService.quote(user, id);
+  }
+
+  @Post(':id/checkout')
+  checkout(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.posService.checkout(user, id);
   }
 
   @Post(':id/cancel')

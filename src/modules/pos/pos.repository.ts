@@ -168,4 +168,33 @@ export class PosRepository {
       include: this.draftInclude,
     });
   }
+
+  async createDraftItem(
+    data: Prisma.PosOrderDraftItemCreateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).posOrderDraftItem.create({ data });
+  }
+
+  async updateDraftItem(
+    itemId: string,
+    data: Prisma.PosOrderDraftItemUpdateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).posOrderDraftItem.update({
+      where: { id: itemId },
+      data,
+    });
+  }
+
+  async deleteDraftItem(itemId: string, tx?: PrismaTx) {
+    return this.client(tx).posOrderDraftItem.delete({ where: { id: itemId } });
+  }
+
+  async findDraftItem(itemId: string, draftId: string) {
+    return this.prisma.posOrderDraftItem.findFirst({
+      where: { id: itemId, draftId },
+      select: { id: true, draftId: true },
+    });
+  }
 }
