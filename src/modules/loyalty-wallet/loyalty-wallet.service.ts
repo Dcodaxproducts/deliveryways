@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   LoyaltyRedemptionTarget,
   LoyaltyTransactionType,
@@ -6,8 +11,14 @@ import {
   Prisma,
   WalletTransactionType,
 } from '@prisma/client';
+import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
+import {
+  AdjustCustomerLoyaltyPointsDto,
+  UpdateLoyaltyProgramDto,
+} from './dto';
 import { LoyaltyWalletRepository } from './loyalty-wallet.repository';
 
 export interface CustomerWalletLoyaltyContext {
@@ -38,6 +49,167 @@ export class LoyaltyWalletService {
     private readonly repository: LoyaltyWalletRepository,
     private readonly prisma: PrismaService,
   ) {}
+
+  async getAdminCustomerLoyalty(user: AuthUserContext, customerId: string) {
+    const customer = await this.resolveAdminManagedCustomer(user, customerId);
+    const data = await this.getLoyaltySummary({
+      customerId: customer.id,
+      tenantId: customer.tenantId!,
+      restaurantId: customer.restaurantId!,
+      branchId: customer.branchId,
+    });
+
+    return {
+      data,
+      message: 'Customer loyalty points fetched successfully',
+    };
+  }
+
+  async adjustCustomerLoyalty(
+    user: AuthUserContext,
+    customerId: string,
+    dto: AdjustCustomerLoyaltyPointsDto,
+  ) {
+    const customer = await this.resolveAdminManagedCustomer(user, customerId);
+    const signedPoints = dto.isCredit === false ? dto.points * -1 : dto.points;
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const program = await this.ensureLoyaltyProgram(
+        {
+          tenantId: customer.tenantId!,
+          restaurantId: customer.restaurantId!,
+        },
+        tx,
+      );
+      const account = await this.ensureLoyaltyAccount(
+        {
+          customerId: customer.id,
+          tenantId: customer.tenantId!,
+          restaurantId: customer.restaurantId!,
+          branchId: customer.branchId,
+        },
+        tx,
+      );
+      const nextPoints = account.availablePoints + signedPoints;
+
+      if (nextPoints < 0) {
+        throw new BadRequestException('Insufficient loyalty points');
+      }
+
+      await this.repository.updateLoyaltyAccount(
+        account.id,
+        {
+          availablePoints: nextPoints,
+          manualAdjustedPoints: {
+            increment: signedPoints,
+          },
+        },
+        tx,
+      );
+
+      await this.repository.createLoyaltyTransaction(
+        {
+          loyaltyAccount: { connect: { id: account.id } },
+          loyaltyProgram: { connect: { id: program.id } },
+          tenant: { connect: { id: customer.tenantId! } },
+          restaurant: { connect: { id: customer.restaurantId! } },
+          branch: customer.branchId
+            ? { connect: { id: customer.branchId } }
+            : undefined,
+          customer: { connect: { id: customer.id } },
+          type: LoyaltyTransactionType.ADJUSTMENT,
+          points: signedPoints,
+          balanceAfter: nextPoints,
+          note:
+            dto.note?.trim() ||
+            (signedPoints > 0
+              ? 'Admin credited loyalty points'
+              : 'Admin deducted loyalty points'),
+          metadata: {
+            adjustedByRole: user.role,
+            adjustmentMode: signedPoints > 0 ? 'CREDIT' : 'DEBIT',
+          },
+          createdBy: user.uid,
+          updatedBy: user.uid,
+        },
+        tx,
+      );
+
+      return this.getLoyaltySummary({
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: customer.branchId,
+      });
+    });
+
+    return {
+      data,
+      message: 'Customer loyalty points updated successfully',
+    };
+  }
+
+  async getLoyaltyProgramSettings(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    const context = await this.resolveAdminProgramContext(
+      user,
+      requestedRestaurantId,
+      true,
+    );
+    const program = await this.ensureLoyaltyProgram(context);
+
+    return {
+      data: this.serializeLoyaltyProgram(program),
+      message: 'Loyalty program fetched successfully',
+    };
+  }
+
+  async updateLoyaltyProgramSettings(
+    user: AuthUserContext,
+    dto: UpdateLoyaltyProgramDto,
+  ) {
+    const context = await this.resolveAdminProgramContext(
+      user,
+      dto.restaurantId,
+      false,
+    );
+    const existing = await this.ensureLoyaltyProgram(context);
+    const data = await this.repository.updateLoyaltyProgram(context.restaurantId, {
+      ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      ...(dto.pointsPerCurrencyUnit !== undefined
+        ? { pointsPerCurrencyUnit: new Prisma.Decimal(dto.pointsPerCurrencyUnit) }
+        : {}),
+      ...(dto.currencyAmountPerPoint !== undefined
+        ? { currencyAmountPerPoint: new Prisma.Decimal(dto.currencyAmountPerPoint) }
+        : {}),
+      ...(dto.redemptionValuePerPoint !== undefined
+        ? { redemptionValuePerPoint: new Prisma.Decimal(dto.redemptionValuePerPoint) }
+        : {}),
+      ...(dto.minimumRedeemPoints !== undefined
+        ? { minimumRedeemPoints: dto.minimumRedeemPoints }
+        : {}),
+      ...(dto.allowWalletConversion !== undefined
+        ? { allowWalletConversion: dto.allowWalletConversion }
+        : {}),
+      ...(dto.allowOrderDiscount !== undefined
+        ? { allowOrderDiscount: dto.allowOrderDiscount }
+        : {}),
+      ...(dto.pointsExpiryDays !== undefined
+        ? { pointsExpiryDays: dto.pointsExpiryDays }
+        : {}),
+      updatedBy: user.uid,
+    });
+
+    return {
+      data: this.serializeLoyaltyProgram({
+        ...existing,
+        ...data,
+      }),
+      message: 'Loyalty program updated successfully',
+    };
+  }
 
   async getWalletSummary(context: CustomerWalletLoyaltyContext) {
     const walletAccount = await this.ensureWalletAccount(context);
@@ -642,6 +814,172 @@ export class LoyaltyWalletService {
       },
       tx,
     );
+  }
+
+  private serializeLoyaltyProgram(program: {
+    restaurantId: string;
+    isActive: boolean;
+    pointsPerCurrencyUnit: Prisma.Decimal;
+    currencyAmountPerPoint: Prisma.Decimal;
+    redemptionValuePerPoint: Prisma.Decimal;
+    minimumRedeemPoints: number;
+    allowWalletConversion: boolean;
+    allowOrderDiscount: boolean;
+    pointsExpiryDays: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      restaurantId: program.restaurantId,
+      isActive: program.isActive,
+      pointsPerCurrencyUnit: Number(program.pointsPerCurrencyUnit),
+      currencyAmountPerPoint: Number(program.currencyAmountPerPoint),
+      redemptionValuePerPoint: Number(program.redemptionValuePerPoint),
+      minimumRedeemPoints: program.minimumRedeemPoints,
+      allowWalletConversion: program.allowWalletConversion,
+      allowOrderDiscount: program.allowOrderDiscount,
+      pointsExpiryDays: program.pointsExpiryDays,
+      createdAt: program.createdAt,
+      updatedAt: program.updatedAt,
+    };
+  }
+
+  private async resolveAdminManagedCustomer(
+    user: AuthUserContext,
+    customerId: string,
+  ) {
+    if (
+      user.role !== UserRoleEnum.SUPER_ADMIN &&
+      user.role !== UserRoleEnum.BUSINESS_ADMIN &&
+      user.role !== UserRoleEnum.BRANCH_ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Insufficient permissions for loyalty management',
+      );
+    }
+
+    const customer = await this.repository.findCustomer(customerId);
+
+    if (
+      !customer ||
+      customer.deletedAt ||
+      !customer.isActive ||
+      customer.role !== 'CUSTOMER' ||
+      !customer.tenantId ||
+      !customer.restaurantId
+    ) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return customer;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (customer.tenantId !== user.tid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
+      }
+
+      return customer;
+    }
+
+    if (!user.rid) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    if (customer.restaurantId !== user.rid) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
+
+    if (user.bid && customer.branchId && customer.branchId !== user.bid) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your branch',
+      );
+    }
+
+    return customer;
+  }
+
+  private async resolveAdminProgramContext(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+    allowBranchAdmin = false,
+  ): Promise<Pick<CustomerWalletLoyaltyContext, 'tenantId' | 'restaurantId'>> {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: { id: requestedRestaurantId, deletedAt: null },
+        select: { id: true, tenantId: true },
+      });
+
+      if (!restaurant) {
+        throw new NotFoundException('Restaurant not found');
+      }
+
+      return { tenantId: restaurant.tenantId, restaurantId: restaurant.id };
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (user.rid) {
+        return { tenantId: user.tid, restaurantId: user.rid };
+      }
+
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: {
+          id: requestedRestaurantId,
+          tenantId: user.tid,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!restaurant) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
+      }
+
+      return { tenantId: user.tid, restaurantId: restaurant.id };
+    }
+
+    if (!(allowBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)) {
+      throw new ForbiddenException('Insufficient permissions for loyalty management');
+    }
+
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (!user.rid) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
+
+    return { tenantId: user.tid, restaurantId: user.rid };
   }
 
   private async readLegacyMetadata(customerId: string) {

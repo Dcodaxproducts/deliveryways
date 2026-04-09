@@ -35,6 +35,8 @@ export class LoyaltyWalletRepository {
         restaurantId: true,
         branchId: true,
         role: true,
+        isActive: true,
+        deletedAt: true,
       },
     });
   }
