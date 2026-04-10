@@ -827,6 +827,9 @@ model Deliveryman {
   password         String?
   refreshTokenHash String?           @map("refresh_token_hash")
   status           DeliverymanStatus @default(OFFLINE)
+  currentLat       Decimal?          @map("current_lat") @db.Decimal(10, 7)
+  currentLng       Decimal?          @map("current_lng") @db.Decimal(10, 7)
+  locationUpdatedAt DateTime?        @map("location_updated_at") @db.Timestamptz
   isActive         Boolean           @default(true) @map("is_active")
   deletedAt        DateTime?         @map("deleted_at") @db.Timestamptz
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz

@@ -4,8 +4,11 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 
@@ -121,6 +124,20 @@ export class AssignDeliverymanOrderDto {
   @ApiProperty()
   @IsString()
   orderId!: string;
+}
+
+export class UpdateDeliverymanLocationDto {
+  @ApiProperty({ example: 31.5204 })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat!: number;
+
+  @ApiProperty({ example: 74.3587 })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng!: number;
 }
 
 export class ListDeliverymenDto extends QueryDto {

@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -22,6 +22,7 @@ import {
   CreateDeliverymanDto,
   ListDeliverymenDto,
   UpdateDeliverymanDto,
+  UpdateDeliverymanLocationDto,
   UpdateDeliverymanStatusDto,
 } from './dto';
 import { DeliverymenService } from './deliverymen.service';
@@ -119,6 +120,18 @@ export class DeliverymenController {
     @Body() dto: AssignDeliverymanOrderDto,
   ) {
     return this.deliverymenService.assignOrder(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/location')
+  @ApiOperation({ summary: 'Update deliveryman live location' })
+  updateMyLocation(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateDeliverymanLocationDto,
+  ) {
+    return this.deliverymenService.updateMyLocation(user, dto);
   }
 
   @ApiBearerAuth()

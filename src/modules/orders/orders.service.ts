@@ -420,6 +420,18 @@ export class OrdersService {
     return this.toOrderTrackingResponse(order);
   }
 
+  async emitTrackingUpdatesForDeliveryman(deliverymanId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        deliverymanId,
+        status: OrderStatus.OUT_FOR_DELIVERY,
+      },
+      select: { id: true },
+    });
+
+    await Promise.all(orders.map((order) => this.emitTrackingUpdate(order.id)));
+  }
+
   private async buildQuote(
     user: AuthUserContext,
     dto: QuoteOrderDto,
@@ -1328,6 +1340,9 @@ export class OrdersService {
       status: string;
       vehicleType: string | null;
       vehicleNumber: string | null;
+      currentLat: Prisma.Decimal | null;
+      currentLng: Prisma.Decimal | null;
+      locationUpdatedAt: Date | null;
     } | null;
   }) {
     const branchAddress = await this.prisma.address.findFirst({
@@ -1381,7 +1396,10 @@ export class OrdersService {
       paidAt: order.paidAt,
       cancelledAt: order.cancelledAt,
       supportsRealtime: true,
-      trackingMode: 'STATUS_ONLY',
+      trackingMode:
+        order.orderType === OrderType.DELIVERY
+          ? 'STATUS_AND_LOCATION'
+          : 'STATUS_ONLY',
       currentStage: order.status,
       progressPercent,
       branch: {
@@ -1407,7 +1425,20 @@ export class OrdersService {
                 : null,
           }
         : null,
-      deliveryman: order.deliveryman,
+      deliveryman: order.deliveryman
+        ? {
+            ...order.deliveryman,
+            currentLat:
+              order.deliveryman.currentLat !== null
+                ? Number(order.deliveryman.currentLat)
+                : null,
+            currentLng:
+              order.deliveryman.currentLng !== null
+                ? Number(order.deliveryman.currentLng)
+                : null,
+            locationUpdatedAt: order.deliveryman.locationUpdatedAt,
+          }
+        : null,
       timeline: stages.map((stage, index) => ({
         status: stage,
         label: this.toTrackingLabel(stage),

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DeliverymanStatus } from '@prisma/client';
+import { DeliverymanStatus, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -16,6 +16,7 @@ import {
   CreateDeliverymanDto,
   ListDeliverymenDto,
   UpdateDeliverymanDto,
+  UpdateDeliverymanLocationDto,
   UpdateDeliverymanStatusDto,
 } from './dto';
 import { DeliverymenRepository } from './deliverymen.repository';
@@ -203,6 +204,34 @@ export class DeliverymenService {
         order: orderAssignment,
       },
       message: 'Order assigned to deliveryman successfully',
+    };
+  }
+
+  async updateMyLocation(
+    user: AuthUserContext,
+    dto: UpdateDeliverymanLocationDto,
+  ) {
+    if (user.role !== 'DELIVERYMAN') {
+      throw new ForbiddenException('Only deliverymen can update live location');
+    }
+
+    const deliveryman = await this.deliverymenRepository.findById(user.uid);
+
+    if (!deliveryman || deliveryman.deletedAt || !deliveryman.isActive) {
+      throw new NotFoundException('Deliveryman not found');
+    }
+
+    const data = await this.deliverymenRepository.update(deliveryman.id, {
+      currentLat: new Prisma.Decimal(dto.lat),
+      currentLng: new Prisma.Decimal(dto.lng),
+      locationUpdatedAt: new Date(),
+    });
+
+    await this.ordersService.emitTrackingUpdatesForDeliveryman(deliveryman.id);
+
+    return {
+      data,
+      message: 'Deliveryman live location updated successfully',
     };
   }
 
