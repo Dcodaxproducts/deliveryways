@@ -555,6 +555,45 @@ export class BranchesService {
     };
   }
 
+  async restore(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    if (
+      user.role !== UserRoleEnum.SUPER_ADMIN &&
+      user.role !== UserRoleEnum.BUSINESS_ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only business admin or super admin can restore branches',
+      );
+    }
+
+    const branch = await this.prisma.branch.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true },
+    });
+
+    if (!branch) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (branch.tenantId !== user.tid) {
+        throw new ForbiddenException(
+          'You cannot restore branches outside your tenant restaurants',
+        );
+      }
+    }
+
+    const data = await this.branchesRepository.restore(id, tx);
+
+    return {
+      data,
+      message: 'Branch restored successfully',
+    };
+  }
+
   async updateImages(
     _user: AuthUserContext,
     id: string,

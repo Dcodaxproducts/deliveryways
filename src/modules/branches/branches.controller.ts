@@ -200,6 +200,14 @@ export class BranchesController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.branchesService.restore(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Patch(':id/images')
   updateImages(
     @CurrentUser() user: AuthUserContext,

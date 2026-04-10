@@ -410,6 +410,16 @@ export class BranchesRepository {
     });
   }
 
+  async restore(id: string, tx?: PrismaTx) {
+    return this.client(tx).branch.update({
+      where: { id },
+      data: {
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+  }
+
   async softDelete(id: string, tx?: PrismaTx) {
     return this.client(tx).branch.update({
       where: { id },
