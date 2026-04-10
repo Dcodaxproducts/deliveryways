@@ -95,36 +95,74 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     const dbUser = await this.prisma.user.findUnique({
       where: { id: user.uid },
-      select: { deletedAt: true, deleteAfter: true },
+      select: {
+        deletedAt: true,
+        deleteAfter: true,
+        role: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+      },
     });
-
-    if (!dbUser?.deletedAt) {
-      return;
-    }
 
     if (allowSoftDeleted) {
       return;
     }
 
-    if (dbUser.deleteAfter && dbUser.deleteAfter > new Date()) {
+    if (dbUser?.deletedAt) {
+      if (dbUser.deleteAfter && dbUser.deleteAfter > new Date()) {
+        throw new ForbiddenException({
+          message:
+            'Your account is scheduled to delete. Request cancel deletion in order to cancel.',
+          error: 'ACCOUNT_DELETION_SCHEDULED',
+          details: {
+            deletionScheduled: true,
+            canCancelDeletion: true,
+            deleteAfter: dbUser.deleteAfter.toISOString(),
+          },
+        });
+      }
+
       throw new ForbiddenException({
-        message: 'Account scheduled for deletion',
-        error: 'ACCOUNT_DELETION_SCHEDULED',
+        message: 'Account has been deleted',
+        error: 'ACCOUNT_DELETED',
         details: {
-          deletionScheduled: true,
-          canCancelDeletion: true,
-          deleteAfter: dbUser.deleteAfter.toISOString(),
+          deletionScheduled: false,
+          canCancelDeletion: false,
         },
       });
     }
 
-    throw new ForbiddenException({
-      message: 'Account has been deleted',
-      error: 'ACCOUNT_DELETED',
-      details: {
-        deletionScheduled: false,
-        canCancelDeletion: false,
-      },
-    });
+    if (
+      dbUser?.role === 'BRANCH_ADMIN' &&
+      dbUser.branchId &&
+      dbUser.tenantId &&
+      dbUser.restaurantId
+    ) {
+      const branch = await this.prisma.branch.findFirst({
+        where: {
+          id: dbUser.branchId,
+          tenantId: dbUser.tenantId,
+          restaurantId: dbUser.restaurantId,
+        },
+        select: {
+          deletedAt: true,
+        },
+      });
+
+      if (branch?.deletedAt) {
+        throw new ForbiddenException({
+          message:
+            'Your account is scheduled to delete. Request cancel deletion in order to cancel.',
+          error: 'ACCOUNT_DELETION_SCHEDULED',
+          details: {
+            deletionScheduled: true,
+            canCancelDeletion: true,
+            deleteAfter: null,
+            reason: 'ASSIGNED_BRANCH_SOFT_DELETED',
+          },
+        });
+      }
+    }
   }
 }

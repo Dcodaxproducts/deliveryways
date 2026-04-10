@@ -506,7 +506,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    this.assertDeletionStateForLogin(user);
+    const loginDeletionState = await this.resolveRecoverableLoginState(user);
 
     if (user.role === 'BUSINESS_ADMIN' && !user.isApproved) {
       throw new ForbiddenException(
@@ -514,11 +514,13 @@ export class AuthService {
       );
     }
 
-    if (!user.isActive) {
+    if (!user.isActive && !loginDeletionState) {
       throw new ForbiddenException('Your account is inactive');
     }
 
-    await this.assertAssignedBranchContext(user);
+    if (!loginDeletionState) {
+      await this.assertAssignedBranchContext(user);
+    }
 
     const auth = await this.issueAuthTokens({
       uid: user.id,
@@ -546,11 +548,16 @@ export class AuthService {
           isApproved: user.isApproved,
           isGuest: user.isGuest,
           profile: user.profile,
-          deletionScheduled: false,
-          deleteAfter: null,
+          deletionScheduled: !!loginDeletionState,
+          deleteAfter: loginDeletionState?.deleteAfter ?? null,
+          canCancelDeletion: !!loginDeletionState,
+          deletionReason: loginDeletionState?.reason ?? null,
         },
+        deletionState: loginDeletionState,
       },
-      message: 'Login successful',
+      message:
+        loginDeletionState?.message ??
+        'Login successful',
     };
   }
 
@@ -1411,34 +1418,113 @@ export class AuthService {
       );
     }
 
-    await this.usersService.cancelDeleteUser(user.uid);
+    const dbUser = await this.usersService.findById(user.uid);
+    if (!dbUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    let didRecover = false;
+
+    if (
+      dbUser.deletedAt &&
+      dbUser.deleteAfter &&
+      dbUser.deleteAfter > new Date()
+    ) {
+      await this.usersService.cancelDeleteUser(user.uid);
+      didRecover = true;
+    }
+
+    if (
+      dbUser.role === UserRoleEnum.BRANCH_ADMIN &&
+      dbUser.branchId &&
+      dbUser.tenantId &&
+      dbUser.restaurantId
+    ) {
+      const branch = await this.prisma.branch.findFirst({
+        where: {
+          id: dbUser.branchId,
+          tenantId: dbUser.tenantId,
+          restaurantId: dbUser.restaurantId,
+        },
+        select: {
+          id: true,
+          deletedAt: true,
+        },
+      });
+
+      if (branch?.deletedAt) {
+        await this.prisma.branch.update({
+          where: { id: branch.id },
+          data: {
+            deletedAt: null,
+            isActive: true,
+          },
+        });
+        didRecover = true;
+      }
+    }
+
+    if (!didRecover) {
+      throw new BadRequestException(
+        'Account is not scheduled for deletion',
+      );
+    }
+
     return {
       data: null,
       message: 'Account deletion canceled',
     };
   }
 
-  private assertDeletionStateForLogin(user: {
+  private async resolveRecoverableLoginState(user: {
+    id: string;
+    role: string;
+    tenantId: string | null;
+    restaurantId: string | null;
+    branchId: string | null;
     deletedAt: Date | null;
     deleteAfter?: Date | null;
   }) {
-    if (!user.deletedAt) {
-      return;
+    if (user.deletedAt && user.deleteAfter && user.deleteAfter > new Date()) {
+      return {
+        reason: 'ACCOUNT_DELETION_SCHEDULED',
+        message:
+          'Your account is scheduled to delete. Request cancel deletion in order to cancel.',
+        deleteAfter: user.deleteAfter.toISOString(),
+        canCancelDeletion: true,
+      };
     }
 
-    if (user.deleteAfter && user.deleteAfter > new Date()) {
-      throw new ForbiddenException({
-        message: 'Account scheduled for deletion',
-        error: 'ACCOUNT_DELETION_SCHEDULED',
-        details: {
-          deletionScheduled: true,
-          canCancelDeletion: true,
-          deleteAfter: user.deleteAfter.toISOString(),
+    if (
+      user.role === UserRoleEnum.BRANCH_ADMIN &&
+      user.branchId &&
+      user.restaurantId &&
+      user.tenantId
+    ) {
+      const branch = await this.prisma.branch.findFirst({
+        where: {
+          id: user.branchId,
+          tenantId: user.tenantId,
+          restaurantId: user.restaurantId,
+        },
+        select: {
+          id: true,
+          deletedAt: true,
         },
       });
+
+      if (branch?.deletedAt) {
+        return {
+          reason: 'ASSIGNED_BRANCH_SOFT_DELETED',
+          message:
+            'Your account is scheduled to delete. Request cancel deletion in order to cancel.',
+          deleteAfter: null,
+          canCancelDeletion: true,
+        };
+      }
     }
 
-    throw new UnauthorizedException('Invalid credentials');
+    return null;
   }
 
   private async issueAuthTokens(payload: {
