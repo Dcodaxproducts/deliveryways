@@ -136,7 +136,7 @@ export class TenantAccessGuard implements CanActivate {
       const requestedBranchId =
         (request.body?.branchId as string | undefined) ??
         request.query?.branchId ??
-        request.params?.id;
+        request.params?.branchId;
 
       if (requestedBranchId && user.bid && requestedBranchId !== user.bid) {
         throw new ForbiddenException(
