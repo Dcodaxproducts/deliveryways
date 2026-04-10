@@ -317,7 +317,7 @@ export class BranchesService {
       );
 
       return {
-        data: data.items,
+        data: data.items.map((item) => this.withBranchDeletionState(item)),
         message: 'Branches fetched successfully',
         meta: buildPaginationMeta(query, data.total),
       };
@@ -333,7 +333,9 @@ export class BranchesService {
     );
 
     return {
-      data: await this.attachBranchAddresses(items, null),
+      data: (await this.attachBranchAddresses(items, null)).map((item) =>
+        this.withBranchDeletionState(item),
+      ),
       message: 'Branches fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -364,7 +366,9 @@ export class BranchesService {
     );
 
     return {
-      data: await this.attachBranchAddresses(items, null),
+      data: (await this.attachBranchAddresses(items, null)).map((item) =>
+        this.withBranchDeletionState(item),
+      ),
       message: 'Public branches fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -392,7 +396,7 @@ export class BranchesService {
     const [address] = await this.branchesRepository.listBranchAddresses([id]);
 
     return {
-      data: {
+      data: this.withBranchDeletionState({
         ...branch,
         address: address
           ? {
@@ -405,7 +409,7 @@ export class BranchesService {
               lng: address.lng,
             }
           : null,
-      },
+      }),
       message: 'Branch fetched successfully',
     };
   }
@@ -729,6 +733,22 @@ export class BranchesService {
     return {
       data,
       message: 'Branch force deleted successfully',
+    };
+  }
+
+  private withBranchDeletionState<T extends {
+    deletedAt?: Date | null;
+    isActive?: boolean;
+  }>(branch: T) {
+    return {
+      ...branch,
+      deletionState: {
+        isDeleted: !!branch.deletedAt,
+        deletionScheduled: false,
+        deletedAt: branch.deletedAt ?? null,
+        deleteAfter: null,
+        isActive: branch.isActive ?? true,
+      },
     };
   }
 

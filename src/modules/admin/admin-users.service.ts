@@ -49,7 +49,7 @@ export class AdminUsersService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.withDeletionState(item)),
       message: 'Customers fetched successfully',
       meta: {
         page: query.page,
@@ -88,7 +88,7 @@ export class AdminUsersService {
     }
 
     return {
-      data: customer,
+      data: this.withDeletionState(customer),
       message: 'Customer fetched successfully',
     };
   }
@@ -244,6 +244,34 @@ export class AdminUsersService {
         isApproved: updated.isApproved,
       },
       message: 'Business admin approved successfully',
+    };
+  }
+
+  private withDeletionState<T extends {
+    deletedAt?: Date | null;
+    deleteAfter?: Date | null;
+    isActive?: boolean;
+  }>(entity: T) {
+    const deletionState = entity.deletedAt
+      ? {
+          isDeleted: true,
+          deletionScheduled:
+            !!entity.deleteAfter && entity.deleteAfter.getTime() > Date.now(),
+          deletedAt: entity.deletedAt,
+          deleteAfter: entity.deleteAfter ?? null,
+          isActive: entity.isActive ?? false,
+        }
+      : {
+          isDeleted: false,
+          deletionScheduled: false,
+          deletedAt: null,
+          deleteAfter: entity.deleteAfter ?? null,
+          isActive: entity.isActive ?? true,
+        };
+
+    return {
+      ...entity,
+      deletionState,
     };
   }
 

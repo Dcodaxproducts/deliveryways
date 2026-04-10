@@ -425,7 +425,7 @@ export class AuthService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.withDeletionState(item)),
       message: 'Customers fetched successfully',
       meta: {
         page: query.page,
@@ -468,7 +468,7 @@ export class AuthService {
     }
 
     return {
-      data: customer,
+      data: this.withDeletionState(customer),
       message: 'Customer fetched successfully',
     };
   }
@@ -1196,7 +1196,7 @@ export class AuthService {
       }
 
       return {
-        data: {
+        data: this.withDeletionState({
           id: staff.id,
           email: staff.email,
           role: UserRoleEnum.STAFF,
@@ -1218,7 +1218,9 @@ export class AuthService {
             bio: staff.bio,
           },
           staffRole: staff.staffRole,
-        },
+          isActive: staff.isActive,
+          deletedAt: staff.deletedAt,
+        }),
         message: 'Current user context fetched',
       };
     }
@@ -1232,7 +1234,7 @@ export class AuthService {
       }
 
       return {
-        data: {
+        data: this.withDeletionState({
           id: deliveryman.id,
           email: deliveryman.email,
           role: 'DELIVERYMAN',
@@ -1250,7 +1252,9 @@ export class AuthService {
             avatarUrl: null,
             bio: null,
           },
-        },
+          isActive: deliveryman.isActive,
+          deletedAt: deliveryman.deletedAt,
+        }),
         message: 'Current user context fetched',
       };
     }
@@ -1263,7 +1267,7 @@ export class AuthService {
     await this.assertAssignedBranchContext(dbUser);
 
     return {
-      data: {
+      data: this.withDeletionState({
         id: dbUser.id,
         email: dbUser.email,
         role: dbUser.role,
@@ -1275,7 +1279,10 @@ export class AuthService {
         isApproved: dbUser.isApproved,
         isGuest: dbUser.isGuest,
         profile: dbUser.profile,
-      },
+        isActive: dbUser.isActive,
+        deletedAt: dbUser.deletedAt,
+        deleteAfter: dbUser.deleteAfter,
+      }),
       message: 'Current user context fetched',
     };
   }
@@ -1504,6 +1511,34 @@ export class AuthService {
     }
 
     return payload;
+  }
+
+  private withDeletionState<T extends {
+    deletedAt?: Date | null;
+    deleteAfter?: Date | null;
+    isActive?: boolean;
+  }>(entity: T) {
+    const deletionState = entity.deletedAt
+      ? {
+          isDeleted: true,
+          deletionScheduled:
+            !!entity.deleteAfter && entity.deleteAfter.getTime() > Date.now(),
+          deletedAt: entity.deletedAt,
+          deleteAfter: entity.deleteAfter ?? null,
+          isActive: entity.isActive ?? false,
+        }
+      : {
+          isDeleted: false,
+          deletionScheduled: false,
+          deletedAt: null,
+          deleteAfter: entity.deleteAfter ?? null,
+          isActive: entity.isActive ?? true,
+        };
+
+    return {
+      ...entity,
+      deletionState,
+    };
   }
 
   private async assertAssignedBranchContext(user: {
