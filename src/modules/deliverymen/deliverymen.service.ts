@@ -61,7 +61,7 @@ export class DeliverymenService {
     });
 
     return {
-      data,
+      data: this.withDeletionState(data),
       message: 'Deliveryman created successfully',
     };
   }
@@ -86,7 +86,7 @@ export class DeliverymenService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.withDeletionState(item)),
       message: 'Deliverymen fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -96,7 +96,7 @@ export class DeliverymenService {
     const deliveryman = await this.getAccessibleDeliveryman(user, id);
 
     return {
-      data: deliveryman,
+      data: this.withDeletionState(deliveryman),
       message: 'Deliveryman fetched successfully',
     };
   }
@@ -136,7 +136,7 @@ export class DeliverymenService {
     });
 
     return {
-      data,
+      data: this.withDeletionState(data),
       message: 'Deliveryman updated successfully',
     };
   }
@@ -154,7 +154,7 @@ export class DeliverymenService {
     });
 
     return {
-      data,
+      data: this.withDeletionState(data),
       message: 'Deliveryman status updated successfully',
     };
   }
@@ -230,7 +230,7 @@ export class DeliverymenService {
     await this.ordersService.emitTrackingUpdatesForDeliveryman(deliveryman.id);
 
     return {
-      data,
+      data: this.withDeletionState(data),
       message: 'Deliveryman live location updated successfully',
     };
   }
@@ -241,8 +241,24 @@ export class DeliverymenService {
     const data = await this.deliverymenRepository.softDelete(id);
 
     return {
-      data,
+      data: this.withDeletionState(data),
       message: 'Deliveryman removed successfully',
+    };
+  }
+
+  private withDeletionState<T extends {
+    deletedAt?: Date | null;
+    isActive?: boolean;
+  }>(entity: T) {
+    return {
+      ...entity,
+      deletionState: {
+        isDeleted: !!entity.deletedAt,
+        deletionScheduled: false,
+        deletedAt: entity.deletedAt ?? null,
+        deleteAfter: null,
+        isActive: entity.isActive ?? true,
+      },
     };
   }
 

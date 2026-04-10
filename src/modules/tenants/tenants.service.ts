@@ -64,7 +64,7 @@ export class TenantsService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.withDeletionState(item)),
       message: 'Tenants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -95,7 +95,7 @@ export class TenantsService {
     );
 
     return {
-      data,
+      data: this.withDeletionState(data),
       message: 'Tenant updated successfully',
     };
   }
@@ -141,6 +141,22 @@ export class TenantsService {
     return {
       data,
       message: 'Tenant force deleted successfully',
+    };
+  }
+
+  private withDeletionState<T extends {
+    deletedAt?: Date | null;
+    isActive?: boolean;
+  }>(entity: T) {
+    return {
+      ...entity,
+      deletionState: {
+        isDeleted: !!entity.deletedAt,
+        deletionScheduled: false,
+        deletedAt: entity.deletedAt ?? null,
+        deleteAfter: null,
+        isActive: entity.isActive ?? true,
+      },
     };
   }
 }

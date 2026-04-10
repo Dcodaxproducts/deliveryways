@@ -91,7 +91,7 @@ export class RestaurantsService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.withDeletionState(item)),
       message: 'Restaurants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -105,7 +105,7 @@ export class RestaurantsService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.withDeletionState(item)),
       message: 'Public restaurants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -121,7 +121,7 @@ export class RestaurantsService {
     this.ensureRestaurantReadAccess(user, restaurant.id);
 
     return {
-      data: restaurant,
+      data: this.withDeletionState(restaurant),
       message: 'Restaurant fetched successfully',
     };
   }
@@ -364,6 +364,22 @@ export class RestaurantsService {
     return {
       data,
       message: 'Restaurant force deleted successfully',
+    };
+  }
+
+  private withDeletionState<T extends {
+    deletedAt?: Date | null;
+    isActive?: boolean;
+  }>(entity: T) {
+    return {
+      ...entity,
+      deletionState: {
+        isDeleted: !!entity.deletedAt,
+        deletionScheduled: false,
+        deletedAt: entity.deletedAt ?? null,
+        deleteAfter: null,
+        isActive: entity.isActive ?? true,
+      },
     };
   }
 
