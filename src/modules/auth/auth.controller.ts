@@ -27,7 +27,12 @@ import {
   UpdateMyProfileDto,
   VerifyEmailDto,
 } from './dto';
-import { AllowUnverified, CurrentUser, Public } from '../../common/decorators';
+import {
+  AllowSoftDeleted,
+  AllowUnverified,
+  CurrentUser,
+  Public,
+} from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { JwtAuthGuard } from '../../common/guards';
 
@@ -202,6 +207,7 @@ export class AuthController {
     return this.authService.deleteAccount(user);
   }
 
+  @AllowSoftDeleted()
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('cancel-deletion')

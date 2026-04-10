@@ -5,3 +5,7 @@ export {
   AllowUnverified,
   ALLOW_UNVERIFIED_KEY,
 } from './allow-unverified.decorator';
+export {
+  AllowSoftDeleted,
+  ALLOW_SOFT_DELETED_KEY,
+} from './allow-soft-deleted.decorator';
