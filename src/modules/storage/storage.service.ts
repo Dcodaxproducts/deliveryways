@@ -36,6 +36,41 @@ interface S3Config {
 export class StorageService {
   constructor(private readonly configService: ConfigService) {}
 
+  async resolveViewUrl(fileUrl: string | null | undefined, expiresIn?: number) {
+    if (!fileUrl || typeof fileUrl !== 'string' || !fileUrl.trim()) {
+      return null;
+    }
+
+    const normalizedFileUrl = fileUrl.trim();
+    const s3Config = this.getS3Config();
+    const publicBaseUrl = s3Config.publicBaseUrl?.replace(/\/+$/, '');
+
+    if (publicBaseUrl && normalizedFileUrl.startsWith(publicBaseUrl)) {
+      return normalizedFileUrl;
+    }
+
+    try {
+      const bucket = s3Config.bucket;
+      if (!bucket || !s3Config.region) {
+        return normalizedFileUrl;
+      }
+
+      const key = this.resolveObjectKey(undefined, normalizedFileUrl, s3Config);
+      const client = this.createS3Client(s3Config);
+      const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      });
+
+      return await getSignedUrl(client, command, {
+        expiresIn:
+          expiresIn ?? s3Config.presignedUploadExpirySeconds,
+      });
+    } catch {
+      return normalizedFileUrl;
+    }
+  }
+
   async createPresignedUploadUrl(
     user: AuthUserContext,
     dto: CreatePresignedUploadUrlDto,

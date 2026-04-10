@@ -25,6 +25,7 @@ import {
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
+import { StorageService } from '../storage/storage.service';
 
 interface FavoriteMetadataShape {
   customerApp?: {
@@ -88,6 +89,7 @@ export interface FaqItem {
 export class CustomerAppService {
   constructor(
     private readonly customerAppRepository: CustomerAppRepository,
+    private readonly storageService: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
   ) {}
 
@@ -118,7 +120,7 @@ export class CustomerAppService {
       );
 
     return {
-      data: items.map((item) => this.mapMenuItem(item)),
+      data: await Promise.all(items.map((item) => this.mapMenuItem(item))),
       message: 'Favorite items fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -190,7 +192,7 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
-        restaurantCoverImage: restaurant.coverImage ?? null,
+        restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         title: 'Privacy Policy',
         content: privacyPolicy,
       },
@@ -208,7 +210,7 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
-        restaurantCoverImage: restaurant.coverImage ?? null,
+        restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         branchId: branch?.id ?? null,
         title: 'Help & Support',
         content:
@@ -256,7 +258,7 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
-        restaurantCoverImage: restaurant.coverImage ?? null,
+        restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         branchId: branch?.id ?? null,
         items: faqs,
       },
@@ -271,15 +273,17 @@ export class CustomerAppService {
       await this.customerAppRepository.listCuisineCategories(resolvedQuery);
 
     return {
-      data: items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        slug: item.slug,
-        description: item.description,
-        imageUrl: item.imageUrl,
-        sortOrder: item.sortOrder,
-        itemCount: item._count.items,
-      })),
+      data: await Promise.all(
+        items.map(async (item) => ({
+          id: item.id,
+          name: item.name,
+          slug: item.slug,
+          description: item.description,
+          imageUrl: await this.resolveMediaUrl(item.imageUrl),
+          sortOrder: item.sortOrder,
+          itemCount: item._count.items,
+        })),
+      ),
       message: 'Cuisines fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -310,8 +314,8 @@ export class CustomerAppService {
 
     return {
       data: {
-        cuisine,
-        items: items.map((item) => this.mapMenuItem(item)),
+        cuisine: await this.resolveCuisineMedia(cuisine),
+        items: await Promise.all(items.map((item) => this.mapMenuItem(item))),
       },
       message: 'Cuisine items fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -328,7 +332,7 @@ export class CustomerAppService {
       await this.customerAppRepository.listPromotionalItems(resolvedQuery);
 
     return {
-      data: items.map((item) => this.mapMenuItem(item)),
+      data: await Promise.all(items.map((item) => this.mapMenuItem(item))),
       message: 'Promotional items fetched successfully',
     };
   }
@@ -349,7 +353,7 @@ export class CustomerAppService {
     }
 
     return {
-      data: this.mapMenuItem(item),
+      data: await this.mapMenuItem(item),
       message: 'Menu item fetched successfully',
     };
   }
@@ -377,8 +381,8 @@ export class CustomerAppService {
         restaurant: {
           id: restaurant.id,
           name: restaurant.name,
-          logoUrl: restaurant.logoUrl,
-          coverImage: restaurant.coverImage,
+          logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
+          coverImage: await this.resolveMediaUrl(restaurant.coverImage),
           tagline: restaurant.tagline,
           bio: restaurant.bio,
         },
@@ -386,23 +390,25 @@ export class CustomerAppService {
           ? {
               id: branch.id,
               name: branch.name,
-              logoUrl: branch.logoUrl ?? null,
-              coverImage: branch.coverImage,
+              logoUrl: await this.resolveMediaUrl(branch.logoUrl ?? null),
+              coverImage: await this.resolveMediaUrl(branch.coverImage),
               description: branch.description,
               tableReservationsEnabled: this.readBooleanValue(branch.settings, [
                 ['tableReservationsEnabled'],
               ]),
             }
           : null,
-        cuisines: cuisines.items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          slug: item.slug,
-          imageUrl: item.imageUrl,
-          itemCount: item._count.items,
-        })),
-        promotionalItems: promotionalItems.map((item) =>
-          this.mapMenuItem(item),
+        cuisines: await Promise.all(
+          cuisines.items.map(async (item) => ({
+            id: item.id,
+            name: item.name,
+            slug: item.slug,
+            imageUrl: await this.resolveMediaUrl(item.imageUrl),
+            itemCount: item._count.items,
+          })),
+        ),
+        promotionalItems: await Promise.all(
+          promotionalItems.map((item) => this.mapMenuItem(item)),
         ),
         faqs: faqs.data.items,
       },
@@ -514,11 +520,15 @@ export class CustomerAppService {
       query.sortOrder,
     );
     const start = (query.page - 1) * query.limit;
-    const data = sortedReservations.slice(start, start + query.limit).map(
-      (reservation) => ({
-        ...reservation,
-        branch: branchMap.get(reservation.branchId) ?? null,
-      }),
+    const data = await Promise.all(
+      sortedReservations.slice(start, start + query.limit).map(
+        async (reservation) => ({
+          ...reservation,
+          branch: await this.resolveBranchMedia(
+            branchMap.get(reservation.branchId) ?? null,
+          ),
+        }),
+      ),
     );
 
     return {
@@ -544,12 +554,14 @@ export class CustomerAppService {
       : [];
     const branchMap = new Map(branches.map((branch) => [branch.id, branch]));
     const start = (query.page - 1) * query.limit;
-    const data = reservations
-      .slice(start, start + query.limit)
-      .map((reservation) => ({
+    const data = await Promise.all(
+      reservations.slice(start, start + query.limit).map(async (reservation) => ({
         ...reservation,
-        branch: branchMap.get(reservation.branchId) ?? null,
-      }));
+        branch: await this.resolveBranchMedia(
+          branchMap.get(reservation.branchId) ?? null,
+        ),
+      })),
+    );
 
     return {
       data,
@@ -706,7 +718,20 @@ export class CustomerAppService {
       throw new NotFoundException('Branch not found');
     }
 
-    return { restaurant, branch };
+    return {
+      restaurant: {
+        ...restaurant,
+        logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
+        coverImage: await this.resolveMediaUrl(restaurant.coverImage),
+      },
+      branch: branch
+        ? {
+            ...branch,
+            logoUrl: await this.resolveMediaUrl(branch.logoUrl),
+            coverImage: await this.resolveMediaUrl(branch.coverImage),
+          }
+        : null,
+    };
   }
 
   private resolvePublicRestaurantQuery<T extends PublicRestaurantQueryDto>(
@@ -994,7 +1019,7 @@ export class CustomerAppService {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  private mapMenuItem(item: {
+  private async mapMenuItem(item: {
     id: string;
     name: string;
     slug: string;
@@ -1041,10 +1066,20 @@ export class CustomerAppService {
       name: item.name,
       slug: item.slug,
       description: item.description,
-      imageUrl: item.imageUrl,
+      imageUrl: await this.resolveMediaUrl(item.imageUrl),
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
-      restaurant: item.restaurant ?? null,
-      category: item.category ?? null,
+      restaurant: item.restaurant
+        ? {
+            ...item.restaurant,
+            logoUrl: await this.resolveMediaUrl(item.restaurant.logoUrl),
+          }
+        : null,
+      category: item.category
+        ? {
+            ...item.category,
+            imageUrl: await this.resolveMediaUrl(item.category.imageUrl),
+          }
+        : null,
       variations: item.variations ?? [],
       modifierGroups: (item.modifierLinks ?? []).map((link) => ({
         id: link.modifierGroup.id,
@@ -1060,6 +1095,33 @@ export class CustomerAppService {
         })),
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
+    };
+  }
+
+  private async resolveMediaUrl(value: string | null | undefined) {
+    return this.storageService.resolveViewUrl(value);
+  }
+
+  private async resolveCuisineMedia<T extends { imageUrl?: string | null }>(
+    cuisine: T,
+  ) {
+    return {
+      ...cuisine,
+      imageUrl: await this.resolveMediaUrl(cuisine.imageUrl ?? null),
+    };
+  }
+
+  private async resolveBranchMedia<
+    T extends { logoUrl?: string | null; coverImage?: string | null } | null,
+  >(branch: T) {
+    if (!branch) {
+      return null;
+    }
+
+    return {
+      ...branch,
+      logoUrl: await this.resolveMediaUrl(branch.logoUrl ?? null),
+      coverImage: await this.resolveMediaUrl(branch.coverImage ?? null),
     };
   }
 
