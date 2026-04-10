@@ -39,7 +39,12 @@ export class PosService {
     this.assertPosActor(user);
     this.assertSupportedOrderType(dto.orderType);
 
-    const branch = await this.posRepository.findActiveBranch(dto.branchId);
+    const effectiveBranchId = this.resolveRequestedBranchId(user, dto.branchId);
+    if (!effectiveBranchId) {
+      throw new BadRequestException('branchId is required');
+    }
+
+    const branch = await this.posRepository.findActiveBranch(effectiveBranchId);
     if (!branch) {
       throw new BadRequestException('Branch not found');
     }

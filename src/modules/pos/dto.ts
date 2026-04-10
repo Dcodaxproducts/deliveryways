@@ -78,9 +78,13 @@ export class UpdatePosDraftItemDto {
 }
 
 export class CreatePosOrderDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional for branch-scoped actors; token branch scope is used automatically',
+  })
+  @IsOptional()
   @IsString()
-  branchId!: string;
+  branchId?: string;
 
   @ApiProperty({ enum: OrderTypeEnum })
   @IsEnum(OrderTypeEnum)
