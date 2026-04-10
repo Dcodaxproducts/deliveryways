@@ -450,6 +450,155 @@ export class BranchesRepository {
     };
   }
 
+  async getOrphanCleanupSummary(branchId: string) {
+    const [
+      branch,
+      addresses,
+      branchAdminUsers,
+      branchAdminProfiles,
+      branchMenuItemOverrides,
+      branchCategoryOverrides,
+      deliverymen,
+      openPosDrafts,
+      checkedOutPosDrafts,
+      inventoryMovements,
+      coupons,
+      orders,
+      transactions,
+      chatThreads,
+    ] = await this.prisma.$transaction([
+      this.prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { id: true, deletedAt: true, isActive: true },
+      }),
+      this.prisma.address.count({
+        where: {
+          refType: AddressRefType.BRANCH,
+          referenceId: branchId,
+        },
+      }),
+      this.prisma.user.count({
+        where: {
+          branchId,
+          role: UserRole.BRANCH_ADMIN,
+        },
+      }),
+      this.prisma.profile.count({
+        where: {
+          user: {
+            branchId,
+            role: UserRole.BRANCH_ADMIN,
+          },
+        },
+      }),
+      this.prisma.branchMenuItemOverride.count({ where: { branchId } }),
+      this.prisma.branchCategoryOverride.count({ where: { branchId } }),
+      this.prisma.deliveryman.count({ where: { branchId } }),
+      this.prisma.posOrderDraft.count({
+        where: { branchId, status: 'OPEN' },
+      }),
+      this.prisma.posOrderDraft.count({
+        where: { branchId, status: 'CHECKED_OUT' },
+      }),
+      this.prisma.inventoryMovement.count({ where: { branchId } }),
+      this.prisma.coupon.count({ where: { branchId } }),
+      this.prisma.order.count({ where: { branchId } }),
+      this.prisma.paymentTransaction.count({ where: { branchId } }),
+      this.prisma.chatThread.count({ where: { branchId } }),
+    ]);
+
+    return {
+      branchExists: !!branch,
+      branchDeletedAt: branch?.deletedAt ?? null,
+      branchIsActive: branch?.isActive ?? null,
+      safeTargets: {
+        addresses,
+        branchAdminUsers,
+        branchAdminProfiles,
+        branchMenuItemOverrides,
+        branchCategoryOverrides,
+        openPosDrafts,
+      },
+      warnings: {
+        deliverymen,
+        checkedOutPosDrafts,
+        inventoryMovements,
+        coupons,
+        orders,
+        transactions,
+        chatThreads,
+      },
+    };
+  }
+
+  async cleanupOrphanedBranchResources(branchId: string, tx?: PrismaTx) {
+    const client = this.client(tx);
+
+    const branchAdminUsers = await client.user.findMany({
+      where: {
+        branchId,
+        role: UserRole.BRANCH_ADMIN,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    const branchAdminUserIds = branchAdminUsers.map((user) => user.id);
+
+    const profileTargetIds = branchAdminUserIds.length ? branchAdminUserIds : [''];
+    const deletedAddresses = await client.address.deleteMany({
+      where: {
+        refType: AddressRefType.BRANCH,
+        referenceId: branchId,
+      },
+    });
+    const deletedMenuItemOverrides = await client.branchMenuItemOverride.deleteMany({
+      where: { branchId },
+    });
+    const deletedCategoryOverrides = await client.branchCategoryOverride.deleteMany({
+      where: { branchId },
+    });
+    const cancelledOpenPosDrafts = await client.posOrderDraft.updateMany({
+      where: {
+        branchId,
+        status: 'OPEN',
+      },
+      data: {
+        status: 'CANCELLED',
+      },
+    });
+    const softDeletedProfiles = await client.profile.updateMany({
+      where: {
+        userId: { in: profileTargetIds },
+      },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+      },
+    });
+    const softDeletedBranchAdmins = await client.user.updateMany({
+      where: {
+        id: { in: profileTargetIds },
+      },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+        branchId: null,
+        refreshTokenHash: null,
+      },
+    });
+
+    return {
+      deletedAddresses: deletedAddresses.count,
+      deletedMenuItemOverrides: deletedMenuItemOverrides.count,
+      deletedCategoryOverrides: deletedCategoryOverrides.count,
+      cancelledOpenPosDrafts: cancelledOpenPosDrafts.count,
+      softDeletedProfiles: softDeletedProfiles.count,
+      softDeletedBranchAdmins: softDeletedBranchAdmins.count,
+    };
+  }
+
   async forceDelete(id: string, tx?: PrismaTx) {
     const client = this.client(tx);
 

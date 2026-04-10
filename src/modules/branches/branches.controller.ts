@@ -22,6 +22,7 @@ import {
 import { BranchesService } from './branches.service';
 import {
   BulkCreateBranchesDto,
+  CleanupOrphanBranchDto,
   CreateBranchDto,
   ListBranchesDto,
   UpdateBranchDto,
@@ -214,6 +215,18 @@ export class BranchesController {
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.remove(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('orphans/:id/cleanup')
+  cleanupOrphanedBranchResources(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: CleanupOrphanBranchDto,
+  ) {
+    return this.branchesService.cleanupOrphanedBranchResources(user, id, dto);
   }
 
   @ApiBearerAuth()

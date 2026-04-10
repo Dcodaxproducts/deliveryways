@@ -17,6 +17,7 @@ import {
   BranchOpeningHourItemDto,
   BranchScheduleDayEnum,
   BulkCreateBranchesDto,
+  CleanupOrphanBranchDto,
   CreateBranchDto,
   ListBranchesDto,
   ListPublicBranchesDto,
@@ -587,6 +588,51 @@ export class BranchesService {
     return {
       data,
       message: 'Branch soft deleted successfully',
+    };
+  }
+
+  async cleanupOrphanedBranchResources(
+    user: AuthUserContext,
+    id: string,
+    dto: CleanupOrphanBranchDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can clean orphan branch resources',
+      );
+    }
+
+    const summary = await this.branchesRepository.getOrphanCleanupSummary(id);
+
+    if (summary.branchExists) {
+      throw new BadRequestException(
+        'Branch still exists. Use guarded branch delete flows instead of orphan cleanup.',
+      );
+    }
+
+    if (!dto.execute) {
+      return {
+        data: {
+          branchId: id,
+          mode: 'PREVIEW',
+          ...summary,
+        },
+        message: 'Orphan branch cleanup preview generated successfully',
+      };
+    }
+
+    const cleaned = await this.branchesRepository.cleanupOrphanedBranchResources(
+      id,
+    );
+
+    return {
+      data: {
+        branchId: id,
+        mode: 'EXECUTE',
+        cleaned,
+        remainingWarnings: summary.warnings,
+      },
+      message: 'Safe orphan branch cleanup executed successfully',
     };
   }
 
