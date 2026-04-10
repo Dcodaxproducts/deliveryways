@@ -518,6 +518,8 @@ export class AuthService {
       throw new ForbiddenException('Your account is inactive');
     }
 
+    await this.assertAssignedBranchContext(user);
+
     const auth = await this.issueAuthTokens({
       uid: user.id,
       actorType: 'USER',
@@ -577,6 +579,7 @@ export class AuthService {
       throw new BadRequestException('Account is not scheduled for deletion');
     }
 
+    await this.assertAssignedBranchContext(user);
     await this.usersService.cancelDeleteUser(user.id);
 
     const auth = await this.issueAuthTokens({
@@ -858,6 +861,8 @@ export class AuthService {
     if (!dbUser || !dbUser.refreshTokenHash) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+
+    await this.assertAssignedBranchContext(dbUser);
 
     const isValid = await bcrypt.compare(
       dto.refreshToken,
@@ -1255,6 +1260,8 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
+    await this.assertAssignedBranchContext(dbUser);
+
     return {
       data: {
         id: dbUser.id,
@@ -1497,6 +1504,48 @@ export class AuthService {
     }
 
     return payload;
+  }
+
+  private async assertAssignedBranchContext(user: {
+    role: string;
+    id: string;
+    tenantId: string | null;
+    restaurantId: string | null;
+    branchId: string | null;
+  }) {
+    if (
+      user.role !== UserRoleEnum.BRANCH_ADMIN ||
+      !user.branchId ||
+      !user.restaurantId ||
+      !user.tenantId
+    ) {
+      return;
+    }
+
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        id: user.branchId,
+        tenantId: user.tenantId,
+        restaurantId: user.restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        isActive: true,
+      },
+    });
+
+    if (!branch) {
+      throw new NotFoundException(
+        'Assigned branch not found for current user',
+      );
+    }
+
+    if (!branch.isActive) {
+      throw new ForbiddenException(
+        'Assigned branch is inactive for current user',
+      );
+    }
   }
 
   private shouldAutoVerifyUser(emailEnabled: boolean): boolean {

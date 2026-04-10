@@ -46,6 +46,16 @@ export class PosService {
 
     const branch = await this.posRepository.findActiveBranch(effectiveBranchId);
     if (!branch) {
+      if (
+        (user.role === UserRoleEnum.BRANCH_ADMIN ||
+          user.role === UserRoleEnum.STAFF) &&
+        user.bid === effectiveBranchId
+      ) {
+        throw new BadRequestException(
+          'Assigned branch not found or inactive for current user',
+        );
+      }
+
       throw new BadRequestException('Branch not found');
     }
 

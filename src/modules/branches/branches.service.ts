@@ -373,6 +373,16 @@ export class BranchesService {
     const branch = await this.branchesRepository.findById(id);
 
     if (!branch || branch.deletedAt) {
+      if (
+        user.role === UserRoleEnum.BRANCH_ADMIN &&
+        user.bid &&
+        user.bid === id
+      ) {
+        throw new BadRequestException(
+          'Assigned branch not found for current user',
+        );
+      }
+
       throw new BadRequestException('Branch not found');
     }
 
