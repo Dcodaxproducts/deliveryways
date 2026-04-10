@@ -158,6 +158,65 @@ export class OrdersRepository {
     });
   }
 
+  async findTrackingById(id: string) {
+    return this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        customerId: true,
+        deliveryAddressId: true,
+        deliverymanId: true,
+        orderType: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        orderTime: true,
+        isScheduled: true,
+        status: true,
+        assignedAt: true,
+        deliveredAt: true,
+        paidAt: true,
+        cancelledAt: true,
+        customerNote: true,
+        createdAt: true,
+        updatedAt: true,
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            coverImage: true,
+          },
+        },
+        deliveryAddress: {
+          select: {
+            id: true,
+            street: true,
+            area: true,
+            city: true,
+            state: true,
+            country: true,
+            lat: true,
+            lng: true,
+          },
+        },
+        deliveryman: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            status: true,
+            vehicleType: true,
+            vehicleNumber: true,
+          },
+        },
+      },
+    });
+  }
+
   async list(
     restaurantId: string | undefined,
     query: ListOrdersDto,

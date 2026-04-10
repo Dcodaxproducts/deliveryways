@@ -20,6 +20,7 @@ import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
+import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
 import {
   CancelOrderDto,
   CreateOrderDto,
@@ -70,6 +71,7 @@ export class OrdersService {
     private readonly couponsService: CouponsService,
     private readonly notificationsService: NotificationsService,
     private readonly chatService: ChatService,
+    private readonly orderTrackingRealtimeService: OrderTrackingRealtimeService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
   ) {}
 
@@ -195,6 +197,7 @@ export class OrdersService {
     });
 
     await this.notificationsService.notifyOrderPlaced(data.id);
+    await this.emitTrackingUpdate(data.id);
 
     return {
       data: this.toOrderMutationResponse(data),
@@ -239,6 +242,15 @@ export class OrdersService {
     };
   }
 
+  async tracking(user: AuthUserContext, id: string) {
+    const data = await this.getTrackingSnapshot(user, id);
+
+    return {
+      data,
+      message: 'Order tracking fetched successfully',
+    };
+  }
+
   async updateStatus(
     user: AuthUserContext,
     id: string,
@@ -270,6 +282,7 @@ export class OrdersService {
       data.id,
       dto.status,
     );
+    await this.emitTrackingUpdate(data.id);
 
     return {
       data: this.toOrderMutationResponse(data),
@@ -307,6 +320,7 @@ export class OrdersService {
       data.id,
       OrderStatus.CANCELLED,
     );
+    await this.emitTrackingUpdate(data.id);
 
     return {
       data: this.toOrderMutationResponse(data),
@@ -375,8 +389,35 @@ export class OrdersService {
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
     await this.chatService.ensureDeliveryThreadForOrder(data.id, deliverymanId);
+    await this.emitTrackingUpdate(data.id);
 
     return this.toOrderMutationResponse(data);
+  }
+
+  async getTrackingSnapshot(user: AuthUserContext, id: string) {
+    const order = await this.ordersRepository.findTrackingById(id);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    await this.assertTrackingAccess(user, {
+      restaurantId: order.restaurantId,
+      customerId: order.customerId,
+      deliverymanId: order.deliverymanId,
+    });
+
+    return this.toOrderTrackingResponse(order);
+  }
+
+  async getTrackingSnapshotForRealtime(id: string) {
+    const order = await this.ordersRepository.findTrackingById(id);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.toOrderTrackingResponse(order);
   }
 
   private async buildQuote(
@@ -1242,6 +1283,220 @@ export class OrdersService {
     };
   }
 
+  private async toOrderTrackingResponse(order: {
+    id: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    customerId: string;
+    deliveryAddressId: string | null;
+    deliverymanId: string | null;
+    orderType: OrderType;
+    paymentStatus: PaymentStatus;
+    paymentMethod: string;
+    orderTime: Date | null;
+    isScheduled: boolean;
+    status: OrderStatus;
+    assignedAt: Date | null;
+    deliveredAt: Date | null;
+    paidAt: Date | null;
+    cancelledAt: Date | null;
+    customerNote: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    branch: {
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      coverImage: string | null;
+    };
+    deliveryAddress: {
+      id: string;
+      street: string;
+      area: string | null;
+      city: string;
+      state: string;
+      country: string;
+      lat: Prisma.Decimal | null;
+      lng: Prisma.Decimal | null;
+    } | null;
+    deliveryman: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      status: string;
+      vehicleType: string | null;
+      vehicleNumber: string | null;
+    } | null;
+  }) {
+    const branchAddress = await this.prisma.address.findFirst({
+      where: {
+        refType: AddressRefType.BRANCH,
+        referenceId: order.branchId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        street: true,
+        area: true,
+        city: true,
+        state: true,
+        country: true,
+        lat: true,
+        lng: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    const stages = this.getTrackingStages(order.orderType);
+    const activeStageIndex = stages.findIndex((stage) => stage === order.status);
+    const resolvedStageIndex = activeStageIndex >= 0 ? activeStageIndex : 0;
+    const progressPercent = Math.round(
+      ((resolvedStageIndex + 1) / stages.length) * 100,
+    );
+
+    return {
+      id: order.id,
+      tenantId: order.tenantId,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      customerId: order.customerId,
+      deliveryAddressId: order.deliveryAddressId,
+      deliverymanId: order.deliverymanId,
+      orderType: order.orderType,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      orderTime: order.orderTime,
+      isScheduled: order.isScheduled,
+      status: order.status,
+      customerNote: order.customerNote,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      assignedAt: order.assignedAt,
+      deliveredAt: order.deliveredAt,
+      paidAt: order.paidAt,
+      cancelledAt: order.cancelledAt,
+      supportsRealtime: true,
+      trackingMode: 'STATUS_ONLY',
+      currentStage: order.status,
+      progressPercent,
+      branch: {
+        ...order.branch,
+        address: branchAddress
+          ? {
+              ...branchAddress,
+              lat: branchAddress.lat !== null ? Number(branchAddress.lat) : null,
+              lng: branchAddress.lng !== null ? Number(branchAddress.lng) : null,
+            }
+          : null,
+      },
+      deliveryAddress: order.deliveryAddress
+        ? {
+            ...order.deliveryAddress,
+            lat:
+              order.deliveryAddress.lat !== null
+                ? Number(order.deliveryAddress.lat)
+                : null,
+            lng:
+              order.deliveryAddress.lng !== null
+                ? Number(order.deliveryAddress.lng)
+                : null,
+          }
+        : null,
+      deliveryman: order.deliveryman,
+      timeline: stages.map((stage, index) => ({
+        status: stage,
+        label: this.toTrackingLabel(stage),
+        completed: index < resolvedStageIndex,
+        active: stage === order.status,
+        pending: index > resolvedStageIndex,
+        at: this.resolveTrackingStageTimestamp(stage, order),
+      })),
+    };
+  }
+
+  private getTrackingStages(orderType: OrderType): OrderStatus[] {
+    if (orderType === OrderType.TAKEAWAY) {
+      return [
+        OrderStatus.PLACED,
+        OrderStatus.CONFIRMED,
+        OrderStatus.PREPARING,
+        OrderStatus.READY_FOR_PICKUP,
+        OrderStatus.PICKED_UP,
+      ];
+    }
+
+    if (orderType === OrderType.DINE_IN) {
+      return [
+        OrderStatus.PLACED,
+        OrderStatus.CONFIRMED,
+        OrderStatus.PREPARING,
+        OrderStatus.READY_TO_SERVE,
+        OrderStatus.SERVED,
+      ];
+    }
+
+    return [
+      OrderStatus.PLACED,
+      OrderStatus.CONFIRMED,
+      OrderStatus.PREPARING,
+      OrderStatus.OUT_FOR_DELIVERY,
+      OrderStatus.DELIVERED,
+    ];
+  }
+
+  private toTrackingLabel(status: OrderStatus): string {
+    const labels: Record<OrderStatus, string> = {
+      PLACED: 'Order placed',
+      CONFIRMED: 'Order confirmed',
+      PREPARING: 'Preparing order',
+      READY_FOR_PICKUP: 'Ready for pickup',
+      PICKED_UP: 'Picked up',
+      READY_TO_SERVE: 'Ready to serve',
+      SERVED: 'Served',
+      OUT_FOR_DELIVERY: 'Out for delivery',
+      DELIVERED: 'Delivered',
+      CANCELLED: 'Cancelled',
+      REJECTED: 'Rejected',
+    };
+
+    return labels[status];
+  }
+
+  private resolveTrackingStageTimestamp(
+    stage: OrderStatus,
+    order: {
+      status: OrderStatus;
+      createdAt: Date;
+      updatedAt: Date;
+      assignedAt: Date | null;
+      deliveredAt: Date | null;
+      cancelledAt: Date | null;
+    },
+  ) {
+    if (stage === OrderStatus.PLACED) {
+      return order.createdAt;
+    }
+
+    if (stage === OrderStatus.OUT_FOR_DELIVERY) {
+      return order.assignedAt;
+    }
+
+    if (
+      stage === OrderStatus.DELIVERED ||
+      stage === OrderStatus.PICKED_UP ||
+      stage === OrderStatus.SERVED
+    ) {
+      return order.deliveredAt;
+    }
+
+    return stage === order.status ? order.updatedAt : null;
+  }
+
   private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
@@ -1384,6 +1639,34 @@ export class OrdersService {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
+    }
+  }
+
+  private async assertTrackingAccess(
+    user: AuthUserContext,
+    order: {
+      restaurantId: string;
+      customerId: string;
+      deliverymanId: string | null;
+    },
+  ) {
+    if (user.role === 'DELIVERYMAN') {
+      if (!order.deliverymanId || order.deliverymanId !== user.uid) {
+        throw new ForbiddenException('Cross-deliveryman access denied');
+      }
+
+      return;
+    }
+
+    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
+  }
+
+  private async emitTrackingUpdate(orderId: string) {
+    try {
+      const snapshot = await this.getTrackingSnapshotForRealtime(orderId);
+      this.orderTrackingRealtimeService.emitTrackingUpdate(snapshot);
+    } catch {
+      return;
     }
   }
 

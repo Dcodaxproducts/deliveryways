@@ -8,7 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -80,6 +80,21 @@ export class OrdersController {
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.ordersService.details(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
+  )
+  @Get(':id/tracking')
+  @ApiOperation({ summary: 'Fetch live tracking snapshot for an order' })
+  tracking(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.ordersService.tracking(user, id);
   }
 
   @ApiBearerAuth()
