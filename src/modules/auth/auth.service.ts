@@ -1562,24 +1562,55 @@ export class AuthService {
         id: user.branchId,
         tenantId: user.tenantId,
         restaurantId: user.restaurantId,
-        deletedAt: null,
       },
       select: {
         id: true,
         isActive: true,
+        deletedAt: true,
       },
     });
 
     if (!branch) {
-      throw new NotFoundException(
-        'Assigned branch not found for current user',
-      );
+      throw new NotFoundException({
+        message: 'Assigned branch not found for current user',
+        error: 'ASSIGNED_BRANCH_NOT_FOUND',
+        details: {
+          branchId: user.branchId,
+          isDeleted: false,
+          deletionScheduled: false,
+          deletedAt: null,
+          canRestore: false,
+        },
+      });
+    }
+
+    if (branch.deletedAt) {
+      throw new ForbiddenException({
+        message:
+          'Assigned branch is soft-deleted. Restore branch to continue login.',
+        error: 'ASSIGNED_BRANCH_SOFT_DELETED',
+        details: {
+          branchId: branch.id,
+          isDeleted: true,
+          deletionScheduled: false,
+          deletedAt: branch.deletedAt.toISOString(),
+          canRestore: true,
+        },
+      });
     }
 
     if (!branch.isActive) {
-      throw new ForbiddenException(
-        'Assigned branch is inactive for current user',
-      );
+      throw new ForbiddenException({
+        message: 'Assigned branch is inactive for current user',
+        error: 'ASSIGNED_BRANCH_INACTIVE',
+        details: {
+          branchId: branch.id,
+          isDeleted: false,
+          deletionScheduled: false,
+          deletedAt: null,
+          canRestore: false,
+        },
+      });
     }
   }
 

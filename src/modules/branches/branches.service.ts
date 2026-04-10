@@ -383,9 +383,18 @@ export class BranchesService {
         user.bid &&
         user.bid === id
       ) {
-        throw new BadRequestException(
-          'Assigned branch not found for current user',
-        );
+        throw new BadRequestException({
+          message:
+            'Assigned branch is soft-deleted. Restore branch to continue.',
+          error: 'ASSIGNED_BRANCH_SOFT_DELETED',
+          details: {
+            branchId: id,
+            isDeleted: true,
+            deletionScheduled: false,
+            deletedAt: branch?.deletedAt?.toISOString?.() ?? null,
+            canRestore: true,
+          },
+        });
       }
 
       throw new BadRequestException('Branch not found');
