@@ -401,7 +401,7 @@ model User {
   hostedGroupOrders      GroupOrderSession[]     @relation("GroupOrderHost")
   groupOrderParticipants GroupOrderParticipant[]
 
-  @@unique([email])
+  @@unique([email, restaurantId])
   @@map("users")
 }
 

@@ -246,7 +246,10 @@ export class AuthService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const existing = await this.usersService.findByEmail(dto.email);
+    const existing = await this.usersService.findByEmail(
+      dto.email,
+      dto.restaurantId,
+    );
     if (existing) {
       throw new BadRequestException('Email already exists');
     }
