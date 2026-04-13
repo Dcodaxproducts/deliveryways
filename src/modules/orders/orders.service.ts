@@ -21,6 +21,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CancelOrderDto,
   CreateOrderDto,
@@ -72,6 +73,7 @@ export class OrdersService {
     private readonly notificationsService: NotificationsService,
     private readonly chatService: ChatService,
     private readonly orderTrackingRealtimeService: OrderTrackingRealtimeService,
+    private readonly storageService?: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
   ) {}
 
@@ -219,8 +221,8 @@ export class OrdersService {
     );
 
     return {
-      data: await Promise.all(
-        items.map((item) => this.toOrderListResponse(item)),
+      data: await this.resolveMediaResponse(
+        await Promise.all(items.map((item) => this.toOrderListResponse(item))),
       ),
       message: 'Orders fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -237,7 +239,9 @@ export class OrdersService {
     await this.assertOrderAccess(user, order.restaurantId, order.customerId);
 
     return {
-      data: await this.toOrderDetailsResponse(order),
+      data: await this.resolveMediaResponse(
+        await this.toOrderDetailsResponse(order),
+      ),
       message: 'Order fetched successfully',
     };
   }
@@ -246,9 +250,13 @@ export class OrdersService {
     const data = await this.getTrackingSnapshot(user, id);
 
     return {
-      data,
+      data: await this.resolveMediaResponse(data),
       message: 'Order tracking fetched successfully',
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   async updateStatus(

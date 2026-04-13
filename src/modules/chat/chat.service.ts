@@ -26,6 +26,7 @@ import {
 } from './dto';
 import { ChatRepository } from './chat.repository';
 import { ChatRealtimeService } from './chat.realtime.service';
+import { StorageService } from '../storage/storage.service';
 
 type StaffPermissionOperation = 'read' | 'reply' | 'assign' | 'resolve';
 
@@ -35,6 +36,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly chatRepository: ChatRepository,
     private readonly chatRealtimeService: ChatRealtimeService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async createThread(user: AuthUserContext, dto: CreateChatThreadDto) {
@@ -110,7 +112,7 @@ export class ChatService {
     await this.chatRealtimeService.emitThreadCreated(payload);
 
     return {
-      data: payload,
+      data: await this.resolveMediaResponse(payload),
       message: 'Support conversation created successfully',
     };
   }
@@ -130,7 +132,9 @@ export class ChatService {
     const { items, total } = await this.chatRepository.list(where, query);
 
     return {
-      data: items.map((item) => this.toThreadListItem(item)),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.toThreadListItem(item)),
+      ),
       message: 'Support conversations fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -146,7 +150,7 @@ export class ChatService {
     await this.assertThreadAccess(user, thread, 'read');
 
     return {
-      data: this.toThreadDetails(thread),
+      data: await this.resolveMediaResponse(this.toThreadDetails(thread)),
       message: 'Support conversation fetched successfully',
     };
   }
@@ -201,9 +205,13 @@ export class ChatService {
     await this.chatRealtimeService.emitThreadUpdated(payload);
 
     return {
-      data: payload,
+      data: await this.resolveMediaResponse(payload),
       message: 'Support conversation updated successfully',
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   async markRead(user: AuthUserContext, id: string) {

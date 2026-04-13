@@ -10,6 +10,7 @@ import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { StaffRolesService } from '../staff-roles/staff-roles.service';
+import { StorageService } from '../storage/storage.service';
 import { StaffManagementRepository } from './staff-management.repository';
 import {
   CreateStaffDto,
@@ -30,6 +31,7 @@ export class StaffManagementService {
   constructor(
     private readonly staffManagementRepository: StaffManagementRepository,
     private readonly staffRolesService: StaffRolesService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateStaffDto) {
@@ -71,7 +73,7 @@ export class StaffManagementService {
     });
 
     return {
-      data: this.toStaffResponse(data),
+      data: await this.resolveMediaResponse(this.toStaffResponse(data)),
       message: 'Staff account created successfully',
     };
   }
@@ -84,7 +86,9 @@ export class StaffManagementService {
     );
 
     return {
-      data: items.map((item) => this.toStaffResponse(item)),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.toStaffResponse(item)),
+      ),
       message: 'Staff accounts fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -94,7 +98,7 @@ export class StaffManagementService {
     const staff = await this.getAccessibleStaffOrThrow(user, id);
 
     return {
-      data: this.toStaffResponse(staff),
+      data: await this.resolveMediaResponse(this.toStaffResponse(staff)),
       message: 'Staff account fetched successfully',
     };
   }
@@ -161,7 +165,7 @@ export class StaffManagementService {
     });
 
     return {
-      data: this.toStaffResponse(data),
+      data: await this.resolveMediaResponse(this.toStaffResponse(data)),
       message: 'Staff account updated successfully',
     };
   }
@@ -178,7 +182,7 @@ export class StaffManagementService {
     });
 
     return {
-      data: this.toStaffResponse(data),
+      data: await this.resolveMediaResponse(this.toStaffResponse(data)),
       message: 'Staff account status updated successfully',
     };
   }
@@ -189,9 +193,13 @@ export class StaffManagementService {
     const data = await this.staffManagementRepository.softDelete(id);
 
     return {
-      data: this.toStaffResponse(data),
+      data: await this.resolveMediaResponse(this.toStaffResponse(data)),
       message: 'Staff account removed successfully',
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   private async getAccessibleStaffOrThrow(user: AuthUserContext, id: string) {

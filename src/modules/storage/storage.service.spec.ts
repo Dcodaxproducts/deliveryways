@@ -131,4 +131,35 @@ describe('StorageService', () => {
       ),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('resolves nested media fields with one reusable helper', async () => {
+    const resolveViewUrlSpy = jest.spyOn(service, 'resolveViewUrl');
+
+    const result = await service.resolveMediaUrlsDeep({
+      profile: {
+        avatarUrl:
+          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/user-1/avatar.png',
+      },
+      restaurant: {
+        logoUrl:
+          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/logo.png',
+      },
+      items: [
+        {
+          imageUrl:
+            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/menu-items/burger.png',
+        },
+        {
+          imageUrl:
+            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/menu-items/burger.png',
+        },
+      ],
+    });
+
+    expect(result.profile.avatarUrl).toBe('https://signed-url.example');
+    expect(result.restaurant.logoUrl).toBe('https://signed-url.example');
+    expect(result.items[0].imageUrl).toBe('https://signed-url.example');
+    expect(result.items[1].imageUrl).toBe('https://signed-url.example');
+    expect(resolveViewUrlSpy).toHaveBeenCalledTimes(3);
+  });
 });

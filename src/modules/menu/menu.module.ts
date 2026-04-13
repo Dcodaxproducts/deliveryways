@@ -17,8 +17,10 @@ import { BranchOverrideRepository } from './branch-override/branch-override.repo
 import { RestaurantMenuController } from './restaurant-menu/restaurant-menu.controller';
 import { RestaurantMenuService } from './restaurant-menu/restaurant-menu.service';
 import { RestaurantMenuRepository } from './restaurant-menu/restaurant-menu.repository';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
+  imports: [StorageModule],
   controllers: [
     MenuCategoryController,
     MenuItemController,

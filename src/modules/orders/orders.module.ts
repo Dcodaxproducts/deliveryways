@@ -5,6 +5,7 @@ import { ChatModule } from '../chat/chat.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { LoyaltyWalletModule } from '../loyalty-wallet/loyalty-wallet.module';
+import { StorageModule } from '../storage/storage.module';
 import { OrderTrackingGateway } from './order-tracking.gateway';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
 import { OrdersController } from './orders.controller';
@@ -17,6 +18,7 @@ import { OrdersService } from './orders.service';
     CouponsModule,
     NotificationsModule,
     LoyaltyWalletModule,
+    StorageModule,
     ConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

@@ -9,6 +9,7 @@ import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
 import { PrismaService } from '../../../database';
+import { StorageService } from '../../storage/storage.service';
 import {
   BulkCreateMenuCategoriesDto,
   CreateMenuCategoryDto,
@@ -22,6 +23,7 @@ export class MenuCategoryService {
   constructor(
     private readonly categoryRepository: MenuCategoryRepository,
     private readonly prisma: PrismaService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuCategoryDto) {
@@ -41,7 +43,10 @@ export class MenuCategoryService {
       isActive: dto.isActive ?? true,
     });
 
-    return { data, message: 'Menu category created successfully' };
+    return {
+      data: await this.resolveMediaResponse(data),
+      message: 'Menu category created successfully',
+    };
   }
 
   async createBulk(user: AuthUserContext, dto: BulkCreateMenuCategoriesDto) {
@@ -87,7 +92,7 @@ export class MenuCategoryService {
     );
 
     return {
-      data: items,
+      data: await this.resolveMediaResponse(items),
       message: 'Menu categories fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -120,7 +125,10 @@ export class MenuCategoryService {
       isActive: dto.isActive,
     });
 
-    return { data, message: 'Menu category updated successfully' };
+    return {
+      data: await this.resolveMediaResponse(data),
+      message: 'Menu category updated successfully',
+    };
   }
 
   async remove(user: AuthUserContext, id: string) {
@@ -272,5 +280,9 @@ export class MenuCategoryService {
     if (!parent) {
       throw new BadRequestException('Parent category not found in restaurant');
     }
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 }

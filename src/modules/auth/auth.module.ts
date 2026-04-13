@@ -11,6 +11,7 @@ import { RestaurantsModule } from '../restaurants/restaurants.module';
 import { BranchesModule } from '../branches/branches.module';
 import { UsersModule } from '../users/users.module';
 import { StaffManagementModule } from '../staff-management/staff-management.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { StaffManagementModule } from '../staff-management/staff-management.modu
     BranchesModule,
     UsersModule,
     StaffManagementModule,
+    StorageModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

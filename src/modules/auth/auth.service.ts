@@ -43,6 +43,7 @@ import { BranchesService } from '../branches/branches.service';
 import { UsersService } from '../users/users.service';
 import { MailerService } from '../mailer/mailer.service';
 import { StaffManagementRepository } from '../staff-management/staff-management.repository';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class AuthService {
@@ -55,6 +56,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly mailerService: MailerService,
     private readonly staffManagementRepository: StaffManagementRepository,
+    private readonly storageService?: StorageService,
   ) {}
 
   async registerTenant(dto: RegisterTenantDto) {
@@ -428,7 +430,9 @@ export class AuthService {
     );
 
     return {
-      data: items.map((item) => this.withDeletionState(item)),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.withDeletionState(item)),
+      ),
       message: 'Customers fetched successfully',
       meta: {
         page: query.page,
@@ -471,7 +475,7 @@ export class AuthService {
     }
 
     return {
-      data: this.withDeletionState(customer),
+      data: await this.resolveMediaResponse(this.withDeletionState(customer)),
       message: 'Customer fetched successfully',
     };
   }
@@ -535,7 +539,7 @@ export class AuthService {
     });
 
     return {
-      data: {
+      data: await this.resolveMediaResponse({
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
         user: {
@@ -557,7 +561,7 @@ export class AuthService {
           deletionReason: loginDeletionState?.reason ?? null,
         },
         deletionState: loginDeletionState,
-      },
+      }),
       message:
         loginDeletionState?.message ??
         'Login successful',
@@ -602,7 +606,7 @@ export class AuthService {
     });
 
     return {
-      data: {
+      data: await this.resolveMediaResponse({
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
         user: {
@@ -621,7 +625,7 @@ export class AuthService {
           deletionScheduled: false,
           deleteAfter: null,
         },
-      },
+      }),
       message: 'Account deletion cancelled successfully',
     };
   }
@@ -665,7 +669,7 @@ export class AuthService {
     });
 
     return {
-      data: {
+      data: await this.resolveMediaResponse({
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
         user: {
@@ -691,7 +695,7 @@ export class AuthService {
           },
           staffRole: staff.staffRole,
         },
-      },
+      }),
       message: 'Staff login successful',
     };
   }
@@ -730,7 +734,7 @@ export class AuthService {
     });
 
     return {
-      data: {
+      data: await this.resolveMediaResponse({
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
         user: {
@@ -752,7 +756,7 @@ export class AuthService {
             bio: null,
           },
         },
-      },
+      }),
       message: 'Deliveryman login successful',
     };
   }
@@ -1206,7 +1210,7 @@ export class AuthService {
       }
 
       return {
-        data: this.withDeletionState({
+        data: await this.resolveMediaResponse(this.withDeletionState({
           id: staff.id,
           email: staff.email,
           role: UserRoleEnum.STAFF,
@@ -1230,7 +1234,7 @@ export class AuthService {
           staffRole: staff.staffRole,
           isActive: staff.isActive,
           deletedAt: staff.deletedAt,
-        }),
+        })),
         message: 'Current user context fetched',
       };
     }
@@ -1244,7 +1248,7 @@ export class AuthService {
       }
 
       return {
-        data: this.withDeletionState({
+        data: await this.resolveMediaResponse(this.withDeletionState({
           id: deliveryman.id,
           email: deliveryman.email,
           role: 'DELIVERYMAN',
@@ -1264,7 +1268,7 @@ export class AuthService {
           },
           isActive: deliveryman.isActive,
           deletedAt: deliveryman.deletedAt,
-        }),
+        })),
         message: 'Current user context fetched',
       };
     }
@@ -1277,7 +1281,7 @@ export class AuthService {
     await this.assertAssignedBranchContext(dbUser);
 
     return {
-      data: this.withDeletionState({
+      data: await this.resolveMediaResponse(this.withDeletionState({
         id: dbUser.id,
         email: dbUser.email,
         role: dbUser.role,
@@ -1292,7 +1296,7 @@ export class AuthService {
         isActive: dbUser.isActive,
         deletedAt: dbUser.deletedAt,
         deleteAfter: dbUser.deleteAfter,
-      }),
+      })),
       message: 'Current user context fetched',
     };
   }
@@ -1322,7 +1326,7 @@ export class AuthService {
       });
 
       return {
-        data: {
+        data: await this.resolveMediaResponse({
           id: updated.id,
           profile: {
             firstName: updated.firstName,
@@ -1331,7 +1335,7 @@ export class AuthService {
             avatarUrl: updated.avatarUrl,
             bio: updated.bio,
           },
-        },
+        }),
         message: avatarOnly
           ? 'Profile avatar updated successfully'
           : 'Profile updated successfully',
@@ -1378,14 +1382,18 @@ export class AuthService {
     const updated = await this.usersService.findById(user.uid);
 
     return {
-      data: {
+      data: await this.resolveMediaResponse({
         id: updated?.id,
         profile: updated?.profile,
-      },
+      }),
       message: avatarOnly
         ? 'Profile avatar updated successfully'
         : 'Profile updated successfully',
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   async deleteAccount(user: AuthUserContext) {

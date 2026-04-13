@@ -36,6 +36,35 @@ interface S3Config {
 export class StorageService {
   constructor(private readonly configService: ConfigService) {}
 
+  async resolveMediaUrlsDeep<T>(value: T): Promise<T> {
+    const cache = new Map<string, Promise<string | null>>();
+
+    const visit = async (input: unknown): Promise<unknown> => {
+      if (Array.isArray(input)) {
+        return Promise.all(input.map((item) => visit(item)));
+      }
+
+      if (!this.isPlainObject(input)) {
+        return input;
+      }
+
+      const output: Record<string, unknown> = {};
+
+      for (const [key, nestedValue] of Object.entries(input)) {
+        if (this.isMediaField(key)) {
+          output[key] = await this.resolveMediaFieldValue(nestedValue, cache);
+          continue;
+        }
+
+        output[key] = await visit(nestedValue);
+      }
+
+      return output;
+    };
+
+    return (await visit(value)) as T;
+  }
+
   async resolveViewUrl(fileUrl: string | null | undefined, expiresIn?: number) {
     if (!fileUrl || typeof fileUrl !== 'string' || !fileUrl.trim()) {
       return null;
@@ -242,6 +271,47 @@ export class StorageService {
     }
 
     return `https://${bucket}.s3.${region}.amazonaws.com/${normalizedKey}`;
+  }
+
+  private async resolveMediaFieldValue(
+    value: unknown,
+    cache: Map<string, Promise<string | null>>,
+  ) {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
+      return value;
+    }
+
+    if (cache.has(normalizedValue)) {
+      return (await cache.get(normalizedValue)) ?? value;
+    }
+
+    const resolvedPromise = this.resolveViewUrl(normalizedValue);
+    cache.set(normalizedValue, resolvedPromise);
+    const resolved = await resolvedPromise;
+    return resolved;
+  }
+
+  private isMediaField(key: string) {
+    return (
+      key === 'avatarUrl' ||
+      key === 'imageUrl' ||
+      key === 'logoUrl' ||
+      key === 'coverImage'
+    );
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
   }
 
   private resolveObjectKey(

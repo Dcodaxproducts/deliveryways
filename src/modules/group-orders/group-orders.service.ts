@@ -14,6 +14,7 @@ import { AuthUserContext } from '../../common/decorators';
 import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { OrdersService } from '../orders/orders.service';
+import { StorageService } from '../storage/storage.service';
 import {
   AddGroupOrderItemDto,
   CheckoutGroupOrderDto,
@@ -31,6 +32,7 @@ export class GroupOrdersService {
   constructor(
     private readonly groupOrdersRepository: GroupOrdersRepository,
     private readonly ordersService: OrdersService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateGroupOrderSessionDto) {
@@ -91,7 +93,9 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(user, session.id),
+      data: await this.resolveMediaResponse(
+        await this.buildSessionResponseOrThrow(user, session.id),
+      ),
       message: 'Group order created successfully',
     };
   }
@@ -144,7 +148,9 @@ export class GroupOrdersService {
     }
 
     return {
-      data: await this.buildSessionResponseOrThrow(user, session.id),
+      data: await this.resolveMediaResponse(
+        await this.buildSessionResponseOrThrow(user, session.id),
+      ),
       message: 'Joined group order successfully',
     };
   }
@@ -158,8 +164,10 @@ export class GroupOrdersService {
         );
 
     return {
-      data: await Promise.all(
-        items.map(async (item) => this.buildSessionResponse(user, item)),
+      data: await this.resolveMediaResponse(
+        await Promise.all(
+          items.map(async (item) => this.buildSessionResponse(user, item)),
+        ),
       ),
       message: 'Group orders fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -170,9 +178,15 @@ export class GroupOrdersService {
     const session = await this.getSessionForReadOrThrow(user, id);
 
     return {
-      data: await this.buildSessionResponse(user, session),
+      data: await this.resolveMediaResponse(
+        await this.buildSessionResponse(user, session),
+      ),
       message: 'Group order fetched successfully',
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   async updateSettings(

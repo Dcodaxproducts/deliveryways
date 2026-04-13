@@ -18,6 +18,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { OrdersService } from '../orders/orders.service';
 import { UsersService } from '../users/users.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CreatePosDraftItemDto,
   CreatePosOrderDto,
@@ -34,6 +35,7 @@ export class PosService {
     private readonly posRepository: PosRepository,
     private readonly ordersService: OrdersService,
     private readonly usersService: UsersService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreatePosOrderDto) {
@@ -85,7 +87,7 @@ export class PosService {
     });
 
     return {
-      data: this.toDraftResponse(data),
+      data: await this.resolveMediaResponse(this.toDraftResponse(data)),
       message: 'POS draft created successfully',
     };
   }
@@ -168,7 +170,9 @@ export class PosService {
     );
 
     return {
-      data: items.map((item) => this.toDraftResponse(item)),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.toDraftResponse(item)),
+      ),
       message: 'POS drafts fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -179,7 +183,7 @@ export class PosService {
     const draft = await this.getScopedDraftOrThrow(user, id);
 
     return {
-      data: this.toDraftResponse(draft),
+      data: await this.resolveMediaResponse(this.toDraftResponse(draft)),
       message: 'POS draft fetched successfully',
     };
   }
@@ -254,7 +258,7 @@ export class PosService {
     });
 
     return {
-      data: this.toDraftResponse(data),
+      data: await this.resolveMediaResponse(this.toDraftResponse(data)),
       message: 'POS draft updated successfully',
     };
   }
@@ -937,5 +941,9 @@ export class PosService {
         updatedAt: item.updatedAt,
       })),
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 }
