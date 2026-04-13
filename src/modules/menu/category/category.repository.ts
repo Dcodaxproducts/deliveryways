@@ -24,6 +24,21 @@ export class MenuCategoryRepository {
     return this.prisma.menuCategory.findUnique({ where: { id } });
   }
 
+  async findByRestaurantAndSlug(
+    restaurantId: string,
+    slug: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.menuCategory.findFirst({
+      where: {
+        restaurantId,
+        slug,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, deletedAt: true },
+    });
+  }
+
   async list(restaurantId: string | undefined, query: ListMenuCategoriesDto) {
     const where: Prisma.MenuCategoryWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),

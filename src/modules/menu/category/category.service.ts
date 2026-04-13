@@ -29,6 +29,8 @@ export class MenuCategoryService {
   async create(user: AuthUserContext, dto: CreateMenuCategoryDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     await this.validateParentCategory(restaurantId, dto.parentCategoryId);
+    const slug = this.normalizeRequiredString(dto.slug, 'slug');
+    await this.assertUniqueSlug(restaurantId, slug);
 
     const data = await this.categoryRepository.create({
       restaurant: { connect: { id: restaurantId } },
@@ -36,7 +38,7 @@ export class MenuCategoryService {
         ? { connect: { id: dto.parentCategoryId } }
         : undefined,
       name: dto.name,
-      slug: dto.slug,
+      slug,
       description: dto.description,
       imageUrl: dto.imageUrl,
       sortOrder: dto.sortOrder ?? 0,
@@ -110,6 +112,14 @@ export class MenuCategoryService {
       dto.parentCategoryId,
       id,
     );
+    const slug =
+      dto.slug !== undefined
+        ? this.normalizeRequiredString(dto.slug, 'slug')
+        : undefined;
+
+    if (slug) {
+      await this.assertUniqueSlug(category.restaurantId, slug, id);
+    }
 
     const data = await this.categoryRepository.update(id, {
       parent: dto.parentCategoryId
@@ -118,7 +128,7 @@ export class MenuCategoryService {
           ? { disconnect: true }
           : undefined,
       name: dto.name,
-      slug: dto.slug,
+      slug,
       description: dto.description,
       imageUrl: dto.imageUrl,
       sortOrder: dto.sortOrder,
@@ -280,6 +290,36 @@ export class MenuCategoryService {
     if (!parent) {
       throw new BadRequestException('Parent category not found in restaurant');
     }
+  }
+
+  private async assertUniqueSlug(
+    restaurantId: string,
+    slug: string,
+    excludeId?: string,
+  ) {
+    const existing = await this.categoryRepository.findByRestaurantAndSlug(
+      restaurantId,
+      slug,
+      excludeId,
+    );
+
+    if (existing) {
+      throw new BadRequestException(
+        existing.deletedAt
+          ? 'A menu category with this slug already exists in this restaurant, including a deleted category'
+          : 'A menu category with this slug already exists in this restaurant',
+      );
+    }
+  }
+
+  private normalizeRequiredString(value: string, field: string) {
+    const normalized = value.trim();
+
+    if (!normalized) {
+      throw new BadRequestException(`${field} is required`);
+    }
+
+    return normalized;
   }
 
   private async resolveMediaResponse<T>(data: T) {
