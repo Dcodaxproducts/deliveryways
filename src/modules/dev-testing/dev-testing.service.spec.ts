@@ -7,12 +7,26 @@ import { DevTestingService } from './dev-testing.service';
 describe('DevTestingService', () => {
   let service: DevTestingService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+  let prisma: { $transaction: jest.Mock };
 
   beforeEach(() => {
     usersService = {
       findManyForDevResolution: jest.fn(),
       setApprovalStatus: jest.fn(),
       deleteManyByIds: jest.fn(),
+    };
+
+    prisma = {
+      $transaction: jest.fn(async (callback: (tx: any) => unknown) =>
+        callback({
+          branch: { updateMany: jest.fn() },
+          inventoryMovement: { updateMany: jest.fn() },
+          notification: { deleteMany: jest.fn() },
+          chatMessage: { deleteMany: jest.fn() },
+          profile: { deleteMany: jest.fn() },
+          user: { delete: jest.fn() },
+        }),
+      ),
     };
 
     service = new DevTestingService(
@@ -23,6 +37,7 @@ describe('DevTestingService', () => {
       {} as never,
       {} as never,
       usersService as unknown as UsersService,
+      prisma as never,
     );
   });
 
@@ -98,15 +113,11 @@ describe('DevTestingService', () => {
         isApproved: true,
       },
     ]);
-    usersService.deleteManyByIds!.mockResolvedValue({ count: 1 });
-
     const result = await service.deleteUser({
       id: 'branch-admin-1',
     });
 
-    expect(usersService.deleteManyByIds).toHaveBeenCalledWith([
-      'branch-admin-1',
-    ]);
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(result.data.deleted).toBe(true);
   });
 

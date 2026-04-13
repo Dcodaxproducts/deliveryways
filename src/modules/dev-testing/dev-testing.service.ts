@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { AddressRefType, Prisma, UserRole } from '@prisma/client';
+import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { AuthService } from '../auth/auth.service';
@@ -16,6 +17,14 @@ import { MenuVariationService } from '../menu/variation/variation.service';
 import { UsersService } from '../users/users.service';
 import { DevBootstrapStoreDto, DevTestingUserIdentifierDto } from './dto';
 
+type ResolvedDevUser = {
+  id: string;
+  email: string;
+  role: UserRole;
+  restaurantId: string | null;
+  isApproved: boolean;
+};
+
 @Injectable()
 export class DevTestingService {
   constructor(
@@ -26,6 +35,7 @@ export class DevTestingService {
     private readonly inventoryCategoryService: InventoryCategoryService,
     private readonly inventoryItemService: InventoryItemService,
     private readonly usersService: UsersService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async bootstrapStore(dto: DevBootstrapStoreDto) {
@@ -206,7 +216,11 @@ export class DevTestingService {
       );
     }
 
-    await this.usersService.deleteManyByIds([user.id]);
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      await this.deleteCustomerWithDependencies(user);
+    } else {
+      await this.deleteNonCustomerUser(user);
+    }
 
     return {
       data: {
@@ -226,7 +240,9 @@ export class DevTestingService {
     UserRoleEnum.CUSTOMER,
   ]);
 
-  private async resolveSingleUser(dto: DevTestingUserIdentifierDto) {
+  private async resolveSingleUser(
+    dto: DevTestingUserIdentifierDto,
+  ): Promise<ResolvedDevUser> {
     const matches = await this.usersService.findManyForDevResolution({
       id: dto.id,
       email: dto.email?.trim().toLowerCase(),
@@ -239,11 +255,206 @@ export class DevTestingService {
     }
 
     if (matches.length > 1) {
-      throw new BadRequestException(
-        'Multiple users matched. Please provide role and/or restaurantId, or use id instead.',
-      );
+      throw new BadRequestException({
+        message:
+          'Multiple users matched this email. Please provide role and/or restaurantId, or use id instead.',
+        error: 'AMBIGUOUS_USER_IDENTIFIER',
+        details: {
+          email: dto.email?.trim().toLowerCase(),
+          matchCount: matches.length,
+          identifiers: matches.map((match) => ({
+            id: match.id,
+            role: match.role,
+            restaurantId: match.restaurantId,
+          })),
+        },
+      });
     }
 
-    return matches[0];
+    return matches[0] as ResolvedDevUser;
+  }
+
+  private async deleteCustomerWithDependencies(user: ResolvedDevUser) {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const orders = await tx.order.findMany({
+          where: { customerId: user.id },
+          select: { id: true },
+        });
+        const orderIds = orders.map((order) => order.id);
+
+        const paymentTransactions = orderIds.length
+          ? await tx.paymentTransaction.findMany({
+              where: { orderId: { in: orderIds } },
+              select: { id: true },
+            })
+          : [];
+        const paymentTransactionIds = paymentTransactions.map(
+          (transaction) => transaction.id,
+        );
+
+        await tx.notification.deleteMany({
+          where: {
+            OR: [
+              { recipientUserId: user.id },
+              ...(orderIds.length > 0 ? [{ orderId: { in: orderIds } }] : []),
+              ...(paymentTransactionIds.length > 0
+                ? [{ paymentTransactionId: { in: paymentTransactionIds } }]
+                : []),
+            ],
+          },
+        });
+
+        await tx.chatMessage.deleteMany({
+          where: { senderUserId: user.id },
+        });
+        await tx.chatThread.deleteMany({
+          where: { customerId: user.id },
+        });
+
+        await tx.groupOrderParticipant.deleteMany({
+          where: { userId: user.id },
+        });
+        await tx.groupOrderSession.deleteMany({
+          where: { hostUserId: user.id },
+        });
+
+        await tx.posOrderDraft.deleteMany({
+          where: { customerId: user.id },
+        });
+
+        await tx.couponUsage.deleteMany({
+          where: { customerId: user.id },
+        });
+        await tx.walletTransaction.deleteMany({
+          where: { customerId: user.id },
+        });
+        await tx.loyaltyTransaction.deleteMany({
+          where: { customerId: user.id },
+        });
+
+        if (orderIds.length > 0) {
+          await tx.paymentTransaction.deleteMany({
+            where: { orderId: { in: orderIds } },
+          });
+          await tx.orderItem.deleteMany({
+            where: { orderId: { in: orderIds } },
+          });
+        }
+
+        await tx.order.deleteMany({
+          where: { customerId: user.id },
+        });
+
+        await tx.walletAccount.deleteMany({
+          where: { customerId: user.id },
+        });
+        await tx.loyaltyAccount.deleteMany({
+          where: { customerId: user.id },
+        });
+
+        await tx.cart.deleteMany({
+          where: { customerId: user.id },
+        });
+        await tx.address.deleteMany({
+          where: {
+            referenceId: user.id,
+            refType: AddressRefType.USER,
+          },
+        });
+        await tx.profile.deleteMany({
+          where: { userId: user.id },
+        });
+        await tx.user.delete({
+          where: { id: user.id },
+        });
+      });
+    } catch (error) {
+      this.rethrowDeleteError(user, error);
+    }
+  }
+
+  private async deleteNonCustomerUser(user: ResolvedDevUser) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      const blockers = await this.getBusinessAdminDeletionBlockers(user.id);
+      const hasBlockers = Object.values(blockers).some((count) => count > 0);
+
+      if (hasBlockers) {
+        throw new BadRequestException({
+          message:
+            'Business admin cannot be deleted until owned tenant/staff records are removed or reassigned.',
+          error: 'USER_DELETE_BLOCKED',
+          details: {
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+            blockers,
+          },
+        });
+      }
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.branch.updateMany({
+          where: { managerId: user.id },
+          data: { managerId: null },
+        });
+        await tx.inventoryMovement.updateMany({
+          where: { createdByUserId: user.id },
+          data: { createdByUserId: null },
+        });
+        await tx.notification.deleteMany({
+          where: { recipientUserId: user.id },
+        });
+        await tx.chatMessage.deleteMany({
+          where: { senderUserId: user.id },
+        });
+        await tx.profile.deleteMany({
+          where: { userId: user.id },
+        });
+        await tx.user.delete({
+          where: { id: user.id },
+        });
+      });
+    } catch (error) {
+      this.rethrowDeleteError(user, error);
+    }
+  }
+
+  private async getBusinessAdminDeletionBlockers(userId: string) {
+    const [tenantOwnerships, staffRoles, staffUsers] = await this.prisma.$transaction([
+      this.prisma.tenant.count({ where: { ownerId: userId } }),
+      this.prisma.staffRole.count({ where: { ownerUserId: userId } }),
+      this.prisma.staffUser.count({ where: { ownerUserId: userId } }),
+    ]);
+
+    return {
+      tenantOwnerships,
+      staffRoles,
+      staffUsers,
+    };
+  }
+
+  private rethrowDeleteError(user: ResolvedDevUser, error: unknown): never {
+    if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      throw error;
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      throw new BadRequestException({
+        message:
+          'User deletion is blocked by related records that are not safe to delete automatically.',
+        error: 'USER_DELETE_BLOCKED',
+        details: {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          prismaCode: error.code,
+        },
+      });
+    }
+
+    throw error;
   }
 }
