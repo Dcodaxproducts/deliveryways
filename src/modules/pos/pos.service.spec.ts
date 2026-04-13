@@ -49,6 +49,8 @@ describe('PosService', () => {
       findDraftItem: jest.fn(),
       updateDraftItem: jest.fn(),
       deleteDraftItem: jest.fn(),
+      findCustomerProfileMetadata: jest.fn(),
+      upsertCustomerProfileMetadata: jest.fn(),
     };
 
     const ordersService = {
@@ -77,6 +79,7 @@ describe('PosService', () => {
       restaurantId: 'restaurant-1',
       name: 'Main',
       coverImage: null,
+      settings: null,
     });
     posRepository.createDraft.mockResolvedValue(makeDraft());
 
@@ -107,6 +110,7 @@ describe('PosService', () => {
       id: 'branch-2',
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
+      settings: null,
     });
 
     await expect(
@@ -124,6 +128,73 @@ describe('PosService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('creates a walk-in reservation in POS by creating a guest customer', async () => {
+    const { service, posRepository, usersService } = makeService();
+    posRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+      coverImage: null,
+      settings: { tableReservationsEnabled: true },
+    });
+    usersService.create.mockResolvedValue({ id: 'guest-customer-1' });
+    posRepository.findCustomerProfileMetadata.mockResolvedValue({ metadata: null });
+    posRepository.upsertCustomerProfileMetadata.mockResolvedValue({ id: 'profile-1' });
+
+    const result = await service.createWalkInReservation(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      {
+        branchId: 'branch-1',
+        guestName: 'Walk In Guest',
+        guestPhone: '03001234567',
+        reservationDate: '2999-03-30T19:30:00.000Z',
+        guestCount: 4,
+        note: 'Window side if possible',
+      },
+    );
+
+    expect(usersService.create).toHaveBeenCalled();
+    expect(posRepository.upsertCustomerProfileMetadata).toHaveBeenCalled();
+    expect(result.data.customerId).toBe('guest-customer-1');
+    expect(result.data.guestCount).toBe(4);
+    expect(result.message).toBe('Walk-in table reservation created successfully');
+  });
+
+  it('blocks POS walk-in reservation when branch reservations are disabled', async () => {
+    const { service, posRepository } = makeService();
+    posRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: { tableReservationsEnabled: false },
+    });
+
+    await expect(
+      service.createWalkInReservation(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.STAFF,
+        },
+        {
+          branchId: 'branch-1',
+          guestName: 'Walk In Guest',
+          reservationDate: '2999-03-30T19:30:00.000Z',
+          guestCount: 4,
+        },
+      ),
+    ).rejects.toThrow('Table reservations are not enabled for this branch');
   });
 
   it('adds an item to an open POS draft', async () => {

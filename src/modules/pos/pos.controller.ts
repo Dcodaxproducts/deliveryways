@@ -20,6 +20,7 @@ import {
 import {
   CreatePosDraftItemDto,
   CreatePosOrderDto,
+  CreatePosWalkInReservationDto,
   ListPosOrdersDto,
   UpdatePosDraftItemDto,
   UpdatePosOrderDto,
@@ -42,6 +43,14 @@ export class PosController {
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreatePosOrderDto) {
     return this.posService.create(user, dto);
+  }
+
+  @Post('walk-in-reservations')
+  createWalkInReservation(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreatePosWalkInReservationDto,
+  ) {
+    return this.posService.createWalkInReservation(user, dto);
   }
 
   @Get()

@@ -184,6 +184,50 @@ export class UpdatePosOrderDto {
   note?: string | null;
 }
 
+export class CreatePosWalkInReservationDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional for branch-scoped actors; token branch scope is used automatically',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  guestName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  guestPhone?: string;
+
+  @ApiProperty({
+    description: 'Reservation date/time in ISO 8601 format',
+    example: '2026-03-30T19:30:00.000Z',
+  })
+  @IsString()
+  reservationDate!: string;
+
+  @ApiProperty({ minimum: 1, maximum: 50, example: 4 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  guestCount!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class ListPosOrdersDto extends QueryDto {
   @ApiPropertyOptional()
   @IsOptional()

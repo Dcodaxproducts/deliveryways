@@ -21,6 +21,7 @@ import { UsersService } from '../users/users.service';
 import {
   CreatePosDraftItemDto,
   CreatePosOrderDto,
+  CreatePosWalkInReservationDto,
   ListPosOrdersDto,
   UpdatePosDraftItemDto,
   UpdatePosOrderDto,
@@ -86,6 +87,69 @@ export class PosService {
     return {
       data: this.toDraftResponse(data),
       message: 'POS draft created successfully',
+    };
+  }
+
+  async createWalkInReservation(
+    user: AuthUserContext,
+    dto: CreatePosWalkInReservationDto,
+  ) {
+    this.assertPosActor(user);
+
+    const effectiveBranchId = this.resolveRequestedBranchId(user, dto.branchId);
+    if (!effectiveBranchId) {
+      throw new BadRequestException('branchId is required');
+    }
+
+    const branch = await this.posRepository.findActiveBranch(effectiveBranchId);
+    if (!branch) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+    this.assertTableReservationsEnabled(branch.settings);
+
+    const reservationDate = this.parseFutureReservationDate(dto.reservationDate);
+
+    let customerId = dto.customerId;
+    if (customerId) {
+      await this.assertScopedCustomer(
+        customerId,
+        branch.tenantId,
+        branch.restaurantId,
+      );
+    } else {
+      customerId = await this.createGuestCustomerForBranch(branch, {
+        guestName: dto.guestName,
+        guestPhone: dto.guestPhone,
+      });
+    }
+
+    const profile = await this.posRepository.findCustomerProfileMetadata(customerId);
+    const existingReservations = this.readTableReservations(profile?.metadata);
+    const reservation = {
+      id: randomBytes(12).toString('hex'),
+      branchId: branch.id,
+      reservationDate: reservationDate.toISOString(),
+      guestCount: dto.guestCount,
+      note: this.resolveNullableString(dto.note),
+      status: 'REQUESTED' as const,
+      createdAt: new Date().toISOString(),
+      cancelledAt: null,
+    };
+
+    const nextMetadata = this.writeCustomerAppMetadata(profile?.metadata, {
+      tableReservations: [reservation, ...existingReservations].slice(0, 20),
+    });
+
+    await this.posRepository.upsertCustomerProfileMetadata(customerId, nextMetadata);
+
+    return {
+      data: {
+        ...reservation,
+        customerId,
+      },
+      message: 'Walk-in table reservation created successfully',
     };
   }
 
@@ -443,31 +507,57 @@ export class PosService {
       return draft.customerId;
     }
 
+    const guestCustomerId = await this.createGuestCustomerForBranch(
+      {
+        id: draft.branchId,
+        tenantId: draft.tenantId,
+        restaurantId: draft.restaurantId,
+      },
+      {
+        guestName: draft.guestName ?? undefined,
+        guestPhone: draft.guestPhone ?? undefined,
+      },
+    );
+
+    await this.posRepository.updateDraft(draft.id, {
+      customer: { connect: { id: guestCustomerId } },
+    });
+
+    return guestCustomerId;
+  }
+
+  private async createGuestCustomerForBranch(
+    branch: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+    },
+    guest: {
+      guestName?: string;
+      guestPhone?: string;
+    },
+  ) {
     const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
-    const guestName = draft.guestName?.trim() || 'Walk-in';
+    const guestName = guest.guestName?.trim() || 'Walk-in';
     const nameParts = guestName.split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] || 'Walk-in';
     const lastName = nameParts.slice(1).join(' ') || 'Customer';
 
     const guestCustomer = await this.usersService.create({
-      email: this.generateGuestEmail(draft.restaurantId, draft.branchId),
+      email: this.generateGuestEmail(branch.restaurantId, branch.id),
       password,
       role: UserRoleEnum.CUSTOMER,
-      tenantId: draft.tenantId,
-      restaurantId: draft.restaurantId,
-      branchId: draft.branchId,
+      tenantId: branch.tenantId,
+      restaurantId: branch.restaurantId,
+      branchId: branch.id,
       isVerified: false,
       isApproved: true,
       isGuest: true,
       profile: {
         firstName,
         lastName,
-        phone: draft.guestPhone ?? undefined,
+        phone: guest.guestPhone ?? undefined,
       },
-    });
-
-    await this.posRepository.updateDraft(draft.id, {
-      customer: { connect: { id: guestCustomer.id } },
     });
 
     return guestCustomer.id;
@@ -476,6 +566,30 @@ export class PosService {
   private generateGuestEmail(restaurantId: string, branchId: string) {
     const token = randomBytes(6).toString('hex');
     return `pos-guest-${restaurantId}-${branchId}-${Date.now()}-${token}@deliveryways.local`;
+  }
+
+  private parseFutureReservationDate(value: string) {
+    const reservationDate = new Date(value);
+
+    if (Number.isNaN(reservationDate.getTime())) {
+      throw new BadRequestException('Invalid reservation date');
+    }
+
+    if (reservationDate.getTime() <= Date.now()) {
+      throw new BadRequestException('Reservation date must be in the future');
+    }
+
+    return reservationDate;
+  }
+
+  private assertTableReservationsEnabled(settings: Prisma.JsonValue | null) {
+    const value = this.readPath(settings, ['tableReservationsEnabled']);
+
+    if (value !== true) {
+      throw new BadRequestException(
+        'Table reservations are not enabled for this branch',
+      );
+    }
   }
 
   private normalizeModifiers(
@@ -599,6 +713,124 @@ export class PosService {
 
     const trimmed = value.trim();
     return trimmed.length ? trimmed : undefined;
+  }
+
+  private resolveNullableString(value: string | null | undefined) {
+    return this.resolveOptionalString(value) ?? null;
+  }
+
+  private writeCustomerAppMetadata(
+    metadata: Prisma.JsonValue | null | undefined,
+    patch: {
+      tableReservations: Array<{
+        id: string;
+        branchId: string;
+        reservationDate: string;
+        guestCount: number;
+        note: string | null;
+        status: 'REQUESTED' | 'CANCELLED';
+        createdAt: string;
+        cancelledAt: string | null;
+      }>;
+    },
+  ): Prisma.JsonObject {
+    const root = this.asObject(metadata);
+    const customerApp = this.asObject(root.customerApp);
+
+    return {
+      ...root,
+      customerApp: {
+        ...customerApp,
+        ...patch,
+      },
+    } as Prisma.JsonObject;
+  }
+
+  private readTableReservations(metadata: Prisma.JsonValue | null | undefined) {
+    const value = this.readPath(metadata, ['customerApp', 'tableReservations']);
+    if (!Array.isArray(value)) {
+      return [] as Array<{
+        id: string;
+        branchId: string;
+        reservationDate: string;
+        guestCount: number;
+        note: string | null;
+        status: 'REQUESTED' | 'CANCELLED';
+        createdAt: string;
+        cancelledAt: string | null;
+      }>;
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return null;
+        }
+
+        const reservation = item as Record<string, unknown>;
+        if (
+          typeof reservation.id !== 'string' ||
+          typeof reservation.branchId !== 'string' ||
+          typeof reservation.reservationDate !== 'string' ||
+          typeof reservation.guestCount !== 'number' ||
+          typeof reservation.createdAt !== 'string'
+        ) {
+          return null;
+        }
+
+        return {
+          id: reservation.id,
+          branchId: reservation.branchId,
+          reservationDate: reservation.reservationDate,
+          guestCount: reservation.guestCount,
+          note: typeof reservation.note === 'string' ? reservation.note : null,
+          status:
+            reservation.status === 'CANCELLED'
+              ? ('CANCELLED' as const)
+              : ('REQUESTED' as const),
+          createdAt: reservation.createdAt,
+          cancelledAt:
+            typeof reservation.cancelledAt === 'string'
+              ? reservation.cancelledAt
+              : null,
+        };
+      })
+      .filter((item): item is {
+        id: string;
+        branchId: string;
+        reservationDate: string;
+        guestCount: number;
+        note: string | null;
+        status: 'REQUESTED' | 'CANCELLED';
+        createdAt: string;
+        cancelledAt: string | null;
+      } => item !== null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  private readPath(
+    value: Prisma.JsonValue | null | undefined,
+    path: string[],
+  ): Prisma.JsonValue | undefined {
+    let current: unknown = value;
+
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return undefined;
+      }
+
+      current = (current as Record<string, unknown>)[key];
+    }
+
+    return current as Prisma.JsonValue | undefined;
+  }
+
+  private asObject(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as Record<string, unknown>;
   }
 
   private toDraftResponse(draft: {

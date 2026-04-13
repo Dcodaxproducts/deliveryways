@@ -61,6 +61,7 @@ export class PosRepository {
         restaurantId: true,
         name: true,
         coverImage: true,
+        settings: true,
       },
     });
   }
@@ -166,6 +167,40 @@ export class PosRepository {
       where: { id },
       data,
       include: this.draftInclude,
+    });
+  }
+
+  async findCustomerProfileMetadata(userId: string) {
+    return this.prisma.profile.findUnique({
+      where: { userId },
+      select: { metadata: true },
+    });
+  }
+
+  async upsertCustomerProfileMetadata(
+    userId: string,
+    metadata: Prisma.JsonObject,
+    tx?: PrismaTx,
+  ) {
+    const existing = await this.client(tx).profile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return this.client(tx).profile.update({
+        where: { id: existing.id },
+        data: { metadata },
+      });
+    }
+
+    return this.client(tx).profile.create({
+      data: {
+        userId,
+        firstName: 'Customer',
+        lastName: 'Profile',
+        metadata,
+      },
     });
   }
 
