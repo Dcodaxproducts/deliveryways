@@ -55,6 +55,12 @@ export class TenantsController {
     return this.tenantsService.listTenants(user, query);
   }
 
+  @Get(':id')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.tenantsService.tenantDetails(user, id);
+  }
+
   @Patch(':id')
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   update(

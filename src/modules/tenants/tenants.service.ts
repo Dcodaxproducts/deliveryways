@@ -52,6 +52,22 @@ export class TenantsService {
     return this.tenantsRepository.findById(id);
   }
 
+  async tenantDetails(user: AuthUserContext, tenantId: string) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can view tenant details');
+    }
+
+    const tenant = await this.tenantsRepository.findDetailsById(tenantId);
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    return {
+      data: this.withDeletionState(tenant),
+      message: 'Tenant fetched successfully',
+    };
+  }
+
   async listTenants(user: AuthUserContext, query: AdminListQueryDto) {
     if (user.role !== UserRoleEnum.SUPER_ADMIN) {
       throw new ForbiddenException('Only super admin can list all tenants');
