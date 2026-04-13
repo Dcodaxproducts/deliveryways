@@ -4,6 +4,7 @@ import { BranchesModule } from '../branches/branches.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { MenuModule } from '../menu/menu.module';
 import { RestaurantsModule } from '../restaurants/restaurants.module';
+import { UsersModule } from '../users/users.module';
 import { DevTestingController } from './dev-testing.controller';
 import { DevTestingService } from './dev-testing.service';
 
@@ -14,6 +15,7 @@ import { DevTestingService } from './dev-testing.service';
     BranchesModule,
     MenuModule,
     InventoryModule,
+    UsersModule,
   ],
   controllers: [DevTestingController],
   providers: [DevTestingService],
