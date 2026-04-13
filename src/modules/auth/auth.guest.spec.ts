@@ -56,8 +56,9 @@ describe('AuthService registerGuestCustomer', () => {
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: null,
-      isVerified: false,
+      isVerified: true,
       isApproved: true,
+      isActive: true,
       isGuest: true,
       profile: {
         firstName: 'Guest',
@@ -79,12 +80,14 @@ describe('AuthService registerGuestCustomer', () => {
         restaurantId: 'restaurant-1',
         tenantId: 'tenant-1',
         isGuest: true,
-        isVerified: false,
+        isVerified: true,
         isApproved: true,
       }),
       {},
     );
     expect(result.data.user.isGuest).toBe(true);
+    expect(result.data.user.isVerified).toBe(true);
+    expect(result.data.user.isActive).toBe(true);
     expect(result.data.accessToken).toBe('access-token');
   });
 });

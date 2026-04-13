@@ -357,7 +357,7 @@ export class AuthService {
           role: UserRoleEnum.CUSTOMER,
           restaurantId: dto.restaurantId,
           tenantId: restaurant.tenantId,
-          isVerified: false,
+          isVerified: true,
           isApproved: true,
           isGuest: true,
           profile: {
@@ -392,6 +392,7 @@ export class AuthService {
           branchId: createdUser.branchId,
           isVerified: createdUser.isVerified,
           isApproved: createdUser.isApproved,
+          isActive: createdUser.isActive,
           isGuest: createdUser.isGuest,
           profile: {
             firstName: dto.firstName?.trim() || 'Guest',
