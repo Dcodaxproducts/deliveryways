@@ -42,6 +42,16 @@ describe('StorageService', () => {
     jest.restoreAllMocks();
   });
 
+  it('creates signed view URL from stored S3 file url', async () => {
+    const result = await service.resolveViewUrl(
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/user-1/2026-03-16/burger.png',
+      180,
+    );
+
+    expect(result).toBe('https://signed-url.example');
+    expect(getSignedUrl).toHaveBeenCalled();
+  });
+
   it('creates upload URL with only file name and content type', async () => {
     const result = await service.createPresignedUploadUrl(
       {

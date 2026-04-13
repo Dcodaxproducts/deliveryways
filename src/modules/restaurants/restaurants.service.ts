@@ -12,6 +12,7 @@ import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
 import { TenantsService } from '../tenants/tenants.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CreateRestaurantDto,
   UpdateRestaurantCustomerAppContentDto,
@@ -25,6 +26,7 @@ export class RestaurantsService {
   constructor(
     private readonly restaurantsRepository: RestaurantsRepository,
     private readonly tenantsService: TenantsService,
+    private readonly storageService: StorageService,
   ) {}
 
   async create(tenantId: string, dto: CreateRestaurantDto, tx?: PrismaTx) {
@@ -58,7 +60,7 @@ export class RestaurantsService {
     const data = await this.create(tenantId, dto, tx);
 
     return {
-      data,
+      data: await this.resolveRestaurantMedia(data),
       message: 'Restaurant created successfully',
     };
   }
@@ -91,7 +93,7 @@ export class RestaurantsService {
     );
 
     return {
-      data: items.map((item) => this.withDeletionState(item)),
+      data: await Promise.all(items.map((item) => this.withDeletionState(item))),
       message: 'Restaurants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -105,7 +107,7 @@ export class RestaurantsService {
     );
 
     return {
-      data: items.map((item) => this.withDeletionState(item)),
+      data: await Promise.all(items.map((item) => this.withDeletionState(item))),
       message: 'Public restaurants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -121,7 +123,7 @@ export class RestaurantsService {
     this.ensureRestaurantReadAccess(user, restaurant.id);
 
     return {
-      data: this.withDeletionState(restaurant),
+      data: await this.withDeletionState(restaurant),
       message: 'Restaurant fetched successfully',
     };
   }
@@ -159,7 +161,7 @@ export class RestaurantsService {
     );
 
     return {
-      data,
+      data: await this.resolveRestaurantMedia(data),
       message: 'Restaurant updated successfully',
     };
   }
@@ -175,7 +177,7 @@ export class RestaurantsService {
     );
 
     return {
-      data,
+      data: await this.resolveRestaurantMedia(data),
       message: 'Restaurant suspended successfully',
     };
   }
@@ -186,7 +188,7 @@ export class RestaurantsService {
     const data = await this.restaurantsRepository.setActive(id, true, tx);
 
     return {
-      data,
+      data: await this.resolveRestaurantMedia(data),
       message: 'Restaurant activated successfully',
     };
   }
@@ -201,7 +203,7 @@ export class RestaurantsService {
     this.ensureRestaurantReadAccess(user, id);
 
     return {
-      data: this.extractCustomerAppContent(restaurant),
+      data: await this.extractCustomerAppContent(restaurant),
       message: 'Restaurant customer app content fetched successfully',
     };
   }
@@ -218,7 +220,7 @@ export class RestaurantsService {
     }
 
     return {
-      data: this.extractCustomerAppContent(restaurant),
+      data: await this.extractCustomerAppContent(restaurant),
       message: 'Restaurant customer app content fetched successfully',
     };
   }
@@ -250,7 +252,7 @@ export class RestaurantsService {
     );
 
     return {
-      data: this.extractCustomerAppContent(data),
+      data: await this.extractCustomerAppContent(data),
       message: 'Restaurant customer app content updated successfully',
     };
   }
@@ -314,7 +316,7 @@ export class RestaurantsService {
     );
 
     return {
-      data,
+      data: await this.resolveRestaurantMedia(data),
       message: 'Restaurant images updated successfully',
     };
   }
@@ -367,12 +369,14 @@ export class RestaurantsService {
     };
   }
 
-  private withDeletionState<T extends {
+  private async withDeletionState<T extends {
     deletedAt?: Date | null;
     isActive?: boolean;
+    logoUrl?: string | null;
+    coverImage?: string | null;
   }>(entity: T) {
     return {
-      ...entity,
+      ...(await this.resolveRestaurantMedia(entity)),
       deletionState: {
         isDeleted: !!entity.deletedAt,
         deletionScheduled: false,
@@ -383,7 +387,7 @@ export class RestaurantsService {
     };
   }
 
-  private extractCustomerAppContent(restaurant: {
+  private async extractCustomerAppContent(restaurant: {
     id: string;
     name?: string;
     slug?: string | null;
@@ -400,8 +404,8 @@ export class RestaurantsService {
         id: restaurant.id,
         name: restaurant.name ?? null,
         slug: restaurant.slug ?? null,
-        logoUrl: this.normalizeMediaUrl(restaurant.logoUrl),
-        coverImage: this.normalizeMediaUrl(restaurant.coverImage),
+        logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
+        coverImage: await this.resolveMediaUrl(restaurant.coverImage),
         tagline: restaurant.tagline ?? null,
         bio: restaurant.bio ?? null,
       },
@@ -627,6 +631,21 @@ export class RestaurantsService {
     channel: 'email' | 'sms' | 'whatsapp',
   ) {
     return Object.values(matrix).some((row) => row[channel]);
+  }
+
+  private async resolveMediaUrl(value: string | null | undefined) {
+    return this.storageService.resolveViewUrl(this.normalizeMediaUrl(value));
+  }
+
+  private async resolveRestaurantMedia<T extends {
+    logoUrl?: string | null;
+    coverImage?: string | null;
+  }>(restaurant: T) {
+    return {
+      ...restaurant,
+      logoUrl: await this.resolveMediaUrl(restaurant.logoUrl ?? null),
+      coverImage: await this.resolveMediaUrl(restaurant.coverImage ?? null),
+    };
   }
 
   private normalizeMediaUrl(value: unknown): string | null {

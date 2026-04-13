@@ -36,10 +36,15 @@ describe('BranchesService', () => {
       branch: { findUnique: jest.fn() },
     };
 
+    const storageService = {
+      resolveViewUrl: jest.fn(async (value?: string | null) => value ?? null),
+    };
+
     const service = new BranchesService(
       repository as never,
       usersService as never,
       prisma as never,
+      storageService as never,
     );
 
     return {
@@ -47,6 +52,7 @@ describe('BranchesService', () => {
       repository,
       usersService,
       prisma,
+      storageService,
     };
   };
 

@@ -12,6 +12,7 @@ import { PrismaTx } from '../../common/types';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
+import { StorageService } from '../storage/storage.service';
 import { BranchesRepository } from './branches.repository';
 import {
   BranchOpeningHourItemDto,
@@ -63,6 +64,7 @@ export class BranchesService {
     private readonly branchesRepository: BranchesRepository,
     private readonly usersService: UsersService,
     private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
   ) {}
 
   async create(tenantId: string, dto: CreateBranchDto, tx?: PrismaTx) {
@@ -113,7 +115,7 @@ export class BranchesService {
     if (!dto.branchAdmin) {
       const data = await this.create(user.tid, branchDto, tx);
       return {
-        data,
+        data: await this.resolveBranchMedia(data),
         message: 'Branch created successfully',
       };
     }
@@ -317,7 +319,9 @@ export class BranchesService {
       );
 
       return {
-        data: data.items.map((item) => this.withBranchDeletionState(item)),
+        data: await Promise.all(
+          data.items.map((item) => this.withBranchDeletionState(item)),
+        ),
         message: 'Branches fetched successfully',
         meta: buildPaginationMeta(query, data.total),
       };
@@ -333,8 +337,10 @@ export class BranchesService {
     );
 
     return {
-      data: (await this.attachBranchAddresses(items, null)).map((item) =>
-        this.withBranchDeletionState(item),
+      data: await Promise.all(
+        (await this.attachBranchAddresses(items, null)).map((item) =>
+          this.withBranchDeletionState(item),
+        ),
       ),
       message: 'Branches fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -366,8 +372,10 @@ export class BranchesService {
     );
 
     return {
-      data: (await this.attachBranchAddresses(items, null)).map((item) =>
-        this.withBranchDeletionState(item),
+      data: await Promise.all(
+        (await this.attachBranchAddresses(items, null)).map((item) =>
+          this.withBranchDeletionState(item),
+        ),
       ),
       message: 'Public branches fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -405,7 +413,7 @@ export class BranchesService {
     const [address] = await this.branchesRepository.listBranchAddresses([id]);
 
     return {
-      data: this.withBranchDeletionState({
+      data: await this.withBranchDeletionState({
         ...branch,
         address: address
           ? {
@@ -545,7 +553,7 @@ export class BranchesService {
       : await this.prisma.$transaction(async (trx) => operation(trx));
 
     return {
-      data,
+      data: await this.resolveBranchMedia(data),
       message: 'Branch updated successfully',
     };
   }
@@ -554,7 +562,7 @@ export class BranchesService {
     const data = await this.branchesRepository.setActive(id, false, tx);
 
     return {
-      data,
+      data: await this.resolveBranchMedia(data),
       message: 'Branch suspended successfully',
     };
   }
@@ -563,7 +571,7 @@ export class BranchesService {
     const data = await this.branchesRepository.setActive(id, true, tx);
 
     return {
-      data,
+      data: await this.resolveBranchMedia(data),
       message: 'Branch activated successfully',
     };
   }
@@ -602,7 +610,7 @@ export class BranchesService {
     const data = await this.branchesRepository.restore(id, tx);
 
     return {
-      data,
+      data: await this.resolveBranchMedia(data),
       message: 'Branch restored successfully',
     };
   }
@@ -629,7 +637,7 @@ export class BranchesService {
     );
 
     return {
-      data,
+      data: await this.resolveBranchMedia(data),
       message: 'Branch images updated successfully',
     };
   }
@@ -745,12 +753,14 @@ export class BranchesService {
     };
   }
 
-  private withBranchDeletionState<T extends {
+  private async withBranchDeletionState<T extends {
     deletedAt?: Date | null;
     isActive?: boolean;
+    logoUrl?: string | null;
+    coverImage?: string | null;
   }>(branch: T) {
     return {
-      ...branch,
+      ...(await this.resolveBranchMedia(branch)),
       deletionState: {
         isDeleted: !!branch.deletedAt,
         deletionScheduled: false,
@@ -1039,6 +1049,21 @@ export class BranchesService {
         distanceKm,
       };
     });
+  }
+
+  private async resolveMediaUrl(value: string | null | undefined) {
+    return this.storageService.resolveViewUrl(this.normalizeMediaUrl(value));
+  }
+
+  private async resolveBranchMedia<T extends {
+    logoUrl?: string | null;
+    coverImage?: string | null;
+  }>(branch: T) {
+    return {
+      ...branch,
+      logoUrl: await this.resolveMediaUrl(branch.logoUrl ?? null),
+      coverImage: await this.resolveMediaUrl(branch.coverImage ?? null),
+    };
   }
 
   private normalizeMediaUrl(value: string | null | undefined) {

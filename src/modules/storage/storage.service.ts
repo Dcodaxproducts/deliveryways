@@ -43,11 +43,6 @@ export class StorageService {
 
     const normalizedFileUrl = fileUrl.trim();
     const s3Config = this.getS3Config();
-    const publicBaseUrl = s3Config.publicBaseUrl?.replace(/\/+$/, '');
-
-    if (publicBaseUrl && normalizedFileUrl.startsWith(publicBaseUrl)) {
-      return normalizedFileUrl;
-    }
 
     try {
       const bucket = s3Config.bucket;
