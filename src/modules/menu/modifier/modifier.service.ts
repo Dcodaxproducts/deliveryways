@@ -137,9 +137,22 @@ export class ModifierService {
 
     await this.ensureWriteAccess(user, group.restaurantId);
 
+    const normalizedName = this.normalizeName(dto.name);
+    const existingModifier =
+      await this.modifierRepository.findModifierByGroupAndName(
+        dto.modifierGroupId,
+        normalizedName,
+      );
+
+    if (existingModifier) {
+      throw new BadRequestException(
+        'A modifier with this name already exists in this group',
+      );
+    }
+
     const data = await this.modifierRepository.createModifier({
       modifierGroup: { connect: { id: dto.modifierGroupId } },
-      name: dto.name,
+      name: normalizedName,
       priceDelta: new Prisma.Decimal(dto.priceDelta ?? 0),
       sortOrder: dto.sortOrder ?? 0,
       isActive: true,
@@ -167,8 +180,26 @@ export class ModifierService {
 
     await this.ensureWriteAccess(user, group.restaurantId);
 
+    const normalizedName =
+      dto.name !== undefined ? this.normalizeName(dto.name) : undefined;
+
+    if (normalizedName) {
+      const existingModifier =
+        await this.modifierRepository.findModifierByGroupAndName(
+          modifier.modifierGroupId,
+          normalizedName,
+          id,
+        );
+
+      if (existingModifier) {
+        throw new BadRequestException(
+          'A modifier with this name already exists in this group',
+        );
+      }
+    }
+
     const data = await this.modifierRepository.updateModifier(id, {
-      name: dto.name,
+      name: normalizedName,
       priceDelta:
         dto.priceDelta !== undefined
           ? new Prisma.Decimal(dto.priceDelta)
@@ -232,6 +263,16 @@ export class ModifierService {
     );
 
     return { data, message: 'Modifier group attached to item successfully' };
+  }
+
+  private normalizeName(value: string) {
+    const normalized = value.trim();
+
+    if (!normalized.length) {
+      throw new BadRequestException('name is required');
+    }
+
+    return normalized;
   }
 
   private async resolveRestaurantId(

@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserRoleEnum } from '../../../common/enums';
 import { ModifierService } from './modifier.service';
 
@@ -7,6 +7,11 @@ describe('ModifierService', () => {
     const modifierRepository = {
       listGroups: jest.fn(),
       listModifiers: jest.fn(),
+      findGroupById: jest.fn(),
+      findModifierByGroupAndName: jest.fn(),
+      createModifier: jest.fn(),
+      findModifierById: jest.fn(),
+      updateModifier: jest.fn(),
     };
 
     const prisma = {
@@ -75,5 +80,39 @@ describe('ModifierService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects duplicate modifier names in the same group before hitting the database', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.findModifierByGroupAndName.mockResolvedValue({
+      id: 'modifier-1',
+    });
+
+    await expect(
+      service.createModifier(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          rid: undefined,
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        {
+          modifierGroupId: 'group-1',
+          name: ' Extra Cheese ',
+          priceDelta: 50,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(modifierRepository.findModifierByGroupAndName).toHaveBeenCalledWith(
+      'group-1',
+      'Extra Cheese',
+    );
+    expect(modifierRepository.createModifier).not.toHaveBeenCalled();
   });
 });

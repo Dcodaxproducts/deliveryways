@@ -121,6 +121,21 @@ export class ModifierRepository {
     return this.client(tx).modifier.create({ data });
   }
 
+  async findModifierByGroupAndName(
+    modifierGroupId: string,
+    name: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.modifier.findFirst({
+      where: {
+        modifierGroupId,
+        name: { equals: name, mode: 'insensitive' },
+        deletedAt: null,
+        ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      },
+    });
+  }
+
   async findModifierById(id: string) {
     return this.prisma.modifier.findUnique({ where: { id } });
   }

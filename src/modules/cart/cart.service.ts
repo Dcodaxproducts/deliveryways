@@ -59,6 +59,12 @@ interface ResolvedCartCustomerScope {
   restaurantId: string | null;
 }
 
+interface ScopedBranch {
+  id: string;
+  tenantId: string;
+  restaurantId: string;
+}
+
 @Injectable()
 export class CartService {
   constructor(
@@ -542,24 +548,52 @@ export class CartService {
     const existingCart = await this.cartRepository.findByCustomerId(
       customer.id,
     );
+    const requestedBranchId = this.resolveOptionalString(dto.branchId);
 
     if (existingCart) {
-      if (dto.branchId && dto.branchId !== existingCart.branchId) {
+      if (requestedBranchId && requestedBranchId !== existingCart.branchId) {
+        if (!existingCart.items.length) {
+          const branch = await this.resolveScopedBranch(
+            customer,
+            requestedBranchId,
+          );
+
+          return this.cartRepository.update(existingCart.id, {
+            tenant: { connect: { id: branch.tenantId } },
+            restaurant: { connect: { id: branch.restaurantId } },
+            branch: { connect: { id: branch.id } },
+          });
+        }
+
         throw new BadRequestException(
-          'Clear cart before switching to another branch',
+          'Cart already contains items from another branch. Clear it before switching branches',
         );
       }
 
       return existingCart;
     }
 
-    if (!dto.branchId) {
+    if (!requestedBranchId) {
       throw new BadRequestException(
         'branchId is required when creating cart from add-to-cart',
       );
     }
 
-    const branch = await this.cartRepository.findActiveBranch(dto.branchId);
+    const branch = await this.resolveScopedBranch(customer, requestedBranchId);
+
+    return this.cartRepository.create({
+      tenant: { connect: { id: branch.tenantId } },
+      restaurant: { connect: { id: branch.restaurantId } },
+      branch: { connect: { id: branch.id } },
+      customer: { connect: { id: customer.id } },
+    });
+  }
+
+  private async resolveScopedBranch(
+    customer: ResolvedCartCustomerScope,
+    branchId: string,
+  ): Promise<ScopedBranch> {
+    const branch = await this.cartRepository.findActiveBranch(branchId);
     if (!branch) {
       throw new BadRequestException('Branch not found or inactive');
     }
@@ -573,12 +607,7 @@ export class CartService {
       );
     }
 
-    return this.cartRepository.create({
-      tenant: { connect: { id: branch.tenantId } },
-      restaurant: { connect: { id: branch.restaurantId } },
-      branch: { connect: { id: branch.id } },
-      customer: { connect: { id: customer.id } },
-    });
+    return branch;
   }
 
   private async buildCartResponse(cart: CartSnapshot) {
