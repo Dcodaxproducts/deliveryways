@@ -28,14 +28,18 @@ export class MenuItemService {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     await this.validateCategory(restaurantId, dto.categoryId);
 
+    const slug = this.normalizeRequiredString(dto.slug, 'slug');
+    const sku = this.resolveOptionalString(dto.sku);
+    await this.assertUniqueFields(restaurantId, { slug, sku });
+
     const data = await this.itemRepository.create({
       restaurant: { connect: { id: restaurantId } },
       category: { connect: { id: dto.categoryId } },
       name: dto.name,
-      slug: dto.slug,
+      slug,
       description: dto.description,
       imageUrl: dto.imageUrl,
-      sku: dto.sku,
+      sku,
       basePrice: new Prisma.Decimal(dto.basePrice),
       prepTimeMinutes: dto.prepTimeMinutes,
       dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
@@ -109,15 +113,23 @@ export class MenuItemService {
       await this.validateCategory(item.restaurantId, dto.categoryId);
     }
 
+    const slug =
+      dto.slug !== undefined
+        ? this.normalizeRequiredString(dto.slug, 'slug')
+        : undefined;
+    const sku =
+      dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
+    await this.assertUniqueFields(item.restaurantId, { slug, sku }, id);
+
     const data = await this.itemRepository.update(id, {
       category: dto.categoryId
         ? { connect: { id: dto.categoryId } }
         : undefined,
       name: dto.name,
-      slug: dto.slug,
+      slug,
       description: dto.description,
       imageUrl: dto.imageUrl,
-      sku: dto.sku,
+      sku,
       basePrice:
         dto.basePrice !== undefined
           ? new Prisma.Decimal(dto.basePrice)
@@ -251,6 +263,63 @@ export class MenuItemService {
         'You cannot access resources outside your tenant restaurants',
       );
     }
+  }
+
+  private async assertUniqueFields(
+    restaurantId: string,
+    fields: { slug?: string; sku?: string | undefined },
+    excludeId?: string,
+  ) {
+    if (fields.slug) {
+      const existingBySlug = await this.itemRepository.findByRestaurantAndSlug(
+        restaurantId,
+        fields.slug,
+        excludeId,
+      );
+
+      if (existingBySlug) {
+        throw new BadRequestException(
+          existingBySlug.deletedAt
+            ? 'A menu item with this slug already exists in this restaurant, including a deleted item'
+            : 'A menu item with this slug already exists in this restaurant',
+        );
+      }
+    }
+
+    if (fields.sku) {
+      const existingBySku = await this.itemRepository.findByRestaurantAndSku(
+        restaurantId,
+        fields.sku,
+        excludeId,
+      );
+
+      if (existingBySku) {
+        throw new BadRequestException(
+          existingBySku.deletedAt
+            ? 'A menu item with this SKU already exists in this restaurant, including a deleted item'
+            : 'A menu item with this SKU already exists in this restaurant',
+        );
+      }
+    }
+  }
+
+  private normalizeRequiredString(value: string, field: string) {
+    const normalized = value.trim();
+
+    if (!normalized) {
+      throw new BadRequestException(`${field} is required`);
+    }
+
+    return normalized;
+  }
+
+  private resolveOptionalString(value: string | null | undefined) {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length ? normalized : undefined;
   }
 
   private async validateCategory(restaurantId: string, categoryId: string) {

@@ -24,6 +24,36 @@ export class MenuItemRepository {
     return this.prisma.menuItem.findUnique({ where: { id } });
   }
 
+  async findByRestaurantAndSlug(
+    restaurantId: string,
+    slug: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.menuItem.findFirst({
+      where: {
+        restaurantId,
+        slug,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, deletedAt: true },
+    });
+  }
+
+  async findByRestaurantAndSku(
+    restaurantId: string,
+    sku: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.menuItem.findFirst({
+      where: {
+        restaurantId,
+        sku,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, deletedAt: true },
+    });
+  }
+
   async list(restaurantId: string | undefined, query: ListMenuItemsDto) {
     const where: Prisma.MenuItemWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
