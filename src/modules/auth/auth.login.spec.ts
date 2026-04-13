@@ -16,6 +16,9 @@ describe('AuthService login', () => {
   let staffManagementRepository: Partial<
     Record<keyof StaffManagementRepository, jest.Mock>
   >;
+  let prismaService: {
+    branch: { findFirst: jest.Mock };
+  };
   let jwtService: { signAsync: jest.Mock };
 
   beforeEach(() => {
@@ -31,6 +34,12 @@ describe('AuthService login', () => {
       update: jest.fn(),
     };
 
+    prismaService = {
+      branch: {
+        findFirst: jest.fn(),
+      },
+    };
+
     jwtService = {
       signAsync: jest
         .fn()
@@ -41,7 +50,7 @@ describe('AuthService login', () => {
     };
 
     service = new AuthService(
-      {} as never,
+      prismaService as never,
       jwtService as never,
       {} as never,
       {} as never,
@@ -126,7 +135,7 @@ describe('AuthService login', () => {
     );
   });
 
-  it('returns a dedicated deletion-scheduled response trigger on login', async () => {
+  it('returns scheduled-deletion metadata on login only for actual account deletion', async () => {
     usersService.findByEmailIncludingDeleted!.mockResolvedValue({
       id: 'customer-1',
       email: 'customer@example.com',
@@ -144,22 +153,20 @@ describe('AuthService login', () => {
       profile: null,
     });
 
-    await expect(
-      service.login({
-        email: 'customer@example.com',
-        password: 'Password@123',
-        restaurantId: 'restaurant-1',
-      }),
-    ).rejects.toMatchObject({
-      response: {
-        message: 'Account scheduled for deletion',
-        error: 'ACCOUNT_DELETION_SCHEDULED',
-        details: expect.objectContaining({
-          deletionScheduled: true,
-          canCancelDeletion: true,
-        }),
-      },
-      status: 403,
+    const result = await service.login({
+      email: 'customer@example.com',
+      password: 'Password@123',
+      restaurantId: 'restaurant-1',
+    });
+
+    expect(result.message).toBe(
+      'Your account is scheduled to delete. Request cancel deletion in order to cancel.',
+    );
+    expect(result.data.user.deletionScheduled).toBe(true);
+    expect(result.data.user.canCancelDeletion).toBe(true);
+    expect(result.data.deletionState).toMatchObject({
+      reason: 'ACCOUNT_DELETION_SCHEDULED',
+      canCancelDeletion: true,
     });
   });
 
@@ -190,6 +197,48 @@ describe('AuthService login', () => {
     expect(usersService.cancelDeleteUser).toHaveBeenCalledWith('customer-1');
     expect(result.data.accessToken).toBe('access-token');
     expect(result.message).toBe('Account deletion cancelled successfully');
+  });
+
+  it('rejects branch-admin login with assigned deleted branch as branch state, not account deletion state', async () => {
+    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
+      id: 'branch-admin-1',
+      email: 'branch.admin@example.com',
+      password: 'hashed-password',
+      role: UserRoleEnum.BRANCH_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      isVerified: true,
+      isApproved: true,
+      isActive: true,
+      isGuest: false,
+      deletedAt: null,
+      deleteAfter: null,
+      profile: null,
+    });
+    prismaService.branch.findFirst.mockResolvedValue({
+      id: 'branch-1',
+      deletedAt: new Date('2026-04-09T00:00:00.000Z'),
+      isActive: true,
+    });
+
+    await expect(
+      service.login({
+        email: 'branch.admin@example.com',
+        password: 'Password@123',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        message:
+          'Assigned branch is soft-deleted. Restore branch to continue login.',
+        error: 'ASSIGNED_BRANCH_SOFT_DELETED',
+        details: expect.objectContaining({
+          deletionScheduled: false,
+          canRestore: true,
+        }),
+      },
+      status: 403,
+    });
   });
 
   it('rejects invalid credentials', async () => {

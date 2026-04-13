@@ -111,6 +111,12 @@ Returns:
 - `refreshToken`
 - user context
 
+Deletion-state contract:
+- `user.deletionScheduled` is the only source of truth for "account deletion is scheduled"
+- `user.deleteAfter` and `user.canCancelDeletion` are metadata only
+- top-level `deletionState` is informational context for auth recovery flows and must not be treated as a scheduled-deletion flag by clients
+- non-account blockers such as `ASSIGNED_BRANCH_SOFT_DELETED` are separate auth errors, not deletion-scheduled states
+
 #### `POST /auth/refresh`
 Body:
 - `refreshToken`
@@ -194,9 +200,14 @@ Behavior:
 - sets `deletedAt`
 - sets `isActive = false`
 - sets `deleteAfter = now + 30 days`
+- subsequent auth responses expose `user.deletionScheduled = true`
 
 #### `POST /auth/cancel-deletion`
 Cancels scheduled self-deletion.
+
+Behavior:
+- clears the pending deletion markers
+- subsequent auth responses expose `user.deletionScheduled = false`
 
 ---
 
@@ -248,6 +259,11 @@ This endpoint is intended for admin cleanup and is safer than raw Prisma Studio 
 ---
 
 ## Flows
+### Login recovery/error semantics
+- `ACCOUNT_DELETION_SCHEDULED` → account is in grace period and login may offer cancel-deletion UX
+- `ASSIGNED_BRANCH_SOFT_DELETED` → branch ownership problem; restore branch to continue login
+- Clients should branch off the explicit auth error/reason and `user.deletionScheduled`, not inferred presence of `deleteAfter` or `deletionState`
+
 ### Tenant registration flow
 1. Validate unique user email
 2. Validate unique tenant slug

@@ -1477,11 +1477,6 @@ export class AuthService {
   }
 
   private async resolveRecoverableLoginState(user: {
-    id: string;
-    role: string;
-    tenantId: string | null;
-    restaurantId: string | null;
-    branchId: string | null;
     deletedAt: Date | null;
     deleteAfter?: Date | null;
   }) {
@@ -1493,35 +1488,6 @@ export class AuthService {
         deleteAfter: user.deleteAfter.toISOString(),
         canCancelDeletion: true,
       };
-    }
-
-    if (
-      user.role === UserRoleEnum.BRANCH_ADMIN &&
-      user.branchId &&
-      user.restaurantId &&
-      user.tenantId
-    ) {
-      const branch = await this.prisma.branch.findFirst({
-        where: {
-          id: user.branchId,
-          tenantId: user.tenantId,
-          restaurantId: user.restaurantId,
-        },
-        select: {
-          id: true,
-          deletedAt: true,
-        },
-      });
-
-      if (branch?.deletedAt) {
-        return {
-          reason: 'ASSIGNED_BRANCH_SOFT_DELETED',
-          message:
-            'Your account is scheduled to delete. Request cancel deletion in order to cancel.',
-          deleteAfter: null,
-          canCancelDeletion: true,
-        };
-      }
     }
 
     return null;
