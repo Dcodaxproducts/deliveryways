@@ -14,7 +14,7 @@ import { AuthService } from '../auth/auth.service';
 import { ListPublicBranchesDto } from '../branches/dto';
 import { BranchesService } from '../branches/branches.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
-import { DevBootstrapStoreDto } from './dto';
+import { DevBootstrapStoreDto, DevTestingUserIdentifierDto } from './dto';
 import { DevTestingService } from './dev-testing.service';
 
 @ApiTags('DEV_TESTING')
@@ -67,5 +67,17 @@ export class DevTestingController {
   bootstrapStore(@Body() dto: DevBootstrapStoreDto) {
     this.assertDevMode();
     return this.devTestingService.bootstrapStore(dto);
+  }
+
+  @Post('users/approve')
+  approveUser(@Body() dto: DevTestingUserIdentifierDto) {
+    this.assertDevMode();
+    return this.devTestingService.approveUser(dto);
+  }
+
+  @Post('users/delete')
+  deleteUser(@Body() dto: DevTestingUserIdentifierDto) {
+    this.assertDevMode();
+    return this.devTestingService.deleteUser(dto);
   }
 }

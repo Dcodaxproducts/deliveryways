@@ -1,4 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { AuthService } from '../auth/auth.service';
@@ -8,7 +13,8 @@ import { InventoryItemService } from '../inventory/item/item.service';
 import { MenuCategoryService } from '../menu/category/category.service';
 import { MenuItemService } from '../menu/item/item.service';
 import { MenuVariationService } from '../menu/variation/variation.service';
-import { DevBootstrapStoreDto } from './dto';
+import { UsersService } from '../users/users.service';
+import { DevBootstrapStoreDto, DevTestingUserIdentifierDto } from './dto';
 
 @Injectable()
 export class DevTestingService {
@@ -19,6 +25,7 @@ export class DevTestingService {
     private readonly menuVariationService: MenuVariationService,
     private readonly inventoryCategoryService: InventoryCategoryService,
     private readonly inventoryItemService: InventoryItemService,
+    private readonly usersService: UsersService,
   ) {}
 
   async bootstrapStore(dto: DevBootstrapStoreDto) {
@@ -152,5 +159,91 @@ export class DevTestingService {
       },
       message: 'Development store bootstrap completed successfully',
     };
+  }
+
+  async approveUser(dto: DevTestingUserIdentifierDto) {
+    const user = await this.resolveSingleUser(dto);
+
+    if (!this.approvableRoles.has(user.role)) {
+      throw new BadRequestException(
+        'Only business admin, branch admin, or customer accounts can be approved',
+      );
+    }
+
+    if (user.isApproved) {
+      return {
+        data: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          restaurantId: user.restaurantId,
+          isApproved: user.isApproved,
+        },
+        message: 'User already approved',
+      };
+    }
+
+    const updated = await this.usersService.setApprovalStatus(user.id, true);
+
+    return {
+      data: {
+        id: updated.id,
+        email: updated.email,
+        role: updated.role,
+        restaurantId: updated.restaurantId,
+        isApproved: updated.isApproved,
+      },
+      message: 'User approved successfully',
+    };
+  }
+
+  async deleteUser(dto: DevTestingUserIdentifierDto) {
+    const user = await this.resolveSingleUser(dto);
+
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      throw new BadRequestException(
+        'Super admin accounts cannot be deleted via dev-testing endpoint',
+      );
+    }
+
+    await this.usersService.deleteManyByIds([user.id]);
+
+    return {
+      data: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        restaurantId: user.restaurantId,
+        deleted: true,
+      },
+      message: 'User deleted successfully',
+    };
+  }
+
+  private readonly approvableRoles = new Set<UserRole>([
+    UserRoleEnum.BUSINESS_ADMIN,
+    UserRoleEnum.BRANCH_ADMIN,
+    UserRoleEnum.CUSTOMER,
+  ]);
+
+  private async resolveSingleUser(dto: DevTestingUserIdentifierDto) {
+    const matches = await this.usersService.findManyForDevResolution({
+      id: dto.id,
+      email: dto.email?.trim().toLowerCase(),
+      restaurantId: dto.restaurantId,
+      role: dto.role as UserRole | undefined,
+    });
+
+    if (matches.length === 0) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (matches.length > 1) {
+      throw new BadRequestException(
+        'Multiple users matched. Please provide role and/or restaurantId, or use id instead.',
+      );
+    }
+
+    return matches[0];
   }
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { UserRole } from '@prisma/client';
 import { AdminListQueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { CreateUserDto, UpdateUserDto } from './dto';
@@ -125,6 +126,17 @@ export class UsersService {
     return this.usersRepository.findById(id);
   }
 
+
+  async findManyForDevResolution(options: {
+    id?: string;
+    email?: string;
+    restaurantId?: string;
+    role?: UserRole;
+    includeDeleted?: boolean;
+  }) {
+    return this.usersRepository.findManyForDevResolution(options);
+  }
+
   async listCustomers(
     tenantId: string | undefined,
     query: AdminListQueryDto & {
@@ -207,6 +219,11 @@ export class UsersService {
 
   async forceDeleteUsersByEmails(emails: string[]) {
     return this.usersRepository.forceDeleteUsersByEmails(emails);
+  }
+
+
+  async deleteManyByIds(ids: string[]) {
+    return this.usersRepository.deleteManyByIds(ids);
   }
 
   async verifyEmailByOtp(userId: string, otp: string) {

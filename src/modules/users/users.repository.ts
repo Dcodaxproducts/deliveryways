@@ -54,6 +54,33 @@ export class UsersRepository {
     });
   }
 
+
+  async findManyForDevResolution(options: {
+    id?: string;
+    email?: string;
+    restaurantId?: string;
+    role?: UserRole;
+    includeDeleted?: boolean;
+  }) {
+    return this.prisma.user.findMany({
+      where: {
+        ...(options.id ? { id: options.id } : {}),
+        ...(options.email ? { email: options.email } : {}),
+        ...(options.restaurantId
+          ? { restaurantId: options.restaurantId }
+          : {}),
+        ...(options.role ? { role: options.role } : {}),
+        ...(options.includeDeleted ? {} : { deletedAt: null }),
+      },
+      include: {
+        profile: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
   async listCustomers(
     tenantId: string | undefined,
     query: AdminListQueryDto & {
@@ -180,6 +207,15 @@ export class UsersRepository {
     return this.prisma.user.deleteMany({
       where: {
         email: { in: emails },
+      },
+    });
+  }
+
+
+  async deleteManyByIds(ids: string[]) {
+    return this.prisma.user.deleteMany({
+      where: {
+        id: { in: ids },
       },
     });
   }
