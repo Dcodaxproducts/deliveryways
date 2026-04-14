@@ -25,6 +25,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StripePaymentsService } from './stripe-payments.service';
+import { CreateWalletTopUpDto } from '../customer-app/dto';
 
 @Injectable()
 export class PaymentsService {
@@ -140,6 +141,79 @@ export class PaymentsService {
     };
   }
 
+  async createWalletTopUpAttempt(
+    user: AuthUserContext,
+    context: {
+      customerId: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId?: string;
+    },
+    dto: CreateWalletTopUpDto,
+  ) {
+    if (user.role === UserRoleEnum.CUSTOMER && user.uid !== context.customerId) {
+      throw new ForbiddenException('Cross-customer access denied');
+    }
+
+    if (!context.branchId) {
+      throw new BadRequestException('Customer branch context is required');
+    }
+
+    const currency = dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
+    const data = await this.paymentsRepository.createUnchecked({
+      tenantId: context.tenantId,
+      restaurantId: context.restaurantId,
+      branchId: context.branchId,
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PENDING,
+      amount: new Prisma.Decimal(dto.amount),
+      currency,
+      note: dto.note,
+      providerData: {
+        target: 'WALLET_TOP_UP',
+        customerId: context.customerId,
+      } as Prisma.InputJsonValue,
+    });
+
+    const intent = await this.stripePaymentsService.createPaymentIntent({
+      amount: dto.amount,
+      currency,
+      description: `DeliveryWays wallet top-up ${context.customerId}`,
+      metadata: {
+        paymentTransactionId: data.id,
+        orderId: null,
+        customerId: context.customerId,
+        restaurantId: context.restaurantId,
+        walletTopUp: 'true',
+      },
+    });
+
+    const updated = await this.paymentsRepository.updateStatus(data.id, {
+      status: PaymentStatus.PENDING,
+      providerRef: intent.id,
+      providerData: {
+        provider: 'stripe',
+        target: 'WALLET_TOP_UP',
+        customerId: context.customerId,
+        clientSecret: intent.client_secret,
+        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        paymentIntentId: intent.id,
+      } as Prisma.InputJsonValue,
+      note: dto.note,
+    });
+
+    return {
+      transaction: updated,
+      paymentSession: {
+        provider: 'stripe',
+        clientSecret: intent.client_secret,
+        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        paymentIntentId: intent.id,
+      },
+    };
+  }
+
   async list(user: AuthUserContext, query: ListPaymentsDto) {
     const restaurantId = await this.resolveRestaurantId(
       user,
@@ -167,6 +241,10 @@ export class PaymentsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
+    if (!payment.order) {
+      throw new BadRequestException('Wallet top-up transactions are not exposed here');
+    }
+
     await this.assertOrderAccess(
       user,
       payment.order.restaurantId,
@@ -189,6 +267,12 @@ export class PaymentsService {
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
     }
+
+    if (!payment.order || !payment.orderId) {
+      throw new BadRequestException('Wallet top-up transactions cannot be marked paid here');
+    }
+
+    const orderId = payment.orderId;
 
     await this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
 
@@ -218,7 +302,7 @@ export class PaymentsService {
       );
 
       await this.paymentsRepository.updateOrderPaymentStatus(
-        payment.orderId,
+        orderId,
         PaymentStatus.PAID,
         tx,
       );
@@ -228,7 +312,7 @@ export class PaymentsService {
     });
 
     await this.loyaltyWalletService!.awardPointsForPaidOrder(
-      payment.orderId,
+      orderId,
       data.id,
       user.uid,
     );
@@ -246,6 +330,12 @@ export class PaymentsService {
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
     }
+
+    if (!payment.order || !payment.orderId) {
+      throw new BadRequestException('Wallet top-up transactions cannot be failed here');
+    }
+
+    const orderId = payment.orderId;
 
     await this.assertAdminPaymentAccess(user, payment.order.restaurantId, true);
 
@@ -267,7 +357,7 @@ export class PaymentsService {
       );
 
       await this.paymentsRepository.updateOrderPaymentStatus(
-        payment.orderId,
+        orderId,
         PaymentStatus.FAILED,
         tx,
       );
@@ -277,7 +367,7 @@ export class PaymentsService {
     });
 
     await this.loyaltyWalletService!.restoreOrderBenefits(
-      payment.orderId,
+      orderId,
       'PAYMENT_REVERSAL',
       user.uid,
     );
@@ -295,6 +385,12 @@ export class PaymentsService {
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
     }
+
+    if (!payment.order || !payment.orderId) {
+      throw new BadRequestException('Wallet top-up transactions cannot be cancelled here');
+    }
+
+    const orderId = payment.orderId;
 
     const isCustomer = user.role === UserRoleEnum.CUSTOMER;
     if (isCustomer) {
@@ -321,7 +417,7 @@ export class PaymentsService {
 
     const data = await this.applyPaymentTerminalStatus(
       payment.id,
-      payment.orderId,
+      orderId,
       PaymentStatus.CANCELLED,
       {
         providerRef: dto.providerRef ?? payment.providerRef ?? undefined,
@@ -345,6 +441,12 @@ export class PaymentsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
+    if (!payment.order || !payment.orderId) {
+      throw new BadRequestException('Wallet top-up transactions cannot be refunded here');
+    }
+
+    const orderId = payment.orderId;
+
     await this.assertAdminPaymentAccess(user, payment.order.restaurantId);
 
     if (payment.type !== PaymentTransactionType.CHARGE) {
@@ -366,7 +468,7 @@ export class PaymentsService {
     }
 
     const refundedSoFar = await this.paymentsRepository.sumSuccessfulRefunds(
-      payment.orderId,
+      orderId,
     );
 
     if (refundedSoFar.plus(refundAmount).greaterThan(payment.amount)) {
@@ -387,7 +489,7 @@ export class PaymentsService {
     const data = await this.prisma.$transaction(async (tx) => {
       const refundTransaction = await this.paymentsRepository.create(
         {
-          order: { connect: { id: payment.orderId } },
+          order: { connect: { id: orderId } },
           tenant: { connect: { id: payment.tenantId } },
           restaurant: { connect: { id: payment.restaurantId } },
           branch: { connect: { id: payment.branchId } },
@@ -411,7 +513,7 @@ export class PaymentsService {
         : PaymentStatus.PAID;
 
       await this.paymentsRepository.updateOrderPaymentStatus(
-        payment.orderId,
+        orderId,
         updatedStatus,
         tx,
       );
@@ -426,7 +528,7 @@ export class PaymentsService {
           tx,
         );
         await this.paymentsRepository.updateOrderState(
-          payment.orderId,
+          orderId,
           {
             status: OrderStatus.CANCELLED,
             cancelledAt: new Date(),
@@ -441,7 +543,7 @@ export class PaymentsService {
 
     if (data.status === PaymentStatus.REFUNDED) {
       await this.loyaltyWalletService!.restoreOrderBenefits(
-        payment.orderId,
+        orderId,
         'REFUND',
         user.uid,
       );
@@ -506,6 +608,35 @@ export class PaymentsService {
       return;
     }
 
+    if (!payment.orderId) {
+      const topUpContext = this.readWalletTopUpContext(payment);
+
+      await this.prisma.$transaction(async (tx) => {
+        await this.paymentsRepository.updateStatus(
+          payment.id,
+          {
+            status: PaymentStatus.PAID,
+            providerRef,
+            providerData: paymentIntent as Prisma.InputJsonValue,
+            processedAt: new Date(),
+          },
+          tx,
+        );
+      });
+
+      await this.loyaltyWalletService!.applyWalletTopUp(
+        topUpContext,
+        Number(payment.amount),
+        payment.id,
+        'Wallet top-up via Stripe',
+        'stripe:webhook',
+      );
+
+      return;
+    }
+
+    const orderId = payment.orderId;
+
     await this.prisma.$transaction(async (tx) => {
       await this.paymentsRepository.updateStatus(
         payment.id,
@@ -518,14 +649,14 @@ export class PaymentsService {
         tx,
       );
       await this.paymentsRepository.updateOrderPaymentStatus(
-        payment.orderId,
+        orderId,
         PaymentStatus.PAID,
         tx,
       );
     });
 
     await this.loyaltyWalletService!.awardPointsForPaidOrder(
-      payment.orderId,
+      orderId,
       payment.id,
       'stripe:webhook',
     );
@@ -548,9 +679,29 @@ export class PaymentsService {
       return;
     }
 
+    if (!payment.orderId) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.paymentsRepository.updateStatus(
+          payment.id,
+          {
+            status,
+            providerRef,
+            providerData: paymentIntent as Prisma.InputJsonValue,
+            note,
+            processedAt: new Date(),
+          },
+          tx,
+        );
+      });
+
+      return;
+    }
+
+    const orderId = payment.orderId;
+
     await this.applyPaymentTerminalStatus(
       payment.id,
-      payment.orderId,
+      orderId,
       status,
       {
         providerRef,
@@ -622,6 +773,30 @@ export class PaymentsService {
     }
 
     return id;
+  }
+
+  private readWalletTopUpContext(payment: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    providerData: Prisma.JsonValue | null;
+  }) {
+    const providerData =
+      payment.providerData && typeof payment.providerData === 'object'
+        ? (payment.providerData as Record<string, unknown>)
+        : {};
+    const customerId = providerData.customerId;
+
+    if (typeof customerId !== 'string' || !customerId.trim()) {
+      throw new BadRequestException('Wallet top-up customer context is missing');
+    }
+
+    return {
+      customerId,
+      tenantId: payment.tenantId,
+      restaurantId: payment.restaurantId,
+      branchId: payment.branchId,
+    };
   }
 
   private async resolveRestaurantId(

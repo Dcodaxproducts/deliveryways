@@ -140,6 +140,15 @@ export class LoyaltyWalletRepository {
     });
   }
 
+  findWalletTransactionByPaymentTransactionId(
+    paymentTransactionId: string,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).walletTransaction.findFirst({
+      where: { paymentTransactionId },
+    });
+  }
+
   listLoyaltyTransactions(loyaltyAccountId: string, limit = 20) {
     return this.prisma.loyaltyTransaction.findMany({
       where: { loyaltyAccountId },

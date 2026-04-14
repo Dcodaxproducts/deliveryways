@@ -63,6 +63,15 @@ describe('CustomerAppService', () => {
       getWalletSummary: jest.fn(),
     };
 
+    const paymentsService = {
+      createWalletTopUpAttempt: jest.fn(),
+    };
+
+    const storageService = {
+      resolveViewUrl: jest.fn(async (value: string | null | undefined) => value ?? null),
+      resolveMediaUrlsDeep: jest.fn(async <T>(value: T) => value),
+    };
+
     const repository = {
       findCustomerProfile: jest.fn(),
       findActiveCustomer: jest.fn(),
@@ -82,9 +91,11 @@ describe('CustomerAppService', () => {
 
     const service = new CustomerAppService(
       repository as never,
+      storageService as never,
       loyaltyWalletService as never,
+      paymentsService as never,
     );
-    return { service, repository, loyaltyWalletService };
+    return { service, repository, loyaltyWalletService, paymentsService };
   };
 
   it('adds favorite item to customer metadata', async () => {
@@ -483,6 +494,7 @@ describe('CustomerAppService', () => {
     expect(result.data[0]?.branch).toEqual({
       id: 'branch-1',
       name: 'Main Branch',
+      logoUrl: null,
       coverImage: 'cover.jpg',
       description: 'Downtown branch',
     });
@@ -603,6 +615,7 @@ describe('CustomerAppService', () => {
     expect(result.data[0]?.branch).toEqual({
       id: 'branch-1',
       name: 'Main Branch',
+      logoUrl: null,
       coverImage: 'cover.jpg',
       description: 'Downtown branch',
     });

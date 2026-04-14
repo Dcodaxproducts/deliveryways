@@ -234,6 +234,77 @@ export class LoyaltyWalletService {
     };
   }
 
+  async applyWalletTopUp(
+    context: CustomerWalletLoyaltyContext,
+    amount: number,
+    paymentTransactionId: string,
+    note?: string,
+    actorId?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await this.repository.findWalletTransactionByPaymentTransactionId(
+        paymentTransactionId,
+        tx,
+      );
+
+      if (existing) {
+        const walletAccount = await this.ensureWalletAccount(context, tx);
+
+        return {
+          customerId: context.customerId,
+          walletBalance: Number(walletAccount.balance),
+          creditedAmount: Number(existing.amount),
+          currency: existing.currency,
+        };
+      }
+
+      const walletAccount = await this.ensureWalletAccount(context, tx);
+      const creditedAmount = new Prisma.Decimal(amount).toDecimalPlaces(2);
+      const nextBalance = walletAccount.balance.plus(creditedAmount);
+      const payment = await this.repository.findPaymentTransaction(
+        paymentTransactionId,
+        tx,
+      );
+
+      await this.repository.updateWalletAccount(
+        walletAccount.id,
+        { balance: nextBalance },
+        tx,
+      );
+
+      await this.repository.createWalletTransaction(
+        {
+          walletAccount: { connect: { id: walletAccount.id } },
+          tenant: { connect: { id: context.tenantId } },
+          restaurant: { connect: { id: context.restaurantId } },
+          branch: context.branchId
+            ? { connect: { id: context.branchId } }
+            : undefined,
+          customer: { connect: { id: context.customerId } },
+          paymentTransaction: { connect: { id: paymentTransactionId } },
+          type: WalletTransactionType.CREDIT,
+          amount: creditedAmount,
+          balanceAfter: nextBalance,
+          currency: payment?.currency ?? 'PKR',
+          note: note?.trim() || 'Wallet top-up credited successfully',
+          metadata: {
+            source: 'STRIPE_TOP_UP',
+          },
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        tx,
+      );
+
+      return {
+        customerId: context.customerId,
+        walletBalance: Number(nextBalance),
+        creditedAmount: Number(creditedAmount),
+        currency: payment?.currency ?? 'PKR',
+      };
+    });
+  }
+
   async getLoyaltySummary(context: CustomerWalletLoyaltyContext) {
     const loyaltyAccount = await this.ensureLoyaltyAccount(context);
     const program = await this.ensureLoyaltyProgram(context);

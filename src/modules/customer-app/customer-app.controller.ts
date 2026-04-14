@@ -34,6 +34,7 @@ import {
   ListTableReservationsQueryDto,
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
+  CreateWalletTopUpDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
 } from './dto';
@@ -246,6 +247,24 @@ export class CustomerAppController {
     @Query() scope: CustomerAppCustomerScopeDto,
   ) {
     return this.customerAppService.getWallet(user, scope.customerId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Post('wallet/top-up')
+  @ApiOperation({ summary: 'Create customer wallet top-up payment intent' })
+  createWalletTopUp(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateWalletTopUpDto,
+    @Query() scope: CustomerAppCustomerScopeDto,
+  ) {
+    return this.customerAppService.createWalletTopUp(user, dto, scope.customerId);
   }
 
   @ApiBearerAuth()

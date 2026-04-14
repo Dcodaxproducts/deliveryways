@@ -7,9 +7,9 @@ import { ConfigService } from '@nestjs/config';
 import Stripe = require('stripe');
 
 export interface StripePaymentIntentMetadata {
-  [key: string]: string;
+  [key: string]: string | number | null;
   paymentTransactionId: string;
-  orderId: string;
+  orderId: string | null;
   customerId: string;
   restaurantId: string;
 }

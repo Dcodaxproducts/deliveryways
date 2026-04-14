@@ -20,12 +20,14 @@ import {
   ListTableReservationsQueryDto,
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
+  CreateWalletTopUpDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StorageService } from '../storage/storage.service';
+import { PaymentsService } from '../payments/payments.service';
 
 interface FavoriteMetadataShape {
   customerApp?: {
@@ -91,6 +93,7 @@ export class CustomerAppService {
     private readonly customerAppRepository: CustomerAppRepository,
     private readonly storageService: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
+    private readonly paymentsService?: PaymentsService,
   ) {}
 
   async listFavorites(
@@ -467,6 +470,29 @@ export class CustomerAppService {
     return {
       data,
       message: 'Wallet fetched successfully',
+    };
+  }
+
+  async createWalletTopUp(
+    user: AuthUserContext,
+    dto: CreateWalletTopUpDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const data = await this.paymentsService!.createWalletTopUpAttempt(
+      user,
+      {
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: customer.branchId ?? undefined,
+      },
+      dto,
+    );
+
+    return {
+      data,
+      message: 'Wallet top-up payment intent created successfully',
     };
   }
 

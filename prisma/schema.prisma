@@ -970,7 +970,7 @@ model OrderItem {
 
 model PaymentTransaction {
   id            String                 @id @default(cuid())
-  orderId       String                 @map("order_id")
+  orderId       String?                @map("order_id")
   tenantId      String                 @map("tenant_id")
   restaurantId  String                 @map("restaurant_id")
   branchId      String                 @map("branch_id")
@@ -986,7 +986,7 @@ model PaymentTransaction {
   createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  order               Order                @relation(fields: [orderId], references: [id])
+  order               Order?               @relation(fields: [orderId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
   restaurant          Restaurant           @relation(fields: [restaurantId], references: [id])
   branch              Branch               @relation(fields: [branchId], references: [id])

@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -227,4 +228,22 @@ export class WalletLoyaltyQuoteDto {
   @IsInt()
   @Min(1)
   loyaltyPoints?: number;
+}
+
+export class CreateWalletTopUpDto {
+  @ApiProperty({ minimum: 0.01, example: 1000 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @ApiPropertyOptional({ maxLength: 50, example: 'PKR' })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @ApiPropertyOptional({ example: 'Wallet top-up from app checkout flow' })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

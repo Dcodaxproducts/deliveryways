@@ -324,6 +324,10 @@ export class NotificationsService {
       throw new NotFoundException('Payment transaction not found');
     }
 
+    if (!payment.order || !payment.orderId) {
+      return;
+    }
+
     await this.createAndDispatchCustomerEmail({
       tenantId: payment.tenantId,
       restaurantId: payment.restaurantId,
@@ -378,6 +382,10 @@ export class NotificationsService {
 
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
+    }
+
+    if (!payment.order || !payment.orderId) {
+      return;
     }
 
     const type = this.mapPaymentType(payment.status);

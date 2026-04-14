@@ -36,6 +36,29 @@ export class PaymentsRepository {
     });
   }
 
+  async createUnchecked(
+    data: Prisma.PaymentTransactionUncheckedCreateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).paymentTransaction.create({
+      data,
+      include: {
+        order: {
+          select: {
+            id: true,
+            customerId: true,
+            restaurantId: true,
+            branchId: true,
+            totalAmount: true,
+            paymentStatus: true,
+            paymentMethod: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.paymentTransaction.findUnique({
       where: { id },

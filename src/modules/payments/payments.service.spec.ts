@@ -6,6 +6,7 @@ describe('PaymentsService', () => {
   const makeService = () => {
     const paymentsRepository = {
       create: jest.fn(),
+      createUnchecked: jest.fn(),
       updateStatus: jest.fn(),
       updateOrderPaymentStatus: jest.fn(),
       updateOrderState: jest.fn(),
@@ -45,6 +46,7 @@ describe('PaymentsService', () => {
     const loyaltyWalletService = {
       awardPointsForPaidOrder: jest.fn(),
       restoreOrderBenefits: jest.fn(),
+      applyWalletTopUp: jest.fn(),
     };
 
     const service = new PaymentsService(
@@ -166,6 +168,53 @@ describe('PaymentsService', () => {
     );
     expect(notificationsService.notifyPaymentStatusChanged).toHaveBeenCalledWith(
       'payment-1',
+    );
+    expect(result.received).toBe(true);
+  });
+
+  it('credits wallet from stripe webhook success for top-up payments', async () => {
+    const {
+      service,
+      stripePaymentsService,
+      paymentsRepository,
+      loyaltyWalletService,
+    } = makeService();
+
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_wallet_123',
+        },
+      },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-wallet-1',
+      orderId: null,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      amount: new Prisma.Decimal(500),
+      providerData: {
+        customerId: 'customer-1',
+        target: 'WALLET_TOP_UP',
+      },
+      status: PaymentStatus.PENDING,
+    });
+
+    const result = await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
+
+    expect(loyaltyWalletService.applyWalletTopUp).toHaveBeenCalledWith(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      500,
+      'payment-wallet-1',
+      'Wallet top-up via Stripe',
+      'stripe:webhook',
     );
     expect(result.received).toBe(true);
   });
