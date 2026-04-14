@@ -51,7 +51,11 @@ Role access:
 ### Create presigned upload URL
 `POST /storage/presigned-upload`
 
-Roles:
+Access:
+- Public for business registration / onboarding image uploads
+- Authenticated for normal in-app uploads
+
+Authenticated roles:
 - `SUPER_ADMIN`
 - `BUSINESS_ADMIN`
 - `BRANCH_ADMIN`
@@ -84,6 +88,10 @@ Example response payload:
   }
 }
 ```
+
+Unauthenticated registration uploads are stored under a public registration-safe
+key prefix like `uploads/public/tenant-registration/<date>/...`, while
+authenticated uploads keep their scoped tenant/restaurant/branch/user prefix.
 
 ### Create presigned view URL
 `POST /storage/presigned-view`

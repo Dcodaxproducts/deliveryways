@@ -74,6 +74,20 @@ describe('StorageService', () => {
     expect(result.fileUrl).toContain(result.key);
   });
 
+  it('creates public upload URL for unauthenticated business registration', async () => {
+    const result = await service.createPresignedUploadUrl(undefined, {
+      fileName: 'business-logo.png',
+      contentType: 'image/png',
+    });
+
+    expect(result.method).toBe('PUT');
+    expect(result.uploadUrl).toBe('https://signed-url.example');
+    expect(result.key).toMatch(
+      /^uploads\/public\/tenant-registration\/\d{4}-\d{2}-\d{2}\//,
+    );
+    expect(result.fileUrl).toContain(result.key);
+  });
+
   it('rejects non-image upload content types', async () => {
     await expect(
       service.createPresignedUploadUrl(

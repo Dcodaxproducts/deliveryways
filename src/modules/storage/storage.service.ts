@@ -96,7 +96,7 @@ export class StorageService {
   }
 
   async createPresignedUploadUrl(
-    user: AuthUserContext,
+    user: AuthUserContext | undefined,
     dto: CreatePresignedUploadUrlDto,
   ) {
     if (!dto.contentType.toLowerCase().startsWith('image/')) {
@@ -104,7 +104,10 @@ export class StorageService {
     }
 
     const folder = StorageFolderEnum.UPLOADS;
-    this.ensureFolderAccess(user, folder);
+
+    if (user) {
+      this.ensureFolderAccess(user, folder);
+    }
 
     const s3Config = this.getS3Config();
     const bucket = s3Config.bucket;
@@ -115,7 +118,9 @@ export class StorageService {
       );
     }
 
-    const key = this.buildObjectKey(user, dto.fileName, folder);
+    const key = user
+      ? this.buildObjectKey(user, dto.fileName, folder)
+      : this.buildPublicRegistrationObjectKey(dto.fileName, folder);
     const client = this.createS3Client(s3Config);
 
     const command = new PutObjectCommand({
@@ -257,6 +262,28 @@ export class StorageService {
     return [
       folder,
       ...scopeParts,
+      date,
+      `${randomUUID()}-${normalizedBaseName}${extension.toLowerCase()}`,
+    ].join('/');
+  }
+
+  private buildPublicRegistrationObjectKey(
+    fileName: string,
+    folder: StorageFolderEnum,
+  ) {
+    const safeFileName = this.sanitizeFileName(fileName);
+    const extension = extname(safeFileName);
+    const baseName = safeFileName.slice(
+      0,
+      safeFileName.length - extension.length,
+    );
+    const normalizedBaseName = this.slugify(baseName) || 'file';
+    const date = new Date().toISOString().slice(0, 10);
+
+    return [
+      folder,
+      'public',
+      'tenant-registration',
       date,
       `${randomUUID()}-${normalizedBaseName}${extension.toLowerCase()}`,
     ].join('/');

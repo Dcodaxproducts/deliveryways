@@ -1,6 +1,11 @@
 import { Body, Controller, Delete, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import {
+  AuthUserContext,
+  CurrentUser,
+  Public,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -13,23 +18,18 @@ import {
   DeleteStoredFileDto,
 } from './dto';
 import { StorageService } from './storage.service';
+import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
 
 @ApiTags('Storage')
 @Controller('storage')
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(
-    RolesEnum.SUPER_ADMIN,
-    RolesEnum.BUSINESS_ADMIN,
-    RolesEnum.BRANCH_ADMIN,
-    RolesEnum.CUSTOMER,
-  )
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('presigned-upload')
   createPresignedUploadUrl(
-    @CurrentUser() user: AuthUserContext,
+    @CurrentUser() user: AuthUserContext | undefined,
     @Body() dto: CreatePresignedUploadUrlDto,
   ) {
     return this.storageService.createPresignedUploadUrl(user, dto);
