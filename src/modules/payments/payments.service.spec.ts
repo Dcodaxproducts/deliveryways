@@ -10,6 +10,7 @@ describe('PaymentsService', () => {
       updateOrderPaymentStatus: jest.fn(),
       updateOrderState: jest.fn(),
       findByProviderRef: jest.fn(),
+      findLatestPendingChargeByOrderId: jest.fn(),
       findById: jest.fn(),
       list: jest.fn(),
       sumSuccessfulRefunds: jest.fn(),
@@ -83,7 +84,7 @@ describe('PaymentsService', () => {
       paymentMethod: PaymentMethod.STRIPE,
       paymentStatus: PaymentStatus.PENDING,
     });
-    paymentsRepository.create.mockResolvedValue({
+    paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue({
       id: 'payment-1',
       orderId: 'order-1',
     });
@@ -118,6 +119,7 @@ describe('PaymentsService', () => {
     expect(notificationsService.notifyPaymentAttemptCreated).toHaveBeenCalledWith(
       'payment-1',
     );
+    expect(paymentsRepository.create).not.toHaveBeenCalled();
   });
 
   it('marks payment paid from stripe webhook success', async () => {

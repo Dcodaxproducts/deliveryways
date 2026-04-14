@@ -76,6 +76,31 @@ export class PaymentsRepository {
     });
   }
 
+  async findLatestPendingChargeByOrderId(orderId: string) {
+    return this.prisma.paymentTransaction.findFirst({
+      where: {
+        orderId,
+        type: PaymentTransactionType.CHARGE,
+        status: PaymentStatus.PENDING,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      include: {
+        order: {
+          select: {
+            id: true,
+            customerId: true,
+            restaurantId: true,
+            branchId: true,
+            totalAmount: true,
+            paymentStatus: true,
+            paymentMethod: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+
   async list(
     restaurantId: string | undefined,
     query: ListPaymentsDto,

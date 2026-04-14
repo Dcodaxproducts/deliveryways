@@ -68,20 +68,26 @@ export class PaymentsService {
     const paymentMethod = dto.paymentMethod ?? order.paymentMethod;
     const currency = dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
 
-    const data = await this.paymentsRepository.create(
-      {
-        order: { connect: { id: order.id } },
-        tenant: { connect: { id: order.tenantId } },
-        restaurant: { connect: { id: order.restaurantId } },
-        branch: { connect: { id: order.branchId } },
-        paymentMethod,
-        type: PaymentTransactionType.CHARGE,
-        status: PaymentStatus.PENDING,
-        amount: order.totalAmount,
-        currency,
-        note: dto.note,
-      },
-    );
+    const existingPendingCharge =
+      await this.paymentsRepository.findLatestPendingChargeByOrderId(order.id);
+
+    const data = existingPendingCharge
+      ? await this.paymentsRepository.updateStatus(existingPendingCharge.id, {
+          status: PaymentStatus.PENDING,
+          note: dto.note,
+        })
+      : await this.paymentsRepository.create({
+          order: { connect: { id: order.id } },
+          tenant: { connect: { id: order.tenantId } },
+          restaurant: { connect: { id: order.restaurantId } },
+          branch: { connect: { id: order.branchId } },
+          paymentMethod,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PENDING,
+          amount: order.totalAmount,
+          currency,
+          note: dto.note,
+        });
 
     let providerPayload: Record<string, unknown> | undefined;
 
