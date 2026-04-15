@@ -1,6 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser, Roles, type AuthUserContext } from '../../common/decorators';
+import {
+  CurrentUser,
+  Roles,
+  type AuthUserContext,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -9,7 +13,12 @@ import {
 } from '../../common/guards';
 import { AdminDashboardService } from './admin-dashboard.service';
 import {
+  AdminDashboardCustomersStatsQueryDto,
   AdminDashboardOrdersTrendQueryDto,
+  AdminDashboardOrdersStatsQueryDto,
+  AdminDashboardRecentActivityQueryDto,
+  AdminDashboardRevenueTrendQueryDto,
+  AdminDashboardSystemAlertsQueryDto,
   AdminDashboardTopRestaurantsQueryDto,
   AdminDashboardRestaurantTrendQueryDto,
 } from './dto';
@@ -54,6 +63,86 @@ export class AdminDashboardController {
     @Query() query: AdminDashboardOrdersTrendQueryDto,
   ) {
     return this.adminDashboardService.getOrdersTrend(user, query);
+  }
+
+  @Get('revenue/trend')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get revenue trend data for admin dashboard graphs',
+  })
+  getRevenueTrend(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardRevenueTrendQueryDto,
+  ) {
+    return this.adminDashboardService.getRevenueTrend(user, query);
+  }
+
+  @Get('orders/stats')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get order stats for admin dashboard summary cards',
+  })
+  getOrdersStats(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardOrdersStatsQueryDto,
+  ) {
+    return this.adminDashboardService.getOrdersStats(user, query);
+  }
+
+  @Get('customers/stats')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get customer stats for admin dashboard summary cards',
+  })
+  getCustomersStats(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardCustomersStatsQueryDto,
+  ) {
+    return this.adminDashboardService.getCustomersStats(user, query);
+  }
+
+  @Get('system-alerts')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get dashboard system alerts derived from recent platform activity',
+  })
+  getSystemAlerts(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardSystemAlertsQueryDto,
+  ) {
+    return this.adminDashboardService.getSystemAlerts(user, query);
+  }
+
+  @Get('recent-activity')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get recent dashboard activity across orders, payments, restaurants, and customers',
+  })
+  getRecentActivity(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardRecentActivityQueryDto,
+  ) {
+    return this.adminDashboardService.getRecentActivity(user, query);
   }
 
   @Get('restaurants/top-performing')

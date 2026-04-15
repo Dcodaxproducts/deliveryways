@@ -19,6 +19,29 @@ interface AdminDashboardTrendPoint {
   cumulativeTotal: number;
 }
 
+interface AdminDashboardStatusBreakdownItem {
+  status: string;
+  count: number;
+}
+
+interface AdminDashboardAlertItem {
+  key: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  message: string;
+  count: number;
+}
+
+interface AdminDashboardRecentActivityItem {
+  id: string;
+  type: 'ORDER' | 'PAYMENT' | 'RESTAURANT' | 'CUSTOMER';
+  title: string;
+  description: string;
+  occurredAt: Date;
+  entityId: string;
+  entityType: 'order' | 'payment' | 'restaurant' | 'customer';
+}
+
 interface TopPerformingRestaurantItem {
   rank: number;
   restaurantId: string;
@@ -47,6 +70,36 @@ export interface AdminDashboardOrdersTrend {
   range: AdminDashboardTrendRange;
   totalOrdersInRange: number;
   points: AdminDashboardTrendPoint[];
+}
+
+export interface AdminDashboardRevenueTrend {
+  range: AdminDashboardTrendRange;
+  totalRevenueInRange: number;
+  currency: string;
+  points: AdminDashboardTrendPoint[];
+}
+
+export interface AdminDashboardOrdersStats {
+  totalOrders: number;
+  totalRevenue: number;
+  averageOrderValue: number;
+  statusBreakdown: AdminDashboardStatusBreakdownItem[];
+  paymentStatusBreakdown: AdminDashboardStatusBreakdownItem[];
+}
+
+export interface AdminDashboardCustomersStats {
+  totalCustomers: number;
+  activeCustomers: number;
+  inactiveCustomers: number;
+  newCustomersLast30Days: number;
+}
+
+export interface AdminDashboardSystemAlerts {
+  items: AdminDashboardAlertItem[];
+}
+
+export interface AdminDashboardRecentActivity {
+  items: AdminDashboardRecentActivityItem[];
 }
 
 export interface AdminDashboardTopPerformingRestaurants {
@@ -188,6 +241,334 @@ export class AdminDashboardRepository {
       totalOrdersInRange: points.reduce((sum, point) => sum + point.value, 0),
       points,
     };
+  }
+
+  async getRevenueTrend(
+    scope: AdminDashboardScope,
+    range: AdminDashboardTrendRange = 'daily',
+  ): Promise<AdminDashboardRevenueTrend> {
+    const buckets = this.buildTrendBuckets(range);
+    const startAt = buckets[0]?.start ?? new Date();
+    const where = {
+      ...this.buildPaymentTransactionWhere(scope),
+      type: 'CHARGE' as const,
+      status: 'PAID' as const,
+    };
+
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: {
+        ...where,
+        createdAt: { gte: startAt },
+      },
+      select: {
+        amount: true,
+        currency: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    let cumulativeTotal = 0;
+    const points = buckets.map((bucket) => {
+      const value = transactions
+        .filter(
+          (transaction) =>
+            transaction.createdAt >= bucket.start &&
+            transaction.createdAt < bucket.end,
+        )
+        .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+
+      cumulativeTotal += value;
+
+      return {
+        key: bucket.key,
+        label: bucket.label,
+        value: Number(value.toFixed(2)),
+        cumulativeTotal: Number(cumulativeTotal.toFixed(2)),
+      };
+    });
+
+    return {
+      range,
+      totalRevenueInRange: Number(
+        points.reduce((sum, point) => sum + point.value, 0).toFixed(2),
+      ),
+      currency: transactions[0]?.currency ?? 'PKR',
+      points,
+    };
+  }
+
+  async getOrdersStats(
+    scope: AdminDashboardScope,
+  ): Promise<AdminDashboardOrdersStats> {
+    const where = this.buildOrderWhere(scope);
+    const [totalOrders, revenueAggregate, orders] =
+      await this.prisma.$transaction([
+        this.prisma.order.count({ where }),
+        this.prisma.order.aggregate({
+          where,
+          _sum: { totalAmount: true },
+          _avg: { totalAmount: true },
+        }),
+        this.prisma.order.findMany({
+          where,
+          select: {
+            status: true,
+            paymentStatus: true,
+          },
+        }),
+      ]);
+
+    const statusMap = orders.reduce<Map<string, number>>((acc, order) => {
+      acc.set(order.status, (acc.get(order.status) ?? 0) + 1);
+      return acc;
+    }, new Map<string, number>());
+
+    const paymentStatusMap = orders.reduce<Map<string, number>>((acc, order) => {
+      acc.set(order.paymentStatus, (acc.get(order.paymentStatus) ?? 0) + 1);
+      return acc;
+    }, new Map<string, number>());
+
+    return {
+      totalOrders,
+      totalRevenue: Number(revenueAggregate._sum.totalAmount ?? 0),
+      averageOrderValue: Number(revenueAggregate._avg.totalAmount ?? 0),
+      statusBreakdown: Array.from(statusMap.entries()).map(([status, count]) => ({
+        status,
+        count,
+      })),
+      paymentStatusBreakdown: Array.from(paymentStatusMap.entries()).map(
+        ([status, count]) => ({
+          status,
+          count,
+        }),
+      ),
+    };
+  }
+
+  async getCustomersStats(
+    scope: AdminDashboardScope,
+  ): Promise<AdminDashboardCustomersStats> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+    const where = {
+      deletedAt: null,
+      role: UserRole.CUSTOMER,
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      ...(scope.branchId ? { branchId: scope.branchId } : {}),
+    };
+
+    const [totalCustomers, activeCustomers, newCustomersLast30Days] =
+      await this.prisma.$transaction([
+        this.prisma.user.count({ where }),
+        this.prisma.user.count({ where: { ...where, isActive: true } }),
+        this.prisma.user.count({
+          where: {
+            ...where,
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+      ]);
+
+    return {
+      totalCustomers,
+      activeCustomers,
+      inactiveCustomers: totalCustomers - activeCustomers,
+      newCustomersLast30Days,
+    };
+  }
+
+  async getSystemAlerts(
+    scope: AdminDashboardScope,
+  ): Promise<AdminDashboardSystemAlerts> {
+    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [failedPayments, failedNotifications, inactiveRestaurants, inactiveBranches] =
+      await this.prisma.$transaction([
+        this.prisma.paymentTransaction.count({
+          where: {
+            ...this.buildPaymentTransactionWhere(scope),
+            status: 'FAILED',
+            createdAt: { gte: last24Hours },
+          },
+        }),
+        this.prisma.notification.count({
+          where: {
+            ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+            ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+            ...(scope.branchId ? { branchId: scope.branchId } : {}),
+            status: 'FAILED',
+            createdAt: { gte: last24Hours },
+          },
+        }),
+        this.prisma.restaurant.count({
+          where: {
+            deletedAt: null,
+            isActive: false,
+            ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+            ...(scope.restaurantId ? { id: scope.restaurantId } : {}),
+          },
+        }),
+        this.prisma.branch.count({
+          where: {
+            deletedAt: null,
+            isActive: false,
+            ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+            ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+            ...(scope.branchId ? { id: scope.branchId } : {}),
+          },
+        }),
+      ]);
+
+    const items: AdminDashboardAlertItem[] = [];
+
+    if (failedPayments > 0) {
+      items.push({
+        key: 'failed-payments',
+        severity: failedPayments >= 10 ? 'critical' : 'warning',
+        title: 'Failed payments detected',
+        message: `${failedPayments} payment attempts failed in the last 24 hours`,
+        count: failedPayments,
+      });
+    }
+
+    if (failedNotifications > 0) {
+      items.push({
+        key: 'failed-notifications',
+        severity: failedNotifications >= 10 ? 'critical' : 'warning',
+        title: 'Failed notifications detected',
+        message: `${failedNotifications} notifications failed in the last 24 hours`,
+        count: failedNotifications,
+      });
+    }
+
+    if (inactiveRestaurants > 0) {
+      items.push({
+        key: 'inactive-restaurants',
+        severity: 'info',
+        title: 'Inactive restaurants present',
+        message: `${inactiveRestaurants} restaurants are currently inactive`,
+        count: inactiveRestaurants,
+      });
+    }
+
+    if (inactiveBranches > 0) {
+      items.push({
+        key: 'inactive-branches',
+        severity: 'info',
+        title: 'Inactive branches present',
+        message: `${inactiveBranches} branches are currently inactive`,
+        count: inactiveBranches,
+      });
+    }
+
+    return {
+      items,
+    };
+  }
+
+  async getRecentActivity(
+    scope: AdminDashboardScope,
+    limit = 10,
+  ): Promise<AdminDashboardRecentActivity> {
+    const [orders, payments, restaurants, customers] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where: this.buildOrderWhere(scope),
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
+      this.prisma.paymentTransaction.findMany({
+        where: this.buildPaymentTransactionWhere(scope),
+        select: {
+          id: true,
+          status: true,
+          type: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
+      this.prisma.restaurant.findMany({
+        where: {
+          deletedAt: null,
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+          ...(scope.restaurantId ? { id: scope.restaurantId } : {}),
+        },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
+      this.prisma.user.findMany({
+        where: {
+          deletedAt: null,
+          role: UserRole.CUSTOMER,
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+          ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+          ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
+    ]);
+
+    const items: AdminDashboardRecentActivityItem[] = [
+      ...orders.map((order) => ({
+        id: `order-${order.id}`,
+        type: 'ORDER' as const,
+        title: 'New order activity',
+        description: `Order ${order.id} is currently ${order.status}`,
+        occurredAt: order.createdAt,
+        entityId: order.id,
+        entityType: 'order' as const,
+      })),
+      ...payments.map((payment) => ({
+        id: `payment-${payment.id}`,
+        type: 'PAYMENT' as const,
+        title: 'Payment activity',
+        description: `${payment.type} payment ${payment.id} is ${payment.status}`,
+        occurredAt: payment.createdAt,
+        entityId: payment.id,
+        entityType: 'payment' as const,
+      })),
+      ...restaurants.map((restaurant) => ({
+        id: `restaurant-${restaurant.id}`,
+        type: 'RESTAURANT' as const,
+        title: 'Restaurant onboarded',
+        description: `${restaurant.name} was added to the platform`,
+        occurredAt: restaurant.createdAt,
+        entityId: restaurant.id,
+        entityType: 'restaurant' as const,
+      })),
+      ...customers.map((customer) => ({
+        id: `customer-${customer.id}`,
+        type: 'CUSTOMER' as const,
+        title: 'Customer signup',
+        description: `${customer.email} joined the platform`,
+        occurredAt: customer.createdAt,
+        entityId: customer.id,
+        entityType: 'customer' as const,
+      })),
+    ]
+      .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime())
+      .slice(0, limit);
+
+    return { items };
   }
 
   async getTopPerformingRestaurants(
@@ -419,11 +800,7 @@ export class AdminDashboardRepository {
 
     return Array.from({ length: 12 }, (_, index) => {
       const start = new Date(
-        Date.UTC(
-          today.getUTCFullYear(),
-          today.getUTCMonth() - (11 - index),
-          1,
-        ),
+        Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (11 - index), 1),
       );
       const end = new Date(
         Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1),
@@ -470,6 +847,14 @@ export class AdminDashboardRepository {
   }
 
   private buildOrderWhere(scope: AdminDashboardScope) {
+    return {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      ...(scope.branchId ? { branchId: scope.branchId } : {}),
+    };
+  }
+
+  private buildPaymentTransactionWhere(scope: AdminDashboardScope) {
     return {
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),

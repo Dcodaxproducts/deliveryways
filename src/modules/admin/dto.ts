@@ -136,6 +136,32 @@ export class AdminDashboardOrdersTrendQueryDto extends AdminDashboardScopedQuery
   range?: AdminDashboardTrendRange;
 }
 
+export class AdminDashboardRevenueTrendQueryDto extends AdminDashboardScopedQueryDto {
+  @ApiPropertyOptional({
+    enum: ADMIN_DASHBOARD_TREND_RANGE_VALUES,
+    default: 'daily',
+  })
+  @IsOptional()
+  @IsIn(ADMIN_DASHBOARD_TREND_RANGE_VALUES)
+  range?: AdminDashboardTrendRange;
+}
+
+export class AdminDashboardOrdersStatsQueryDto extends AdminDashboardScopedQueryDto {}
+
+export class AdminDashboardCustomersStatsQueryDto extends AdminDashboardScopedQueryDto {}
+
+export class AdminDashboardSystemAlertsQueryDto extends AdminDashboardScopedQueryDto {}
+
+export class AdminDashboardRecentActivityQueryDto extends AdminDashboardScopedQueryDto {
+  @ApiPropertyOptional({ minimum: 1, maximum: 50, default: 10 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit = 10;
+}
+
 export class AdminDashboardTopRestaurantsQueryDto extends AdminDashboardScopedQueryDto {
   @ApiPropertyOptional({
     enum: ADMIN_DASHBOARD_TOP_RESTAURANTS_RANGE_VALUES,

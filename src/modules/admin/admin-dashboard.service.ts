@@ -7,17 +7,27 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
+  AdminDashboardCustomersStats,
   AdminDashboardOrdersTrend,
+  AdminDashboardOrdersStats,
   AdminDashboardOverview,
+  AdminDashboardRecentActivity,
+  AdminDashboardRevenueTrend,
   AdminDashboardRepository,
   AdminDashboardRestaurantTrend,
   AdminDashboardScope,
+  AdminDashboardSystemAlerts,
   AdminDashboardTopPerformingRestaurants,
 } from './admin-dashboard.repository';
 import {
+  AdminDashboardCustomersStatsQueryDto,
   AdminDashboardOrdersTrendQueryDto,
+  AdminDashboardOrdersStatsQueryDto,
+  AdminDashboardRecentActivityQueryDto,
+  AdminDashboardRevenueTrendQueryDto,
   AdminDashboardTopRestaurantsQueryDto,
   AdminDashboardRestaurantTrendQueryDto,
+  AdminDashboardSystemAlertsQueryDto,
 } from './dto';
 
 @Injectable()
@@ -77,6 +87,112 @@ export class AdminDashboardService {
     };
   }
 
+  async getRevenueTrend(
+    user: AuthUserContext,
+    query: AdminDashboardRevenueTrendQueryDto,
+  ): Promise<{
+    data: AdminDashboardRevenueTrend;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getRevenueTrend(
+      scope,
+      query.range ?? 'daily',
+    );
+
+    return {
+      data,
+      message: 'Admin dashboard revenue trend fetched successfully',
+    };
+  }
+
+  async getOrdersStats(
+    user: AuthUserContext,
+    query: AdminDashboardOrdersStatsQueryDto,
+  ): Promise<{
+    data: AdminDashboardOrdersStats;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getOrdersStats(scope);
+
+    return {
+      data,
+      message: 'Admin dashboard order stats fetched successfully',
+    };
+  }
+
+  async getCustomersStats(
+    user: AuthUserContext,
+    query: AdminDashboardCustomersStatsQueryDto,
+  ): Promise<{
+    data: AdminDashboardCustomersStats;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getCustomersStats(scope);
+
+    return {
+      data,
+      message: 'Admin dashboard customer stats fetched successfully',
+    };
+  }
+
+  async getSystemAlerts(
+    user: AuthUserContext,
+    query: AdminDashboardSystemAlertsQueryDto,
+  ): Promise<{
+    data: AdminDashboardSystemAlerts;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getSystemAlerts(scope);
+
+    return {
+      data,
+      message: 'Admin dashboard system alerts fetched successfully',
+    };
+  }
+
+  async getRecentActivity(
+    user: AuthUserContext,
+    query: AdminDashboardRecentActivityQueryDto,
+  ): Promise<{
+    data: AdminDashboardRecentActivity;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getRecentActivity(
+      scope,
+      query.limit,
+    );
+
+    return {
+      data,
+      message: 'Admin dashboard recent activity fetched successfully',
+    };
+  }
+
   async getTopPerformingRestaurants(
     user: AuthUserContext,
     query: AdminDashboardTopRestaurantsQueryDto,
@@ -109,15 +225,19 @@ export class AdminDashboardService {
   ): Promise<AdminDashboardScope> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       if (requestedBranchId) {
-        const branch = await this.adminDashboardRepository.findBranchScope(
-          requestedBranchId,
-        );
+        const branch =
+          await this.adminDashboardRepository.findBranchScope(
+            requestedBranchId,
+          );
 
         if (!branch) {
           throw new NotFoundException('Branch not found');
         }
 
-        if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
+        if (
+          requestedRestaurantId &&
+          requestedRestaurantId !== branch.restaurantId
+        ) {
           throw new BadRequestException(
             'branchId does not belong to the provided restaurantId',
           );
@@ -131,9 +251,10 @@ export class AdminDashboardService {
       }
 
       if (requestedRestaurantId) {
-        const restaurant = await this.adminDashboardRepository.findRestaurantScope(
-          requestedRestaurantId,
-        );
+        const restaurant =
+          await this.adminDashboardRepository.findRestaurantScope(
+            requestedRestaurantId,
+          );
 
         if (!restaurant) {
           throw new NotFoundException('Restaurant not found');
@@ -189,7 +310,10 @@ export class AdminDashboardService {
         );
       }
 
-      if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
+      if (
+        requestedRestaurantId &&
+        requestedRestaurantId !== branch.restaurantId
+      ) {
         throw new BadRequestException(
           'branchId does not belong to the provided restaurantId',
         );
@@ -216,10 +340,11 @@ export class AdminDashboardService {
     }
 
     if (requestedRestaurantId) {
-      const restaurant = await this.adminDashboardRepository.findRestaurantScope(
-        requestedRestaurantId,
-        user.tid,
-      );
+      const restaurant =
+        await this.adminDashboardRepository.findRestaurantScope(
+          requestedRestaurantId,
+          user.tid,
+        );
 
       if (!restaurant) {
         throw new ForbiddenException(

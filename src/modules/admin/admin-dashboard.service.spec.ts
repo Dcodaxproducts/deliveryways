@@ -219,4 +219,215 @@ describe('AdminDashboardService', () => {
       5,
     );
   });
+
+  it('returns scoped revenue trend data for business admin', async () => {
+    const repository = {
+      getRevenueTrend: jest.fn().mockResolvedValue({
+        range: 'weekly',
+        totalRevenueInRange: 25000,
+        currency: 'PKR',
+        points: [
+          {
+            key: '2026-04-01_2026-04-07',
+            label: 'Apr 1 - Apr 7',
+            value: 12000,
+            cumulativeTotal: 12000,
+          },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getRevenueTrend(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        { range: 'weekly', restaurantId: 'restaurant-1' },
+      ),
+    ).resolves.toEqual({
+      data: {
+        range: 'weekly',
+        totalRevenueInRange: 25000,
+        currency: 'PKR',
+        points: [
+          {
+            key: '2026-04-01_2026-04-07',
+            label: 'Apr 1 - Apr 7',
+            value: 12000,
+            cumulativeTotal: 12000,
+          },
+        ],
+      },
+      message: 'Admin dashboard revenue trend fetched successfully',
+    });
+
+    expect(repository.getRevenueTrend).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      },
+      'weekly',
+    );
+  });
+
+  it('returns order stats for branch admin scope', async () => {
+    const repository = {
+      getOrdersStats: jest.fn().mockResolvedValue({
+        totalOrders: 15,
+        totalRevenue: 18000,
+        averageOrderValue: 1200,
+        statusBreakdown: [{ status: 'DELIVERED', count: 8 }],
+        paymentStatusBreakdown: [{ status: 'PAID', count: 10 }],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getOrdersStats(
+        {
+          uid: 'branch-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: 'BRANCH_ADMIN',
+        } as never,
+        {},
+      ),
+    ).resolves.toEqual({
+      data: {
+        totalOrders: 15,
+        totalRevenue: 18000,
+        averageOrderValue: 1200,
+        statusBreakdown: [{ status: 'DELIVERED', count: 8 }],
+        paymentStatusBreakdown: [{ status: 'PAID', count: 10 }],
+      },
+      message: 'Admin dashboard order stats fetched successfully',
+    });
+  });
+
+  it('returns customer stats for super admin scope', async () => {
+    const repository = {
+      getCustomersStats: jest.fn().mockResolvedValue({
+        totalCustomers: 200,
+        activeCustomers: 170,
+        inactiveCustomers: 30,
+        newCustomersLast30Days: 42,
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getCustomersStats(
+        {
+          uid: 'super-1',
+          role: 'SUPER_ADMIN',
+        } as never,
+        {},
+      ),
+    ).resolves.toEqual({
+      data: {
+        totalCustomers: 200,
+        activeCustomers: 170,
+        inactiveCustomers: 30,
+        newCustomersLast30Days: 42,
+      },
+      message: 'Admin dashboard customer stats fetched successfully',
+    });
+  });
+
+  it('returns system alerts with resolved tenant scope', async () => {
+    const repository = {
+      getSystemAlerts: jest.fn().mockResolvedValue({
+        items: [
+          {
+            key: 'failed-payments',
+            severity: 'warning',
+            title: 'Failed payments detected',
+            message: '3 payment attempts failed in the last 24 hours',
+            count: 3,
+          },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getSystemAlerts(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {},
+      ),
+    ).resolves.toEqual({
+      data: {
+        items: [
+          {
+            key: 'failed-payments',
+            severity: 'warning',
+            title: 'Failed payments detected',
+            message: '3 payment attempts failed in the last 24 hours',
+            count: 3,
+          },
+        ],
+      },
+      message: 'Admin dashboard system alerts fetched successfully',
+    });
+  });
+
+  it('returns recent activity with requested limit', async () => {
+    const repository = {
+      getRecentActivity: jest.fn().mockResolvedValue({
+        items: [
+          {
+            id: 'order-1',
+            type: 'ORDER',
+            title: 'New order activity',
+            description: 'Order order-1 is currently PLACED',
+            occurredAt: new Date('2026-04-15T10:00:00.000Z'),
+            entityId: 'order-1',
+            entityType: 'order',
+          },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getRecentActivity(
+        {
+          uid: 'super-1',
+          role: 'SUPER_ADMIN',
+        } as never,
+        { limit: 5 },
+      ),
+    ).resolves.toEqual({
+      data: {
+        items: [
+          {
+            id: 'order-1',
+            type: 'ORDER',
+            title: 'New order activity',
+            description: 'Order order-1 is currently PLACED',
+            occurredAt: new Date('2026-04-15T10:00:00.000Z'),
+            entityId: 'order-1',
+            entityType: 'order',
+          },
+        ],
+      },
+      message: 'Admin dashboard recent activity fetched successfully',
+    });
+
+    expect(repository.getRecentActivity).toHaveBeenCalledWith({}, 5);
+  });
 });
