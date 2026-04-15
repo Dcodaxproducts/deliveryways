@@ -15,6 +15,7 @@ import {
   AssignDeliverymanOrderDto,
   CreateDeliverymanDto,
   ListDeliverymenDto,
+  UpdateMyDeliverymanStatusDto,
   UpdateDeliverymanDto,
   UpdateDeliverymanLocationDto,
   UpdateDeliverymanStatusDto,
@@ -235,6 +236,35 @@ export class DeliverymenService {
     };
   }
 
+  async updateMyStatus(
+    user: AuthUserContext,
+    dto: UpdateMyDeliverymanStatusDto,
+  ) {
+    if (user.role !== 'DELIVERYMAN') {
+      throw new ForbiddenException('Only deliverymen can update own status');
+    }
+
+    const deliveryman = await this.deliverymenRepository.findById(user.uid);
+
+    if (!deliveryman || deliveryman.deletedAt || !deliveryman.isActive) {
+      throw new NotFoundException('Deliveryman not found');
+    }
+
+    const nextStatus =
+      dto.status === 'ONLINE'
+        ? DeliverymanStatus.AVAILABLE
+        : DeliverymanStatus.OFFLINE;
+
+    const data = await this.deliverymenRepository.update(deliveryman.id, {
+      status: nextStatus,
+    });
+
+    return {
+      data: this.withDeletionState(data),
+      message: 'Deliveryman availability updated successfully',
+    };
+  }
+
   async remove(user: AuthUserContext, id: string) {
     await this.getAccessibleDeliveryman(user, id);
 
@@ -246,10 +276,12 @@ export class DeliverymenService {
     };
   }
 
-  private withDeletionState<T extends {
-    deletedAt?: Date | null;
-    isActive?: boolean;
-  }>(entity: T) {
+  private withDeletionState<
+    T extends {
+      deletedAt?: Date | null;
+      isActive?: boolean;
+    },
+  >(entity: T) {
     return {
       ...entity,
       deletionState: {

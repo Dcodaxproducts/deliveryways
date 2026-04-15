@@ -21,6 +21,7 @@ import {
   AssignDeliverymanOrderDto,
   CreateDeliverymanDto,
   ListDeliverymenDto,
+  UpdateMyDeliverymanStatusDto,
   UpdateDeliverymanDto,
   UpdateDeliverymanLocationDto,
   UpdateDeliverymanStatusDto,
@@ -132,6 +133,20 @@ export class DeliverymenController {
     @Body() dto: UpdateDeliverymanLocationDto,
   ) {
     return this.deliverymenService.updateMyLocation(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/status')
+  @ApiOperation({
+    summary: 'Update deliveryman own availability status',
+  })
+  updateMyStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateMyDeliverymanStatusDto,
+  ) {
+    return this.deliverymenService.updateMyStatus(user, dto);
   }
 
   @ApiBearerAuth()

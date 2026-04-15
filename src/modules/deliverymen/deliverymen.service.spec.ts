@@ -168,4 +168,47 @@ describe('DeliverymenService', () => {
 
     expect(repository.create).not.toHaveBeenCalled();
   });
+
+  it('allows deliveryman to set own status online', async () => {
+    repository.update!.mockResolvedValue({
+      ...deliveryman,
+      status: DeliverymanStatus.AVAILABLE,
+    });
+
+    const result = await service.updateMyStatus(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      {
+        status: 'ONLINE',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith('dm-1', {
+      status: DeliverymanStatus.AVAILABLE,
+    });
+    expect(result.message).toBe('Deliveryman availability updated successfully');
+  });
+
+  it('allows deliveryman to set own status offline', async () => {
+    repository.update!.mockResolvedValue({
+      ...deliveryman,
+      status: DeliverymanStatus.OFFLINE,
+    });
+
+    await service.updateMyStatus(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      {
+        status: 'OFFLINE',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith('dm-1', {
+      status: DeliverymanStatus.OFFLINE,
+    });
+  });
 });

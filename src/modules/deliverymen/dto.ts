@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -138,6 +139,12 @@ export class UpdateDeliverymanLocationDto {
   @Min(-180)
   @Max(180)
   lng!: number;
+}
+
+export class UpdateMyDeliverymanStatusDto {
+  @ApiProperty({ enum: ['ONLINE', 'OFFLINE'] })
+  @IsIn(['ONLINE', 'OFFLINE'])
+  status!: 'ONLINE' | 'OFFLINE';
 }
 
 export class ListDeliverymenDto extends QueryDto {
