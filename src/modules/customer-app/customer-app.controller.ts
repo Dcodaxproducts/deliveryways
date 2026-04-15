@@ -35,6 +35,7 @@ import {
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   CreateWalletTopUpDto,
+  ListWalletHistoryQueryDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
 } from './dto';
@@ -257,6 +258,28 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
   )
+  @Get('wallet/history')
+  @ApiOperation({ summary: 'Fetch customer wallet transaction history' })
+  getWalletHistory(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListWalletHistoryQueryDto,
+    @Query() scope: CustomerAppCustomerScopeDto,
+  ) {
+    return this.customerAppService.getWalletHistory(
+      user,
+      query,
+      scope.customerId,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
   @Post('wallet/top-up')
   @ApiOperation({ summary: 'Create customer wallet top-up payment intent' })
   createWalletTopUp(
@@ -264,7 +287,11 @@ export class CustomerAppController {
     @Body() dto: CreateWalletTopUpDto,
     @Query() scope: CustomerAppCustomerScopeDto,
   ) {
-    return this.customerAppService.createWalletTopUp(user, dto, scope.customerId);
+    return this.customerAppService.createWalletTopUp(
+      user,
+      dto,
+      scope.customerId,
+    );
   }
 
   @ApiBearerAuth()
@@ -275,7 +302,9 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
   )
   @Get('admin/table-reservations')
-  @ApiOperation({ summary: 'List table reservations for admin/branch-admin panels' })
+  @ApiOperation({
+    summary: 'List table reservations for admin/branch-admin panels',
+  })
   listAdminTableReservations(
     @CurrentUser() user: AuthUserContext,
     @Query() query: ListAdminTableReservationsQueryDto,

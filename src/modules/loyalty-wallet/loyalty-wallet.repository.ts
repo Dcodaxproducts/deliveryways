@@ -1,13 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import {
-  LoyaltyAccount,
-  LoyaltyProgram,
-  PaymentTransaction,
-  Prisma,
-  PrismaClient,
-  User,
-  WalletAccount,
-} from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 
@@ -52,11 +45,7 @@ export class LoyaltyWalletRepository {
     });
   }
 
-  findLoyaltyAccount(
-    restaurantId: string,
-    customerId: string,
-    tx?: PrismaTx,
-  ) {
+  findLoyaltyAccount(restaurantId: string, customerId: string, tx?: PrismaTx) {
     return this.client(tx).loyaltyAccount.findUnique({
       where: {
         restaurantId_customerId: {
@@ -138,6 +127,29 @@ export class LoyaltyWalletRepository {
       orderBy: [{ createdAt: 'desc' }],
       take: limit,
     });
+  }
+
+  async listWalletTransactionsPaginated(
+    walletAccountId: string,
+    query: QueryDto,
+  ) {
+    const where: Prisma.WalletTransactionWhereInput = {
+      walletAccountId,
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.walletTransaction.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: {
+          [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+        },
+      }),
+      this.prisma.walletTransaction.count({ where }),
+    ]);
+
+    return { items, total };
   }
 
   findWalletTransactionByPaymentTransactionId(

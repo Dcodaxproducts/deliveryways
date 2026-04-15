@@ -13,12 +13,10 @@ import {
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
+import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
-import {
-  AdjustCustomerLoyaltyPointsDto,
-  UpdateLoyaltyProgramDto,
-} from './dto';
+import { AdjustCustomerLoyaltyPointsDto, UpdateLoyaltyProgramDto } from './dto';
 import { LoyaltyWalletRepository } from './loyalty-wallet.repository';
 
 export interface CustomerWalletLoyaltyContext {
@@ -176,31 +174,46 @@ export class LoyaltyWalletService {
       false,
     );
     const existing = await this.ensureLoyaltyProgram(context);
-    const data = await this.repository.updateLoyaltyProgram(context.restaurantId, {
-      ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-      ...(dto.pointsPerCurrencyUnit !== undefined
-        ? { pointsPerCurrencyUnit: new Prisma.Decimal(dto.pointsPerCurrencyUnit) }
-        : {}),
-      ...(dto.currencyAmountPerPoint !== undefined
-        ? { currencyAmountPerPoint: new Prisma.Decimal(dto.currencyAmountPerPoint) }
-        : {}),
-      ...(dto.redemptionValuePerPoint !== undefined
-        ? { redemptionValuePerPoint: new Prisma.Decimal(dto.redemptionValuePerPoint) }
-        : {}),
-      ...(dto.minimumRedeemPoints !== undefined
-        ? { minimumRedeemPoints: dto.minimumRedeemPoints }
-        : {}),
-      ...(dto.allowWalletConversion !== undefined
-        ? { allowWalletConversion: dto.allowWalletConversion }
-        : {}),
-      ...(dto.allowOrderDiscount !== undefined
-        ? { allowOrderDiscount: dto.allowOrderDiscount }
-        : {}),
-      ...(dto.pointsExpiryDays !== undefined
-        ? { pointsExpiryDays: dto.pointsExpiryDays }
-        : {}),
-      updatedBy: user.uid,
-    });
+    const data = await this.repository.updateLoyaltyProgram(
+      context.restaurantId,
+      {
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.pointsPerCurrencyUnit !== undefined
+          ? {
+              pointsPerCurrencyUnit: new Prisma.Decimal(
+                dto.pointsPerCurrencyUnit,
+              ),
+            }
+          : {}),
+        ...(dto.currencyAmountPerPoint !== undefined
+          ? {
+              currencyAmountPerPoint: new Prisma.Decimal(
+                dto.currencyAmountPerPoint,
+              ),
+            }
+          : {}),
+        ...(dto.redemptionValuePerPoint !== undefined
+          ? {
+              redemptionValuePerPoint: new Prisma.Decimal(
+                dto.redemptionValuePerPoint,
+              ),
+            }
+          : {}),
+        ...(dto.minimumRedeemPoints !== undefined
+          ? { minimumRedeemPoints: dto.minimumRedeemPoints }
+          : {}),
+        ...(dto.allowWalletConversion !== undefined
+          ? { allowWalletConversion: dto.allowWalletConversion }
+          : {}),
+        ...(dto.allowOrderDiscount !== undefined
+          ? { allowOrderDiscount: dto.allowOrderDiscount }
+          : {}),
+        ...(dto.pointsExpiryDays !== undefined
+          ? { pointsExpiryDays: dto.pointsExpiryDays }
+          : {}),
+        updatedBy: user.uid,
+      },
+    );
 
     return {
       data: this.serializeLoyaltyProgram({
@@ -213,7 +226,9 @@ export class LoyaltyWalletService {
 
   async getWalletSummary(context: CustomerWalletLoyaltyContext) {
     const walletAccount = await this.ensureWalletAccount(context);
-    const history = await this.repository.listWalletTransactions(walletAccount.id);
+    const history = await this.repository.listWalletTransactions(
+      walletAccount.id,
+    );
 
     return {
       customerId: context.customerId,
@@ -234,6 +249,33 @@ export class LoyaltyWalletService {
     };
   }
 
+  async listWalletHistory(
+    context: CustomerWalletLoyaltyContext,
+    query: QueryDto,
+  ) {
+    const walletAccount = await this.ensureWalletAccount(context);
+    const result = await this.repository.listWalletTransactionsPaginated(
+      walletAccount.id,
+      query,
+    );
+
+    return {
+      items: result.items.map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        amount: Number(entry.amount),
+        balanceAfter: Number(entry.balanceAfter),
+        currency: entry.currency,
+        orderId: entry.orderId,
+        paymentTransactionId: entry.paymentTransactionId,
+        note: entry.note,
+        metadata: entry.metadata,
+        createdAt: entry.createdAt,
+      })),
+      total: result.total,
+    };
+  }
+
   async applyWalletTopUp(
     context: CustomerWalletLoyaltyContext,
     amount: number,
@@ -242,10 +284,11 @@ export class LoyaltyWalletService {
     actorId?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await this.repository.findWalletTransactionByPaymentTransactionId(
-        paymentTransactionId,
-        tx,
-      );
+      const existing =
+        await this.repository.findWalletTransactionByPaymentTransactionId(
+          paymentTransactionId,
+          tx,
+        );
 
       if (existing) {
         const walletAccount = await this.ensureWalletAccount(context, tx);
@@ -308,7 +351,9 @@ export class LoyaltyWalletService {
   async getLoyaltySummary(context: CustomerWalletLoyaltyContext) {
     const loyaltyAccount = await this.ensureLoyaltyAccount(context);
     const program = await this.ensureLoyaltyProgram(context);
-    const history = await this.repository.listLoyaltyTransactions(loyaltyAccount.id);
+    const history = await this.repository.listLoyaltyTransactions(
+      loyaltyAccount.id,
+    );
 
     return {
       customerId: context.customerId,
@@ -443,7 +488,9 @@ export class LoyaltyWalletService {
     });
   }
 
-  async calculateQuoteBenefits(input: QuoteBenefitsInput): Promise<QuoteBenefitsResult> {
+  async calculateQuoteBenefits(
+    input: QuoteBenefitsInput,
+  ): Promise<QuoteBenefitsResult> {
     const totalBeforeBenefits = input.totalBeforeBenefits;
     let runningTotal = totalBeforeBenefits;
     let walletAppliedAmount = new Prisma.Decimal(0);
@@ -482,7 +529,9 @@ export class LoyaltyWalletService {
 
     if (input.requestedWalletAmount && input.requestedWalletAmount > 0) {
       const walletAccount = await this.ensureWalletAccount(input);
-      const requestedWalletAmount = new Prisma.Decimal(input.requestedWalletAmount);
+      const requestedWalletAmount = new Prisma.Decimal(
+        input.requestedWalletAmount,
+      );
 
       if (requestedWalletAmount.greaterThan(walletAccount.balance)) {
         throw new BadRequestException('Insufficient wallet balance');
@@ -519,7 +568,9 @@ export class LoyaltyWalletService {
   ) {
     if (order.walletAppliedAmount.greaterThan(0)) {
       const walletAccount = await this.ensureWalletAccount(context, tx);
-      const nextBalance = walletAccount.balance.minus(order.walletAppliedAmount);
+      const nextBalance = walletAccount.balance.minus(
+        order.walletAppliedAmount,
+      );
       if (nextBalance.lessThan(0)) {
         throw new BadRequestException('Insufficient wallet balance');
       }
@@ -556,7 +607,8 @@ export class LoyaltyWalletService {
     if (order.loyaltyPointsRedeemed > 0) {
       const loyaltyAccount = await this.ensureLoyaltyAccount(context, tx);
       const program = await this.ensureLoyaltyProgram(context, tx);
-      const nextPoints = loyaltyAccount.availablePoints - order.loyaltyPointsRedeemed;
+      const nextPoints =
+        loyaltyAccount.availablePoints - order.loyaltyPointsRedeemed;
       if (nextPoints < 0) {
         throw new BadRequestException('Insufficient loyalty points');
       }
@@ -625,11 +677,16 @@ export class LoyaltyWalletService {
         branchId: order.branchId,
       };
       const program = await this.ensureLoyaltyProgram(context, tx);
-      if (!program.isActive || program.pointsPerCurrencyUnit.lessThanOrEqualTo(0)) {
+      if (
+        !program.isActive ||
+        program.pointsPerCurrencyUnit.lessThanOrEqualTo(0)
+      ) {
         return null;
       }
 
-      const qualifyingAmount = order.totalAmount.plus(order.walletAppliedAmount);
+      const qualifyingAmount = order.totalAmount.plus(
+        order.walletAppliedAmount,
+      );
       const pointsAwarded = Math.floor(
         Number(qualifyingAmount.mul(program.pointsPerCurrencyUnit)),
       );
@@ -641,7 +698,9 @@ export class LoyaltyWalletService {
       const nextPoints = loyaltyAccount.availablePoints + pointsAwarded;
       const expiresAt =
         program.pointsExpiryDays && program.pointsExpiryDays > 0
-          ? new Date(Date.now() + program.pointsExpiryDays * 24 * 60 * 60 * 1000)
+          ? new Date(
+              Date.now() + program.pointsExpiryDays * 24 * 60 * 60 * 1000,
+            )
           : null;
 
       await this.repository.updateLoyaltyAccount(
@@ -706,13 +765,13 @@ export class LoyaltyWalletService {
       };
 
       if (order.walletAppliedAmount.greaterThan(0)) {
-        const walletRestoreCount = await this.repository.countWalletRestoreTransactions(
-          order.id,
-          tx,
-        );
+        const walletRestoreCount =
+          await this.repository.countWalletRestoreTransactions(order.id, tx);
         if (!walletRestoreCount) {
           const walletAccount = await this.ensureWalletAccount(context, tx);
-          const nextBalance = walletAccount.balance.plus(order.walletAppliedAmount);
+          const nextBalance = walletAccount.balance.plus(
+            order.walletAppliedAmount,
+          );
           await this.repository.updateWalletAccount(
             walletAccount.id,
             { balance: nextBalance },
@@ -743,14 +802,13 @@ export class LoyaltyWalletService {
       }
 
       if (order.loyaltyPointsRedeemed > 0) {
-        const loyaltyRestoreCount = await this.repository.countLoyaltyRestoreTransactions(
-          order.id,
-          tx,
-        );
+        const loyaltyRestoreCount =
+          await this.repository.countLoyaltyRestoreTransactions(order.id, tx);
         if (!loyaltyRestoreCount) {
           const loyaltyAccount = await this.ensureLoyaltyAccount(context, tx);
           const program = await this.ensureLoyaltyProgram(context, tx);
-          const nextPoints = loyaltyAccount.availablePoints + order.loyaltyPointsRedeemed;
+          const nextPoints =
+            loyaltyAccount.availablePoints + order.loyaltyPointsRedeemed;
           await this.repository.updateLoyaltyAccount(
             loyaltyAccount.id,
             {
@@ -1033,7 +1091,9 @@ export class LoyaltyWalletService {
     }
 
     if (!(allowBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)) {
-      throw new ForbiddenException('Insufficient permissions for loyalty management');
+      throw new ForbiddenException(
+        'Insufficient permissions for loyalty management',
+      );
     }
 
     if (!user.tid) {
@@ -1058,10 +1118,7 @@ export class LoyaltyWalletService {
     return profile?.metadata;
   }
 
-  private readPath(
-    value: unknown,
-    path: readonly string[],
-  ): unknown {
+  private readPath(value: unknown, path: readonly string[]): unknown {
     let current = value;
     for (const key of path) {
       if (!current || typeof current !== 'object' || Array.isArray(current)) {
@@ -1072,10 +1129,7 @@ export class LoyaltyWalletService {
     return current;
   }
 
-  private readNumber(
-    value: unknown,
-    paths: ReadonlyArray<readonly string[]>,
-  ) {
+  private readNumber(value: unknown, paths: ReadonlyArray<readonly string[]>) {
     for (const path of paths) {
       const found = this.readPath(value, path);
       if (typeof found === 'number' && Number.isFinite(found)) {
@@ -1091,10 +1145,7 @@ export class LoyaltyWalletService {
     return 0;
   }
 
-  private readString(
-    value: unknown,
-    paths: ReadonlyArray<readonly string[]>,
-  ) {
+  private readString(value: unknown, paths: ReadonlyArray<readonly string[]>) {
     for (const path of paths) {
       const found = this.readPath(value, path);
       if (typeof found === 'string' && found.trim().length) {

@@ -230,6 +230,16 @@ export class WalletLoyaltyQuoteDto {
   loyaltyPoints?: number;
 }
 
+export class ListWalletHistoryQueryDto extends QueryDto {
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 20;
+}
+
 export class CreateWalletTopUpDto {
   @ApiProperty({ minimum: 0.01, example: 1000 })
   @Transform(({ value }) => Number(value))

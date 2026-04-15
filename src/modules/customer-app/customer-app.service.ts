@@ -21,6 +21,7 @@ import {
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   CreateWalletTopUpDto,
+  ListWalletHistoryQueryDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
 } from './dto';
@@ -473,6 +474,29 @@ export class CustomerAppService {
     };
   }
 
+  async getWalletHistory(
+    user: AuthUserContext,
+    query: ListWalletHistoryQueryDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const result = await this.loyaltyWalletService!.listWalletHistory(
+      {
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: customer.branchId ?? undefined,
+      },
+      query,
+    );
+
+    return {
+      data: result.items,
+      message: 'Wallet history fetched successfully',
+      meta: buildPaginationMeta(query, result.total),
+    };
+  }
+
   async createWalletTopUp(
     user: AuthUserContext,
     dto: CreateWalletTopUpDto,
@@ -501,7 +525,9 @@ export class CustomerAppService {
     query: ListAdminTableReservationsQueryDto,
   ) {
     if (user.role === UserRoleEnum.CUSTOMER) {
-      throw new ForbiddenException('Customers cannot access reservation admin data');
+      throw new ForbiddenException(
+        'Customers cannot access reservation admin data',
+      );
     }
 
     const restaurantId = await this.resolveAdminReservationRestaurantId(
@@ -509,11 +535,12 @@ export class CustomerAppService {
       query.restaurantId,
     );
     const branchId = this.resolveAdminReservationBranchId(user, query.branchId);
-    const customers = await this.customerAppRepository.findCustomersForTableReservations({
-      restaurantId,
-      customerId: query.customerId,
-      search: query.search,
-    });
+    const customers =
+      await this.customerAppRepository.findCustomersForTableReservations({
+        restaurantId,
+        customerId: query.customerId,
+        search: query.search,
+      });
     const reservations = customers.flatMap((customer) =>
       this.readTableReservations(customer.profile?.metadata)
         .filter((reservation) =>
@@ -547,14 +574,14 @@ export class CustomerAppService {
     );
     const start = (query.page - 1) * query.limit;
     const data = await Promise.all(
-      sortedReservations.slice(start, start + query.limit).map(
-        async (reservation) => ({
+      sortedReservations
+        .slice(start, start + query.limit)
+        .map(async (reservation) => ({
           ...reservation,
           branch: await this.resolveBranchMedia(
             branchMap.get(reservation.branchId) ?? null,
           ),
-        }),
-      ),
+        })),
     );
 
     return {
@@ -581,12 +608,14 @@ export class CustomerAppService {
     const branchMap = new Map(branches.map((branch) => [branch.id, branch]));
     const start = (query.page - 1) * query.limit;
     const data = await Promise.all(
-      reservations.slice(start, start + query.limit).map(async (reservation) => ({
-        ...reservation,
-        branch: await this.resolveBranchMedia(
-          branchMap.get(reservation.branchId) ?? null,
-        ),
-      })),
+      reservations
+        .slice(start, start + query.limit)
+        .map(async (reservation) => ({
+          ...reservation,
+          branch: await this.resolveBranchMedia(
+            branchMap.get(reservation.branchId) ?? null,
+          ),
+        })),
     );
 
     return {
@@ -954,7 +983,8 @@ export class CustomerAppService {
         return (a.guestCount - b.guestCount) * multiplier;
       }
 
-      const left = sortBy === 'reservationDate' ? a.reservationDate : a.createdAt;
+      const left =
+        sortBy === 'reservationDate' ? a.reservationDate : a.createdAt;
       const right =
         sortBy === 'reservationDate' ? b.reservationDate : b.createdAt;
 

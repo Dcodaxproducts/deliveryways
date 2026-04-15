@@ -61,6 +61,7 @@ describe('CustomerAppService', () => {
       getLoyaltySummary: jest.fn(),
       redeemPointsToWallet: jest.fn(),
       getWalletSummary: jest.fn(),
+      listWalletHistory: jest.fn(),
     };
 
     const paymentsService = {
@@ -68,7 +69,9 @@ describe('CustomerAppService', () => {
     };
 
     const storageService = {
-      resolveViewUrl: jest.fn(async (value: string | null | undefined) => value ?? null),
+      resolveViewUrl: jest.fn(
+        async (value: string | null | undefined) => value ?? null,
+      ),
       resolveMediaUrlsDeep: jest.fn(async <T>(value: T) => value),
     };
 
@@ -388,6 +391,64 @@ describe('CustomerAppService', () => {
       availablePoints: 240,
       redeemedPoints: 60,
     });
+  });
+
+  it('lists wallet history through loyalty wallet service', async () => {
+    const { service, repository, loyaltyWalletService } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      profile: { metadata: {} },
+    });
+    loyaltyWalletService.listWalletHistory.mockResolvedValue({
+      items: [
+        {
+          id: 'wallet-transaction-1',
+          type: 'CREDIT',
+          amount: 1000,
+          balanceAfter: 1500,
+          currency: 'PKR',
+          createdAt: '2026-04-15T09:00:00.000Z',
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.getWalletHistory(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(loyaltyWalletService.listWalletHistory).toHaveBeenCalledWith(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+    expect(result.data).toHaveLength(1);
+    expect(result.meta?.total).toBe(1);
+    expect(result.message).toBe('Wallet history fetched successfully');
   });
 
   it('redeems loyalty points through loyalty wallet service', async () => {
