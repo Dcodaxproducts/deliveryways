@@ -67,7 +67,8 @@ export class PaymentsService {
     }
 
     const paymentMethod = dto.paymentMethod ?? order.paymentMethod;
-    const currency = dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
+    const currency =
+      dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
 
     const existingPendingCharge =
       await this.paymentsRepository.findLatestPendingChargeByOrderId(order.id);
@@ -151,19 +152,21 @@ export class PaymentsService {
     },
     dto: CreateWalletTopUpDto,
   ) {
-    if (user.role === UserRoleEnum.CUSTOMER && user.uid !== context.customerId) {
+    if (
+      user.role === UserRoleEnum.CUSTOMER &&
+      user.uid !== context.customerId
+    ) {
       throw new ForbiddenException('Cross-customer access denied');
     }
 
-    if (!context.branchId) {
-      throw new BadRequestException('Customer branch context is required');
-    }
+    const branchId = await this.resolveWalletTopUpBranchId(context);
 
-    const currency = dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
+    const currency =
+      dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
     const data = await this.paymentsRepository.createUnchecked({
       tenantId: context.tenantId,
       restaurantId: context.restaurantId,
-      branchId: context.branchId,
+      branchId,
       paymentMethod: PaymentMethod.STRIPE,
       type: PaymentTransactionType.CHARGE,
       status: PaymentStatus.PENDING,
@@ -214,6 +217,37 @@ export class PaymentsService {
     };
   }
 
+  private async resolveWalletTopUpBranchId(context: {
+    customerId: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId?: string;
+  }) {
+    if (context.branchId) {
+      return context.branchId;
+    }
+
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        tenantId: context.tenantId,
+        restaurantId: context.restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+      orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
+    });
+
+    if (!branch) {
+      throw new BadRequestException(
+        'Restaurant branch context is required for wallet top-up',
+      );
+    }
+
+    return branch.id;
+  }
+
   async list(user: AuthUserContext, query: ListPaymentsDto) {
     const restaurantId = await this.resolveRestaurantId(
       user,
@@ -242,7 +276,9 @@ export class PaymentsService {
     }
 
     if (!payment.order) {
-      throw new BadRequestException('Wallet top-up transactions are not exposed here');
+      throw new BadRequestException(
+        'Wallet top-up transactions are not exposed here',
+      );
     }
 
     await this.assertOrderAccess(
@@ -269,7 +305,9 @@ export class PaymentsService {
     }
 
     if (!payment.order || !payment.orderId) {
-      throw new BadRequestException('Wallet top-up transactions cannot be marked paid here');
+      throw new BadRequestException(
+        'Wallet top-up transactions cannot be marked paid here',
+      );
     }
 
     const orderId = payment.orderId;
@@ -307,7 +345,6 @@ export class PaymentsService {
         tx,
       );
 
-
       return updatedPayment;
     });
 
@@ -332,7 +369,9 @@ export class PaymentsService {
     }
 
     if (!payment.order || !payment.orderId) {
-      throw new BadRequestException('Wallet top-up transactions cannot be failed here');
+      throw new BadRequestException(
+        'Wallet top-up transactions cannot be failed here',
+      );
     }
 
     const orderId = payment.orderId;
@@ -362,7 +401,6 @@ export class PaymentsService {
         tx,
       );
 
-
       return updatedPayment;
     });
 
@@ -387,7 +425,9 @@ export class PaymentsService {
     }
 
     if (!payment.order || !payment.orderId) {
-      throw new BadRequestException('Wallet top-up transactions cannot be cancelled here');
+      throw new BadRequestException(
+        'Wallet top-up transactions cannot be cancelled here',
+      );
     }
 
     const orderId = payment.orderId;
@@ -442,7 +482,9 @@ export class PaymentsService {
     }
 
     if (!payment.order || !payment.orderId) {
-      throw new BadRequestException('Wallet top-up transactions cannot be refunded here');
+      throw new BadRequestException(
+        'Wallet top-up transactions cannot be refunded here',
+      );
     }
 
     const orderId = payment.orderId;
@@ -467,9 +509,8 @@ export class PaymentsService {
       );
     }
 
-    const refundedSoFar = await this.paymentsRepository.sumSuccessfulRefunds(
-      orderId,
-    );
+    const refundedSoFar =
+      await this.paymentsRepository.sumSuccessfulRefunds(orderId);
 
     if (refundedSoFar.plus(refundAmount).greaterThan(payment.amount)) {
       throw new BadRequestException(
@@ -556,7 +597,10 @@ export class PaymentsService {
     };
   }
 
-  async handleStripeWebhook(rawBody: Buffer | string | undefined, signature?: string) {
+  async handleStripeWebhook(
+    rawBody: Buffer | string | undefined,
+    signature?: string,
+  ) {
     if (!rawBody) {
       throw new BadRequestException('Stripe webhook payload is required');
     }
@@ -602,7 +646,8 @@ export class PaymentsService {
     paymentIntent: Record<string, unknown>,
   ) {
     const providerRef = this.readStripeIntentId(paymentIntent);
-    const payment = await this.paymentsRepository.findByProviderRef(providerRef);
+    const payment =
+      await this.paymentsRepository.findByProviderRef(providerRef);
 
     if (!payment || payment.status === PaymentStatus.PAID) {
       return;
@@ -669,7 +714,8 @@ export class PaymentsService {
     status: PaymentStatus = PaymentStatus.FAILED,
   ) {
     const providerRef = this.readStripeIntentId(paymentIntent);
-    const payment = await this.paymentsRepository.findByProviderRef(providerRef);
+    const payment =
+      await this.paymentsRepository.findByProviderRef(providerRef);
 
     if (
       !payment ||
@@ -738,7 +784,11 @@ export class PaymentsService {
         tx,
       );
 
-      await this.paymentsRepository.updateOrderPaymentStatus(orderId, status, tx);
+      await this.paymentsRepository.updateOrderPaymentStatus(
+        orderId,
+        status,
+        tx,
+      );
 
       if (cancelOrder) {
         await this.paymentsRepository.updateOrderState(
@@ -788,7 +838,9 @@ export class PaymentsService {
     const customerId = providerData.customerId;
 
     if (typeof customerId !== 'string' || !customerId.trim()) {
-      throw new BadRequestException('Wallet top-up customer context is missing');
+      throw new BadRequestException(
+        'Wallet top-up customer context is missing',
+      );
     }
 
     return {

@@ -21,6 +21,9 @@ describe('PaymentsService', () => {
       order: {
         findUnique: jest.fn(),
       },
+      branch: {
+        findFirst: jest.fn(),
+      },
       restaurant: {
         findFirst: jest.fn(),
       },
@@ -118,9 +121,9 @@ describe('PaymentsService', () => {
       publishableKey: 'pk_test_123',
       paymentIntentId: 'pi_123',
     });
-    expect(notificationsService.notifyPaymentAttemptCreated).toHaveBeenCalledWith(
-      'payment-1',
-    );
+    expect(
+      notificationsService.notifyPaymentAttemptCreated,
+    ).toHaveBeenCalledWith('payment-1');
     expect(paymentsRepository.create).not.toHaveBeenCalled();
   });
 
@@ -166,9 +169,9 @@ describe('PaymentsService', () => {
       'payment-1',
       'stripe:webhook',
     );
-    expect(notificationsService.notifyPaymentStatusChanged).toHaveBeenCalledWith(
-      'payment-1',
-    );
+    expect(
+      notificationsService.notifyPaymentStatusChanged,
+    ).toHaveBeenCalledWith('payment-1');
     expect(result.received).toBe(true);
   });
 
@@ -202,7 +205,10 @@ describe('PaymentsService', () => {
       status: PaymentStatus.PENDING,
     });
 
-    const result = await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
+    const result = await service.handleStripeWebhook(
+      Buffer.from('{}'),
+      'sig_123',
+    );
 
     expect(loyaltyWalletService.applyWalletTopUp).toHaveBeenCalledWith(
       {
@@ -217,5 +223,72 @@ describe('PaymentsService', () => {
       'stripe:webhook',
     );
     expect(result.received).toBe(true);
+  });
+
+  it('creates wallet top-up even when customer is not tied to a branch', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      stripePaymentsService,
+    } = makeService();
+
+    prisma.branch.findFirst.mockResolvedValue({
+      id: 'branch-main-1',
+    });
+    paymentsRepository.createUnchecked.mockResolvedValue({
+      id: 'payment-wallet-1',
+      providerData: {},
+    });
+    stripePaymentsService.createPaymentIntent.mockResolvedValue({
+      id: 'pi_wallet_123',
+      client_secret: 'pi_wallet_123_secret',
+    });
+    paymentsRepository.updateStatus.mockResolvedValue({
+      id: 'payment-wallet-1',
+      providerRef: 'pi_wallet_123',
+      providerData: {},
+    });
+
+    const result = await service.createWalletTopUpAttempt(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      },
+      {
+        amount: 500,
+        currency: 'PKR',
+        note: 'Wallet top-up',
+      },
+    );
+
+    expect(prisma.branch.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+      orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
+    });
+    expect(paymentsRepository.createUnchecked).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 'branch-main-1',
+      }),
+    );
+    expect(result.paymentSession).toEqual({
+      provider: 'stripe',
+      clientSecret: 'pi_wallet_123_secret',
+      publishableKey: 'pk_test_123',
+      paymentIntentId: 'pi_wallet_123',
+    });
   });
 });
