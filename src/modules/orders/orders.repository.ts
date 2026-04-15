@@ -227,6 +227,7 @@ export class OrdersRepository {
     restaurantId: string | undefined,
     query: ListOrdersDto,
     customerId?: string,
+    deliverymanId?: string,
   ) {
     const where: Prisma.OrderWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
@@ -234,6 +235,7 @@ export class OrdersRepository {
       ...(query.status ? { status: query.status } : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(customerId ? { customerId } : {}),
+      ...(deliverymanId ? { deliverymanId } : {}),
       ...(query.kind === 'group-orders'
         ? { sourceGroupOrder: { isNot: null } }
         : query.kind === 'order'

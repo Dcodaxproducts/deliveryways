@@ -204,6 +204,85 @@ describe('OrdersService - order time validation', () => {
   });
 });
 
+describe('OrdersService - deliveryman order access', () => {
+  let service: OrdersService;
+  let ordersRepository: { list: jest.Mock; findById: jest.Mock };
+
+  const deliverymanUser = {
+    uid: 'dm-1',
+    role: 'DELIVERYMAN' as const,
+    actorType: 'DELIVERYMAN' as const,
+  };
+
+  beforeEach(() => {
+    ordersRepository = {
+      list: jest
+        .fn()
+        .mockResolvedValue({ items: [{ id: 'order-1' }], total: 1 }),
+      findById: jest.fn(),
+    };
+
+    service = new OrdersService(
+      {} as never,
+      ordersRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    Object.assign(service as object, {
+      toOrderListResponse: jest.fn().mockResolvedValue({ id: 'order-1' }),
+      toOrderDetailsResponse: jest.fn().mockResolvedValue({ id: 'order-1' }),
+    });
+  });
+
+  it('lists only orders assigned to the deliveryman', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    };
+
+    const result = await service.list(deliverymanUser as never, query as never);
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      undefined,
+      query,
+      undefined,
+      'dm-1',
+    );
+    expect(result.message).toBe('Orders fetched successfully');
+  });
+
+  it('allows deliveryman to fetch details of assigned orders', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+    });
+
+    const result = await service.details(deliverymanUser as never, 'order-1');
+
+    expect(result.message).toBe('Order fetched successfully');
+  });
+
+  it('blocks deliveryman from fetching another deliveryman order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-2',
+    });
+
+    await expect(
+      service.details(deliverymanUser as never, 'order-1'),
+    ).rejects.toThrow('Cross-deliveryman access denied');
+  });
+});
+
 describe('OrdersService - coupon quote validation', () => {
   it('skips delivery address checks when validating coupon application', async () => {
     const prisma = {
@@ -258,6 +337,7 @@ describe('OrdersService - coupon quote validation', () => {
       prisma as never,
       {} as never,
       couponsService as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

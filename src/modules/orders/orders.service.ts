@@ -208,16 +208,18 @@ export class OrdersService {
   }
 
   async list(user: AuthUserContext, query: ListOrdersDto) {
-    const restaurantId = await this.resolveRestaurantId(
-      user,
-      query.restaurantId,
-    );
+    const isDeliveryman = user.role === 'DELIVERYMAN';
+    const restaurantId = isDeliveryman
+      ? undefined
+      : await this.resolveRestaurantId(user, query.restaurantId);
     const customerId =
       user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
+    const deliverymanId = isDeliveryman ? user.uid : undefined;
     const { items, total } = await this.ordersRepository.list(
       restaurantId,
       query,
       customerId,
+      deliverymanId,
     );
 
     return {
@@ -236,7 +238,11 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    if (user.role === 'DELIVERYMAN') {
+      this.assertDeliverymanOrderAccess(user, order.deliverymanId);
+    } else {
+      await this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    }
 
     return {
       data: await this.resolveMediaResponse(
@@ -1681,6 +1687,15 @@ export class OrdersService {
     }
   }
 
+  private assertDeliverymanOrderAccess(
+    user: AuthUserContext,
+    deliverymanId: string | null,
+  ) {
+    if (!deliverymanId || deliverymanId !== user.uid) {
+      throw new ForbiddenException('Cross-deliveryman access denied');
+    }
+  }
+
   private async assertTrackingAccess(
     user: AuthUserContext,
     order: {
@@ -1690,10 +1705,7 @@ export class OrdersService {
     },
   ) {
     if (user.role === 'DELIVERYMAN') {
-      if (!order.deliverymanId || order.deliverymanId !== user.uid) {
-        throw new ForbiddenException('Cross-deliveryman access denied');
-      }
-
+      this.assertDeliverymanOrderAccess(user, order.deliverymanId);
       return;
     }
 

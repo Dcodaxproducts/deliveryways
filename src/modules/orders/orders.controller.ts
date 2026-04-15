@@ -63,6 +63,7 @@ export class OrdersController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Get()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListOrdersDto) {
@@ -76,6 +77,7 @@ export class OrdersController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {

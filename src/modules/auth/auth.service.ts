@@ -1344,9 +1344,59 @@ export class AuthService {
     }
 
     if (user.actorType === 'DELIVERYMAN') {
-      throw new ForbiddenException(
-        'Deliveryman profile updates are not supported here',
-      );
+      const deliveryman = await this.prisma.deliveryman.findUnique({
+        where: { id: user.uid },
+      });
+
+      if (!deliveryman || deliveryman.deletedAt) {
+        throw new NotFoundException('Deliveryman account not found');
+      }
+
+      if (avatarOnly || dto.avatarUrl !== undefined || dto.bio !== undefined) {
+        throw new ForbiddenException(
+          'Deliveryman avatar and bio updates are not supported',
+        );
+      }
+
+      if (dto.phone && dto.phone !== deliveryman.phone) {
+        const existingPhone = await this.prisma.deliveryman.findFirst({
+          where: {
+            branchId: deliveryman.branchId,
+            phone: dto.phone,
+            id: { not: deliveryman.id },
+          },
+          select: { id: true },
+        });
+
+        if (existingPhone) {
+          throw new BadRequestException(
+            'A deliveryman with this phone already exists in this branch',
+          );
+        }
+      }
+
+      const updated = await this.prisma.deliveryman.update({
+        where: { id: deliveryman.id },
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+        },
+      });
+
+      return {
+        data: {
+          id: updated.id,
+          profile: {
+            firstName: updated.firstName,
+            lastName: updated.lastName,
+            phone: updated.phone,
+            avatarUrl: null,
+            bio: null,
+          },
+        },
+        message: 'Profile updated successfully',
+      };
     }
 
     const dbUser = await this.usersService.findById(user.uid);
