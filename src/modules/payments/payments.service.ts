@@ -16,6 +16,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import {
+  AdminUpdatePaymentStatusDto,
   CreatePaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
@@ -276,9 +277,18 @@ export class PaymentsService {
     }
 
     if (!payment.order) {
-      throw new BadRequestException(
-        'Wallet top-up transactions are not exposed here',
-      );
+      if (user.role === UserRoleEnum.CUSTOMER) {
+        throw new BadRequestException(
+          'Wallet top-up transactions are not exposed here',
+        );
+      }
+
+      await this.assertAdminPaymentAccess(user, payment.restaurantId, true);
+
+      return {
+        data: payment,
+        message: 'Payment fetched successfully',
+      };
     }
 
     await this.assertOrderAccess(
@@ -291,6 +301,46 @@ export class PaymentsService {
       data: payment,
       message: 'Payment fetched successfully',
     };
+  }
+
+  async updateStatus(
+    user: AuthUserContext,
+    id: string,
+    dto: AdminUpdatePaymentStatusDto,
+  ) {
+    if (dto.status === PaymentStatus.REFUNDED) {
+      throw new BadRequestException(
+        'Use the refund endpoint for refunded payment updates',
+      );
+    }
+
+    if (dto.status === PaymentStatus.PENDING) {
+      throw new BadRequestException(
+        'Admin payment updates only support PAID, FAILED, or CANCELLED',
+      );
+    }
+
+    const payment = await this.paymentsRepository.findById(id);
+
+    if (!payment) {
+      throw new NotFoundException('Payment transaction not found');
+    }
+
+    await this.assertAdminPaymentAccess(user, payment.restaurantId, true);
+
+    if (payment.orderId && payment.order) {
+      if (dto.status === PaymentStatus.PAID) {
+        return this.markPaid(user, id, dto);
+      }
+
+      if (dto.status === PaymentStatus.FAILED) {
+        return this.fail(user, id, dto);
+      }
+
+      return this.cancel(user, id, dto);
+    }
+
+    return this.updateWalletTopUpStatus(payment, dto, user.uid);
   }
 
   async markPaid(
@@ -594,6 +644,84 @@ export class PaymentsService {
     return {
       data,
       message: 'Payment refunded successfully',
+    };
+  }
+
+  private async updateWalletTopUpStatus(
+    payment: {
+      id: string;
+      orderId: string | null;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      amount: Prisma.Decimal;
+      paymentMethod: PaymentMethod;
+      providerRef: string | null;
+      providerData: Prisma.JsonValue | null;
+      status: PaymentStatus;
+      type: PaymentTransactionType;
+    },
+    dto: AdminUpdatePaymentStatusDto,
+    actorId: string,
+  ) {
+    if (payment.type !== PaymentTransactionType.CHARGE) {
+      throw new BadRequestException(
+        'Only charge transactions can be updated here',
+      );
+    }
+
+    if (payment.status === PaymentStatus.REFUNDED) {
+      throw new BadRequestException('Refunded transactions cannot be updated');
+    }
+
+    if (
+      dto.status !== PaymentStatus.PAID &&
+      payment.status === PaymentStatus.PAID
+    ) {
+      throw new BadRequestException(
+        'Paid wallet top-up transactions cannot be downgraded',
+      );
+    }
+
+    if (
+      dto.status === PaymentStatus.CANCELLED &&
+      payment.paymentMethod === PaymentMethod.STRIPE &&
+      payment.providerRef
+    ) {
+      await this.stripePaymentsService.cancelPaymentIntent(payment.providerRef);
+    }
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      return this.paymentsRepository.updateStatus(
+        payment.id,
+        {
+          status: dto.status,
+          providerRef: dto.providerRef ?? payment.providerRef ?? undefined,
+          providerData: dto.providerData as Prisma.InputJsonValue,
+          note: dto.note,
+          processedAt: new Date(),
+        },
+        tx,
+      );
+    });
+
+    if (dto.status === PaymentStatus.PAID) {
+      const topUpContext = this.readWalletTopUpContext(payment);
+
+      await this.loyaltyWalletService!.applyWalletTopUp(
+        topUpContext,
+        Number(payment.amount),
+        payment.id,
+        dto.note?.trim() || 'Wallet top-up marked as paid by admin',
+        actorId,
+      );
+    }
+
+    await this.notificationsService.notifyPaymentStatusChanged(data.id);
+
+    return {
+      data,
+      message: `Payment marked as ${dto.status.toLowerCase()} successfully`,
     };
   }
 

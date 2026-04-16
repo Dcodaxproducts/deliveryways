@@ -81,6 +81,14 @@ export class UpdatePaymentStatusDto {
   note?: string;
 }
 
+export class AdminUpdatePaymentStatusDto extends UpdatePaymentStatusDto {
+  @ApiPropertyOptional({
+    enum: [PaymentStatus.PAID, PaymentStatus.FAILED, PaymentStatus.CANCELLED],
+  })
+  @IsEnum(PaymentStatus)
+  status!: PaymentStatus;
+}
+
 export class RefundPaymentDto {
   @ApiPropertyOptional({ description: 'Defaults to the source charge amount' })
   @IsOptional()

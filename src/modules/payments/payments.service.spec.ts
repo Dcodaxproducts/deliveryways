@@ -27,8 +27,8 @@ describe('PaymentsService', () => {
       restaurant: {
         findFirst: jest.fn(),
       },
-      $transaction: jest.fn(async (callback: (tx: unknown) => unknown) =>
-        callback({}),
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(callback({})),
       ),
     };
 
@@ -226,12 +226,8 @@ describe('PaymentsService', () => {
   });
 
   it('creates wallet top-up even when customer is not tied to a branch', async () => {
-    const {
-      service,
-      prisma,
-      paymentsRepository,
-      stripePaymentsService,
-    } = makeService();
+    const { service, prisma, paymentsRepository, stripePaymentsService } =
+      makeService();
 
     prisma.branch.findFirst.mockResolvedValue({
       id: 'branch-main-1',
@@ -290,5 +286,89 @@ describe('PaymentsService', () => {
       publishableKey: 'pk_test_123',
       paymentIntentId: 'pi_wallet_123',
     });
+  });
+
+  it('allows admin to fetch wallet top-up payment details', async () => {
+    const { service, paymentsRepository } = makeService();
+
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-wallet-1',
+      orderId: null,
+      restaurantId: 'restaurant-1',
+      providerData: {
+        customerId: 'customer-1',
+        target: 'WALLET_TOP_UP',
+      },
+    });
+
+    const result = await service.details(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'payment-wallet-1',
+    );
+
+    expect(result.message).toBe('Payment fetched successfully');
+    expect(result.data.id).toBe('payment-wallet-1');
+  });
+
+  it('lets admin mark wallet top-up paid and credit wallet once', async () => {
+    const {
+      service,
+      paymentsRepository,
+      loyaltyWalletService,
+      notificationsService,
+    } = makeService();
+
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-wallet-1',
+      orderId: null,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      amount: new Prisma.Decimal(500),
+      paymentMethod: PaymentMethod.STRIPE,
+      providerRef: 'pi_wallet_123',
+      providerData: {
+        customerId: 'customer-1',
+        target: 'WALLET_TOP_UP',
+      },
+      status: PaymentStatus.PENDING,
+      type: 'CHARGE',
+    });
+    paymentsRepository.updateStatus.mockResolvedValue({
+      id: 'payment-wallet-1',
+      status: PaymentStatus.PAID,
+    });
+
+    const result = await service.updateStatus(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'payment-wallet-1',
+      {
+        status: PaymentStatus.PAID,
+        note: 'Admin confirmed payment',
+      },
+    );
+
+    expect(loyaltyWalletService.applyWalletTopUp).toHaveBeenCalledWith(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      500,
+      'payment-wallet-1',
+      'Admin confirmed payment',
+      'admin-1',
+    );
+    expect(
+      notificationsService.notifyPaymentStatusChanged,
+    ).toHaveBeenCalledWith('payment-wallet-1');
+    expect(result.message).toBe('Payment marked as paid successfully');
   });
 });

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  Patch,
   Param,
   Post,
   Query,
@@ -23,6 +24,7 @@ import {
   TenantAccessGuard,
 } from '../../common/guards';
 import {
+  AdminUpdatePaymentStatusDto,
   CreatePaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
@@ -87,6 +89,25 @@ export class PaymentsController {
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.paymentsService.details(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Patch(':id/status')
+  @ApiOperation({
+    summary: 'Update payment status for order or wallet top-up transactions',
+  })
+  updateStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: AdminUpdatePaymentStatusDto,
+  ) {
+    return this.paymentsService.updateStatus(user, id, dto);
   }
 
   @ApiBearerAuth()
