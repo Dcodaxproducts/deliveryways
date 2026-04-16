@@ -388,6 +388,7 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.deliveryFee).toBe(150);
     expect(result.data.discountAmount).toBe(100);
     expect(result.data.totalAmount).toBe(550);
+    expect(result.data.payableAmount).toBe(550);
   });
 });
 
@@ -1175,9 +1176,17 @@ describe('OrdersService - wallet payment', () => {
   it('marks wallet-only orders as paid and awards loyalty points', async () => {
     const paymentTransactionCreate = jest.fn();
     const ordersRepository = {
-      create: jest
-        .fn()
-        .mockResolvedValue({ id: 'order-1', tenantId: 'tenant-1' }),
+      create: jest.fn().mockResolvedValue({
+        id: 'order-1',
+        tenantId: 'tenant-1',
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(500),
+        totalAmount: new Prisma.Decimal(0),
+      }),
     };
     const prisma = {
       restaurant: {
@@ -1245,7 +1254,7 @@ describe('OrdersService - wallet payment', () => {
         couponId: undefined,
       });
 
-    await service.create(
+    const result = await service.create(
       {
         uid: 'customer-1',
         tid: 'tenant-1',
@@ -1261,6 +1270,9 @@ describe('OrdersService - wallet payment', () => {
       },
     );
 
+    expect(result.data.totalAmount).toBe(500);
+    expect(result.data.payableAmount).toBe(0);
+    expect(result.data.walletAppliedAmount).toBe(500);
     expect(ordersRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentMethod: PaymentMethod.WALLET,

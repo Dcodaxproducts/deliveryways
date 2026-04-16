@@ -794,6 +794,32 @@ export class OrdersService {
     return null;
   }
 
+  private buildAmountSummary(amounts: {
+    subtotal: Prisma.Decimal;
+    taxAmount: Prisma.Decimal;
+    deliveryFee: Prisma.Decimal;
+    discountAmount: Prisma.Decimal;
+    loyaltyDiscountAmount?: Prisma.Decimal;
+    walletAppliedAmount?: Prisma.Decimal;
+    payableAmount: Prisma.Decimal;
+  }) {
+    const loyaltyDiscountAmount =
+      amounts.loyaltyDiscountAmount ?? new Prisma.Decimal(0);
+    const walletAppliedAmount =
+      amounts.walletAppliedAmount ?? new Prisma.Decimal(0);
+
+    return {
+      subtotal: Number(amounts.subtotal),
+      taxAmount: Number(amounts.taxAmount),
+      deliveryFee: Number(amounts.deliveryFee),
+      discountAmount: Number(amounts.discountAmount),
+      loyaltyDiscountAmount: Number(loyaltyDiscountAmount),
+      walletAppliedAmount: Number(walletAppliedAmount),
+      totalAmount: Number(amounts.payableAmount.plus(walletAppliedAmount)),
+      payableAmount: Number(amounts.payableAmount),
+    };
+  }
+
   private assertWalletPaymentCoverage(
     paymentMethod: string,
     quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
@@ -839,6 +865,16 @@ export class OrdersService {
     quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
     dto: QuoteOrderDto,
   ) {
+    const amountSummary = this.buildAmountSummary({
+      subtotal: quote.subtotal,
+      taxAmount: quote.taxAmount,
+      deliveryFee: quote.deliveryFee,
+      discountAmount: quote.discountAmount,
+      loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
+      walletAppliedAmount: quote.walletAppliedAmount,
+      payableAmount: quote.totalAmount,
+    });
+
     return {
       branchId: quote.branch.id,
       restaurantId: quote.branch.restaurantId,
@@ -846,14 +882,15 @@ export class OrdersService {
       orderType: dto.orderType,
       orderTime: dto.orderTime,
       isScheduled: this.isScheduledOrderTime(dto.orderTime),
-      subtotal: Number(quote.subtotal),
-      taxAmount: Number(quote.taxAmount),
-      deliveryFee: Number(quote.deliveryFee),
-      discountAmount: Number(quote.discountAmount),
-      walletAppliedAmount: Number(quote.walletAppliedAmount),
-      loyaltyDiscountAmount: Number(quote.loyaltyDiscountAmount),
+      subtotal: amountSummary.subtotal,
+      taxAmount: amountSummary.taxAmount,
+      deliveryFee: amountSummary.deliveryFee,
+      discountAmount: amountSummary.discountAmount,
+      walletAppliedAmount: amountSummary.walletAppliedAmount,
+      loyaltyDiscountAmount: amountSummary.loyaltyDiscountAmount,
       loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
-      totalAmount: Number(quote.totalAmount),
+      totalAmount: amountSummary.totalAmount,
+      payableAmount: amountSummary.payableAmount,
       couponCode: quote.appliedCouponCode,
       items: quote.lines.map((line) => ({
         menuItemId: line.menuItemId,
@@ -882,12 +919,46 @@ export class OrdersService {
     return scheduledAt.getTime() > Date.now();
   }
 
-  private toOrderMutationResponse<T extends { tenantId?: string | null }>(
-    order: T,
-  ): Omit<T, 'tenantId'> {
+  private toOrderMutationResponse<
+    T extends {
+      tenantId?: string | null;
+      subtotal?: Prisma.Decimal;
+      taxAmount?: Prisma.Decimal;
+      deliveryFee?: Prisma.Decimal;
+      discountAmount?: Prisma.Decimal;
+      loyaltyDiscountAmount?: Prisma.Decimal;
+      walletAppliedAmount?: Prisma.Decimal;
+      totalAmount?: Prisma.Decimal;
+    },
+  >(order: T): Omit<T, 'tenantId'> & { payableAmount?: number } {
     const rest = { ...order } as T & { tenantId?: string | null };
     delete rest.tenantId;
-    return rest;
+
+    const payableAmount = rest.totalAmount;
+    if (
+      rest.subtotal === undefined ||
+      rest.taxAmount === undefined ||
+      rest.deliveryFee === undefined ||
+      rest.discountAmount === undefined ||
+      rest.loyaltyDiscountAmount === undefined ||
+      rest.walletAppliedAmount === undefined ||
+      payableAmount === undefined
+    ) {
+      return rest;
+    }
+
+    return {
+      ...rest,
+      ...this.buildAmountSummary({
+        subtotal: rest.subtotal,
+        taxAmount: rest.taxAmount,
+        deliveryFee: rest.deliveryFee,
+        discountAmount: rest.discountAmount,
+        loyaltyDiscountAmount: rest.loyaltyDiscountAmount,
+        walletAppliedAmount: rest.walletAppliedAmount,
+        payableAmount,
+      }),
+    };
   }
 
   private async toOrderListResponse(order: {
@@ -904,6 +975,8 @@ export class OrdersService {
     taxAmount: Prisma.Decimal;
     deliveryFee: Prisma.Decimal;
     discountAmount: Prisma.Decimal;
+    walletAppliedAmount: Prisma.Decimal;
+    loyaltyDiscountAmount: Prisma.Decimal;
     totalAmount: Prisma.Decimal;
     customerNote: string | null;
     createdAt: Date;
@@ -1006,11 +1079,15 @@ export class OrdersService {
         (order.orderTime ? this.isScheduledOrderTime(order.orderTime) : false),
       status: order.status,
       paymentStatus: order.paymentStatus,
-      subtotal: Number(order.subtotal),
-      taxAmount: Number(order.taxAmount),
-      deliveryFee: Number(order.deliveryFee),
-      discountAmount: Number(order.discountAmount),
-      totalAmount: Number(order.totalAmount),
+      ...this.buildAmountSummary({
+        subtotal: order.subtotal,
+        taxAmount: order.taxAmount,
+        deliveryFee: order.deliveryFee,
+        discountAmount: order.discountAmount,
+        loyaltyDiscountAmount: order.loyaltyDiscountAmount,
+        walletAppliedAmount: order.walletAppliedAmount,
+        payableAmount: order.totalAmount,
+      }),
       customerNote: order.customerNote,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -1060,6 +1137,8 @@ export class OrdersService {
     taxAmount: Prisma.Decimal;
     deliveryFee: Prisma.Decimal;
     discountAmount: Prisma.Decimal;
+    walletAppliedAmount: Prisma.Decimal;
+    loyaltyDiscountAmount: Prisma.Decimal;
     totalAmount: Prisma.Decimal;
     customerNote: string | null;
     assignedAt: Date | null;
@@ -1199,11 +1278,15 @@ export class OrdersService {
         (order.orderTime ? this.isScheduledOrderTime(order.orderTime) : false),
       status: order.status,
       paymentStatus: order.paymentStatus,
-      subtotal: Number(order.subtotal),
-      taxAmount: Number(order.taxAmount),
-      deliveryFee: Number(order.deliveryFee),
-      discountAmount: Number(order.discountAmount),
-      totalAmount: Number(order.totalAmount),
+      ...this.buildAmountSummary({
+        subtotal: order.subtotal,
+        taxAmount: order.taxAmount,
+        deliveryFee: order.deliveryFee,
+        discountAmount: order.discountAmount,
+        loyaltyDiscountAmount: order.loyaltyDiscountAmount,
+        walletAppliedAmount: order.walletAppliedAmount,
+        payableAmount: order.totalAmount,
+      }),
       customerNote: order.customerNote,
       assignedAt: order.assignedAt,
       deliveredAt: order.deliveredAt,
