@@ -103,6 +103,9 @@ export class OrdersService {
 
   async create(user: AuthUserContext, dto: CreateOrderDto) {
     const quote = await this.buildQuote(user, dto);
+    const currency = await this.resolveRestaurantCurrency(
+      quote.branch.restaurantId,
+    );
 
     const branchSettings = this.readBranchSettings(quote.branch.settings);
     if (!this.isPaymentAllowed(branchSettings, dto.paymentMethod)) {
@@ -198,7 +201,7 @@ export class OrdersService {
             dto.paymentMethod,
             quote,
           ),
-          currency: 'PKR',
+          currency,
           processedAt,
           note:
             dto.paymentMethod === PaymentMethodEnum.WALLET
@@ -742,6 +745,53 @@ export class OrdersService {
     }
 
     return dto.walletAmount;
+  }
+
+  private async resolveRestaurantCurrency(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { settings: true },
+    });
+
+    return this.readRestaurantCurrency(restaurant?.settings) ?? 'PKR';
+  }
+
+  private readRestaurantCurrency(
+    settings: Prisma.JsonValue | null | undefined,
+  ) {
+    return (
+      this.readFirstJsonString(settings, [
+        ['currency'],
+        ['customerApp', 'currency'],
+        ['checkout', 'currency'],
+        ['payments', 'currency'],
+        ['defaultCurrency'],
+      ])?.toUpperCase() ?? null
+    );
+  }
+
+  private readFirstJsonString(
+    source: Prisma.JsonValue | null | undefined,
+    paths: string[][],
+  ) {
+    for (const path of paths) {
+      let current: unknown = source;
+
+      for (const key of path) {
+        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+          current = null;
+          break;
+        }
+
+        current = (current as Record<string, unknown>)[key];
+      }
+
+      if (typeof current === 'string' && current.trim().length > 0) {
+        return current.trim();
+      }
+    }
+
+    return null;
   }
 
   private assertWalletPaymentCoverage(

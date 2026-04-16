@@ -25,7 +25,7 @@ describe('PaymentsService', () => {
         findFirst: jest.fn(),
       },
       restaurant: {
-        findFirst: jest.fn(),
+        findUnique: jest.fn(),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback({})),
@@ -89,6 +89,9 @@ describe('PaymentsService', () => {
       paymentMethod: PaymentMethod.STRIPE,
       paymentStatus: PaymentStatus.PENDING,
     });
+    prisma.restaurant.findUnique.mockResolvedValue({
+      settings: { currency: 'USD' },
+    });
     paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue({
       id: 'payment-1',
       orderId: 'order-1',
@@ -115,6 +118,15 @@ describe('PaymentsService', () => {
     );
 
     expect(stripePaymentsService.createPaymentIntent).toHaveBeenCalled();
+    expect(paymentsRepository.updateStatus).toHaveBeenCalledWith(
+      'payment-1',
+      expect.objectContaining({
+        providerRef: 'pi_123',
+      }),
+    );
+    expect(stripePaymentsService.createPaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ currency: 'USD' }),
+    );
     expect(result.paymentSession).toEqual({
       provider: 'stripe',
       clientSecret: 'pi_123_secret_abc',
@@ -232,6 +244,9 @@ describe('PaymentsService', () => {
     prisma.branch.findFirst.mockResolvedValue({
       id: 'branch-main-1',
     });
+    prisma.restaurant.findUnique.mockResolvedValue({
+      settings: { currency: 'USD' },
+    });
     paymentsRepository.createUnchecked.mockResolvedValue({
       id: 'payment-wallet-1',
       providerData: {},
@@ -278,6 +293,7 @@ describe('PaymentsService', () => {
     expect(paymentsRepository.createUnchecked).toHaveBeenCalledWith(
       expect.objectContaining({
         branchId: 'branch-main-1',
+        currency: 'USD',
       }),
     );
     expect(result.paymentSession).toEqual({

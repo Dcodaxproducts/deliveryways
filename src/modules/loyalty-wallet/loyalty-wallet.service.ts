@@ -328,7 +328,7 @@ export class LoyaltyWalletService {
           type: WalletTransactionType.CREDIT,
           amount: creditedAmount,
           balanceAfter: nextBalance,
-          currency: payment?.currency ?? 'PKR',
+          currency: payment?.currency ?? walletAccount.currency,
           note: note?.trim() || 'Wallet top-up credited successfully',
           metadata: {
             source: 'STRIPE_TOP_UP',
@@ -343,7 +343,7 @@ export class LoyaltyWalletService {
         customerId: context.customerId,
         walletBalance: Number(nextBalance),
         creditedAmount: Number(creditedAmount),
-        currency: payment?.currency ?? 'PKR',
+        currency: payment?.currency ?? walletAccount.currency,
       };
     });
   }
@@ -791,7 +791,7 @@ export class LoyaltyWalletService {
                   : WalletTransactionType.PAYMENT_REVERSAL,
               amount: order.walletAppliedAmount,
               balanceAfter: nextBalance,
-              currency: 'PKR',
+              currency: walletAccount.currency,
               note: 'Wallet amount restored from order reversal',
               createdBy: actorId,
               updatedBy: actorId,
@@ -862,11 +862,17 @@ export class LoyaltyWalletService {
       ['customerApp', 'wallet', 'balance'],
       ['wallet', 'balance'],
     ]);
+    const restaurantCurrency = await this.resolveRestaurantCurrency(
+      context.restaurantId,
+      tx,
+    );
     const legacyCurrency =
       this.readString(metadata, [
         ['customerApp', 'wallet', 'currency'],
         ['wallet', 'currency'],
-      ]) ?? 'PKR';
+      ]) ??
+      restaurantCurrency ??
+      'PKR';
 
     return this.repository.createWalletAccount(
       {
@@ -877,6 +883,23 @@ export class LoyaltyWalletService {
         currency: legacyCurrency,
       },
       tx,
+    );
+  }
+
+  private async resolveRestaurantCurrency(restaurantId: string, tx?: PrismaTx) {
+    const restaurant = await this.repository.findRestaurantSettings(
+      restaurantId,
+      tx,
+    );
+
+    return (
+      this.readString(restaurant?.settings, [
+        ['currency'],
+        ['customerApp', 'currency'],
+        ['checkout', 'currency'],
+        ['payments', 'currency'],
+        ['defaultCurrency'],
+      ])?.toUpperCase() ?? null
     );
   }
 

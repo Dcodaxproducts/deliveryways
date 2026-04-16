@@ -62,6 +62,13 @@ export class LoyaltyWalletRepository {
     });
   }
 
+  findRestaurantSettings(restaurantId: string, tx?: PrismaTx) {
+    return this.client(tx).restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { settings: true },
+    });
+  }
+
   createWalletAccount(data: Prisma.WalletAccountCreateInput, tx?: PrismaTx) {
     return this.client(tx).walletAccount.create({ data });
   }

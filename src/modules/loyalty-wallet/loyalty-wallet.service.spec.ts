@@ -16,13 +16,14 @@ describe('LoyaltyWalletService', () => {
       createLoyaltyTransaction: jest.fn(),
       updateLoyaltyProgram: jest.fn(),
       findProfileMetadata: jest.fn(),
+      findRestaurantSettings: jest.fn(),
     };
 
     const prisma = {
       restaurant: {
         findFirst: jest.fn(),
       },
-      $transaction: jest.fn(async (callback: (tx: unknown) => unknown) =>
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         callback({}),
       ),
     };
@@ -165,9 +166,10 @@ describe('LoyaltyWalletService', () => {
     const { service } = makeService();
 
     await expect(
-      service.getLoyaltyProgramSettings(
-        { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
-      ),
+      service.getLoyaltyProgramSettings({
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

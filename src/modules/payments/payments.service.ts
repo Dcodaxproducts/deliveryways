@@ -68,8 +68,10 @@ export class PaymentsService {
     }
 
     const paymentMethod = dto.paymentMethod ?? order.paymentMethod;
-    const currency =
-      dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
+    const currency = await this.resolvePreferredCurrency(
+      order.restaurantId,
+      dto.currency,
+    );
 
     const existingPendingCharge =
       await this.paymentsRepository.findLatestPendingChargeByOrderId(order.id);
@@ -162,8 +164,10 @@ export class PaymentsService {
 
     const branchId = await this.resolveWalletTopUpBranchId(context);
 
-    const currency =
-      dto.currency ?? this.stripePaymentsService.getDefaultCurrency();
+    const currency = await this.resolvePreferredCurrency(
+      context.restaurantId,
+      dto.currency,
+    );
     const data = await this.paymentsRepository.createUnchecked({
       tenantId: context.tenantId,
       restaurantId: context.restaurantId,
@@ -247,6 +251,60 @@ export class PaymentsService {
     }
 
     return branch.id;
+  }
+
+  private async resolvePreferredCurrency(
+    restaurantId: string,
+    fallbackCurrency?: string,
+  ) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { settings: true },
+    });
+
+    return (
+      this.readRestaurantCurrency(restaurant?.settings) ??
+      fallbackCurrency?.trim().toUpperCase() ??
+      this.stripePaymentsService.getDefaultCurrency()
+    );
+  }
+
+  private readRestaurantCurrency(
+    settings: Prisma.JsonValue | null | undefined,
+  ) {
+    const value = this.readFirstJsonString(settings, [
+      ['currency'],
+      ['customerApp', 'currency'],
+      ['checkout', 'currency'],
+      ['payments', 'currency'],
+      ['defaultCurrency'],
+    ]);
+
+    return value?.toUpperCase() ?? null;
+  }
+
+  private readFirstJsonString(
+    source: Prisma.JsonValue | null | undefined,
+    paths: string[][],
+  ) {
+    for (const path of paths) {
+      let current: unknown = source;
+
+      for (const key of path) {
+        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+          current = null;
+          break;
+        }
+
+        current = (current as Record<string, unknown>)[key];
+      }
+
+      if (typeof current === 'string' && current.trim().length > 0) {
+        return current.trim();
+      }
+    }
+
+    return null;
   }
 
   async list(user: AuthUserContext, query: ListPaymentsDto) {

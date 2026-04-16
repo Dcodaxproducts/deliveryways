@@ -1180,6 +1180,11 @@ describe('OrdersService - wallet payment', () => {
         .mockResolvedValue({ id: 'order-1', tenantId: 'tenant-1' }),
     };
     const prisma = {
+      restaurant: {
+        findUnique: jest.fn().mockResolvedValue({
+          settings: { currency: 'USD' },
+        }),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(
           callback({
@@ -1270,6 +1275,7 @@ describe('OrdersService - wallet payment', () => {
           paymentMethod: PaymentMethod;
           status: PaymentStatus;
           amount: Prisma.Decimal;
+          currency: string;
         };
       },
     ];
@@ -1277,6 +1283,7 @@ describe('OrdersService - wallet payment', () => {
       PaymentMethod.WALLET,
     );
     expect(paymentTransactionArgs.data.status).toBe(PaymentStatus.PAID);
+    expect(paymentTransactionArgs.data.currency).toBe('USD');
     expect(
       paymentTransactionArgs.data.amount.equals(new Prisma.Decimal(500)),
     ).toBe(true);
@@ -1289,7 +1296,13 @@ describe('OrdersService - wallet payment', () => {
 
   it('rejects wallet payment when wallet balance is insufficient', async () => {
     const service = new OrdersService(
-      {} as never,
+      {
+        restaurant: {
+          findUnique: jest.fn().mockResolvedValue({
+            settings: { currency: 'USD' },
+          }),
+        },
+      } as never,
       {} as never,
       {} as never,
       {} as never,
