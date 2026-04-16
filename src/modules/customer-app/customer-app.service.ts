@@ -390,6 +390,9 @@ export class CustomerAppService {
           tagline: restaurant.tagline,
           bio: restaurant.bio,
         },
+        config: {
+          currency: this.readRestaurantCurrency(restaurant.settings),
+        },
         branch: branch
           ? {
               id: branch.id,
@@ -1212,6 +1215,16 @@ export class CustomerAppService {
     }
 
     return 0;
+  }
+
+  private readRestaurantCurrency(source: unknown): string | null {
+    return this.readStringValue(source, [
+      ['customerApp', 'currency'],
+      ['checkout', 'currency'],
+      ['payments', 'currency'],
+      ['currency'],
+      ['defaultCurrency'],
+    ]);
   }
 
   private readFaqs(source: unknown, paths: string[][]): FaqItem[] | null {

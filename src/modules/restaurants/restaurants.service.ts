@@ -93,7 +93,9 @@ export class RestaurantsService {
     );
 
     return {
-      data: await Promise.all(items.map((item) => this.withDeletionState(item))),
+      data: await Promise.all(
+        items.map((item) => this.withDeletionState(item)),
+      ),
       message: 'Restaurants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -107,7 +109,9 @@ export class RestaurantsService {
     );
 
     return {
-      data: await Promise.all(items.map((item) => this.withDeletionState(item))),
+      data: await Promise.all(
+        items.map((item) => this.withDeletionState(item)),
+      ),
       message: 'Public restaurants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -369,12 +373,14 @@ export class RestaurantsService {
     };
   }
 
-  private async withDeletionState<T extends {
-    deletedAt?: Date | null;
-    isActive?: boolean;
-    logoUrl?: string | null;
-    coverImage?: string | null;
-  }>(entity: T) {
+  private async withDeletionState<
+    T extends {
+      deletedAt?: Date | null;
+      isActive?: boolean;
+      logoUrl?: string | null;
+      coverImage?: string | null;
+    },
+  >(entity: T) {
     return {
       ...(await this.resolveRestaurantMedia(entity)),
       deletionState: {
@@ -427,7 +433,20 @@ export class RestaurantsService {
         ['faqs'],
       ]),
       supportContact: this.asObject(restaurant.supportContact),
+      config: {
+        currency: this.readRestaurantCurrency(restaurant.settings),
+      },
     };
+  }
+
+  private readRestaurantCurrency(settings: Prisma.JsonValue | null) {
+    return this.readStringValue(settings, [
+      ['customerApp', 'currency'],
+      ['checkout', 'currency'],
+      ['payments', 'currency'],
+      ['currency'],
+      ['defaultCurrency'],
+    ]);
   }
 
   private mergeCustomerAppContent(
@@ -637,10 +656,12 @@ export class RestaurantsService {
     return this.storageService.resolveViewUrl(this.normalizeMediaUrl(value));
   }
 
-  private async resolveRestaurantMedia<T extends {
-    logoUrl?: string | null;
-    coverImage?: string | null;
-  }>(restaurant: T) {
+  private async resolveRestaurantMedia<
+    T extends {
+      logoUrl?: string | null;
+      coverImage?: string | null;
+    },
+  >(restaurant: T) {
     return {
       ...restaurant,
       logoUrl: await this.resolveMediaUrl(restaurant.logoUrl ?? null),

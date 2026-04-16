@@ -102,21 +102,20 @@ export class OrdersService {
   }
 
   async create(user: AuthUserContext, dto: CreateOrderDto) {
-    const effectiveDto = this.toEffectiveCreateOrderDto(dto);
-    const quote = await this.buildQuote(user, effectiveDto);
+    const quote = await this.buildQuote(user, dto);
 
     const branchSettings = this.readBranchSettings(quote.branch.settings);
-    if (!this.isPaymentAllowed(branchSettings, effectiveDto.paymentMethod)) {
+    if (!this.isPaymentAllowed(branchSettings, dto.paymentMethod)) {
       throw new BadRequestException(
         'Payment method is not allowed for this branch',
       );
     }
 
-    this.assertWalletPaymentCoverage(effectiveDto.paymentMethod, quote);
+    this.assertWalletPaymentCoverage(dto.paymentMethod, quote);
 
     const customerId = quote.customer.customerId;
     const initialPaymentStatus = this.resolveInitialPaymentStatus(
-      effectiveDto.paymentMethod,
+      dto.paymentMethod,
       quote,
     );
 
@@ -132,13 +131,13 @@ export class OrdersService {
           coupon: quote.couponId
             ? { connect: { id: quote.couponId } }
             : undefined,
-          deliveryAddress: effectiveDto.deliveryAddressId
-            ? { connect: { id: effectiveDto.deliveryAddressId } }
+          deliveryAddress: dto.deliveryAddressId
+            ? { connect: { id: dto.deliveryAddressId } }
             : undefined,
-          orderType: effectiveDto.orderType,
-          paymentMethod: effectiveDto.paymentMethod,
-          orderTime: new Date(effectiveDto.orderTime),
-          isScheduled: this.isScheduledOrderTime(effectiveDto.orderTime),
+          orderType: dto.orderType,
+          paymentMethod: dto.paymentMethod,
+          orderTime: new Date(dto.orderTime),
+          isScheduled: this.isScheduledOrderTime(dto.orderTime),
           status: OrderStatus.PLACED,
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
@@ -150,7 +149,7 @@ export class OrdersService {
           totalAmount: quote.totalAmount,
           paymentStatus: initialPaymentStatus,
           paidAt: processedAt,
-          customerNote: effectiveDto.customerNote,
+          customerNote: dto.customerNote,
           items: {
             create: quote.lines.map((line) => ({
               menuItem: { connect: { id: line.menuItemId } },
@@ -192,17 +191,17 @@ export class OrdersService {
           tenantId: quote.branch.tenantId,
           restaurantId: quote.branch.restaurantId,
           branchId: quote.branch.id,
-          paymentMethod: effectiveDto.paymentMethod,
+          paymentMethod: dto.paymentMethod,
           type: PaymentTransactionType.CHARGE,
           status: initialPaymentStatus,
           amount: this.resolvePaymentTransactionAmount(
-            effectiveDto.paymentMethod,
+            dto.paymentMethod,
             quote,
           ),
           currency: 'PKR',
           processedAt,
           note:
-            effectiveDto.paymentMethod === PaymentMethodEnum.WALLET
+            dto.paymentMethod === PaymentMethodEnum.WALLET
               ? 'Order paid fully via wallet balance'
               : undefined,
         },
@@ -708,7 +707,10 @@ export class OrdersService {
       branchId: branch.id,
       subtotal,
       totalBeforeBenefits,
-      requestedWalletAmount: dto.walletAmount,
+      requestedWalletAmount: this.resolveRequestedWalletAmount(
+        dto,
+        totalBeforeBenefits,
+      ),
       requestedLoyaltyPoints: dto.loyaltyPoints,
     });
 
@@ -729,18 +731,17 @@ export class OrdersService {
     };
   }
 
-  private toEffectiveCreateOrderDto(dto: CreateOrderDto): CreateOrderDto {
-    if (
-      dto.paymentMethod !== PaymentMethodEnum.WALLET ||
-      dto.walletAmount !== undefined
-    ) {
-      return dto;
+  private resolveRequestedWalletAmount(
+    dto: Pick<CreateOrderDto | QuoteOrderDto, 'walletAmount'> & {
+      paymentMethod?: string;
+    },
+    totalBeforeBenefits: Prisma.Decimal,
+  ) {
+    if (dto.paymentMethod === PaymentMethodEnum.WALLET) {
+      return Number(totalBeforeBenefits.toDecimalPlaces(2));
     }
 
-    return {
-      ...dto,
-      walletAmount: Number.MAX_SAFE_INTEGER,
-    };
+    return dto.walletAmount;
   }
 
   private assertWalletPaymentCoverage(

@@ -8,6 +8,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { RestaurantsRepository } from './restaurants.repository';
 import { RestaurantsService } from './restaurants.service';
 import { TenantsService } from '../tenants/tenants.service';
+import { StorageService } from '../storage/storage.service';
 
 describe('RestaurantsService notification settings', () => {
   let service: RestaurantsService;
@@ -35,6 +36,15 @@ describe('RestaurantsService notification settings', () => {
           provide: TenantsService,
           useValue: {
             findById: jest.fn(),
+          },
+        },
+        {
+          provide: StorageService,
+          useValue: {
+            resolveViewUrl: jest.fn(
+              (value: string | null | undefined) => value ?? null,
+            ),
+            resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
           },
         },
       ],
@@ -84,6 +94,34 @@ describe('RestaurantsService notification settings', () => {
     expect(result.data.helpSupport).toBe('help');
     expect(result.data.faqs).toEqual([{ question: 'Q1', answer: 'A1' }]);
     expect(result.data.restaurantId).toBe('restaurant-1');
+    expect(result.data.config).toEqual({ currency: null });
+  });
+
+  it('returns customer app currency config when present in settings', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      name: 'Demo Restaurant',
+      slug: 'demo-restaurant',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      settings: {
+        customerApp: {
+          currency: 'AED',
+        },
+      },
+      supportContact: null,
+    });
+
+    const result = await service.customerAppContentFromContext({
+      role: UserRoleEnum.CUSTOMER,
+      rid: 'restaurant-1',
+    } as never);
+
+    expect(result.data.config).toEqual({ currency: 'AED' });
   });
 
   it('reads legacy top-level customer app content keys too', async () => {

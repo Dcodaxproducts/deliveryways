@@ -70,9 +70,9 @@ describe('CustomerAppService', () => {
 
     const storageService = {
       resolveViewUrl: jest.fn(
-        async (value: string | null | undefined) => value ?? null,
+        (value: string | null | undefined) => value ?? null,
       ),
-      resolveMediaUrlsDeep: jest.fn(async <T>(value: T) => value),
+      resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
     };
 
     const repository = {
@@ -283,6 +283,7 @@ describe('CustomerAppService', () => {
     expect(result.data.restaurant.coverImage).toBe(
       'https://cdn.example.com/restaurant-cover.png',
     );
+    expect(result.data.config).toEqual({ currency: null });
     expect(result.data.branch).toEqual({
       id: 'branch-1',
       name: 'Main Branch',
@@ -291,6 +292,36 @@ describe('CustomerAppService', () => {
       description: 'Downtown branch',
       tableReservationsEnabled: true,
     });
+  });
+
+  it('returns currency config on home screen when restaurant settings include it', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      settings: {
+        customerApp: {
+          currency: 'SAR',
+        },
+      },
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    repository.findBranchPublicContent.mockResolvedValue(null);
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(result.data.config).toEqual({ currency: 'SAR' });
   });
 
   it('uses customer token restaurant scope for privacy policy when query restaurantId is omitted', async () => {
