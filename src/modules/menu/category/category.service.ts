@@ -149,7 +149,29 @@ export class MenuCategoryService {
 
     await this.ensureCanAccessRestaurant(user, category.restaurantId);
 
-    const data = await this.categoryRepository.softDelete(id);
+    const [childrenCount, itemsCount] = await Promise.all([
+      this.categoryRepository.countChildren(id),
+      this.categoryRepository.countItems(id),
+    ]);
+
+    if (childrenCount > 0) {
+      throw new BadRequestException(
+        'Menu category cannot be permanently deleted while child categories exist',
+      );
+    }
+
+    if (itemsCount > 0) {
+      throw new BadRequestException(
+        'Menu category cannot be permanently deleted while menu items exist',
+      );
+    }
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      await this.categoryRepository.clearCouponScopes(id, tx);
+      await this.categoryRepository.deleteBranchOverrides(id, tx);
+      return this.categoryRepository.hardDelete(id, tx);
+    });
+
     return { data, message: 'Menu category deleted successfully' };
   }
 

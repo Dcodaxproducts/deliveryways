@@ -11,7 +11,11 @@ describe('MenuCategoryService', () => {
       findByRestaurantAndSlug: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
+      countChildren: jest.fn(),
+      countItems: jest.fn(),
+      clearCouponScopes: jest.fn(),
+      deleteBranchOverrides: jest.fn(),
+      hardDelete: jest.fn(),
     };
 
     const prisma = {
@@ -21,10 +25,13 @@ describe('MenuCategoryService', () => {
       menuCategory: {
         findFirst: jest.fn(),
       },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(callback({})),
+      ),
     };
 
     const storageService = {
-      resolveMediaUrlsDeep: jest.fn(async (value) => value),
+      resolveMediaUrlsDeep: jest.fn((value) => Promise.resolve(value)),
     };
 
     const service = new MenuCategoryService(
@@ -154,5 +161,64 @@ describe('MenuCategoryService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('hard deletes category after clearing simple references', async () => {
+    const { service, categoryRepository } = makeService();
+    categoryRepository.findById.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    categoryRepository.countChildren.mockResolvedValue(0);
+    categoryRepository.countItems.mockResolvedValue(0);
+    categoryRepository.hardDelete.mockResolvedValue({ id: 'category-1' });
+
+    const result = await service.remove(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'category-1',
+    );
+
+    expect(categoryRepository.clearCouponScopes).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(categoryRepository.deleteBranchOverrides).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(categoryRepository.hardDelete).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(result.message).toBe('Menu category deleted successfully');
+  });
+
+  it('blocks permanent category delete when items exist', async () => {
+    const { service, categoryRepository } = makeService();
+    categoryRepository.findById.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    categoryRepository.countChildren.mockResolvedValue(0);
+    categoryRepository.countItems.mockResolvedValue(2);
+
+    await expect(
+      service.remove(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'category-1',
+      ),
+    ).rejects.toThrow(
+      'Menu category cannot be permanently deleted while menu items exist',
+    );
   });
 });

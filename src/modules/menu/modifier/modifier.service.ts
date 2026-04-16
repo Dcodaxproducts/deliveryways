@@ -123,7 +123,12 @@ export class ModifierService {
 
     await this.ensureWriteAccess(user, group.restaurantId);
 
-    const data = await this.modifierRepository.softDeleteGroup(id);
+    const data = await this.prisma.$transaction(async (tx) => {
+      await this.modifierRepository.deleteGroupItemLinks(id, tx);
+      await this.modifierRepository.deleteGroupModifiers(id, tx);
+      return this.modifierRepository.hardDeleteGroup(id, tx);
+    });
+
     return { data, message: 'Modifier group deleted successfully' };
   }
 
@@ -226,7 +231,7 @@ export class ModifierService {
 
     await this.ensureWriteAccess(user, group.restaurantId);
 
-    const data = await this.modifierRepository.softDeleteModifier(id);
+    const data = await this.modifierRepository.hardDeleteModifier(id);
     return { data, message: 'Modifier deleted successfully' };
   }
 

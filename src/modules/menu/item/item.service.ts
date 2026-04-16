@@ -159,7 +159,24 @@ export class MenuItemService {
 
     await this.ensureCanAccessRestaurant(user, item.restaurantId);
 
-    const data = await this.itemRepository.softDelete(id);
+    const orderItemsCount = await this.itemRepository.countOrderItems(id);
+
+    if (orderItemsCount > 0) {
+      throw new BadRequestException(
+        'Menu item cannot be permanently deleted because it is used in orders',
+      );
+    }
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      await this.itemRepository.deleteMenuLinks(id, tx);
+      await this.itemRepository.deleteVariations(id, tx);
+      await this.itemRepository.deleteModifierLinks(id, tx);
+      await this.itemRepository.deleteBranchOverrides(id, tx);
+      await this.itemRepository.deleteRecipes(id, tx);
+      await this.itemRepository.clearCouponScopes(id, tx);
+      return this.itemRepository.hardDelete(id, tx);
+    });
+
     return { data, message: 'Menu item deleted successfully' };
   }
 

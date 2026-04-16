@@ -104,4 +104,33 @@ export class MenuCategoryRepository {
       data: { deletedAt: new Date(), isActive: false },
     });
   }
+
+  countChildren(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).menuCategory.count({
+      where: { parentCategoryId: categoryId },
+    });
+  }
+
+  countItems(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItem.count({
+      where: { categoryId },
+    });
+  }
+
+  clearCouponScopes(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).coupon.updateMany({
+      where: { scopeCategoryId: categoryId },
+      data: { scopeCategoryId: null },
+    });
+  }
+
+  deleteBranchOverrides(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).branchCategoryOverride.deleteMany({
+      where: { menuCategoryId: categoryId },
+    });
+  }
+
+  hardDelete(id: string, tx?: PrismaTx) {
+    return this.client(tx).menuCategory.delete({ where: { id } });
+  }
 }

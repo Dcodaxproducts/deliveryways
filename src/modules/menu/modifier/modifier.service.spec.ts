@@ -12,12 +12,19 @@ describe('ModifierService', () => {
       createModifier: jest.fn(),
       findModifierById: jest.fn(),
       updateModifier: jest.fn(),
+      deleteGroupItemLinks: jest.fn(),
+      deleteGroupModifiers: jest.fn(),
+      hardDeleteGroup: jest.fn(),
+      hardDeleteModifier: jest.fn(),
     };
 
     const prisma = {
       restaurant: {
         findFirst: jest.fn(),
       },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(callback({})),
+      ),
     };
 
     const service = new ModifierService(
@@ -114,5 +121,69 @@ describe('ModifierService', () => {
       'Extra Cheese',
     );
     expect(modifierRepository.createModifier).not.toHaveBeenCalled();
+  });
+
+  it('hard deletes modifier groups with linked config records', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.hardDeleteGroup.mockResolvedValue({ id: 'group-1' });
+
+    const result = await service.removeGroup(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'group-1',
+    );
+
+    expect(modifierRepository.deleteGroupItemLinks).toHaveBeenCalledWith(
+      'group-1',
+      expect.anything(),
+    );
+    expect(modifierRepository.deleteGroupModifiers).toHaveBeenCalledWith(
+      'group-1',
+      expect.anything(),
+    );
+    expect(modifierRepository.hardDeleteGroup).toHaveBeenCalledWith(
+      'group-1',
+      expect.anything(),
+    );
+    expect(result.message).toBe('Modifier group deleted successfully');
+  });
+
+  it('hard deletes modifiers directly', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findModifierById.mockResolvedValue({
+      id: 'modifier-1',
+      modifierGroupId: 'group-1',
+      deletedAt: null,
+    });
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.hardDeleteModifier.mockResolvedValue({
+      id: 'modifier-1',
+    });
+
+    const result = await service.removeModifier(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'modifier-1',
+    );
+
+    expect(modifierRepository.hardDeleteModifier).toHaveBeenCalledWith(
+      'modifier-1',
+    );
+    expect(result.message).toBe('Modifier deleted successfully');
   });
 });

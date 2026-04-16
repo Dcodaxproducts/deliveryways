@@ -12,7 +12,14 @@ describe('MenuItemService', () => {
       findByRestaurantAndSku: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
+      countOrderItems: jest.fn(),
+      deleteMenuLinks: jest.fn(),
+      deleteVariations: jest.fn(),
+      deleteModifierLinks: jest.fn(),
+      deleteBranchOverrides: jest.fn(),
+      deleteRecipes: jest.fn(),
+      clearCouponScopes: jest.fn(),
+      hardDelete: jest.fn(),
     };
 
     const prisma = {
@@ -22,14 +29,22 @@ describe('MenuItemService', () => {
       menuCategory: {
         findFirst: jest.fn(),
       },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(callback({})),
+      ),
+    };
+
+    const storageService = {
+      resolveMediaUrlsDeep: jest.fn((value) => Promise.resolve(value)),
     };
 
     const service = new MenuItemService(
       itemRepository as never,
       prisma as never,
+      storageService as never,
     );
 
-    return { service, itemRepository, prisma };
+    return { service, itemRepository, prisma, storageService };
   };
 
   it('rejects duplicate menu item slug before hitting the database', async () => {
@@ -122,5 +137,78 @@ describe('MenuItemService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('hard deletes menu item after clearing config references', async () => {
+    const { service, itemRepository } = makeService();
+    itemRepository.findById.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    itemRepository.countOrderItems.mockResolvedValue(0);
+    itemRepository.hardDelete.mockResolvedValue({ id: 'item-1' });
+
+    const result = await service.remove(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'item-1',
+    );
+
+    expect(itemRepository.deleteMenuLinks).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteVariations).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteModifierLinks).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteBranchOverrides).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteRecipes).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.clearCouponScopes).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.hardDelete).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(result.message).toBe('Menu item deleted successfully');
+  });
+
+  it('blocks permanent item delete when order history exists', async () => {
+    const { service, itemRepository } = makeService();
+    itemRepository.findById.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    itemRepository.countOrderItems.mockResolvedValue(1);
+
+    await expect(
+      service.remove(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'item-1',
+      ),
+    ).rejects.toThrow(
+      'Menu item cannot be permanently deleted because it is used in orders',
+    );
   });
 });

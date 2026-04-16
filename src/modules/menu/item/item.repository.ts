@@ -158,4 +158,51 @@ export class MenuItemRepository {
       data: { deletedAt: new Date(), isActive: false },
     });
   }
+
+  countOrderItems(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).orderItem.count({
+      where: { menuItemId },
+    });
+  }
+
+  deleteMenuLinks(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).restaurantMenuItem.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteVariations(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemVariation.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteModifierLinks(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemModifierGroup.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteBranchOverrides(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).branchMenuItemOverride.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteRecipes(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemRecipe.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  clearCouponScopes(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).coupon.updateMany({
+      where: { scopeMenuItemId: menuItemId },
+      data: { scopeMenuItemId: null },
+    });
+  }
+
+  hardDelete(id: string, tx?: PrismaTx) {
+    return this.client(tx).menuItem.delete({ where: { id } });
+  }
 }

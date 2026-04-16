@@ -117,6 +117,22 @@ export class ModifierRepository {
     });
   }
 
+  deleteGroupItemLinks(modifierGroupId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemModifierGroup.deleteMany({
+      where: { modifierGroupId },
+    });
+  }
+
+  deleteGroupModifiers(modifierGroupId: string, tx?: PrismaTx) {
+    return this.client(tx).modifier.deleteMany({
+      where: { modifierGroupId },
+    });
+  }
+
+  hardDeleteGroup(id: string, tx?: PrismaTx) {
+    return this.client(tx).modifierGroup.delete({ where: { id } });
+  }
+
   async createModifier(data: Prisma.ModifierCreateInput, tx?: PrismaTx) {
     return this.client(tx).modifier.create({ data });
   }
@@ -153,6 +169,10 @@ export class ModifierRepository {
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
     });
+  }
+
+  hardDeleteModifier(id: string, tx?: PrismaTx) {
+    return this.client(tx).modifier.delete({ where: { id } });
   }
 
   async attachGroupToItem(
