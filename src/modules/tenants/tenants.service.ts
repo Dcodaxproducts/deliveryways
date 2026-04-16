@@ -12,10 +12,14 @@ import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { TenantsRepository } from './tenants.repository';
 import { CreateTenantDto, UpdateTenantDto } from './dto';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class TenantsService {
-  constructor(private readonly tenantsRepository: TenantsRepository) {}
+  constructor(
+    private readonly tenantsRepository: TenantsRepository,
+    private readonly storageService: StorageService,
+  ) {}
 
   async create(dto: CreateTenantDto, tx?: PrismaTx) {
     return this.tenantsRepository.create(
@@ -63,7 +67,9 @@ export class TenantsService {
     }
 
     return {
-      data: this.withDeletionState(tenant),
+      data: await this.storageService.resolveMediaUrlsDeep(
+        this.withDeletionState(tenant),
+      ),
       message: 'Tenant fetched successfully',
     };
   }
@@ -80,7 +86,9 @@ export class TenantsService {
     );
 
     return {
-      data: items.map((item) => this.withDeletionState(item)),
+      data: await this.storageService.resolveMediaUrlsDeep(
+        items.map((item) => this.withDeletionState(item)),
+      ),
       message: 'Tenants fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -111,7 +119,9 @@ export class TenantsService {
     );
 
     return {
-      data: this.withDeletionState(data),
+      data: await this.storageService.resolveMediaUrlsDeep(
+        this.withDeletionState(data),
+      ),
       message: 'Tenant updated successfully',
     };
   }
@@ -160,10 +170,12 @@ export class TenantsService {
     };
   }
 
-  private withDeletionState<T extends {
-    deletedAt?: Date | null;
-    isActive?: boolean;
-  }>(entity: T) {
+  private withDeletionState<
+    T extends {
+      deletedAt?: Date | null;
+      isActive?: boolean;
+    },
+  >(entity: T) {
     return {
       ...entity,
       deletionState: {

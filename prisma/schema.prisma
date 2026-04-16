@@ -69,6 +69,7 @@ enum PaymentMethod {
   EASYPAISA
   JAZZCASH
   BANK_TRANSFER
+  WALLET
 }
 
 enum PaymentStatus {

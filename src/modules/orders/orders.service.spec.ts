@@ -1,6 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
+import { PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  OrderTypeEnum,
+  PaymentMethodEnum,
+  UserRoleEnum,
+} from '../../common/enums';
 import { OrdersService } from './orders.service';
 
 describe('OrdersService - delivery radius', () => {
@@ -1162,6 +1166,186 @@ describe('OrdersService - admin customer resolution', () => {
         },
         branch,
         'customer-9',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('OrdersService - wallet payment', () => {
+  it('marks wallet-only orders as paid and awards loyalty points', async () => {
+    const paymentTransactionCreate = jest.fn();
+    const ordersRepository = {
+      create: jest
+        .fn()
+        .mockResolvedValue({ id: 'order-1', tenantId: 'tenant-1' }),
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(
+          callback({
+            paymentTransaction: {
+              create: paymentTransactionCreate,
+            },
+          }),
+        ),
+      ),
+    };
+    const loyaltyWalletService = {
+      applyOrderBenefits: jest.fn(),
+      awardPointsForPaidOrder: jest.fn(),
+    };
+    const service = new OrdersService(
+      prisma as never,
+      ordersRepository as never,
+      { registerUsage: jest.fn() } as never,
+      { notifyOrderPlaced: jest.fn() } as never,
+      {} as never,
+      {
+        emitOrderCreated: jest.fn(),
+        emitOrderStatusChanged: jest.fn(),
+      } as never,
+      undefined,
+      loyaltyWalletService as never,
+    );
+
+    jest
+      .spyOn(
+        service as unknown as {
+          buildQuote: (user: unknown, dto: unknown) => Promise<unknown>;
+        },
+        'buildQuote',
+      )
+      .mockResolvedValue({
+        branch: {
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            ordering: {
+              allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+              allowedPaymentMethods: ['COD', 'STRIPE', 'WALLET'],
+            },
+          },
+        },
+        customer: { customerId: 'customer-1' },
+        lines: [],
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(500),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        loyaltyPointsRedeemed: 0,
+        totalAmount: new Prisma.Decimal(0),
+        couponId: undefined,
+      });
+
+    await service.create(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        paymentMethod: PaymentMethodEnum.WALLET,
+        items: [],
+        orderTime: '2026-04-16T12:00:00.000Z',
+      },
+    );
+
+    expect(ordersRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.WALLET,
+        paymentStatus: PaymentStatus.PAID,
+      }),
+      expect.anything(),
+    );
+    expect(paymentTransactionCreate).toHaveBeenCalled();
+    const [paymentTransactionArgs] = paymentTransactionCreate.mock.calls[0] as [
+      {
+        data: {
+          paymentMethod: PaymentMethod;
+          status: PaymentStatus;
+          amount: Prisma.Decimal;
+        };
+      },
+    ];
+    expect(paymentTransactionArgs.data.paymentMethod).toBe(
+      PaymentMethod.WALLET,
+    );
+    expect(paymentTransactionArgs.data.status).toBe(PaymentStatus.PAID);
+    expect(
+      paymentTransactionArgs.data.amount.equals(new Prisma.Decimal(500)),
+    ).toBe(true);
+    expect(loyaltyWalletService.awardPointsForPaidOrder).toHaveBeenCalledWith(
+      'order-1',
+      undefined,
+      'customer-1',
+    );
+  });
+
+  it('rejects wallet payment when wallet balance is insufficient', async () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      {} as never,
+    );
+
+    jest
+      .spyOn(
+        service as unknown as {
+          buildQuote: (user: unknown, dto: unknown) => Promise<unknown>;
+        },
+        'buildQuote',
+      )
+      .mockResolvedValue({
+        branch: {
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            ordering: {
+              allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+              allowedPaymentMethods: ['COD', 'STRIPE', 'WALLET'],
+            },
+          },
+        },
+        customer: { customerId: 'customer-1' },
+        lines: [],
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(300),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        loyaltyPointsRedeemed: 0,
+        totalAmount: new Prisma.Decimal(200),
+        couponId: undefined,
+      });
+
+    await expect(
+      service.create(
+        {
+          uid: 'customer-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        } as never,
+        {
+          branchId: 'branch-1',
+          orderType: OrderTypeEnum.DELIVERY,
+          paymentMethod: PaymentMethodEnum.WALLET,
+          items: [],
+          orderTime: '2026-04-16T12:00:00.000Z',
+        },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

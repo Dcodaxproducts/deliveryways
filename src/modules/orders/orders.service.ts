@@ -13,7 +13,11 @@ import {
   Prisma,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
+import {
+  OrderTypeEnum,
+  PaymentMethodEnum,
+  UserRoleEnum,
+} from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../../database';
@@ -98,18 +102,27 @@ export class OrdersService {
   }
 
   async create(user: AuthUserContext, dto: CreateOrderDto) {
-    const quote = await this.buildQuote(user, dto);
+    const effectiveDto = this.toEffectiveCreateOrderDto(dto);
+    const quote = await this.buildQuote(user, effectiveDto);
 
     const branchSettings = this.readBranchSettings(quote.branch.settings);
-    if (!this.isPaymentAllowed(branchSettings, dto.paymentMethod)) {
+    if (!this.isPaymentAllowed(branchSettings, effectiveDto.paymentMethod)) {
       throw new BadRequestException(
         'Payment method is not allowed for this branch',
       );
     }
 
+    this.assertWalletPaymentCoverage(effectiveDto.paymentMethod, quote);
+
     const customerId = quote.customer.customerId;
+    const initialPaymentStatus = this.resolveInitialPaymentStatus(
+      effectiveDto.paymentMethod,
+      quote,
+    );
 
     const data = await this.prisma.$transaction(async (tx) => {
+      const processedAt =
+        initialPaymentStatus === PaymentStatus.PAID ? new Date() : undefined;
       const order = await this.ordersRepository.create(
         {
           tenant: { connect: { id: quote.branch.tenantId } },
@@ -119,13 +132,13 @@ export class OrdersService {
           coupon: quote.couponId
             ? { connect: { id: quote.couponId } }
             : undefined,
-          deliveryAddress: dto.deliveryAddressId
-            ? { connect: { id: dto.deliveryAddressId } }
+          deliveryAddress: effectiveDto.deliveryAddressId
+            ? { connect: { id: effectiveDto.deliveryAddressId } }
             : undefined,
-          orderType: dto.orderType,
-          paymentMethod: dto.paymentMethod,
-          orderTime: new Date(dto.orderTime),
-          isScheduled: this.isScheduledOrderTime(dto.orderTime),
+          orderType: effectiveDto.orderType,
+          paymentMethod: effectiveDto.paymentMethod,
+          orderTime: new Date(effectiveDto.orderTime),
+          isScheduled: this.isScheduledOrderTime(effectiveDto.orderTime),
           status: OrderStatus.PLACED,
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
@@ -135,8 +148,9 @@ export class OrdersService {
           loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
           loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
           totalAmount: quote.totalAmount,
-          paymentStatus: PaymentStatus.PENDING,
-          customerNote: dto.customerNote,
+          paymentStatus: initialPaymentStatus,
+          paidAt: processedAt,
+          customerNote: effectiveDto.customerNote,
           items: {
             create: quote.lines.map((line) => ({
               menuItem: { connect: { id: line.menuItemId } },
@@ -178,11 +192,19 @@ export class OrdersService {
           tenantId: quote.branch.tenantId,
           restaurantId: quote.branch.restaurantId,
           branchId: quote.branch.id,
-          paymentMethod: dto.paymentMethod,
+          paymentMethod: effectiveDto.paymentMethod,
           type: PaymentTransactionType.CHARGE,
-          status: PaymentStatus.PENDING,
-          amount: quote.totalAmount,
+          status: initialPaymentStatus,
+          amount: this.resolvePaymentTransactionAmount(
+            effectiveDto.paymentMethod,
+            quote,
+          ),
           currency: 'PKR',
+          processedAt,
+          note:
+            effectiveDto.paymentMethod === PaymentMethodEnum.WALLET
+              ? 'Order paid fully via wallet balance'
+              : undefined,
         },
       });
 
@@ -197,6 +219,14 @@ export class OrdersService {
 
       return order;
     });
+
+    if (initialPaymentStatus === PaymentStatus.PAID) {
+      await this.loyaltyWalletService!.awardPointsForPaidOrder(
+        data.id,
+        undefined,
+        user.uid,
+      );
+    }
 
     await this.notificationsService.notifyOrderPlaced(data.id);
     await this.emitTrackingUpdate(data.id);
@@ -697,6 +727,61 @@ export class OrdersService {
       couponId,
       appliedCouponCode,
     };
+  }
+
+  private toEffectiveCreateOrderDto(dto: CreateOrderDto): CreateOrderDto {
+    if (
+      dto.paymentMethod !== PaymentMethodEnum.WALLET ||
+      dto.walletAmount !== undefined
+    ) {
+      return dto;
+    }
+
+    return {
+      ...dto,
+      walletAmount: Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  private assertWalletPaymentCoverage(
+    paymentMethod: string,
+    quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
+  ) {
+    if (paymentMethod !== 'WALLET') {
+      return;
+    }
+
+    if (quote.totalAmount.greaterThan(0)) {
+      throw new BadRequestException(
+        'Insufficient wallet balance for wallet payment',
+      );
+    }
+  }
+
+  private resolveInitialPaymentStatus(
+    paymentMethod: string,
+    quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
+  ) {
+    if (
+      paymentMethod === 'WALLET' &&
+      quote.totalAmount.equals(0) &&
+      quote.walletAppliedAmount.greaterThan(0)
+    ) {
+      return PaymentStatus.PAID;
+    }
+
+    return PaymentStatus.PENDING;
+  }
+
+  private resolvePaymentTransactionAmount(
+    paymentMethod: string,
+    quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
+  ) {
+    if (paymentMethod === 'WALLET') {
+      return quote.walletAppliedAmount;
+    }
+
+    return quote.totalAmount;
   }
 
   private toQuoteResponseData(
@@ -1382,7 +1467,9 @@ export class OrdersService {
     });
 
     const stages = this.getTrackingStages(order.orderType);
-    const activeStageIndex = stages.findIndex((stage) => stage === order.status);
+    const activeStageIndex = stages.findIndex(
+      (stage) => stage === order.status,
+    );
     const resolvedStageIndex = activeStageIndex >= 0 ? activeStageIndex : 0;
     const progressPercent = Math.round(
       ((resolvedStageIndex + 1) / stages.length) * 100,
@@ -1421,8 +1508,10 @@ export class OrdersService {
         address: branchAddress
           ? {
               ...branchAddress,
-              lat: branchAddress.lat !== null ? Number(branchAddress.lat) : null,
-              lng: branchAddress.lng !== null ? Number(branchAddress.lng) : null,
+              lat:
+                branchAddress.lat !== null ? Number(branchAddress.lat) : null,
+              lng:
+                branchAddress.lng !== null ? Number(branchAddress.lng) : null,
             }
           : null,
       },
@@ -1783,6 +1872,10 @@ export class OrdersService {
     settings: BranchSettings,
     paymentMethod: string,
   ): boolean {
+    if (paymentMethod === 'WALLET') {
+      return true;
+    }
+
     return settings.allowedPaymentMethods.includes(paymentMethod);
   }
 
@@ -1822,7 +1915,7 @@ export class OrdersService {
   private readBranchSettings(input: unknown): BranchSettings {
     const fallback: BranchSettings = {
       allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
-      allowedPaymentMethods: ['COD'],
+      allowedPaymentMethods: ['COD', 'WALLET'],
       deliveryConfig: {
         radiusKm: 5,
         minOrderAmount: 0,

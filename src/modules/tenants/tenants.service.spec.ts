@@ -15,17 +15,26 @@ describe('TenantsService', () => {
       getDeleteSummary: jest.fn(),
       forceDelete: jest.fn(),
     };
+    const storageService = {
+      resolveMediaUrlsDeep: jest.fn(
+        <T>(value: T): Promise<T> => Promise.resolve(value),
+      ),
+    };
 
-    const service = new TenantsService(tenantsRepository as never);
+    const service = new TenantsService(
+      tenantsRepository as never,
+      storageService as never,
+    );
 
     return {
       service,
       tenantsRepository,
+      storageService,
     };
   };
 
   it('returns tenant details for super admin by id', async () => {
-    const { service, tenantsRepository } = makeService();
+    const { service, tenantsRepository, storageService } = makeService();
     tenantsRepository.findDetailsById.mockResolvedValue({
       id: 'tenant-1',
       name: 'Tenant One',
@@ -45,16 +54,17 @@ describe('TenantsService', () => {
 
     expect(tenantsRepository.findDetailsById).toHaveBeenCalledWith('tenant-1');
     expect(result.message).toBe('Tenant fetched successfully');
-    expect(result.data).toEqual(
-      expect.objectContaining({
-        id: 'tenant-1',
-        slug: 'tenant-one',
-        deletionState: expect.objectContaining({
-          isDeleted: false,
-          isActive: true,
-        }),
-      }),
+    expect(storageService.resolveMediaUrlsDeep).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'tenant-1' }),
     );
+    expect(result.data).toMatchObject({
+      id: 'tenant-1',
+      slug: 'tenant-one',
+      deletionState: {
+        isDeleted: false,
+        isActive: true,
+      },
+    });
   });
 
   it('blocks non-super-admin users from tenant details', async () => {

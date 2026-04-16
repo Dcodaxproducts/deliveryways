@@ -4,4 +4,5 @@ export enum PaymentMethodEnum {
   EASYPAISA = 'EASYPAISA',
   JAZZCASH = 'JAZZCASH',
   BANK_TRANSFER = 'BANK_TRANSFER',
+  WALLET = 'WALLET',
 }
