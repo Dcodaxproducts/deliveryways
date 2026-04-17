@@ -494,10 +494,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmailIncludingDeleted(
-      dto.email,
-      dto.restaurantId,
-    );
+    const user = await this.resolveLoginUser(dto);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -514,7 +511,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const loginDeletionState = await this.resolveRecoverableLoginState(user);
+    const loginDeletionState = this.resolveRecoverableLoginState(user);
 
     if (user.role === 'BUSINESS_ADMIN' && !user.isApproved) {
       throw new ForbiddenException(
@@ -563,17 +560,12 @@ export class AuthService {
         },
         deletionState: loginDeletionState,
       }),
-      message:
-        loginDeletionState?.message ??
-        'Login successful',
+      message: loginDeletionState?.message ?? 'Login successful',
     };
   }
 
   async cancelDeletionByLogin(dto: CancelDeletionByLoginDto) {
-    const user = await this.usersService.findByEmailIncludingDeleted(
-      dto.email,
-      dto.restaurantId,
-    );
+    const user = await this.resolveLoginUser(dto);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -590,7 +582,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (!user.deletedAt || !user.deleteAfter || user.deleteAfter <= new Date()) {
+    if (
+      !user.deletedAt ||
+      !user.deleteAfter ||
+      user.deleteAfter <= new Date()
+    ) {
       throw new BadRequestException('Account is not scheduled for deletion');
     }
 
@@ -1211,31 +1207,33 @@ export class AuthService {
       }
 
       return {
-        data: await this.resolveMediaResponse(this.withDeletionState({
-          id: staff.id,
-          email: staff.email,
-          role: UserRoleEnum.STAFF,
-          actorType: 'STAFF',
-          ownerUserId: staff.ownerUserId,
-          staffRoleId: staff.staffRoleId,
-          panelType: staff.panelType,
-          tenantId: staff.tenantId,
-          restaurantId: staff.restaurantId,
-          branchId: staff.branchId,
-          isVerified: staff.isVerified,
-          isApproved: staff.isApproved,
-          isGuest: false,
-          profile: {
-            firstName: staff.firstName,
-            lastName: staff.lastName,
-            phone: staff.phone,
-            avatarUrl: staff.avatarUrl,
-            bio: staff.bio,
-          },
-          staffRole: staff.staffRole,
-          isActive: staff.isActive,
-          deletedAt: staff.deletedAt,
-        })),
+        data: await this.resolveMediaResponse(
+          this.withDeletionState({
+            id: staff.id,
+            email: staff.email,
+            role: UserRoleEnum.STAFF,
+            actorType: 'STAFF',
+            ownerUserId: staff.ownerUserId,
+            staffRoleId: staff.staffRoleId,
+            panelType: staff.panelType,
+            tenantId: staff.tenantId,
+            restaurantId: staff.restaurantId,
+            branchId: staff.branchId,
+            isVerified: staff.isVerified,
+            isApproved: staff.isApproved,
+            isGuest: false,
+            profile: {
+              firstName: staff.firstName,
+              lastName: staff.lastName,
+              phone: staff.phone,
+              avatarUrl: staff.avatarUrl,
+              bio: staff.bio,
+            },
+            staffRole: staff.staffRole,
+            isActive: staff.isActive,
+            deletedAt: staff.deletedAt,
+          }),
+        ),
         message: 'Current user context fetched',
       };
     }
@@ -1249,27 +1247,29 @@ export class AuthService {
       }
 
       return {
-        data: await this.resolveMediaResponse(this.withDeletionState({
-          id: deliveryman.id,
-          email: deliveryman.email,
-          role: 'DELIVERYMAN',
-          actorType: 'DELIVERYMAN',
-          tenantId: deliveryman.tenantId,
-          restaurantId: deliveryman.restaurantId,
-          branchId: deliveryman.branchId,
-          isVerified: true,
-          isApproved: true,
-          isGuest: false,
-          profile: {
-            firstName: deliveryman.firstName,
-            lastName: deliveryman.lastName,
-            phone: deliveryman.phone,
-            avatarUrl: null,
-            bio: null,
-          },
-          isActive: deliveryman.isActive,
-          deletedAt: deliveryman.deletedAt,
-        })),
+        data: await this.resolveMediaResponse(
+          this.withDeletionState({
+            id: deliveryman.id,
+            email: deliveryman.email,
+            role: 'DELIVERYMAN',
+            actorType: 'DELIVERYMAN',
+            tenantId: deliveryman.tenantId,
+            restaurantId: deliveryman.restaurantId,
+            branchId: deliveryman.branchId,
+            isVerified: true,
+            isApproved: true,
+            isGuest: false,
+            profile: {
+              firstName: deliveryman.firstName,
+              lastName: deliveryman.lastName,
+              phone: deliveryman.phone,
+              avatarUrl: null,
+              bio: null,
+            },
+            isActive: deliveryman.isActive,
+            deletedAt: deliveryman.deletedAt,
+          }),
+        ),
         message: 'Current user context fetched',
       };
     }
@@ -1282,22 +1282,24 @@ export class AuthService {
     await this.assertAssignedBranchContext(dbUser);
 
     return {
-      data: await this.resolveMediaResponse(this.withDeletionState({
-        id: dbUser.id,
-        email: dbUser.email,
-        role: dbUser.role,
-        actorType: 'USER',
-        tenantId: dbUser.tenantId,
-        restaurantId: dbUser.restaurantId,
-        branchId: dbUser.branchId,
-        isVerified: dbUser.isVerified,
-        isApproved: dbUser.isApproved,
-        isGuest: dbUser.isGuest,
-        profile: dbUser.profile,
-        isActive: dbUser.isActive,
-        deletedAt: dbUser.deletedAt,
-        deleteAfter: dbUser.deleteAfter,
-      })),
+      data: await this.resolveMediaResponse(
+        this.withDeletionState({
+          id: dbUser.id,
+          email: dbUser.email,
+          role: dbUser.role,
+          actorType: 'USER',
+          tenantId: dbUser.tenantId,
+          restaurantId: dbUser.restaurantId,
+          branchId: dbUser.branchId,
+          isVerified: dbUser.isVerified,
+          isApproved: dbUser.isApproved,
+          isGuest: dbUser.isGuest,
+          profile: dbUser.profile,
+          isActive: dbUser.isActive,
+          deletedAt: dbUser.deletedAt,
+          deleteAfter: dbUser.deleteAfter,
+        }),
+      ),
       message: 'Current user context fetched',
     };
   }
@@ -1497,7 +1499,7 @@ export class AuthService {
     }
 
     if (
-      dbUser.role === UserRoleEnum.BRANCH_ADMIN &&
+      dbUser.role === 'BRANCH_ADMIN' &&
       dbUser.branchId &&
       dbUser.tenantId &&
       dbUser.restaurantId
@@ -1527,9 +1529,7 @@ export class AuthService {
     }
 
     if (!didRecover) {
-      throw new BadRequestException(
-        'Account is not scheduled for deletion',
-      );
+      throw new BadRequestException('Account is not scheduled for deletion');
     }
 
     return {
@@ -1538,7 +1538,7 @@ export class AuthService {
     };
   }
 
-  private async resolveRecoverableLoginState(user: {
+  private resolveRecoverableLoginState(user: {
     deletedAt: Date | null;
     deleteAfter?: Date | null;
   }) {
@@ -1627,11 +1627,13 @@ export class AuthService {
     return payload;
   }
 
-  private withDeletionState<T extends {
-    deletedAt?: Date | null;
-    deleteAfter?: Date | null;
-    isActive?: boolean;
-  }>(entity: T) {
+  private withDeletionState<
+    T extends {
+      deletedAt?: Date | null;
+      deleteAfter?: Date | null;
+      isActive?: boolean;
+    },
+  >(entity: T) {
     const deletionState = entity.deletedAt
       ? {
           isDeleted: true,
@@ -1655,6 +1657,31 @@ export class AuthService {
     };
   }
 
+  private async resolveLoginUser(dto: {
+    email: string;
+    restaurantId?: string;
+  }) {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+
+    if (dto.restaurantId) {
+      return this.usersService.findByEmailIncludingDeleted(
+        normalizedEmail,
+        dto.restaurantId,
+      );
+    }
+
+    const candidates = await this.usersService.findManyForDevResolution({
+      email: normalizedEmail,
+      includeDeleted: true,
+    });
+
+    const preferredUser = candidates.find(
+      (candidate) => candidate.role !== 'CUSTOMER',
+    );
+
+    return preferredUser ?? candidates[0] ?? null;
+  }
+
   private async assertAssignedBranchContext(user: {
     role: string;
     id: string;
@@ -1663,7 +1690,7 @@ export class AuthService {
     branchId: string | null;
   }) {
     if (
-      user.role !== UserRoleEnum.BRANCH_ADMIN ||
+      user.role !== 'BRANCH_ADMIN' ||
       !user.branchId ||
       !user.restaurantId ||
       !user.tenantId

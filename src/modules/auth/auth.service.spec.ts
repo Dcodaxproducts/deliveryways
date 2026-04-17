@@ -1,4 +1,9 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UserRoleEnum } from '../../common/enums';
 import { UsersService } from '../users/users.service';
@@ -281,6 +286,127 @@ describe('AuthService updateMyProfile', () => {
         { firstName: 'Nope' },
       ),
     ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('AuthService login', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+  let jwtService: {
+    signAsync: jest.Mock;
+  };
+
+  beforeEach(() => {
+    usersService = {
+      findManyForDevResolution: jest.fn(),
+      findByEmailIncludingDeleted: jest.fn(),
+      setRefreshTokenHash: jest.fn(),
+    };
+
+    jwtService = {
+      signAsync: jest.fn().mockResolvedValue('token-value'),
+    };
+
+    jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+    jest
+      .spyOn(bcrypt, 'hash')
+      .mockResolvedValue('hashed-refresh-token' as never);
+
+    service = new AuthService(
+      {
+        branch: {
+          findFirst: jest.fn(),
+        },
+      } as never,
+      jwtService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {
+        update: jest.fn(),
+      } as never,
+    );
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('prefers non-customer account when login email is shared with customer profiles', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'shared@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.CUSTOMER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isGuest: false,
+        isActive: true,
+        deletedAt: null,
+        profile: null,
+      },
+      {
+        id: 'business-admin-1',
+        email: 'shared@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isVerified: true,
+        isApproved: true,
+        isGuest: false,
+        isActive: true,
+        deletedAt: null,
+        profile: null,
+      },
+    ]);
+
+    const result = await service.login({
+      email: 'shared@example.com',
+      password: 'Admin@123456',
+    });
+
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith({
+      email: 'shared@example.com',
+      includeDeleted: true,
+    });
+    expect(result.data.user.role).toBe(UserRoleEnum.BUSINESS_ADMIN);
+    expect(result.data.user.restaurantId).toBeNull();
+    expect(result.data.user.branchId).toBeNull();
+  });
+
+  it('still requires restaurantId for customer-only login', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.CUSTOMER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isGuest: false,
+        isActive: true,
+        deletedAt: null,
+        profile: null,
+      },
+    ]);
+
+    await expect(
+      service.login({
+        email: 'customer@example.com',
+        password: 'Customer@123',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });
 
