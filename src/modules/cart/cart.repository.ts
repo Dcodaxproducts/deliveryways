@@ -174,6 +174,9 @@ export class CartRepository {
                     deletedAt: null,
                     isActive: true,
                   },
+                  include: {
+                    itemPriceOverrides: true,
+                  },
                 },
               },
             },
@@ -224,6 +227,9 @@ export class CartRepository {
               include: {
                 modifiers: {
                   where: { deletedAt: null, isActive: true },
+                  include: {
+                    itemPriceOverrides: true,
+                  },
                   orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                 },
               },

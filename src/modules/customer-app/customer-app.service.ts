@@ -1099,6 +1099,7 @@ export class CustomerAppService {
       id: string;
       name: string;
       description: string | null;
+      requiredModifierId?: string | null;
       price: Prisma.Decimal;
       isDefault: boolean;
     }>;
@@ -1114,6 +1115,10 @@ export class CustomerAppService {
           id: string;
           name: string;
           priceDelta: Prisma.Decimal;
+          itemPriceOverrides?: Array<{
+            menuItemId: string;
+            priceDelta: Prisma.Decimal;
+          }>;
         }>;
       };
     }>;
@@ -1157,7 +1162,10 @@ export class CustomerAppService {
         modifiers: link.modifierGroup.modifiers.map((modifier) => ({
           id: modifier.id,
           name: modifier.name,
-          priceDelta: modifier.priceDelta,
+          priceDelta:
+            modifier.itemPriceOverrides?.find(
+              (itemOverride) => itemOverride.menuItemId === item.id,
+            )?.priceDelta ?? modifier.priceDelta,
         })),
       })),
       isAvailable: branchOverride?.isAvailable ?? true,

@@ -29,26 +29,43 @@ export class MenuItemService {
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     await this.validateCategory(restaurantId, dto.categoryId);
+    await this.assertModifierOverridesBelongToRestaurant(
+      restaurantId,
+      dto.modifierPriceOverrides,
+    );
 
     const slug = this.normalizeRequiredString(dto.slug, 'slug');
     const sku = this.resolveOptionalString(dto.sku);
     await this.assertUniqueFields(restaurantId, { slug, sku });
 
-    const data = await this.itemRepository.create({
-      restaurant: { connect: { id: restaurantId } },
-      category: { connect: { id: dto.categoryId } },
-      name: dto.name,
-      slug,
-      description: dto.description,
-      ingredients: dto.ingredients,
-      nutritionalInformation: dto.nutritionalInformation,
-      imageUrl: dto.imageUrl,
-      sku,
-      basePrice: new Prisma.Decimal(dto.basePrice),
-      prepTimeMinutes: dto.prepTimeMinutes,
-      dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
-      allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
-      isActive: dto.isActive ?? true,
+    const data = await this.prisma.$transaction(async (tx) => {
+      const created = await this.itemRepository.create(
+        {
+          restaurant: { connect: { id: restaurantId } },
+          category: { connect: { id: dto.categoryId } },
+          name: dto.name,
+          slug,
+          description: dto.description,
+          ingredients: dto.ingredients,
+          nutritionalInformation: dto.nutritionalInformation,
+          imageUrl: dto.imageUrl,
+          sku,
+          basePrice: new Prisma.Decimal(dto.basePrice),
+          prepTimeMinutes: dto.prepTimeMinutes,
+          dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
+          allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
+          isActive: dto.isActive ?? true,
+        },
+        tx,
+      );
+
+      await this.syncModifierPriceOverrides(
+        created.id,
+        dto.modifierPriceOverrides,
+        tx,
+      );
+
+      return created;
     });
 
     return {
@@ -121,6 +138,10 @@ export class MenuItemService {
     if (dto.categoryId) {
       await this.validateCategory(item.restaurantId, dto.categoryId);
     }
+    await this.assertModifierOverridesBelongToRestaurant(
+      item.restaurantId,
+      dto.modifierPriceOverrides,
+    );
 
     const slug =
       dto.slug !== undefined
@@ -130,25 +151,41 @@ export class MenuItemService {
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
     await this.assertUniqueFields(item.restaurantId, { slug, sku }, id);
 
-    const data = await this.itemRepository.update(id, {
-      category: dto.categoryId
-        ? { connect: { id: dto.categoryId } }
-        : undefined,
-      name: dto.name,
-      slug,
-      description: dto.description,
-      ingredients: dto.ingredients,
-      nutritionalInformation: dto.nutritionalInformation,
-      imageUrl: dto.imageUrl,
-      sku,
-      basePrice:
-        dto.basePrice !== undefined
-          ? new Prisma.Decimal(dto.basePrice)
-          : undefined,
-      prepTimeMinutes: dto.prepTimeMinutes,
-      dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
-      allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
-      isActive: dto.isActive,
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updated = await this.itemRepository.update(
+        id,
+        {
+          category: dto.categoryId
+            ? { connect: { id: dto.categoryId } }
+            : undefined,
+          name: dto.name,
+          slug,
+          description: dto.description,
+          ingredients: dto.ingredients,
+          nutritionalInformation: dto.nutritionalInformation,
+          imageUrl: dto.imageUrl,
+          sku,
+          basePrice:
+            dto.basePrice !== undefined
+              ? new Prisma.Decimal(dto.basePrice)
+              : undefined,
+          prepTimeMinutes: dto.prepTimeMinutes,
+          dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
+          allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
+          isActive: dto.isActive,
+        },
+        tx,
+      );
+
+      if (dto.modifierPriceOverrides !== undefined) {
+        await this.syncModifierPriceOverrides(
+          id,
+          dto.modifierPriceOverrides,
+          tx,
+        );
+      }
+
+      return updated;
     });
 
     return {
@@ -366,6 +403,55 @@ export class MenuItemService {
     if (!category) {
       throw new BadRequestException('Category not found in restaurant');
     }
+  }
+
+  private async assertModifierOverridesBelongToRestaurant(
+    restaurantId: string,
+    overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
+  ) {
+    if (!overrides?.length) {
+      return;
+    }
+
+    const modifierIds = [...new Set(overrides.map((item) => item.modifierId))];
+    const count = await this.prisma.modifier.count({
+      where: {
+        id: { in: modifierIds },
+        deletedAt: null,
+        modifierGroup: {
+          restaurantId,
+          deletedAt: null,
+        },
+      },
+    });
+
+    if (count !== modifierIds.length) {
+      throw new BadRequestException(
+        'One or more modifier price overrides are invalid for this restaurant',
+      );
+    }
+  }
+
+  private async syncModifierPriceOverrides(
+    menuItemId: string,
+    overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
+    tx: Prisma.TransactionClient,
+  ) {
+    await tx.menuItemModifierPriceOverride.deleteMany({
+      where: { menuItemId },
+    });
+
+    if (!overrides?.length) {
+      return;
+    }
+
+    await tx.menuItemModifierPriceOverride.createMany({
+      data: overrides.map((item) => ({
+        menuItemId,
+        modifierId: item.modifierId,
+        priceDelta: new Prisma.Decimal(item.priceDelta),
+      })),
+    });
   }
 
   private async resolveMediaResponse<T>(data: T) {

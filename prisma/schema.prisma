@@ -443,6 +443,7 @@ model MenuCategory {
   parent       MenuCategory?            @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
   children     MenuCategory[]           @relation("MenuCategoryTree")
   items        MenuItem[]
+  modifierLinks MenuCategoryModifierGroup[]
   overrides    BranchCategoryOverride[]
   couponScopes Coupon[]
 
@@ -475,6 +476,7 @@ model MenuItem {
   menuLinks       RestaurantMenuItem[]
   variations      MenuItemVariation[]
   modifierLinks   MenuItemModifierGroup[]
+  modifierPriceOverrides MenuItemModifierPriceOverride[]
   branchOverrides BranchMenuItemOverride[]
   recipes         MenuItemRecipe[]
   couponScopes    Coupon[]
@@ -525,6 +527,7 @@ model MenuItemVariation {
   menuItemId  String    @map("menu_item_id")
   name        String
   description String?
+  requiredModifierId String? @map("required_modifier_id")
   sku         String?
   price       Decimal   @default(0) @db.Decimal(10, 2)
   sortOrder   Int       @default(0) @map("sort_order")
@@ -534,10 +537,24 @@ model MenuItemVariation {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItem          MenuItem   @relation(fields: [menuItemId], references: [id])
+  requiredModifier  Modifier?  @relation(fields: [requiredModifierId], references: [id])
 
   @@unique([menuItemId, name])
   @@map("menu_item_variations")
+}
+
+model MenuCategoryModifierGroup {
+  id              String @id @default(cuid())
+  categoryId      String @map("category_id")
+  modifierGroupId String @map("modifier_group_id")
+  sortOrder       Int    @default(0) @map("sort_order")
+
+  category      MenuCategory  @relation(fields: [categoryId], references: [id])
+  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+
+  @@unique([categoryId, modifierGroupId])
+  @@map("menu_category_modifier_groups")
 }
 
 model ModifierGroup {
@@ -557,6 +574,7 @@ model ModifierGroup {
   restaurant Restaurant              @relation(fields: [restaurantId], references: [id])
   modifiers  Modifier[]
   itemLinks  MenuItemModifierGroup[]
+  categoryLinks MenuCategoryModifierGroup[]
 
   @@unique([restaurantId, name])
   @@map("modifier_groups")
@@ -573,7 +591,9 @@ model Modifier {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+  modifierGroup       ModifierGroup                   @relation(fields: [modifierGroupId], references: [id])
+  itemPriceOverrides  MenuItemModifierPriceOverride[]
+  requiredByVariations MenuItemVariation[]
 
   @@unique([modifierGroupId, name])
   @@map("modifiers")
@@ -590,6 +610,19 @@ model MenuItemModifierGroup {
 
   @@unique([menuItemId, modifierGroupId])
   @@map("menu_item_modifier_groups")
+}
+
+model MenuItemModifierPriceOverride {
+  id         String  @id @default(cuid())
+  menuItemId String  @map("menu_item_id")
+  modifierId String  @map("modifier_id")
+  priceDelta Decimal @default(0) @map("price_delta") @db.Decimal(10, 2)
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+  modifier Modifier @relation(fields: [modifierId], references: [id])
+
+  @@unique([menuItemId, modifierId])
+  @@map("menu_item_modifier_price_overrides")
 }
 
 model BranchMenuItemOverride {

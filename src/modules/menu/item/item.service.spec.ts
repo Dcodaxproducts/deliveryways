@@ -29,8 +29,18 @@ describe('MenuItemService', () => {
       menuCategory: {
         findFirst: jest.fn(),
       },
+      modifier: {
+        count: jest.fn(),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-        Promise.resolve(callback({})),
+        Promise.resolve(
+          callback({
+            menuItemModifierPriceOverride: {
+              deleteMany: jest.fn(),
+              createMany: jest.fn(),
+            },
+          }),
+        ),
       ),
     };
 
@@ -216,6 +226,7 @@ describe('MenuItemService', () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    prisma.modifier.count.mockResolvedValue(0);
     itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
     itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
     itemRepository.create.mockImplementation((data: unknown) => data);
@@ -242,6 +253,7 @@ describe('MenuItemService', () => {
         ingredients: 'Chicken, bun, mayo',
         nutritionalInformation: '520 kcal',
       }),
+      expect.anything(),
     );
     expect(result.data).toEqual(
       expect.objectContaining({

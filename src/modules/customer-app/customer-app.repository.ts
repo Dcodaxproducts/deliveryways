@@ -61,7 +61,9 @@ export class CustomerAppRepository {
                   profile: {
                     is: {
                       OR: [
-                        { firstName: { contains: search, mode: 'insensitive' } },
+                        {
+                          firstName: { contains: search, mode: 'insensitive' },
+                        },
                         { lastName: { contains: search, mode: 'insensitive' } },
                         { phone: { contains: search, mode: 'insensitive' } },
                       ],
@@ -166,6 +168,9 @@ export class CustomerAppRepository {
                 include: {
                   modifiers: {
                     where: { deletedAt: null, isActive: true },
+                    include: {
+                      itemPriceOverrides: true,
+                    },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
                 },
@@ -404,6 +409,9 @@ export class CustomerAppRepository {
                 include: {
                   modifiers: {
                     where: { deletedAt: null, isActive: true },
+                    include: {
+                      itemPriceOverrides: true,
+                    },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
                 },
@@ -474,6 +482,9 @@ export class CustomerAppRepository {
               include: {
                 modifiers: {
                   where: { deletedAt: null, isActive: true },
+                  include: {
+                    itemPriceOverrides: true,
+                  },
                   orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                 },
               },
@@ -541,6 +552,9 @@ export class CustomerAppRepository {
               include: {
                 modifiers: {
                   where: { deletedAt: null, isActive: true },
+                  include: {
+                    itemPriceOverrides: true,
+                  },
                   orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                 },
               },

@@ -12,6 +12,17 @@ import {
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
 
+export class MenuItemModifierPriceOverrideDto {
+  @ApiProperty()
+  @IsString()
+  modifierId!: string;
+
+  @ApiProperty()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  priceDelta!: number;
+}
+
 export class CreateMenuItemDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -83,6 +94,13 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: [MenuItemModifierPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemModifierPriceOverrideDto)
+  modifierPriceOverrides?: MenuItemModifierPriceOverrideDto[];
 }
 
 export class BulkCreateMenuItemsDto {
@@ -168,6 +186,13 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: [MenuItemModifierPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemModifierPriceOverrideDto)
+  modifierPriceOverrides?: MenuItemModifierPriceOverrideDto[];
 }
 
 export class ListMenuItemsDto extends QueryDto {

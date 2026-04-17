@@ -537,6 +537,9 @@ export class OrdersService {
                 include: {
                   modifiers: {
                     where: { deletedAt: null, isActive: true },
+                    include: {
+                      itemPriceOverrides: true,
+                    },
                   },
                 },
               },
@@ -573,6 +576,10 @@ export class OrdersService {
           : menuItem.basePrice);
 
       let variationName: string | undefined;
+      const selectedModifierIds = new Set(
+        (requestedItem.modifiers ?? []).map((modifier) => modifier.modifierId),
+      );
+
       if (requestedItem.variationId) {
         const variation = menuItem.variations.find(
           (v) => v.id === requestedItem.variationId,
@@ -580,6 +587,14 @@ export class OrdersService {
         if (!variation) {
           throw new BadRequestException(
             `Variation not found for item: ${menuItem.name}`,
+          );
+        }
+        if (
+          variation.requiredModifierId &&
+          !selectedModifierIds.has(variation.requiredModifierId)
+        ) {
+          throw new BadRequestException(
+            `Variation not available for selected modifiers: ${menuItem.name}`,
           );
         }
         variationName = variation.name;
@@ -593,6 +608,7 @@ export class OrdersService {
           const found = this.findModifier(
             menuItem.modifierLinks,
             requestedModifier.modifierId,
+            menuItem.id,
           );
 
           if (!found) {
@@ -1417,6 +1433,9 @@ export class OrdersService {
                   include: {
                     modifiers: {
                       where: { deletedAt: null, isActive: true },
+                      include: {
+                        itemPriceOverrides: true,
+                      },
                       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                     },
                   },
@@ -2029,17 +2048,33 @@ export class OrdersService {
   private findModifier(
     links: {
       modifierGroup: {
-        modifiers: { id: string; name: string; priceDelta: Prisma.Decimal }[];
+        modifiers: {
+          id: string;
+          name: string;
+          priceDelta: Prisma.Decimal;
+          itemPriceOverrides?: {
+            menuItemId: string;
+            priceDelta: Prisma.Decimal;
+          }[];
+        }[];
       };
     }[],
     modifierId: string,
+    menuItemId?: string,
   ) {
     for (const link of links) {
       const found = link.modifierGroup.modifiers.find(
         (modifier) => modifier.id === modifierId,
       );
       if (found) {
-        return found;
+        const override = found.itemPriceOverrides?.find(
+          (item) => item.menuItemId === menuItemId,
+        );
+
+        return {
+          ...found,
+          priceDelta: override?.priceDelta ?? found.priceDelta,
+        };
       }
     }
 

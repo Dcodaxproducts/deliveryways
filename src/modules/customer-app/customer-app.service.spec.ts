@@ -39,6 +39,12 @@ describe('CustomerAppService', () => {
               id: 'modifier-1',
               name: 'Extra Cheese',
               priceDelta: 100,
+              itemPriceOverrides: [
+                {
+                  menuItemId: 'item-1',
+                  priceDelta: 150,
+                },
+              ],
             },
           ],
         },
@@ -224,7 +230,7 @@ describe('CustomerAppService', () => {
           {
             id: 'modifier-1',
             name: 'Extra Cheese',
-            priceDelta: 100,
+            priceDelta: 150,
           },
         ],
       },

@@ -34,6 +34,10 @@ export class MenuVariationService {
     await this.ensureRestaurantWriteAccess(user, item.restaurantId);
 
     return this.prisma.$transaction(async (tx) => {
+      if (dto.requiredModifierId) {
+        await this.assertModifierBelongsToItem(dto.requiredModifierId, item.id);
+      }
+
       if (dto.isDefault) {
         await this.variationRepository.resetDefaults(dto.menuItemId, tx);
       }
@@ -43,6 +47,9 @@ export class MenuVariationService {
           menuItem: { connect: { id: dto.menuItemId } },
           name: dto.name,
           description: dto.description,
+          requiredModifier: dto.requiredModifierId
+            ? { connect: { id: dto.requiredModifierId } }
+            : undefined,
           sku: dto.sku,
           price: new Prisma.Decimal(dto.price),
           sortOrder: dto.sortOrder ?? 0,
@@ -90,6 +97,13 @@ export class MenuVariationService {
     await this.ensureRestaurantWriteAccess(user, item.restaurantId);
 
     return this.prisma.$transaction(async (tx) => {
+      if (dto.requiredModifierId !== undefined) {
+        await this.assertOptionalModifierBelongsToItem(
+          dto.requiredModifierId,
+          item.id,
+        );
+      }
+
       if (dto.isDefault) {
         await this.variationRepository.resetDefaults(variation.menuItemId, tx);
       }
@@ -99,6 +113,11 @@ export class MenuVariationService {
         {
           name: dto.name,
           description: dto.description,
+          requiredModifier: dto.requiredModifierId
+            ? { connect: { id: dto.requiredModifierId } }
+            : dto.requiredModifierId === null
+              ? { disconnect: true }
+              : undefined,
           sku: dto.sku,
           price:
             dto.price !== undefined ? new Prisma.Decimal(dto.price) : undefined,
@@ -192,5 +211,40 @@ export class MenuVariationService {
         'You cannot access resources outside your tenant restaurants',
       );
     }
+  }
+
+  private async assertModifierBelongsToItem(
+    modifierId: string,
+    menuItemId: string,
+  ) {
+    const link = await this.prisma.menuItemModifierGroup.findFirst({
+      where: {
+        menuItemId,
+        modifierGroup: {
+          modifiers: {
+            some: {
+              id: modifierId,
+              deletedAt: null,
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!link) {
+      throw new NotFoundException('Required modifier not found for menu item');
+    }
+  }
+
+  private async assertOptionalModifierBelongsToItem(
+    modifierId: string | undefined,
+    menuItemId: string,
+  ) {
+    if (!modifierId) {
+      return;
+    }
+
+    await this.assertModifierBelongsToItem(modifierId, menuItemId);
   }
 }

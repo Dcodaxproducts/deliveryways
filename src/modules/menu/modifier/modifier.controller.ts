@@ -143,4 +143,38 @@ export class ModifierController {
   ) {
     return this.modifierService.attachGroupToItem(user, itemId, groupId, dto);
   }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('categories/:categoryId/modifier-groups')
+  listCategoryModifierGroups(
+    @CurrentUser() user: AuthUserContext,
+    @Param('categoryId') categoryId: string,
+  ) {
+    return this.modifierService.listCategoryGroups(user, categoryId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('categories/:categoryId/modifier-groups/:groupId')
+  attachModifierGroupToCategory(
+    @CurrentUser() user: AuthUserContext,
+    @Param('categoryId') categoryId: string,
+    @Param('groupId') groupId: string,
+    @Body() dto: AttachModifierGroupDto,
+  ) {
+    return this.modifierService.attachGroupToCategory(
+      user,
+      categoryId,
+      groupId,
+      dto,
+    );
+  }
 }

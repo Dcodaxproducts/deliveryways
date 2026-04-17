@@ -666,6 +666,8 @@ export class CartService {
                       id: selectedVariation.id,
                       name: selectedVariation.name,
                       price: selectedVariation.price,
+                      requiredModifierId:
+                        selectedVariation.requiredModifierId ?? null,
                     }
                   : null,
                 modifierGroups: menuItem.modifierLinks.map((link) => ({
@@ -678,7 +680,10 @@ export class CartService {
                   modifiers: link.modifierGroup.modifiers.map((modifier) => ({
                     id: modifier.id,
                     name: modifier.name,
-                    priceDelta: modifier.priceDelta,
+                    priceDelta:
+                      modifier.itemPriceOverrides?.find(
+                        (item) => item.menuItemId === menuItem.id,
+                      )?.priceDelta ?? modifier.priceDelta,
                   })),
                 })),
               }
@@ -863,6 +868,16 @@ export class CartService {
       if (!variation) {
         throw new BadRequestException(
           `Variation not found for item: ${menuItem.name}`,
+        );
+      }
+      if (
+        variation.requiredModifierId &&
+        !(dto.modifiers ?? []).some(
+          (modifier) => modifier.modifierId === variation.requiredModifierId,
+        )
+      ) {
+        throw new BadRequestException(
+          `Variation not available for selected modifiers: ${menuItem.name}`,
         );
       }
     }

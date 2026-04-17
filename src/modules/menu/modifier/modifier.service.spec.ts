@@ -12,6 +12,8 @@ describe('ModifierService', () => {
       createModifier: jest.fn(),
       findModifierById: jest.fn(),
       updateModifier: jest.fn(),
+      attachGroupToCategory: jest.fn(),
+      listCategoryGroups: jest.fn(),
       deleteGroupItemLinks: jest.fn(),
       deleteGroupModifiers: jest.fn(),
       hardDeleteGroup: jest.fn(),
@@ -21,6 +23,9 @@ describe('ModifierService', () => {
     const prisma = {
       restaurant: {
         findFirst: jest.fn(),
+      },
+      menuCategory: {
+        findUnique: jest.fn(),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback({})),
@@ -185,5 +190,42 @@ describe('ModifierService', () => {
       'modifier-1',
     );
     expect(result.message).toBe('Modifier deleted successfully');
+  });
+
+  it('attaches modifier group to category in same restaurant', async () => {
+    const { service, modifierRepository, prisma } = makeService();
+    prisma.menuCategory.findUnique.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.attachGroupToCategory.mockResolvedValue({
+      id: 'link-1',
+    });
+
+    const result = await service.attachGroupToCategory(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'category-1',
+      'group-1',
+      { sortOrder: 1 },
+    );
+
+    expect(modifierRepository.attachGroupToCategory).toHaveBeenCalledWith(
+      'category-1',
+      'group-1',
+      1,
+    );
+    expect(result.message).toBe(
+      'Modifier group attached to category successfully',
+    );
   });
 });

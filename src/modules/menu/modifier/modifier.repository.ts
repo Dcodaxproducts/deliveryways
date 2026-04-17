@@ -196,4 +196,43 @@ export class ModifierRepository {
       },
     });
   }
+
+  async attachGroupToCategory(
+    categoryId: string,
+    modifierGroupId: string,
+    sortOrder: number,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).menuCategoryModifierGroup.upsert({
+      where: {
+        categoryId_modifierGroupId: {
+          categoryId,
+          modifierGroupId,
+        },
+      },
+      update: { sortOrder },
+      create: {
+        categoryId,
+        modifierGroupId,
+        sortOrder,
+      },
+    });
+  }
+
+  listCategoryGroups(categoryId: string) {
+    return this.prisma.menuCategoryModifierGroup.findMany({
+      where: { categoryId },
+      orderBy: [{ sortOrder: 'asc' }, { modifierGroup: { sortOrder: 'asc' } }],
+      include: {
+        modifierGroup: {
+          include: {
+            modifiers: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
+        },
+      },
+    });
+  }
 }

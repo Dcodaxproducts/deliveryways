@@ -270,6 +270,60 @@ export class ModifierService {
     return { data, message: 'Modifier group attached to item successfully' };
   }
 
+  async attachGroupToCategory(
+    user: AuthUserContext,
+    categoryId: string,
+    groupId: string,
+    dto: AttachModifierGroupDto,
+  ) {
+    const category = await this.prisma.menuCategory.findUnique({
+      where: { id: categoryId },
+    });
+    if (!category || category.deletedAt) {
+      throw new NotFoundException('Menu category not found');
+    }
+
+    const group = await this.modifierRepository.findGroupById(groupId);
+    if (!group || group.deletedAt) {
+      throw new NotFoundException('Modifier group not found');
+    }
+
+    if (category.restaurantId !== group.restaurantId) {
+      throw new BadRequestException(
+        'Menu category and modifier group must belong to the same restaurant',
+      );
+    }
+
+    await this.ensureWriteAccess(user, category.restaurantId);
+
+    const data = await this.modifierRepository.attachGroupToCategory(
+      categoryId,
+      groupId,
+      dto.sortOrder ?? 0,
+    );
+
+    return {
+      data,
+      message: 'Modifier group attached to category successfully',
+    };
+  }
+
+  async listCategoryGroups(user: AuthUserContext, categoryId: string) {
+    const category = await this.prisma.menuCategory.findUnique({
+      where: { id: categoryId },
+    });
+    if (!category || category.deletedAt) {
+      throw new NotFoundException('Menu category not found');
+    }
+
+    await this.ensureReadAccess(user, category.restaurantId);
+
+    return {
+      data: await this.modifierRepository.listCategoryGroups(categoryId),
+      message: 'Category modifier groups fetched successfully',
+    };
+  }
+
   private normalizeName(value: string) {
     const normalized = value.trim();
 
@@ -363,6 +417,27 @@ export class ModifierService {
     }
 
     throw new ForbiddenException('Insufficient permissions for modifier write');
+  }
+
+  private async ensureReadAccess(user: AuthUserContext, restaurantId: string) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return;
+    }
+
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return;
+    }
+
+    if (user.rid !== restaurantId) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
   }
 
   private async assertRestaurantInTenant(

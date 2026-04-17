@@ -127,6 +127,9 @@ export class MenuItemRepository {
                 include: {
                   modifiers: {
                     where: { deletedAt: null },
+                    include: {
+                      itemPriceOverrides: true,
+                    },
                     orderBy: { sortOrder: 'asc' },
                   },
                 },
