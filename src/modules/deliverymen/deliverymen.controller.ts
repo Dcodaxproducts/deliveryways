@@ -65,6 +65,32 @@ export class DeliverymenController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/location')
+  @ApiOperation({ summary: 'Update deliveryman live location' })
+  updateMyLocation(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateDeliverymanLocationDto,
+  ) {
+    return this.deliverymenService.updateMyLocation(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/status')
+  @ApiOperation({
+    summary: 'Update deliveryman own availability status',
+  })
+  updateMyStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateMyDeliverymanStatusDto,
+  ) {
+    return this.deliverymenService.updateMyStatus(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -122,32 +148,6 @@ export class DeliverymenController {
     @Body() dto: AssignDeliverymanOrderDto,
   ) {
     return this.deliverymenService.assignOrder(user, id, dto);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.DELIVERYMAN)
-  @Patch('me/location')
-  @ApiOperation({ summary: 'Update deliveryman live location' })
-  updateMyLocation(
-    @CurrentUser() user: AuthUserContext,
-    @Body() dto: UpdateDeliverymanLocationDto,
-  ) {
-    return this.deliverymenService.updateMyLocation(user, dto);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.DELIVERYMAN)
-  @Patch('me/status')
-  @ApiOperation({
-    summary: 'Update deliveryman own availability status',
-  })
-  updateMyStatus(
-    @CurrentUser() user: AuthUserContext,
-    @Body() dto: UpdateMyDeliverymanStatusDto,
-  ) {
-    return this.deliverymenService.updateMyStatus(user, dto);
   }
 
   @ApiBearerAuth()
