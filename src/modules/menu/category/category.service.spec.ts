@@ -221,4 +221,65 @@ describe('MenuCategoryService', () => {
       'Menu category cannot be permanently deleted while menu items exist',
     );
   });
+
+  it('includes category-level modifier groups in list responses', async () => {
+    const { service, categoryRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    categoryRepository.list.mockResolvedValue({
+      items: [
+        {
+          id: 'category-1',
+          name: 'Burgers',
+          slug: 'burgers',
+          modifierLinks: [
+            {
+              sortOrder: 1,
+              modifierGroup: {
+                id: 'group-1',
+                name: 'Size',
+                description: 'Choose size',
+                minSelect: 1,
+                maxSelect: 1,
+                isRequired: true,
+                modifiers: [
+                  {
+                    id: 'modifier-1',
+                    name: 'Large',
+                    priceDelta: 0,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        modifierGroups: [
+          expect.objectContaining({
+            id: 'group-1',
+            name: 'Size',
+          }),
+        ],
+      }),
+    );
+  });
 });

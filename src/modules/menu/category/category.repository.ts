@@ -81,6 +81,19 @@ export class MenuCategoryRepository {
         ],
         include: {
           parent: { select: { id: true, name: true } },
+          modifierLinks: {
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              modifierGroup: {
+                include: {
+                  modifiers: {
+                    where: { deletedAt: null, isActive: true },
+                    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                  },
+                },
+              },
+            },
+          },
           _count: { select: { children: true, items: true } },
         },
       }),

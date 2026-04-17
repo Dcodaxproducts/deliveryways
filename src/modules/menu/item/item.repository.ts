@@ -100,7 +100,25 @@ export class MenuItemRepository {
             },
           },
           category: {
-            select: { id: true, name: true, slug: true, imageUrl: true },
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              imageUrl: true,
+              modifierLinks: {
+                orderBy: [{ sortOrder: 'asc' }],
+                include: {
+                  modifierGroup: {
+                    include: {
+                      modifiers: {
+                        where: { deletedAt: null, isActive: true },
+                        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           menuLinks: {
             where: { ...(query.includeInactive ? {} : { isActive: true }) },

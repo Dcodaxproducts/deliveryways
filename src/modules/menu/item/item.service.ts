@@ -121,7 +121,9 @@ export class MenuItemService {
     );
 
     return {
-      data: await this.resolveMediaResponse(items),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.withCategoryModifierGroups(item)),
+      ),
       message: 'Menu items fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -456,5 +458,56 @@ export class MenuItemService {
 
   private async resolveMediaResponse<T>(data: T) {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
+  }
+
+  private withCategoryModifierGroups<T extends { category?: unknown }>(
+    item: T,
+  ) {
+    const rawCategory = item.category;
+
+    if (
+      !rawCategory ||
+      typeof rawCategory !== 'object' ||
+      Array.isArray(rawCategory)
+    ) {
+      return item;
+    }
+
+    const category = rawCategory as {
+      modifierLinks?: Array<{
+        sortOrder: number;
+        modifierGroup: {
+          id: string;
+          name: string;
+          description?: string | null;
+          minSelect: number;
+          maxSelect: number;
+          isRequired: boolean;
+          modifiers: Array<{
+            id: string;
+            name: string;
+            priceDelta: Prisma.Decimal;
+          }>;
+        };
+      }>;
+    };
+
+    return {
+      ...item,
+      categoryModifierGroups: (category.modifierLinks ?? []).map((link) => ({
+        id: link.modifierGroup.id,
+        name: link.modifierGroup.name,
+        description: link.modifierGroup.description ?? null,
+        minSelect: link.modifierGroup.minSelect,
+        maxSelect: link.modifierGroup.maxSelect,
+        isRequired: link.modifierGroup.isRequired,
+        sortOrder: link.sortOrder,
+        modifiers: link.modifierGroup.modifiers.map((modifier) => ({
+          id: modifier.id,
+          name: modifier.name,
+          priceDelta: modifier.priceDelta,
+        })),
+      })),
+    };
   }
 }
