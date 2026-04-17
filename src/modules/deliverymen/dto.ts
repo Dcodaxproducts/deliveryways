@@ -115,10 +115,16 @@ export class UpdateDeliverymanDto {
   isActive?: boolean;
 }
 
+const DELIVERYMAN_STATUS_INPUTS = [
+  ...Object.values(DeliverymanStatus),
+  'ONLINE',
+  'OFFLINE',
+] as const;
+
 export class UpdateDeliverymanStatusDto {
-  @ApiProperty({ enum: DeliverymanStatus })
-  @IsEnum(DeliverymanStatus)
-  status!: DeliverymanStatus;
+  @ApiProperty({ enum: DELIVERYMAN_STATUS_INPUTS })
+  @IsIn(DELIVERYMAN_STATUS_INPUTS)
+  status!: DeliverymanStatus | 'ONLINE' | 'OFFLINE';
 }
 
 export class AssignDeliverymanOrderDto {

@@ -147,10 +147,32 @@ export class DeliverymenService {
     id: string,
     dto: UpdateDeliverymanStatusDto,
   ) {
+    if (user.role === 'DELIVERYMAN') {
+      if (user.uid !== id) {
+        throw new ForbiddenException(
+          'Deliverymen can only update their own status',
+        );
+      }
+
+      const availabilityStatus =
+        dto.status === 'ONLINE'
+          ? DeliverymanStatus.AVAILABLE
+          : DeliverymanStatus.OFFLINE;
+
+      const data = await this.deliverymenRepository.update(id, {
+        status: availabilityStatus,
+      });
+
+      return {
+        data: this.withDeletionState(data),
+        message: 'Deliveryman availability updated successfully',
+      };
+    }
+
     await this.getAccessibleDeliveryman(user, id);
 
     const data = await this.deliverymenRepository.update(id, {
-      status: dto.status,
+      status: dto.status as DeliverymanStatus,
       isActive: dto.status === DeliverymanStatus.INACTIVE ? false : undefined,
     });
 

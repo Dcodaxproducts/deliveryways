@@ -188,7 +188,9 @@ describe('DeliverymenService', () => {
     expect(repository.update).toHaveBeenCalledWith('dm-1', {
       status: DeliverymanStatus.AVAILABLE,
     });
-    expect(result.message).toBe('Deliveryman availability updated successfully');
+    expect(result.message).toBe(
+      'Deliveryman availability updated successfully',
+    );
   });
 
   it('allows deliveryman to set own status offline', async () => {
@@ -210,5 +212,45 @@ describe('DeliverymenService', () => {
     expect(repository.update).toHaveBeenCalledWith('dm-1', {
       status: DeliverymanStatus.OFFLINE,
     });
+  });
+
+  it('allows deliveryman to update own status through id route with online payload', async () => {
+    repository.update!.mockResolvedValue({
+      ...deliveryman,
+      status: DeliverymanStatus.AVAILABLE,
+    });
+
+    const result = await service.updateStatus(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      'dm-1',
+      {
+        status: 'ONLINE',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith('dm-1', {
+      status: DeliverymanStatus.AVAILABLE,
+    });
+    expect(result.message).toBe(
+      'Deliveryman availability updated successfully',
+    );
+  });
+
+  it('blocks deliveryman from updating another deliveryman status through id route', async () => {
+    await expect(
+      service.updateStatus(
+        {
+          uid: 'dm-1',
+          role: 'DELIVERYMAN',
+        } as never,
+        'dm-2',
+        {
+          status: 'OFFLINE',
+        },
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

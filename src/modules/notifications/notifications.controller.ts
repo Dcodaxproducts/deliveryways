@@ -22,6 +22,7 @@ export class NotificationsController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Get('summary')
   summary(
@@ -38,6 +39,7 @@ export class NotificationsController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Get()
   list(
@@ -54,6 +56,7 @@ export class NotificationsController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -67,6 +70,7 @@ export class NotificationsController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Post(':id/seen')
   markSeen(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -80,6 +84,7 @@ export class NotificationsController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Post('seen-all')
   markAllSeen(
@@ -96,6 +101,7 @@ export class NotificationsController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
   )
   @Post(':id/retry')
   retry(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {

@@ -581,7 +581,10 @@ export class NotificationsService {
       );
     }
 
-    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+    if (
+      user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === 'DELIVERYMAN'
+    ) {
       if (user.bid && user.bid !== notification.branchId) {
         throw new ForbiddenException(
           'You do not have access to this notification',
@@ -619,6 +622,20 @@ export class NotificationsService {
 
     if (user.role === UserRoleEnum.STAFF) {
       throw new ForbiddenException('Notification access is not available');
+    }
+
+    if (user.role === 'DELIVERYMAN') {
+      if (!user.rid || !user.bid) {
+        throw new ForbiddenException('Deliveryman scope is required');
+      }
+
+      return {
+        audience: NotificationAudience.ADMIN,
+        restaurantId: user.rid,
+        branchId: user.bid,
+        recipientUserId: undefined,
+        allowedTypes: ADMIN_NOTIFICATION_TYPES,
+      };
     }
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {

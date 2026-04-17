@@ -140,6 +140,55 @@ describe('NotificationsService', () => {
     expect(result.data).toEqual({ total: 5, unseen: 3, seen: 2 });
   });
 
+  it('lists admin notifications for deliveryman within own branch scope', async () => {
+    notificationsRepository.list.mockResolvedValue({
+      items: [
+        {
+          id: 'notification-branch-1',
+          audience: NotificationAudience.ADMIN,
+          type: NotificationType.ORDER_PLACED,
+          subject: 'New branch order',
+          body: 'Order assigned in your branch',
+          payload: { orderId: 'order-1' },
+          seenAt: null,
+          createdAt: new Date('2026-03-27T10:00:00.000Z'),
+          order: {
+            id: 'order-1',
+            status: 'OUT_FOR_DELIVERY',
+            paymentStatus: 'PAID',
+          },
+          paymentTransaction: null,
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.list(
+      {
+        uid: 'dm-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(notificationsRepository.buildWhere).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      }),
+    );
+    expect(result.data[0].audience).toBe(NotificationAudience.ADMIN);
+  });
+
   it('marks a notification as seen', async () => {
     notificationsRepository.findById.mockResolvedValue({
       id: 'notification-1',
@@ -169,6 +218,35 @@ describe('NotificationsService', () => {
       seenAt: new Date('2026-03-27T10:30:00.000Z'),
       isSeen: true,
     });
+  });
+
+  it('allows deliveryman to mark branch notification as seen', async () => {
+    notificationsRepository.findById.mockResolvedValue({
+      id: 'notification-branch-1',
+      audience: NotificationAudience.ADMIN,
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      recipientUserId: null,
+      recipientEmail: null,
+      channel: NotificationChannel.IN_APP,
+    });
+    notificationsRepository.markSeen.mockResolvedValue({
+      id: 'notification-branch-1',
+      seenAt: new Date('2026-03-27T10:30:00.000Z'),
+    });
+
+    const result = await service.markSeen(
+      {
+        uid: 'dm-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      'notification-branch-1',
+    );
+
+    expect(result.data.id).toBe('notification-branch-1');
+    expect(result.data.isSeen).toBe(true);
   });
 
   it('creates both customer email and admin in-app notification on order placed', async () => {
