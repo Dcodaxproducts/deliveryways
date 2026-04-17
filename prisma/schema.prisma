@@ -451,22 +451,24 @@ model MenuCategory {
 }
 
 model MenuItem {
-  id              String    @id @default(cuid())
-  restaurantId    String    @map("restaurant_id")
-  categoryId      String    @map("category_id")
-  name            String
-  slug            String
-  description     String?
-  imageUrl        String?   @map("image_url")
-  sku             String?
-  basePrice       Decimal   @default(0) @map("base_price") @db.Decimal(10, 2)
-  prepTimeMinutes Int?      @map("prep_time_minutes")
-  dietaryFlags    Json?     @map("dietary_flags")
-  allergenFlags   Json?     @map("allergen_flags")
-  isActive        Boolean   @default(true) @map("is_active")
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                     String    @id @default(cuid())
+  restaurantId           String    @map("restaurant_id")
+  categoryId             String    @map("category_id")
+  name                   String
+  slug                   String
+  description            String?
+  ingredients            String?
+  nutritionalInformation String?   @map("nutritional_information")
+  imageUrl               String?   @map("image_url")
+  sku                    String?
+  basePrice              Decimal   @default(0) @map("base_price") @db.Decimal(10, 2)
+  prepTimeMinutes        Int?      @map("prep_time_minutes")
+  dietaryFlags           Json?     @map("dietary_flags")
+  allergenFlags          Json?     @map("allergen_flags")
+  isActive               Boolean   @default(true) @map("is_active")
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   restaurant      Restaurant               @relation(fields: [restaurantId], references: [id])
   category        MenuCategory             @relation(fields: [categoryId], references: [id])
@@ -519,17 +521,18 @@ model RestaurantMenuItem {
 }
 
 model MenuItemVariation {
-  id         String    @id @default(cuid())
-  menuItemId String    @map("menu_item_id")
-  name       String
-  sku        String?
-  price      Decimal   @default(0) @db.Decimal(10, 2)
-  sortOrder  Int       @default(0) @map("sort_order")
-  isDefault  Boolean   @default(false) @map("is_default")
-  isActive   Boolean   @default(true) @map("is_active")
-  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id          String    @id @default(cuid())
+  menuItemId  String    @map("menu_item_id")
+  name        String
+  description String?
+  sku         String?
+  price       Decimal   @default(0) @db.Decimal(10, 2)
+  sortOrder   Int       @default(0) @map("sort_order")
+  isDefault   Boolean   @default(false) @map("is_default")
+  isActive    Boolean   @default(true) @map("is_active")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   menuItem MenuItem @relation(fields: [menuItemId], references: [id])
 

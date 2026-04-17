@@ -211,4 +211,43 @@ describe('MenuItemService', () => {
       'Menu item cannot be permanently deleted because it is used in orders',
     );
   });
+
+  it('persists optional ingredients and nutritional information on create', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockImplementation((data: unknown) => data);
+
+    const result = await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Zinger Burger',
+        slug: 'zinger-burger',
+        basePrice: 650,
+        ingredients: 'Chicken, bun, mayo',
+        nutritionalInformation: '520 kcal',
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ingredients: 'Chicken, bun, mayo',
+        nutritionalInformation: '520 kcal',
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        ingredients: 'Chicken, bun, mayo',
+        nutritionalInformation: '520 kcal',
+      }),
+    );
+  });
 });

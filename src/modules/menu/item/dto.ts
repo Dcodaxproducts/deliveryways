@@ -38,6 +38,16 @@ export class CreateMenuItemDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  ingredients?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nutritionalInformation?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   imageUrl?: string;
 
   @ApiPropertyOptional()
@@ -108,6 +118,16 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ingredients?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nutritionalInformation?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

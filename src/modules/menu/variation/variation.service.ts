@@ -42,6 +42,7 @@ export class MenuVariationService {
         {
           menuItem: { connect: { id: dto.menuItemId } },
           name: dto.name,
+          description: dto.description,
           sku: dto.sku,
           price: new Prisma.Decimal(dto.price),
           sortOrder: dto.sortOrder ?? 0,
@@ -97,6 +98,7 @@ export class MenuVariationService {
         id,
         {
           name: dto.name,
+          description: dto.description,
           sku: dto.sku,
           price:
             dto.price !== undefined ? new Prisma.Decimal(dto.price) : undefined,

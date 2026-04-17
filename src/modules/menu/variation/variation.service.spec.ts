@@ -48,6 +48,7 @@ describe('MenuVariationService', () => {
       {
         menuItemId: 'item-1',
         name: 'Large',
+        description: 'Best for sharing',
         price: 100,
       },
     );
@@ -56,7 +57,13 @@ describe('MenuVariationService', () => {
       where: { id: 'restaurant-1', tenantId: 'tenant-1', deletedAt: null },
       select: { id: true },
     });
-    expect(variationRepository.create).toHaveBeenCalled();
+    expect(variationRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Large',
+        description: 'Best for sharing',
+      }),
+      expect.anything(),
+    );
     expect(result.message).toBe('Menu variation created successfully');
   });
 

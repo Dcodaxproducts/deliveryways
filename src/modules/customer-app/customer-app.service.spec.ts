@@ -8,8 +8,11 @@ describe('CustomerAppService', () => {
     name: 'Zinger Burger',
     slug: 'zinger-burger',
     description: 'Crispy chicken burger',
+    ingredients: 'Chicken, bun, mayo',
+    nutritionalInformation: '520 kcal',
     imageUrl: 'https://cdn.example.com/zinger.png',
     basePrice: 799,
+    prepTimeMinutes: 15,
     restaurant: {
       id: 'restaurant-1',
       name: 'DeliveryWays Kitchen',
@@ -245,6 +248,9 @@ describe('CustomerAppService', () => {
       },
     );
     expect(result.data.slug).toBe('zinger-burger');
+    expect(result.data.ingredients).toBe('Chicken, bun, mayo');
+    expect(result.data.nutritionalInformation).toBe('520 kcal');
+    expect(result.data.prepTimeMinutes).toBe(15);
     expect(result.data.modifierGroups).toHaveLength(1);
   });
 

@@ -22,6 +22,11 @@ export class CreateMenuVariationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   sku?: string;
 
   @ApiProperty()
@@ -52,6 +57,11 @@ export class UpdateMenuVariationDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1083,8 +1083,11 @@ export class CustomerAppService {
     name: string;
     slug: string;
     description: string | null;
+    ingredients: string | null;
+    nutritionalInformation: string | null;
     imageUrl: string | null;
     basePrice: Prisma.Decimal;
+    prepTimeMinutes: number | null;
     restaurant?: {
       id: string;
       name: string;
@@ -1095,6 +1098,7 @@ export class CustomerAppService {
     variations?: Array<{
       id: string;
       name: string;
+      description: string | null;
       price: Prisma.Decimal;
       isDefault: boolean;
     }>;
@@ -1125,8 +1129,11 @@ export class CustomerAppService {
       name: item.name,
       slug: item.slug,
       description: item.description,
+      ingredients: item.ingredients,
+      nutritionalInformation: item.nutritionalInformation,
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
+      prepTimeMinutes: item.prepTimeMinutes,
       restaurant: item.restaurant
         ? {
             ...item.restaurant,
