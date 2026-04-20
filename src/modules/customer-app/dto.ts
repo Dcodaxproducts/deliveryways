@@ -41,6 +41,11 @@ export class PublicRestaurantQueryDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({ description: 'Optional FAQ category filter' })
+  @IsOptional()
+  @IsString()
+  category?: string;
 }
 
 export class PublicMenuItemBySlugQueryDto extends PublicRestaurantQueryDto {}

@@ -7,18 +7,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-
-class CustomerAppFaqDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  question?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  answer?: string;
-}
+import { RestaurantCustomerAppFaqDto } from './customer-app-faq.dto';
 
 export class UpdateRestaurantCustomerAppContentDto {
   @ApiPropertyOptional()
@@ -31,12 +20,12 @@ export class UpdateRestaurantCustomerAppContentDto {
   @IsString()
   helpSupport?: string;
 
-  @ApiPropertyOptional({ type: [CustomerAppFaqDto] })
+  @ApiPropertyOptional({ type: [RestaurantCustomerAppFaqDto] })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => CustomerAppFaqDto)
-  faqs?: CustomerAppFaqDto[];
+  @Type(() => RestaurantCustomerAppFaqDto)
+  faqs?: RestaurantCustomerAppFaqDto[];
 
   @ApiPropertyOptional({
     type: Object,

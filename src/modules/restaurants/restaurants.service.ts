@@ -8,18 +8,27 @@ import { Prisma } from '@prisma/client';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
-import { buildPaginationMeta } from '../../common/utils';
+import {
+  buildPaginationMeta,
+  CustomerAppFaqItem,
+  DEFAULT_CUSTOMER_APP_FAQ_CATEGORIES,
+  extractCustomerAppFaqCategories,
+  normalizeCustomerAppFaqItem,
+} from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
 import { TenantsService } from '../tenants/tenants.service';
 import { StorageService } from '../storage/storage.service';
 import {
+  CreateRestaurantCustomerAppFaqDto,
   CreateRestaurantDto,
+  UpdateRestaurantCustomerAppFaqDto,
   UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
   UpdateRestaurantNotificationSettingsDto,
 } from './dto';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class RestaurantsService {
@@ -261,6 +270,159 @@ export class RestaurantsService {
     };
   }
 
+  async customerAppFaqs(user: AuthUserContext, id: string) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    this.ensureRestaurantReadAccess(user, restaurant.id);
+
+    const items = this.extractCustomerAppFaqs(restaurant.settings);
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        categories: extractCustomerAppFaqCategories(items),
+        defaultCategories: [...DEFAULT_CUSTOMER_APP_FAQ_CATEGORIES],
+        items,
+      },
+      message: 'Restaurant customer app FAQs fetched successfully',
+    };
+  }
+
+  async createCustomerAppFaq(
+    user: AuthUserContext,
+    id: string,
+    dto: CreateRestaurantCustomerAppFaqDto,
+    tx?: PrismaTx,
+  ) {
+    this.ensureRestaurantWriteAccess(user, id);
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const now = new Date().toISOString();
+    const nextItem: CustomerAppFaqItem = {
+      id: randomUUID(),
+      question: dto.question.trim(),
+      answer: dto.answer.trim(),
+      category: dto.category.trim(),
+      status: dto.status ?? 'PUBLISHED',
+      visibility: dto.visibility ?? 'PUBLIC',
+      createdByUserId: user.uid ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.restaurantsRepository.update(
+      id,
+      {
+        settings: this.writeCustomerAppFaqs(restaurant.settings, [
+          ...this.extractCustomerAppFaqs(restaurant.settings),
+          nextItem,
+        ]) as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: nextItem,
+      message: 'Restaurant customer app FAQ created successfully',
+    };
+  }
+
+  async updateCustomerAppFaq(
+    user: AuthUserContext,
+    id: string,
+    faqId: string,
+    dto: UpdateRestaurantCustomerAppFaqDto,
+    tx?: PrismaTx,
+  ) {
+    this.ensureRestaurantWriteAccess(user, id);
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const items = this.extractCustomerAppFaqs(restaurant.settings);
+    const itemIndex = items.findIndex((item) => item.id === faqId);
+
+    if (itemIndex === -1) {
+      throw new NotFoundException('FAQ not found');
+    }
+
+    const currentItem = items[itemIndex];
+    const nextItem: CustomerAppFaqItem = {
+      ...currentItem,
+      ...(dto.question !== undefined ? { question: dto.question.trim() } : {}),
+      ...(dto.answer !== undefined ? { answer: dto.answer.trim() } : {}),
+      ...(dto.category !== undefined ? { category: dto.category.trim() } : {}),
+      ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.visibility !== undefined ? { visibility: dto.visibility } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+
+    items[itemIndex] = nextItem;
+
+    await this.restaurantsRepository.update(
+      id,
+      {
+        settings: this.writeCustomerAppFaqs(
+          restaurant.settings,
+          items,
+        ) as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: nextItem,
+      message: 'Restaurant customer app FAQ updated successfully',
+    };
+  }
+
+  async removeCustomerAppFaq(
+    user: AuthUserContext,
+    id: string,
+    faqId: string,
+    tx?: PrismaTx,
+  ) {
+    this.ensureRestaurantWriteAccess(user, id);
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const items = this.extractCustomerAppFaqs(restaurant.settings);
+    const nextItems = items.filter((item) => item.id !== faqId);
+
+    if (nextItems.length === items.length) {
+      throw new NotFoundException('FAQ not found');
+    }
+
+    await this.restaurantsRepository.update(
+      id,
+      {
+        settings: this.writeCustomerAppFaqs(
+          restaurant.settings,
+          nextItems,
+        ) as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: { id: faqId },
+      message: 'Restaurant customer app FAQ removed successfully',
+    };
+  }
+
   async notificationSettings(user: AuthUserContext) {
     const restaurant = await this.getRestaurantForNotificationSettings(user);
 
@@ -427,11 +589,10 @@ export class RestaurantsService {
         ['helpSupport'],
         ['help_support'],
       ]),
-      faqs: this.readFaqs(restaurant.settings, [
-        ['customerApp', 'faqs'],
-        ['publicContent', 'faqs'],
-        ['faqs'],
-      ]),
+      faqCategories: extractCustomerAppFaqCategories(
+        this.extractCustomerAppFaqs(restaurant.settings),
+      ),
+      faqs: this.extractCustomerAppFaqs(restaurant.settings),
       supportContact: this.asObject(restaurant.supportContact),
       config: {
         currency: this.readRestaurantCurrency(restaurant.settings),
@@ -455,6 +616,7 @@ export class RestaurantsService {
   ): Prisma.JsonObject {
     const root = this.asObject(currentSettings);
     const customerApp = this.asObject(root.customerApp);
+    const existingFaqs = this.extractCustomerAppFaqs(currentSettings);
 
     return {
       ...root,
@@ -468,14 +630,65 @@ export class RestaurantsService {
           : {}),
         ...(dto.faqs !== undefined
           ? {
-              faqs: dto.faqs.map((item) => ({
-                question: item.question ?? '',
-                answer: item.answer ?? '',
-              })),
+              faqs: dto.faqs
+                .map((item, index) => {
+                  const existingItem =
+                    item.id !== undefined
+                      ? existingFaqs.find((faq) => faq.id === item.id)
+                      : undefined;
+                  const now = new Date().toISOString();
+
+                  return normalizeCustomerAppFaqItem(
+                    {
+                      id: existingItem?.id ?? item.id ?? randomUUID(),
+                      question: item.question,
+                      answer: item.answer,
+                      category:
+                        item.category ?? existingItem?.category ?? undefined,
+                      status: item.status ?? existingItem?.status ?? undefined,
+                      visibility:
+                        item.visibility ??
+                        existingItem?.visibility ??
+                        undefined,
+                      createdByUserId:
+                        existingItem?.createdByUserId ?? undefined,
+                      createdAt: existingItem?.createdAt ?? now,
+                      updatedAt: now,
+                    },
+                    `legacy:${index}`,
+                  );
+                })
+                .filter((item): item is CustomerAppFaqItem => item !== null),
             }
           : {}),
       },
-    } as Prisma.JsonObject;
+    } as unknown as Prisma.JsonObject;
+  }
+
+  private extractCustomerAppFaqs(
+    source: Prisma.JsonValue | null,
+  ): CustomerAppFaqItem[] {
+    return this.readFaqs(source, [
+      ['customerApp', 'faqs'],
+      ['publicContent', 'faqs'],
+      ['faqs'],
+    ]);
+  }
+
+  private writeCustomerAppFaqs(
+    currentSettings: Prisma.JsonValue | null,
+    items: CustomerAppFaqItem[],
+  ): Prisma.JsonObject {
+    const root = this.asObject(currentSettings);
+    const customerApp = this.asObject(root.customerApp);
+
+    return {
+      ...root,
+      customerApp: {
+        ...customerApp,
+        faqs: items,
+      },
+    } as unknown as Prisma.JsonObject;
   }
 
   private extractNotificationSettings(restaurant: {
@@ -714,10 +927,7 @@ export class RestaurantsService {
     return false;
   }
 
-  private readFaqs(
-    source: unknown,
-    paths: string[][],
-  ): Array<{ question: string; answer: string }> {
+  private readFaqs(source: unknown, paths: string[][]): CustomerAppFaqItem[] {
     for (const path of paths) {
       const value = this.readPath(source, path);
       if (!Array.isArray(value)) {
@@ -725,34 +935,10 @@ export class RestaurantsService {
       }
 
       const items = value
-        .map((item) => {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            return null;
-          }
-
-          const faq = item as Record<string, unknown>;
-          if (
-            typeof faq.question !== 'string' ||
-            typeof faq.answer !== 'string'
-          ) {
-            return null;
-          }
-
-          const question = faq.question.trim();
-          const answer = faq.answer.trim();
-
-          if (!question || !answer) {
-            return null;
-          }
-
-          return {
-            question,
-            answer,
-          };
-        })
-        .filter(
-          (item): item is { question: string; answer: string } => item !== null,
-        );
+        .map((item, index) =>
+          normalizeCustomerAppFaqItem(item, `legacy:${index}`),
+        )
+        .filter((item): item is CustomerAppFaqItem => item !== null);
 
       return items;
     }

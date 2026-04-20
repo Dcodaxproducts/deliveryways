@@ -68,7 +68,16 @@ describe('RestaurantsService notification settings', () => {
         customerApp: {
           privacyPolicy: 'privacy',
           helpSupport: 'help',
-          faqs: [{ question: 'Q1', answer: 'A1' }],
+          faqs: [
+            {
+              id: 'faq-1',
+              question: 'Q1',
+              answer: 'A1',
+              category: 'Orders',
+              status: 'PUBLISHED',
+              visibility: 'PUBLIC',
+            },
+          ],
         },
       },
       supportContact: {
@@ -92,7 +101,25 @@ describe('RestaurantsService notification settings', () => {
     });
     expect(result.data.privacyPolicy).toBe('privacy');
     expect(result.data.helpSupport).toBe('help');
-    expect(result.data.faqs).toEqual([{ question: 'Q1', answer: 'A1' }]);
+    expect(result.data.faqCategories).toEqual([
+      'Orders',
+      'Delivery',
+      'Payments',
+      'Policy',
+    ]);
+    expect(result.data.faqs).toEqual([
+      {
+        id: 'faq-1',
+        question: 'Q1',
+        answer: 'A1',
+        category: 'Orders',
+        status: 'PUBLISHED',
+        visibility: 'PUBLIC',
+        createdByUserId: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ]);
     expect(result.data.restaurantId).toBe('restaurant-1');
     expect(result.data.config).toEqual({ currency: null });
   });
@@ -157,12 +184,194 @@ describe('RestaurantsService notification settings', () => {
     expect(result.data.privacyPolicy).toBe('Legacy privacy');
     expect(result.data.helpSupport).toBe('Legacy help');
     expect(result.data.faqs).toEqual([
-      { question: 'Legacy Q', answer: 'Legacy A' },
+      {
+        id: 'legacy:0',
+        question: 'Legacy Q',
+        answer: 'Legacy A',
+        category: null,
+        status: 'PUBLISHED',
+        visibility: 'PUBLIC',
+        createdByUserId: null,
+        createdAt: null,
+        updatedAt: null,
+      },
     ]);
     expect(result.data.supportContact).toEqual({
       email: 'support@example.com',
       phone: '1234567898',
     });
+  });
+
+  it('lists categorized customer app faqs for admins', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        customerApp: {
+          faqs: [
+            {
+              id: 'faq-1',
+              question: 'How do refunds work?',
+              answer: 'Refunds are processed within 5 business days.',
+              category: 'Payments',
+              status: 'DRAFT',
+              visibility: 'AUTHENTICATED',
+              createdByUserId: 'admin-1',
+              createdAt: '2026-04-20T10:00:00.000Z',
+              updatedAt: '2026-04-20T10:05:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await service.customerAppFaqs(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data.categories).toEqual([
+      'Orders',
+      'Delivery',
+      'Payments',
+      'Policy',
+    ]);
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data.items[0].category).toBe('Payments');
+    expect(result.data.items[0].status).toBe('DRAFT');
+  });
+
+  it('creates a structured faq entry', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: { customerApp: { faqs: [] } },
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {},
+    });
+
+    const result = await service.createCustomerAppFaq(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      {
+        question: ' How do I track my order? ',
+        category: 'Orders',
+        answer: ' Use the live order screen. ',
+        status: 'PUBLISHED',
+        visibility: 'PUBLIC',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalled();
+    expect(result.data.question).toBe('How do I track my order?');
+    expect(result.data.answer).toBe('Use the live order screen.');
+    expect(result.data.category).toBe('Orders');
+    expect(result.data.createdByUserId).toBe('admin-1');
+  });
+
+  it('updates an existing structured faq entry', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        customerApp: {
+          faqs: [
+            {
+              id: 'faq-1',
+              question: 'Old question',
+              answer: 'Old answer',
+              category: 'Orders',
+              status: 'DRAFT',
+              visibility: 'PUBLIC',
+              createdByUserId: 'admin-1',
+              createdAt: '2026-04-20T10:00:00.000Z',
+              updatedAt: '2026-04-20T10:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {},
+    });
+
+    const result = await service.updateCustomerAppFaq(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      'faq-1',
+      {
+        answer: 'Updated answer',
+        status: 'PUBLISHED',
+      },
+    );
+
+    expect(result.data.id).toBe('faq-1');
+    expect(result.data.answer).toBe('Updated answer');
+    expect(result.data.status).toBe('PUBLISHED');
+  });
+
+  it('removes a faq entry', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        customerApp: {
+          faqs: [
+            {
+              id: 'faq-1',
+              question: 'Question',
+              answer: 'Answer',
+              category: 'Orders',
+              status: 'PUBLISHED',
+              visibility: 'PUBLIC',
+            },
+          ],
+        },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {},
+    });
+
+    const result = await service.removeCustomerAppFaq(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      'faq-1',
+    );
+
+    expect(result.data).toEqual({ id: 'faq-1' });
+    expect(repository.update).toHaveBeenCalled();
   });
 
   it('normalizes invalid media placeholders in customer app content output', async () => {

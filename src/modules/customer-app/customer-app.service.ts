@@ -8,7 +8,12 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
-import { buildPaginationMeta } from '../../common/utils';
+import {
+  buildPaginationMeta,
+  CustomerAppFaqItem,
+  extractCustomerAppFaqCategories,
+  normalizeCustomerAppFaqItem,
+} from '../../common/utils';
 import {
   CreateTableReservationDto,
   HomeScreenQueryDto,
@@ -81,11 +86,6 @@ export interface LoyaltyRedemptionRecord {
   points: number;
   note: string | null;
   createdAt: string;
-}
-
-export interface FaqItem {
-  question: string;
-  answer: string;
 }
 
 @Injectable()
@@ -258,13 +258,29 @@ export class CustomerAppService {
         ['faqs'],
       ]) ??
       [];
+    const visibleFaqs = faqs.filter((item) => {
+      if (item.status !== 'PUBLISHED') {
+        return false;
+      }
+
+      if (item.visibility === 'AUTHENTICATED' && !user) {
+        return false;
+      }
+
+      if (query.category?.trim()) {
+        return item.category === query.category.trim();
+      }
+
+      return true;
+    });
 
     return {
       data: {
         restaurantId: restaurant.id,
         restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         branchId: branch?.id ?? null,
-        items: faqs,
+        categories: extractCustomerAppFaqCategories(visibleFaqs),
+        items: visibleFaqs,
       },
       message: 'FAQs fetched successfully',
     };
@@ -1242,7 +1258,10 @@ export class CustomerAppService {
     ]);
   }
 
-  private readFaqs(source: unknown, paths: string[][]): FaqItem[] | null {
+  private readFaqs(
+    source: unknown,
+    paths: string[][],
+  ): CustomerAppFaqItem[] | null {
     for (const path of paths) {
       const value = this.readPath(source, path);
       if (!Array.isArray(value)) {
@@ -1250,27 +1269,10 @@ export class CustomerAppService {
       }
 
       const items = value
-        .map((item) => {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            return null;
-          }
-
-          const faq = item as { question?: unknown; answer?: unknown };
-          if (
-            typeof faq.question !== 'string' ||
-            typeof faq.answer !== 'string' ||
-            !faq.question.trim() ||
-            !faq.answer.trim()
-          ) {
-            return null;
-          }
-
-          return {
-            question: faq.question.trim(),
-            answer: faq.answer.trim(),
-          } satisfies FaqItem;
-        })
-        .filter((item): item is FaqItem => item !== null);
+        .map((item, index) =>
+          normalizeCustomerAppFaqItem(item, `legacy:${index}`),
+        )
+        .filter((item): item is CustomerAppFaqItem => item !== null);
 
       return items;
     }

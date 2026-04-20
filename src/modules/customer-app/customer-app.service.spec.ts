@@ -173,14 +173,30 @@ describe('CustomerAppService', () => {
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       settings: {
         faqs: [
-          { question: 'Restaurant question', answer: 'Restaurant answer' },
+          {
+            id: 'faq-restaurant',
+            question: 'Restaurant question',
+            answer: 'Restaurant answer',
+            category: 'Orders',
+            status: 'PUBLISHED',
+            visibility: 'PUBLIC',
+          },
         ],
       },
     });
     repository.findBranchPublicContent.mockResolvedValue({
       id: 'branch-1',
       settings: {
-        faqs: [{ question: 'Branch question', answer: 'Branch answer' }],
+        faqs: [
+          {
+            id: 'faq-branch',
+            question: 'Branch question',
+            answer: 'Branch answer',
+            category: 'Delivery',
+            status: 'PUBLISHED',
+            visibility: 'PUBLIC',
+          },
+        ],
       },
     });
 
@@ -190,11 +206,93 @@ describe('CustomerAppService', () => {
     });
 
     expect(result.data.items).toEqual([
-      { question: 'Branch question', answer: 'Branch answer' },
+      {
+        id: 'faq-branch',
+        question: 'Branch question',
+        answer: 'Branch answer',
+        category: 'Delivery',
+        status: 'PUBLISHED',
+        visibility: 'PUBLIC',
+        createdByUserId: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ]);
+    expect(result.data.categories).toEqual([
+      'Orders',
+      'Delivery',
+      'Payments',
+      'Policy',
     ]);
     expect(result.data.restaurantCoverImage).toBe(
       'https://cdn.example.com/restaurant-cover.png',
     );
+  });
+
+  it('filters public faqs by category and auth visibility', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      coverImage: null,
+      settings: {
+        faqs: [
+          {
+            id: 'faq-1',
+            question: 'Order question',
+            answer: 'Order answer',
+            category: 'Orders',
+            status: 'PUBLISHED',
+            visibility: 'PUBLIC',
+          },
+          {
+            id: 'faq-2',
+            question: 'Payment question',
+            answer: 'Payment answer',
+            category: 'Payments',
+            status: 'PUBLISHED',
+            visibility: 'AUTHENTICATED',
+          },
+          {
+            id: 'faq-3',
+            question: 'Draft question',
+            answer: 'Draft answer',
+            category: 'Payments',
+            status: 'DRAFT',
+            visibility: 'PUBLIC',
+          },
+        ],
+      },
+    });
+    repository.findBranchPublicContent.mockResolvedValue(null);
+
+    const anonymousResult = await service.getFaqs({
+      restaurantId: 'restaurant-1',
+      category: 'Payments',
+    });
+
+    expect(anonymousResult.data.items).toEqual([]);
+
+    const authenticatedResult = await service.getFaqs(
+      {
+        restaurantId: 'restaurant-1',
+        category: 'Payments',
+      },
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+    );
+
+    expect(authenticatedResult.data.items).toHaveLength(1);
+    expect(authenticatedResult.data.items[0].id).toBe('faq-2');
+    expect(authenticatedResult.data.categories).toEqual([
+      'Orders',
+      'Delivery',
+      'Payments',
+      'Policy',
+    ]);
   });
 
   it('populates restaurant on promotional items', async () => {

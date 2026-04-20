@@ -21,7 +21,9 @@ import {
 } from '../../common/guards';
 import { RestaurantsService } from './restaurants.service';
 import {
+  CreateRestaurantCustomerAppFaqDto,
   CreateRestaurantDto,
+  UpdateRestaurantCustomerAppFaqDto,
   UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
@@ -142,6 +144,54 @@ export class RestaurantsController {
     @Body() dto: UpdateRestaurantCustomerAppContentDto,
   ) {
     return this.restaurantsService.updateCustomerAppContent(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get(':id/customer-app-faqs')
+  customerAppFaqs(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.customerAppFaqs(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Post(':id/customer-app-faqs')
+  createCustomerAppFaq(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: CreateRestaurantCustomerAppFaqDto,
+  ) {
+    return this.restaurantsService.createCustomerAppFaq(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/customer-app-faqs/:faqId')
+  updateCustomerAppFaq(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Param('faqId') faqId: string,
+    @Body() dto: UpdateRestaurantCustomerAppFaqDto,
+  ) {
+    return this.restaurantsService.updateCustomerAppFaq(user, id, faqId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Delete(':id/customer-app-faqs/:faqId')
+  removeCustomerAppFaq(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Param('faqId') faqId: string,
+  ) {
+    return this.restaurantsService.removeCustomerAppFaq(user, id, faqId);
   }
 
   @ApiBearerAuth()
