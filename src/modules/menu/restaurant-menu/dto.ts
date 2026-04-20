@@ -176,6 +176,19 @@ export class UpdateRestaurantMenuItemDto {
 }
 
 export class ListRestaurantMenuItemsDto extends QueryDto {
+  @ApiPropertyOptional({ description: 'Optional category filter within the menu' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional comma-separated menu item ids filter within the menu',
+    example: 'item-1,item-2',
+  })
+  @IsOptional()
+  @IsString()
+  itemIds?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => value === 'true')

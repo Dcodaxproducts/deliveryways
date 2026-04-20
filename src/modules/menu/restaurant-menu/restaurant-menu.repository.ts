@@ -229,47 +229,129 @@ export class RestaurantMenuRepository {
     restaurantMenuId: string,
     query: ListRestaurantMenuItemsDto,
   ) {
-    const where: Prisma.RestaurantMenuItemWhereInput = {
-      restaurantMenuId,
+    const requestedItemIds = query.itemIds
+      ? query.itemIds
+          .split(',')
+          .map((itemId) => itemId.trim())
+          .filter((itemId) => itemId.length > 0)
+      : [];
+
+    const where: Prisma.MenuItemWhereInput = {
+      deletedAt: null,
       ...(query.includeInactive ? {} : { isActive: true }),
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(requestedItemIds.length ? { id: { in: requestedItemIds } } : {}),
       ...(query.search
         ? {
-            menuItem: {
-              OR: [
-                { name: { contains: query.search, mode: 'insensitive' } },
-                { slug: { contains: query.search, mode: 'insensitive' } },
-                { sku: { contains: query.search, mode: 'insensitive' } },
-              ],
-            },
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              { slug: { contains: query.search, mode: 'insensitive' } },
+              { sku: { contains: query.search, mode: 'insensitive' } },
+            ],
           }
         : {}),
-    };
-
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.restaurantMenuItem.findMany({
-        where,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-        orderBy: [
-          { sortOrder: 'asc' },
-          { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
-        ],
-        include: {
-          menuItem: {
-            include: {
-              category: { select: { id: true, name: true } },
-              variations: {
-                where: { deletedAt: null, isActive: true },
-                orderBy: { sortOrder: 'asc' },
+      OR: [
+        {
+          menuLinks: {
+            some: {
+              restaurantMenuId,
+              ...(query.includeInactive ? {} : { isActive: true }),
+            },
+          },
+        },
+        {
+          category: {
+            menuLinks: {
+              some: {
+                restaurantMenuId,
               },
             },
           },
         },
+      ],
+    };
+
+    const orderDirection = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.menuItem.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy:
+          query.sortBy === 'sortOrder'
+            ? [{ category: { sortOrder: orderDirection } }, { name: 'asc' }]
+            : [{ [query.sortBy]: orderDirection }],
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+          variations: {
+            where: { deletedAt: null, ...(query.includeInactive ? {} : { isActive: true }) },
+            orderBy: { sortOrder: 'asc' },
+          },
+          menuLinks: {
+            where: { restaurantMenuId },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            select: {
+              id: true,
+              sortOrder: true,
+              isActive: true,
+            },
+          },
+        },
       }),
-      this.prisma.restaurantMenuItem.count({ where }),
+      this.prisma.menuItem.count({ where }),
     ]);
 
-    return { items, total };
+    const menuCategoryLinks = await this.prisma.restaurantMenuCategory.findMany({
+      where: { restaurantMenuId },
+      select: {
+        menuCategoryId: true,
+        sortOrder: true,
+      },
+    });
+
+    const categoryLinkMap = new Map(
+      menuCategoryLinks.map((link) => [link.menuCategoryId, link]),
+    );
+
+    return {
+      items: items.map((item) => {
+        const directLink = item.menuLinks[0] ?? null;
+        const categoryLink = categoryLinkMap.get(item.categoryId) ?? null;
+        const source = directLink && categoryLink
+          ? 'DIRECT_AND_CATEGORY'
+          : directLink
+            ? 'DIRECT'
+            : 'CATEGORY';
+
+        return {
+          id: item.id,
+          name: item.name,
+          slug: item.slug,
+          description: item.description,
+          imageUrl: item.imageUrl,
+          sku: item.sku,
+          basePrice: item.basePrice,
+          depositAmount: item.depositAmount,
+          prepTimeMinutes: item.prepTimeMinutes,
+          isActive: item.isActive,
+          category: item.category,
+          variations: item.variations,
+          menuResolution: {
+            source,
+            directLink,
+            categoryLink,
+          },
+        };
+      }),
+      total,
+    };
   }
 
   async updateMenuItemLink(

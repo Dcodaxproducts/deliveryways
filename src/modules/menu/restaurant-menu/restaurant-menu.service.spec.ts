@@ -156,4 +156,46 @@ describe('RestaurantMenuService', () => {
       },
     });
   });
+
+  it('lists effective menu items resolved from direct and category links', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    restaurantMenuRepository.listMenuItems.mockResolvedValue({
+      items: [
+        {
+          id: 'item-1',
+          name: 'Burger',
+          menuResolution: { source: 'DIRECT_AND_CATEGORY' },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listItems(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'menu-1',
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+        categoryId: 'category-1',
+      },
+    );
+
+    expect(restaurantMenuRepository.listMenuItems).toHaveBeenCalledWith(
+      'menu-1',
+      expect.objectContaining({ categoryId: 'category-1' }),
+    );
+    expect(result.data[0].menuResolution.source).toBe('DIRECT_AND_CATEGORY');
+  });
 });
