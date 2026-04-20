@@ -83,7 +83,9 @@ export class OrdersService {
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
-    const quote = await this.buildQuote(user, dto);
+    const quote = await this.buildQuote(user, dto, {
+      skipDeliveryAddressValidation: Boolean(dto.couponCode),
+    });
 
     return {
       data: this.toQuoteResponseData(quote, dto),
