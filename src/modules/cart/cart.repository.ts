@@ -124,6 +124,32 @@ export class CartRepository {
     });
   }
 
+  async findRestaurantMenuById(
+    restaurantMenuId: string,
+    restaurantId: string,
+  ) {
+    return this.prisma.restaurantMenu.findFirst({
+      where: {
+        id: restaurantMenuId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        isTimed: true,
+        timingConfig: true,
+        items: {
+          where: { isActive: true },
+          select: { menuItemId: true },
+        },
+        categories: {
+          select: { menuCategoryId: true },
+        },
+      },
+    });
+  }
+
   async findOwnedAddress(addressId: string, tenantId: string, userId: string) {
     return this.prisma.address.findFirst({
       where: {

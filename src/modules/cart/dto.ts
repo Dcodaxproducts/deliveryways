@@ -37,6 +37,14 @@ export class AddCartItemDto {
   @IsString()
   menuItemId!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Optional selected restaurant menu context, mainly used when creating a new cart from a timed menu.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantMenuId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -109,6 +117,11 @@ export class UpdateCartDto {
   @IsOptional()
   @IsString()
   customerNote?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  restaurantMenuId?: string | null;
 }
 
 export class UpdateCartOrderTypeDto {

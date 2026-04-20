@@ -506,6 +506,8 @@ model RestaurantMenu {
   restaurant Restaurant           @relation(fields: [restaurantId], references: [id])
   items      RestaurantMenuItem[]
   categories RestaurantMenuCategory[]
+  carts      Cart[]
+  groupOrderSessions GroupOrderSession[]
 
   @@unique([restaurantId, slug])
   @@map("restaurant_menus")
@@ -911,6 +913,7 @@ model Cart {
   restaurantId      String         @map("restaurant_id")
   branchId          String         @map("branch_id")
   customerId        String         @unique @map("customer_id")
+  restaurantMenuId  String?        @map("restaurant_menu_id")
   orderType         OrderType      @default(DELIVERY) @map("order_type")
   deliveryAddressId String?        @map("delivery_address_id")
   couponCode        String?        @map("coupon_code")
@@ -923,12 +926,14 @@ model Cart {
   tenant          Tenant     @relation(fields: [tenantId], references: [id])
   restaurant      Restaurant @relation(fields: [restaurantId], references: [id])
   branch          Branch     @relation(fields: [branchId], references: [id])
+  restaurantMenu  RestaurantMenu? @relation(fields: [restaurantMenuId], references: [id])
   customer        User       @relation("CustomerCart", fields: [customerId], references: [id])
   deliveryAddress Address?   @relation("CartDeliveryAddress", fields: [deliveryAddressId], references: [id])
   items           CartItem[]
 
   @@index([tenantId, branchId])
   @@index([restaurantId, branchId])
+  @@index([restaurantMenuId])
   @@map("carts")
 }
 
@@ -1202,6 +1207,7 @@ model GroupOrderSession {
   restaurantId      String           @map("restaurant_id")
   branchId          String           @map("branch_id")
   hostUserId        String           @map("host_user_id")
+  restaurantMenuId  String?          @map("restaurant_menu_id")
   orderType         OrderType        @map("order_type")
   deliveryAddressId String?          @map("delivery_address_id")
   couponCode        String?          @map("coupon_code")
@@ -1219,6 +1225,7 @@ model GroupOrderSession {
   tenant          Tenant                  @relation(fields: [tenantId], references: [id])
   restaurant      Restaurant              @relation(fields: [restaurantId], references: [id])
   branch          Branch                  @relation(fields: [branchId], references: [id])
+  restaurantMenu  RestaurantMenu?         @relation(fields: [restaurantMenuId], references: [id])
   hostUser        User                    @relation("GroupOrderHost", fields: [hostUserId], references: [id])
   deliveryAddress Address?                @relation("GroupOrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
   finalOrder      Order?                  @relation("GroupOrderFinalOrder", fields: [finalOrderId], references: [id])
@@ -1228,6 +1235,7 @@ model GroupOrderSession {
   @@index([tenantId, restaurantId, status, createdAt])
   @@index([branchId, status, createdAt])
   @@index([hostUserId, status, createdAt])
+  @@index([restaurantMenuId])
   @@map("group_order_sessions")
 }
 

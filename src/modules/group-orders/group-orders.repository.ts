@@ -257,6 +257,25 @@ export class GroupOrdersRepository {
     });
   }
 
+  async findRestaurantMenuById(
+    restaurantMenuId: string,
+    restaurantId: string,
+  ) {
+    return this.prisma.restaurantMenu.findFirst({
+      where: {
+        id: restaurantMenuId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        isTimed: true,
+        timingConfig: true,
+      },
+    });
+  }
+
   async findRestaurantInTenant(restaurantId: string, tenantId: string) {
     return this.prisma.restaurant.findFirst({
       where: {

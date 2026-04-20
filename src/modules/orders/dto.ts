@@ -87,6 +87,14 @@ export class QuoteOrderDto {
   @IsString()
   couponCode?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Optional explicit selected restaurant menu context. Timed-menu enforcement only applies when provided.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantMenuId?: string;
+
   @ApiPropertyOptional({ minimum: 0, example: 250 })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))

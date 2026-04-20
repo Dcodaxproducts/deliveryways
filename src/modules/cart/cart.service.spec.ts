@@ -15,6 +15,7 @@ describe('CartService', () => {
     const cartRepository = {
       findByCustomerId: jest.fn(),
       findActiveBranch: jest.fn(),
+      findRestaurantMenuById: jest.fn(),
       findMenuItemForCart: jest.fn(),
       findMenuItemsForResponse: jest.fn(),
       findActiveCustomer: jest.fn(),
@@ -801,6 +802,7 @@ describe('CartService', () => {
           cart: {
             branchId: string;
             customerId: string;
+            restaurantMenuId?: string | null;
             orderType: 'DELIVERY';
             deliveryAddressId: string | null;
             couponCode: string | null;
@@ -817,6 +819,7 @@ describe('CartService', () => {
         ) => Promise<{
           branchId: string;
           customerId?: string;
+          restaurantMenuId?: string;
           deliveryAddressId?: string;
           orderTime: string;
         }>;
@@ -825,6 +828,7 @@ describe('CartService', () => {
       {
         branchId: 'branch-1',
         customerId: 'customer-1',
+        restaurantMenuId: 'menu-1',
         orderType: 'DELIVERY',
         deliveryAddressId: null,
         couponCode: 'SAVE10',
@@ -844,6 +848,7 @@ describe('CartService', () => {
 
     expect(payload.customerId).toBe('customer-1');
     expect(payload.branchId).toBe('branch-1');
+    expect(payload.restaurantMenuId).toBe('menu-1');
     expect(payload.deliveryAddressId).toBe('address-1');
     expect(payload.orderTime).toEqual(expect.any(String));
   });
@@ -859,6 +864,7 @@ describe('CartService', () => {
         toQuotePayload: (cart: {
           branchId: string;
           customerId: string;
+          restaurantMenuId: string | null;
           orderType: 'DELIVERY';
           deliveryAddressId: string | null;
           couponCode: string | null;
@@ -876,6 +882,7 @@ describe('CartService', () => {
     ).toQuotePayload({
       branchId: 'branch-1',
       customerId: 'customer-1',
+      restaurantMenuId: null,
       orderType: 'DELIVERY',
       deliveryAddressId: null,
       couponCode: 'SAVE10',

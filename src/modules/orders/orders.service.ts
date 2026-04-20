@@ -19,6 +19,7 @@ import {
   UserRoleEnum,
 } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
+import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
@@ -521,6 +522,14 @@ export class OrdersService {
       );
     }
 
+    const selectedMenu = dto.restaurantMenuId
+      ? await this.resolveSelectedRestaurantMenu(
+          branch.restaurantId,
+          dto.restaurantMenuId,
+          dto.orderTime,
+        )
+      : null;
+
     const lines: QuoteLine[] = [];
 
     for (const requestedItem of dto.items) {
@@ -566,6 +575,16 @@ export class OrdersService {
       if (branchOverride && !branchOverride.isAvailable) {
         throw new BadRequestException(
           `Menu item unavailable at branch: ${menuItem.name}`,
+        );
+      }
+
+      if (
+        selectedMenu &&
+        !selectedMenu.directItemIds.has(menuItem.id) &&
+        !selectedMenu.categoryIds.has(menuItem.category.id)
+      ) {
+        throw new BadRequestException(
+          `Menu item is not available in selected menu: ${menuItem.name}`,
         );
       }
 
@@ -915,6 +934,7 @@ export class OrdersService {
       totalAmount: amountSummary.totalAmount,
       payableAmount: amountSummary.payableAmount,
       couponCode: quote.appliedCouponCode,
+      restaurantMenuId: dto.restaurantMenuId ?? null,
       items: quote.lines.map((line) => ({
         menuItemId: line.menuItemId,
         menuItemName: line.menuItemName,
@@ -941,6 +961,54 @@ export class OrdersService {
     const scheduledAt =
       orderTime instanceof Date ? orderTime : new Date(orderTime);
     return scheduledAt.getTime() > Date.now();
+  }
+
+  private async resolveSelectedRestaurantMenu(
+    restaurantId: string,
+    restaurantMenuId: string,
+    orderTime: string,
+  ) {
+    const menu = await this.prisma.restaurantMenu.findFirst({
+      where: {
+        id: restaurantMenuId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        isTimed: true,
+        timingConfig: true,
+        items: {
+          where: { isActive: true },
+          select: { menuItemId: true },
+        },
+        categories: {
+          select: { menuCategoryId: true },
+        },
+      },
+    });
+
+    if (!menu) {
+      throw new BadRequestException('Selected menu not found or inactive');
+    }
+
+    if (
+      menu.isTimed &&
+      !isRestaurantMenuAvailableAt(menu.timingConfig, orderTime)
+    ) {
+      throw new BadRequestException(
+        'Selected menu is not available at requested order time',
+      );
+    }
+
+    return {
+      id: menu.id,
+      directItemIds: new Set(menu.items.map((item) => item.menuItemId)),
+      categoryIds: new Set(
+        menu.categories.map((category) => category.menuCategoryId),
+      ),
+    };
   }
 
   private toOrderMutationResponse<

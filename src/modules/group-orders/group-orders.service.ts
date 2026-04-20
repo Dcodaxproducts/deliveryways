@@ -12,7 +12,10 @@ import {
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
-import { buildPaginationMeta } from '../../common/utils';
+import {
+  buildPaginationMeta,
+  isRestaurantMenuAvailableAt,
+} from '../../common/utils';
 import { OrdersService } from '../orders/orders.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -67,6 +70,14 @@ export class GroupOrdersService {
       orderType,
       dto.deliveryAddressId,
     );
+    const restaurantMenuId = this.resolveOptionalString(dto.restaurantMenuId);
+    const restaurantMenu = restaurantMenuId
+      ? await this.requireRestaurantMenu(
+          restaurantMenuId,
+          branch.restaurantId,
+          dto.orderTime ? new Date(dto.orderTime) : undefined,
+        )
+      : null;
     const inviteCode = this.generateInviteCode();
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
 
@@ -75,6 +86,9 @@ export class GroupOrdersService {
       restaurant: { connect: { id: branch.restaurantId } },
       branch: { connect: { id: branch.id } },
       hostUser: { connect: { id: user.uid } },
+      restaurantMenu: restaurantMenu
+        ? { connect: { id: restaurantMenu.id } }
+        : undefined,
       orderType,
       deliveryAddress: dto.deliveryAddressId
         ? { connect: { id: dto.deliveryAddressId } }
@@ -212,6 +226,32 @@ export class GroupOrdersService {
       dto.couponCode !== undefined
         ? this.resolveOptionalString(dto.couponCode)
         : undefined;
+    const requestedRestaurantMenuId =
+      dto.restaurantMenuId !== undefined
+        ? this.resolveOptionalString(dto.restaurantMenuId)
+        : undefined;
+
+    if (
+      requestedRestaurantMenuId !== undefined &&
+      requestedRestaurantMenuId !== session.restaurantMenuId &&
+      session.items.length
+    ) {
+      throw new BadRequestException(
+        'Clear group order items before changing selected menu',
+      );
+    }
+
+    const restaurantMenu = requestedRestaurantMenuId
+      ? await this.requireRestaurantMenu(
+          requestedRestaurantMenuId,
+          session.restaurantId,
+          dto.orderTime
+            ? new Date(dto.orderTime)
+            : (session.orderTime ?? undefined),
+        )
+      : requestedRestaurantMenuId === null
+        ? null
+        : undefined;
 
     if (couponCode) {
       await this.validateSessionCouponCode(user, session, couponCode);
@@ -233,6 +273,12 @@ export class GroupOrdersService {
       hostNote:
         dto.hostNote !== undefined
           ? this.resolveOptionalString(dto.hostNote)
+          : undefined,
+      restaurantMenu:
+        requestedRestaurantMenuId !== undefined
+          ? restaurantMenu
+            ? { connect: { id: restaurantMenu.id } }
+            : { disconnect: true }
           : undefined,
       couponCode,
     });
@@ -800,6 +846,7 @@ export class GroupOrdersService {
       restaurantId: session.restaurantId,
       branchId: session.branchId,
       hostUserId: session.hostUserId,
+      restaurantMenuId: session.restaurantMenuId,
       orderType: session.orderType,
       deliveryAddressId: session.deliveryAddressId,
       couponCode: session.couponCode,
@@ -1008,6 +1055,7 @@ export class GroupOrdersService {
 
     return {
       branchId: session.branchId,
+      restaurantMenuId: session.restaurantMenuId ?? undefined,
       orderType: this.toOrderTypeEnum(session.orderType),
       deliveryAddressId: session.deliveryAddressId ?? undefined,
       couponCode: session.couponCode ?? undefined,
@@ -1055,6 +1103,35 @@ export class GroupOrdersService {
     }
     const trimmed = value.trim();
     return trimmed.length ? trimmed : null;
+  }
+
+  private async requireRestaurantMenu(
+    restaurantMenuId: string,
+    restaurantId: string,
+    orderTime?: Date,
+  ) {
+    const restaurantMenu = await this.groupOrdersRepository.findRestaurantMenuById(
+      restaurantMenuId,
+      restaurantId,
+    );
+
+    if (!restaurantMenu) {
+      throw new BadRequestException('Selected menu not found or inactive');
+    }
+
+    if (
+      restaurantMenu.isTimed &&
+      !isRestaurantMenuAvailableAt(
+        restaurantMenu.timingConfig,
+        orderTime ?? new Date(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Selected menu is not available at requested order time',
+      );
+    }
+
+    return restaurantMenu;
   }
 
   private toOrderType(value: OrderTypeEnum | OrderType) {

@@ -8,6 +8,7 @@ describe('GroupOrdersService', () => {
     const groupOrdersRepository = {
       findActiveBranch: jest.fn(),
       findActiveSessionByHost: jest.fn(),
+      findRestaurantMenuById: jest.fn(),
       findOwnedAddress: jest.fn(),
       createSession: jest.fn(),
       updateSession: jest.fn(),

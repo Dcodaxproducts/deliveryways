@@ -40,6 +40,11 @@ export class CreateGroupOrderSessionDto {
   @IsString()
   deliveryAddressId?: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  restaurantMenuId?: string | null;
+
   @ApiPropertyOptional({ example: '2026-03-30T20:00:00.000Z' })
   @IsOptional()
   @IsDateString()
@@ -66,6 +71,11 @@ export class UpdateGroupOrderSessionDto {
   @IsOptional()
   @IsString()
   hostNote?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  restaurantMenuId?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

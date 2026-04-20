@@ -1480,4 +1480,188 @@ describe('OrdersService - wallet payment', () => {
     expect(result.data.items[0].depositAmount).toBe(50);
     expect(result.data.totalAmount).toBe(600);
   });
+
+  it('enforces selected menu membership and timed availability only when restaurantMenuId is provided', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            ordering: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+            },
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 150,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: {
+              taxPercentage: 0,
+            },
+          },
+        }),
+      },
+      restaurantMenu: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          isTimed: true,
+          timingConfig: {
+            timezone: 'Asia/Karachi',
+            windows: [{ day: 'MONDAY', start: '12:00', end: '16:00' }],
+          },
+          items: [{ menuItemId: 'menu-1' }],
+          categories: [],
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(500),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-1' },
+          variations: [],
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+      },
+      address: {
+        findFirst: jest.fn().mockResolvedValue({
+          lat: new Prisma.Decimal('31.5204'),
+          lng: new Prisma.Decimal('74.3587'),
+        }),
+      },
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      { validateForCheckout: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(650),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        restaurantMenuId: 'menu-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        orderTime: '2026-04-20T08:00:00.000Z',
+      },
+    );
+
+    expect(prisma.restaurantMenu.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'menu-1' }),
+      }),
+    );
+    expect(result.data.restaurantMenuId).toBe('menu-1');
+  });
+
+  it('rejects selected menus outside their timed window', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            ordering: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+            },
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 150,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: {
+              taxPercentage: 0,
+            },
+          },
+        }),
+      },
+      restaurantMenu: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          isTimed: true,
+          timingConfig: {
+            timezone: 'Asia/Karachi',
+            windows: [{ day: 'MONDAY', start: '12:00', end: '16:00' }],
+          },
+          items: [{ menuItemId: 'menu-1' }],
+          categories: [],
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn(),
+      },
+      address: {
+        findFirst: jest.fn(),
+      },
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      { validateForCheckout: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn(),
+      } as never,
+    );
+
+    await expect(
+      service.quote(
+        {
+          uid: 'customer-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          restaurantMenuId: 'menu-1',
+          orderType: OrderTypeEnum.DELIVERY,
+          deliveryAddressId: 'address-1',
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+          orderTime: '2026-04-20T04:00:00.000Z',
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.menuItem.findFirst).not.toHaveBeenCalled();
+  });
 });

@@ -11,6 +11,7 @@ import {
   PaymentMethodEnum,
   UserRoleEnum,
 } from '../../common/enums';
+import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { ProfilesRepository } from '../profiles/profiles.repository';
 import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
@@ -42,6 +43,7 @@ interface CartSnapshot {
   restaurantId: string;
   branchId: string;
   customerId: string;
+  restaurantMenuId: string | null;
   orderType: OrderType;
   deliveryAddressId: string | null;
   couponCode: string | null;
@@ -138,6 +140,16 @@ export class CartService {
           ? nextDeliveryAddressId
             ? { connect: { id: nextDeliveryAddressId } }
             : { disconnect: true }
+          : undefined,
+      restaurantMenu:
+        dto.restaurantMenuId !== undefined
+          ? await this.resolveRestaurantMenuRelationInput(
+              cart.restaurantId,
+              cart.restaurantMenuId,
+              dto.restaurantMenuId,
+              cart.items.length,
+              cart.orderTime,
+            )
           : undefined,
     });
 
@@ -311,7 +323,10 @@ export class CartService {
     requestedRestaurantId?: string,
   ) {
     const cart = await this.getCartForAddItem(user, dto, requestedCustomerId);
-    await this.assertValidCartItem(cart.restaurantId, cart.branchId, dto);
+    await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
+      ...dto,
+      restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
+    });
 
     await this.cartRepository.createItem({
       cart: { connect: { id: cart.id } },
@@ -357,6 +372,7 @@ export class CartService {
 
     const nextPayload: AddCartItemDto = {
       menuItemId: item.menuItemId,
+      restaurantMenuId: item.cart.restaurantMenuId ?? undefined,
       variationId:
         dto.variationId !== undefined
           ? (dto.variationId ?? undefined)
@@ -549,6 +565,9 @@ export class CartService {
       customer.id,
     );
     const requestedBranchId = this.resolveOptionalString(dto.branchId);
+    const requestedRestaurantMenuId = this.resolveOptionalString(
+      dto.restaurantMenuId,
+    );
 
     if (existingCart) {
       if (requestedBranchId && requestedBranchId !== existingCart.branchId) {
@@ -558,16 +577,52 @@ export class CartService {
             requestedBranchId,
           );
 
+          const restaurantMenu = requestedRestaurantMenuId
+            ? await this.requireRestaurantMenu(
+                requestedRestaurantMenuId,
+                branch.restaurantId,
+                existingCart.orderTime,
+              )
+            : null;
+
           return this.cartRepository.update(existingCart.id, {
             tenant: { connect: { id: branch.tenantId } },
             restaurant: { connect: { id: branch.restaurantId } },
             branch: { connect: { id: branch.id } },
+            restaurantMenu: restaurantMenu
+              ? { connect: { id: restaurantMenu.id } }
+              : undefined,
           });
         }
 
         throw new BadRequestException(
           'Cart already contains items from another branch. Clear it before switching branches',
         );
+      }
+
+      if (
+        requestedRestaurantMenuId !== undefined &&
+        requestedRestaurantMenuId !== existingCart.restaurantMenuId
+      ) {
+        if (existingCart.items.length) {
+          throw new BadRequestException(
+            'Clear cart items before changing selected menu',
+          );
+        }
+
+        const restaurantMenu = requestedRestaurantMenuId
+          ? await this.requireRestaurantMenu(
+              requestedRestaurantMenuId,
+              existingCart.restaurantId,
+              existingCart.orderTime,
+            )
+          : null;
+
+        return this.cartRepository.update(existingCart.id, {
+          restaurantMenu: restaurantMenu
+            ? { connect: { id: restaurantMenu.id } }
+            : { disconnect: true },
+        });
       }
 
       return existingCart;
@@ -580,12 +635,21 @@ export class CartService {
     }
 
     const branch = await this.resolveScopedBranch(customer, requestedBranchId);
+    const restaurantMenu = requestedRestaurantMenuId
+      ? await this.requireRestaurantMenu(
+          requestedRestaurantMenuId,
+          branch.restaurantId,
+        )
+      : null;
 
     return this.cartRepository.create({
       tenant: { connect: { id: branch.tenantId } },
       restaurant: { connect: { id: branch.restaurantId } },
       branch: { connect: { id: branch.id } },
       customer: { connect: { id: customer.id } },
+      restaurantMenu: restaurantMenu
+        ? { connect: { id: restaurantMenu.id } }
+        : undefined,
     });
   }
 
@@ -626,6 +690,7 @@ export class CartService {
       restaurantId: cart.restaurantId,
       branchId: cart.branchId,
       customerId: cart.customerId,
+      restaurantMenuId: cart.restaurantMenuId,
       orderType: cart.orderType,
       deliveryAddressId: effectiveDeliveryAddressId,
       couponCode: cart.couponCode,
@@ -700,6 +765,7 @@ export class CartService {
     return {
       branchId: cart.branchId,
       customerId: cart.customerId,
+      restaurantMenuId: cart.restaurantMenuId ?? undefined,
       orderType: this.toOrderTypeEnum(cart.orderType),
       deliveryAddressId:
         cart.orderType === OrderType.DELIVERY
@@ -863,6 +929,26 @@ export class CartService {
       );
     }
 
+    const selectedRestaurantMenuId = this.resolveOptionalString(
+      dto.restaurantMenuId,
+    );
+
+    if (selectedRestaurantMenuId) {
+      const restaurantMenu = await this.requireRestaurantMenu(
+        selectedRestaurantMenuId,
+        restaurantId,
+      );
+
+      if (
+        !restaurantMenu.directItemIds.has(menuItem.id) &&
+        !restaurantMenu.categoryIds.has(menuItem.category.id)
+      ) {
+        throw new BadRequestException(
+          `Menu item is not available in selected menu: ${menuItem.name}`,
+        );
+      }
+    }
+
     if (dto.variationId) {
       const variation = menuItem.variations.find(
         (item) => item.id === dto.variationId,
@@ -938,6 +1024,77 @@ export class CartService {
 
     const trimmed = value.trim();
     return trimmed.length ? trimmed : null;
+  }
+
+  private async resolveRestaurantMenuRelationInput(
+    restaurantId: string,
+    currentRestaurantMenuId: string | null,
+    requestedRestaurantMenuId: string | null,
+    itemCount: number,
+    orderTime: Date | null,
+  ) {
+    const nextRestaurantMenuId = this.resolveOptionalString(
+      requestedRestaurantMenuId,
+    );
+
+    if (nextRestaurantMenuId === currentRestaurantMenuId) {
+      return undefined;
+    }
+
+    if (itemCount > 0) {
+      throw new BadRequestException(
+        'Clear cart items before changing selected menu',
+      );
+    }
+
+    if (!nextRestaurantMenuId) {
+      return { disconnect: true };
+    }
+
+    const restaurantMenu = await this.requireRestaurantMenu(
+      nextRestaurantMenuId,
+      restaurantId,
+      orderTime,
+    );
+
+    return { connect: { id: restaurantMenu.id } };
+  }
+
+  private async requireRestaurantMenu(
+    restaurantMenuId: string,
+    restaurantId: string,
+    orderTime?: Date | null,
+  ) {
+    const restaurantMenu = await this.cartRepository.findRestaurantMenuById(
+      restaurantMenuId,
+      restaurantId,
+    );
+
+    if (!restaurantMenu) {
+      throw new BadRequestException('Selected menu not found or inactive');
+    }
+
+    if (
+      restaurantMenu.isTimed &&
+      !isRestaurantMenuAvailableAt(
+        restaurantMenu.timingConfig,
+        orderTime ?? new Date(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Selected menu is not available at requested order time',
+      );
+    }
+
+    return {
+      id: restaurantMenu.id,
+      directItemIds: new Set(
+        restaurantMenu.items.map((item) => item.menuItemId),
+      ),
+      categoryIds: new Set(
+        restaurantMenu.categories.map((category) => category.menuCategoryId),
+      ),
+    };
   }
 
   private async resolveCartCustomerId(
@@ -1019,6 +1176,7 @@ export class CartService {
       restaurantId: null,
       branchId: null,
       customerId,
+      restaurantMenuId: null,
       orderType: OrderType.DELIVERY,
       deliveryAddressId: defaultAddressId,
       couponCode: null,
