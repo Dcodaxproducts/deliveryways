@@ -12,6 +12,7 @@ describe('CustomerAppService', () => {
     nutritionalInformation: '520 kcal',
     imageUrl: 'https://cdn.example.com/zinger.png',
     basePrice: 799,
+    depositAmount: 100,
     prepTimeMinutes: 15,
     restaurant: {
       id: 'restaurant-1',
@@ -316,6 +317,7 @@ describe('CustomerAppService', () => {
     });
 
     expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
+    expect(result.data[0].depositAmount).toBe(100);
     expect(result.data[0].modifierGroups).toEqual([
       {
         id: 'group-1',
@@ -355,6 +357,7 @@ describe('CustomerAppService', () => {
     expect(result.data.ingredients).toBe('Chicken, bun, mayo');
     expect(result.data.nutritionalInformation).toBe('520 kcal');
     expect(result.data.prepTimeMinutes).toBe(15);
+    expect(result.data.depositAmount).toBe(100);
     expect(result.data.modifierGroups).toHaveLength(1);
   });
 

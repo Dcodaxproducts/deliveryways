@@ -317,6 +317,7 @@ describe('OrdersService - coupon quote validation', () => {
           name: 'Burger',
           restaurantId: 'restaurant-1',
           basePrice: new Prisma.Decimal(500),
+          depositAmount: new Prisma.Decimal(50),
           category: { id: 'cat-1' },
           variations: [],
           modifierLinks: [],
@@ -350,7 +351,7 @@ describe('OrdersService - coupon quote validation', () => {
           walletAppliedAmount: new Prisma.Decimal(0),
           loyaltyDiscountAmount: new Prisma.Decimal(0),
           loyaltyPointsRedeemed: 0,
-          totalAmount: new Prisma.Decimal(550),
+          totalAmount: new Prisma.Decimal(600),
         }),
       } as never,
     );
@@ -382,13 +383,14 @@ describe('OrdersService - coupon quote validation', () => {
         branchId: 'branch-1',
         customerId: 'customer-1',
         code: 'SAVE10',
-        subtotal: 500,
+        subtotal: 550,
       }),
     );
     expect(result.data.deliveryFee).toBe(150);
     expect(result.data.discountAmount).toBe(100);
-    expect(result.data.totalAmount).toBe(550);
-    expect(result.data.payableAmount).toBe(550);
+    expect(result.data.items[0].depositAmount).toBe(50);
+    expect(result.data.totalAmount).toBe(600);
+    expect(result.data.payableAmount).toBe(600);
   });
 });
 

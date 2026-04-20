@@ -1103,6 +1103,7 @@ export class CustomerAppService {
     nutritionalInformation: string | null;
     imageUrl: string | null;
     basePrice: Prisma.Decimal;
+    depositAmount?: Prisma.Decimal | null;
     prepTimeMinutes: number | null;
     restaurant?: {
       id: string;
@@ -1154,6 +1155,7 @@ export class CustomerAppService {
       nutritionalInformation: item.nutritionalInformation,
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
+      depositAmount: item.depositAmount ? Number(item.depositAmount) : null,
       prepTimeMinutes: item.prepTimeMinutes,
       restaurant: item.restaurant
         ? {

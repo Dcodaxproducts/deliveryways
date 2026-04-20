@@ -42,6 +42,7 @@ type QuoteLine = {
   variationId?: string;
   variationName?: string;
   quantity: number;
+  depositAmount: Prisma.Decimal;
   unitPrice: Prisma.Decimal;
   lineTotal: Prisma.Decimal;
   note?: string;
@@ -574,6 +575,7 @@ export class OrdersService {
               requestedItem.variationId,
             )
           : menuItem.basePrice);
+      const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
 
       let variationName: string | undefined;
       const selectedModifierIds = new Set(
@@ -629,7 +631,9 @@ export class OrdersService {
         }
       }
 
-      const lineTotal = unitPrice.mul(requestedItem.quantity);
+      const lineTotal = unitPrice
+        .plus(depositAmount)
+        .mul(requestedItem.quantity);
 
       lines.push({
         menuItemId: menuItem.id,
@@ -638,6 +642,7 @@ export class OrdersService {
         variationId: requestedItem.variationId,
         variationName,
         quantity: requestedItem.quantity,
+        depositAmount: depositAmount.toDecimalPlaces(2),
         unitPrice: unitPrice.toDecimalPlaces(2),
         lineTotal: lineTotal.toDecimalPlaces(2),
         note: requestedItem.note,
@@ -914,6 +919,7 @@ export class OrdersService {
         variationId: line.variationId,
         variationName: line.variationName,
         quantity: line.quantity,
+        depositAmount: Number(line.depositAmount),
         unitPrice: Number(line.unitPrice),
         lineTotal: Number(line.lineTotal),
         note: line.note,

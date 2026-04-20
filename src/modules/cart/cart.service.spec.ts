@@ -105,6 +105,7 @@ describe('CartService', () => {
         description: 'Beef burger',
         imageUrl: 'burger.png',
         basePrice: 450,
+        depositAmount: 50,
         category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
         variations: [],
         modifierLinks: [],
@@ -124,9 +125,10 @@ describe('CartService', () => {
 
     const firstItem = result.data.items[0] as {
       menuItemId: string;
-      menuItem: { name: string } | null;
+      menuItem: { name: string; depositAmount: number | null } | null;
     };
     expect(firstItem.menuItem?.name).toBe('Burger');
+    expect(firstItem.menuItem?.depositAmount).toBe(50);
     expect(firstItem.menuItemId).toBe('menu-1');
     expect(result.data.deliveryAddressId).toBe('address-1');
     expect(result.data).not.toHaveProperty('selectedAddressId');
@@ -362,14 +364,17 @@ describe('CartService', () => {
       .mockResolvedValueOnce(existingCart)
       .mockResolvedValueOnce({
         ...existingCart,
-        items: [...existingCart.items, {
-          id: 'item-2',
-          menuItemId: 'menu-2',
-          variationId: null,
-          quantity: 1,
-          note: null,
-          modifiers: null,
-        }],
+        items: [
+          ...existingCart.items,
+          {
+            id: 'item-2',
+            menuItemId: 'menu-2',
+            variationId: null,
+            quantity: 1,
+            note: null,
+            modifiers: null,
+          },
+        ],
       });
     cartRepository.findMenuItemForCart.mockResolvedValue({
       id: 'menu-2',
@@ -841,6 +846,53 @@ describe('CartService', () => {
     expect(payload.branchId).toBe('branch-1');
     expect(payload.deliveryAddressId).toBe('address-1');
     expect(payload.orderTime).toEqual(expect.any(String));
+  });
+
+  it('uses saved cart order time when building quote payload', async () => {
+    const { service, profilesRepository } = makeService();
+    profilesRepository.findByUserId.mockResolvedValue({
+      metadata: { defaultAddressId: 'address-1' },
+    });
+
+    const payload = await (
+      service as unknown as {
+        toQuotePayload: (cart: {
+          branchId: string;
+          customerId: string;
+          orderType: 'DELIVERY';
+          deliveryAddressId: string | null;
+          couponCode: string | null;
+          orderTime: Date | null;
+          items: {
+            id: string;
+            menuItemId: string;
+            variationId: string | null;
+            quantity: number;
+            note: string | null;
+            modifiers: null;
+          }[];
+        }) => Promise<{ orderTime: string }>;
+      }
+    ).toQuotePayload({
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: 'SAVE10',
+      orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+
+    expect(payload.orderTime).toBe('2026-03-24T19:30:00.000Z');
   });
 
   it('falls back to saved cart checkout fields when omitted at checkout', async () => {
