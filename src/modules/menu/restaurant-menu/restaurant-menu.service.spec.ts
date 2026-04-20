@@ -1,0 +1,159 @@
+import { UserRoleEnum } from '../../../common/enums';
+import { RestaurantMenuService } from './restaurant-menu.service';
+
+describe('RestaurantMenuService', () => {
+  const makeService = () => {
+    const restaurantMenuRepository = {
+      create: jest.fn(),
+      findById: jest.fn(),
+      list: jest.fn(),
+      update: jest.fn(),
+      softDelete: jest.fn(),
+      findMenuItemLink: jest.fn(),
+      findMenuItemLinkById: jest.fn(),
+      updateMenuItemLink: jest.fn(),
+      removeMenuItemLink: jest.fn(),
+      listMenuItems: jest.fn(),
+      findMenuCategoryLink: jest.fn(),
+      getNextSortOrder: jest.fn(),
+      getNextCategorySortOrder: jest.fn(),
+    };
+
+    const prisma = {
+      restaurant: {
+        findFirst: jest.fn(),
+      },
+      restaurantMenu: {
+        findFirst: jest.fn(),
+      },
+      menuItem: {
+        findMany: jest.fn(),
+      },
+      menuCategory: {
+        findMany: jest.fn(),
+      },
+      restaurantMenuItem: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        delete: jest.fn(),
+      },
+      restaurantMenuCategory: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        delete: jest.fn(),
+      },
+      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+    };
+
+    const service = new RestaurantMenuService(
+      restaurantMenuRepository as never,
+      prisma as never,
+    );
+
+    return { service, restaurantMenuRepository, prisma };
+  };
+
+  it('creates a timed menu with category links', async () => {
+    const { service, restaurantMenuRepository, prisma } = makeService();
+
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.restaurantMenu.findFirst.mockResolvedValue(null);
+    restaurantMenuRepository.create.mockResolvedValue({ id: 'menu-1' });
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      categories: [],
+      items: [],
+    });
+    prisma.menuCategory.findMany.mockResolvedValue([
+      { id: 'category-1', restaurantId: 'restaurant-1' },
+    ]);
+    restaurantMenuRepository.findMenuCategoryLink.mockResolvedValue(null);
+    restaurantMenuRepository.getNextCategorySortOrder.mockResolvedValue(0);
+    prisma.restaurantMenuCategory.create.mockResolvedValue({ id: 'link-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        name: 'Lunch Menu',
+        slug: 'lunch-menu',
+        isTimed: true,
+        timingConfig: {
+          timezone: 'Asia/Karachi',
+          windows: [{ day: 'MONDAY', start: '12:00', end: '16:00' }],
+        },
+        categoryIds: ['category-1'],
+      },
+    );
+
+    expect(restaurantMenuRepository.create).toHaveBeenCalledWith({
+      restaurant: { connect: { id: 'restaurant-1' } },
+      name: 'Lunch Menu',
+      slug: 'lunch-menu',
+      description: undefined,
+      isTimed: true,
+      timingConfig: {
+        timezone: 'Asia/Karachi',
+        windows: [{ day: 'MONDAY', start: '12:00', end: '16:00' }],
+      },
+      sortOrder: 0,
+      isActive: true,
+    });
+    expect(prisma.restaurantMenuCategory.create).toHaveBeenCalledWith({
+      data: {
+        restaurantMenuId: 'menu-1',
+        menuCategoryId: 'category-1',
+        sortOrder: 0,
+      },
+    });
+  });
+
+  it('syncs menu category links during update', async () => {
+    const { service, restaurantMenuRepository, prisma } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.restaurantMenu.findFirst.mockResolvedValue(null);
+    restaurantMenuRepository.update.mockResolvedValue({ id: 'menu-1' });
+    prisma.menuCategory.findMany.mockResolvedValue([
+      { id: 'category-2', restaurantId: 'restaurant-1' },
+    ]);
+    prisma.restaurantMenuCategory.findMany.mockResolvedValue([
+      { id: 'link-1', menuCategoryId: 'category-1' },
+    ]);
+    prisma.restaurantMenuCategory.delete.mockResolvedValue({ id: 'link-1' });
+    prisma.restaurantMenuCategory.create.mockResolvedValue({ id: 'link-2' });
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'menu-1',
+      {
+        categoryIds: ['category-2'],
+      },
+    );
+
+    expect(prisma.restaurantMenuCategory.delete).toHaveBeenCalledWith({
+      where: { id: 'link-1' },
+    });
+    expect(prisma.restaurantMenuCategory.create).toHaveBeenCalledWith({
+      data: {
+        restaurantMenuId: 'menu-1',
+        menuCategoryId: 'category-2',
+        sortOrder: 1,
+      },
+    });
+  });
+});

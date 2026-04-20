@@ -443,6 +443,7 @@ model MenuCategory {
   parent       MenuCategory?            @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
   children     MenuCategory[]           @relation("MenuCategoryTree")
   items        MenuItem[]
+  menuLinks    RestaurantMenuCategory[]
   modifierLinks MenuCategoryModifierGroup[]
   overrides    BranchCategoryOverride[]
   couponScopes Coupon[]
@@ -466,6 +467,7 @@ model MenuItem {
   prepTimeMinutes        Int?      @map("prep_time_minutes")
   dietaryFlags           Json?     @map("dietary_flags")
   allergenFlags          Json?     @map("allergen_flags")
+  depositAmount          Decimal?  @map("deposit_amount") @db.Decimal(10, 2)
   isActive               Boolean   @default(true) @map("is_active")
   deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
@@ -493,6 +495,8 @@ model RestaurantMenu {
   name         String
   slug         String
   description  String?
+  isTimed      Boolean   @default(false) @map("is_timed")
+  timingConfig Json?     @map("timing_config")
   sortOrder    Int       @default(0) @map("sort_order")
   isActive     Boolean   @default(true) @map("is_active")
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
@@ -501,9 +505,25 @@ model RestaurantMenu {
 
   restaurant Restaurant           @relation(fields: [restaurantId], references: [id])
   items      RestaurantMenuItem[]
+  categories RestaurantMenuCategory[]
 
   @@unique([restaurantId, slug])
   @@map("restaurant_menus")
+}
+
+model RestaurantMenuCategory {
+  id               String   @id @default(cuid())
+  restaurantMenuId String   @map("restaurant_menu_id")
+  menuCategoryId   String   @map("menu_category_id")
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  restaurantMenu RestaurantMenu @relation(fields: [restaurantMenuId], references: [id])
+  menuCategory   MenuCategory   @relation(fields: [menuCategoryId], references: [id])
+
+  @@unique([restaurantMenuId, menuCategoryId])
+  @@map("restaurant_menu_categories")
 }
 
 model RestaurantMenuItem {

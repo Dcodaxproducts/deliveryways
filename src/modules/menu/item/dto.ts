@@ -90,6 +90,14 @@ export class CreateMenuItemDto {
   @IsString({ each: true })
   allergenFlags?: string[];
 
+  @ApiPropertyOptional({
+    description: 'Optional separate drink deposit (Pfand) amount',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  depositAmount?: number;
+
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()
@@ -181,6 +189,14 @@ export class UpdateMenuItemDto {
   @IsArray()
   @IsString({ each: true })
   allergenFlags?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Optional separate drink deposit (Pfand) amount',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  depositAmount?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

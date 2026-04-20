@@ -54,6 +54,10 @@ export class MenuItemService {
           prepTimeMinutes: dto.prepTimeMinutes,
           dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
           allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
+          depositAmount:
+            dto.depositAmount !== undefined
+              ? new Prisma.Decimal(dto.depositAmount)
+              : undefined,
           isActive: dto.isActive ?? true,
         },
         tx,
@@ -99,6 +103,10 @@ export class MenuItemService {
       prepTimeMinutes: item.prepTimeMinutes,
       dietaryFlags: item.dietaryFlags as unknown as Prisma.InputJsonValue,
       allergenFlags: item.allergenFlags as unknown as Prisma.InputJsonValue,
+      depositAmount:
+        item.depositAmount !== undefined
+          ? new Prisma.Decimal(item.depositAmount)
+          : undefined,
       isActive: item.isActive ?? true,
     }));
 
@@ -174,6 +182,10 @@ export class MenuItemService {
           prepTimeMinutes: dto.prepTimeMinutes,
           dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
           allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
+          depositAmount:
+            dto.depositAmount !== undefined
+              ? new Prisma.Decimal(dto.depositAmount)
+              : undefined,
           isActive: dto.isActive,
         },
         tx,

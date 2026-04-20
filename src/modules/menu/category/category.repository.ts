@@ -45,18 +45,29 @@ export class MenuCategoryRepository {
       deletedAt: null,
       ...(query.menuId || query.menu_id
         ? {
-            items: {
-              some: {
-                deletedAt: null,
-                ...(query.includeInactive ? {} : { isActive: true }),
+            OR: [
+              {
                 menuLinks: {
                   some: {
                     restaurantMenuId: query.menuId ?? query.menu_id,
-                    ...(query.includeInactive ? {} : { isActive: true }),
                   },
                 },
               },
-            },
+              {
+                items: {
+                  some: {
+                    deletedAt: null,
+                    ...(query.includeInactive ? {} : { isActive: true }),
+                    menuLinks: {
+                      some: {
+                        restaurantMenuId: query.menuId ?? query.menu_id,
+                        ...(query.includeInactive ? {} : { isActive: true }),
+                      },
+                    },
+                  },
+                },
+              },
+            ],
           }
         : {}),
       ...(query.includeInactive ? {} : { isActive: true }),
@@ -81,6 +92,19 @@ export class MenuCategoryRepository {
         ],
         include: {
           parent: { select: { id: true, name: true } },
+          menuLinks: {
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              restaurantMenu: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  isActive: true,
+                },
+              },
+            },
+          },
           modifierLinks: {
             orderBy: [{ sortOrder: 'asc' }],
             include: {

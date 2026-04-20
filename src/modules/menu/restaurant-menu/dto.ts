@@ -5,6 +5,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -34,6 +35,16 @@ export class CreateRestaurantMenuDto {
   @IsString({ each: true })
   itemIds?: string[];
 
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional category ids to include in this menu',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  categoryIds?: string[];
+
   @ApiProperty()
   @IsString()
   @MaxLength(120)
@@ -43,6 +54,19 @@ export class CreateRestaurantMenuDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isTimed?: boolean;
+
+  @ApiPropertyOptional({
+    type: Object,
+    description: 'Optional timed menu schedule configuration',
+  })
+  @IsOptional()
+  @IsObject()
+  timingConfig?: Record<string, unknown>;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
@@ -73,6 +97,15 @@ export class UpdateRestaurantMenuDto {
   @IsString({ each: true })
   itemIds?: string[];
 
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional full replacement list of category ids for this menu',
+  })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsArray()
+  @IsString({ each: true })
+  categoryIds?: string[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -83,6 +116,16 @@ export class UpdateRestaurantMenuDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isTimed?: boolean;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  timingConfig?: Record<string, unknown>;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -41,12 +41,18 @@ export class RestaurantMenuService {
       name: dto.name,
       slug,
       description: dto.description,
+      isTimed: dto.isTimed ?? false,
+      timingConfig: dto.timingConfig as never,
       sortOrder: dto.sortOrder ?? 0,
       isActive: dto.isActive ?? true,
     });
 
     if (dto.itemIds?.length) {
       await this.attachItemsToMenu(data.id, restaurantId, dto.itemIds);
+    }
+
+    if (dto.categoryIds?.length) {
+      await this.attachCategoriesToMenu(data.id, restaurantId, dto.categoryIds);
     }
 
     const menu = await this.restaurantMenuRepository.findById(data.id);
@@ -107,12 +113,18 @@ export class RestaurantMenuService {
         ? await this.ensureUniqueSlug(menu.restaurantId, dto.slug, id)
         : undefined,
       description: dto.description,
+      isTimed: dto.isTimed,
+      timingConfig: dto.timingConfig as never,
       sortOrder: dto.sortOrder,
       isActive: dto.isActive,
     });
 
     if (dto.itemIds !== undefined) {
       await this.syncMenuItems(menu.id, menu.restaurantId, dto.itemIds);
+    }
+
+    if (dto.categoryIds !== undefined) {
+      await this.syncMenuCategories(menu.id, menu.restaurantId, dto.categoryIds);
     }
 
     const updatedMenu = await this.restaurantMenuRepository.findById(id);
@@ -267,6 +279,44 @@ export class RestaurantMenuService {
     );
   }
 
+  private async attachCategoriesToMenu(
+    menuId: string,
+    restaurantId: string,
+    categoryIds: string[],
+  ) {
+    const categories = await this.resolveMenuCategoriesForMenu(
+      restaurantId,
+      categoryIds,
+    );
+
+    const existingLinks = await Promise.all(
+      categories.map((category) =>
+        this.restaurantMenuRepository.findMenuCategoryLink(menuId, category.id),
+      ),
+    );
+
+    if (existingLinks.some(Boolean)) {
+      throw new BadRequestException(
+        'One or more menu categories are already attached to this menu',
+      );
+    }
+
+    const nextSortOrder =
+      await this.restaurantMenuRepository.getNextCategorySortOrder(menuId);
+
+    return this.prisma.$transaction(
+      categories.map((category, index) =>
+        this.prisma.restaurantMenuCategory.create({
+          data: {
+            restaurantMenuId: menuId,
+            menuCategoryId: category.id,
+            sortOrder: nextSortOrder + index,
+          },
+        }),
+      ),
+    );
+  }
+
   private async syncMenuItems(
     menuId: string,
     restaurantId: string,
@@ -311,6 +361,51 @@ export class RestaurantMenuService {
     ]);
   }
 
+  private async syncMenuCategories(
+    menuId: string,
+    restaurantId: string,
+    categoryIds: string[],
+  ) {
+    const uniqueCategoryIds = [...new Set(categoryIds)];
+    const categories = uniqueCategoryIds.length
+      ? await this.resolveMenuCategoriesForMenu(restaurantId, uniqueCategoryIds)
+      : [];
+
+    const existingLinks = await this.prisma.restaurantMenuCategory.findMany({
+      where: { restaurantMenuId: menuId },
+      select: { id: true, menuCategoryId: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const existingCategoryIds = new Set(
+      existingLinks.map((link) => link.menuCategoryId),
+    );
+    const requestedCategoryIds = new Set(uniqueCategoryIds);
+
+    const linksToRemove = existingLinks.filter(
+      (link) => !requestedCategoryIds.has(link.menuCategoryId),
+    );
+
+    const categoriesToAdd = categories.filter(
+      (category) => !existingCategoryIds.has(category.id),
+    );
+
+    await this.prisma.$transaction([
+      ...linksToRemove.map((link) =>
+        this.prisma.restaurantMenuCategory.delete({ where: { id: link.id } }),
+      ),
+      ...categoriesToAdd.map((category, index) =>
+        this.prisma.restaurantMenuCategory.create({
+          data: {
+            restaurantMenuId: menuId,
+            menuCategoryId: category.id,
+            sortOrder: existingLinks.length + index,
+          },
+        }),
+      ),
+    ]);
+  }
+
   private async resolveMenuItemsForMenu(
     restaurantId: string,
     itemIds: string[],
@@ -345,6 +440,40 @@ export class RestaurantMenuService {
       }
 
       return item;
+    });
+  }
+
+  private async resolveMenuCategoriesForMenu(
+    restaurantId: string,
+    categoryIds: string[],
+  ) {
+    const uniqueCategoryIds = [...new Set(categoryIds)];
+    const categories = await this.prisma.menuCategory.findMany({
+      where: {
+        id: { in: uniqueCategoryIds },
+        restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        restaurantId: true,
+      },
+    });
+
+    if (categories.length !== uniqueCategoryIds.length) {
+      throw new NotFoundException('One or more menu categories were not found');
+    }
+
+    return uniqueCategoryIds.map((categoryId) => {
+      const category = categories.find((item) => item.id === categoryId);
+
+      if (!category) {
+        throw new NotFoundException(
+          'One or more menu categories were not found',
+        );
+      }
+
+      return category;
     });
   }
 

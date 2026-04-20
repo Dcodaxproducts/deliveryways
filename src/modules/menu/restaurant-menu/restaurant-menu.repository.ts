@@ -34,6 +34,20 @@ export class RestaurantMenuRepository {
             },
           },
         },
+        categories: {
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            menuCategory: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                imageUrl: true,
+                isActive: true,
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -63,7 +77,7 @@ export class RestaurantMenuRepository {
           { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
         ],
         include: {
-          _count: { select: { items: true } },
+          _count: { select: { items: true, categories: true } },
           items: {
             where: query.includeInactive
               ? undefined
@@ -83,6 +97,20 @@ export class RestaurantMenuRepository {
                     where: { deletedAt: null, isActive: true },
                     orderBy: { sortOrder: 'asc' },
                   },
+                },
+              },
+            },
+          },
+          categories: {
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              menuCategory: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  imageUrl: true,
+                  isActive: true,
                 },
               },
             },
@@ -114,6 +142,13 @@ export class RestaurantMenuRepository {
     return this.client(tx).restaurantMenuItem.create({ data });
   }
 
+  async attachCategory(
+    data: Prisma.RestaurantMenuCategoryCreateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).restaurantMenuCategory.create({ data });
+  }
+
   async getNextSortOrder(restaurantMenuId: string) {
     const latest = await this.prisma.restaurantMenuItem.findFirst({
       where: { restaurantMenuId },
@@ -143,6 +178,51 @@ export class RestaurantMenuRepository {
         },
       },
     });
+  }
+
+  async findMenuCategoryLink(restaurantMenuId: string, menuCategoryId: string) {
+    return this.prisma.restaurantMenuCategory.findUnique({
+      where: {
+        restaurantMenuId_menuCategoryId: {
+          restaurantMenuId,
+          menuCategoryId,
+        },
+      },
+    });
+  }
+
+  async listMenuCategories(restaurantMenuId: string) {
+    return this.prisma.restaurantMenuCategory.findMany({
+      where: { restaurantMenuId },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        menuCategory: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            imageUrl: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+  }
+
+  async deleteMenuCategoryLinks(restaurantMenuId: string, tx?: PrismaTx) {
+    return this.client(tx).restaurantMenuCategory.deleteMany({
+      where: { restaurantMenuId },
+    });
+  }
+
+  async getNextCategorySortOrder(restaurantMenuId: string) {
+    const latest = await this.prisma.restaurantMenuCategory.findFirst({
+      where: { restaurantMenuId },
+      orderBy: [{ sortOrder: 'desc' }, { createdAt: 'desc' }],
+      select: { sortOrder: true },
+    });
+
+    return (latest?.sortOrder ?? -1) + 1;
   }
 
   async listMenuItems(

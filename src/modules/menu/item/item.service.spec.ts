@@ -127,6 +127,38 @@ describe('MenuItemService', () => {
     expect(itemRepository.create).not.toHaveBeenCalled();
   });
 
+  it('stores separate deposit amount when provided', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Glass Bottle Cola',
+        slug: 'glass-bottle-cola',
+        basePrice: 250,
+        depositAmount: 50,
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        depositAmount: expect.anything(),
+      }),
+      expect.anything(),
+    );
+  });
+
   it('blocks customer writes outside menu item permissions', async () => {
     const { service } = makeService();
 
