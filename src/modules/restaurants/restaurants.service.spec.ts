@@ -246,6 +246,31 @@ describe('RestaurantsService notification settings', () => {
     expect(result.data.items[0].status).toBe('DRAFT');
   });
 
+  it('allows business admin faq access when token rid is null but restaurant belongs to same tenant', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        customerApp: {
+          faqs: [],
+        },
+      },
+    });
+
+    const result = await service.customerAppFaqs(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: null,
+      } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data.restaurantId).toBe('restaurant-1');
+    expect(repository.findById).toHaveBeenCalledWith('restaurant-1');
+  });
+
   it('creates a structured faq entry', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',

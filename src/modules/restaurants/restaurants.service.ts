@@ -133,7 +133,7 @@ export class RestaurantsService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    this.ensureRestaurantReadAccess(user, restaurant.id);
+    await this.ensureRestaurantReadAccess(user, restaurant.id);
 
     return {
       data: await this.withDeletionState(restaurant),
@@ -147,7 +147,7 @@ export class RestaurantsService {
     dto: UpdateRestaurantDto,
     tx?: PrismaTx,
   ) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const data = await this.restaurantsRepository.update(
       id,
@@ -180,7 +180,7 @@ export class RestaurantsService {
   }
 
   async suspend(user: AuthUserContext, id: string, tx?: PrismaTx) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const data = await this.restaurantsRepository.setActive(id, false, tx);
     await this.restaurantsRepository.setBranchesActiveByRestaurant(
@@ -196,7 +196,7 @@ export class RestaurantsService {
   }
 
   async activate(user: AuthUserContext, id: string, tx?: PrismaTx) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const data = await this.restaurantsRepository.setActive(id, true, tx);
 
@@ -213,7 +213,7 @@ export class RestaurantsService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    this.ensureRestaurantReadAccess(user, id);
+    await this.ensureRestaurantReadAccess(user, id);
 
     return {
       data: await this.extractCustomerAppContent(restaurant),
@@ -244,7 +244,7 @@ export class RestaurantsService {
     dto: UpdateRestaurantCustomerAppContentDto,
     tx?: PrismaTx,
   ) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const restaurant = await this.restaurantsRepository.findById(id);
     if (!restaurant || restaurant.deletedAt) {
@@ -277,7 +277,7 @@ export class RestaurantsService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    this.ensureRestaurantReadAccess(user, restaurant.id);
+    await this.ensureRestaurantReadAccess(user, restaurant.id);
 
     const items = this.extractCustomerAppFaqs(restaurant.settings);
 
@@ -298,7 +298,7 @@ export class RestaurantsService {
     dto: CreateRestaurantCustomerAppFaqDto,
     tx?: PrismaTx,
   ) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const restaurant = await this.restaurantsRepository.findById(id);
     if (!restaurant || restaurant.deletedAt) {
@@ -342,7 +342,7 @@ export class RestaurantsService {
     dto: UpdateRestaurantCustomerAppFaqDto,
     tx?: PrismaTx,
   ) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const restaurant = await this.restaurantsRepository.findById(id);
     if (!restaurant || restaurant.deletedAt) {
@@ -392,7 +392,7 @@ export class RestaurantsService {
     faqId: string,
     tx?: PrismaTx,
   ) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const restaurant = await this.restaurantsRepository.findById(id);
     if (!restaurant || restaurant.deletedAt) {
@@ -464,7 +464,7 @@ export class RestaurantsService {
     dto: UpdateRestaurantImagesDto,
     tx?: PrismaTx,
   ) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const data = await this.restaurantsRepository.update(
       id,
@@ -488,7 +488,7 @@ export class RestaurantsService {
   }
 
   async remove(user: AuthUserContext, id: string, tx?: PrismaTx) {
-    this.ensureRestaurantWriteAccess(user, id);
+    await this.ensureRestaurantWriteAccess(user, id);
 
     const data = await this.restaurantsRepository.softDelete(id, tx);
 
@@ -1028,7 +1028,7 @@ export class RestaurantsService {
     return user.tid;
   }
 
-  private ensureRestaurantReadAccess(
+  private async ensureRestaurantReadAccess(
     user: AuthUserContext,
     restaurantId: string,
   ) {
@@ -1040,21 +1040,30 @@ export class RestaurantsService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    if (
-      user.role !== UserRoleEnum.BUSINESS_ADMIN ||
-      user.rid !== restaurantId
-    ) {
+    if (user.role !== UserRoleEnum.BUSINESS_ADMIN) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
+    }
+
+    if (user.rid === restaurantId) {
+      return;
+    }
+
+    const restaurant = await this.restaurantsRepository.findById(restaurantId);
+
+    if (!restaurant || restaurant.deletedAt || restaurant.tenantId !== user.tid) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
     }
   }
 
-  private ensureRestaurantWriteAccess(
+  private async ensureRestaurantWriteAccess(
     user: AuthUserContext,
     restaurantId: string,
   ) {
-    this.ensureRestaurantReadAccess(user, restaurantId);
+    await this.ensureRestaurantReadAccess(user, restaurantId);
   }
 
   private async ensureUniqueSlug(
