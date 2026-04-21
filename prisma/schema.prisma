@@ -566,9 +566,7 @@ model MenuItemVariation {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  category   MenuCategory @relation(fields: [categoryId], references: [id])
-  modifier   Modifier?    @relation(fields: [modifierId], references: [id])
-  modifierId String?
+  category MenuCategory @relation(fields: [categoryId], references: [id])
 
   @@unique([categoryId, name])
   @@map("menu_item_variations")
@@ -621,9 +619,8 @@ model Modifier {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  modifierGroup        ModifierGroup                   @relation(fields: [modifierGroupId], references: [id])
-  itemPriceOverrides   MenuItemModifierPriceOverride[]
-  requiredByVariations MenuItemVariation[]
+  modifierGroup      ModifierGroup                   @relation(fields: [modifierGroupId], references: [id])
+  itemPriceOverrides MenuItemModifierPriceOverride[]
 
   @@unique([modifierGroupId, name])
   @@map("modifiers")
