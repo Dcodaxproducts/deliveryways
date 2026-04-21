@@ -21,6 +21,31 @@ ALTER TABLE "menu_item_variations"
   ADD CONSTRAINT "menu_item_variations_category_id_fkey"
   FOREIGN KEY ("category_id") REFERENCES "menu_categories"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+WITH ranked_variations AS (
+  SELECT
+    mv."id",
+    mv."name",
+    mi."name" AS "menu_item_name",
+    ROW_NUMBER() OVER (
+      PARTITION BY mv."category_id", mv."name"
+      ORDER BY mv."created_at" ASC, mv."id" ASC
+    ) AS "duplicate_rank"
+  FROM "menu_item_variations" mv
+  LEFT JOIN "menu_items" mi ON mi."id" = mv."menu_item_id"
+)
+UPDATE "menu_item_variations" mv
+SET "name" = CONCAT(
+  ranked_variations."name",
+  ' (',
+  COALESCE(NULLIF(ranked_variations."menu_item_name", ''), 'Item'),
+  ' ',
+  ranked_variations."duplicate_rank",
+  ')'
+)
+FROM ranked_variations
+WHERE mv."id" = ranked_variations."id"
+  AND ranked_variations."duplicate_rank" > 1;
+
 CREATE UNIQUE INDEX "menu_item_variations_category_id_name_key"
   ON "menu_item_variations"("category_id", "name");
 
