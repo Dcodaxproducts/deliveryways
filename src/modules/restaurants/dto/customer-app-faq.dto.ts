@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString } from 'class-validator';
 import {
+  CUSTOMER_APP_FAQ_CATEGORY_VALUES,
   CUSTOMER_APP_FAQ_STATUS_VALUES,
   CUSTOMER_APP_FAQ_VISIBILITY_VALUES,
 } from '../../../common/utils';
@@ -16,10 +17,10 @@ export class RestaurantCustomerAppFaqDto {
   @IsString()
   question?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: CUSTOMER_APP_FAQ_CATEGORY_VALUES })
   @IsOptional()
-  @IsString()
-  category?: string;
+  @IsIn(CUSTOMER_APP_FAQ_CATEGORY_VALUES)
+  category?: (typeof CUSTOMER_APP_FAQ_CATEGORY_VALUES)[number];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -42,9 +43,9 @@ export class CreateRestaurantCustomerAppFaqDto {
   @IsString()
   question!: string;
 
-  @ApiProperty()
-  @IsString()
-  category!: string;
+  @ApiProperty({ enum: CUSTOMER_APP_FAQ_CATEGORY_VALUES })
+  @IsIn(CUSTOMER_APP_FAQ_CATEGORY_VALUES)
+  category!: (typeof CUSTOMER_APP_FAQ_CATEGORY_VALUES)[number];
 
   @ApiProperty()
   @IsString()
@@ -67,10 +68,10 @@ export class UpdateRestaurantCustomerAppFaqDto {
   @IsString()
   question?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: CUSTOMER_APP_FAQ_CATEGORY_VALUES })
   @IsOptional()
-  @IsString()
-  category?: string;
+  @IsIn(CUSTOMER_APP_FAQ_CATEGORY_VALUES)
+  category?: (typeof CUSTOMER_APP_FAQ_CATEGORY_VALUES)[number];
 
   @ApiPropertyOptional()
   @IsOptional()

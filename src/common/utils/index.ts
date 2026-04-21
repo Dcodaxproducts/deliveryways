@@ -5,6 +5,7 @@ export {
 } from './pagination.util';
 export {
   DEFAULT_CUSTOMER_APP_FAQ_CATEGORIES,
+  CUSTOMER_APP_FAQ_CATEGORY_VALUES,
   CUSTOMER_APP_FAQ_STATUS_VALUES,
   CUSTOMER_APP_FAQ_VISIBILITY_VALUES,
   extractCustomerAppFaqCategories,
