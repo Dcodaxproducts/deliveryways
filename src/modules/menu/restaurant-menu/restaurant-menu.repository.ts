@@ -31,6 +31,10 @@ export class RestaurantMenuRepository {
                     name: true,
                     slug: true,
                     imageUrl: true,
+                    variations: {
+                      where: { deletedAt: null, isActive: true },
+                      orderBy: { sortOrder: 'asc' },
+                    },
                     modifierLinks: {
                       orderBy: [{ sortOrder: 'asc' }],
                       include: {
@@ -48,10 +52,6 @@ export class RestaurantMenuRepository {
                       },
                     },
                   },
-                },
-                variations: {
-                  where: { deletedAt: null, isActive: true },
-                  orderBy: { sortOrder: 'asc' },
                 },
                 modifierLinks: {
                   orderBy: [{ sortOrder: 'asc' }],
@@ -137,6 +137,10 @@ export class RestaurantMenuRepository {
                       name: true,
                       slug: true,
                       imageUrl: true,
+                      variations: {
+                        where: { deletedAt: null, isActive: true },
+                        orderBy: { sortOrder: 'asc' },
+                      },
                       modifierLinks: {
                         orderBy: [{ sortOrder: 'asc' }],
                         include: {
@@ -154,10 +158,6 @@ export class RestaurantMenuRepository {
                         },
                       },
                     },
-                  },
-                  variations: {
-                    where: { deletedAt: null, isActive: true },
-                    orderBy: { sortOrder: 'asc' },
                   },
                   modifierLinks: {
                     orderBy: [{ sortOrder: 'asc' }],
@@ -370,6 +370,13 @@ export class RestaurantMenuRepository {
               name: true,
               slug: true,
               imageUrl: true,
+              variations: {
+                where: {
+                  deletedAt: null,
+                  ...(query.includeInactive ? {} : { isActive: true }),
+                },
+                orderBy: { sortOrder: 'asc' },
+              },
               modifierLinks: {
                 orderBy: [{ sortOrder: 'asc' }],
                 include: {
@@ -384,13 +391,6 @@ export class RestaurantMenuRepository {
                 },
               },
             },
-          },
-          variations: {
-            where: {
-              deletedAt: null,
-              ...(query.includeInactive ? {} : { isActive: true }),
-            },
-            orderBy: { sortOrder: 'asc' },
           },
           menuLinks: {
             where: { restaurantMenuId },
@@ -459,7 +459,7 @@ export class RestaurantMenuRepository {
           prepTimeMinutes: item.prepTimeMinutes,
           isActive: item.isActive,
           category: item.category,
-          variations: item.variations,
+          variations: item.category.variations,
           menuResolution: {
             source,
             directLink,

@@ -257,10 +257,7 @@ export class GroupOrdersRepository {
     });
   }
 
-  async findRestaurantMenuById(
-    restaurantMenuId: string,
-    restaurantId: string,
-  ) {
+  async findRestaurantMenuById(restaurantMenuId: string, restaurantId: string) {
     return this.prisma.restaurantMenu.findFirst({
       where: {
         id: restaurantMenuId,
@@ -306,7 +303,7 @@ export class GroupOrdersRepository {
     restaurantId: string,
     branchId: string,
   ) {
-    return this.prisma.menuItem.findFirst({
+    const item = await this.prisma.menuItem.findFirst({
       where: {
         id: menuItemId,
         restaurantId,
@@ -314,9 +311,13 @@ export class GroupOrdersRepository {
         isActive: true,
       },
       include: {
-        variations: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        category: {
+          select: {
+            variations: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
         },
         branchOverrides: {
           where: { branchId },
@@ -325,6 +326,13 @@ export class GroupOrdersRepository {
         },
       },
     });
+
+    return item
+      ? {
+          ...item,
+          variations: item.category.variations,
+        }
+      : null;
   }
 
   async findMenuItemsForResponse(
@@ -336,18 +344,22 @@ export class GroupOrdersRepository {
       return [];
     }
 
-    return this.prisma.menuItem.findMany({
+    const items = await this.prisma.menuItem.findMany({
       where: {
         id: { in: menuItemIds },
         restaurantId,
       },
       include: {
         category: {
-          select: { id: true, name: true, imageUrl: true },
-        },
-        variations: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            variations: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
         },
         modifierLinks: {
           orderBy: [{ sortOrder: 'asc' }],
@@ -369,5 +381,10 @@ export class GroupOrdersRepository {
         },
       },
     });
+
+    return items.map((item) => ({
+      ...item,
+      variations: item.category.variations,
+    }));
   }
 }

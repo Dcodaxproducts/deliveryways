@@ -551,8 +551,14 @@ export class OrdersService {
           isActive: true,
         },
         include: {
-          category: { select: { id: true } },
-          variations: { where: { deletedAt: null, isActive: true } },
+          category: {
+            select: {
+              id: true,
+              variations: {
+                where: { deletedAt: null, isActive: true },
+              },
+            },
+          },
           modifierLinks: {
             include: {
               modifierGroup: {
@@ -599,32 +605,25 @@ export class OrdersService {
       }
 
       let unitPrice = this.resolveOrderItemBasePrice(
-        menuItem,
+        {
+          ...menuItem,
+          variations: menuItem.category.variations,
+        },
         branchOverride?.priceOverride,
         requestedItem.variationId,
       ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
 
       let variationName: string | undefined;
-      const selectedModifierIds = new Set(
-        (requestedItem.modifiers ?? []).map((modifier) => modifier.modifierId),
-      );
+      const menuItemVariations = menuItem.category.variations;
 
       if (requestedItem.variationId) {
-        const variation = menuItem.variations.find(
+        const variation = menuItemVariations.find(
           (v) => v.id === requestedItem.variationId,
         );
         if (!variation) {
           throw new BadRequestException(
             `Variation not found for item: ${menuItem.name}`,
-          );
-        }
-        if (
-          variation.requiredModifierId &&
-          !selectedModifierIds.has(variation.requiredModifierId)
-        ) {
-          throw new BadRequestException(
-            `Variation not available for selected modifiers: ${menuItem.name}`,
           );
         }
         variationName = variation.name;
@@ -1550,39 +1549,50 @@ export class OrdersService {
     ];
 
     const menuItems = menuItemIds.length
-      ? await this.prisma.menuItem.findMany({
-          where: {
-            id: { in: menuItemIds },
-          },
-          include: {
-            category: {
-              select: { id: true, name: true, imageUrl: true },
+      ? await this.prisma.menuItem
+          .findMany({
+            where: {
+              id: { in: menuItemIds },
             },
-            variations: {
-              where: { deletedAt: null, isActive: true },
-              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            },
-            modifierLinks: {
-              orderBy: [{ sortOrder: 'asc' }],
-              include: {
-                modifierGroup: {
-                  include: {
-                    modifiers: {
-                      where: { deletedAt: null, isActive: true },
-                      include: {
-                        itemPriceOverrides: true,
+            include: {
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                  variations: {
+                    where: { deletedAt: null, isActive: true },
+                    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                  },
+                },
+              },
+              modifierLinks: {
+                orderBy: [{ sortOrder: 'asc' }],
+                include: {
+                  modifierGroup: {
+                    include: {
+                      modifiers: {
+                        where: { deletedAt: null, isActive: true },
+                        include: {
+                          itemPriceOverrides: true,
+                        },
+                        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                       },
-                      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                     },
                   },
                 },
               },
+              branchOverrides: {
+                where: { branchId },
+              },
             },
-            branchOverrides: {
-              where: { branchId },
-            },
-          },
-        })
+          })
+          .then((items) =>
+            items.map((item) => ({
+              ...item,
+              variations: item.category.variations ?? [],
+            })),
+          )
       : [];
 
     const menuItemMap = new Map(

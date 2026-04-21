@@ -14,7 +14,7 @@ describe('MenuVariationService', () => {
     };
 
     const prisma = {
-      menuItem: { findUnique: jest.fn() },
+      menuCategory: { findUnique: jest.fn() },
       restaurant: { findFirst: jest.fn() },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback({})),
@@ -31,8 +31,8 @@ describe('MenuVariationService', () => {
 
   it('allows business admin to create variation for a tenant restaurant even when token rid is null', async () => {
     const { service, variationRepository, prisma } = makeService();
-    prisma.menuItem.findUnique.mockResolvedValue({
-      id: 'item-1',
+    prisma.menuCategory.findUnique.mockResolvedValue({
+      id: 'category-1',
       restaurantId: 'restaurant-1',
       deletedAt: null,
     });
@@ -46,7 +46,7 @@ describe('MenuVariationService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       {
-        menuItemId: 'item-1',
+        categoryId: 'category-1',
         name: 'Large',
         description: 'Best for sharing',
         price: 100,
@@ -69,8 +69,8 @@ describe('MenuVariationService', () => {
 
   it('blocks business admin variation write outside tenant restaurants', async () => {
     const { service, prisma } = makeService();
-    prisma.menuItem.findUnique.mockResolvedValue({
-      id: 'item-1',
+    prisma.menuCategory.findUnique.mockResolvedValue({
+      id: 'category-1',
       restaurantId: 'restaurant-2',
       deletedAt: null,
     });
@@ -84,7 +84,7 @@ describe('MenuVariationService', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
         },
         {
-          menuItemId: 'item-1',
+          categoryId: 'category-1',
           name: 'Large',
           price: 100,
         },
@@ -94,7 +94,7 @@ describe('MenuVariationService', () => {
 
   it('throws when menu item is missing', async () => {
     const { service, prisma } = makeService();
-    prisma.menuItem.findUnique.mockResolvedValue(null);
+    prisma.menuCategory.findUnique.mockResolvedValue(null);
 
     await expect(
       service.create(
@@ -104,7 +104,7 @@ describe('MenuVariationService', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
         },
         {
-          menuItemId: 'missing-item',
+          categoryId: 'missing-category',
           name: 'Large',
           price: 100,
         },

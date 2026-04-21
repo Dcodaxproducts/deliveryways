@@ -75,7 +75,7 @@ export class RestaurantMenuService {
     );
 
     return {
-      data: items,
+      data: items.map((item) => this.attachCategoryVariations(item)),
       message: 'Restaurant menus fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -90,7 +90,7 @@ export class RestaurantMenuService {
     await this.ensureCanReadRestaurant(user, menu.restaurantId);
 
     return {
-      data: menu,
+      data: this.attachCategoryVariations(menu),
       message: 'Restaurant menu fetched successfully',
     };
   }
@@ -124,7 +124,11 @@ export class RestaurantMenuService {
     }
 
     if (dto.categoryIds !== undefined) {
-      await this.syncMenuCategories(menu.id, menu.restaurantId, dto.categoryIds);
+      await this.syncMenuCategories(
+        menu.id,
+        menu.restaurantId,
+        dto.categoryIds,
+      );
     }
 
     const updatedMenu = await this.restaurantMenuRepository.findById(id);
@@ -614,5 +618,30 @@ export class RestaurantMenuService {
       candidate = `${normalizedBase}-${counter}`;
       counter += 1;
     }
+  }
+
+  private attachCategoryVariations<
+    T extends {
+      items?: Array<{
+        menuItem: Record<string, unknown> & {
+          category?: { variations?: unknown[] };
+        };
+      }>;
+    },
+  >(menu: T): T {
+    if (!menu.items) {
+      return menu;
+    }
+
+    return {
+      ...menu,
+      items: menu.items.map((item) => ({
+        ...item,
+        menuItem: {
+          ...item.menuItem,
+          variations: item.menuItem.category?.variations ?? [],
+        },
+      })),
+    };
   }
 }

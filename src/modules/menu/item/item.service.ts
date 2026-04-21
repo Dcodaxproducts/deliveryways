@@ -241,7 +241,6 @@ export class MenuItemService {
 
     const data = await this.prisma.$transaction(async (tx) => {
       await this.itemRepository.deleteMenuLinks(id, tx);
-      await this.itemRepository.deleteVariations(id, tx);
       await this.itemRepository.deleteModifierLinks(id, tx);
       await this.itemRepository.deleteBranchOverrides(id, tx);
       await this.itemRepository.deleteRecipes(id, tx);

@@ -22,7 +22,7 @@ export class MenuVariationRepository {
 
   async list(query: ListMenuVariationsDto) {
     const where: Prisma.MenuItemVariationWhereInput = {
-      menuItemId: query.menuItemId,
+      categoryId: query.categoryId,
       deletedAt: null,
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
@@ -42,9 +42,9 @@ export class MenuVariationRepository {
     return { items, total };
   }
 
-  async resetDefaults(menuItemId: string, tx?: PrismaTx) {
+  async resetDefaults(categoryId: string, tx?: PrismaTx) {
     return this.client(tx).menuItemVariation.updateMany({
-      where: { menuItemId },
+      where: { categoryId },
       data: { isDefault: false },
     });
   }

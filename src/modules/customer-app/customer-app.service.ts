@@ -1111,12 +1111,22 @@ export class CustomerAppService {
       logoUrl?: string | null;
       tagline?: string | null;
     };
-    category?: { id: string; name: string; imageUrl?: string | null };
+    category?: {
+      id: string;
+      name: string;
+      imageUrl?: string | null;
+      variations?: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        price: Prisma.Decimal;
+        isDefault: boolean;
+      }>;
+    };
     variations?: Array<{
       id: string;
       name: string;
       description: string | null;
-      requiredModifierId?: string | null;
       price: Prisma.Decimal;
       isDefault: boolean;
     }>;
@@ -1169,7 +1179,7 @@ export class CustomerAppService {
             imageUrl: await this.resolveMediaUrl(item.category.imageUrl),
           }
         : null,
-      variations: item.variations ?? [],
+      variations: item.variations ?? item.category?.variations ?? [],
       modifierGroups: (item.modifierLinks ?? []).map((link) => ({
         id: link.modifierGroup.id,
         name: link.modifierGroup.name,

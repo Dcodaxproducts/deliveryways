@@ -118,6 +118,13 @@ export class MenuItemRepository {
               name: true,
               slug: true,
               imageUrl: true,
+              variations: {
+                where: {
+                  deletedAt: null,
+                  ...(query.includeInactive ? {} : { isActive: true }),
+                },
+                orderBy: { sortOrder: 'asc' },
+              },
               menuLinks: {
                 orderBy: [{ sortOrder: 'asc' }],
                 include: {
@@ -160,10 +167,6 @@ export class MenuItemRepository {
               },
             },
           },
-          variations: {
-            where: { deletedAt: null },
-            orderBy: { sortOrder: 'asc' },
-          },
           modifierLinks: {
             orderBy: [{ sortOrder: 'asc' }],
             include: {
@@ -182,7 +185,6 @@ export class MenuItemRepository {
           },
           _count: {
             select: {
-              variations: true,
               modifierLinks: true,
               menuLinks: true,
             },
@@ -192,7 +194,17 @@ export class MenuItemRepository {
       this.prisma.menuItem.count({ where }),
     ]);
 
-    return { items, total };
+    return {
+      items: items.map((item) => ({
+        ...item,
+        variations: item.category.variations,
+        _count: {
+          ...item._count,
+          variations: item.category.variations.length,
+        },
+      })),
+      total,
+    };
   }
 
   async update(id: string, data: Prisma.MenuItemUpdateInput, tx?: PrismaTx) {
@@ -214,12 +226,6 @@ export class MenuItemRepository {
 
   deleteMenuLinks(menuItemId: string, tx?: PrismaTx) {
     return this.client(tx).restaurantMenuItem.deleteMany({
-      where: { menuItemId },
-    });
-  }
-
-  deleteVariations(menuItemId: string, tx?: PrismaTx) {
-    return this.client(tx).menuItemVariation.deleteMany({
       where: { menuItemId },
     });
   }

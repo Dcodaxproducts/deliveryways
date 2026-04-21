@@ -156,10 +156,16 @@ export class CustomerAppRepository {
           restaurant: {
             select: { id: true, name: true, logoUrl: true, tagline: true },
           },
-          category: { select: { id: true, name: true, imageUrl: true } },
-          variations: {
-            where: { deletedAt: null, isActive: true },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          category: {
+            select: {
+              id: true,
+              name: true,
+              imageUrl: true,
+              variations: {
+                where: { deletedAt: null, isActive: true },
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              },
+            },
           },
           modifierLinks: {
             orderBy: [{ sortOrder: 'asc' }],
@@ -397,10 +403,16 @@ export class CustomerAppRepository {
           restaurant: {
             select: { id: true, name: true, logoUrl: true, tagline: true },
           },
-          category: { select: { id: true, name: true, imageUrl: true } },
-          variations: {
-            where: { deletedAt: null, isActive: true },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          category: {
+            select: {
+              id: true,
+              name: true,
+              imageUrl: true,
+              variations: {
+                where: { deletedAt: null, isActive: true },
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              },
+            },
           },
           modifierLinks: {
             orderBy: [{ sortOrder: 'asc' }],
@@ -470,10 +482,16 @@ export class CustomerAppRepository {
         restaurant: {
           select: { id: true, name: true, logoUrl: true, tagline: true },
         },
-        category: { select: { id: true, name: true, imageUrl: true } },
-        variations: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        category: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            variations: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
         },
         modifierLinks: {
           orderBy: [{ sortOrder: 'asc' }],
@@ -540,10 +558,16 @@ export class CustomerAppRepository {
         restaurant: {
           select: { id: true, name: true, logoUrl: true, tagline: true },
         },
-        category: { select: { id: true, name: true, imageUrl: true } },
-        variations: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        category: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            variations: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
         },
         modifierLinks: {
           orderBy: [{ sortOrder: 'asc' }],

@@ -13,7 +13,7 @@ import { QueryDto } from '../../../common/dto';
 export class CreateMenuVariationDto {
   @ApiProperty()
   @IsString()
-  menuItemId!: string;
+  categoryId!: string;
 
   @ApiProperty()
   @IsString()
@@ -23,11 +23,6 @@ export class CreateMenuVariationDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  requiredModifierId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -71,11 +66,6 @@ export class UpdateMenuVariationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  requiredModifierId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   sku?: string;
 
   @ApiPropertyOptional()
@@ -105,5 +95,5 @@ export class UpdateMenuVariationDto {
 export class ListMenuVariationsDto extends QueryDto {
   @ApiProperty()
   @IsString()
-  menuItemId!: string;
+  categoryId!: string;
 }

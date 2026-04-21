@@ -223,15 +223,15 @@ model Tenant {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  owner         User?                @relation("TenantOwner", fields: [ownerId], references: [id])
-  restaurants   Restaurant[]
-  branches      Branch[]
-  users         User[]               @relation("TenantUsers")
-  staffRoles    StaffRole[]
-  staffUsers    StaffUser[]
-  coupons       Coupon[]
-  carts         Cart[]
-  orders        Order[]
+  owner               User?                @relation("TenantOwner", fields: [ownerId], references: [id])
+  restaurants         Restaurant[]
+  branches            Branch[]
+  users               User[]               @relation("TenantUsers")
+  staffRoles          StaffRole[]
+  staffUsers          StaffUser[]
+  coupons             Coupon[]
+  carts               Cart[]
+  orders              Order[]
   transactions        PaymentTransaction[]
   walletAccounts      WalletAccount[]
   walletTransactions  WalletTransaction[]
@@ -239,10 +239,10 @@ model Tenant {
   loyaltyAccounts     LoyaltyAccount[]
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
-  deliverymen   Deliveryman[]
-  chatThreads   ChatThread[]
-  groupOrders   GroupOrderSession[]
-  posOrderDrafts PosOrderDraft[]
+  deliverymen         Deliveryman[]
+  chatThreads         ChatThread[]
+  groupOrders         GroupOrderSession[]
+  posOrderDrafts      PosOrderDraft[]
 
   @@map("tenants")
 }
@@ -311,26 +311,26 @@ model Branch {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant         Restaurant               @relation(fields: [restaurantId], references: [id])
-  tenant             Tenant                   @relation(fields: [tenantId], references: [id])
-  manager            User?                    @relation("BranchManager", fields: [managerId], references: [id])
-  users              User[]                   @relation("BranchUsers")
-  staffRoles         StaffRole[]
-  staffUsers         StaffUser[]
-  menuItemOverrides  BranchMenuItemOverride[]
-  categoryOverrides  BranchCategoryOverride[]
-  inventoryMovements InventoryMovement[]
-  coupons            Coupon[]
-  carts              Cart[]
-  orders             Order[]
+  restaurant          Restaurant               @relation(fields: [restaurantId], references: [id])
+  tenant              Tenant                   @relation(fields: [tenantId], references: [id])
+  manager             User?                    @relation("BranchManager", fields: [managerId], references: [id])
+  users               User[]                   @relation("BranchUsers")
+  staffRoles          StaffRole[]
+  staffUsers          StaffUser[]
+  menuItemOverrides   BranchMenuItemOverride[]
+  categoryOverrides   BranchCategoryOverride[]
+  inventoryMovements  InventoryMovement[]
+  coupons             Coupon[]
+  carts               Cart[]
+  orders              Order[]
   transactions        PaymentTransaction[]
   walletTransactions  WalletTransaction[]
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
-  deliverymen        Deliveryman[]
-  chatThreads        ChatThread[]
-  groupOrders        GroupOrderSession[]
-  posOrderDrafts     PosOrderDraft[]
+  deliverymen         Deliveryman[]
+  chatThreads         ChatThread[]
+  groupOrders         GroupOrderSession[]
+  posOrderDrafts      PosOrderDraft[]
 
   @@map("branches")
 }
@@ -444,53 +444,53 @@ model MenuCategory {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant   Restaurant               @relation(fields: [restaurantId], references: [id])
-  parent       MenuCategory?            @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
-  children     MenuCategory[]           @relation("MenuCategoryTree")
-  items        MenuItem[]
-  menuLinks    RestaurantMenuCategory[]
+  restaurant    Restaurant                  @relation(fields: [restaurantId], references: [id])
+  parent        MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
+  children      MenuCategory[]              @relation("MenuCategoryTree")
+  items         MenuItem[]
+  variations    MenuItemVariation[]
+  menuLinks     RestaurantMenuCategory[]
   modifierLinks MenuCategoryModifierGroup[]
-  overrides    BranchCategoryOverride[]
-  couponScopes Coupon[]
+  overrides     BranchCategoryOverride[]
+  couponScopes  Coupon[]
 
   @@unique([restaurantId, slug])
   @@map("menu_categories")
 }
 
 model MenuItem {
-  id                     String    @id @default(cuid())
-  restaurantId           String    @map("restaurant_id")
-  categoryId             String    @map("category_id")
-  name                   String
-  slug                   String
-  description            String?
-  ingredients            String?
-  nutritionalInformation String?   @map("nutritional_information")
-  imageUrl               String?   @map("image_url")
-  sku                    String?
-  pricingMode            MenuItemPricingMode @default(SINGLE) @map("pricing_mode")
-  basePrice              Decimal   @default(0) @map("base_price") @db.Decimal(10, 2)
-  deliveryPriceAdjustment Decimal  @default(0) @map("delivery_price_adjustment") @db.Decimal(10, 2)
-  takeawayPriceAdjustment Decimal  @default(0) @map("takeaway_price_adjustment") @db.Decimal(10, 2)
-  prepTimeMinutes        Int?      @map("prep_time_minutes")
-  dietaryFlags           Json?     @map("dietary_flags")
-  allergenFlags          Json?     @map("allergen_flags")
-  depositAmount          Decimal?  @map("deposit_amount") @db.Decimal(10, 2)
-  isActive               Boolean   @default(true) @map("is_active")
-  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                      String              @id @default(cuid())
+  restaurantId            String              @map("restaurant_id")
+  categoryId              String              @map("category_id")
+  name                    String
+  slug                    String
+  description             String?
+  ingredients             String?
+  nutritionalInformation  String?             @map("nutritional_information")
+  imageUrl                String?             @map("image_url")
+  sku                     String?
+  pricingMode             MenuItemPricingMode @default(SINGLE) @map("pricing_mode")
+  basePrice               Decimal             @default(0) @map("base_price") @db.Decimal(10, 2)
+  deliveryPriceAdjustment Decimal             @default(0) @map("delivery_price_adjustment") @db.Decimal(10, 2)
+  takeawayPriceAdjustment Decimal             @default(0) @map("takeaway_price_adjustment") @db.Decimal(10, 2)
+  prepTimeMinutes         Int?                @map("prep_time_minutes")
+  dietaryFlags            Json?               @map("dietary_flags")
+  allergenFlags           Json?               @map("allergen_flags")
+  depositAmount           Decimal?            @map("deposit_amount") @db.Decimal(10, 2)
+  isActive                Boolean             @default(true) @map("is_active")
+  deletedAt               DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant      Restaurant               @relation(fields: [restaurantId], references: [id])
-  category        MenuCategory             @relation(fields: [categoryId], references: [id])
-  menuLinks       RestaurantMenuItem[]
-  variations      MenuItemVariation[]
-  modifierLinks   MenuItemModifierGroup[]
+  restaurant             Restaurant                      @relation(fields: [restaurantId], references: [id])
+  category               MenuCategory                    @relation(fields: [categoryId], references: [id])
+  menuLinks              RestaurantMenuItem[]
+  modifierLinks          MenuItemModifierGroup[]
   modifierPriceOverrides MenuItemModifierPriceOverride[]
-  branchOverrides BranchMenuItemOverride[]
-  recipes         MenuItemRecipe[]
-  couponScopes    Coupon[]
-  orderItems      OrderItem[]
+  branchOverrides        BranchMenuItemOverride[]
+  recipes                MenuItemRecipe[]
+  couponScopes           Coupon[]
+  orderItems             OrderItem[]
 
   @@unique([restaurantId, slug])
   @@unique([restaurantId, sku])
@@ -511,10 +511,10 @@ model RestaurantMenu {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant Restaurant           @relation(fields: [restaurantId], references: [id])
-  items      RestaurantMenuItem[]
-  categories RestaurantMenuCategory[]
-  carts      Cart[]
+  restaurant         Restaurant               @relation(fields: [restaurantId], references: [id])
+  items              RestaurantMenuItem[]
+  categories         RestaurantMenuCategory[]
+  carts              Cart[]
   groupOrderSessions GroupOrderSession[]
 
   @@unique([restaurantId, slug])
@@ -554,10 +554,9 @@ model RestaurantMenuItem {
 
 model MenuItemVariation {
   id          String    @id @default(cuid())
-  menuItemId  String    @map("menu_item_id")
+  categoryId  String    @map("category_id")
   name        String
   description String?
-  requiredModifierId String? @map("required_modifier_id")
   sku         String?
   price       Decimal   @default(0) @db.Decimal(10, 2)
   sortOrder   Int       @default(0) @map("sort_order")
@@ -567,10 +566,11 @@ model MenuItemVariation {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  menuItem          MenuItem   @relation(fields: [menuItemId], references: [id])
-  requiredModifier  Modifier?  @relation(fields: [requiredModifierId], references: [id])
+  category   MenuCategory @relation(fields: [categoryId], references: [id])
+  modifier   Modifier?    @relation(fields: [modifierId], references: [id])
+  modifierId String?
 
-  @@unique([menuItemId, name])
+  @@unique([categoryId, name])
   @@map("menu_item_variations")
 }
 
@@ -601,9 +601,9 @@ model ModifierGroup {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant Restaurant              @relation(fields: [restaurantId], references: [id])
-  modifiers  Modifier[]
-  itemLinks  MenuItemModifierGroup[]
+  restaurant    Restaurant                  @relation(fields: [restaurantId], references: [id])
+  modifiers     Modifier[]
+  itemLinks     MenuItemModifierGroup[]
   categoryLinks MenuCategoryModifierGroup[]
 
   @@unique([restaurantId, name])
@@ -621,8 +621,8 @@ model Modifier {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  modifierGroup       ModifierGroup                   @relation(fields: [modifierGroupId], references: [id])
-  itemPriceOverrides  MenuItemModifierPriceOverride[]
+  modifierGroup        ModifierGroup                   @relation(fields: [modifierGroupId], references: [id])
+  itemPriceOverrides   MenuItemModifierPriceOverride[]
   requiredByVariations MenuItemVariation[]
 
   @@unique([modifierGroupId, name])
@@ -881,26 +881,26 @@ model StaffUser {
 }
 
 model Deliveryman {
-  id               String            @id @default(cuid())
-  tenantId         String            @map("tenant_id")
-  restaurantId     String            @map("restaurant_id")
-  branchId         String            @map("branch_id")
-  firstName        String            @map("first_name")
-  lastName         String            @map("last_name")
-  email            String
-  phone            String
-  vehicleType      String?           @map("vehicle_type")
-  vehicleNumber    String?           @map("vehicle_number")
-  password         String?
-  refreshTokenHash String?           @map("refresh_token_hash")
-  status           DeliverymanStatus @default(OFFLINE)
-  currentLat       Decimal?          @map("current_lat") @db.Decimal(10, 7)
-  currentLng       Decimal?          @map("current_lng") @db.Decimal(10, 7)
-  locationUpdatedAt DateTime?        @map("location_updated_at") @db.Timestamptz
-  isActive         Boolean           @default(true) @map("is_active")
-  deletedAt        DateTime?         @map("deleted_at") @db.Timestamptz
-  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  id                String            @id @default(cuid())
+  tenantId          String            @map("tenant_id")
+  restaurantId      String            @map("restaurant_id")
+  branchId          String            @map("branch_id")
+  firstName         String            @map("first_name")
+  lastName          String            @map("last_name")
+  email             String
+  phone             String
+  vehicleType       String?           @map("vehicle_type")
+  vehicleNumber     String?           @map("vehicle_number")
+  password          String?
+  refreshTokenHash  String?           @map("refresh_token_hash")
+  status            DeliverymanStatus @default(OFFLINE)
+  currentLat        Decimal?          @map("current_lat") @db.Decimal(10, 7)
+  currentLng        Decimal?          @map("current_lng") @db.Decimal(10, 7)
+  locationUpdatedAt DateTime?         @map("location_updated_at") @db.Timestamptz
+  isActive          Boolean           @default(true) @map("is_active")
+  deletedAt         DateTime?         @map("deleted_at") @db.Timestamptz
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant           Tenant        @relation(fields: [tenantId], references: [id])
   restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])
@@ -931,12 +931,12 @@ model Cart {
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant          Tenant     @relation(fields: [tenantId], references: [id])
-  restaurant      Restaurant @relation(fields: [restaurantId], references: [id])
-  branch          Branch     @relation(fields: [branchId], references: [id])
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  restaurant      Restaurant      @relation(fields: [restaurantId], references: [id])
+  branch          Branch          @relation(fields: [branchId], references: [id])
   restaurantMenu  RestaurantMenu? @relation(fields: [restaurantMenuId], references: [id])
-  customer        User       @relation("CustomerCart", fields: [customerId], references: [id])
-  deliveryAddress Address?   @relation("CartDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  customer        User            @relation("CustomerCart", fields: [customerId], references: [id])
+  deliveryAddress Address?        @relation("CartDeliveryAddress", fields: [deliveryAddressId], references: [id])
   items           CartItem[]
 
   @@index([tenantId, branchId])
@@ -963,53 +963,53 @@ model CartItem {
 }
 
 model Order {
-  id                String        @id @default(cuid())
-  tenantId          String        @map("tenant_id")
-  restaurantId      String        @map("restaurant_id")
-  branchId          String        @map("branch_id")
-  customerId        String        @map("customer_id")
-  couponId          String?       @map("coupon_id")
-  deliveryAddressId String?       @map("delivery_address_id")
-  deliverymanId     String?       @map("deliveryman_id")
-  orderType         OrderType     @map("order_type")
-  paymentMethod     PaymentMethod @map("payment_method")
-  orderTime         DateTime?     @map("order_time") @db.Timestamptz
-  isScheduled       Boolean       @default(false) @map("is_scheduled")
-  status            OrderStatus   @default(PLACED)
-  subtotal          Decimal       @db.Decimal(10, 2)
-  taxAmount         Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
-  deliveryFee       Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
-  discountAmount       Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
-  walletAppliedAmount  Decimal       @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
-  loyaltyDiscountAmount Decimal      @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
-  loyaltyPointsRedeemed Int          @default(0) @map("loyalty_points_redeemed")
-  loyaltyPointsAwarded  Int          @default(0) @map("loyalty_points_awarded")
-  totalAmount          Decimal       @map("total_amount") @db.Decimal(10, 2)
-  paymentStatus     PaymentStatus @default(PENDING) @map("payment_status")
-  paidAt            DateTime?     @map("paid_at") @db.Timestamptz
-  assignedAt        DateTime?     @map("assigned_at") @db.Timestamptz
-  deliveredAt       DateTime?     @map("delivered_at") @db.Timestamptz
-  customerNote      String?       @map("customer_note")
-  cancelledAt       DateTime?     @map("cancelled_at") @db.Timestamptz
-  cancelledByUserId String?       @map("cancelled_by_user_id")
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String        @id @default(cuid())
+  tenantId              String        @map("tenant_id")
+  restaurantId          String        @map("restaurant_id")
+  branchId              String        @map("branch_id")
+  customerId            String        @map("customer_id")
+  couponId              String?       @map("coupon_id")
+  deliveryAddressId     String?       @map("delivery_address_id")
+  deliverymanId         String?       @map("deliveryman_id")
+  orderType             OrderType     @map("order_type")
+  paymentMethod         PaymentMethod @map("payment_method")
+  orderTime             DateTime?     @map("order_time") @db.Timestamptz
+  isScheduled           Boolean       @default(false) @map("is_scheduled")
+  status                OrderStatus   @default(PLACED)
+  subtotal              Decimal       @db.Decimal(10, 2)
+  taxAmount             Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  deliveryFee           Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  discountAmount        Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  walletAppliedAmount   Decimal       @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
+  loyaltyDiscountAmount Decimal       @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
+  loyaltyPointsRedeemed Int           @default(0) @map("loyalty_points_redeemed")
+  loyaltyPointsAwarded  Int           @default(0) @map("loyalty_points_awarded")
+  totalAmount           Decimal       @map("total_amount") @db.Decimal(10, 2)
+  paymentStatus         PaymentStatus @default(PENDING) @map("payment_status")
+  paidAt                DateTime?     @map("paid_at") @db.Timestamptz
+  assignedAt            DateTime?     @map("assigned_at") @db.Timestamptz
+  deliveredAt           DateTime?     @map("delivered_at") @db.Timestamptz
+  customerNote          String?       @map("customer_note")
+  cancelledAt           DateTime?     @map("cancelled_at") @db.Timestamptz
+  cancelledByUserId     String?       @map("cancelled_by_user_id")
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant           Tenant               @relation(fields: [tenantId], references: [id])
-  restaurant       Restaurant           @relation(fields: [restaurantId], references: [id])
-  branch           Branch               @relation(fields: [branchId], references: [id])
-  customer         User                 @relation("OrderCustomer", fields: [customerId], references: [id])
-  coupon           Coupon?              @relation(fields: [couponId], references: [id])
-  deliveryAddress  Address?             @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
-  deliveryman      Deliveryman?         @relation(fields: [deliverymanId], references: [id])
-  items            OrderItem[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  restaurant          Restaurant           @relation(fields: [restaurantId], references: [id])
+  branch              Branch               @relation(fields: [branchId], references: [id])
+  customer            User                 @relation("OrderCustomer", fields: [customerId], references: [id])
+  coupon              Coupon?              @relation(fields: [couponId], references: [id])
+  deliveryAddress     Address?             @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  deliveryman         Deliveryman?         @relation(fields: [deliverymanId], references: [id])
+  items               OrderItem[]
   couponUsages        CouponUsage[]
   transactions        PaymentTransaction[]
   walletTransactions  WalletTransaction[]
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
-  chatThreads      ChatThread[]
-  sourceGroupOrder GroupOrderSession?   @relation("GroupOrderFinalOrder")
+  chatThreads         ChatThread[]
+  sourceGroupOrder    GroupOrderSession?   @relation("GroupOrderFinalOrder")
 
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
@@ -1194,14 +1194,14 @@ model LoyaltyTransaction {
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
 
-  loyaltyAccount     LoyaltyAccount       @relation(fields: [loyaltyAccountId], references: [id])
-  loyaltyProgram     LoyaltyProgram?      @relation(fields: [loyaltyProgramId], references: [id])
-  tenant             Tenant               @relation(fields: [tenantId], references: [id])
-  restaurant         Restaurant           @relation(fields: [restaurantId], references: [id])
-  branch             Branch?              @relation(fields: [branchId], references: [id])
-  customer           User                 @relation(fields: [customerId], references: [id])
-  order              Order?               @relation(fields: [orderId], references: [id])
-  paymentTransaction PaymentTransaction?  @relation(fields: [paymentTransactionId], references: [id])
+  loyaltyAccount     LoyaltyAccount      @relation(fields: [loyaltyAccountId], references: [id])
+  loyaltyProgram     LoyaltyProgram?     @relation(fields: [loyaltyProgramId], references: [id])
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  restaurant         Restaurant          @relation(fields: [restaurantId], references: [id])
+  branch             Branch?             @relation(fields: [branchId], references: [id])
+  customer           User                @relation(fields: [customerId], references: [id])
+  order              Order?              @relation(fields: [orderId], references: [id])
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
 
   @@index([loyaltyAccountId, createdAt])
   @@index([customerId, createdAt])
@@ -1287,34 +1287,33 @@ model GroupOrderItem {
   @@map("group_order_items")
 }
 
-
 model PosOrderDraft {
-  id               String             @id @default(cuid())
-  tenantId         String             @map("tenant_id")
-  restaurantId     String             @map("restaurant_id")
-  branchId         String             @map("branch_id")
-  createdByActorId String             @map("created_by_actor_id")
-  createdByActorType PosActorType     @map("created_by_actor_type")
-  customerId       String?            @map("customer_id")
-  orderType        OrderType          @map("order_type")
-  paymentMethod    PaymentMethod?     @map("payment_method")
-  guestName        String?            @map("guest_name")
-  guestPhone       String?            @map("guest_phone")
-  tableLabel       String?            @map("table_label")
-  guestCount       Int?               @map("guest_count")
-  couponCode       String?            @map("coupon_code")
-  note             String?            @map("note")
-  status           PosOrderDraftStatus @default(OPEN)
-  checkedOutAt     DateTime?          @map("checked_out_at") @db.Timestamptz
-  finalOrderId     String?            @map("final_order_id")
-  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  id                 String              @id @default(cuid())
+  tenantId           String              @map("tenant_id")
+  restaurantId       String              @map("restaurant_id")
+  branchId           String              @map("branch_id")
+  createdByActorId   String              @map("created_by_actor_id")
+  createdByActorType PosActorType        @map("created_by_actor_type")
+  customerId         String?             @map("customer_id")
+  orderType          OrderType           @map("order_type")
+  paymentMethod      PaymentMethod?      @map("payment_method")
+  guestName          String?             @map("guest_name")
+  guestPhone         String?             @map("guest_phone")
+  tableLabel         String?             @map("table_label")
+  guestCount         Int?                @map("guest_count")
+  couponCode         String?             @map("coupon_code")
+  note               String?             @map("note")
+  status             PosOrderDraftStatus @default(OPEN)
+  checkedOutAt       DateTime?           @map("checked_out_at") @db.Timestamptz
+  finalOrderId       String?             @map("final_order_id")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant    Tenant        @relation(fields: [tenantId], references: [id])
-  restaurant Restaurant   @relation(fields: [restaurantId], references: [id])
-  branch    Branch        @relation(fields: [branchId], references: [id])
-  customer  User?         @relation("PosDraftCustomer", fields: [customerId], references: [id])
-  items     PosOrderDraftItem[]
+  tenant     Tenant              @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant          @relation(fields: [restaurantId], references: [id])
+  branch     Branch              @relation(fields: [branchId], references: [id])
+  customer   User?               @relation("PosDraftCustomer", fields: [customerId], references: [id])
+  items      PosOrderDraftItem[]
 
   @@index([tenantId, branchId, status, createdAt])
   @@index([restaurantId, branchId, status, createdAt])
@@ -1324,14 +1323,14 @@ model PosOrderDraft {
 
 model PosOrderDraftItem {
   id          String   @id @default(cuid())
-  draftId      String   @map("draft_id")
-  menuItemId   String   @map("menu_item_id")
-  variationId  String?  @map("variation_id")
-  quantity     Int
-  note         String?
-  modifiers    Json?
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  draftId     String   @map("draft_id")
+  menuItemId  String   @map("menu_item_id")
+  variationId String?  @map("variation_id")
+  quantity    Int
+  note        String?
+  modifiers   Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   draft PosOrderDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
 
@@ -1361,13 +1360,13 @@ model ChatThread {
   createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant        Tenant       @relation(fields: [tenantId], references: [id])
-  restaurant    Restaurant   @relation(fields: [restaurantId], references: [id])
-  branch        Branch?      @relation(fields: [branchId], references: [id])
-  customer      User         @relation("ChatThreadCustomer", fields: [customerId], references: [id])
-  order         Order?       @relation(fields: [orderId], references: [id])
-  deliveryman   Deliveryman? @relation("ChatThreadDeliveryman", fields: [deliverymanId], references: [id])
-  assignedStaff StaffUser?   @relation("ChatThreadAssignedStaff", fields: [assignedStaffUserId], references: [id])
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
+  branch        Branch?       @relation(fields: [branchId], references: [id])
+  customer      User          @relation("ChatThreadCustomer", fields: [customerId], references: [id])
+  order         Order?        @relation(fields: [orderId], references: [id])
+  deliveryman   Deliveryman?  @relation("ChatThreadDeliveryman", fields: [deliverymanId], references: [id])
+  assignedStaff StaffUser?    @relation("ChatThreadAssignedStaff", fields: [assignedStaffUserId], references: [id])
   messages      ChatMessage[]
 
   @@index([tenantId, restaurantId, status, lastMessageAt])

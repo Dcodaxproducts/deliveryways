@@ -110,7 +110,7 @@ export class DevTestingService {
     });
 
     await this.menuVariationService.create(ownerContext, {
-      menuItemId: zingerItem.data.id,
+      categoryId: burgerCategory.data.id,
       name: 'Large',
       price: 740,
       sortOrder: 1,
@@ -210,13 +210,13 @@ export class DevTestingService {
   async deleteUser(dto: DevTestingUserIdentifierDto) {
     const user = await this.resolveSingleUser(dto);
 
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+    if (user.role === UserRole.SUPER_ADMIN) {
       throw new BadRequestException(
         'Super admin accounts cannot be deleted via dev-testing endpoint',
       );
     }
 
-    if (user.role === UserRoleEnum.CUSTOMER) {
+    if (user.role === UserRole.CUSTOMER) {
       await this.deleteCustomerWithDependencies(user);
     } else {
       await this.deleteNonCustomerUser(user);
@@ -375,7 +375,7 @@ export class DevTestingService {
   }
 
   private async deleteNonCustomerUser(user: ResolvedDevUser) {
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+    if (user.role === UserRole.BUSINESS_ADMIN) {
       const blockers = await this.getBusinessAdminDeletionBlockers(user.id);
       const hasBlockers = Object.values(blockers).some((count) => count > 0);
 
@@ -423,11 +423,12 @@ export class DevTestingService {
   }
 
   private async getBusinessAdminDeletionBlockers(userId: string) {
-    const [tenantOwnerships, staffRoles, staffUsers] = await this.prisma.$transaction([
-      this.prisma.tenant.count({ where: { ownerId: userId } }),
-      this.prisma.staffRole.count({ where: { ownerUserId: userId } }),
-      this.prisma.staffUser.count({ where: { ownerUserId: userId } }),
-    ]);
+    const [tenantOwnerships, staffRoles, staffUsers] =
+      await this.prisma.$transaction([
+        this.prisma.tenant.count({ where: { ownerId: userId } }),
+        this.prisma.staffRole.count({ where: { ownerUserId: userId } }),
+        this.prisma.staffUser.count({ where: { ownerUserId: userId } }),
+      ]);
 
     return {
       tenantOwnerships,
@@ -437,7 +438,10 @@ export class DevTestingService {
   }
 
   private rethrowDeleteError(user: ResolvedDevUser, error: unknown): never {
-    if (error instanceof BadRequestException || error instanceof NotFoundException) {
+    if (
+      error instanceof BadRequestException ||
+      error instanceof NotFoundException
+    ) {
       throw error;
     }
 
