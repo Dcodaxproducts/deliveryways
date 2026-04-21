@@ -260,8 +260,10 @@ export class CartService {
       throw new BadRequestException('couponCode is required');
     }
 
+    const quotePayload = await this.toQuotePayload(cart);
     const quote = await this.ordersService.quoteForCouponValidation(user, {
-      ...(await this.toQuotePayload(cart)),
+      ...quotePayload,
+      deliveryAddressId: undefined,
       couponCode,
     });
 

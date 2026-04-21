@@ -711,7 +711,9 @@ describe('CartService', () => {
       couponCode: 'SAVE10',
     });
     cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
-    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    profilesRepository.findByUserId.mockResolvedValue({
+      metadata: { defaultAddressId: 'address-without-coordinates' },
+    });
     ordersService.quoteForCouponValidation.mockResolvedValue({
       data: {
         couponCode: 'SAVE10',
