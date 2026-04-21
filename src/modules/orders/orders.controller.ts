@@ -105,6 +105,7 @@ export class OrdersController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.DELIVERYMAN,
   )
   @Patch(':id/status')
   updateStatus(

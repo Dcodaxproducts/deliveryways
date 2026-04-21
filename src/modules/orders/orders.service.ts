@@ -312,12 +312,22 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertOrderAccess(
-      user,
-      order.restaurantId,
-      order.customerId,
-      true,
-    );
+    if (user.role === 'DELIVERYMAN') {
+      this.assertDeliverymanOrderAccess(user, order.deliverymanId);
+
+      if (!this.isValidDeliverymanStatusTransition(order, dto.status)) {
+        throw new ForbiddenException(
+          'Deliveryman cannot update this order to the requested status',
+        );
+      }
+    } else {
+      await this.assertOrderAccess(
+        user,
+        order.restaurantId,
+        order.customerId,
+        true,
+      );
+    }
 
     if (
       !this.isValidStatusTransition(order.orderType, order.status, dto.status)
@@ -2083,6 +2093,17 @@ export class OrdersService {
     };
 
     return (baseTransitions[current] ?? []).includes(next);
+  }
+
+  private isValidDeliverymanStatusTransition(
+    order: { orderType: OrderType; status: OrderStatus },
+    next: OrderStatus,
+  ): boolean {
+    return (
+      order.orderType === OrderType.DELIVERY &&
+      order.status === OrderStatus.OUT_FOR_DELIVERY &&
+      next === OrderStatus.DELIVERED
+    );
   }
 
   private getPreparingTransitions(orderType: OrderType): OrderStatus[] {

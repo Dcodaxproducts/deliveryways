@@ -210,7 +210,14 @@ describe('OrdersService - order time validation', () => {
 
 describe('OrdersService - deliveryman order access', () => {
   let service: OrdersService;
-  let ordersRepository: { list: jest.Mock; findById: jest.Mock };
+  let ordersRepository: {
+    list: jest.Mock;
+    findById: jest.Mock;
+    updateStatus: jest.Mock;
+  };
+  let notificationsService: { notifyOrderStatusChanged: jest.Mock };
+  let chatService: { syncDeliveryThreadForOrderLifecycle: jest.Mock };
+  let orderTrackingRealtimeService: { emitTrackingUpdate: jest.Mock };
 
   const deliverymanUser = {
     uid: 'dm-1',
@@ -224,20 +231,36 @@ describe('OrdersService - deliveryman order access', () => {
         .fn()
         .mockResolvedValue({ items: [{ id: 'order-1' }], total: 1 }),
       findById: jest.fn(),
+      updateStatus: jest.fn(),
+    };
+
+    notificationsService = {
+      notifyOrderStatusChanged: jest.fn().mockResolvedValue(undefined),
+    };
+
+    chatService = {
+      syncDeliveryThreadForOrderLifecycle: jest
+        .fn()
+        .mockResolvedValue(undefined),
+    };
+
+    orderTrackingRealtimeService = {
+      emitTrackingUpdate: jest.fn(),
     };
 
     service = new OrdersService(
       {} as never,
       ordersRepository as never,
       {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      notificationsService as never,
+      chatService as never,
+      orderTrackingRealtimeService as never,
     );
 
     Object.assign(service as object, {
       toOrderListResponse: jest.fn().mockResolvedValue({ id: 'order-1' }),
       toOrderDetailsResponse: jest.fn().mockResolvedValue({ id: 'order-1' }),
+      getTrackingSnapshotForRealtime: jest.fn().mockResolvedValue({ id: 'x' }),
     });
   });
 
@@ -283,6 +306,56 @@ describe('OrdersService - deliveryman order access', () => {
 
     await expect(
       service.details(deliverymanUser as never, 'order-1'),
+    ).rejects.toThrow('Cross-deliveryman access denied');
+  });
+
+  it('allows deliveryman to mark assigned out-for-delivery order as delivered', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+      orderType: 'DELIVERY',
+      status: 'OUT_FOR_DELIVERY',
+    });
+    ordersRepository.updateStatus = jest.fn().mockResolvedValue({
+      id: 'order-1',
+      orderType: 'DELIVERY',
+      status: 'DELIVERED',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+    });
+
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    const result = await service.updateStatus(deliverymanUser as never, 'order-1', {
+      status: 'DELIVERED',
+    } as never);
+
+    expect(ordersRepository.updateStatus).toHaveBeenCalledWith(
+      'order-1',
+      'DELIVERED',
+    );
+    expect(result.message).toBe('Order status updated successfully');
+  });
+
+  it('blocks deliveryman from updating another deliveryman assigned order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-2',
+      orderType: 'DELIVERY',
+      status: 'OUT_FOR_DELIVERY',
+    });
+
+    await expect(
+      service.updateStatus(deliverymanUser as never, 'order-1', {
+        status: 'DELIVERED',
+      } as never),
     ).rejects.toThrow('Cross-deliveryman access denied');
   });
 });
