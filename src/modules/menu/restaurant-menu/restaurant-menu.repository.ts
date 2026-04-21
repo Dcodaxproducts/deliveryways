@@ -25,10 +25,49 @@ export class RestaurantMenuRepository {
           include: {
             menuItem: {
               include: {
-                category: { select: { id: true, name: true } },
+                category: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    imageUrl: true,
+                    modifierLinks: {
+                      orderBy: [{ sortOrder: 'asc' }],
+                      include: {
+                        modifierGroup: {
+                          include: {
+                            modifiers: {
+                              where: { deletedAt: null, isActive: true },
+                              orderBy: [
+                                { sortOrder: 'asc' },
+                                { createdAt: 'asc' },
+                              ],
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
                 variations: {
                   where: { deletedAt: null, isActive: true },
                   orderBy: { sortOrder: 'asc' },
+                },
+                modifierLinks: {
+                  orderBy: [{ sortOrder: 'asc' }],
+                  include: {
+                    modifierGroup: {
+                      include: {
+                        modifiers: {
+                          where: { deletedAt: null, isActive: true },
+                          include: {
+                            itemPriceOverrides: true,
+                          },
+                          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                        },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -92,10 +131,52 @@ export class RestaurantMenuRepository {
             include: {
               menuItem: {
                 include: {
-                  category: { select: { id: true, name: true } },
+                  category: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      imageUrl: true,
+                      modifierLinks: {
+                        orderBy: [{ sortOrder: 'asc' }],
+                        include: {
+                          modifierGroup: {
+                            include: {
+                              modifiers: {
+                                where: { deletedAt: null, isActive: true },
+                                orderBy: [
+                                  { sortOrder: 'asc' },
+                                  { createdAt: 'asc' },
+                                ],
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
                   variations: {
                     where: { deletedAt: null, isActive: true },
                     orderBy: { sortOrder: 'asc' },
+                  },
+                  modifierLinks: {
+                    orderBy: [{ sortOrder: 'asc' }],
+                    include: {
+                      modifierGroup: {
+                        include: {
+                          modifiers: {
+                            where: { deletedAt: null, isActive: true },
+                            include: {
+                              itemPriceOverrides: true,
+                            },
+                            orderBy: [
+                              { sortOrder: 'asc' },
+                              { createdAt: 'asc' },
+                            ],
+                          },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -288,10 +369,27 @@ export class RestaurantMenuRepository {
               id: true,
               name: true,
               slug: true,
+              imageUrl: true,
+              modifierLinks: {
+                orderBy: [{ sortOrder: 'asc' }],
+                include: {
+                  modifierGroup: {
+                    include: {
+                      modifiers: {
+                        where: { deletedAt: null, isActive: true },
+                        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
           variations: {
-            where: { deletedAt: null, ...(query.includeInactive ? {} : { isActive: true }) },
+            where: {
+              deletedAt: null,
+              ...(query.includeInactive ? {} : { isActive: true }),
+            },
             orderBy: { sortOrder: 'asc' },
           },
           menuLinks: {
@@ -303,18 +401,36 @@ export class RestaurantMenuRepository {
               isActive: true,
             },
           },
+          modifierLinks: {
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              modifierGroup: {
+                include: {
+                  modifiers: {
+                    where: { deletedAt: null, isActive: true },
+                    include: {
+                      itemPriceOverrides: true,
+                    },
+                    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                  },
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.menuItem.count({ where }),
     ]);
 
-    const menuCategoryLinks = await this.prisma.restaurantMenuCategory.findMany({
-      where: { restaurantMenuId },
-      select: {
-        menuCategoryId: true,
-        sortOrder: true,
+    const menuCategoryLinks = await this.prisma.restaurantMenuCategory.findMany(
+      {
+        where: { restaurantMenuId },
+        select: {
+          menuCategoryId: true,
+          sortOrder: true,
+        },
       },
-    });
+    );
 
     const categoryLinkMap = new Map(
       menuCategoryLinks.map((link) => [link.menuCategoryId, link]),
@@ -324,11 +440,12 @@ export class RestaurantMenuRepository {
       items: items.map((item) => {
         const directLink = item.menuLinks[0] ?? null;
         const categoryLink = categoryLinkMap.get(item.categoryId) ?? null;
-        const source = directLink && categoryLink
-          ? 'DIRECT_AND_CATEGORY'
-          : directLink
-            ? 'DIRECT'
-            : 'CATEGORY';
+        const source =
+          directLink && categoryLink
+            ? 'DIRECT_AND_CATEGORY'
+            : directLink
+              ? 'DIRECT'
+              : 'CATEGORY';
 
         return {
           id: item.id,

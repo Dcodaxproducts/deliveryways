@@ -198,4 +198,62 @@ describe('RestaurantMenuService', () => {
     );
     expect(result.data[0].menuResolution.source).toBe('DIRECT_AND_CATEGORY');
   });
+
+  it('returns modifier links inside fetched menu items', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      items: [
+        {
+          id: 'link-1',
+          menuItem: {
+            id: 'item-1',
+            name: 'Burger',
+            modifierLinks: [
+              {
+                id: 'item-modifier-link-1',
+                modifierGroup: {
+                  id: 'group-1',
+                  name: 'Sauces',
+                },
+              },
+            ],
+          },
+        },
+      ],
+      categories: [],
+    });
+
+    const result = (await service.getById(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'menu-1',
+    )) as {
+      data: {
+        items: Array<{
+          menuItem: {
+            modifierLinks: Array<{
+              modifierGroup: {
+                id: string;
+                name: string;
+              };
+            }>;
+          };
+        }>;
+      };
+    };
+
+    expect(
+      result.data.items[0].menuItem.modifierLinks[0].modifierGroup,
+    ).toEqual({
+      id: 'group-1',
+      name: 'Sauces',
+    });
+  });
 });
