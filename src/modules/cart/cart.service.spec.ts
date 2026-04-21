@@ -105,7 +105,10 @@ describe('CartService', () => {
         slug: 'burger',
         description: 'Beef burger',
         imageUrl: 'burger.png',
+        pricingMode: 'MULTIPLE',
         basePrice: 450,
+        deliveryPriceAdjustment: 50,
+        takeawayPriceAdjustment: 20,
         depositAmount: 50,
         category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
         variations: [],
@@ -126,9 +129,14 @@ describe('CartService', () => {
 
     const firstItem = result.data.items[0] as {
       menuItemId: string;
-      menuItem: { name: string; depositAmount: number | null } | null;
+      menuItem: {
+        name: string;
+        depositAmount: number | null;
+        unitPrice: number | null;
+      } | null;
     };
     expect(firstItem.menuItem?.name).toBe('Burger');
+    expect(firstItem.menuItem?.unitPrice).toBe(500);
     expect(firstItem.menuItem?.depositAmount).toBe(50);
     expect(firstItem.menuItemId).toBe('menu-1');
     expect(result.data.deliveryAddressId).toBe('address-1');

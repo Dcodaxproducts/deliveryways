@@ -705,11 +705,17 @@ export class CartService {
           (variation) => variation.id === item.variationId,
         );
         const branchOverride = menuItem?.branchOverrides?.[0];
-        const unitPrice =
+        const baseUnitPrice =
           selectedVariation?.price ??
           branchOverride?.priceOverride ??
           menuItem?.basePrice ??
           null;
+        const unitPrice =
+          baseUnitPrice === null || baseUnitPrice === undefined || !menuItem
+            ? null
+            : new Prisma.Decimal(baseUnitPrice).plus(
+                this.resolveOrderTypePriceAdjustment(menuItem, cart.orderType),
+              );
 
         return {
           id: item.id,
@@ -727,13 +733,28 @@ export class CartService {
                 imageUrl: menuItem.imageUrl,
                 category: menuItem.category,
                 isAvailable: branchOverride?.isAvailable ?? true,
-                unitPrice,
-                depositAmount: menuItem.depositAmount ?? null,
+                pricingMode: menuItem.pricingMode,
+                unitPrice: unitPrice ? Number(unitPrice) : unitPrice,
+                deliveryPriceAdjustment:
+                  menuItem.deliveryPriceAdjustment !== undefined &&
+                  menuItem.deliveryPriceAdjustment !== null
+                    ? Number(menuItem.deliveryPriceAdjustment)
+                    : null,
+                takeawayPriceAdjustment:
+                  menuItem.takeawayPriceAdjustment !== undefined &&
+                  menuItem.takeawayPriceAdjustment !== null
+                    ? Number(menuItem.takeawayPriceAdjustment)
+                    : null,
+                depositAmount:
+                  menuItem.depositAmount !== undefined &&
+                  menuItem.depositAmount !== null
+                    ? Number(menuItem.depositAmount)
+                    : null,
                 selectedVariation: selectedVariation
                   ? {
                       id: selectedVariation.id,
                       name: selectedVariation.name,
-                      price: selectedVariation.price,
+                      price: Number(selectedVariation.price),
                       requiredModifierId:
                         selectedVariation.requiredModifierId ?? null,
                     }
@@ -748,10 +769,11 @@ export class CartService {
                   modifiers: link.modifierGroup.modifiers.map((modifier) => ({
                     id: modifier.id,
                     name: modifier.name,
-                    priceDelta:
+                    priceDelta: Number(
                       modifier.itemPriceOverrides?.find(
                         (item) => item.menuItemId === menuItem.id,
                       )?.priceDelta ?? modifier.priceDelta,
+                    ),
                   })),
                 })),
               }
@@ -774,8 +796,7 @@ export class CartService {
           ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
           : undefined,
       couponCode: cart.couponCode ?? undefined,
-      orderTime:
-        cart.orderTime?.toISOString() ?? new Date().toISOString(),
+      orderTime: cart.orderTime?.toISOString() ?? new Date().toISOString(),
       items: cart.items.map((item) => ({
         menuItemId: item.menuItemId,
         variationId: item.variationId ?? undefined,
@@ -1013,6 +1034,30 @@ export class CartService {
     }
 
     return modifiers.length ? modifiers : undefined;
+  }
+
+  private resolveOrderTypePriceAdjustment(
+    menuItem: {
+      [key: string]: unknown;
+      pricingMode?: string | null;
+      deliveryPriceAdjustment?: Prisma.Decimal | null;
+      takeawayPriceAdjustment?: Prisma.Decimal | null;
+    },
+    orderType: OrderType,
+  ) {
+    if (menuItem.pricingMode !== 'MULTIPLE') {
+      return new Prisma.Decimal(0);
+    }
+
+    if (orderType === OrderType.DELIVERY) {
+      return menuItem.deliveryPriceAdjustment ?? new Prisma.Decimal(0);
+    }
+
+    if (orderType === OrderType.TAKEAWAY) {
+      return menuItem.takeawayPriceAdjustment ?? new Prisma.Decimal(0);
+    }
+
+    return new Prisma.Decimal(0);
   }
 
   private resolveOptionalString(value: string | null | undefined) {

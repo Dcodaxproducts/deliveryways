@@ -331,9 +331,13 @@ describe('OrdersService - deliveryman order access', () => {
       toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
     });
 
-    const result = await service.updateStatus(deliverymanUser as never, 'order-1', {
-      status: 'DELIVERED',
-    } as never);
+    const result = await service.updateStatus(
+      deliverymanUser as never,
+      'order-1',
+      {
+        status: 'DELIVERED',
+      } as never,
+    );
 
     expect(ordersRepository.updateStatus).toHaveBeenCalledWith(
       'order-1',
@@ -464,6 +468,89 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.items[0].depositAmount).toBe(50);
     expect(result.data.totalAmount).toBe(600);
     expect(result.data.payableAmount).toBe(600);
+  });
+
+  it('adds delivery price adjustment on top of base item price when pricing mode is MULTIPLE', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 150,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: { taxPercentage: 0 },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          pricingMode: 'MULTIPLE',
+          basePrice: new Prisma.Decimal(500),
+          deliveryPriceAdjustment: new Prisma.Decimal(80),
+          takeawayPriceAdjustment: new Prisma.Decimal(20),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-1' },
+          variations: [],
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+      },
+      address: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn().mockResolvedValue({
+          coupon: null,
+          discountAmount: new Prisma.Decimal(0),
+          eligibleSubtotal: new Prisma.Decimal(580),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(730),
+        }),
+      } as never,
+    );
+
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items[0].unitPrice).toBe(580);
+    expect(result.data.subtotal).toBe(580);
   });
 });
 
@@ -1649,11 +1736,10 @@ describe('OrdersService - wallet payment', () => {
       },
     );
 
-    expect(prisma.restaurantMenu.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: 'menu-1' }),
-      }),
-    );
+    const [[restaurantMenuFindFirstArgs]] = prisma.restaurantMenu.findFirst.mock
+      .calls as Array<[{ where: { id: string } }]>;
+
+    expect(restaurantMenuFindFirstArgs.where.id).toBe('menu-1');
     expect(result.data.restaurantMenuId).toBe('menu-1');
   });
 

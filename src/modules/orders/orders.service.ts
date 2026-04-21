@@ -598,14 +598,11 @@ export class OrdersService {
         );
       }
 
-      let unitPrice =
-        branchOverride?.priceOverride ??
-        (requestedItem.variationId
-          ? this.resolveVariationPrice(
-              menuItem.variations,
-              requestedItem.variationId,
-            )
-          : menuItem.basePrice);
+      let unitPrice = this.resolveOrderItemBasePrice(
+        menuItem,
+        branchOverride?.priceOverride,
+        requestedItem.variationId,
+      ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
 
       let variationName: string | undefined;
@@ -631,7 +628,9 @@ export class OrdersService {
           );
         }
         variationName = variation.name;
-        unitPrice = variation.price;
+        unitPrice = variation.price.plus(
+          this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType),
+        );
       }
 
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
@@ -958,6 +957,57 @@ export class OrdersService {
         snapshotModifiers: line.snapshotModifiers,
       })),
     };
+  }
+
+  private resolveOrderItemBasePrice(
+    menuItem: {
+      [key: string]: unknown;
+      basePrice: Prisma.Decimal;
+      variations: Array<{ id: string; name?: string; price: Prisma.Decimal }>;
+    },
+    branchPriceOverride: Prisma.Decimal | null | undefined,
+    variationId?: string,
+  ) {
+    if (branchPriceOverride) {
+      return branchPriceOverride;
+    }
+
+    if (variationId) {
+      return this.resolveVariationPrice(
+        menuItem.variations as Array<{
+          id: string;
+          name: string;
+          price: Prisma.Decimal;
+        }>,
+        variationId,
+      );
+    }
+
+    return menuItem.basePrice;
+  }
+
+  private resolveOrderTypePriceAdjustment(
+    menuItem: {
+      [key: string]: unknown;
+      pricingMode?: string | null;
+      deliveryPriceAdjustment?: Prisma.Decimal | null;
+      takeawayPriceAdjustment?: Prisma.Decimal | null;
+    },
+    orderType: OrderTypeEnum,
+  ) {
+    if (menuItem.pricingMode !== 'MULTIPLE') {
+      return new Prisma.Decimal(0);
+    }
+
+    if (orderType === OrderTypeEnum.DELIVERY) {
+      return menuItem.deliveryPriceAdjustment ?? new Prisma.Decimal(0);
+    }
+
+    if (orderType === OrderTypeEnum.TAKEAWAY) {
+      return menuItem.takeawayPriceAdjustment ?? new Prisma.Decimal(0);
+    }
+
+    return new Prisma.Decimal(0);
   }
 
   private assertValidOrderTime(orderTime: string) {

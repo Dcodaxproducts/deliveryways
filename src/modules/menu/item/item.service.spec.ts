@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserRoleEnum } from '../../../common/enums';
 import { MenuItemService } from './item.service';
@@ -153,7 +154,79 @@ describe('MenuItemService', () => {
 
     expect(itemRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        depositAmount: expect.anything(),
+        depositAmount: new Prisma.Decimal(50),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('stores multiple pricing adjustments when pricing mode is MULTIPLE', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Family Burger',
+        slug: 'family-burger',
+        pricingMode: 'MULTIPLE',
+        basePrice: 500,
+        deliveryPriceAdjustment: 80,
+        takeawayPriceAdjustment: 40,
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pricingMode: 'MULTIPLE',
+        deliveryPriceAdjustment: new Prisma.Decimal(80),
+        takeawayPriceAdjustment: new Prisma.Decimal(40),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('resets additional prices to zero when pricing mode is SINGLE', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Simple Burger',
+        slug: 'simple-burger',
+        pricingMode: 'SINGLE',
+        basePrice: 500,
+        deliveryPriceAdjustment: 80,
+        takeawayPriceAdjustment: 40,
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pricingMode: 'SINGLE',
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
       }),
       expect.anything(),
     );

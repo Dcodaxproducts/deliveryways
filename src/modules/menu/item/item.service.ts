@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MenuItemPricingMode, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
@@ -36,6 +36,7 @@ export class MenuItemService {
 
     const slug = this.normalizeRequiredString(dto.slug, 'slug');
     const sku = this.resolveOptionalString(dto.sku);
+    const pricing = this.resolvePricingInput(dto);
     await this.assertUniqueFields(restaurantId, { slug, sku });
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -50,7 +51,10 @@ export class MenuItemService {
           nutritionalInformation: dto.nutritionalInformation,
           imageUrl: dto.imageUrl,
           sku,
+          pricingMode: pricing.pricingMode,
           basePrice: new Prisma.Decimal(dto.basePrice),
+          deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
+          takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
           prepTimeMinutes: dto.prepTimeMinutes,
           dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
           allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
@@ -89,26 +93,33 @@ export class MenuItemService {
       await this.validateCategory(restaurantId, item.categoryId);
     }
 
-    const payload: Prisma.MenuItemCreateManyInput[] = dto.items.map((item) => ({
-      restaurantId,
-      categoryId: item.categoryId,
-      name: item.name,
-      slug: item.slug,
-      description: item.description,
-      ingredients: item.ingredients,
-      nutritionalInformation: item.nutritionalInformation,
-      imageUrl: item.imageUrl,
-      sku: item.sku,
-      basePrice: new Prisma.Decimal(item.basePrice),
-      prepTimeMinutes: item.prepTimeMinutes,
-      dietaryFlags: item.dietaryFlags as unknown as Prisma.InputJsonValue,
-      allergenFlags: item.allergenFlags as unknown as Prisma.InputJsonValue,
-      depositAmount:
-        item.depositAmount !== undefined
-          ? new Prisma.Decimal(item.depositAmount)
-          : undefined,
-      isActive: item.isActive ?? true,
-    }));
+    const payload: Prisma.MenuItemCreateManyInput[] = dto.items.map((item) => {
+      const pricing = this.resolvePricingInput(item);
+
+      return {
+        restaurantId,
+        categoryId: item.categoryId,
+        name: item.name,
+        slug: item.slug,
+        description: item.description,
+        ingredients: item.ingredients,
+        nutritionalInformation: item.nutritionalInformation,
+        imageUrl: item.imageUrl,
+        sku: item.sku,
+        pricingMode: pricing.pricingMode,
+        basePrice: new Prisma.Decimal(item.basePrice),
+        deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
+        takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
+        prepTimeMinutes: item.prepTimeMinutes,
+        dietaryFlags: item.dietaryFlags as unknown as Prisma.InputJsonValue,
+        allergenFlags: item.allergenFlags as unknown as Prisma.InputJsonValue,
+        depositAmount:
+          item.depositAmount !== undefined
+            ? new Prisma.Decimal(item.depositAmount)
+            : undefined,
+        isActive: item.isActive ?? true,
+      };
+    });
 
     const result = await this.itemRepository.createMany(payload);
 
@@ -159,6 +170,7 @@ export class MenuItemService {
         : undefined;
     const sku =
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
+    const pricing = this.resolvePricingInput(dto, item);
     await this.assertUniqueFields(item.restaurantId, { slug, sku }, id);
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -175,10 +187,13 @@ export class MenuItemService {
           nutritionalInformation: dto.nutritionalInformation,
           imageUrl: dto.imageUrl,
           sku,
+          pricingMode: pricing.pricingMode,
           basePrice:
             dto.basePrice !== undefined
               ? new Prisma.Decimal(dto.basePrice)
               : undefined,
+          deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
+          takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
           prepTimeMinutes: dto.prepTimeMinutes,
           dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
           allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
@@ -470,6 +485,40 @@ export class MenuItemService {
 
   private async resolveMediaResponse<T>(data: T) {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
+  }
+
+  private resolvePricingInput(
+    dto: CreateMenuItemDto | UpdateMenuItemDto,
+    existing?: {
+      [key: string]: unknown;
+      pricingMode?: MenuItemPricingMode | null;
+      deliveryPriceAdjustment?: Prisma.Decimal | null;
+      takeawayPriceAdjustment?: Prisma.Decimal | null;
+    },
+  ) {
+    const pricingMode =
+      (dto.pricingMode as MenuItemPricingMode | undefined) ??
+      existing?.pricingMode ??
+      MenuItemPricingMode.SINGLE;
+
+    if (pricingMode === MenuItemPricingMode.SINGLE) {
+      const zero = new Prisma.Decimal(0);
+      return {
+        pricingMode,
+        deliveryPriceAdjustment: zero,
+        takeawayPriceAdjustment: zero,
+      };
+    }
+
+    return {
+      pricingMode,
+      deliveryPriceAdjustment: new Prisma.Decimal(
+        dto.deliveryPriceAdjustment ?? existing?.deliveryPriceAdjustment ?? 0,
+      ),
+      takeawayPriceAdjustment: new Prisma.Decimal(
+        dto.takeawayPriceAdjustment ?? existing?.takeawayPriceAdjustment ?? 0,
+      ),
+    };
   }
 
   private withCategoryModifierGroups<T extends { category?: unknown }>(

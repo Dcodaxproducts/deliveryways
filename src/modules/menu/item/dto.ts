@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -11,6 +12,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
+
+export const MENU_ITEM_PRICING_MODE_VALUES = ['SINGLE', 'MULTIPLE'] as const;
 
 export class MenuItemModifierPriceOverrideDto {
   @ApiProperty()
@@ -66,10 +69,40 @@ export class CreateMenuItemDto {
   @IsString()
   sku?: string;
 
+  @ApiPropertyOptional({
+    enum: MENU_ITEM_PRICING_MODE_VALUES,
+    default: 'SINGLE',
+  })
+  @IsOptional()
+  @IsIn(MENU_ITEM_PRICING_MODE_VALUES)
+  pricingMode?: (typeof MENU_ITEM_PRICING_MODE_VALUES)[number];
+
   @ApiProperty()
   @Transform(({ value }) => Number(value))
   @IsNumber()
   basePrice!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Extra amount added for delivery orders when pricingMode is MULTIPLE',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  deliveryPriceAdjustment?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Extra amount added for takeaway orders when pricingMode is MULTIPLE',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  takeawayPriceAdjustment?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -165,11 +198,30 @@ export class UpdateMenuItemDto {
   @IsString()
   sku?: string;
 
+  @ApiPropertyOptional({ enum: MENU_ITEM_PRICING_MODE_VALUES })
+  @IsOptional()
+  @IsIn(MENU_ITEM_PRICING_MODE_VALUES)
+  pricingMode?: (typeof MENU_ITEM_PRICING_MODE_VALUES)[number];
+
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsNumber()
   basePrice?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  deliveryPriceAdjustment?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  takeawayPriceAdjustment?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
