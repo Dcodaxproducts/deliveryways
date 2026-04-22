@@ -7,9 +7,12 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
+  AdminDashboardDeliverymenStats,
+  AdminDashboardEmployeesStats,
   AdminDashboardCustomersStats,
   AdminDashboardOrdersTrend,
   AdminDashboardOrdersStats,
+  AdminDashboardRestaurantOverview,
   AdminDashboardOverview,
   AdminDashboardRecentActivity,
   AdminDashboardRevenueTrend,
@@ -20,10 +23,13 @@ import {
   AdminDashboardTopPerformingRestaurants,
 } from './admin-dashboard.repository';
 import {
+  AdminDashboardDeliverymenStatsQueryDto,
+  AdminDashboardEmployeesStatsQueryDto,
   AdminDashboardCustomersStatsQueryDto,
   AdminDashboardOrdersTrendQueryDto,
   AdminDashboardOrdersStatsQueryDto,
   AdminDashboardRecentActivityQueryDto,
+  AdminDashboardRestaurantOverviewQueryDto,
   AdminDashboardRevenueTrendQueryDto,
   AdminDashboardTopRestaurantsQueryDto,
   AdminDashboardRestaurantTrendQueryDto,
@@ -45,6 +51,28 @@ export class AdminDashboardService {
     return {
       data,
       message: 'Admin dashboard overview fetched successfully',
+    };
+  }
+
+  async getRestaurantOverview(
+    user: AuthUserContext,
+    query: AdminDashboardRestaurantOverviewQueryDto,
+  ): Promise<{
+    data: AdminDashboardRestaurantOverview;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getRestaurantOverview(
+      scope,
+    );
+
+    return {
+      data,
+      message: 'Restaurant dashboard overview fetched successfully',
     };
   }
 
@@ -147,6 +175,48 @@ export class AdminDashboardService {
     return {
       data,
       message: 'Admin dashboard customer stats fetched successfully',
+    };
+  }
+
+  async getDeliverymenStats(
+    user: AuthUserContext,
+    query: AdminDashboardDeliverymenStatsQueryDto,
+  ): Promise<{
+    data: AdminDashboardDeliverymenStats;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getDeliverymenStats(
+      scope,
+    );
+
+    return {
+      data,
+      message: 'Admin dashboard deliverymen stats fetched successfully',
+    };
+  }
+
+  async getEmployeesStats(
+    user: AuthUserContext,
+    query: AdminDashboardEmployeesStatsQueryDto,
+  ): Promise<{
+    data: AdminDashboardEmployeesStats;
+    message: string;
+  }> {
+    const scope = await this.resolveDashboardScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const data = await this.adminDashboardRepository.getEmployeesStats(scope);
+
+    return {
+      data,
+      message: 'Admin dashboard employee stats fetched successfully',
     };
   }
 

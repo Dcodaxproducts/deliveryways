@@ -1,6 +1,52 @@
 import { AdminDashboardService } from './admin-dashboard.service';
 
 describe('AdminDashboardService', () => {
+  it('returns restaurant dashboard overview for branch admin scope', async () => {
+    const repository = {
+      getRestaurantOverview: jest.fn().mockResolvedValue({
+        totalOrders: 18,
+        totalRevenue: 22500,
+        averageOrderValue: 1250,
+        activeOrders: 4,
+        totalCustomers: 90,
+        activeCustomers: 73,
+        totalDeliverymen: 7,
+        availableDeliverymen: 3,
+        totalEmployees: 11,
+        activeEmployees: 9,
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getRestaurantOverview(
+        {
+          uid: 'branch-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: 'BRANCH_ADMIN',
+        } as never,
+        {},
+      ),
+    ).resolves.toEqual({
+      data: {
+        totalOrders: 18,
+        totalRevenue: 22500,
+        averageOrderValue: 1250,
+        activeOrders: 4,
+        totalCustomers: 90,
+        activeCustomers: 73,
+        totalDeliverymen: 7,
+        availableDeliverymen: 3,
+        totalEmployees: 11,
+        activeEmployees: 9,
+      },
+      message: 'Restaurant dashboard overview fetched successfully',
+    });
+  });
+
   it('returns overview stats with active and inactive splits', async () => {
     const repository = {
       getOverview: jest.fn().mockResolvedValue({
@@ -339,6 +385,74 @@ describe('AdminDashboardService', () => {
         newCustomersLast30Days: 42,
       },
       message: 'Admin dashboard customer stats fetched successfully',
+    });
+  });
+
+  it('returns deliverymen stats for business admin scope', async () => {
+    const repository = {
+      getDeliverymenStats: jest.fn().mockResolvedValue({
+        totalDeliverymen: 8,
+        activeDeliverymen: 6,
+        inactiveDeliverymen: 2,
+        statusBreakdown: [{ status: 'AVAILABLE', count: 3 }],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getDeliverymenStats(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {},
+      ),
+    ).resolves.toEqual({
+      data: {
+        totalDeliverymen: 8,
+        activeDeliverymen: 6,
+        inactiveDeliverymen: 2,
+        statusBreakdown: [{ status: 'AVAILABLE', count: 3 }],
+      },
+      message: 'Admin dashboard deliverymen stats fetched successfully',
+    });
+  });
+
+  it('returns employee stats for business admin scope', async () => {
+    const repository = {
+      getEmployeesStats: jest.fn().mockResolvedValue({
+        totalEmployees: 12,
+        activeEmployees: 10,
+        inactiveEmployees: 2,
+        roleBreakdown: [
+          { staffRoleId: 'role-1', name: 'Cashier', count: 5 },
+        ],
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getEmployeesStats(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {},
+      ),
+    ).resolves.toEqual({
+      data: {
+        totalEmployees: 12,
+        activeEmployees: 10,
+        inactiveEmployees: 2,
+        roleBreakdown: [{ staffRoleId: 'role-1', name: 'Cashier', count: 5 }],
+      },
+      message: 'Admin dashboard employee stats fetched successfully',
     });
   });
 

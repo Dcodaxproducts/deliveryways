@@ -13,10 +13,13 @@ import {
 } from '../../common/guards';
 import { AdminDashboardService } from './admin-dashboard.service';
 import {
+  AdminDashboardDeliverymenStatsQueryDto,
+  AdminDashboardEmployeesStatsQueryDto,
   AdminDashboardCustomersStatsQueryDto,
   AdminDashboardOrdersTrendQueryDto,
   AdminDashboardOrdersStatsQueryDto,
   AdminDashboardRecentActivityQueryDto,
+  AdminDashboardRestaurantOverviewQueryDto,
   AdminDashboardRevenueTrendQueryDto,
   AdminDashboardSystemAlertsQueryDto,
   AdminDashboardTopRestaurantsQueryDto,
@@ -29,6 +32,22 @@ import {
 @Controller('admin/dashboard')
 export class AdminDashboardController {
   constructor(private readonly adminDashboardService: AdminDashboardService) {}
+
+  @Get('restaurant/overview')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get restaurant dashboard overview cards for restaurant and branch admins',
+  })
+  getRestaurantOverview(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardRestaurantOverviewQueryDto,
+  ) {
+    return this.adminDashboardService.getRestaurantOverview(user, query);
+  }
 
   @Get('overview')
   @Roles(RolesEnum.SUPER_ADMIN)
@@ -113,6 +132,38 @@ export class AdminDashboardController {
     return this.adminDashboardService.getCustomersStats(user, query);
   }
 
+  @Get('deliverymen/stats')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get deliverymen stats for restaurant dashboard summary cards',
+  })
+  getDeliverymenStats(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardDeliverymenStatsQueryDto,
+  ) {
+    return this.adminDashboardService.getDeliverymenStats(user, query);
+  }
+
+  @Get('employees/stats')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Get employee stats for restaurant dashboard summary cards',
+  })
+  getEmployeesStats(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminDashboardEmployeesStatsQueryDto,
+  ) {
+    return this.adminDashboardService.getEmployeesStats(user, query);
+  }
+
   @Get('system-alerts')
   @Roles(
     RolesEnum.SUPER_ADMIN,
@@ -120,7 +171,8 @@ export class AdminDashboardController {
     RolesEnum.BRANCH_ADMIN,
   )
   @ApiOperation({
-    summary: 'Get dashboard system alerts derived from recent platform activity',
+    summary:
+      'Get dashboard system alerts derived from recent platform activity',
   })
   getSystemAlerts(
     @CurrentUser() user: AuthUserContext,
@@ -136,7 +188,8 @@ export class AdminDashboardController {
     RolesEnum.BRANCH_ADMIN,
   )
   @ApiOperation({
-    summary: 'Get recent dashboard activity across orders, payments, restaurants, and customers',
+    summary:
+      'Get recent dashboard activity across orders, payments, restaurants, and customers',
   })
   getRecentActivity(
     @CurrentUser() user: AuthUserContext,

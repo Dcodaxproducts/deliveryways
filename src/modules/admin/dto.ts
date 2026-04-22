@@ -150,6 +150,12 @@ export class AdminDashboardOrdersStatsQueryDto extends AdminDashboardScopedQuery
 
 export class AdminDashboardCustomersStatsQueryDto extends AdminDashboardScopedQueryDto {}
 
+export class AdminDashboardRestaurantOverviewQueryDto extends AdminDashboardScopedQueryDto {}
+
+export class AdminDashboardDeliverymenStatsQueryDto extends AdminDashboardScopedQueryDto {}
+
+export class AdminDashboardEmployeesStatsQueryDto extends AdminDashboardScopedQueryDto {}
+
 export class AdminDashboardSystemAlertsQueryDto extends AdminDashboardScopedQueryDto {}
 
 export class AdminDashboardRecentActivityQueryDto extends AdminDashboardScopedQueryDto {
