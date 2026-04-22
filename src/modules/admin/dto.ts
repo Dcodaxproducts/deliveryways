@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsDateString,
   IsArray,
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsIn,
   IsInt,
   IsOptional,
@@ -13,6 +15,8 @@ import {
   Min,
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderTypeEnum } from '../../common/enums';
 
 export class AdminListCustomersDto extends AdminListQueryDto {
   @ApiPropertyOptional({ description: 'Filter customers by restaurant' })
@@ -184,4 +188,113 @@ export class AdminDashboardTopRestaurantsQueryDto extends AdminDashboardScopedQu
   @Min(1)
   @Max(20)
   limit = 5;
+}
+
+export class AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+}
+
+export class AdminExportMenuCsvQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ description: 'Optional restaurant menu filter' })
+  @IsOptional()
+  @IsString()
+  menuId?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  includeInactive?: boolean;
+}
+
+export class AdminExportOrdersCsvQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional({ enum: OrderStatus })
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
+  @ApiPropertyOptional({ enum: OrderTypeEnum })
+  @IsOptional()
+  @IsEnum(OrderTypeEnum)
+  orderType?: OrderTypeEnum;
+
+  @ApiPropertyOptional({ enum: PaymentStatus })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  paymentStatus?: PaymentStatus;
+
+  @ApiPropertyOptional({ enum: ['order', 'group-orders'] })
+  @IsOptional()
+  @IsIn(['order', 'group-orders'])
+  kind?: 'order' | 'group-orders';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
+export class AdminExportCustomersCsvQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isVerified?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
+export class AdminOrdersReportQueryDto extends AdminExportOrdersCsvQueryDto {}
+
+export class AdminFinancialReportQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
 }
