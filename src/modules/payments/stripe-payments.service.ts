@@ -4,7 +4,8 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Stripe from 'stripe';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import Stripe = require('stripe');
 
 export interface StripePaymentIntentMetadata {
   [key: string]: string | number | null;
