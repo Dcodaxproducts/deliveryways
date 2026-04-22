@@ -41,6 +41,257 @@ WHERE m."modifier_group_id" IS NOT NULL
       AND mgm."modifier_id" = m."id"
   );
 
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    FIRST_VALUE(m."id") OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "canonical_id",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id", "canonical_id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+INSERT INTO "modifier_group_modifiers" (
+  "id",
+  "modifier_group_id",
+  "modifier_id",
+  "sort_order",
+  "created_at",
+  "updated_at"
+)
+SELECT
+  gen_random_uuid()::text,
+  mgm."modifier_group_id",
+  dm."canonical_id",
+  mgm."sort_order",
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+FROM "modifier_group_modifiers" AS mgm
+INNER JOIN duplicate_modifiers AS dm
+  ON dm."id" = mgm."modifier_id"
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM "modifier_group_modifiers" AS existing
+  WHERE existing."modifier_group_id" = mgm."modifier_group_id"
+    AND existing."modifier_id" = dm."canonical_id"
+);
+
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    FIRST_VALUE(m."id") OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "canonical_id",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id", "canonical_id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+INSERT INTO "menu_item_modifier_price_overrides" (
+  "id",
+  "menu_item_id",
+  "modifier_id",
+  "price_delta"
+)
+SELECT
+  gen_random_uuid()::text,
+  mimo."menu_item_id",
+  dm."canonical_id",
+  mimo."price_delta"
+FROM "menu_item_modifier_price_overrides" AS mimo
+INNER JOIN duplicate_modifiers AS dm
+  ON dm."id" = mimo."modifier_id"
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM "menu_item_modifier_price_overrides" AS existing
+  WHERE existing."menu_item_id" = mimo."menu_item_id"
+    AND existing."modifier_id" = dm."canonical_id"
+);
+
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    FIRST_VALUE(m."id") OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "canonical_id",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id", "canonical_id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+INSERT INTO "menu_variation_modifier_price_overrides" (
+  "id",
+  "variation_id",
+  "modifier_id",
+  "price_delta"
+)
+SELECT
+  gen_random_uuid()::text,
+  mvmpo."variation_id",
+  dm."canonical_id",
+  mvmpo."price_delta"
+FROM "menu_variation_modifier_price_overrides" AS mvmpo
+INNER JOIN duplicate_modifiers AS dm
+  ON dm."id" = mvmpo."modifier_id"
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM "menu_variation_modifier_price_overrides" AS existing
+  WHERE existing."variation_id" = mvmpo."variation_id"
+    AND existing."modifier_id" = dm."canonical_id"
+);
+
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    FIRST_VALUE(m."id") OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "canonical_id",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+DELETE FROM "modifier_group_modifiers"
+WHERE "modifier_id" IN (SELECT "id" FROM duplicate_modifiers);
+
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+DELETE FROM "menu_item_modifier_price_overrides"
+WHERE "modifier_id" IN (SELECT "id" FROM duplicate_modifiers);
+
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+DELETE FROM "menu_variation_modifier_price_overrides"
+WHERE "modifier_id" IN (SELECT "id" FROM duplicate_modifiers);
+
+WITH ranked_modifiers AS (
+  SELECT
+    m."id",
+    m."restaurant_id",
+    m."name",
+    ROW_NUMBER() OVER (
+      PARTITION BY m."restaurant_id", m."name"
+      ORDER BY
+        CASE WHEN m."deleted_at" IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN m."is_active" THEN 0 ELSE 1 END,
+        m."created_at",
+        m."id"
+    ) AS "row_num"
+  FROM "modifiers" AS m
+  WHERE m."restaurant_id" IS NOT NULL
+), duplicate_modifiers AS (
+  SELECT "id"
+  FROM ranked_modifiers
+  WHERE "row_num" > 1
+)
+DELETE FROM "modifiers"
+WHERE "id" IN (SELECT "id" FROM duplicate_modifiers);
+
 DO $$
 BEGIN
   IF NOT EXISTS (
