@@ -199,6 +199,55 @@ describe('RestaurantMenuService', () => {
     expect(result.data[0].menuResolution.source).toBe('DIRECT_AND_CATEGORY');
   });
 
+  it('locks business admin menu listing to restaurant id from token when query restaurantId is omitted', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.list.mockResolvedValue({
+      items: [],
+      total: 0,
+    });
+
+    await service.list(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(restaurantMenuRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.objectContaining({ page: 1, limit: 20 }),
+    );
+  });
+
+  it('rejects business admin menu listing without restaurant scope', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.list(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          page: 1,
+          limit: 20,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC',
+        },
+      ),
+    ).rejects.toThrow('restaurantId is required');
+  });
+
   it('returns modifier links inside fetched menu items', async () => {
     const { service, restaurantMenuRepository } = makeService();
 

@@ -497,9 +497,14 @@ export class RestaurantMenuService {
 
       if (requestedRestaurantId) {
         await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+        return requestedRestaurantId;
       }
 
-      return requestedRestaurantId;
+      if (allowReadFromToken && user.rid) {
+        return user.rid;
+      }
+
+      throw new BadRequestException('restaurantId is required');
     }
 
     const canReadFromToken =
