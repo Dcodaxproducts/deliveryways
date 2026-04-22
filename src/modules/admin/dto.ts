@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -15,7 +16,7 @@ import {
   Min,
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { CouponCampaignKind, OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
 
 export class AdminListCustomersDto extends AdminListQueryDto {
@@ -297,4 +298,243 @@ export class AdminFinancialReportQueryDto extends AdminReportsScopedQueryDto {
   @IsOptional()
   @IsDateString()
   toDate?: string;
+}
+
+export class AdminPromotionsOverviewQueryDto extends AdminReportsScopedQueryDto {}
+
+export class AdminListPromotionsQueryDto extends AdminListQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional({ enum: CouponCampaignKind })
+  @IsOptional()
+  @IsEnum(CouponCampaignKind)
+  kind?: CouponCampaignKind;
+
+  @ApiPropertyOptional({ enum: ['active', 'scheduled', 'expired', 'inactive'] })
+  @IsOptional()
+  @IsIn(['active', 'scheduled', 'expired', 'inactive'])
+  lifecycle?: 'active' | 'scheduled' | 'expired' | 'inactive';
+}
+
+export class AdminPromotionStatsQueryDto extends AdminReportsScopedQueryDto {}
+
+export class AdminPromotionBaseDto {
+  @ApiProperty()
+  @IsString()
+  code!: string;
+
+  @ApiProperty()
+  @IsString()
+  title!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiProperty({ enum: ['FLAT', 'PERCENTAGE'] })
+  @IsIn(['FLAT', 'PERCENTAGE'])
+  discountType!: 'FLAT' | 'PERCENTAGE';
+
+  @ApiProperty()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  discountValue!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maxDiscountAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minOrderAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxUses?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxUsesPerCustomer?: number;
+
+  @ApiProperty({ format: 'date-time' })
+  @IsDateString()
+  startsAt!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  @IsDateString()
+  expiresAt!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  scopeMenuItemId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  scopeCategoryId?: string;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class CreateAdminPromotionDto extends AdminPromotionBaseDto {}
+
+export class UpdateAdminPromotionDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional({ enum: ['FLAT', 'PERCENTAGE'] })
+  @IsOptional()
+  @IsIn(['FLAT', 'PERCENTAGE'])
+  discountType?: 'FLAT' | 'PERCENTAGE';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  discountValue?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maxDiscountAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minOrderAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxUses?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxUsesPerCustomer?: number;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsDateString()
+  startsAt?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  scopeMenuItemId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  scopeCategoryId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class CreateAdminHappyHourDto extends AdminPromotionBaseDto {
+  @ApiProperty({ type: [Number], description: 'UTC days, 0=Sunday ... 6=Saturday' })
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  activeDays!: number[];
+
+  @ApiProperty({ example: '14:00' })
+  @IsString()
+  dailyStartTime!: string;
+
+  @ApiProperty({ example: '17:00' })
+  @IsString()
+  dailyEndTime!: string;
+}
+
+export class UpdateAdminHappyHourDto extends UpdateAdminPromotionDto {
+  @ApiPropertyOptional({ type: [Number], description: 'UTC days, 0=Sunday ... 6=Saturday' })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  activeDays?: number[];
+
+  @ApiPropertyOptional({ example: '14:00' })
+  @IsOptional()
+  @IsString()
+  dailyStartTime?: string;
+
+  @ApiPropertyOptional({ example: '17:00' })
+  @IsOptional()
+  @IsString()
+  dailyEndTime?: string;
 }

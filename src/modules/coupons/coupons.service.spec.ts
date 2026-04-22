@@ -25,6 +25,9 @@ describe('CouponsService - validateForCheckout', () => {
     usedCount: 0,
     startsAt: new Date('2026-01-01'),
     expiresAt: new Date('2026-12-31'),
+    activeDays: null,
+    dailyStartTime: null,
+    dailyEndTime: null,
     scopeMenuItemId: null,
     scopeCategoryId: null,
     isActive: true,
@@ -204,5 +207,40 @@ describe('CouponsService - validateForCheckout', () => {
     await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
       'Coupon is not applicable to selected categories',
     );
+  });
+
+  it('throws when happy hour daily window is not active', async () => {
+    const originalDate = global.Date;
+
+    class MockDate extends Date {
+      constructor(...args: ConstructorParameters<DateConstructor>) {
+        if (args.length) {
+          super(...args);
+          return;
+        }
+
+        super('2026-04-22T10:00:00.000Z');
+      }
+
+      static now() {
+        return new originalDate('2026-04-22T10:00:00.000Z').getTime();
+      }
+    }
+
+    global.Date = MockDate as DateConstructor;
+
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        activeDays: [2],
+        dailyStartTime: '14:00',
+        dailyEndTime: '17:00',
+      }),
+    );
+
+    await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
+      'Coupon is not valid at this time',
+    );
+
+    global.Date = originalDate;
   });
 });

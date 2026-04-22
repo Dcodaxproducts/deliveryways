@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { UsersModule } from '../users/users.module';
+import { AdminPromotionsController } from './admin-promotions.controller';
+import { AdminPromotionsRepository } from './admin-promotions.repository';
+import { AdminPromotionsService } from './admin-promotions.service';
 import { AdminReportsController } from './admin-reports.controller';
 import { AdminReportsRepository } from './admin-reports.repository';
 import { AdminReportsService } from './admin-reports.service';
@@ -16,6 +19,7 @@ import { AdminUsersService } from './admin-users.service';
     AdminUsersController,
     AdminDashboardController,
     AdminReportsController,
+    AdminPromotionsController,
   ],
   providers: [
     AdminUsersService,
@@ -23,6 +27,8 @@ import { AdminUsersService } from './admin-users.service';
     AdminDashboardRepository,
     AdminReportsService,
     AdminReportsRepository,
+    AdminPromotionsService,
+    AdminPromotionsRepository,
   ],
 })
 export class AdminModule {}

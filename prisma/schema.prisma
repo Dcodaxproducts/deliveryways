@@ -57,6 +57,11 @@ enum CouponDiscountType {
   PERCENTAGE
 }
 
+enum CouponCampaignKind {
+  PROMOTION
+  HAPPY_HOUR
+}
+
 enum OrderType {
   DELIVERY
   TAKEAWAY
@@ -782,6 +787,7 @@ model Coupon {
   code               String
   title              String
   description        String?
+  kind               CouponCampaignKind @default(PROMOTION)
   status             CouponStatus       @default(ACTIVE)
   discountType       CouponDiscountType @map("discount_type")
   discountValue      Decimal            @map("discount_value") @db.Decimal(10, 2)
@@ -792,6 +798,9 @@ model Coupon {
   usedCount          Int                @default(0) @map("used_count")
   startsAt           DateTime           @map("starts_at") @db.Timestamptz
   expiresAt          DateTime           @map("expires_at") @db.Timestamptz
+  activeDays         Json?              @map("active_days")
+  dailyStartTime     String?            @map("daily_start_time")
+  dailyEndTime       String?            @map("daily_end_time")
   scopeMenuItemId    String?            @map("scope_menu_item_id")
   scopeCategoryId    String?            @map("scope_category_id")
   isActive           Boolean            @default(true) @map("is_active")

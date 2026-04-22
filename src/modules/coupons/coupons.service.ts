@@ -237,6 +237,10 @@ export class CouponsService {
       throw new BadRequestException('Coupon is not valid at this time');
     }
 
+    if (!this.isCouponScheduleActive(coupon, now)) {
+      throw new BadRequestException('Coupon is not valid at this time');
+    }
+
     if (coupon.branchId && coupon.branchId !== input.branchId) {
       throw new BadRequestException('Coupon is not valid for this branch');
     }
@@ -460,5 +464,58 @@ export class CouponsService {
         );
       }
     }
+  }
+
+  private isCouponScheduleActive(
+    coupon: Pick<Coupon, 'activeDays' | 'dailyStartTime' | 'dailyEndTime'>,
+    now: Date,
+  ) {
+    const activeDays = this.readActiveDays(coupon.activeDays);
+    if (activeDays && !activeDays.includes(now.getUTCDay())) {
+      return false;
+    }
+
+    if (!coupon.dailyStartTime || !coupon.dailyEndTime) {
+      return true;
+    }
+
+    const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const startMinutes = this.parseTimeToMinutes(coupon.dailyStartTime);
+    const endMinutes = this.parseTimeToMinutes(coupon.dailyEndTime);
+
+    if (startMinutes === null || endMinutes === null) {
+      return true;
+    }
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    }
+
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  }
+
+  private readActiveDays(value: Prisma.JsonValue | null): number[] | null {
+    if (!Array.isArray(value) || !value.length) {
+      return null;
+    }
+
+    return value
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 6);
+  }
+
+  private parseTimeToMinutes(value: string): number | null {
+    const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+    if (!match) {
+      return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 23 || minutes > 59) {
+      return null;
+    }
+
+    return hours * 60 + minutes;
   }
 }
