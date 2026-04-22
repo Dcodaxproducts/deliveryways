@@ -1,9 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  CouponCampaignKind,
-  CouponStatus,
-  Prisma,
-} from '@prisma/client';
+import { CouponCampaignKind, CouponStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { AdminListPromotionsQueryDto } from './dto';
 
@@ -88,46 +84,50 @@ export class AdminPromotionsRepository {
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
     };
 
-    const [activePromotions, scheduledPromotions, expiredPromotions, promoOrders] =
-      await this.prisma.$transaction([
-        this.prisma.coupon.count({
-          where: {
-            ...baseWhere,
-            status: CouponStatus.ACTIVE,
-            isActive: true,
-            startsAt: { lte: now },
-            expiresAt: { gte: now },
+    const [
+      activePromotions,
+      scheduledPromotions,
+      expiredPromotions,
+      promoOrders,
+    ] = await this.prisma.$transaction([
+      this.prisma.coupon.count({
+        where: {
+          ...baseWhere,
+          status: CouponStatus.ACTIVE,
+          isActive: true,
+          startsAt: { lte: now },
+          expiresAt: { gte: now },
+        },
+      }),
+      this.prisma.coupon.count({
+        where: {
+          ...baseWhere,
+          isActive: true,
+          startsAt: { gt: now },
+        },
+      }),
+      this.prisma.coupon.count({
+        where: {
+          ...baseWhere,
+          expiresAt: { lt: now },
+        },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+          ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+          ...(scope.branchId ? { branchId: scope.branchId } : {}),
+          couponId: { not: null },
+          coupon: {
+            deletedAt: null,
           },
-        }),
-        this.prisma.coupon.count({
-          where: {
-            ...baseWhere,
-            isActive: true,
-            startsAt: { gt: now },
-          },
-        }),
-        this.prisma.coupon.count({
-          where: {
-            ...baseWhere,
-            expiresAt: { lt: now },
-          },
-        }),
-        this.prisma.order.findMany({
-          where: {
-            ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
-            ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
-            ...(scope.branchId ? { branchId: scope.branchId } : {}),
-            couponId: { not: null },
-            coupon: {
-              deletedAt: null,
-            },
-          },
-          select: {
-            totalAmount: true,
-            couponId: true,
-          },
-        }),
-      ]);
+        },
+        select: {
+          totalAmount: true,
+          couponId: true,
+        },
+      }),
+    ]);
 
     return {
       activePromotions,
@@ -181,7 +181,9 @@ export class AdminPromotionsRepository {
       return null;
     }
 
-    const uniqueCustomers = new Set(coupon.usages.map((usage) => usage.customerId));
+    const uniqueCustomers = new Set(
+      coupon.usages.map((usage) => usage.customerId),
+    );
     const orders = coupon.usages.filter((usage) => usage.order);
 
     return {

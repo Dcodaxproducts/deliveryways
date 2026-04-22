@@ -280,6 +280,7 @@ model Restaurant {
   menuCategories      MenuCategory[]
   menuItems           MenuItem[]
   modifierGroups      ModifierGroup[]
+  modifiers           Modifier[]
   inventoryCategories InventoryCategory[]
   inventoryItems      InventoryItem[]
   coupons             Coupon[]
@@ -606,7 +607,7 @@ model ModifierGroup {
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   restaurant    Restaurant                  @relation(fields: [restaurantId], references: [id])
-  modifiers     Modifier[]
+  modifierLinks ModifierGroupModifier[]
   itemLinks     MenuItemModifierGroup[]
   categoryLinks MenuCategoryModifierGroup[]
 
@@ -615,22 +616,40 @@ model ModifierGroup {
 }
 
 model Modifier {
-  id              String    @id @default(cuid())
-  modifierGroupId String    @map("modifier_group_id")
-  name            String
-  priceDelta      Decimal   @default(0) @map("price_delta") @db.Decimal(10, 2)
-  sortOrder       Int       @default(0) @map("sort_order")
-  isActive        Boolean   @default(true) @map("is_active")
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                     String    @id @default(cuid())
+  restaurantId           String    @map("restaurant_id")
+  name                   String
+  priceDelta             Decimal   @default(0) @map("price_delta") @db.Decimal(10, 2)
+  sortOrder              Int       @default(0) @map("sort_order")
+  isActive               Boolean   @default(true) @map("is_active")
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  modifierGroup           ModifierGroup                        @relation(fields: [modifierGroupId], references: [id])
+  restaurant             Restaurant                          @relation(fields: [restaurantId], references: [id])
+  groupLinks             ModifierGroupModifier[]
   itemPriceOverrides      MenuItemModifierPriceOverride[]
   variationPriceOverrides MenuVariationModifierPriceOverride[]
 
-  @@unique([modifierGroupId, name])
+  @@unique([restaurantId, name])
+  @@index([restaurantId, sortOrder])
   @@map("modifiers")
+}
+
+model ModifierGroupModifier {
+  id              String   @id @default(cuid())
+  modifierGroupId String   @map("modifier_group_id")
+  modifierId      String   @map("modifier_id")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  modifier      Modifier      @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+
+  @@unique([modifierGroupId, modifierId])
+  @@index([modifierId])
+  @@map("modifier_group_modifiers")
 }
 
 model MenuItemModifierGroup {

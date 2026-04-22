@@ -111,7 +111,9 @@ export class PosService {
     this.assertBranchAccess(user, branch);
     this.assertTableReservationsEnabled(branch.settings);
 
-    const reservationDate = this.parseFutureReservationDate(dto.reservationDate);
+    const reservationDate = this.parseFutureReservationDate(
+      dto.reservationDate,
+    );
 
     let customerId = dto.customerId;
     if (customerId) {
@@ -127,7 +129,8 @@ export class PosService {
       });
     }
 
-    const profile = await this.posRepository.findCustomerProfileMetadata(customerId);
+    const profile =
+      await this.posRepository.findCustomerProfileMetadata(customerId);
     const existingReservations = this.readTableReservations(profile?.metadata);
     const reservation = {
       id: randomBytes(12).toString('hex'),
@@ -144,7 +147,10 @@ export class PosService {
       tableReservations: [reservation, ...existingReservations].slice(0, 20),
     });
 
-    await this.posRepository.upsertCustomerProfileMetadata(customerId, nextMetadata);
+    await this.posRepository.upsertCustomerProfileMetadata(
+      customerId,
+      nextMetadata,
+    );
 
     return {
       data: {
@@ -376,7 +382,9 @@ export class PosService {
     this.assertDraftHasItems(draft.items.length);
 
     if (!draft.paymentMethod) {
-      throw new BadRequestException('paymentMethod is required for POS checkout');
+      throw new BadRequestException(
+        'paymentMethod is required for POS checkout',
+      );
     }
 
     const checkoutCustomerId = await this.ensureDraftCheckoutCustomer(draft);
@@ -597,9 +605,7 @@ export class PosService {
   }
 
   private normalizeModifiers(
-    modifiers:
-      | Array<{ modifierId: string; quantity?: number }>
-      | undefined,
+    modifiers: Array<{ modifierId: string; quantity?: number }> | undefined,
   ): Prisma.InputJsonValue | undefined {
     if (!modifiers) {
       return undefined;
@@ -619,8 +625,11 @@ export class PosService {
     }
 
     return modifiers
-      .filter((modifier): modifier is Prisma.JsonObject =>
-        typeof modifier === 'object' && modifier !== null && !Array.isArray(modifier),
+      .filter(
+        (modifier): modifier is Prisma.JsonObject =>
+          typeof modifier === 'object' &&
+          modifier !== null &&
+          !Array.isArray(modifier),
       )
       .map((modifier) => {
         const modifierId = modifier['modifierId'];
@@ -799,16 +808,20 @@ export class PosService {
               : null,
         };
       })
-      .filter((item): item is {
-        id: string;
-        branchId: string;
-        reservationDate: string;
-        guestCount: number;
-        note: string | null;
-        status: 'REQUESTED' | 'CANCELLED';
-        createdAt: string;
-        cancelledAt: string | null;
-      } => item !== null)
+      .filter(
+        (
+          item,
+        ): item is {
+          id: string;
+          branchId: string;
+          reservationDate: string;
+          guestCount: number;
+          note: string | null;
+          status: 'REQUESTED' | 'CANCELLED';
+          createdAt: string;
+          cancelledAt: string | null;
+        } => item !== null,
+      )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 

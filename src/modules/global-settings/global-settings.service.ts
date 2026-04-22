@@ -20,7 +20,11 @@ export interface NotificationSettingsShape {
   phoneNumber: string | null;
   whatsappNumber: string | null;
   notificationTypes: Record<
-    'newOrder' | 'orderCancelled' | 'printerError' | 'dailyReport' | 'payoutUpdate',
+    | 'newOrder'
+    | 'orderCancelled'
+    | 'printerError'
+    | 'dailyReport'
+    | 'payoutUpdate',
     NotificationChannelMatrix
   >;
 }
@@ -66,7 +70,10 @@ export class GlobalSettingsService {
     const current = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),
     );
-    const normalized = this.normalizeUpdateDto(dto, current.notificationSettings);
+    const normalized = this.normalizeUpdateDto(
+      dto,
+      current.notificationSettings,
+    );
 
     const data = await this.globalSettingsRepository.updateSingleton(
       this.toUpdateInput(normalized, user.uid),
@@ -187,9 +194,9 @@ export class GlobalSettingsService {
     };
   }
 
-  private serializeSettings<T extends { notificationSettings?: Prisma.JsonValue | null }>(
-    settings: T,
-  ) {
+  private serializeSettings<
+    T extends { notificationSettings?: Prisma.JsonValue | null },
+  >(settings: T) {
     return {
       ...settings,
       notificationSettings: this.extractNotificationSettings(
@@ -208,7 +215,11 @@ export class GlobalSettingsService {
   }
 
   private defaultNotificationTypeMatrix(): Record<
-    'newOrder' | 'orderCancelled' | 'printerError' | 'dailyReport' | 'payoutUpdate',
+    | 'newOrder'
+    | 'orderCancelled'
+    | 'printerError'
+    | 'dailyReport'
+    | 'payoutUpdate',
     NotificationChannelMatrix
   > {
     return {
@@ -277,9 +288,15 @@ export class GlobalSettingsService {
       keys.map((key) => [
         key,
         {
-          email: this.readBooleanValue(source, [['notificationTypes', key, 'email']]),
-          sms: this.readBooleanValue(source, [['notificationTypes', key, 'sms']]),
-          whatsapp: this.readBooleanValue(source, [['notificationTypes', key, 'whatsapp']]),
+          email: this.readBooleanValue(source, [
+            ['notificationTypes', key, 'email'],
+          ]),
+          sms: this.readBooleanValue(source, [
+            ['notificationTypes', key, 'sms'],
+          ]),
+          whatsapp: this.readBooleanValue(source, [
+            ['notificationTypes', key, 'whatsapp'],
+          ]),
         },
       ]),
     ) as NotificationSettingsShape['notificationTypes'];
@@ -310,7 +327,9 @@ export class GlobalSettingsService {
                 ? updateRow.email
                 : existingRow.email,
             sms:
-              typeof updateRow.sms === 'boolean' ? updateRow.sms : existingRow.sms,
+              typeof updateRow.sms === 'boolean'
+                ? updateRow.sms
+                : existingRow.sms,
             whatsapp:
               typeof updateRow.whatsapp === 'boolean'
                 ? updateRow.whatsapp

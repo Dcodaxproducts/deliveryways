@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Stripe = require('stripe');
+import Stripe from 'stripe';
 
 export interface StripePaymentIntentMetadata {
   [key: string]: string | number | null;
@@ -27,8 +27,13 @@ export class StripePaymentsService {
     this.stripePublishableKey = this.configService.get<string>(
       'STRIPE_PUBLISHABLE_KEY',
     );
-    this.webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
-    this.defaultCurrency = this.configService.get<string>('STRIPE_CURRENCY', 'PKR');
+    this.webhookSecret = this.configService.get<string>(
+      'STRIPE_WEBHOOK_SECRET',
+    );
+    this.defaultCurrency = this.configService.get<string>(
+      'STRIPE_CURRENCY',
+      'PKR',
+    );
 
     if (this.stripeSecretKey) {
       this.stripe = new Stripe(this.stripeSecretKey, {
@@ -101,7 +106,11 @@ export class StripePaymentsService {
       );
     }
 
-    return stripe.webhooks.constructEvent(payload, signature, this.webhookSecret);
+    return stripe.webhooks.constructEvent(
+      payload,
+      signature,
+      this.webhookSecret,
+    );
   }
 
   private requireStripe() {

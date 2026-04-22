@@ -1052,7 +1052,11 @@ export class RestaurantsService {
 
     const restaurant = await this.restaurantsRepository.findById(restaurantId);
 
-    if (!restaurant || restaurant.deletedAt || restaurant.tenantId !== user.tid) {
+    if (
+      !restaurant ||
+      restaurant.deletedAt ||
+      restaurant.tenantId !== user.tid
+    ) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );

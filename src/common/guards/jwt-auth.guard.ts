@@ -6,7 +6,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../../database';
-import { AuthUserContext, ALLOW_SOFT_DELETED_KEY, IS_PUBLIC_KEY } from '../decorators';
+import {
+  AuthUserContext,
+  ALLOW_SOFT_DELETED_KEY,
+  IS_PUBLIC_KEY,
+} from '../decorators';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -37,7 +41,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return false;
     }
 
-    const request = context.switchToHttp().getRequest<{ user?: AuthUserContext }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<{ user?: AuthUserContext }>();
     const user = request.user;
 
     if (!user?.uid) {

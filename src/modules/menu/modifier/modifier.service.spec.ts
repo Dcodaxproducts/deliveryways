@@ -8,16 +8,18 @@ describe('ModifierService', () => {
       listGroups: jest.fn(),
       listModifiers: jest.fn(),
       findGroupById: jest.fn(),
-      findModifierByGroupAndName: jest.fn(),
+      findModifierByRestaurantAndName: jest.fn(),
       createModifier: jest.fn(),
       findModifierById: jest.fn(),
       updateModifier: jest.fn(),
       attachGroupToCategory: jest.fn(),
       listCategoryGroups: jest.fn(),
       deleteGroupItemLinks: jest.fn(),
-      deleteGroupModifiers: jest.fn(),
+      deleteGroupCategoryLinks: jest.fn(),
+      deleteGroupModifierLinks: jest.fn(),
       hardDeleteGroup: jest.fn(),
       hardDeleteModifier: jest.fn(),
+      attachModifierToGroup: jest.fn(),
     };
 
     const prisma = {
@@ -101,7 +103,7 @@ describe('ModifierService', () => {
       restaurantId: 'restaurant-1',
       deletedAt: null,
     });
-    modifierRepository.findModifierByGroupAndName.mockResolvedValue({
+    modifierRepository.findModifierByRestaurantAndName.mockResolvedValue({
       id: 'modifier-1',
     });
 
@@ -121,10 +123,9 @@ describe('ModifierService', () => {
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(modifierRepository.findModifierByGroupAndName).toHaveBeenCalledWith(
-      'group-1',
-      'Extra Cheese',
-    );
+    expect(
+      modifierRepository.findModifierByRestaurantAndName,
+    ).toHaveBeenCalledWith('restaurant-1', 'Extra Cheese');
     expect(modifierRepository.createModifier).not.toHaveBeenCalled();
   });
 
@@ -150,7 +151,11 @@ describe('ModifierService', () => {
       'group-1',
       expect.anything(),
     );
-    expect(modifierRepository.deleteGroupModifiers).toHaveBeenCalledWith(
+    expect(modifierRepository.deleteGroupCategoryLinks).toHaveBeenCalledWith(
+      'group-1',
+      expect.anything(),
+    );
+    expect(modifierRepository.deleteGroupModifierLinks).toHaveBeenCalledWith(
       'group-1',
       expect.anything(),
     );
@@ -165,12 +170,8 @@ describe('ModifierService', () => {
     const { service, modifierRepository } = makeService();
     modifierRepository.findModifierById.mockResolvedValue({
       id: 'modifier-1',
-      modifierGroupId: 'group-1',
-      deletedAt: null,
-    });
-    modifierRepository.findGroupById.mockResolvedValue({
-      id: 'group-1',
       restaurantId: 'restaurant-1',
+      groupLinks: [],
       deletedAt: null,
     });
     modifierRepository.hardDeleteModifier.mockResolvedValue({

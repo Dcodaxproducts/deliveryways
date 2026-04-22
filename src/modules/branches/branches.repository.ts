@@ -556,19 +556,23 @@ export class BranchesRepository {
 
     const branchAdminUserIds = branchAdminUsers.map((user) => user.id);
 
-    const profileTargetIds = branchAdminUserIds.length ? branchAdminUserIds : [''];
+    const profileTargetIds = branchAdminUserIds.length
+      ? branchAdminUserIds
+      : [''];
     const deletedAddresses = await client.address.deleteMany({
       where: {
         refType: AddressRefType.BRANCH,
         referenceId: branchId,
       },
     });
-    const deletedMenuItemOverrides = await client.branchMenuItemOverride.deleteMany({
-      where: { branchId },
-    });
-    const deletedCategoryOverrides = await client.branchCategoryOverride.deleteMany({
-      where: { branchId },
-    });
+    const deletedMenuItemOverrides =
+      await client.branchMenuItemOverride.deleteMany({
+        where: { branchId },
+      });
+    const deletedCategoryOverrides =
+      await client.branchCategoryOverride.deleteMany({
+        where: { branchId },
+      });
     const cancelledOpenPosDrafts = await client.posOrderDraft.updateMany({
       where: {
         branchId,

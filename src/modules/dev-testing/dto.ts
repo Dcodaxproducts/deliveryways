@@ -42,14 +42,14 @@ export class DevTestingUserIdentifierDto {
   @ApiPropertyOptional({
     description: 'User id. Provide this or email.',
   })
-  @ValidateIf((value) => !value.email)
+  @ValidateIf((value: DevTestingUserIdentifierDto) => !value.email)
   @IsString()
   id?: string;
 
   @ApiPropertyOptional({
     description: 'User email. Provide this or id.',
   })
-  @ValidateIf((value) => !value.id)
+  @ValidateIf((value: DevTestingUserIdentifierDto) => !value.id)
   @IsEmail()
   email?: string;
 
@@ -72,7 +72,8 @@ export class DevTestingUserIdentifierDto {
 
 export class DevTestingLookupAccountsByEmailDto {
   @ApiPropertyOptional({
-    description: 'Email address to search across user, staff, and deliveryman accounts.',
+    description:
+      'Email address to search across user, staff, and deliveryman accounts.',
   })
   @IsEmail()
   email!: string;

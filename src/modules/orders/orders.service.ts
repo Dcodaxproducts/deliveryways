@@ -566,11 +566,17 @@ export class OrdersService {
             include: {
               modifierGroup: {
                 include: {
-                  modifiers: {
-                    where: { deletedAt: null, isActive: true },
+                  modifierLinks: {
+                    where: {
+                      modifier: { deletedAt: null, isActive: true },
+                    },
                     include: {
-                      itemPriceOverrides: true,
-                      variationPriceOverrides: true,
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
                     },
                   },
                 },
@@ -1579,13 +1585,22 @@ export class OrdersService {
                 include: {
                   modifierGroup: {
                     include: {
-                      modifiers: {
-                        where: { deletedAt: null, isActive: true },
-                        include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
+                      modifierLinks: {
+                        where: {
+                          modifier: { deletedAt: null, isActive: true },
                         },
-                        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                        orderBy: [
+                          { sortOrder: 'asc' },
+                          { modifier: { createdAt: 'asc' } },
+                        ],
                       },
                     },
                   },
@@ -2222,18 +2237,20 @@ export class OrdersService {
   private findModifier(
     links: {
       modifierGroup: {
-        modifiers: {
-          id: string;
-          name: string;
-          priceDelta: Prisma.Decimal;
-          itemPriceOverrides?: {
-            menuItemId: string;
+        modifierLinks: {
+          modifier: {
+            id: string;
+            name: string;
             priceDelta: Prisma.Decimal;
-          }[];
-          variationPriceOverrides?: {
-            variationId: string;
-            priceDelta: Prisma.Decimal;
-          }[];
+            itemPriceOverrides?: {
+              menuItemId: string;
+              priceDelta: Prisma.Decimal;
+            }[];
+            variationPriceOverrides?: {
+              variationId: string;
+              priceDelta: Prisma.Decimal;
+            }[];
+          };
         }[];
       };
     }[],
@@ -2242,9 +2259,9 @@ export class OrdersService {
     variationId?: string,
   ) {
     for (const link of links) {
-      const found = link.modifierGroup.modifiers.find(
-        (modifier) => modifier.id === modifierId,
-      );
+      const found = link.modifierGroup.modifierLinks.find(
+        (modifierLink) => modifierLink.modifier.id === modifierId,
+      )?.modifier;
       if (found) {
         const variationOverride = found.variationPriceOverrides?.find(
           (item) => item.variationId === variationId,
@@ -2256,7 +2273,9 @@ export class OrdersService {
         return {
           ...found,
           priceDelta:
-            variationOverride?.priceDelta ?? override?.priceDelta ?? found.priceDelta,
+            variationOverride?.priceDelta ??
+            override?.priceDelta ??
+            found.priceDelta,
         };
       }
     }

@@ -88,15 +88,16 @@ describe('MenuVariationService', () => {
     });
     prisma.modifier.count.mockResolvedValue(2);
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) =>
-      Promise.resolve(
-        callback({
-          menuVariationModifierPriceOverride: {
-            deleteMany,
-            createMany,
-          },
-        }),
-      ),
+    prisma.$transaction.mockImplementation(
+      (callback: (tx: unknown) => unknown) =>
+        Promise.resolve(
+          callback({
+            menuVariationModifierPriceOverride: {
+              deleteMany,
+              createMany,
+            },
+          }),
+        ),
     );
     variationRepository.create.mockResolvedValue({ id: 'variation-1' });
 
@@ -121,28 +122,38 @@ describe('MenuVariationService', () => {
       where: {
         id: { in: ['modifier-1', 'modifier-2'] },
         deletedAt: null,
-        modifierGroup: {
-          restaurantId: 'restaurant-1',
-          deletedAt: null,
+        restaurantId: 'restaurant-1',
+        groupLinks: {
+          some: {
+            modifierGroup: {
+              restaurantId: 'restaurant-1',
+              deletedAt: null,
+            },
+          },
         },
       },
     });
     expect(deleteMany).toHaveBeenCalledWith({
       where: { variationId: 'variation-1' },
     });
-    expect(createMany).toHaveBeenCalledWith({
-      data: [
-        {
-          variationId: 'variation-1',
-          modifierId: 'modifier-1',
-          priceDelta: expect.anything(),
-        },
-        {
-          variationId: 'variation-1',
-          modifierId: 'modifier-2',
-          priceDelta: expect.anything(),
-        },
-      ],
+    expect(createMany).toHaveBeenCalledTimes(1);
+    const [createManyArg] = createMany.mock.calls[0] as [
+      {
+        data: Array<{
+          variationId: string;
+          modifierId: string;
+          priceDelta: unknown;
+        }>;
+      },
+    ];
+    expect(createManyArg.data).toHaveLength(2);
+    expect(createManyArg.data[0]).toMatchObject({
+      variationId: 'variation-1',
+      modifierId: 'modifier-1',
+    });
+    expect(createManyArg.data[1]).toMatchObject({
+      variationId: 'variation-1',
+      modifierId: 'modifier-2',
     });
   });
 

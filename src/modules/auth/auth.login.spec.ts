@@ -25,6 +25,7 @@ describe('AuthService login', () => {
     usersService = {
       findByEmail: jest.fn(),
       findByEmailIncludingDeleted: jest.fn(),
+      findManyForDevResolution: jest.fn(),
       cancelDeleteUser: jest.fn(),
       setRefreshTokenHash: jest.fn(),
     };
@@ -69,7 +70,8 @@ describe('AuthService login', () => {
   });
 
   it('requires restaurantId for customer login', async () => {
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
       id: 'customer-1',
       email: 'customer@example.com',
       password: 'hashed-password',
@@ -84,7 +86,8 @@ describe('AuthService login', () => {
       deletedAt: null,
       deleteAfter: null,
       profile: null,
-    });
+      },
+    ]);
 
     await expect(
       service.login({
@@ -93,9 +96,11 @@ describe('AuthService login', () => {
       }),
     ).rejects.toThrow(BadRequestException);
 
-    expect(usersService.findByEmailIncludingDeleted).toHaveBeenCalledWith(
-      'customer@example.com',
-      undefined,
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'customer@example.com',
+        includeDeleted: true,
+      }),
     );
   });
 
@@ -200,7 +205,8 @@ describe('AuthService login', () => {
   });
 
   it('rejects branch-admin login with assigned deleted branch as branch state, not account deletion state', async () => {
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
       id: 'branch-admin-1',
       email: 'branch.admin@example.com',
       password: 'hashed-password',
@@ -215,7 +221,8 @@ describe('AuthService login', () => {
       deletedAt: null,
       deleteAfter: null,
       profile: null,
-    });
+      },
+    ]);
     prismaService.branch.findFirst.mockResolvedValue({
       id: 'branch-1',
       deletedAt: new Date('2026-04-09T00:00:00.000Z'),
@@ -232,10 +239,10 @@ describe('AuthService login', () => {
         message:
           'Assigned branch is soft-deleted. Restore branch to continue login.',
         error: 'ASSIGNED_BRANCH_SOFT_DELETED',
-        details: expect.objectContaining({
+        details: {
           deletionScheduled: false,
           canRestore: true,
-        }),
+        },
       },
       status: 403,
     });

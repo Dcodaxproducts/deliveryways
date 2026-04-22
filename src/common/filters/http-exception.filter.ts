@@ -15,7 +15,10 @@ type ValidationErrorDetail = {
   allowedValues?: string[];
 };
 
-type ErrorDetails = ValidationErrorDetail[] | Record<string, unknown> | undefined;
+type ErrorDetails =
+  | ValidationErrorDetail[]
+  | Record<string, unknown>
+  | undefined;
 
 const FIELD_LABELS: Record<string, string> = {
   restaurantId: 'restaurant',

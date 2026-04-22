@@ -247,11 +247,13 @@ export class AdminUsersService {
     };
   }
 
-  private withDeletionState<T extends {
-    deletedAt?: Date | null;
-    deleteAfter?: Date | null;
-    isActive?: boolean;
-  }>(entity: T) {
+  private withDeletionState<
+    T extends {
+      deletedAt?: Date | null;
+      deleteAfter?: Date | null;
+      isActive?: boolean;
+    },
+  >(entity: T) {
     const deletionState = entity.deletedAt
       ? {
           isDeleted: true,

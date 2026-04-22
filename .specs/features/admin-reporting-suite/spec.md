@@ -75,9 +75,9 @@ All endpoints must follow the standard response envelope, and export endpoints m
 - Orders report
 
 ### Phase 3 — Promotions management
-- Promotions overview
-- Happy hours CRUD + stats
-- Promotions CRUD + stats
+- Promotions overview ✅ shipped in `527b829`
+- Happy hours CRUD + stats ✅ shipped in `527b829`
+- Promotions CRUD + stats ✅ shipped in `527b829`
 
 ### Phase 4 — Operational controls
 - Auto-printing configuration/status

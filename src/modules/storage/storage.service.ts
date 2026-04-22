@@ -87,8 +87,7 @@ export class StorageService {
       });
 
       return await getSignedUrl(client, command, {
-        expiresIn:
-          expiresIn ?? s3Config.presignedUploadExpirySeconds,
+        expiresIn: expiresIn ?? s3Config.presignedUploadExpirySeconds,
       });
     } catch {
       return normalizedFileUrl;
@@ -337,7 +336,7 @@ export class StorageService {
       return false;
     }
 
-    const prototype = Object.getPrototypeOf(value);
+    const prototype: unknown = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
   }
 

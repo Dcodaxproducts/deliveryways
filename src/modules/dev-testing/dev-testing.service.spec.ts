@@ -14,6 +14,15 @@ describe('DevTestingService', () => {
     deliveryman: { findMany: jest.Mock };
   };
 
+  type DevTestingTx = {
+    branch: { updateMany: jest.Mock };
+    inventoryMovement: { updateMany: jest.Mock };
+    notification: { deleteMany: jest.Mock };
+    chatMessage: { deleteMany: jest.Mock };
+    profile: { deleteMany: jest.Mock };
+    user: { delete: jest.Mock };
+  };
+
   beforeEach(() => {
     usersService = {
       findManyForDevResolution: jest.fn(),
@@ -25,15 +34,17 @@ describe('DevTestingService', () => {
       user: { findMany: jest.fn() },
       staffUser: { findMany: jest.fn() },
       deliveryman: { findMany: jest.fn() },
-      $transaction: jest.fn(async (callback: (tx: any) => unknown) =>
-        callback({
-          branch: { updateMany: jest.fn() },
-          inventoryMovement: { updateMany: jest.fn() },
-          notification: { deleteMany: jest.fn() },
-          chatMessage: { deleteMany: jest.fn() },
-          profile: { deleteMany: jest.fn() },
-          user: { delete: jest.fn() },
-        }),
+      $transaction: jest.fn((callback: (tx: DevTestingTx) => unknown) =>
+        Promise.resolve(
+          callback({
+            branch: { updateMany: jest.fn() },
+            inventoryMovement: { updateMany: jest.fn() },
+            notification: { deleteMany: jest.fn() },
+            chatMessage: { deleteMany: jest.fn() },
+            profile: { deleteMany: jest.fn() },
+            user: { delete: jest.fn() },
+          }),
+        ),
       ),
     };
 
@@ -186,7 +197,10 @@ describe('DevTestingService', () => {
     expect(result.data.accounts).toEqual([
       expect.objectContaining({ accountType: 'user', id: 'user-1' }),
       expect.objectContaining({ accountType: 'staff', id: 'staff-1' }),
-      expect.objectContaining({ accountType: 'deliveryman', id: 'deliveryman-1' }),
+      expect.objectContaining({
+        accountType: 'deliveryman',
+        id: 'deliveryman-1',
+      }),
     ]);
   });
 });

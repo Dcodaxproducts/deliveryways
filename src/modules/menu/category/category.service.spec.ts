@@ -241,11 +241,14 @@ describe('MenuCategoryService', () => {
                 minSelect: 1,
                 maxSelect: 1,
                 isRequired: true,
-                modifiers: [
+                modifierLinks: [
                   {
-                    id: 'modifier-1',
-                    name: 'Large',
-                    priceDelta: 0,
+                    sortOrder: 1,
+                    modifier: {
+                      id: 'modifier-1',
+                      name: 'Large',
+                      priceDelta: 0,
+                    },
                   },
                 ],
               },

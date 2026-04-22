@@ -119,13 +119,15 @@ export class UsersService {
   }
 
   async findByEmailIncludingDeleted(email: string, restaurantId?: string) {
-    return this.usersRepository.findByEmailIncludingDeleted(email, restaurantId);
+    return this.usersRepository.findByEmailIncludingDeleted(
+      email,
+      restaurantId,
+    );
   }
 
   async findById(id: string) {
     return this.usersRepository.findById(id);
   }
-
 
   async findManyForDevResolution(options: {
     id?: string;
@@ -220,7 +222,6 @@ export class UsersService {
   async forceDeleteUsersByEmails(emails: string[]) {
     return this.usersRepository.forceDeleteUsersByEmails(emails);
   }
-
 
   async deleteManyByIds(ids: string[]) {
     return this.usersRepository.deleteManyByIds(ids);

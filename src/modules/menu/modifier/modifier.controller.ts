@@ -20,6 +20,7 @@ import {
 } from '../../../common/guards';
 import {
   AttachModifierGroupDto,
+  AttachModifierToGroupDto,
   CreateModifierDto,
   CreateModifierGroupDto,
   ListModifierGroupsDto,
@@ -129,6 +130,24 @@ export class ModifierController {
     @Param('id') id: string,
   ) {
     return this.modifierService.removeModifier(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('modifier-groups/:groupId/modifiers/:modifierId')
+  attachModifierToGroup(
+    @CurrentUser() user: AuthUserContext,
+    @Param('groupId') groupId: string,
+    @Param('modifierId') modifierId: string,
+    @Body() dto: AttachModifierToGroupDto,
+  ) {
+    return this.modifierService.attachModifierToGroup(
+      user,
+      groupId,
+      modifierId,
+      dto,
+    );
   }
 
   @ApiBearerAuth()

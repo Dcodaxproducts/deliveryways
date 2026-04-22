@@ -141,8 +141,12 @@ describe('PosService', () => {
       settings: { tableReservationsEnabled: true },
     });
     usersService.create.mockResolvedValue({ id: 'guest-customer-1' });
-    posRepository.findCustomerProfileMetadata.mockResolvedValue({ metadata: null });
-    posRepository.upsertCustomerProfileMetadata.mockResolvedValue({ id: 'profile-1' });
+    posRepository.findCustomerProfileMetadata.mockResolvedValue({
+      metadata: null,
+    });
+    posRepository.upsertCustomerProfileMetadata.mockResolvedValue({
+      id: 'profile-1',
+    });
 
     const result = await service.createWalkInReservation(
       {
@@ -166,7 +170,9 @@ describe('PosService', () => {
     expect(posRepository.upsertCustomerProfileMetadata).toHaveBeenCalled();
     expect(result.data.customerId).toBe('guest-customer-1');
     expect(result.data.guestCount).toBe(4);
-    expect(result.message).toBe('Walk-in table reservation created successfully');
+    expect(result.message).toBe(
+      'Walk-in table reservation created successfully',
+    );
   });
 
   it('blocks POS walk-in reservation when branch reservations are disabled', async () => {
@@ -240,7 +246,8 @@ describe('PosService', () => {
   });
 
   it('checks out walk-in POS draft by creating a guest customer and final order', async () => {
-    const { service, posRepository, ordersService, usersService } = makeService();
+    const { service, posRepository, ordersService, usersService } =
+      makeService();
     posRepository.findDraftById.mockResolvedValue(
       makeDraft({
         paymentMethod: 'COD',

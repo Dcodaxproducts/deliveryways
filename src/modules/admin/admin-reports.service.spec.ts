@@ -23,9 +23,7 @@ describe('AdminReportsService', () => {
             slug: 'burgers',
             variations: [{ id: 'var-1' }],
           },
-          menuLinks: [
-            { restaurantMenu: { id: 'menu-1', name: 'Main Menu' } },
-          ],
+          menuLinks: [{ restaurantMenu: { id: 'menu-1', name: 'Main Menu' } }],
           _count: { modifierLinks: 2 },
         },
       ]),
@@ -65,7 +63,14 @@ describe('AdminReportsService', () => {
         statusBreakdown: [{ key: 'DELIVERED', count: 8 }],
         orderTypeBreakdown: [{ key: 'DELIVERY', count: 9 }],
         paymentStatusBreakdown: [{ key: 'PAID', count: 10 }],
-        topItems: [{ menuItemId: 'item-1', menuItemName: 'Burger', quantity: 7, revenue: 3150 }],
+        topItems: [
+          {
+            menuItemId: 'item-1',
+            menuItemName: 'Burger',
+            quantity: 7,
+            revenue: 3150,
+          },
+        ],
       }),
     };
 
@@ -88,7 +93,10 @@ describe('AdminReportsService', () => {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
       },
-      expect.objectContaining({ branchId: 'branch-1', restaurantId: 'restaurant-1' }),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        restaurantId: 'restaurant-1',
+      }),
     );
     expect(result.data.totalOrders).toBe(12);
     expect(result.message).toBe('Orders report fetched successfully');

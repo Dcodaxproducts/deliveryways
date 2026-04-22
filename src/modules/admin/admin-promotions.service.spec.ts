@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { CouponCampaignKind, CouponDiscountType, CouponStatus, Prisma } from '@prisma/client';
+import {
+  CouponCampaignKind,
+  CouponDiscountType,
+  CouponStatus,
+  Prisma,
+} from '@prisma/client';
 import { AdminPromotionsService } from './admin-promotions.service';
 
 describe('AdminPromotionsService', () => {
@@ -46,7 +51,10 @@ describe('AdminPromotionsService', () => {
       menuItem: { findFirst: jest.fn().mockResolvedValue(null) },
       menuCategory: { findFirst: jest.fn().mockResolvedValue(null) },
     };
-    const service = new AdminPromotionsService(repository as never, prisma as never);
+    const service = new AdminPromotionsService(
+      repository as never,
+      prisma as never,
+    );
 
     const result = await service.createHappyHour(
       {
@@ -110,7 +118,10 @@ describe('AdminPromotionsService', () => {
     const repository = {
       list: jest.fn().mockResolvedValue({ items: [makeCoupon()], total: 1 }),
     };
-    const service = new AdminPromotionsService(repository as never, {} as never);
+    const service = new AdminPromotionsService(
+      repository as never,
+      {} as never,
+    );
 
     const result = await service.list(
       {

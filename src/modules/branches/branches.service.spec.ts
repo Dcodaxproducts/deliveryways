@@ -37,7 +37,7 @@ describe('BranchesService', () => {
     };
 
     const storageService = {
-      resolveViewUrl: jest.fn(async (value?: string | null) => value ?? null),
+      resolveViewUrl: jest.fn((value?: string | null) => value ?? null),
     };
 
     const service = new BranchesService(

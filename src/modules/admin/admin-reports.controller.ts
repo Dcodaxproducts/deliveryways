@@ -24,7 +24,11 @@ export class AdminReportsController {
   constructor(private readonly adminReportsService: AdminReportsService) {}
 
   @Get('menu/export')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Export menu items to CSV for admin reporting' })
   exportMenuCsv(
     @CurrentUser() user: AuthUserContext,
@@ -34,7 +38,11 @@ export class AdminReportsController {
   }
 
   @Get('orders/export')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Export orders to CSV for admin reporting' })
   exportOrdersCsv(
     @CurrentUser() user: AuthUserContext,
@@ -44,7 +52,11 @@ export class AdminReportsController {
   }
 
   @Get('customers/export')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Export customers to CSV for admin reporting' })
   exportCustomersCsv(
     @CurrentUser() user: AuthUserContext,
@@ -54,7 +66,11 @@ export class AdminReportsController {
   }
 
   @Get('orders')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Get restaurant order report summary' })
   getOrdersReport(
     @CurrentUser() user: AuthUserContext,
@@ -64,7 +80,11 @@ export class AdminReportsController {
   }
 
   @Get('financial')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Get restaurant financial report summary' })
   getFinancialReport(
     @CurrentUser() user: AuthUserContext,

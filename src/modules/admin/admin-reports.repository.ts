@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import {
-  OrderStatus,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -55,7 +54,10 @@ export class AdminReportsRepository {
     });
   }
 
-  async exportMenu(scope: AdminReportsScope, query: AdminExportMenuCsvQueryDto) {
+  async exportMenu(
+    scope: AdminReportsScope,
+    query: AdminExportMenuCsvQueryDto,
+  ) {
     return this.prisma.menuItem.findMany({
       where: {
         deletedAt: null,
@@ -106,7 +108,10 @@ export class AdminReportsRepository {
             name: true,
             slug: true,
             variations: {
-              where: { deletedAt: null, ...(query.includeInactive ? {} : { isActive: true }) },
+              where: {
+                deletedAt: null,
+                ...(query.includeInactive ? {} : { isActive: true }),
+              },
               select: { id: true },
             },
           },
@@ -124,7 +129,10 @@ export class AdminReportsRepository {
     });
   }
 
-  async exportOrders(scope: AdminReportsScope, query: AdminExportOrdersCsvQueryDto) {
+  async exportOrders(
+    scope: AdminReportsScope,
+    query: AdminExportOrdersCsvQueryDto,
+  ) {
     return this.prisma.order.findMany({
       where: this.buildOrderWhere(scope, query),
       orderBy: [{ createdAt: 'desc' }],
@@ -148,7 +156,9 @@ export class AdminReportsRepository {
           select: {
             id: true,
             email: true,
-            profile: { select: { firstName: true, lastName: true, phone: true } },
+            profile: {
+              select: { firstName: true, lastName: true, phone: true },
+            },
           },
         },
         coupon: { select: { code: true } },
@@ -167,7 +177,10 @@ export class AdminReportsRepository {
     });
   }
 
-  async exportCustomers(scope: AdminReportsScope, query: AdminExportCustomersCsvQueryDto) {
+  async exportCustomers(
+    scope: AdminReportsScope,
+    query: AdminExportCustomersCsvQueryDto,
+  ) {
     return this.prisma.user.findMany({
       where: {
         role: UserRole.CUSTOMER,
@@ -176,8 +189,11 @@ export class AdminReportsRepository {
         ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
         ...(scope.branchId ? { branchId: scope.branchId } : {}),
         ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-        ...(query.isVerified !== undefined ? { isVerified: query.isVerified } : {}),
-        ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ?? {}),
+        ...(query.isVerified !== undefined
+          ? { isVerified: query.isVerified }
+          : {}),
+        ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ??
+          {}),
         ...(query.search
           ? {
               OR: [
@@ -185,9 +201,21 @@ export class AdminReportsRepository {
                 {
                   profile: {
                     OR: [
-                      { firstName: { contains: query.search, mode: 'insensitive' } },
-                      { lastName: { contains: query.search, mode: 'insensitive' } },
-                      { phone: { contains: query.search, mode: 'insensitive' } },
+                      {
+                        firstName: {
+                          contains: query.search,
+                          mode: 'insensitive',
+                        },
+                      },
+                      {
+                        lastName: {
+                          contains: query.search,
+                          mode: 'insensitive',
+                        },
+                      },
+                      {
+                        phone: { contains: query.search, mode: 'insensitive' },
+                      },
                     ],
                   },
                 },
@@ -221,7 +249,10 @@ export class AdminReportsRepository {
     });
   }
 
-  async getOrdersReport(scope: AdminReportsScope, query: AdminOrdersReportQueryDto) {
+  async getOrdersReport(
+    scope: AdminReportsScope,
+    query: AdminOrdersReportQueryDto,
+  ) {
     const where = this.buildOrderWhere(scope, query);
     const [aggregate, orders, items] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
@@ -264,7 +295,10 @@ export class AdminReportsRepository {
     };
   }
 
-  async getFinancialReport(scope: AdminReportsScope, query: AdminFinancialReportQueryDto) {
+  async getFinancialReport(
+    scope: AdminReportsScope,
+    query: AdminFinancialReportQueryDto,
+  ) {
     const orderWhere: Prisma.OrderWhereInput = {
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
@@ -278,38 +312,50 @@ export class AdminReportsRepository {
       ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ?? {}),
     };
 
-    const [ordersAggregate, paidCharges, paidRefunds, failedPayments, paidOrders] =
-      await this.prisma.$transaction([
-        this.prisma.order.aggregate({
-          where: orderWhere,
-          _count: { id: true },
-          _sum: { totalAmount: true, taxAmount: true, deliveryFee: true, discountAmount: true },
-          _avg: { totalAmount: true },
-        }),
-        this.prisma.paymentTransaction.aggregate({
-          where: {
-            ...paymentWhere,
-            type: PaymentTransactionType.CHARGE,
-            status: PaymentStatus.PAID,
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.paymentTransaction.aggregate({
-          where: {
-            ...paymentWhere,
-            type: PaymentTransactionType.REFUND,
-            status: PaymentStatus.PAID,
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.paymentTransaction.count({
-          where: {
-            ...paymentWhere,
-            status: PaymentStatus.FAILED,
-          },
-        }),
-        this.prisma.order.count({ where: { ...orderWhere, paymentStatus: PaymentStatus.PAID } }),
-      ]);
+    const [
+      ordersAggregate,
+      paidCharges,
+      paidRefunds,
+      failedPayments,
+      paidOrders,
+    ] = await this.prisma.$transaction([
+      this.prisma.order.aggregate({
+        where: orderWhere,
+        _count: { id: true },
+        _sum: {
+          totalAmount: true,
+          taxAmount: true,
+          deliveryFee: true,
+          discountAmount: true,
+        },
+        _avg: { totalAmount: true },
+      }),
+      this.prisma.paymentTransaction.aggregate({
+        where: {
+          ...paymentWhere,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PAID,
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.paymentTransaction.aggregate({
+        where: {
+          ...paymentWhere,
+          type: PaymentTransactionType.REFUND,
+          status: PaymentStatus.PAID,
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.paymentTransaction.count({
+        where: {
+          ...paymentWhere,
+          status: PaymentStatus.FAILED,
+        },
+      }),
+      this.prisma.order.count({
+        where: { ...orderWhere, paymentStatus: PaymentStatus.PAID },
+      }),
+    ]);
 
     return {
       totalOrders: ordersAggregate._count.id,
@@ -323,12 +369,18 @@ export class AdminReportsRepository {
       totalDeliveryFee: Number(ordersAggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(ordersAggregate._sum.discountAmount ?? 0),
       netRevenue: Number(
-        (Number(paidCharges._sum.amount ?? 0) - Number(paidRefunds._sum.amount ?? 0)).toFixed(2),
+        (
+          Number(paidCharges._sum.amount ?? 0) -
+          Number(paidRefunds._sum.amount ?? 0)
+        ).toFixed(2),
       ),
     };
   }
 
-  private buildOrderWhere(scope: AdminReportsScope, query: AdminExportOrdersCsvQueryDto) {
+  private buildOrderWhere(
+    scope: AdminReportsScope,
+    query: AdminExportOrdersCsvQueryDto,
+  ) {
     return {
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
@@ -363,7 +415,10 @@ export class AdminReportsRepository {
     };
   }
 
-  private countByField<T extends Record<string, string>>(items: T[], field: keyof T) {
+  private countByField<T extends Record<string, string>>(
+    items: T[],
+    field: keyof T,
+  ) {
     const counts = new Map<string, number>();
     for (const item of items) {
       const key = item[field];
@@ -384,7 +439,15 @@ export class AdminReportsRepository {
       lineTotal: Prisma.Decimal;
     }>,
   ) {
-    const map = new Map<string, { menuItemId: string; menuItemName: string; quantity: number; revenue: number }>();
+    const map = new Map<
+      string,
+      {
+        menuItemId: string;
+        menuItemName: string;
+        quantity: number;
+        revenue: number;
+      }
+    >();
 
     for (const item of items) {
       const existing = map.get(item.menuItemId) ?? {
@@ -400,7 +463,10 @@ export class AdminReportsRepository {
     }
 
     return Array.from(map.values())
-      .sort((left, right) => right.quantity - left.quantity || right.revenue - left.revenue)
+      .sort(
+        (left, right) =>
+          right.quantity - left.quantity || right.revenue - left.revenue,
+      )
       .slice(0, 10);
   }
 }

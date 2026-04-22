@@ -39,7 +39,11 @@ export class AdminPromotionsService {
     user: AuthUserContext,
     query: AdminPromotionsOverviewQueryDto,
   ) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const data = await this.adminPromotionsRepository.getOverview(scope);
 
     return {
@@ -59,9 +63,16 @@ export class AdminPromotionsService {
     query: AdminListPromotionsQueryDto,
     kind?: CouponCampaignKind,
   ) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const effectiveQuery = kind ? { ...query, kind } : query;
-    const { items, total } = await this.adminPromotionsRepository.list(scope, effectiveQuery);
+    const { items, total } = await this.adminPromotionsRepository.list(
+      scope,
+      effectiveQuery,
+    );
 
     return {
       data: items.map((item) => this.mapPromotion(item)),
@@ -76,13 +87,17 @@ export class AdminPromotionsService {
     query: AdminPromotionStatsQueryDto,
     kind?: CouponCampaignKind,
   ) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const promotion = await this.adminPromotionsRepository.findById(id);
     if (!promotion || promotion.deletedAt) {
       throw new NotFoundException('Promotion not found');
     }
 
-    await this.ensureCouponInScope(scope, promotion);
+    this.ensureCouponInScope(scope, promotion);
     if (kind && promotion.kind !== kind) {
       throw new NotFoundException('Promotion not found');
     }
@@ -97,7 +112,11 @@ export class AdminPromotionsService {
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
 
-    await this.validateScopeReferences(scope.restaurantId, dto.scopeMenuItemId, dto.scopeCategoryId);
+    await this.validateScopeReferences(
+      scope.restaurantId,
+      dto.scopeMenuItemId,
+      dto.scopeCategoryId,
+    );
 
     const data = await this.adminPromotionsRepository.create({
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
@@ -107,7 +126,8 @@ export class AdminPromotionsService {
       title: dto.title,
       description: dto.description,
       kind: CouponCampaignKind.PROMOTION,
-      status: dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
+      status:
+        dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
       discountType: dto.discountType as CouponDiscountType,
       discountValue: new Prisma.Decimal(dto.discountValue),
       maxDiscountAmount:
@@ -149,10 +169,17 @@ export class AdminPromotionsService {
 
     const requestedRestaurantId = dto.restaurantId ?? existing.restaurantId;
     const requestedBranchId = dto.branchId ?? existing.branchId ?? undefined;
-    const scope = await this.resolveScope(user, requestedRestaurantId, requestedBranchId);
-    await this.ensureCouponInScope(scope, existing);
+    const scope = await this.resolveScope(
+      user,
+      requestedRestaurantId,
+      requestedBranchId,
+    );
+    this.ensureCouponInScope(scope, existing);
 
-    this.assertValidDateRange(dto.startsAt ?? existing.startsAt.toISOString(), dto.expiresAt ?? existing.expiresAt.toISOString());
+    this.assertValidDateRange(
+      dto.startsAt ?? existing.startsAt.toISOString(),
+      dto.expiresAt ?? existing.expiresAt.toISOString(),
+    );
     await this.validateScopeReferences(
       scope.restaurantId,
       dto.scopeMenuItemId ?? existing.scopeMenuItemId ?? undefined,
@@ -162,11 +189,19 @@ export class AdminPromotionsService {
     const data = await this.adminPromotionsRepository.update(id, {
       ...(dto.code ? { code: dto.code.trim().toUpperCase() } : {}),
       ...(dto.title !== undefined ? { title: dto.title } : {}),
-      ...(dto.description !== undefined ? { description: dto.description } : {}),
-      ...(scope.branchId !== existing.branchId
-        ? { branch: scope.branchId ? { connect: { id: scope.branchId } } : { disconnect: true } }
+      ...(dto.description !== undefined
+        ? { description: dto.description }
         : {}),
-      ...(dto.discountType ? { discountType: dto.discountType as CouponDiscountType } : {}),
+      ...(scope.branchId !== existing.branchId
+        ? {
+            branch: scope.branchId
+              ? { connect: { id: scope.branchId } }
+              : { disconnect: true },
+          }
+        : {}),
+      ...(dto.discountType
+        ? { discountType: dto.discountType as CouponDiscountType }
+        : {}),
       ...(dto.discountValue !== undefined
         ? { discountValue: new Prisma.Decimal(dto.discountValue) }
         : {}),
@@ -210,14 +245,22 @@ export class AdminPromotionsService {
     };
   }
 
-  async removePromotion(user: AuthUserContext, id: string, query: AdminPromotionStatsQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async removePromotion(
+    user: AuthUserContext,
+    id: string,
+    query: AdminPromotionStatsQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const existing = await this.adminPromotionsRepository.findById(id);
     if (!existing || existing.deletedAt) {
       throw new NotFoundException('Promotion not found');
     }
 
-    await this.ensureCouponInScope(scope, existing);
+    this.ensureCouponInScope(scope, existing);
 
     await this.adminPromotionsRepository.update(id, {
       deletedAt: new Date(),
@@ -235,7 +278,11 @@ export class AdminPromotionsService {
     this.assertValidDailyWindow(dto.dailyStartTime, dto.dailyEndTime);
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
-    await this.validateScopeReferences(scope.restaurantId, dto.scopeMenuItemId, dto.scopeCategoryId);
+    await this.validateScopeReferences(
+      scope.restaurantId,
+      dto.scopeMenuItemId,
+      dto.scopeCategoryId,
+    );
 
     const data = await this.adminPromotionsRepository.create({
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
@@ -245,7 +292,8 @@ export class AdminPromotionsService {
       title: dto.title,
       description: dto.description,
       kind: CouponCampaignKind.HAPPY_HOUR,
-      status: dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
+      status:
+        dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
       discountType: dto.discountType as CouponDiscountType,
       discountValue: new Prisma.Decimal(dto.discountValue),
       maxDiscountAmount:
@@ -284,17 +332,31 @@ export class AdminPromotionsService {
     dto: UpdateAdminHappyHourDto,
   ) {
     const existing = await this.adminPromotionsRepository.findById(id);
-    if (!existing || existing.deletedAt || existing.kind !== CouponCampaignKind.HAPPY_HOUR) {
+    if (
+      !existing ||
+      existing.deletedAt ||
+      existing.kind !== CouponCampaignKind.HAPPY_HOUR
+    ) {
       throw new NotFoundException('Happy hour not found');
     }
 
     const requestedRestaurantId = dto.restaurantId ?? existing.restaurantId;
     const requestedBranchId = dto.branchId ?? existing.branchId ?? undefined;
-    const scope = await this.resolveScope(user, requestedRestaurantId, requestedBranchId);
-    await this.ensureCouponInScope(scope, existing);
+    const scope = await this.resolveScope(
+      user,
+      requestedRestaurantId,
+      requestedBranchId,
+    );
+    this.ensureCouponInScope(scope, existing);
 
-    this.assertValidDateRange(dto.startsAt ?? existing.startsAt.toISOString(), dto.expiresAt ?? existing.expiresAt.toISOString());
-    this.assertValidDailyWindow(dto.dailyStartTime ?? existing.dailyStartTime ?? '', dto.dailyEndTime ?? existing.dailyEndTime ?? '');
+    this.assertValidDateRange(
+      dto.startsAt ?? existing.startsAt.toISOString(),
+      dto.expiresAt ?? existing.expiresAt.toISOString(),
+    );
+    this.assertValidDailyWindow(
+      dto.dailyStartTime ?? existing.dailyStartTime ?? '',
+      dto.dailyEndTime ?? existing.dailyEndTime ?? '',
+    );
     await this.validateScopeReferences(
       scope.restaurantId,
       dto.scopeMenuItemId ?? existing.scopeMenuItemId ?? undefined,
@@ -304,11 +366,19 @@ export class AdminPromotionsService {
     const data = await this.adminPromotionsRepository.update(id, {
       ...(dto.code ? { code: dto.code.trim().toUpperCase() } : {}),
       ...(dto.title !== undefined ? { title: dto.title } : {}),
-      ...(dto.description !== undefined ? { description: dto.description } : {}),
-      ...(scope.branchId !== existing.branchId
-        ? { branch: scope.branchId ? { connect: { id: scope.branchId } } : { disconnect: true } }
+      ...(dto.description !== undefined
+        ? { description: dto.description }
         : {}),
-      ...(dto.discountType ? { discountType: dto.discountType as CouponDiscountType } : {}),
+      ...(scope.branchId !== existing.branchId
+        ? {
+            branch: scope.branchId
+              ? { connect: { id: scope.branchId } }
+              : { disconnect: true },
+          }
+        : {}),
+      ...(dto.discountType
+        ? { discountType: dto.discountType as CouponDiscountType }
+        : {}),
       ...(dto.discountValue !== undefined
         ? { discountValue: new Prisma.Decimal(dto.discountValue) }
         : {}),
@@ -325,8 +395,12 @@ export class AdminPromotionsService {
       ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
       ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
       ...(dto.activeDays !== undefined ? { activeDays: dto.activeDays } : {}),
-      ...(dto.dailyStartTime !== undefined ? { dailyStartTime: dto.dailyStartTime } : {}),
-      ...(dto.dailyEndTime !== undefined ? { dailyEndTime: dto.dailyEndTime } : {}),
+      ...(dto.dailyStartTime !== undefined
+        ? { dailyStartTime: dto.dailyStartTime }
+        : {}),
+      ...(dto.dailyEndTime !== undefined
+        ? { dailyEndTime: dto.dailyEndTime }
+        : {}),
       ...(dto.scopeMenuItemId !== undefined
         ? {
             scopeMenuItem: dto.scopeMenuItemId
@@ -355,9 +429,20 @@ export class AdminPromotionsService {
     };
   }
 
-  async getStats(user: AuthUserContext, id: string, query: AdminPromotionStatsQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
-    const stats = await this.adminPromotionsRepository.getPromotionStats(scope, id);
+  async getStats(
+    user: AuthUserContext,
+    id: string,
+    query: AdminPromotionStatsQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const stats = await this.adminPromotionsRepository.getPromotionStats(
+      scope,
+      id,
+    );
     if (!stats) {
       throw new NotFoundException('Promotion not found');
     }
@@ -383,20 +468,35 @@ export class AdminPromotionsService {
   ): Promise<AdminPromotionScope> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       if (requestedBranchId) {
-        const branch = await this.adminPromotionsRepository.findBranchScope(requestedBranchId);
+        const branch =
+          await this.adminPromotionsRepository.findBranchScope(
+            requestedBranchId,
+          );
         if (!branch) {
           throw new NotFoundException('Branch not found');
         }
 
-        if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
-          throw new BadRequestException('branchId does not belong to the provided restaurantId');
+        if (
+          requestedRestaurantId &&
+          requestedRestaurantId !== branch.restaurantId
+        ) {
+          throw new BadRequestException(
+            'branchId does not belong to the provided restaurantId',
+          );
         }
 
-        return { tenantId: branch.tenantId, restaurantId: branch.restaurantId, branchId: branch.id };
+        return {
+          tenantId: branch.tenantId,
+          restaurantId: branch.restaurantId,
+          branchId: branch.id,
+        };
       }
 
       if (requestedRestaurantId) {
-        const restaurant = await this.adminPromotionsRepository.findRestaurantScope(requestedRestaurantId);
+        const restaurant =
+          await this.adminPromotionsRepository.findRestaurantScope(
+            requestedRestaurantId,
+          );
         if (!restaurant) {
           throw new NotFoundException('Restaurant not found');
         }
@@ -417,41 +517,68 @@ export class AdminPromotionsService {
       }
 
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('You cannot access resources outside your restaurant');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       if (requestedBranchId && requestedBranchId !== user.bid) {
-        throw new ForbiddenException('You cannot access resources outside your branch');
+        throw new ForbiddenException(
+          'You cannot access resources outside your branch',
+        );
       }
 
       return { tenantId: user.tid, restaurantId: user.rid, branchId: user.bid };
     }
 
     if (requestedBranchId) {
-      const branch = await this.adminPromotionsRepository.findBranchScope(requestedBranchId, user.tid, user.rid);
+      const branch = await this.adminPromotionsRepository.findBranchScope(
+        requestedBranchId,
+        user.tid,
+        user.rid,
+      );
       if (!branch) {
-        throw new ForbiddenException('You cannot access resources outside your tenant restaurants');
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
       }
 
-      if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
-        throw new BadRequestException('branchId does not belong to the provided restaurantId');
+      if (
+        requestedRestaurantId &&
+        requestedRestaurantId !== branch.restaurantId
+      ) {
+        throw new BadRequestException(
+          'branchId does not belong to the provided restaurantId',
+        );
       }
 
-      return { tenantId: user.tid, restaurantId: branch.restaurantId, branchId: branch.id };
+      return {
+        tenantId: user.tid,
+        restaurantId: branch.restaurantId,
+        branchId: branch.id,
+      };
     }
 
     if (user.rid) {
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('You cannot access resources outside your restaurant');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       return { tenantId: user.tid, restaurantId: user.rid };
     }
 
     if (requestedRestaurantId) {
-      const restaurant = await this.adminPromotionsRepository.findRestaurantScope(requestedRestaurantId, user.tid);
+      const restaurant =
+        await this.adminPromotionsRepository.findRestaurantScope(
+          requestedRestaurantId,
+          user.tid,
+        );
       if (!restaurant) {
-        throw new ForbiddenException('You cannot access resources outside your tenant restaurants');
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
       }
 
       return { tenantId: user.tid, restaurantId: restaurant.id };
@@ -465,38 +592,63 @@ export class AdminPromotionsService {
     menuItemId?: string,
     categoryId?: string,
   ) {
-    const scopedRestaurantId = this.requireRestaurantIdFromScope({ restaurantId });
+    const scopedRestaurantId = this.requireRestaurantIdFromScope({
+      restaurantId,
+    });
 
     if (menuItemId) {
       const item = await this.prisma.menuItem.findFirst({
-        where: { id: menuItemId, restaurantId: scopedRestaurantId, deletedAt: null, isActive: true },
+        where: {
+          id: menuItemId,
+          restaurantId: scopedRestaurantId,
+          deletedAt: null,
+          isActive: true,
+        },
         select: { id: true },
       });
       if (!item) {
-        throw new BadRequestException('scopeMenuItemId not found in restaurant');
+        throw new BadRequestException(
+          'scopeMenuItemId not found in restaurant',
+        );
       }
     }
 
     if (categoryId) {
       const category = await this.prisma.menuCategory.findFirst({
-        where: { id: categoryId, restaurantId: scopedRestaurantId, deletedAt: null, isActive: true },
+        where: {
+          id: categoryId,
+          restaurantId: scopedRestaurantId,
+          deletedAt: null,
+          isActive: true,
+        },
         select: { id: true },
       });
       if (!category) {
-        throw new BadRequestException('scopeCategoryId not found in restaurant');
+        throw new BadRequestException(
+          'scopeCategoryId not found in restaurant',
+        );
       }
     }
   }
 
-  private async ensureCouponInScope(scope: AdminPromotionScope, coupon: { tenantId: string; restaurantId: string; branchId: string | null }) {
+  private ensureCouponInScope(
+    scope: AdminPromotionScope,
+    coupon: { tenantId: string; restaurantId: string; branchId: string | null },
+  ) {
     if (scope.tenantId && coupon.tenantId !== scope.tenantId) {
-      throw new ForbiddenException('You cannot access resources outside your tenant restaurants');
+      throw new ForbiddenException(
+        'You cannot access resources outside your tenant restaurants',
+      );
     }
     if (scope.restaurantId && coupon.restaurantId !== scope.restaurantId) {
-      throw new ForbiddenException('You cannot access resources outside your restaurant');
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
     if (scope.branchId && coupon.branchId !== scope.branchId) {
-      throw new ForbiddenException('You cannot access resources outside your branch');
+      throw new ForbiddenException(
+        'You cannot access resources outside your branch',
+      );
     }
   }
 
@@ -508,7 +660,9 @@ export class AdminPromotionsService {
 
   private assertValidDailyWindow(start: string, end: string) {
     if (!this.isValidTime(start) || !this.isValidTime(end)) {
-      throw new BadRequestException('dailyStartTime and dailyEndTime must be in HH:mm format');
+      throw new BadRequestException(
+        'dailyStartTime and dailyEndTime must be in HH:mm format',
+      );
     }
   }
 
@@ -552,8 +706,12 @@ export class AdminPromotionsService {
       status: coupon.status,
       discountType: coupon.discountType,
       discountValue: Number(coupon.discountValue),
-      maxDiscountAmount: coupon.maxDiscountAmount ? Number(coupon.maxDiscountAmount) : null,
-      minOrderAmount: coupon.minOrderAmount ? Number(coupon.minOrderAmount) : null,
+      maxDiscountAmount: coupon.maxDiscountAmount
+        ? Number(coupon.maxDiscountAmount)
+        : null,
+      minOrderAmount: coupon.minOrderAmount
+        ? Number(coupon.minOrderAmount)
+        : null,
       maxUses: coupon.maxUses,
       maxUsesPerCustomer: coupon.maxUsesPerCustomer,
       usedCount: coupon.usedCount,
@@ -590,7 +748,9 @@ export class AdminPromotionsService {
     return scope.tenantId;
   }
 
-  private requireRestaurantIdFromScope(scope: Pick<AdminPromotionScope, 'restaurantId'>) {
+  private requireRestaurantIdFromScope(
+    scope: Pick<AdminPromotionScope, 'restaurantId'>,
+  ) {
     if (!scope.restaurantId) {
       throw new BadRequestException('restaurantId is required');
     }

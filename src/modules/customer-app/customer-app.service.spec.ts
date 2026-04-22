@@ -35,17 +35,20 @@ describe('CustomerAppService', () => {
           minSelect: 0,
           maxSelect: 3,
           isRequired: false,
-          modifiers: [
+          modifierLinks: [
             {
-              id: 'modifier-1',
-              name: 'Extra Cheese',
-              priceDelta: 100,
-              itemPriceOverrides: [
-                {
-                  menuItemId: 'item-1',
-                  priceDelta: 150,
-                },
-              ],
+              sortOrder: 1,
+              modifier: {
+                id: 'modifier-1',
+                name: 'Extra Cheese',
+                priceDelta: 100,
+                itemPriceOverrides: [
+                  {
+                    menuItemId: 'item-1',
+                    priceDelta: 150,
+                  },
+                ],
+              },
             },
           ],
         },
@@ -331,6 +334,7 @@ describe('CustomerAppService', () => {
             id: 'modifier-1',
             name: 'Extra Cheese',
             priceDelta: 150,
+            sortOrder: 1,
           },
         ],
       },

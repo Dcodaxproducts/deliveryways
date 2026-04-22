@@ -35,12 +35,7 @@ export class ModifierRepository {
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-        include: {
-          modifiers: {
-            where: { deletedAt: null },
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
+        include: this.groupInclude(query.includeInactive),
       }),
       this.prisma.modifierGroup.count({ where }),
     ]);
@@ -55,13 +50,13 @@ export class ModifierRepository {
     const where: Prisma.ModifierWhereInput = {
       deletedAt: null,
       ...(query.includeInactive ? {} : { isActive: true }),
+      ...(restaurantId ? { restaurantId } : {}),
       ...(query.modifierGroupId
-        ? { modifierGroupId: query.modifierGroupId }
-        : {}),
-      ...(restaurantId
         ? {
-            modifierGroup: {
-              restaurantId,
+            groupLinks: {
+              some: {
+                modifierGroupId: query.modifierGroupId,
+              },
             },
           }
         : {}),
@@ -77,18 +72,23 @@ export class ModifierRepository {
         take: query.limit,
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
         include: {
-          modifierGroup: {
-            select: {
-              id: true,
-              restaurantId: true,
-              name: true,
-              description: true,
-              minSelect: true,
-              maxSelect: true,
-              isRequired: true,
-              sortOrder: true,
-              isActive: true,
+          groupLinks: {
+            include: {
+              modifierGroup: {
+                select: {
+                  id: true,
+                  restaurantId: true,
+                  name: true,
+                  description: true,
+                  minSelect: true,
+                  maxSelect: true,
+                  isRequired: true,
+                  sortOrder: true,
+                  isActive: true,
+                },
+              },
             },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
           },
         },
       }),
@@ -110,21 +110,20 @@ export class ModifierRepository {
     return this.client(tx).modifierGroup.update({ where: { id }, data });
   }
 
-  async softDeleteGroup(id: string, tx?: PrismaTx) {
-    return this.client(tx).modifierGroup.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
-    });
-  }
-
   deleteGroupItemLinks(modifierGroupId: string, tx?: PrismaTx) {
     return this.client(tx).menuItemModifierGroup.deleteMany({
       where: { modifierGroupId },
     });
   }
 
-  deleteGroupModifiers(modifierGroupId: string, tx?: PrismaTx) {
-    return this.client(tx).modifier.deleteMany({
+  deleteGroupCategoryLinks(modifierGroupId: string, tx?: PrismaTx) {
+    return this.client(tx).menuCategoryModifierGroup.deleteMany({
+      where: { modifierGroupId },
+    });
+  }
+
+  deleteGroupModifierLinks(modifierGroupId: string, tx?: PrismaTx) {
+    return this.client(tx).modifierGroupModifier.deleteMany({
       where: { modifierGroupId },
     });
   }
@@ -137,14 +136,36 @@ export class ModifierRepository {
     return this.client(tx).modifier.create({ data });
   }
 
-  async findModifierByGroupAndName(
+  async attachModifierToGroup(
     modifierGroupId: string,
+    modifierId: string,
+    sortOrder: number,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).modifierGroupModifier.upsert({
+      where: {
+        modifierGroupId_modifierId: {
+          modifierGroupId,
+          modifierId,
+        },
+      },
+      update: { sortOrder },
+      create: {
+        modifierGroupId,
+        modifierId,
+        sortOrder,
+      },
+    });
+  }
+
+  async findModifierByRestaurantAndName(
+    restaurantId: string,
     name: string,
     excludeId?: string,
   ) {
     return this.prisma.modifier.findFirst({
       where: {
-        modifierGroupId,
+        restaurantId,
         name: { equals: name, mode: 'insensitive' },
         deletedAt: null,
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
@@ -153,7 +174,18 @@ export class ModifierRepository {
   }
 
   async findModifierById(id: string) {
-    return this.prisma.modifier.findUnique({ where: { id } });
+    return this.prisma.modifier.findUnique({
+      where: { id },
+      include: {
+        groupLinks: {
+          include: {
+            modifierGroup: {
+              select: { id: true, restaurantId: true, deletedAt: true },
+            },
+          },
+        },
+      },
+    });
   }
 
   async updateModifier(
@@ -164,15 +196,14 @@ export class ModifierRepository {
     return this.client(tx).modifier.update({ where: { id }, data });
   }
 
-  async softDeleteModifier(id: string, tx?: PrismaTx) {
-    return this.client(tx).modifier.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
-    });
-  }
-
   hardDeleteModifier(id: string, tx?: PrismaTx) {
     return this.client(tx).modifier.delete({ where: { id } });
+  }
+
+  async countModifierGroupLinks(modifierId: string, tx?: PrismaTx) {
+    return this.client(tx).modifierGroupModifier.count({
+      where: { modifierId },
+    });
   }
 
   async attachGroupToItem(
@@ -225,14 +256,33 @@ export class ModifierRepository {
       orderBy: [{ sortOrder: 'asc' }, { modifierGroup: { sortOrder: 'asc' } }],
       include: {
         modifierGroup: {
-          include: {
-            modifiers: {
-              where: { deletedAt: null, isActive: true },
-              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: this.groupInclude(false),
+        },
+      },
+    });
+  }
+
+  private groupInclude(includeInactive?: boolean) {
+    return {
+      modifierLinks: {
+        where: includeInactive
+          ? undefined
+          : {
+              modifier: {
+                deletedAt: null,
+                isActive: true,
+              },
+            },
+        orderBy: [{ sortOrder: 'asc' }, { modifier: { createdAt: 'asc' } }],
+        include: {
+          modifier: {
+            include: {
+              itemPriceOverrides: true,
+              variationPriceOverrides: true,
             },
           },
         },
       },
-    });
+    } satisfies Prisma.ModifierGroupInclude;
   }
 }

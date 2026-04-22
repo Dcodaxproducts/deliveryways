@@ -34,10 +34,16 @@ import { AdminPromotionsService } from './admin-promotions.service';
 @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
 @Controller('admin/promotions')
 export class AdminPromotionsController {
-  constructor(private readonly adminPromotionsService: AdminPromotionsService) {}
+  constructor(
+    private readonly adminPromotionsService: AdminPromotionsService,
+  ) {}
 
   @Get('overview')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Get promotions overview for admin dashboard' })
   getOverview(
     @CurrentUser() user: AuthUserContext,
@@ -47,7 +53,11 @@ export class AdminPromotionsController {
   }
 
   @Get('campaigns')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'List promotion campaigns' })
   listPromotions(
     @CurrentUser() user: AuthUserContext,
@@ -61,7 +71,11 @@ export class AdminPromotionsController {
   }
 
   @Post('campaigns')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Create promotion campaign' })
   createPromotion(
     @CurrentUser() user: AuthUserContext,
@@ -71,7 +85,11 @@ export class AdminPromotionsController {
   }
 
   @Get('campaigns/:id')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Get promotion campaign detail' })
   getPromotion(
     @CurrentUser() user: AuthUserContext,
@@ -87,7 +105,11 @@ export class AdminPromotionsController {
   }
 
   @Patch('campaigns/:id')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Update promotion campaign' })
   updatePromotion(
     @CurrentUser() user: AuthUserContext,
@@ -98,7 +120,11 @@ export class AdminPromotionsController {
   }
 
   @Delete('campaigns/:id')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Delete promotion campaign' })
   removePromotion(
     @CurrentUser() user: AuthUserContext,
@@ -109,7 +135,11 @@ export class AdminPromotionsController {
   }
 
   @Get('happy-hours')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'List happy hours' })
   listHappyHours(
     @CurrentUser() user: AuthUserContext,
@@ -123,7 +153,11 @@ export class AdminPromotionsController {
   }
 
   @Post('happy-hours')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Create happy hour' })
   createHappyHour(
     @CurrentUser() user: AuthUserContext,
@@ -133,7 +167,11 @@ export class AdminPromotionsController {
   }
 
   @Get('happy-hours/:id')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Get happy hour detail' })
   getHappyHour(
     @CurrentUser() user: AuthUserContext,
@@ -149,7 +187,11 @@ export class AdminPromotionsController {
   }
 
   @Patch('happy-hours/:id')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Update happy hour' })
   updateHappyHour(
     @CurrentUser() user: AuthUserContext,
@@ -160,7 +202,11 @@ export class AdminPromotionsController {
   }
 
   @Delete('happy-hours/:id')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Delete happy hour' })
   removeHappyHour(
     @CurrentUser() user: AuthUserContext,
@@ -171,7 +217,11 @@ export class AdminPromotionsController {
   }
 
   @Get(':id/stats')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @ApiOperation({ summary: 'Get promotion performance stats' })
   getStats(
     @CurrentUser() user: AuthUserContext,

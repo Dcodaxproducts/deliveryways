@@ -446,9 +446,14 @@ export class MenuItemService {
       where: {
         id: { in: modifierIds },
         deletedAt: null,
-        modifierGroup: {
-          restaurantId,
-          deletedAt: null,
+        restaurantId,
+        groupLinks: {
+          some: {
+            modifierGroup: {
+              restaurantId,
+              deletedAt: null,
+            },
+          },
         },
       },
     });
@@ -543,10 +548,13 @@ export class MenuItemService {
           minSelect: number;
           maxSelect: number;
           isRequired: boolean;
-          modifiers: Array<{
-            id: string;
-            name: string;
-            priceDelta: Prisma.Decimal;
+          modifierLinks: Array<{
+            sortOrder: number;
+            modifier: {
+              id: string;
+              name: string;
+              priceDelta: Prisma.Decimal;
+            };
           }>;
         };
       }>;
@@ -562,11 +570,14 @@ export class MenuItemService {
         maxSelect: link.modifierGroup.maxSelect,
         isRequired: link.modifierGroup.isRequired,
         sortOrder: link.sortOrder,
-        modifiers: link.modifierGroup.modifiers.map((modifier) => ({
-          id: modifier.id,
-          name: modifier.name,
-          priceDelta: modifier.priceDelta,
-        })),
+        modifiers: link.modifierGroup.modifierLinks.map(
+          ({ modifier, sortOrder }) => ({
+            id: modifier.id,
+            name: modifier.name,
+            priceDelta: modifier.priceDelta,
+            sortOrder,
+          }),
+        ),
       })),
     };
   }

@@ -66,9 +66,8 @@ export class AdminDashboardService {
       query.restaurantId,
       query.branchId,
     );
-    const data = await this.adminDashboardRepository.getRestaurantOverview(
-      scope,
-    );
+    const data =
+      await this.adminDashboardRepository.getRestaurantOverview(scope);
 
     return {
       data,
@@ -190,9 +189,7 @@ export class AdminDashboardService {
       query.restaurantId,
       query.branchId,
     );
-    const data = await this.adminDashboardRepository.getDeliverymenStats(
-      scope,
-    );
+    const data = await this.adminDashboardRepository.getDeliverymenStats(scope);
 
     return {
       data,

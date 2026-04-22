@@ -219,9 +219,7 @@ export class MenuVariationService {
 
   private async assertModifierOverridesBelongToRestaurant(
     restaurantId: string,
-    overrides:
-      | Array<{ modifierId: string; priceDelta: number }>
-      | undefined,
+    overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
   ) {
     if (!overrides?.length) {
       return;
@@ -232,9 +230,14 @@ export class MenuVariationService {
       where: {
         id: { in: modifierIds },
         deletedAt: null,
-        modifierGroup: {
-          restaurantId,
-          deletedAt: null,
+        restaurantId,
+        groupLinks: {
+          some: {
+            modifierGroup: {
+              restaurantId,
+              deletedAt: null,
+            },
+          },
         },
       },
     });
@@ -248,9 +251,7 @@ export class MenuVariationService {
 
   private async syncModifierPriceOverrides(
     variationId: string,
-    overrides:
-      | Array<{ modifierId: string; priceDelta: number }>
-      | undefined,
+    overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
     tx: Prisma.TransactionClient,
   ) {
     await tx.menuVariationModifierPriceOverride.deleteMany({

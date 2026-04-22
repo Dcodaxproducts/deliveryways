@@ -331,8 +331,11 @@ export class StaffManagementService {
   }
 
   private toStaffResponse(
-    staff: { password?: string; deletedAt?: Date | null; isActive?: boolean } &
-      Record<string, unknown>,
+    staff: {
+      password?: string;
+      deletedAt?: Date | null;
+      isActive?: boolean;
+    } & Record<string, unknown>,
   ) {
     const rest = { ...staff };
     delete rest.password;

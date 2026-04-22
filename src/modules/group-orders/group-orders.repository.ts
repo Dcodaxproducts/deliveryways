@@ -366,9 +366,17 @@ export class GroupOrdersRepository {
           include: {
             modifierGroup: {
               include: {
-                modifiers: {
-                  where: { deletedAt: null, isActive: true },
-                  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                modifierLinks: {
+                  where: {
+                    modifier: { deletedAt: null, isActive: true },
+                  },
+                  orderBy: [
+                    { sortOrder: 'asc' },
+                    { modifier: { createdAt: 'asc' } },
+                  ],
+                  include: {
+                    modifier: true,
+                  },
                 },
               },
             },

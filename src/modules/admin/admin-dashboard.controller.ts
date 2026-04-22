@@ -40,7 +40,8 @@ export class AdminDashboardController {
     RolesEnum.BRANCH_ADMIN,
   )
   @ApiOperation({
-    summary: 'Get restaurant dashboard overview cards for restaurant and branch admins',
+    summary:
+      'Get restaurant dashboard overview cards for restaurant and branch admins',
   })
   getRestaurantOverview(
     @CurrentUser() user: AuthUserContext,

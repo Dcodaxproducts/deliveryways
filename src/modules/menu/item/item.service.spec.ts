@@ -277,10 +277,6 @@ describe('MenuItemService', () => {
       'item-1',
       expect.anything(),
     );
-    expect(itemRepository.deleteVariations).toHaveBeenCalledWith(
-      'item-1',
-      expect.anything(),
-    );
     expect(itemRepository.deleteModifierLinks).toHaveBeenCalledWith(
       'item-1',
       expect.anything(),
@@ -391,11 +387,14 @@ describe('MenuItemService', () => {
                   minSelect: 1,
                   maxSelect: 1,
                   isRequired: true,
-                  modifiers: [
+                  modifierLinks: [
                     {
-                      id: 'modifier-1',
-                      name: 'Large',
-                      priceDelta: 0,
+                      sortOrder: 1,
+                      modifier: {
+                        id: 'modifier-1',
+                        name: 'Large',
+                        priceDelta: 0,
+                      },
                     },
                   ],
                 },

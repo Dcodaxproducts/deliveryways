@@ -127,9 +127,10 @@ export class ListModifiersDto extends QueryDto {
 }
 
 export class CreateModifierDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  modifierGroupId!: string;
+  modifierGroupId?: string;
 
   @ApiProperty()
   @IsString()
@@ -182,3 +183,5 @@ export class AttachModifierGroupDto {
   @Min(0)
   sortOrder?: number;
 }
+
+export class AttachModifierToGroupDto extends AttachModifierGroupDto {}

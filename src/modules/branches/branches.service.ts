@@ -681,9 +681,8 @@ export class BranchesService {
       };
     }
 
-    const cleaned = await this.branchesRepository.cleanupOrphanedBranchResources(
-      id,
-    );
+    const cleaned =
+      await this.branchesRepository.cleanupOrphanedBranchResources(id);
 
     return {
       data: {
@@ -753,12 +752,14 @@ export class BranchesService {
     };
   }
 
-  private async withBranchDeletionState<T extends {
-    deletedAt?: Date | null;
-    isActive?: boolean;
-    logoUrl?: string | null;
-    coverImage?: string | null;
-  }>(branch: T) {
+  private async withBranchDeletionState<
+    T extends {
+      deletedAt?: Date | null;
+      isActive?: boolean;
+      logoUrl?: string | null;
+      coverImage?: string | null;
+    },
+  >(branch: T) {
     return {
       ...(await this.resolveBranchMedia(branch)),
       deletionState: {
@@ -1055,10 +1056,12 @@ export class BranchesService {
     return this.storageService.resolveViewUrl(this.normalizeMediaUrl(value));
   }
 
-  private async resolveBranchMedia<T extends {
-    logoUrl?: string | null;
-    coverImage?: string | null;
-  }>(branch: T) {
+  private async resolveBranchMedia<
+    T extends {
+      logoUrl?: string | null;
+      coverImage?: string | null;
+    },
+  >(branch: T) {
     return {
       ...branch,
       logoUrl: await this.resolveMediaUrl(branch.logoUrl ?? null),

@@ -30,7 +30,11 @@ import { LoyaltyWalletService } from './loyalty-wallet.service';
 export class LoyaltyWalletController {
   constructor(private readonly loyaltyWalletService: LoyaltyWalletService) {}
 
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Get('customers/:customerId')
   @ApiOperation({ summary: 'Fetch loyalty summary and history for a customer' })
   getCustomerLoyalty(
@@ -40,18 +44,32 @@ export class LoyaltyWalletController {
     return this.loyaltyWalletService.getAdminCustomerLoyalty(user, customerId);
   }
 
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Post('customers/:customerId/adjust')
-  @ApiOperation({ summary: 'Manually add or deduct loyalty points for a customer' })
+  @ApiOperation({
+    summary: 'Manually add or deduct loyalty points for a customer',
+  })
   adjustCustomerLoyalty(
     @CurrentUser() user: AuthUserContext,
     @Param('customerId') customerId: string,
     @Body() dto: AdjustCustomerLoyaltyPointsDto,
   ) {
-    return this.loyaltyWalletService.adjustCustomerLoyalty(user, customerId, dto);
+    return this.loyaltyWalletService.adjustCustomerLoyalty(
+      user,
+      customerId,
+      dto,
+    );
   }
 
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Get('program')
   @ApiOperation({ summary: 'Fetch loyalty program settings for a restaurant' })
   getProgram(

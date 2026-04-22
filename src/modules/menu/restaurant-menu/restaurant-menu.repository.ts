@@ -40,12 +40,17 @@ export class RestaurantMenuRepository {
                       include: {
                         modifierGroup: {
                           include: {
-                            modifiers: {
-                              where: { deletedAt: null, isActive: true },
+                            modifierLinks: {
+                              where: {
+                                modifier: { deletedAt: null, isActive: true },
+                              },
                               orderBy: [
                                 { sortOrder: 'asc' },
-                                { createdAt: 'asc' },
+                                { modifier: { createdAt: 'asc' } },
                               ],
+                              include: {
+                                modifier: true,
+                              },
                             },
                           },
                         },
@@ -58,13 +63,22 @@ export class RestaurantMenuRepository {
                   include: {
                     modifierGroup: {
                       include: {
-                        modifiers: {
-                          where: { deletedAt: null, isActive: true },
-                          include: {
-                            itemPriceOverrides: true,
-                            variationPriceOverrides: true,
+                        modifierLinks: {
+                          where: {
+                            modifier: { deletedAt: null, isActive: true },
                           },
-                          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                          include: {
+                            modifier: {
+                              include: {
+                                itemPriceOverrides: true,
+                                variationPriceOverrides: true,
+                              },
+                            },
+                          },
+                          orderBy: [
+                            { sortOrder: 'asc' },
+                            { modifier: { createdAt: 'asc' } },
+                          ],
                         },
                       },
                     },
@@ -147,12 +161,17 @@ export class RestaurantMenuRepository {
                         include: {
                           modifierGroup: {
                             include: {
-                              modifiers: {
-                                where: { deletedAt: null, isActive: true },
+                              modifierLinks: {
+                                where: {
+                                  modifier: { deletedAt: null, isActive: true },
+                                },
                                 orderBy: [
                                   { sortOrder: 'asc' },
-                                  { createdAt: 'asc' },
+                                  { modifier: { createdAt: 'asc' } },
                                 ],
+                                include: {
+                                  modifier: true,
+                                },
                               },
                             },
                           },
@@ -165,14 +184,20 @@ export class RestaurantMenuRepository {
                     include: {
                       modifierGroup: {
                         include: {
-                          modifiers: {
-                            where: { deletedAt: null, isActive: true },
+                          modifierLinks: {
+                            where: {
+                              modifier: { deletedAt: null, isActive: true },
+                            },
                             include: {
-                              itemPriceOverrides: true,
+                              modifier: {
+                                include: {
+                                  itemPriceOverrides: true,
+                                },
+                              },
                             },
                             orderBy: [
                               { sortOrder: 'asc' },
-                              { createdAt: 'asc' },
+                              { modifier: { createdAt: 'asc' } },
                             ],
                           },
                         },
@@ -383,9 +408,17 @@ export class RestaurantMenuRepository {
                 include: {
                   modifierGroup: {
                     include: {
-                      modifiers: {
-                        where: { deletedAt: null, isActive: true },
-                        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                      modifierLinks: {
+                        where: {
+                          modifier: { deletedAt: null, isActive: true },
+                        },
+                        orderBy: [
+                          { sortOrder: 'asc' },
+                          { modifier: { createdAt: 'asc' } },
+                        ],
+                        include: {
+                          modifier: true,
+                        },
                       },
                     },
                   },
@@ -407,12 +440,21 @@ export class RestaurantMenuRepository {
             include: {
               modifierGroup: {
                 include: {
-                  modifiers: {
-                    where: { deletedAt: null, isActive: true },
-                    include: {
-                      itemPriceOverrides: true,
+                  modifierLinks: {
+                    where: {
+                      modifier: { deletedAt: null, isActive: true },
                     },
-                    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                        },
+                      },
+                    },
+                    orderBy: [
+                      { sortOrder: 'asc' },
+                      { modifier: { createdAt: 'asc' } },
+                    ],
                   },
                 },
               },

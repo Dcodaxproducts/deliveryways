@@ -15,7 +15,6 @@ export class MenuVariationRepository {
           select: {
             id: true,
             name: true,
-            modifierGroupId: true,
           },
         },
       },

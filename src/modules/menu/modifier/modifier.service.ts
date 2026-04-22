@@ -11,6 +11,7 @@ import { buildPaginationMeta } from '../../../common/utils';
 import { PrismaService } from '../../../database';
 import {
   AttachModifierGroupDto,
+  AttachModifierToGroupDto,
   CreateModifierDto,
   CreateModifierGroupDto,
   ListModifierGroupsDto,
@@ -59,7 +60,7 @@ export class ModifierService {
     );
 
     return {
-      data: items,
+      data: items.map((group) => this.mapGroup(group)),
       message: 'Modifier groups fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -76,7 +77,7 @@ export class ModifierService {
     );
 
     return {
-      data: items,
+      data: items.map((modifier) => this.mapModifier(modifier)),
       message: 'Modifiers fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -125,7 +126,8 @@ export class ModifierService {
 
     const data = await this.prisma.$transaction(async (tx) => {
       await this.modifierRepository.deleteGroupItemLinks(id, tx);
-      await this.modifierRepository.deleteGroupModifiers(id, tx);
+      await this.modifierRepository.deleteGroupCategoryLinks(id, tx);
+      await this.modifierRepository.deleteGroupModifierLinks(id, tx);
       return this.modifierRepository.hardDeleteGroup(id, tx);
     });
 
@@ -133,34 +135,55 @@ export class ModifierService {
   }
 
   async createModifier(user: AuthUserContext, dto: CreateModifierDto) {
-    const group = await this.modifierRepository.findGroupById(
-      dto.modifierGroupId,
-    );
-    if (!group || group.deletedAt) {
+    const group = dto.modifierGroupId
+      ? await this.modifierRepository.findGroupById(dto.modifierGroupId)
+      : null;
+
+    if (dto.modifierGroupId && (!group || group.deletedAt)) {
       throw new NotFoundException('Modifier group not found');
     }
 
-    await this.ensureWriteAccess(user, group.restaurantId);
+    const restaurantId = group
+      ? group.restaurantId
+      : await this.resolveRestaurantId(user, undefined);
+
+    await this.ensureWriteAccess(user, restaurantId);
 
     const normalizedName = this.normalizeName(dto.name);
     const existingModifier =
-      await this.modifierRepository.findModifierByGroupAndName(
-        dto.modifierGroupId,
+      await this.modifierRepository.findModifierByRestaurantAndName(
+        restaurantId,
         normalizedName,
       );
 
     if (existingModifier) {
       throw new BadRequestException(
-        'A modifier with this name already exists in this group',
+        'A modifier with this name already exists in this restaurant',
       );
     }
 
-    const data = await this.modifierRepository.createModifier({
-      modifierGroup: { connect: { id: dto.modifierGroupId } },
-      name: normalizedName,
-      priceDelta: new Prisma.Decimal(dto.priceDelta ?? 0),
-      sortOrder: dto.sortOrder ?? 0,
-      isActive: true,
+    const data = await this.prisma.$transaction(async (tx) => {
+      const modifier = await this.modifierRepository.createModifier(
+        {
+          restaurant: { connect: { id: restaurantId } },
+          name: normalizedName,
+          priceDelta: new Prisma.Decimal(dto.priceDelta ?? 0),
+          sortOrder: dto.sortOrder ?? 0,
+          isActive: true,
+        },
+        tx,
+      );
+
+      if (dto.modifierGroupId) {
+        await this.modifierRepository.attachModifierToGroup(
+          dto.modifierGroupId,
+          modifier.id,
+          dto.sortOrder ?? 0,
+          tx,
+        );
+      }
+
+      return modifier;
     });
 
     return { data, message: 'Modifier created successfully' };
@@ -176,29 +199,22 @@ export class ModifierService {
       throw new NotFoundException('Modifier not found');
     }
 
-    const group = await this.modifierRepository.findGroupById(
-      modifier.modifierGroupId,
-    );
-    if (!group || group.deletedAt) {
-      throw new NotFoundException('Modifier group not found');
-    }
-
-    await this.ensureWriteAccess(user, group.restaurantId);
+    await this.ensureWriteAccess(user, modifier.restaurantId);
 
     const normalizedName =
       dto.name !== undefined ? this.normalizeName(dto.name) : undefined;
 
     if (normalizedName) {
       const existingModifier =
-        await this.modifierRepository.findModifierByGroupAndName(
-          modifier.modifierGroupId,
+        await this.modifierRepository.findModifierByRestaurantAndName(
+          modifier.restaurantId,
           normalizedName,
           id,
         );
 
       if (existingModifier) {
         throw new BadRequestException(
-          'A modifier with this name already exists in this group',
+          'A modifier with this name already exists in this restaurant',
         );
       }
     }
@@ -222,17 +238,46 @@ export class ModifierService {
       throw new NotFoundException('Modifier not found');
     }
 
-    const group = await this.modifierRepository.findGroupById(
-      modifier.modifierGroupId,
-    );
+    await this.ensureWriteAccess(user, modifier.restaurantId);
+
+    const data = await this.modifierRepository.hardDeleteModifier(id);
+    return { data, message: 'Modifier deleted successfully' };
+  }
+
+  async attachModifierToGroup(
+    user: AuthUserContext,
+    groupId: string,
+    modifierId: string,
+    dto: AttachModifierToGroupDto,
+  ) {
+    const [group, modifier] = await Promise.all([
+      this.modifierRepository.findGroupById(groupId),
+      this.modifierRepository.findModifierById(modifierId),
+    ]);
+
     if (!group || group.deletedAt) {
       throw new NotFoundException('Modifier group not found');
     }
 
+    if (!modifier || modifier.deletedAt) {
+      throw new NotFoundException('Modifier not found');
+    }
+
+    if (group.restaurantId !== modifier.restaurantId) {
+      throw new BadRequestException(
+        'Modifier and modifier group must belong to the same restaurant',
+      );
+    }
+
     await this.ensureWriteAccess(user, group.restaurantId);
 
-    const data = await this.modifierRepository.hardDeleteModifier(id);
-    return { data, message: 'Modifier deleted successfully' };
+    const data = await this.modifierRepository.attachModifierToGroup(
+      groupId,
+      modifierId,
+      dto.sortOrder ?? modifier.sortOrder,
+    );
+
+    return { data, message: 'Modifier attached to group successfully' };
   }
 
   async attachGroupToItem(
@@ -319,8 +364,72 @@ export class ModifierService {
     await this.ensureReadAccess(user, category.restaurantId);
 
     return {
-      data: await this.modifierRepository.listCategoryGroups(categoryId),
+      data: (await this.modifierRepository.listCategoryGroups(categoryId)).map(
+        (link) => ({
+          ...link,
+          modifierGroup: this.mapGroup(link.modifierGroup),
+        }),
+      ),
       message: 'Category modifier groups fetched successfully',
+    };
+  }
+
+  private mapGroup(group: {
+    id: string;
+    name: string;
+    description: string | null;
+    minSelect: number;
+    maxSelect: number;
+    isRequired: boolean;
+    sortOrder: number;
+    isActive: boolean;
+    modifierLinks?: Array<{
+      sortOrder: number;
+      modifier: {
+        id: string;
+        name: string;
+        priceDelta: Prisma.Decimal;
+        sortOrder: number;
+        isActive: boolean;
+      };
+    }>;
+  }) {
+    return {
+      ...group,
+      modifiers: (group.modifierLinks ?? []).map((link) => ({
+        ...link.modifier,
+        sortOrder: link.sortOrder,
+      })),
+    };
+  }
+
+  private mapModifier(modifier: {
+    id: string;
+    name: string;
+    priceDelta: Prisma.Decimal;
+    sortOrder: number;
+    isActive: boolean;
+    groupLinks?: Array<{
+      sortOrder: number;
+      modifierGroup: {
+        id: string;
+        restaurantId: string;
+        name: string;
+        description: string | null;
+        minSelect: number;
+        maxSelect: number;
+        isRequired: boolean;
+        sortOrder: number;
+        isActive: boolean;
+      };
+    }>;
+  }) {
+    return {
+      ...modifier,
+      modifierGroups: (modifier.groupLinks ?? []).map((link) => ({
+        ...link.modifierGroup,
+        sortOrder: link.sortOrder,
+      })),
     };
   }
 
@@ -343,12 +452,13 @@ export class ModifierService {
         throw new ForbiddenException('Tenant context is required');
       }
 
-      if (!requestedRestaurantId) {
+      const fallbackRestaurantId = requestedRestaurantId ?? user.rid;
+      if (!fallbackRestaurantId) {
         throw new BadRequestException('restaurantId is required');
       }
 
-      await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
-      return requestedRestaurantId;
+      await this.assertRestaurantInTenant(user.tid, fallbackRestaurantId);
+      return fallbackRestaurantId;
     }
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {

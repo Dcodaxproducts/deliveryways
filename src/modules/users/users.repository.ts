@@ -54,7 +54,6 @@ export class UsersRepository {
     });
   }
 
-
   async findManyForDevResolution(options: {
     id?: string;
     email?: string;
@@ -66,9 +65,7 @@ export class UsersRepository {
       where: {
         ...(options.id ? { id: options.id } : {}),
         ...(options.email ? { email: options.email } : {}),
-        ...(options.restaurantId
-          ? { restaurantId: options.restaurantId }
-          : {}),
+        ...(options.restaurantId ? { restaurantId: options.restaurantId } : {}),
         ...(options.role ? { role: options.role } : {}),
         ...(options.includeDeleted ? {} : { deletedAt: null }),
       },
@@ -210,7 +207,6 @@ export class UsersRepository {
       },
     });
   }
-
 
   async deleteManyByIds(ids: string[]) {
     return this.prisma.user.deleteMany({

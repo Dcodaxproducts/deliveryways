@@ -503,7 +503,10 @@ export class UpdateAdminPromotionDto {
 }
 
 export class CreateAdminHappyHourDto extends AdminPromotionBaseDto {
-  @ApiProperty({ type: [Number], description: 'UTC days, 0=Sunday ... 6=Saturday' })
+  @ApiProperty({
+    type: [Number],
+    description: 'UTC days, 0=Sunday ... 6=Saturday',
+  })
   @IsArray()
   @IsInt({ each: true })
   @Min(0, { each: true })
@@ -520,7 +523,10 @@ export class CreateAdminHappyHourDto extends AdminPromotionBaseDto {
 }
 
 export class UpdateAdminHappyHourDto extends UpdateAdminPromotionDto {
-  @ApiPropertyOptional({ type: [Number], description: 'UTC days, 0=Sunday ... 6=Saturday' })
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'UTC days, 0=Sunday ... 6=Saturday',
+  })
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })

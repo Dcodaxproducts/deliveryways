@@ -1110,10 +1110,11 @@ export class GroupOrdersService {
     restaurantId: string,
     orderTime?: Date,
   ) {
-    const restaurantMenu = await this.groupOrdersRepository.findRestaurantMenuById(
-      restaurantMenuId,
-      restaurantId,
-    );
+    const restaurantMenu =
+      await this.groupOrdersRepository.findRestaurantMenuById(
+        restaurantMenuId,
+        restaurantId,
+      );
 
     if (!restaurantMenu) {
       throw new BadRequestException('Selected menu not found or inactive');

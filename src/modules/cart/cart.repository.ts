@@ -195,14 +195,20 @@ export class CartRepository {
           include: {
             modifierGroup: {
               include: {
-                modifiers: {
+                modifierLinks: {
                   where: {
-                    deletedAt: null,
-                    isActive: true,
+                    modifier: {
+                      deletedAt: null,
+                      isActive: true,
+                    },
                   },
                   include: {
-                    itemPriceOverrides: true,
-                    variationPriceOverrides: true,
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
                   },
                 },
               },
@@ -262,13 +268,22 @@ export class CartRepository {
           include: {
             modifierGroup: {
               include: {
-                modifiers: {
-                  where: { deletedAt: null, isActive: true },
-                  include: {
-                    itemPriceOverrides: true,
-                    variationPriceOverrides: true,
+                modifierLinks: {
+                  where: {
+                    modifier: { deletedAt: null, isActive: true },
                   },
-                  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                  include: {
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
+                  },
+                  orderBy: [
+                    { sortOrder: 'asc' },
+                    { modifier: { createdAt: 'asc' } },
+                  ],
                 },
               },
             },

@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
-import { AdminReportsRepository, AdminReportsScope } from './admin-reports.repository';
+import {
+  AdminReportsRepository,
+  AdminReportsScope,
+} from './admin-reports.repository';
 import {
   AdminExportCustomersCsvQueryDto,
   AdminExportMenuCsvQueryDto,
@@ -17,10 +20,19 @@ import {
 
 @Injectable()
 export class AdminReportsService {
-  constructor(private readonly adminReportsRepository: AdminReportsRepository) {}
+  constructor(
+    private readonly adminReportsRepository: AdminReportsRepository,
+  ) {}
 
-  async exportMenuCsv(user: AuthUserContext, query: AdminExportMenuCsvQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async exportMenuCsv(
+    user: AuthUserContext,
+    query: AdminExportMenuCsvQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const items = await this.adminReportsRepository.exportMenu(scope, {
       ...query,
       restaurantId: scope.restaurantId,
@@ -41,7 +53,9 @@ export class AdminReportsService {
       takeawayPriceAdjustment: Number(item.takeawayPriceAdjustment),
       depositAmount: Number(item.depositAmount ?? 0),
       prepTimeMinutes: item.prepTimeMinutes ?? '',
-      menuNames: item.menuLinks.map((link) => link.restaurantMenu.name).join(' | '),
+      menuNames: item.menuLinks
+        .map((link) => link.restaurantMenu.name)
+        .join(' | '),
       variationsCount: item.category.variations.length,
       modifierGroupsCount: item._count.modifierLinks,
       isActive: item.isActive,
@@ -59,8 +73,15 @@ export class AdminReportsService {
     };
   }
 
-  async exportOrdersCsv(user: AuthUserContext, query: AdminExportOrdersCsvQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async exportOrdersCsv(
+    user: AuthUserContext,
+    query: AdminExportOrdersCsvQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const orders = await this.adminReportsRepository.exportOrders(scope, {
       ...query,
       restaurantId: scope.restaurantId,
@@ -73,7 +94,8 @@ export class AdminReportsService {
       branchId: order.branchId,
       branchName: order.branch.name,
       customerId: order.customer.id,
-      customerName: `${order.customer.profile?.firstName ?? ''} ${order.customer.profile?.lastName ?? ''}`.trim(),
+      customerName:
+        `${order.customer.profile?.firstName ?? ''} ${order.customer.profile?.lastName ?? ''}`.trim(),
       customerEmail: order.customer.email,
       customerPhone: order.customer.profile?.phone ?? '',
       orderType: order.orderType,
@@ -82,7 +104,10 @@ export class AdminReportsService {
       paymentMethod: order.paymentMethod,
       itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
       itemsSummary: order.items
-        .map((item) => `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity}`)
+        .map(
+          (item) =>
+            `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity}`,
+        )
         .join(' | '),
       subtotal: Number(order.subtotal),
       taxAmount: Number(order.taxAmount),
@@ -108,8 +133,15 @@ export class AdminReportsService {
     };
   }
 
-  async exportCustomersCsv(user: AuthUserContext, query: AdminExportCustomersCsvQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async exportCustomersCsv(
+    user: AuthUserContext,
+    query: AdminExportCustomersCsvQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const customers = await this.adminReportsRepository.exportCustomers(scope, {
       ...query,
       restaurantId: scope.restaurantId,
@@ -144,8 +176,15 @@ export class AdminReportsService {
     };
   }
 
-  async getOrdersReport(user: AuthUserContext, query: AdminOrdersReportQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async getOrdersReport(
+    user: AuthUserContext,
+    query: AdminOrdersReportQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const data = await this.adminReportsRepository.getOrdersReport(scope, {
       ...query,
       restaurantId: scope.restaurantId,
@@ -170,8 +209,15 @@ export class AdminReportsService {
     };
   }
 
-  async getFinancialReport(user: AuthUserContext, query: AdminFinancialReportQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async getFinancialReport(
+    user: AuthUserContext,
+    query: AdminFinancialReportQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const data = await this.adminReportsRepository.getFinancialReport(scope, {
       ...query,
       restaurantId: scope.restaurantId,
@@ -199,13 +245,19 @@ export class AdminReportsService {
   ): Promise<AdminReportsScope> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       if (requestedBranchId) {
-        const branch = await this.adminReportsRepository.findBranchScope(requestedBranchId);
+        const branch =
+          await this.adminReportsRepository.findBranchScope(requestedBranchId);
         if (!branch) {
           throw new NotFoundException('Branch not found');
         }
 
-        if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
-          throw new BadRequestException('branchId does not belong to the provided restaurantId');
+        if (
+          requestedRestaurantId &&
+          requestedRestaurantId !== branch.restaurantId
+        ) {
+          throw new BadRequestException(
+            'branchId does not belong to the provided restaurantId',
+          );
         }
 
         return {
@@ -216,7 +268,10 @@ export class AdminReportsService {
       }
 
       if (requestedRestaurantId) {
-        const restaurant = await this.adminReportsRepository.findRestaurantScope(requestedRestaurantId);
+        const restaurant =
+          await this.adminReportsRepository.findRestaurantScope(
+            requestedRestaurantId,
+          );
         if (!restaurant) {
           throw new NotFoundException('Restaurant not found');
         }
@@ -240,11 +295,15 @@ export class AdminReportsService {
       }
 
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('You cannot access resources outside your restaurant');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       if (requestedBranchId && requestedBranchId !== user.bid) {
-        throw new ForbiddenException('You cannot access resources outside your branch');
+        throw new ForbiddenException(
+          'You cannot access resources outside your branch',
+        );
       }
 
       return {
@@ -261,11 +320,18 @@ export class AdminReportsService {
         user.rid,
       );
       if (!branch) {
-        throw new ForbiddenException('You cannot access resources outside your tenant restaurants');
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
       }
 
-      if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
-        throw new BadRequestException('branchId does not belong to the provided restaurantId');
+      if (
+        requestedRestaurantId &&
+        requestedRestaurantId !== branch.restaurantId
+      ) {
+        throw new BadRequestException(
+          'branchId does not belong to the provided restaurantId',
+        );
       }
 
       return {
@@ -277,7 +343,9 @@ export class AdminReportsService {
 
     if (user.rid) {
       if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException('You cannot access resources outside your restaurant');
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
       }
 
       return {
@@ -292,7 +360,9 @@ export class AdminReportsService {
         user.tid,
       );
       if (!restaurant) {
-        throw new ForbiddenException('You cannot access resources outside your tenant restaurants');
+        throw new ForbiddenException(
+          'You cannot access resources outside your tenant restaurants',
+        );
       }
 
       return {
@@ -325,9 +395,7 @@ export class AdminReportsService {
     const lines = [
       headers.join(','),
       ...rows.map((row) =>
-        headers
-          .map((header) => this.escapeCsvValue(row[header]))
-          .join(','),
+        headers.map((header) => this.escapeCsvValue(row[header])).join(','),
       ),
     ];
 
@@ -339,7 +407,21 @@ export class AdminReportsService {
       return '';
     }
 
-    const normalized = String(value).replace(/"/g, '""');
+    let rawValue: string;
+    if (typeof value === 'object') {
+      rawValue = JSON.stringify(value);
+    } else if (typeof value === 'string') {
+      rawValue = value;
+    } else if (
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+    ) {
+      rawValue = value.toString();
+    } else {
+      rawValue = '';
+    }
+    const normalized = rawValue.replace(/"/g, '""');
     return /[",\n]/.test(normalized) ? `"${normalized}"` : normalized;
   }
 }

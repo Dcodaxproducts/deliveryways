@@ -1138,14 +1138,17 @@ export class CustomerAppService {
         minSelect: number;
         maxSelect: number;
         isRequired: boolean;
-        modifiers: Array<{
-          id: string;
-          name: string;
-          priceDelta: Prisma.Decimal;
-          itemPriceOverrides?: Array<{
-            menuItemId: string;
+        modifierLinks: Array<{
+          sortOrder: number;
+          modifier: {
+            id: string;
+            name: string;
             priceDelta: Prisma.Decimal;
-          }>;
+            itemPriceOverrides?: Array<{
+              menuItemId: string;
+              priceDelta: Prisma.Decimal;
+            }>;
+          };
         }>;
       };
     }>;
@@ -1187,14 +1190,17 @@ export class CustomerAppService {
         maxSelect: link.modifierGroup.maxSelect,
         isRequired: link.modifierGroup.isRequired,
         sortOrder: link.sortOrder,
-        modifiers: link.modifierGroup.modifiers.map((modifier) => ({
-          id: modifier.id,
-          name: modifier.name,
-          priceDelta:
-            modifier.itemPriceOverrides?.find(
-              (itemOverride) => itemOverride.menuItemId === item.id,
-            )?.priceDelta ?? modifier.priceDelta,
-        })),
+        modifiers: link.modifierGroup.modifierLinks.map(
+          ({ modifier, sortOrder }) => ({
+            id: modifier.id,
+            name: modifier.name,
+            sortOrder,
+            priceDelta:
+              modifier.itemPriceOverrides?.find(
+                (itemOverride) => itemOverride.menuItemId === item.id,
+              )?.priceDelta ?? modifier.priceDelta,
+          }),
+        ),
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };

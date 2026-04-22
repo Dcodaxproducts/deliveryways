@@ -765,20 +765,25 @@ export class CartService {
                   maxSelect: link.modifierGroup.maxSelect,
                   isRequired: link.modifierGroup.isRequired,
                   sortOrder: link.sortOrder,
-                  modifiers: link.modifierGroup.modifiers.map((modifier) => ({
+                  modifiers: link.modifierGroup.modifierLinks.map(
+                    ({ modifier, sortOrder }) => ({
                       id: modifier.id,
                       name: modifier.name,
+                      sortOrder,
                       priceDelta: Number(
                         modifier.variationPriceOverrides?.find(
                           (variationOverride) =>
-                            variationOverride.variationId === cartItem.variationId,
+                            variationOverride.variationId ===
+                            cartItem.variationId,
                         )?.priceDelta ??
-                        modifier.itemPriceOverrides?.find(
-                          (itemOverride) => itemOverride.menuItemId === menuItem.id,
-                        )?.priceDelta ??
-                        modifier.priceDelta,
+                          modifier.itemPriceOverrides?.find(
+                            (itemOverride) =>
+                              itemOverride.menuItemId === menuItem.id,
+                          )?.priceDelta ??
+                          modifier.priceDelta,
                       ),
-                  })),
+                    }),
+                  ),
                 })),
               }
             : null,
@@ -989,8 +994,8 @@ export class CartService {
 
     for (const modifier of dto.modifiers ?? []) {
       const found = menuItem.modifierLinks.some((link) =>
-        link.modifierGroup.modifiers.some(
-          (candidate) => candidate.id === modifier.modifierId,
+        link.modifierGroup.modifierLinks.some(
+          (candidate) => candidate.modifier.id === modifier.modifierId,
         ),
       );
 

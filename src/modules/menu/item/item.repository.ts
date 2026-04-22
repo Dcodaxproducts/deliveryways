@@ -146,9 +146,17 @@ export class MenuItemRepository {
                 include: {
                   modifierGroup: {
                     include: {
-                      modifiers: {
-                        where: { deletedAt: null, isActive: true },
-                        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                      modifierLinks: {
+                        where: {
+                          modifier: { deletedAt: null, isActive: true },
+                        },
+                        orderBy: [
+                          { sortOrder: 'asc' },
+                          { modifier: { createdAt: 'asc' } },
+                        ],
+                        include: {
+                          modifier: true,
+                        },
                       },
                     },
                   },
@@ -175,11 +183,17 @@ export class MenuItemRepository {
             include: {
               modifierGroup: {
                 include: {
-                  modifiers: {
-                    where: { deletedAt: null },
+                  modifierLinks: {
+                    where: {
+                      modifier: { deletedAt: null },
+                    },
                     include: {
-                      itemPriceOverrides: true,
-                      variationPriceOverrides: true,
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
                     },
                     orderBy: { sortOrder: 'asc' },
                   },
