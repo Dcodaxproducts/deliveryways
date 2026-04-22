@@ -1,14 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
+
+export class MenuVariationModifierPriceOverrideDto {
+  @ApiProperty()
+  @IsString()
+  modifierId!: string;
+
+  @ApiProperty()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  priceDelta!: number;
+}
 
 export class CreateMenuVariationDto {
   @ApiProperty()
@@ -50,6 +63,13 @@ export class CreateMenuVariationDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: [MenuVariationModifierPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuVariationModifierPriceOverrideDto)
+  modifierPriceOverrides?: MenuVariationModifierPriceOverrideDto[];
 }
 
 export class UpdateMenuVariationDto {
@@ -90,6 +110,13 @@ export class UpdateMenuVariationDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: [MenuVariationModifierPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuVariationModifierPriceOverrideDto)
+  modifierPriceOverrides?: MenuVariationModifierPriceOverrideDto[];
 }
 
 export class ListMenuVariationsDto extends QueryDto {

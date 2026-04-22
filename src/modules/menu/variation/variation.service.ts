@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -32,6 +33,10 @@ export class MenuVariationService {
     }
 
     await this.ensureRestaurantWriteAccess(user, category.restaurantId);
+    await this.assertModifierOverridesBelongToRestaurant(
+      category.restaurantId,
+      dto.modifierPriceOverrides,
+    );
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {
@@ -49,6 +54,12 @@ export class MenuVariationService {
           isDefault: dto.isDefault ?? false,
           isActive: dto.isActive ?? true,
         },
+        tx,
+      );
+
+      await this.syncModifierPriceOverrides(
+        data.id,
+        dto.modifierPriceOverrides,
         tx,
       );
 
@@ -88,6 +99,10 @@ export class MenuVariationService {
     }
 
     await this.ensureRestaurantWriteAccess(user, category.restaurantId);
+    await this.assertModifierOverridesBelongToRestaurant(
+      category.restaurantId,
+      dto.modifierPriceOverrides,
+    );
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {
@@ -108,6 +123,14 @@ export class MenuVariationService {
         },
         tx,
       );
+
+      if (dto.modifierPriceOverrides !== undefined) {
+        await this.syncModifierPriceOverrides(
+          id,
+          dto.modifierPriceOverrides,
+          tx,
+        );
+      }
 
       return { data, message: 'Menu variation updated successfully' };
     });
@@ -192,5 +215,58 @@ export class MenuVariationService {
         'You cannot access resources outside your tenant restaurants',
       );
     }
+  }
+
+  private async assertModifierOverridesBelongToRestaurant(
+    restaurantId: string,
+    overrides:
+      | Array<{ modifierId: string; priceDelta: number }>
+      | undefined,
+  ) {
+    if (!overrides?.length) {
+      return;
+    }
+
+    const modifierIds = [...new Set(overrides.map((item) => item.modifierId))];
+    const count = await this.prisma.modifier.count({
+      where: {
+        id: { in: modifierIds },
+        deletedAt: null,
+        modifierGroup: {
+          restaurantId,
+          deletedAt: null,
+        },
+      },
+    });
+
+    if (count !== modifierIds.length) {
+      throw new BadRequestException(
+        'One or more variation modifier price overrides are invalid for this restaurant',
+      );
+    }
+  }
+
+  private async syncModifierPriceOverrides(
+    variationId: string,
+    overrides:
+      | Array<{ modifierId: string; priceDelta: number }>
+      | undefined,
+    tx: Prisma.TransactionClient,
+  ) {
+    await tx.menuVariationModifierPriceOverride.deleteMany({
+      where: { variationId },
+    });
+
+    if (!overrides?.length) {
+      return;
+    }
+
+    await tx.menuVariationModifierPriceOverride.createMany({
+      data: overrides.map((item) => ({
+        variationId,
+        modifierId: item.modifierId,
+        priceDelta: new Prisma.Decimal(item.priceDelta),
+      })),
+    });
   }
 }

@@ -699,10 +699,10 @@ export class CartService {
       paymentMethod: cart.paymentMethod,
       orderTime: cart.orderTime,
       customerNote: cart.customerNote,
-      items: cart.items.map((item) => {
-        const menuItem = menuItemMap.get(item.menuItemId);
+      items: cart.items.map((cartItem) => {
+        const menuItem = menuItemMap.get(cartItem.menuItemId);
         const selectedVariation = menuItem?.variations.find(
-          (variation) => variation.id === item.variationId,
+          (variation) => variation.id === cartItem.variationId,
         );
         const branchOverride = menuItem?.branchOverrides?.[0];
         const baseUnitPrice =
@@ -718,12 +718,12 @@ export class CartService {
               );
 
         return {
-          id: item.id,
-          menuItemId: item.menuItemId,
-          variationId: item.variationId,
-          quantity: item.quantity,
-          note: item.note,
-          modifiers: this.readModifiers(item.modifiers),
+          id: cartItem.id,
+          menuItemId: cartItem.menuItemId,
+          variationId: cartItem.variationId,
+          quantity: cartItem.quantity,
+          note: cartItem.note,
+          modifiers: this.readModifiers(cartItem.modifiers),
           menuItem: menuItem
             ? {
                 id: menuItem.id,
@@ -754,6 +754,7 @@ export class CartService {
                   ? {
                       id: selectedVariation.id,
                       name: selectedVariation.name,
+                      description: selectedVariation.description ?? null,
                       price: Number(selectedVariation.price),
                     }
                   : null,
@@ -765,13 +766,18 @@ export class CartService {
                   isRequired: link.modifierGroup.isRequired,
                   sortOrder: link.sortOrder,
                   modifiers: link.modifierGroup.modifiers.map((modifier) => ({
-                    id: modifier.id,
-                    name: modifier.name,
-                    priceDelta: Number(
-                      modifier.itemPriceOverrides?.find(
-                        (item) => item.menuItemId === menuItem.id,
-                      )?.priceDelta ?? modifier.priceDelta,
-                    ),
+                      id: modifier.id,
+                      name: modifier.name,
+                      priceDelta: Number(
+                        modifier.variationPriceOverrides?.find(
+                          (variationOverride) =>
+                            variationOverride.variationId === cartItem.variationId,
+                        )?.priceDelta ??
+                        modifier.itemPriceOverrides?.find(
+                          (itemOverride) => itemOverride.menuItemId === menuItem.id,
+                        )?.priceDelta ??
+                        modifier.priceDelta,
+                      ),
                   })),
                 })),
               }

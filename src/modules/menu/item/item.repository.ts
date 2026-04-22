@@ -123,6 +123,9 @@ export class MenuItemRepository {
                   deletedAt: null,
                   ...(query.includeInactive ? {} : { isActive: true }),
                 },
+                include: {
+                  modifierPriceOverrides: true,
+                },
                 orderBy: { sortOrder: 'asc' },
               },
               menuLinks: {
@@ -176,6 +179,7 @@ export class MenuItemRepository {
                     where: { deletedAt: null },
                     include: {
                       itemPriceOverrides: true,
+                      variationPriceOverrides: true,
                     },
                     orderBy: { sortOrder: 'asc' },
                   },

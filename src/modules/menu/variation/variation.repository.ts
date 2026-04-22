@@ -8,16 +8,37 @@ import { ListMenuVariationsDto } from './dto';
 export class MenuVariationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly include = {
+    modifierPriceOverrides: {
+      include: {
+        modifier: {
+          select: {
+            id: true,
+            name: true,
+            modifierGroupId: true,
+          },
+        },
+      },
+      orderBy: [{ modifierId: 'asc' }],
+    },
+  } satisfies Prisma.MenuItemVariationInclude;
+
   private client(tx?: PrismaTx): PrismaTx | PrismaClient {
     return tx ?? this.prisma;
   }
 
   async create(data: Prisma.MenuItemVariationCreateInput, tx?: PrismaTx) {
-    return this.client(tx).menuItemVariation.create({ data });
+    return this.client(tx).menuItemVariation.create({
+      data,
+      include: this.include,
+    });
   }
 
   async findById(id: string) {
-    return this.prisma.menuItemVariation.findUnique({ where: { id } });
+    return this.prisma.menuItemVariation.findUnique({
+      where: { id },
+      include: this.include,
+    });
   }
 
   async list(query: ListMenuVariationsDto) {
@@ -35,6 +56,7 @@ export class MenuVariationRepository {
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        include: this.include,
       }),
       this.prisma.menuItemVariation.count({ where }),
     ]);
@@ -54,13 +76,18 @@ export class MenuVariationRepository {
     data: Prisma.MenuItemVariationUpdateInput,
     tx?: PrismaTx,
   ) {
-    return this.client(tx).menuItemVariation.update({ where: { id }, data });
+    return this.client(tx).menuItemVariation.update({
+      where: { id },
+      data,
+      include: this.include,
+    });
   }
 
   async softDelete(id: string, tx?: PrismaTx) {
     return this.client(tx).menuItemVariation.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false, isDefault: false },
+      include: this.include,
     });
   }
 }

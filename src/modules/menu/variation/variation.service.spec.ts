@@ -15,9 +15,17 @@ describe('MenuVariationService', () => {
 
     const prisma = {
       menuCategory: { findUnique: jest.fn() },
+      modifier: { count: jest.fn() },
       restaurant: { findFirst: jest.fn() },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-        Promise.resolve(callback({})),
+        Promise.resolve(
+          callback({
+            menuVariationModifierPriceOverride: {
+              deleteMany: jest.fn(),
+              createMany: jest.fn(),
+            },
+          }),
+        ),
       ),
     };
 
@@ -36,6 +44,7 @@ describe('MenuVariationService', () => {
       restaurantId: 'restaurant-1',
       deletedAt: null,
     });
+    prisma.modifier.count.mockResolvedValue(0);
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     variationRepository.create.mockResolvedValue({ id: 'variation-1' });
 
@@ -67,6 +76,76 @@ describe('MenuVariationService', () => {
     expect(result.message).toBe('Menu variation created successfully');
   });
 
+  it('stores variation-based modifier price overrides during create', async () => {
+    const { service, variationRepository, prisma } = makeService();
+    const deleteMany = jest.fn();
+    const createMany = jest.fn();
+
+    prisma.menuCategory.findUnique.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.modifier.count.mockResolvedValue(2);
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) =>
+      Promise.resolve(
+        callback({
+          menuVariationModifierPriceOverride: {
+            deleteMany,
+            createMany,
+          },
+        }),
+      ),
+    );
+    variationRepository.create.mockResolvedValue({ id: 'variation-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        categoryId: 'category-1',
+        name: 'Large',
+        price: 100,
+        modifierPriceOverrides: [
+          { modifierId: 'modifier-1', priceDelta: 50 },
+          { modifierId: 'modifier-2', priceDelta: 80 },
+        ],
+      },
+    );
+
+    expect(prisma.modifier.count).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['modifier-1', 'modifier-2'] },
+        deletedAt: null,
+        modifierGroup: {
+          restaurantId: 'restaurant-1',
+          deletedAt: null,
+        },
+      },
+    });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { variationId: 'variation-1' },
+    });
+    expect(createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          variationId: 'variation-1',
+          modifierId: 'modifier-1',
+          priceDelta: expect.anything(),
+        },
+        {
+          variationId: 'variation-1',
+          modifierId: 'modifier-2',
+          priceDelta: expect.anything(),
+        },
+      ],
+    });
+  });
+
   it('blocks business admin variation write outside tenant restaurants', async () => {
     const { service, prisma } = makeService();
     prisma.menuCategory.findUnique.mockResolvedValue({
@@ -74,6 +153,7 @@ describe('MenuVariationService', () => {
       restaurantId: 'restaurant-2',
       deletedAt: null,
     });
+    prisma.modifier.count.mockResolvedValue(0);
     prisma.restaurant.findFirst.mockResolvedValue(null);
 
     await expect(

@@ -556,6 +556,9 @@ export class OrdersService {
               id: true,
               variations: {
                 where: { deletedAt: null, isActive: true },
+                include: {
+                  modifierPriceOverrides: true,
+                },
               },
             },
           },
@@ -567,6 +570,7 @@ export class OrdersService {
                     where: { deletedAt: null, isActive: true },
                     include: {
                       itemPriceOverrides: true,
+                      variationPriceOverrides: true,
                     },
                   },
                 },
@@ -640,6 +644,7 @@ export class OrdersService {
             menuItem.modifierLinks,
             requestedModifier.modifierId,
             menuItem.id,
+            requestedItem.variationId,
           );
 
           if (!found) {
@@ -1562,6 +1567,9 @@ export class OrdersService {
                   imageUrl: true,
                   variations: {
                     where: { deletedAt: null, isActive: true },
+                    include: {
+                      modifierPriceOverrides: true,
+                    },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
                 },
@@ -1575,6 +1583,7 @@ export class OrdersService {
                         where: { deletedAt: null, isActive: true },
                         include: {
                           itemPriceOverrides: true,
+                          variationPriceOverrides: true,
                         },
                         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                       },
@@ -2190,7 +2199,15 @@ export class OrdersService {
   }
 
   private resolveVariationPrice(
-    variations: { id: string; price: Prisma.Decimal; name: string }[],
+    variations: {
+      id: string;
+      price: Prisma.Decimal;
+      name: string;
+      modifierPriceOverrides?: {
+        modifierId: string;
+        priceDelta: Prisma.Decimal;
+      }[];
+    }[],
     variationId: string,
   ) {
     const variation = variations.find((item) => item.id === variationId);
@@ -2213,24 +2230,33 @@ export class OrdersService {
             menuItemId: string;
             priceDelta: Prisma.Decimal;
           }[];
+          variationPriceOverrides?: {
+            variationId: string;
+            priceDelta: Prisma.Decimal;
+          }[];
         }[];
       };
     }[],
     modifierId: string,
     menuItemId?: string,
+    variationId?: string,
   ) {
     for (const link of links) {
       const found = link.modifierGroup.modifiers.find(
         (modifier) => modifier.id === modifierId,
       );
       if (found) {
+        const variationOverride = found.variationPriceOverrides?.find(
+          (item) => item.variationId === variationId,
+        );
         const override = found.itemPriceOverrides?.find(
           (item) => item.menuItemId === menuItemId,
         );
 
         return {
           ...found,
-          priceDelta: override?.priceDelta ?? found.priceDelta,
+          priceDelta:
+            variationOverride?.priceDelta ?? override?.priceDelta ?? found.priceDelta,
         };
       }
     }

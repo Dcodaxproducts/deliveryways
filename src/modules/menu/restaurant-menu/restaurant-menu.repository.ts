@@ -62,6 +62,7 @@ export class RestaurantMenuRepository {
                           where: { deletedAt: null, isActive: true },
                           include: {
                             itemPriceOverrides: true,
+                            variationPriceOverrides: true,
                           },
                           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                         },

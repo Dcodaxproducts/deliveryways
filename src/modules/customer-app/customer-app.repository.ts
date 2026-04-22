@@ -163,6 +163,9 @@ export class CustomerAppRepository {
               imageUrl: true,
               variations: {
                 where: { deletedAt: null, isActive: true },
+                include: {
+                  modifierPriceOverrides: true,
+                },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },
             },
@@ -176,6 +179,7 @@ export class CustomerAppRepository {
                     where: { deletedAt: null, isActive: true },
                     include: {
                       itemPriceOverrides: true,
+                      variationPriceOverrides: true,
                     },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
@@ -410,6 +414,9 @@ export class CustomerAppRepository {
               imageUrl: true,
               variations: {
                 where: { deletedAt: null, isActive: true },
+                include: {
+                  modifierPriceOverrides: true,
+                },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },
             },
@@ -423,6 +430,7 @@ export class CustomerAppRepository {
                     where: { deletedAt: null, isActive: true },
                     include: {
                       itemPriceOverrides: true,
+                      variationPriceOverrides: true,
                     },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
@@ -489,6 +497,9 @@ export class CustomerAppRepository {
             imageUrl: true,
             variations: {
               where: { deletedAt: null, isActive: true },
+              include: {
+                modifierPriceOverrides: true,
+              },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
           },
@@ -502,6 +513,7 @@ export class CustomerAppRepository {
                   where: { deletedAt: null, isActive: true },
                   include: {
                     itemPriceOverrides: true,
+                    variationPriceOverrides: true,
                   },
                   orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                 },
@@ -565,6 +577,9 @@ export class CustomerAppRepository {
             imageUrl: true,
             variations: {
               where: { deletedAt: null, isActive: true },
+              include: {
+                modifierPriceOverrides: true,
+              },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
           },
@@ -578,6 +593,7 @@ export class CustomerAppRepository {
                   where: { deletedAt: null, isActive: true },
                   include: {
                     itemPriceOverrides: true,
+                    variationPriceOverrides: true,
                   },
                   orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                 },

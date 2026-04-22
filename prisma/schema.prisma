@@ -566,7 +566,8 @@ model MenuItemVariation {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  category MenuCategory @relation(fields: [categoryId], references: [id])
+  category               MenuCategory                         @relation(fields: [categoryId], references: [id])
+  modifierPriceOverrides MenuVariationModifierPriceOverride[]
 
   @@unique([categoryId, name])
   @@map("menu_item_variations")
@@ -619,8 +620,9 @@ model Modifier {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  modifierGroup      ModifierGroup                   @relation(fields: [modifierGroupId], references: [id])
-  itemPriceOverrides MenuItemModifierPriceOverride[]
+  modifierGroup           ModifierGroup                        @relation(fields: [modifierGroupId], references: [id])
+  itemPriceOverrides      MenuItemModifierPriceOverride[]
+  variationPriceOverrides MenuVariationModifierPriceOverride[]
 
   @@unique([modifierGroupId, name])
   @@map("modifiers")
@@ -650,6 +652,19 @@ model MenuItemModifierPriceOverride {
 
   @@unique([menuItemId, modifierId])
   @@map("menu_item_modifier_price_overrides")
+}
+
+model MenuVariationModifierPriceOverride {
+  id          String  @id @default(cuid())
+  variationId String  @map("variation_id")
+  modifierId  String  @map("modifier_id")
+  priceDelta  Decimal @default(0) @map("price_delta") @db.Decimal(10, 2)
+
+  variation MenuItemVariation @relation(fields: [variationId], references: [id])
+  modifier  Modifier          @relation(fields: [modifierId], references: [id])
+
+  @@unique([variationId, modifierId])
+  @@map("menu_variation_modifier_price_overrides")
 }
 
 model BranchMenuItemOverride {
