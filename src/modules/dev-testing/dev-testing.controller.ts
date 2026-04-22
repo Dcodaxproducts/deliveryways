@@ -14,7 +14,11 @@ import { AuthService } from '../auth/auth.service';
 import { ListPublicBranchesDto } from '../branches/dto';
 import { BranchesService } from '../branches/branches.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
-import { DevBootstrapStoreDto, DevTestingUserIdentifierDto } from './dto';
+import {
+  DevBootstrapStoreDto,
+  DevTestingLookupAccountsByEmailDto,
+  DevTestingUserIdentifierDto,
+} from './dto';
 import { DevTestingService } from './dev-testing.service';
 
 @ApiTags('DEV_TESTING')
@@ -79,5 +83,11 @@ export class DevTestingController {
   deleteUser(@Body() dto: DevTestingUserIdentifierDto) {
     this.assertDevMode();
     return this.devTestingService.deleteUser(dto);
+  }
+
+  @Get('accounts/by-email')
+  lookupAccountsByEmail(@Query() query: DevTestingLookupAccountsByEmailDto) {
+    this.assertDevMode();
+    return this.devTestingService.lookupAccountsByEmail(query.email);
   }
 }

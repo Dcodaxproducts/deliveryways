@@ -25,6 +25,17 @@ type ResolvedDevUser = {
   isApproved: boolean;
 };
 
+type DevLookupAccount = {
+  accountType: 'user' | 'staff' | 'deliveryman';
+  id: string;
+  email: string;
+  role: string;
+  restaurantId: string | null;
+  branchId?: string | null;
+  isActive: boolean;
+  deletedAt: Date | null;
+};
+
 @Injectable()
 export class DevTestingService {
   constructor(
@@ -231,6 +242,101 @@ export class DevTestingService {
         deleted: true,
       },
       message: 'User deleted successfully',
+    };
+  }
+
+  async lookupAccountsByEmail(email: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const [users, staffUsers, deliverymen] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          restaurantId: true,
+          isActive: true,
+          deletedAt: true,
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      }),
+      this.prisma.staffUser.findMany({
+        where: {
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+        },
+        select: {
+          id: true,
+          email: true,
+          panelType: true,
+          restaurantId: true,
+          branchId: true,
+          isActive: true,
+          deletedAt: true,
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      }),
+      this.prisma.deliveryman.findMany({
+        where: {
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+        },
+        select: {
+          id: true,
+          email: true,
+          restaurantId: true,
+          branchId: true,
+          status: true,
+          isActive: true,
+          deletedAt: true,
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      }),
+    ]);
+
+    const accounts: DevLookupAccount[] = [
+      ...users.map((item) => ({
+        accountType: 'user' as const,
+        id: item.id,
+        email: item.email,
+        role: item.role,
+        restaurantId: item.restaurantId,
+        isActive: item.isActive,
+        deletedAt: item.deletedAt,
+      })),
+      ...staffUsers.map((item) => ({
+        accountType: 'staff' as const,
+        id: item.id,
+        email: item.email,
+        role: item.panelType,
+        restaurantId: item.restaurantId,
+        branchId: item.branchId,
+        isActive: item.isActive,
+        deletedAt: item.deletedAt,
+      })),
+      ...deliverymen.map((item) => ({
+        accountType: 'deliveryman' as const,
+        id: item.id,
+        email: item.email,
+        role: item.status,
+        restaurantId: item.restaurantId,
+        branchId: item.branchId,
+        isActive: item.isActive,
+        deletedAt: item.deletedAt,
+      })),
+    ];
+
+    return {
+      data: {
+        email: normalizedEmail,
+        totalAccounts: accounts.length,
+        accounts,
+      },
+      message:
+        accounts.length > 0
+          ? 'Accounts fetched successfully'
+          : 'No accounts found for this email',
     };
   }
 

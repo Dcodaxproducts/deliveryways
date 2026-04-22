@@ -7,7 +7,12 @@ import { DevTestingService } from './dev-testing.service';
 describe('DevTestingService', () => {
   let service: DevTestingService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
-  let prisma: { $transaction: jest.Mock };
+  let prisma: {
+    $transaction: jest.Mock;
+    user: { findMany: jest.Mock };
+    staffUser: { findMany: jest.Mock };
+    deliveryman: { findMany: jest.Mock };
+  };
 
   beforeEach(() => {
     usersService = {
@@ -17,6 +22,9 @@ describe('DevTestingService', () => {
     };
 
     prisma = {
+      user: { findMany: jest.fn() },
+      staffUser: { findMany: jest.fn() },
+      deliveryman: { findMany: jest.fn() },
       $transaction: jest.fn(async (callback: (tx: any) => unknown) =>
         callback({
           branch: { updateMany: jest.fn() },
@@ -129,5 +137,56 @@ describe('DevTestingService', () => {
         email: 'missing@example.com',
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns all accounts linked to an email across user, staff, and deliveryman', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: 'user-1',
+        email: 'shared@example.com',
+        role: UserRoleEnum.CUSTOMER,
+        restaurantId: 'restaurant-1',
+        isActive: true,
+        deletedAt: null,
+      },
+    ]);
+    prisma.staffUser.findMany.mockResolvedValue([
+      {
+        id: 'staff-1',
+        email: 'shared@example.com',
+        panelType: 'BRANCH_ADMIN',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isActive: true,
+        deletedAt: null,
+      },
+    ]);
+    prisma.deliveryman.findMany.mockResolvedValue([
+      {
+        id: 'deliveryman-1',
+        email: 'shared@example.com',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        status: 'AVAILABLE',
+        isActive: true,
+        deletedAt: null,
+      },
+    ]);
+
+    const result = await service.lookupAccountsByEmail('Shared@example.com');
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          email: { equals: 'shared@example.com', mode: 'insensitive' },
+        },
+      }),
+    );
+    expect(result.data.totalAccounts).toBe(3);
+    expect(result.data.accounts).toEqual([
+      expect.objectContaining({ accountType: 'user', id: 'user-1' }),
+      expect.objectContaining({ accountType: 'staff', id: 'staff-1' }),
+      expect.objectContaining({ accountType: 'deliveryman', id: 'deliveryman-1' }),
+    ]);
   });
 });

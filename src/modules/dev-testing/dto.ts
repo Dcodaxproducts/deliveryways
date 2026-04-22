@@ -69,3 +69,11 @@ export class DevTestingUserIdentifierDto {
   @IsString()
   restaurantId?: string;
 }
+
+export class DevTestingLookupAccountsByEmailDto {
+  @ApiPropertyOptional({
+    description: 'Email address to search across user, staff, and deliveryman accounts.',
+  })
+  @IsEmail()
+  email!: string;
+}
