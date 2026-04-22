@@ -8,6 +8,7 @@ describe('ModifierService', () => {
       listGroups: jest.fn(),
       listModifiers: jest.fn(),
       findGroupById: jest.fn(),
+      findGroupsByIds: jest.fn(),
       findModifierByRestaurantAndName: jest.fn(),
       createModifier: jest.fn(),
       findModifierById: jest.fn(),
@@ -20,6 +21,7 @@ describe('ModifierService', () => {
       hardDeleteGroup: jest.fn(),
       hardDeleteModifier: jest.fn(),
       attachModifierToGroup: jest.fn(),
+      syncModifierGroups: jest.fn(),
     };
 
     const prisma = {
@@ -98,11 +100,13 @@ describe('ModifierService', () => {
 
   it('rejects duplicate modifier names in the same group before hitting the database', async () => {
     const { service, modifierRepository } = makeService();
-    modifierRepository.findGroupById.mockResolvedValue({
-      id: 'group-1',
-      restaurantId: 'restaurant-1',
-      deletedAt: null,
-    });
+    modifierRepository.findGroupsByIds.mockResolvedValue([
+      {
+        id: 'group-1',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      },
+    ]);
     modifierRepository.findModifierByRestaurantAndName.mockResolvedValue({
       id: 'modifier-1',
     });
@@ -191,6 +195,99 @@ describe('ModifierService', () => {
       'modifier-1',
     );
     expect(result.message).toBe('Modifier deleted successfully');
+  });
+
+  it('creates modifier and bulk assigns it to multiple groups', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findGroupsByIds.mockResolvedValue([
+      {
+        id: 'group-1',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      },
+      {
+        id: 'group-2',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      },
+    ]);
+    modifierRepository.findModifierByRestaurantAndName.mockResolvedValue(null);
+    modifierRepository.createModifier.mockResolvedValue({
+      id: 'modifier-1',
+    });
+
+    const result = await service.createModifier(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      {
+        name: 'Extra Sauce',
+        priceDelta: 50,
+        sortOrder: 2,
+        modifierGroupIds: ['group-1', 'group-2'],
+      },
+    );
+
+    expect(modifierRepository.findGroupsByIds).toHaveBeenCalledWith([
+      'group-1',
+      'group-2',
+    ]);
+    expect(modifierRepository.syncModifierGroups).toHaveBeenCalledWith(
+      'modifier-1',
+      ['group-1', 'group-2'],
+      2,
+      expect.anything(),
+    );
+    expect(result.message).toBe('Modifier created successfully');
+  });
+
+  it('updates modifier and syncs bulk group selection', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findModifierById.mockResolvedValue({
+      id: 'modifier-1',
+      restaurantId: 'restaurant-1',
+      sortOrder: 3,
+      groupLinks: [],
+      deletedAt: null,
+    });
+    modifierRepository.findGroupsByIds.mockResolvedValue([
+      {
+        id: 'group-1',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      },
+      {
+        id: 'group-2',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      },
+    ]);
+    modifierRepository.updateModifier.mockResolvedValue({
+      id: 'modifier-1',
+      sortOrder: 3,
+    });
+
+    const result = await service.updateModifier(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'modifier-1',
+      {
+        modifierGroupIds: ['group-1', 'group-2'],
+      },
+    );
+
+    expect(modifierRepository.syncModifierGroups).toHaveBeenCalledWith(
+      'modifier-1',
+      ['group-1', 'group-2'],
+      3,
+      expect.anything(),
+    );
+    expect(result.message).toBe('Modifier updated successfully');
   });
 
   it('attaches modifier group to category in same restaurant', async () => {

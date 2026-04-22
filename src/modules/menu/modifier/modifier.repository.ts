@@ -102,6 +102,14 @@ export class ModifierRepository {
     return this.prisma.modifierGroup.findUnique({ where: { id } });
   }
 
+  async findGroupsByIds(ids: string[]) {
+    return this.prisma.modifierGroup.findMany({
+      where: {
+        id: { in: ids },
+      },
+    });
+  }
+
   async updateGroup(
     id: string,
     data: Prisma.ModifierGroupUpdateInput,
@@ -156,6 +164,27 @@ export class ModifierRepository {
         sortOrder,
       },
     });
+  }
+
+  syncModifierGroups(
+    modifierId: string,
+    modifierGroupIds: string[],
+    sortOrder: number,
+    tx?: PrismaTx,
+  ) {
+    return Promise.all([
+      this.client(tx).modifierGroupModifier.deleteMany({
+        where: {
+          modifierId,
+          ...(modifierGroupIds.length
+            ? { modifierGroupId: { notIn: modifierGroupIds } }
+            : {}),
+        },
+      }),
+      ...modifierGroupIds.map((modifierGroupId) =>
+        this.attachModifierToGroup(modifierGroupId, modifierId, sortOrder, tx),
+      ),
+    ]);
   }
 
   async findModifierByRestaurantAndName(

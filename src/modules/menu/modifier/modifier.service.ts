@@ -135,17 +135,23 @@ export class ModifierService {
   }
 
   async createModifier(user: AuthUserContext, dto: CreateModifierDto) {
-    const group = dto.modifierGroupId
-      ? await this.modifierRepository.findGroupById(dto.modifierGroupId)
-      : null;
+    const modifierGroupIds = this.normalizeModifierGroupIds(
+      dto.modifierGroupId,
+      dto.modifierGroupIds,
+    );
+    const groups = modifierGroupIds.length
+      ? await this.modifierRepository.findGroupsByIds(modifierGroupIds)
+      : [];
 
-    if (dto.modifierGroupId && (!group || group.deletedAt)) {
-      throw new NotFoundException('Modifier group not found');
+    if (modifierGroupIds.length) {
+      this.assertValidModifierGroups(groups, modifierGroupIds);
     }
 
-    const restaurantId = group
-      ? group.restaurantId
+    const restaurantId = groups.length
+      ? groups[0].restaurantId
       : await this.resolveRestaurantId(user, undefined);
+
+    this.assertGroupsBelongToRestaurant(groups, restaurantId);
 
     await this.ensureWriteAccess(user, restaurantId);
 
@@ -174,10 +180,10 @@ export class ModifierService {
         tx,
       );
 
-      if (dto.modifierGroupId) {
-        await this.modifierRepository.attachModifierToGroup(
-          dto.modifierGroupId,
+      if (modifierGroupIds.length) {
+        await this.modifierRepository.syncModifierGroups(
           modifier.id,
+          modifierGroupIds,
           dto.sortOrder ?? 0,
           tx,
         );
@@ -201,6 +207,15 @@ export class ModifierService {
 
     await this.ensureWriteAccess(user, modifier.restaurantId);
 
+    if (dto.modifierGroupIds !== undefined) {
+      const groups = dto.modifierGroupIds.length
+        ? await this.modifierRepository.findGroupsByIds(dto.modifierGroupIds)
+        : [];
+
+      this.assertValidModifierGroups(groups, dto.modifierGroupIds);
+      this.assertGroupsBelongToRestaurant(groups, modifier.restaurantId);
+    }
+
     const normalizedName =
       dto.name !== undefined ? this.normalizeName(dto.name) : undefined;
 
@@ -219,14 +234,31 @@ export class ModifierService {
       }
     }
 
-    const data = await this.modifierRepository.updateModifier(id, {
-      name: normalizedName,
-      priceDelta:
-        dto.priceDelta !== undefined
-          ? new Prisma.Decimal(dto.priceDelta)
-          : undefined,
-      sortOrder: dto.sortOrder,
-      isActive: dto.isActive,
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updatedModifier = await this.modifierRepository.updateModifier(
+        id,
+        {
+          name: normalizedName,
+          priceDelta:
+            dto.priceDelta !== undefined
+              ? new Prisma.Decimal(dto.priceDelta)
+              : undefined,
+          sortOrder: dto.sortOrder,
+          isActive: dto.isActive,
+        },
+        tx,
+      );
+
+      if (dto.modifierGroupIds !== undefined) {
+        await this.modifierRepository.syncModifierGroups(
+          id,
+          dto.modifierGroupIds,
+          dto.sortOrder ?? updatedModifier.sortOrder,
+          tx,
+        );
+      }
+
+      return updatedModifier;
     });
 
     return { data, message: 'Modifier updated successfully' };
@@ -441,6 +473,46 @@ export class ModifierService {
     }
 
     return normalized;
+  }
+
+  private normalizeModifierGroupIds(
+    modifierGroupId?: string,
+    modifierGroupIds?: string[],
+  ) {
+    return [
+      ...new Set(
+        [modifierGroupId, ...(modifierGroupIds ?? [])].filter(Boolean),
+      ),
+    ] as string[];
+  }
+
+  private assertValidModifierGroups(
+    groups: Array<{
+      id: string;
+      restaurantId: string;
+      deletedAt: Date | null;
+    }>,
+    expectedGroupIds: string[],
+  ) {
+    if (
+      groups.length !== expectedGroupIds.length ||
+      groups.some((group) => group.deletedAt)
+    ) {
+      throw new NotFoundException('One or more modifier groups were not found');
+    }
+  }
+
+  private assertGroupsBelongToRestaurant(
+    groups: Array<{
+      restaurantId: string;
+    }>,
+    restaurantId: string,
+  ) {
+    if (groups.some((group) => group.restaurantId !== restaurantId)) {
+      throw new BadRequestException(
+        'All modifier groups must belong to the same restaurant',
+      );
+    }
   }
 
   private async resolveRestaurantId(

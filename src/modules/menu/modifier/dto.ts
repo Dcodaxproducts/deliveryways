@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayUnique,
   IsBoolean,
+  IsArray,
   IsInt,
   IsNumber,
   IsOptional,
@@ -132,6 +134,13 @@ export class CreateModifierDto {
   @IsString()
   modifierGroupId?: string;
 
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  modifierGroupIds?: string[];
+
   @ApiProperty()
   @IsString()
   name!: string;
@@ -155,6 +164,13 @@ export class UpdateModifierDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  modifierGroupIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
