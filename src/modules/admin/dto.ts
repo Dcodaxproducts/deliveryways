@@ -544,3 +544,99 @@ export class UpdateAdminHappyHourDto extends UpdateAdminPromotionDto {
   @IsString()
   dailyEndTime?: string;
 }
+
+export class AdminPrintingScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+}
+
+export class UpdateAdminPrintingSettingsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  autoPrintOnNewOrder?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  autoPrintOnStatusChange?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  printCustomerReceipt?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  printKitchenTicket?: boolean;
+
+  @ApiPropertyOptional({ enum: ['USB', 'LAN', 'BLUETOOTH', 'CLOUD'] })
+  @IsOptional()
+  @IsIn(['USB', 'LAN', 'BLUETOOTH', 'CLOUD'])
+  connectionType?: 'USB' | 'LAN' | 'BLUETOOTH' | 'CLOUD';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  printerName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  printerTarget?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ipAddress?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  queueName?: string;
+}
+
+export class AdminPrintingStatusQueryDto extends AdminPrintingScopedQueryDto {}
+
+export class AdminPrintingLogsQueryDto extends AdminPrintingScopedQueryDto {
+  @ApiPropertyOptional({ enum: ['success', 'failed', 'warning'] })
+  @IsOptional()
+  @IsIn(['success', 'failed', 'warning'])
+  status?: 'success' | 'failed' | 'warning';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 20;
+}
