@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type Branch, type Restaurant } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 
 export interface AdminPrintingScope {
@@ -73,7 +73,10 @@ export class AdminPrintingRepository {
     });
   }
 
-  async updateRestaurantSettings(restaurantId: string, settings: Prisma.JsonObject) {
+  async updateRestaurantSettings(
+    restaurantId: string,
+    settings: Prisma.JsonObject,
+  ) {
     return this.prisma.restaurant.update({
       where: { id: restaurantId },
       data: {

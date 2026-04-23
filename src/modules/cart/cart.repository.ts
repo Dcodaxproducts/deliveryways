@@ -179,6 +179,18 @@ export class CartRepository {
             id: true,
             name: true,
             imageUrl: true,
+            items: {
+              where: {
+                deletedAt: null,
+                isActive: true,
+              },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+              orderBy: [{ createdAt: 'asc' }],
+            },
             variations: {
               where: {
                 deletedAt: null,
@@ -231,6 +243,60 @@ export class CartRepository {
       : null;
   }
 
+  async findSplitSectionItems(
+    menuItemIds: string[],
+    restaurantId: string,
+    branchId: string,
+    categoryId: string,
+  ) {
+    if (!menuItemIds.length) {
+      return [];
+    }
+
+    const items = await this.prisma.menuItem.findMany({
+      where: {
+        id: { in: menuItemIds },
+        restaurantId,
+        categoryId,
+        deletedAt: null,
+        isActive: true,
+      },
+      include: {
+        modifierLinks: {
+          include: {
+            modifierGroup: {
+              include: {
+                modifierLinks: {
+                  where: {
+                    modifier: {
+                      deletedAt: null,
+                      isActive: true,
+                    },
+                  },
+                  include: {
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        branchOverrides: {
+          where: {
+            branchId,
+          },
+        },
+      },
+    });
+
+    return items;
+  }
+
   async findMenuItemsForResponse(
     menuItemIds: string[],
     restaurantId: string,
@@ -251,6 +317,18 @@ export class CartRepository {
             id: true,
             name: true,
             imageUrl: true,
+            items: {
+              where: {
+                deletedAt: null,
+                isActive: true,
+              },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+              orderBy: [{ createdAt: 'asc' }],
+            },
             variations: {
               where: {
                 deletedAt: null,

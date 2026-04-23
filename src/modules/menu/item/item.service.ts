@@ -56,7 +56,10 @@ export class MenuItemService {
           deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
           takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
           prepTimeMinutes: dto.prepTimeMinutes,
-          dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
+          dietaryFlags: this.toStoredDietaryFlags(
+            dto.dietaryFlags,
+            dto.supportsSplitPizza,
+          ) as unknown as Prisma.InputJsonValue,
           allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
           depositAmount:
             dto.depositAmount !== undefined
@@ -77,7 +80,7 @@ export class MenuItemService {
     });
 
     return {
-      data: await this.resolveMediaResponse(data),
+      data: await this.resolveMediaResponse(this.withSplitPizzaMetadata(data)),
       message: 'Menu item created successfully',
     };
   }
@@ -111,7 +114,10 @@ export class MenuItemService {
         deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
         takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
         prepTimeMinutes: item.prepTimeMinutes,
-        dietaryFlags: item.dietaryFlags as unknown as Prisma.InputJsonValue,
+        dietaryFlags: this.toStoredDietaryFlags(
+          item.dietaryFlags,
+          item.supportsSplitPizza,
+        ) as unknown as Prisma.InputJsonValue,
         allergenFlags: item.allergenFlags as unknown as Prisma.InputJsonValue,
         depositAmount:
           item.depositAmount !== undefined
@@ -141,7 +147,9 @@ export class MenuItemService {
 
     return {
       data: await this.resolveMediaResponse(
-        items.map((item) => this.withCategoryModifierGroups(item)),
+        items.map((item) =>
+          this.withSplitPizzaMetadata(this.withCategoryModifierGroups(item)),
+        ),
       ),
       message: 'Menu items fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -195,7 +203,11 @@ export class MenuItemService {
           deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
           takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
           prepTimeMinutes: dto.prepTimeMinutes,
-          dietaryFlags: dto.dietaryFlags as unknown as Prisma.InputJsonValue,
+          dietaryFlags: this.toStoredDietaryFlags(
+            dto.dietaryFlags,
+            dto.supportsSplitPizza,
+            item.dietaryFlags,
+          ) as unknown as Prisma.InputJsonValue,
           allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
           depositAmount:
             dto.depositAmount !== undefined
@@ -218,7 +230,7 @@ export class MenuItemService {
     });
 
     return {
-      data: await this.resolveMediaResponse(data),
+      data: await this.resolveMediaResponse(this.withSplitPizzaMetadata(data)),
       message: 'Menu item updated successfully',
     };
   }
@@ -485,6 +497,72 @@ export class MenuItemService {
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),
     });
+  }
+
+  private readonly splitPizzaDietaryFlag = '__SPLIT_PIZZA_ENABLED__';
+
+  private toStoredDietaryFlags(
+    dietaryFlags: string[] | undefined,
+    supportsSplitPizza?: boolean,
+    existingDietaryFlags?: unknown,
+  ) {
+    const currentFlags =
+      dietaryFlags ?? this.readStringArray(existingDietaryFlags) ?? [];
+    const nextFlags = currentFlags.filter(
+      (flag) => flag !== this.splitPizzaDietaryFlag,
+    );
+
+    if (supportsSplitPizza) {
+      nextFlags.push(this.splitPizzaDietaryFlag);
+    }
+
+    return nextFlags;
+  }
+
+  private withSplitPizzaMetadata<T extends Record<string, unknown>>(
+    item: T,
+  ): T {
+    const dietaryFlags = this.readStringArray(item.dietaryFlags);
+    const supportsSplitPizza = dietaryFlags.includes(
+      this.splitPizzaDietaryFlag,
+    );
+    const publicDietaryFlags = dietaryFlags.filter(
+      (flag) => flag !== this.splitPizzaDietaryFlag,
+    );
+    const category =
+      item.category &&
+      typeof item.category === 'object' &&
+      !Array.isArray(item.category)
+        ? (item.category as {
+            items?: Array<{ id: string; name: string; slug: string }>;
+          })
+        : undefined;
+
+    return {
+      ...item,
+      dietaryFlags: publicDietaryFlags,
+      supportsSplitPizza,
+      splitPizza: supportsSplitPizza
+        ? {
+            enabled: true,
+            slots: ['LEFT', 'RIGHT'],
+            pricingRule: 'HIGHEST_HALF',
+            allowedFlavors: (category?.items ?? []).map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              slug: candidate.slug,
+            })),
+          }
+        : null,
+    };
+  }
+
+  private readStringArray(input: unknown): string[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((value): value is string => typeof value === 'string');
   }
 
   private async resolveMediaResponse<T>(data: T) {

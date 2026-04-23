@@ -53,6 +53,18 @@ type QuoteLine = {
     quantity: number;
     unitPrice: number;
   }[];
+  snapshotSections?: {
+    slot: 'LEFT' | 'RIGHT';
+    menuItemId: string;
+    menuItemName: string;
+    unitPrice: number;
+    modifiers: {
+      modifierId: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+    }[];
+  }[];
 };
 
 type QuoteCustomerContext = {
@@ -167,8 +179,10 @@ export class OrdersService {
               quantity: line.quantity,
               lineTotal: line.lineTotal,
               note: line.note,
-              snapshotModifiers:
-                line.snapshotModifiers as unknown as Prisma.InputJsonValue,
+              snapshotModifiers: this.packOrderSelections(
+                line.snapshotModifiers,
+                line.snapshotSections,
+              ) as unknown as Prisma.InputJsonValue,
             })),
           },
         },
@@ -643,6 +657,7 @@ export class OrdersService {
       }
 
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
+      const snapshotSections: QuoteLine['snapshotSections'] = [];
 
       if (requestedItem.modifiers?.length) {
         for (const requestedModifier of requestedItem.modifiers) {
@@ -671,6 +686,183 @@ export class OrdersService {
         }
       }
 
+      if (requestedItem.sections?.length) {
+        if (!this.supportsSplitPizza(menuItem)) {
+          throw new BadRequestException(
+            `Split pizza is not enabled for item: ${menuItem.name}`,
+          );
+        }
+
+        if (requestedItem.sections.length !== 2) {
+          throw new BadRequestException(
+            'Split pizza requires exactly 2 sections',
+          );
+        }
+
+        const slots = new Set(
+          requestedItem.sections.map((section) => section.slot),
+        );
+        if (!slots.has('LEFT') || !slots.has('RIGHT') || slots.size !== 2) {
+          throw new BadRequestException(
+            'Split pizza sections must include one LEFT and one RIGHT section',
+          );
+        }
+
+        const splitItems = await this.prisma.menuItem.findMany({
+          where: {
+            id: {
+              in: [
+                ...new Set(
+                  requestedItem.sections.map((section) => section.menuItemId),
+                ),
+              ],
+            },
+            restaurantId: branch.restaurantId,
+            categoryId: menuItem.category.id,
+            deletedAt: null,
+            isActive: true,
+          },
+          include: {
+            modifierLinks: {
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifierLinks: {
+                      where: {
+                        modifier: { deletedAt: null, isActive: true },
+                      },
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            branchOverrides: {
+              where: {
+                branchId: branch.id,
+              },
+            },
+            category: {
+              select: {
+                id: true,
+                variations: {
+                  where: { deletedAt: null, isActive: true },
+                },
+              },
+            },
+          },
+        });
+        const splitItemMap = new Map(splitItems.map((item) => [item.id, item]));
+        const sectionUnitPrices: Prisma.Decimal[] = [];
+        let sectionModifiersTotal = new Prisma.Decimal(0);
+
+        for (const section of requestedItem.sections) {
+          const sectionItem = splitItemMap.get(section.menuItemId);
+          if (!sectionItem) {
+            throw new BadRequestException(
+              `Split section flavor not found for item: ${menuItem.name}`,
+            );
+          }
+
+          const sectionBranchOverride = sectionItem.branchOverrides[0];
+          if (sectionBranchOverride && !sectionBranchOverride.isAvailable) {
+            throw new BadRequestException(
+              `Split section flavor unavailable at branch: ${sectionItem.name}`,
+            );
+          }
+
+          if (
+            selectedMenu &&
+            !selectedMenu.directItemIds.has(sectionItem.id) &&
+            !selectedMenu.categoryIds.has(sectionItem.category.id)
+          ) {
+            throw new BadRequestException(
+              `Split section flavor is not available in selected menu: ${sectionItem.name}`,
+            );
+          }
+
+          let sectionPrice = this.resolveOrderItemBasePrice(
+            {
+              ...sectionItem,
+              variations: sectionItem.category.variations,
+            },
+            sectionBranchOverride?.priceOverride,
+            requestedItem.variationId,
+          ).plus(
+            this.resolveOrderTypePriceAdjustment(sectionItem, dto.orderType),
+          );
+
+          const sectionSnapshotModifiers: NonNullable<
+            QuoteLine['snapshotSections']
+          >[number]['modifiers'] = [];
+
+          for (const requestedModifier of section.modifiers ?? []) {
+            const found = this.findModifier(
+              sectionItem.modifierLinks,
+              requestedModifier.modifierId,
+              sectionItem.id,
+              requestedItem.variationId,
+            );
+
+            if (!found) {
+              throw new BadRequestException(
+                `Modifier not found for split section item: ${sectionItem.name}`,
+              );
+            }
+
+            const modifierQty = requestedModifier.quantity ?? 1;
+            const modifierTotal = found.priceDelta.mul(modifierQty);
+            sectionPrice = sectionPrice.plus(modifierTotal);
+            sectionModifiersTotal = sectionModifiersTotal.plus(modifierTotal);
+
+            sectionSnapshotModifiers.push({
+              modifierId: found.id,
+              name: found.name,
+              quantity: modifierQty,
+              unitPrice: Number(found.priceDelta),
+            });
+          }
+
+          sectionUnitPrices.push(
+            this.resolveOrderItemBasePrice(
+              {
+                ...sectionItem,
+                variations: sectionItem.category.variations,
+              },
+              sectionBranchOverride?.priceOverride,
+              requestedItem.variationId,
+            ).plus(
+              this.resolveOrderTypePriceAdjustment(sectionItem, dto.orderType),
+            ),
+          );
+
+          snapshotSections.push({
+            slot: section.slot,
+            menuItemId: sectionItem.id,
+            menuItemName: sectionItem.name,
+            unitPrice: Number(sectionPrice.toDecimalPlaces(2)),
+            modifiers: sectionSnapshotModifiers,
+          });
+        }
+
+        unitPrice = Prisma.Decimal.max(...sectionUnitPrices)
+          .plus(
+            snapshotModifiers.reduce(
+              (sum, modifier) =>
+                sum.plus(modifier.unitPrice * modifier.quantity),
+              new Prisma.Decimal(0),
+            ),
+          )
+          .plus(sectionModifiersTotal);
+      }
+
       const lineTotal = unitPrice
         .plus(depositAmount)
         .mul(requestedItem.quantity);
@@ -687,6 +879,7 @@ export class OrdersService {
         lineTotal: lineTotal.toDecimalPlaces(2),
         note: requestedItem.note,
         snapshotModifiers,
+        snapshotSections,
       });
     }
 
@@ -965,6 +1158,7 @@ export class OrdersService {
         lineTotal: Number(line.lineTotal),
         note: line.note,
         snapshotModifiers: line.snapshotModifiers,
+        snapshotSections: line.snapshotSections,
       })),
     };
   }
@@ -1275,7 +1469,8 @@ export class OrdersService {
         unitPrice: Number(item.unitPrice),
         lineTotal: Number(item.lineTotal),
         note: item.note,
-        snapshotModifiers: item.snapshotModifiers,
+        snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
+        snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
       })),
     };
   }
@@ -1477,7 +1672,8 @@ export class OrdersService {
         unitPrice: Number(item.unitPrice),
         lineTotal: Number(item.lineTotal),
         note: item.note,
-        snapshotModifiers: item.snapshotModifiers,
+        snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
+        snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
       })),
       deliveryAddress: order.deliveryAddress
         ? {
@@ -1507,7 +1703,8 @@ export class OrdersService {
         quantity: item.quantity,
         lineTotal: Number(item.lineTotal),
         note: item.note,
-        snapshotModifiers: item.snapshotModifiers,
+        snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
+        snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
         menuItem: item.menuItem,
       })),
     };
@@ -2281,6 +2478,50 @@ export class OrdersService {
     }
 
     return undefined;
+  }
+
+  private packOrderSelections(
+    modifiers?: QuoteLine['snapshotModifiers'],
+    sections?: QuoteLine['snapshotSections'],
+  ) {
+    if (!sections?.length) {
+      return modifiers?.length ? modifiers : [];
+    }
+
+    return {
+      modifiers: modifiers?.length ? modifiers : [],
+      sections,
+    };
+  }
+
+  private readSnapshotModifiers(input: Prisma.JsonValue | null) {
+    if (Array.isArray(input)) {
+      return input;
+    }
+
+    if (!input || typeof input !== 'object') {
+      return [];
+    }
+
+    return Array.isArray((input as { modifiers?: unknown }).modifiers)
+      ? (input as { modifiers: unknown[] }).modifiers
+      : [];
+  }
+
+  private readSnapshotSections(input: Prisma.JsonValue | null) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return [];
+    }
+
+    return Array.isArray((input as { sections?: unknown }).sections)
+      ? (input as { sections: unknown[] }).sections
+      : [];
+  }
+
+  private supportsSplitPizza(menuItem: { dietaryFlags?: unknown }) {
+    return Array.isArray(menuItem.dietaryFlags)
+      ? menuItem.dietaryFlags.includes('__SPLIT_PIZZA_ENABLED__')
+      : false;
   }
 
   private readBranchSettings(input: unknown): BranchSettings {

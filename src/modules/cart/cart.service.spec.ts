@@ -17,6 +17,7 @@ describe('CartService', () => {
       findActiveBranch: jest.fn(),
       findRestaurantMenuById: jest.fn(),
       findMenuItemForCart: jest.fn(),
+      findSplitSectionItems: jest.fn(),
       findMenuItemsForResponse: jest.fn(),
       findActiveCustomer: jest.fn(),
       findOwnedAddress: jest.fn(),
@@ -422,6 +423,88 @@ describe('CartService', () => {
       modifiers: undefined,
     });
     expect(result.message).toBe('Item added to cart successfully');
+  });
+
+  it('stores split pizza sections in cart items', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(existingCart)
+      .mockResolvedValueOnce(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-parent',
+      name: 'Half And Half Pizza',
+      restaurantId: 'restaurant-1',
+      dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+      category: { id: 'cat-pizza', items: [] },
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.findSplitSectionItems.mockResolvedValue([
+      {
+        id: 'flavor-1',
+        name: 'Fajita Pizza',
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+      {
+        id: 'flavor-2',
+        name: 'Pepperoni Pizza',
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    cartRepository.createItem.mockResolvedValue({ id: 'item-2' });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-parent',
+        quantity: 1,
+        sections: [
+          { slot: 'LEFT', menuItemId: 'flavor-1' },
+          { slot: 'RIGHT', menuItemId: 'flavor-2' },
+        ],
+      },
+    );
+
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modifiers: {
+          modifiers: [],
+          sections: [
+            { slot: 'LEFT', menuItemId: 'flavor-1', modifiers: [] },
+            { slot: 'RIGHT', menuItemId: 'flavor-2', modifiers: [] },
+          ],
+        },
+      }),
+    );
   });
 
   it('retargets an empty cart when customer switches branches', async () => {

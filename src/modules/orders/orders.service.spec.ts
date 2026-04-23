@@ -1039,6 +1039,7 @@ describe('OrdersService - response mapping', () => {
         lineTotal: 500,
         note: null,
         snapshotModifiers: [],
+        snapshotSections: [],
       },
     ]);
   });
@@ -1639,6 +1640,136 @@ describe('OrdersService - wallet payment', () => {
     );
     expect(result.data.items[0].depositAmount).toBe(50);
     expect(result.data.totalAmount).toBe(600);
+  });
+
+  it('prices split pizza using the highest half and returns section snapshots', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: {
+              taxPercentage: 0,
+            },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-parent',
+          name: 'Half And Half Pizza',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(900),
+          depositAmount: new Prisma.Decimal(0),
+          dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+          category: { id: 'cat-pizza', variations: [] },
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'flavor-1',
+            name: 'Fajita Pizza',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(1200),
+            dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+            category: { id: 'cat-pizza', variations: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          },
+          {
+            id: 'flavor-2',
+            name: 'Pepperoni Pizza',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(1000),
+            dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+            category: { id: 'cat-pizza', variations: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          },
+        ]),
+      },
+      address: {
+        findFirst: jest.fn().mockResolvedValue({
+          lat: new Prisma.Decimal('31.5204'),
+          lng: new Prisma.Decimal('74.3587'),
+        }),
+      },
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      { validateForCheckout: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(1200),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          {
+            menuItemId: 'menu-parent',
+            quantity: 1,
+            sections: [
+              { slot: 'LEFT', menuItemId: 'flavor-1' },
+              { slot: 'RIGHT', menuItemId: 'flavor-2' },
+            ],
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items[0].unitPrice).toBe(1200);
+    expect(result.data.items[0].snapshotSections).toEqual([
+      {
+        slot: 'LEFT',
+        menuItemId: 'flavor-1',
+        menuItemName: 'Fajita Pizza',
+        unitPrice: 1200,
+        modifiers: [],
+      },
+      {
+        slot: 'RIGHT',
+        menuItemId: 'flavor-2',
+        menuItemName: 'Pepperoni Pizza',
+        unitPrice: 1000,
+        modifiers: [],
+      },
+    ]);
   });
 
   it('enforces selected menu membership and timed availability only when restaurantMenuId is provided', async () => {

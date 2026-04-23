@@ -15,6 +15,8 @@ import {
 import { QueryDto } from '../../common/dto';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
 
+export const ORDER_ITEM_SECTION_SLOT_VALUES = ['LEFT', 'RIGHT'] as const;
+
 export class OrderItemModifierDto {
   @ApiProperty()
   @IsString()
@@ -25,6 +27,23 @@ export class OrderItemModifierDto {
   @IsInt()
   @Min(1)
   quantity?: number;
+}
+
+export class OrderItemSectionDto {
+  @ApiProperty({ enum: ORDER_ITEM_SECTION_SLOT_VALUES })
+  @IsIn(ORDER_ITEM_SECTION_SLOT_VALUES)
+  slot!: (typeof ORDER_ITEM_SECTION_SLOT_VALUES)[number];
+
+  @ApiProperty()
+  @IsString()
+  menuItemId!: string;
+
+  @ApiPropertyOptional({ type: [OrderItemModifierDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemModifierDto)
+  modifiers?: OrderItemModifierDto[];
 }
 
 export class OrderItemDto {
@@ -48,6 +67,13 @@ export class OrderItemDto {
   @ValidateNested({ each: true })
   @Type(() => OrderItemModifierDto)
   modifiers?: OrderItemModifierDto[];
+
+  @ApiPropertyOptional({ type: [OrderItemSectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemSectionDto)
+  sections?: OrderItemSectionDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

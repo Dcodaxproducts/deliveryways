@@ -113,33 +113,51 @@ describe('AdminPrintingService', () => {
       metrics as never,
     );
 
-    const result = await service.updateSettings(
-      {
-        uid: 'business-1',
-        tid: 'tenant-1',
-        rid: 'restaurant-1',
-        role: 'BUSINESS_ADMIN',
-      } as never,
-      {},
-      {
-        enabled: true,
-        autoPrintOnNewOrder: true,
-        printerName: 'Kitchen LAN',
-      },
-    );
-
-    expect(repository.updateRestaurantSettings).toHaveBeenCalledWith(
-      'restaurant-1',
-      expect.objectContaining({
-        printing: expect.objectContaining({
+    await expect(
+      (
+        service as unknown as {
+          updateSettings: (
+            user: unknown,
+            scope: Record<string, never>,
+            dto: {
+              enabled: boolean;
+              autoPrintOnNewOrder: boolean;
+              printerName: string;
+            },
+          ) => Promise<unknown>;
+        }
+      ).updateSettings(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {},
+        {
           enabled: true,
           autoPrintOnNewOrder: true,
           printerName: 'Kitchen LAN',
-        }),
-      }),
+        },
+      ),
+    ).resolves.toMatchObject({
+      data: {
+        settings: {
+          printerName: 'Kitchen LAN',
+        },
+        source: 'restaurant',
+      },
+    });
+    expect(repository.updateRestaurantSettings).toHaveBeenCalledWith(
+      'restaurant-1',
+      {
+        printing: {
+          enabled: true,
+          autoPrintOnNewOrder: true,
+          printerName: 'Kitchen LAN',
+        },
+      },
     );
-    expect(result.data.settings.printerName).toBe('Kitchen LAN');
-    expect(result.data.source).toBe('restaurant');
   });
 
   it('filters printer logs to branch scope when building status', async () => {
@@ -208,9 +226,12 @@ describe('AdminPrintingService', () => {
   });
 
   it('forbids branch admin from querying another branch logs', async () => {
-    const service = new AdminPrintingService({} as never, {
-      getIntegrationLogs: jest.fn(),
-    } as never);
+    const service = new AdminPrintingService(
+      {} as never,
+      {
+        getIntegrationLogs: jest.fn(),
+      } as never,
+    );
 
     await expect(
       service.getLogs(

@@ -644,10 +644,45 @@ export class RestaurantMenuService {
         ...item,
         menuItem: {
           ...item.menuItem,
+          dietaryFlags: Array.isArray(item.menuItem.dietaryFlags)
+            ? item.menuItem.dietaryFlags.filter(
+                (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
+              )
+            : item.menuItem.dietaryFlags,
+          supportsSplitPizza:
+            Array.isArray(item.menuItem.dietaryFlags) &&
+            item.menuItem.dietaryFlags.includes('__SPLIT_PIZZA_ENABLED__'),
+          splitPizza:
+            Array.isArray(item.menuItem.dietaryFlags) &&
+            item.menuItem.dietaryFlags.includes('__SPLIT_PIZZA_ENABLED__')
+              ? {
+                  enabled: true,
+                  slots: ['LEFT', 'RIGHT'],
+                  pricingRule: 'HIGHEST_HALF',
+                  allowedFlavors: (
+                    (
+                      item.menuItem.category as {
+                        items?: Array<{
+                          id: string;
+                          name: string;
+                          slug: string;
+                        }>;
+                      }
+                    )?.items ?? []
+                  ).map((candidate) => ({
+                    id: candidate.id,
+                    name: candidate.name,
+                    slug: candidate.slug,
+                  })),
+                }
+              : null,
           variations: item.menuItem.category?.variations ?? [],
           modifierGroups: [
-            ...(((item.menuItem.category as { modifierLinks?: unknown[] } | undefined)
-              ?.modifierLinks as unknown[]) ?? []),
+            ...(((
+              item.menuItem.category as
+                | { modifierLinks?: unknown[] }
+                | undefined
+            )?.modifierLinks as unknown[]) ?? []),
             ...((item.menuItem.modifierLinks as unknown[]) ?? []),
           ]
             .filter(
@@ -700,8 +735,8 @@ export class RestaurantMenuService {
                     return (
                       (candidate as { modifierGroup?: { id?: string } })
                         .modifierGroup?.id ===
-                      (link as { modifierGroup?: { id?: string } }).modifierGroup
-                        ?.id
+                      (link as { modifierGroup?: { id?: string } })
+                        .modifierGroup?.id
                     );
                   }) === index
                 );
@@ -736,7 +771,8 @@ export class RestaurantMenuService {
                     variationId: override.variationId,
                     priceDelta: Number(override.priceDelta),
                   })),
-                })),
+                }),
+              ),
             })),
         },
       })),

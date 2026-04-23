@@ -118,6 +118,18 @@ export class MenuItemRepository {
               name: true,
               slug: true,
               imageUrl: true,
+              items: {
+                where: {
+                  deletedAt: null,
+                  ...(query.includeInactive ? {} : { isActive: true }),
+                },
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                },
+                orderBy: [{ createdAt: 'asc' }],
+              },
               variations: {
                 where: {
                   deletedAt: null,

@@ -136,6 +136,13 @@ export class CreateMenuItemDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Enables half-and-half split pizza selection for this item',
+  })
+  @IsOptional()
+  @IsBoolean()
+  supportsSplitPizza?: boolean;
+
   @ApiPropertyOptional({ type: [MenuItemModifierPriceOverrideDto] })
   @IsOptional()
   @IsArray()
@@ -254,6 +261,13 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Enables half-and-half split pizza selection for this item',
+  })
+  @IsOptional()
+  @IsBoolean()
+  supportsSplitPizza?: boolean;
 
   @ApiPropertyOptional({ type: [MenuItemModifierPriceOverrideDto] })
   @IsOptional()

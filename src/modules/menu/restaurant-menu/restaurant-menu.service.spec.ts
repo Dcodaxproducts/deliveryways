@@ -371,7 +371,15 @@ describe('RestaurantMenuService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       'menu-1',
-    )) as any;
+    )) as unknown as {
+      data: {
+        items: Array<{
+          menuItem: {
+            modifierGroups: unknown[];
+          };
+        }>;
+      };
+    };
 
     expect(result.data.items[0].menuItem.modifierGroups).toEqual([
       {

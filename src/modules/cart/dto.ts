@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,6 +12,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
+
+export const CART_ITEM_SECTION_SLOT_VALUES = ['LEFT', 'RIGHT'] as const;
 
 export class CartItemModifierDto {
   @ApiProperty()
@@ -22,6 +25,23 @@ export class CartItemModifierDto {
   @IsInt()
   @Min(1)
   quantity?: number;
+}
+
+export class CartItemSectionDto {
+  @ApiProperty({ enum: CART_ITEM_SECTION_SLOT_VALUES })
+  @IsIn(CART_ITEM_SECTION_SLOT_VALUES)
+  slot!: (typeof CART_ITEM_SECTION_SLOT_VALUES)[number];
+
+  @ApiProperty()
+  @IsString()
+  menuItemId!: string;
+
+  @ApiPropertyOptional({ type: [CartItemModifierDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CartItemModifierDto)
+  modifiers?: CartItemModifierDto[];
 }
 
 export class AddCartItemDto {
@@ -62,6 +82,13 @@ export class AddCartItemDto {
   @Type(() => CartItemModifierDto)
   modifiers?: CartItemModifierDto[];
 
+  @ApiPropertyOptional({ type: [CartItemSectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CartItemSectionDto)
+  sections?: CartItemSectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -86,6 +113,13 @@ export class UpdateCartItemDto {
   @ValidateNested({ each: true })
   @Type(() => CartItemModifierDto)
   modifiers?: CartItemModifierDto[] | null;
+
+  @ApiPropertyOptional({ type: [CartItemSectionDto], nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CartItemSectionDto)
+  sections?: CartItemSectionDto[] | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

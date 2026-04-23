@@ -31,6 +31,18 @@ export class RestaurantMenuRepository {
                     name: true,
                     slug: true,
                     imageUrl: true,
+                    items: {
+                      where: {
+                        deletedAt: null,
+                        isActive: true,
+                      },
+                      select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                      },
+                      orderBy: [{ createdAt: 'asc' }],
+                    },
                     variations: {
                       where: { deletedAt: null, isActive: true },
                       orderBy: { sortOrder: 'asc' },
@@ -157,6 +169,18 @@ export class RestaurantMenuRepository {
                       name: true,
                       slug: true,
                       imageUrl: true,
+                      items: {
+                        where: {
+                          deletedAt: null,
+                          isActive: true,
+                        },
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                        },
+                        orderBy: [{ createdAt: 'asc' }],
+                      },
                       variations: {
                         where: { deletedAt: null, isActive: true },
                         orderBy: { sortOrder: 'asc' },
@@ -193,14 +217,14 @@ export class RestaurantMenuRepository {
                             where: {
                               modifier: { deletedAt: null, isActive: true },
                             },
-                              include: {
-                                modifier: {
-                                  include: {
-                                    itemPriceOverrides: true,
-                                    variationPriceOverrides: true,
-                                  },
+                            include: {
+                              modifier: {
+                                include: {
+                                  itemPriceOverrides: true,
+                                  variationPriceOverrides: true,
                                 },
                               },
+                            },
                             orderBy: [
                               { sortOrder: 'asc' },
                               { modifier: { createdAt: 'asc' } },
@@ -402,6 +426,18 @@ export class RestaurantMenuRepository {
               name: true,
               slug: true,
               imageUrl: true,
+              items: {
+                where: {
+                  deletedAt: null,
+                  isActive: true,
+                },
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                },
+                orderBy: [{ createdAt: 'asc' }],
+              },
               variations: {
                 where: {
                   deletedAt: null,
@@ -422,14 +458,14 @@ export class RestaurantMenuRepository {
                           { sortOrder: 'asc' },
                           { modifier: { createdAt: 'asc' } },
                         ],
-                              include: {
-                                modifier: {
-                                  include: {
-                                    itemPriceOverrides: true,
-                                    variationPriceOverrides: true,
-                                  },
-                                },
-                              },
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
                       },
                     },
                   },
@@ -455,14 +491,14 @@ export class RestaurantMenuRepository {
                     where: {
                       modifier: { deletedAt: null, isActive: true },
                     },
-                              include: {
-                                modifier: {
-                                  include: {
-                                    itemPriceOverrides: true,
-                                    variationPriceOverrides: true,
-                                  },
-                                },
-                              },
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
                     orderBy: [
                       { sortOrder: 'asc' },
                       { modifier: { createdAt: 'asc' } },
@@ -539,39 +575,9 @@ export class RestaurantMenuRepository {
     return this.client(tx).restaurantMenuItem.delete({ where: { id } });
   }
 
-  private buildModifierGroups(
-    item: {
-      id: string;
-      category: {
-        modifierLinks: Array<{
-          sortOrder: number;
-          modifierGroup: {
-            id: string;
-            name: string;
-            description?: string | null;
-            minSelect: number;
-            maxSelect: number;
-            isRequired: boolean;
-            modifierLinks: Array<{
-              sortOrder: number;
-              modifier: {
-                id: string;
-                name: string;
-                description?: string | null;
-                priceDelta: Prisma.Decimal;
-                itemPriceOverrides?: Array<{
-                  menuItemId: string;
-                  priceDelta: Prisma.Decimal;
-                }>;
-                variationPriceOverrides?: Array<{
-                  variationId: string;
-                  priceDelta: Prisma.Decimal;
-                }>;
-              };
-            }>;
-          };
-        }>;
-      };
+  private buildModifierGroups(item: {
+    id: string;
+    category: {
       modifierLinks: Array<{
         sortOrder: number;
         modifierGroup: {
@@ -600,8 +606,36 @@ export class RestaurantMenuRepository {
           }>;
         };
       }>;
-    },
-  ) {
+    };
+    modifierLinks: Array<{
+      sortOrder: number;
+      modifierGroup: {
+        id: string;
+        name: string;
+        description?: string | null;
+        minSelect: number;
+        maxSelect: number;
+        isRequired: boolean;
+        modifierLinks: Array<{
+          sortOrder: number;
+          modifier: {
+            id: string;
+            name: string;
+            description?: string | null;
+            priceDelta: Prisma.Decimal;
+            itemPriceOverrides?: Array<{
+              menuItemId: string;
+              priceDelta: Prisma.Decimal;
+            }>;
+            variationPriceOverrides?: Array<{
+              variationId: string;
+              priceDelta: Prisma.Decimal;
+            }>;
+          };
+        }>;
+      };
+    }>;
+  }) {
     const categoryGroupIds = new Set(
       item.category.modifierLinks.map((link) => link.modifierGroup.id),
     );
@@ -621,7 +655,9 @@ export class RestaurantMenuRepository {
         maxSelect: link.modifierGroup.maxSelect,
         isRequired: link.modifierGroup.isRequired,
         sortOrder: link.sortOrder,
-        source: categoryGroupIds.has(link.modifierGroup.id) ? 'CATEGORY' : 'ITEM',
+        source: categoryGroupIds.has(link.modifierGroup.id)
+          ? 'CATEGORY'
+          : 'ITEM',
         modifiers: (link.modifierGroup.modifierLinks ?? []).map(
           ({ modifier, sortOrder }) => ({
             id: modifier.id,

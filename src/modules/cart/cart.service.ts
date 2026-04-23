@@ -18,6 +18,7 @@ import { OrdersService } from '../orders/orders.service';
 import {
   AddCartItemDto,
   CartItemModifierDto,
+  CartItemSectionDto,
   CheckoutCartDto,
   QuoteCartDto,
   UpdateCartAddressDto,
@@ -336,7 +337,10 @@ export class CartService {
       variationId: dto.variationId,
       quantity: dto.quantity,
       note: dto.note,
-      modifiers: dto.modifiers as unknown as Prisma.InputJsonValue,
+      modifiers: this.packCartSelections(
+        dto.modifiers,
+        dto.sections,
+      ) as unknown as Prisma.InputJsonValue,
     });
 
     const updatedCart = await this.getExistingCartOrThrow(
@@ -388,6 +392,10 @@ export class CartService {
         dto.modifiers !== undefined
           ? (dto.modifiers ?? undefined)
           : this.readModifiers(item.modifiers),
+      sections:
+        dto.sections !== undefined
+          ? (dto.sections ?? undefined)
+          : this.readSections(item.modifiers),
     };
 
     await this.assertValidCartItem(
@@ -407,8 +415,15 @@ export class CartService {
           ? this.resolveOptionalString(dto.note)
           : undefined,
       modifiers:
-        dto.modifiers !== undefined
-          ? (dto.modifiers as unknown as Prisma.InputJsonValue | undefined)
+        dto.modifiers !== undefined || dto.sections !== undefined
+          ? (this.packCartSelections(
+              dto.modifiers !== undefined
+                ? (dto.modifiers ?? undefined)
+                : this.readModifiers(item.modifiers),
+              dto.sections !== undefined
+                ? (dto.sections ?? undefined)
+                : this.readSections(item.modifiers),
+            ) as Prisma.InputJsonValue | undefined)
           : undefined,
     });
 
@@ -724,6 +739,7 @@ export class CartService {
           quantity: cartItem.quantity,
           note: cartItem.note,
           modifiers: this.readModifiers(cartItem.modifiers),
+          sections: this.readSections(cartItem.modifiers),
           menuItem: menuItem
             ? {
                 id: menuItem.id,
@@ -750,6 +766,21 @@ export class CartService {
                   menuItem.depositAmount !== null
                     ? Number(menuItem.depositAmount)
                     : null,
+                supportsSplitPizza: this.supportsSplitPizza(menuItem),
+                splitPizza: this.supportsSplitPizza(menuItem)
+                  ? {
+                      enabled: true,
+                      slots: ['LEFT', 'RIGHT'],
+                      pricingRule: 'HIGHEST_HALF',
+                      allowedFlavors: (menuItem.category.items ?? []).map(
+                        (candidate) => ({
+                          id: candidate.id,
+                          name: candidate.name,
+                          slug: candidate.slug,
+                        }),
+                      ),
+                    }
+                  : null,
                 selectedVariation: selectedVariation
                   ? {
                       id: selectedVariation.id,
@@ -811,6 +842,7 @@ export class CartService {
         variationId: item.variationId ?? undefined,
         quantity: item.quantity,
         modifiers: this.readModifiers(item.modifiers),
+        sections: this.readSections(item.modifiers),
         note: item.note ?? undefined,
       })),
     };
@@ -1005,18 +1037,96 @@ export class CartService {
         );
       }
     }
+
+    await this.assertValidSplitSections(menuItem, branchId, dto);
+  }
+
+  private async assertValidSplitSections(
+    menuItem: Awaited<ReturnType<CartRepository['findMenuItemForCart']>>,
+    branchId: string,
+    dto: AddCartItemDto,
+  ) {
+    if (!menuItem) {
+      return;
+    }
+
+    const sections = dto.sections;
+    if (!sections?.length) {
+      return;
+    }
+
+    if (!this.supportsSplitPizza(menuItem)) {
+      throw new BadRequestException(
+        `Split pizza is not enabled for item: ${menuItem.name}`,
+      );
+    }
+
+    if (sections.length !== 2) {
+      throw new BadRequestException('Split pizza requires exactly 2 sections');
+    }
+
+    const slots = new Set(sections.map((section) => section.slot));
+    if (!slots.has('LEFT') || !slots.has('RIGHT') || slots.size !== 2) {
+      throw new BadRequestException(
+        'Split pizza sections must include one LEFT and one RIGHT section',
+      );
+    }
+
+    const splitItems = await this.cartRepository.findSplitSectionItems(
+      [...new Set(sections.map((section) => section.menuItemId))],
+      menuItem.restaurantId,
+      branchId,
+      menuItem.category.id,
+    );
+    const splitItemMap = new Map(splitItems.map((item) => [item.id, item]));
+
+    for (const section of sections) {
+      const sectionItem = splitItemMap.get(section.menuItemId);
+      if (!sectionItem) {
+        throw new BadRequestException(
+          `Split section flavor not found for item: ${menuItem.name}`,
+        );
+      }
+
+      const branchOverride = sectionItem.branchOverrides[0];
+      if (branchOverride && !branchOverride.isAvailable) {
+        throw new BadRequestException(
+          `Split section flavor unavailable at branch: ${sectionItem.name}`,
+        );
+      }
+
+      for (const modifier of section.modifiers ?? []) {
+        const found = sectionItem.modifierLinks.some((link) =>
+          link.modifierGroup.modifierLinks.some(
+            (candidate) => candidate.modifier.id === modifier.modifierId,
+          ),
+        );
+
+        if (!found) {
+          throw new BadRequestException(
+            `Modifier not found for split section item: ${sectionItem.name}`,
+          );
+        }
+      }
+    }
   }
 
   private readModifiers(
     input: Prisma.JsonValue | null,
   ): CartItemModifierDto[] | undefined {
-    if (!Array.isArray(input)) {
+    const source = Array.isArray(input)
+      ? input
+      : input && typeof input === 'object' && !Array.isArray(input)
+        ? ((input as { modifiers?: unknown }).modifiers ?? undefined)
+        : undefined;
+
+    if (!Array.isArray(source)) {
       return undefined;
     }
 
     const modifiers: CartItemModifierDto[] = [];
 
-    for (const item of input) {
+    for (const item of source) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
         continue;
       }
@@ -1033,6 +1143,72 @@ export class CartService {
     }
 
     return modifiers.length ? modifiers : undefined;
+  }
+
+  private readSections(
+    input: Prisma.JsonValue | null,
+  ): CartItemSectionDto[] | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const rawSections = (input as { sections?: unknown }).sections;
+    if (!Array.isArray(rawSections)) {
+      return undefined;
+    }
+
+    const sections: CartItemSectionDto[] = [];
+
+    for (const item of rawSections) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        continue;
+      }
+
+      const raw = item as {
+        slot?: unknown;
+        menuItemId?: unknown;
+        modifiers?: Prisma.JsonValue | null;
+      };
+
+      if (
+        (raw.slot !== 'LEFT' && raw.slot !== 'RIGHT') ||
+        typeof raw.menuItemId !== 'string'
+      ) {
+        continue;
+      }
+
+      sections.push({
+        slot: raw.slot,
+        menuItemId: raw.menuItemId,
+        modifiers: this.readModifiers(raw.modifiers ?? null),
+      });
+    }
+
+    return sections.length ? sections : undefined;
+  }
+
+  private packCartSelections(
+    modifiers?: CartItemModifierDto[],
+    sections?: CartItemSectionDto[],
+  ) {
+    if (!sections?.length) {
+      return modifiers?.length ? modifiers : undefined;
+    }
+
+    return {
+      modifiers: modifiers?.length ? modifiers : [],
+      sections: sections.map((section) => ({
+        slot: section.slot,
+        menuItemId: section.menuItemId,
+        modifiers: section.modifiers?.length ? section.modifiers : [],
+      })),
+    };
+  }
+
+  private supportsSplitPizza(menuItem: { dietaryFlags?: unknown }) {
+    return Array.isArray(menuItem.dietaryFlags)
+      ? menuItem.dietaryFlags.includes('__SPLIT_PIZZA_ENABLED__')
+      : false;
   }
 
   private resolveOrderTypePriceAdjustment(
