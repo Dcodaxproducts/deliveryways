@@ -305,4 +305,105 @@ describe('RestaurantMenuService', () => {
       name: 'Sauces',
     });
   });
+
+  it('adds frontend-friendly modifierGroups to fetched menu items', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      items: [
+        {
+          id: 'link-1',
+          menuItem: {
+            id: 'item-1',
+            category: {
+              variations: [],
+              modifierLinks: [
+                {
+                  sortOrder: 1,
+                  modifierGroup: {
+                    id: 'group-1',
+                    name: 'Sauces',
+                    description: 'Pick a sauce',
+                    minSelect: 0,
+                    maxSelect: 2,
+                    isRequired: false,
+                    modifierLinks: [
+                      {
+                        sortOrder: 1,
+                        modifier: {
+                          id: 'modifier-1',
+                          name: 'Ketchup',
+                          description: 'Tomato ketchup',
+                          priceDelta: { toString: () => '25' },
+                          itemPriceOverrides: [
+                            {
+                              menuItemId: 'item-1',
+                              priceDelta: { toString: () => '35' },
+                            },
+                          ],
+                          variationPriceOverrides: [
+                            {
+                              variationId: 'variation-1',
+                              priceDelta: { toString: () => '45' },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            modifierLinks: [],
+          },
+        },
+      ],
+      categories: [],
+    });
+
+    const result = (await service.getById(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'menu-1',
+    )) as any;
+
+    expect(result.data.items[0].menuItem.modifierGroups).toEqual([
+      {
+        id: 'group-1',
+        name: 'Sauces',
+        description: 'Pick a sauce',
+        minSelect: 0,
+        maxSelect: 2,
+        isRequired: false,
+        sortOrder: 1,
+        modifiers: [
+          {
+            id: 'modifier-1',
+            name: 'Ketchup',
+            description: 'Tomato ketchup',
+            sortOrder: 1,
+            priceDelta: 25,
+            itemPriceOverrides: [
+              {
+                menuItemId: 'item-1',
+                priceDelta: 35,
+              },
+            ],
+            variationPriceOverrides: [
+              {
+                variationId: 'variation-1',
+                priceDelta: 45,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
 });

@@ -49,7 +49,12 @@ export class RestaurantMenuRepository {
                                 { modifier: { createdAt: 'asc' } },
                               ],
                               include: {
-                                modifier: true,
+                                modifier: {
+                                  include: {
+                                    itemPriceOverrides: true,
+                                    variationPriceOverrides: true,
+                                  },
+                                },
                               },
                             },
                           },
@@ -188,13 +193,14 @@ export class RestaurantMenuRepository {
                             where: {
                               modifier: { deletedAt: null, isActive: true },
                             },
-                            include: {
-                              modifier: {
-                                include: {
-                                  itemPriceOverrides: true,
+                              include: {
+                                modifier: {
+                                  include: {
+                                    itemPriceOverrides: true,
+                                    variationPriceOverrides: true,
+                                  },
                                 },
                               },
-                            },
                             orderBy: [
                               { sortOrder: 'asc' },
                               { modifier: { createdAt: 'asc' } },
@@ -416,9 +422,14 @@ export class RestaurantMenuRepository {
                           { sortOrder: 'asc' },
                           { modifier: { createdAt: 'asc' } },
                         ],
-                        include: {
-                          modifier: true,
-                        },
+                              include: {
+                                modifier: {
+                                  include: {
+                                    itemPriceOverrides: true,
+                                    variationPriceOverrides: true,
+                                  },
+                                },
+                              },
                       },
                     },
                   },
@@ -444,13 +455,14 @@ export class RestaurantMenuRepository {
                     where: {
                       modifier: { deletedAt: null, isActive: true },
                     },
-                    include: {
-                      modifier: {
-                        include: {
-                          itemPriceOverrides: true,
-                        },
-                      },
-                    },
+                              include: {
+                                modifier: {
+                                  include: {
+                                    itemPriceOverrides: true,
+                                    variationPriceOverrides: true,
+                                  },
+                                },
+                              },
                     orderBy: [
                       { sortOrder: 'asc' },
                       { modifier: { createdAt: 'asc' } },
@@ -503,6 +515,7 @@ export class RestaurantMenuRepository {
           isActive: item.isActive,
           category: item.category,
           variations: item.category.variations,
+          modifierGroups: this.buildModifierGroups(item),
           menuResolution: {
             source,
             directLink,
@@ -524,5 +537,112 @@ export class RestaurantMenuRepository {
 
   async removeMenuItemLink(id: string, tx?: PrismaTx) {
     return this.client(tx).restaurantMenuItem.delete({ where: { id } });
+  }
+
+  private buildModifierGroups(
+    item: {
+      id: string;
+      category: {
+        modifierLinks: Array<{
+          sortOrder: number;
+          modifierGroup: {
+            id: string;
+            name: string;
+            description?: string | null;
+            minSelect: number;
+            maxSelect: number;
+            isRequired: boolean;
+            modifierLinks: Array<{
+              sortOrder: number;
+              modifier: {
+                id: string;
+                name: string;
+                description?: string | null;
+                priceDelta: Prisma.Decimal;
+                itemPriceOverrides?: Array<{
+                  menuItemId: string;
+                  priceDelta: Prisma.Decimal;
+                }>;
+                variationPriceOverrides?: Array<{
+                  variationId: string;
+                  priceDelta: Prisma.Decimal;
+                }>;
+              };
+            }>;
+          };
+        }>;
+      };
+      modifierLinks: Array<{
+        sortOrder: number;
+        modifierGroup: {
+          id: string;
+          name: string;
+          description?: string | null;
+          minSelect: number;
+          maxSelect: number;
+          isRequired: boolean;
+          modifierLinks: Array<{
+            sortOrder: number;
+            modifier: {
+              id: string;
+              name: string;
+              description?: string | null;
+              priceDelta: Prisma.Decimal;
+              itemPriceOverrides?: Array<{
+                menuItemId: string;
+                priceDelta: Prisma.Decimal;
+              }>;
+              variationPriceOverrides?: Array<{
+                variationId: string;
+                priceDelta: Prisma.Decimal;
+              }>;
+            };
+          }>;
+        };
+      }>;
+    },
+  ) {
+    const categoryGroupIds = new Set(
+      item.category.modifierLinks.map((link) => link.modifierGroup.id),
+    );
+
+    return [...item.category.modifierLinks, ...item.modifierLinks]
+      .filter(
+        (link, index, links) =>
+          links.findIndex(
+            (candidate) => candidate.modifierGroup.id === link.modifierGroup.id,
+          ) === index,
+      )
+      .map((link) => ({
+        id: link.modifierGroup.id,
+        name: link.modifierGroup.name,
+        description: link.modifierGroup.description ?? null,
+        minSelect: link.modifierGroup.minSelect,
+        maxSelect: link.modifierGroup.maxSelect,
+        isRequired: link.modifierGroup.isRequired,
+        sortOrder: link.sortOrder,
+        source: categoryGroupIds.has(link.modifierGroup.id) ? 'CATEGORY' : 'ITEM',
+        modifiers: (link.modifierGroup.modifierLinks ?? []).map(
+          ({ modifier, sortOrder }) => ({
+            id: modifier.id,
+            name: modifier.name,
+            description: modifier.description ?? null,
+            sortOrder,
+            priceDelta: Number(modifier.priceDelta),
+            itemPriceOverrides: (modifier.itemPriceOverrides ?? [])
+              .filter((override) => override.menuItemId === item.id)
+              .map((override) => ({
+                menuItemId: override.menuItemId,
+                priceDelta: Number(override.priceDelta),
+              })),
+            variationPriceOverrides: (
+              modifier.variationPriceOverrides ?? []
+            ).map((override) => ({
+              variationId: override.variationId,
+              priceDelta: Number(override.priceDelta),
+            })),
+          }),
+        ),
+      }));
   }
 }
