@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   OrderTypeEnum,
   PaymentMethodEnum,
@@ -171,6 +172,80 @@ describe('CartService', () => {
       }),
     );
     expect(ordersService.quote).not.toHaveBeenCalled();
+  });
+
+  it('calculates percentage-based variation prices from item base price', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: 'var-1',
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: 'Beef burger',
+        imageUrl: 'burger.png',
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(500),
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+        variations: [
+          {
+            id: 'var-1',
+            name: 'Large',
+            description: null,
+            price: new Prisma.Decimal(0),
+            pricingMode: 'PERCENTAGE_ADJUSTMENT',
+            adjustmentValue: new Prisma.Decimal(10),
+          },
+        ],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const firstItem = result.data.items[0] as {
+      menuItem: {
+        unitPrice: number | null;
+        selectedVariation: { price: number; adjustmentValue: number | null } | null;
+      } | null;
+    };
+    expect(firstItem.menuItem?.unitPrice).toBe(550);
+    expect(firstItem.menuItem?.selectedVariation?.price).toBe(550);
+    expect(firstItem.menuItem?.selectedVariation?.adjustmentValue).toBe(10);
   });
 
   it('requires customerId for business-admin cart access', async () => {

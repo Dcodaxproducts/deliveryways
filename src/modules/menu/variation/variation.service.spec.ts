@@ -157,6 +157,41 @@ describe('MenuVariationService', () => {
     });
   });
 
+  it('stores percentage-based variation pricing during create', async () => {
+    const { service, variationRepository, prisma } = makeService();
+
+    prisma.menuCategory.findUnique.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.modifier.count.mockResolvedValue(0);
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    variationRepository.create.mockResolvedValue({ id: 'variation-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        categoryId: 'category-1',
+        name: 'Large',
+        pricingMode: 'PERCENTAGE_ADJUSTMENT',
+        adjustmentValue: 10,
+      },
+    );
+
+    expect(variationRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pricingMode: 'PERCENTAGE_ADJUSTMENT',
+        adjustmentValue: expect.anything(),
+      }),
+      expect.anything(),
+    );
+  });
+
   it('blocks business admin variation write outside tenant restaurants', async () => {
     const { service, prisma } = makeService();
     prisma.menuCategory.findUnique.mockResolvedValue({

@@ -12,6 +12,7 @@ import {
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
+  VariationPricingMode,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -658,9 +659,11 @@ export class OrdersService {
           );
         }
         variationName = variation.name;
-        unitPrice = variation.price.plus(
-          this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType),
-        );
+        unitPrice = this.resolveVariationPrice(
+          menuItemVariations,
+          requestedItem.variationId,
+          branchOverride?.priceOverride ?? menuItem.basePrice,
+        ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       }
 
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
@@ -1174,27 +1177,32 @@ export class OrdersService {
     menuItem: {
       [key: string]: unknown;
       basePrice: Prisma.Decimal;
-      variations: Array<{ id: string; name?: string; price: Prisma.Decimal }>;
+      variations: Array<{
+        id: string;
+        name?: string;
+        price: Prisma.Decimal;
+        pricingMode?: VariationPricingMode;
+        adjustmentValue?: Prisma.Decimal | null;
+      }>;
     },
     branchPriceOverride: Prisma.Decimal | null | undefined,
     variationId?: string,
   ) {
-    if (branchPriceOverride) {
-      return branchPriceOverride;
-    }
-
     if (variationId) {
       return this.resolveVariationPrice(
         menuItem.variations as Array<{
           id: string;
           name: string;
           price: Prisma.Decimal;
+          pricingMode?: VariationPricingMode;
+          adjustmentValue?: Prisma.Decimal | null;
         }>,
         variationId,
+        branchPriceOverride ?? menuItem.basePrice,
       );
     }
 
-    return menuItem.basePrice;
+    return branchPriceOverride ?? menuItem.basePrice;
   }
 
   private resolveOrderTypePriceAdjustment(
@@ -2464,17 +2472,32 @@ export class OrdersService {
       id: string;
       price: Prisma.Decimal;
       name: string;
+      pricingMode?: VariationPricingMode;
+      adjustmentValue?: Prisma.Decimal | null;
       modifierPriceOverrides?: {
         modifierId: string;
         priceDelta: Prisma.Decimal;
       }[];
     }[],
     variationId: string,
+    basePrice: Prisma.Decimal,
   ) {
     const variation = variations.find((item) => item.id === variationId);
 
     if (!variation) {
       throw new BadRequestException('Variation not found');
+    }
+
+    if (variation.pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
+      return basePrice.plus(variation.adjustmentValue ?? new Prisma.Decimal(0));
+    }
+
+    if (
+      variation.pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT
+    ) {
+      return basePrice.plus(
+        basePrice.mul(variation.adjustmentValue ?? new Prisma.Decimal(0)).div(100),
+      );
     }
 
     return variation.price;

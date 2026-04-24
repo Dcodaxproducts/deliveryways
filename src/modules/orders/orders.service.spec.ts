@@ -592,6 +592,101 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.items[0].unitPrice).toBe(580);
     expect(result.data.subtotal).toBe(580);
   });
+
+  it('calculates percentage-based variation prices from item base price in quotes', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: { taxPercentage: 0 },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          pricingMode: 'SINGLE',
+          basePrice: new Prisma.Decimal(500),
+          deliveryPriceAdjustment: new Prisma.Decimal(0),
+          takeawayPriceAdjustment: new Prisma.Decimal(0),
+          depositAmount: new Prisma.Decimal(0),
+          category: {
+            id: 'cat-1',
+            variations: [
+              {
+                id: 'var-1',
+                name: 'Large',
+                price: new Prisma.Decimal(0),
+                pricingMode: 'PERCENTAGE_ADJUSTMENT',
+                adjustmentValue: new Prisma.Decimal(10),
+                modifierPriceOverrides: [],
+              },
+            ],
+          },
+          variations: [],
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+      },
+      address: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn().mockResolvedValue({
+          coupon: null,
+          discountAmount: new Prisma.Decimal(0),
+          eligibleSubtotal: new Prisma.Decimal(550),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(550),
+        }),
+      } as never,
+    );
+
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [{ menuItemId: 'menu-1', variationId: 'var-1', quantity: 1 }],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items[0].unitPrice).toBe(550);
+    expect(result.data.subtotal).toBe(550);
+  });
 });
 
 describe('OrdersService - branch address lookup', () => {

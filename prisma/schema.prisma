@@ -73,6 +73,12 @@ enum MenuItemPricingMode {
   MULTIPLE
 }
 
+enum VariationPricingMode {
+  FIXED
+  FLAT_ADJUSTMENT
+  PERCENTAGE_ADJUSTMENT
+}
+
 enum PaymentMethod {
   COD
   STRIPE
@@ -565,6 +571,8 @@ model MenuItemVariation {
   description String?
   sku         String?
   price       Decimal   @default(0) @db.Decimal(10, 2)
+  pricingMode VariationPricingMode @default(FIXED) @map("pricing_mode")
+  adjustmentValue Decimal? @map("adjustment_value") @db.Decimal(10, 2)
   sortOrder   Int       @default(0) @map("sort_order")
   isDefault   Boolean   @default(false) @map("is_default")
   isActive    Boolean   @default(true) @map("is_active")

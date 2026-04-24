@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderType, PaymentMethod, Prisma } from '@prisma/client';
+import {
+  OrderType,
+  PaymentMethod,
+  Prisma,
+  VariationPricingMode,
+} from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
   OrderTypeEnum,
@@ -723,10 +728,12 @@ export class CartService {
         );
         const branchOverride = menuItem?.branchOverrides?.[0];
         const baseUnitPrice =
-          selectedVariation?.price ??
-          branchOverride?.priceOverride ??
-          menuItem?.basePrice ??
-          null;
+          selectedVariation && menuItem
+            ? this.resolveVariationPrice(
+                selectedVariation,
+                branchOverride?.priceOverride ?? menuItem.basePrice,
+              )
+            : branchOverride?.priceOverride ?? menuItem?.basePrice ?? null;
         const unitPrice =
           baseUnitPrice === null || baseUnitPrice === undefined || !menuItem
             ? null
@@ -788,7 +795,20 @@ export class CartService {
                       id: selectedVariation.id,
                       name: selectedVariation.name,
                       description: selectedVariation.description ?? null,
-                      price: Number(selectedVariation.price),
+                      price: Number(
+                        this.resolveVariationPrice(
+                          selectedVariation,
+                          branchOverride?.priceOverride ?? menuItem.basePrice,
+                        ),
+                      ),
+                      pricingMode:
+                        selectedVariation.pricingMode ??
+                        VariationPricingMode.FIXED,
+                      adjustmentValue:
+                        selectedVariation.adjustmentValue !== undefined &&
+                        selectedVariation.adjustmentValue !== null
+                          ? Number(selectedVariation.adjustmentValue)
+                          : null,
                     }
                   : null,
                 modifierGroups: menuItem.modifierLinks.map((link) => ({
@@ -829,6 +849,29 @@ export class CartService {
 
   private async resolveMediaResponse<T>(data: T) {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
+  }
+
+  private resolveVariationPrice(
+    variation: {
+      price: Prisma.Decimal;
+      pricingMode?: VariationPricingMode;
+      adjustmentValue?: Prisma.Decimal | null;
+    },
+    basePrice: Prisma.Decimal,
+  ) {
+    if (variation.pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
+      return basePrice.plus(variation.adjustmentValue ?? new Prisma.Decimal(0));
+    }
+
+    if (
+      variation.pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT
+    ) {
+      return basePrice.plus(
+        basePrice.mul(variation.adjustmentValue ?? new Prisma.Decimal(0)).div(100),
+      );
+    }
+
+    return variation.price;
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {

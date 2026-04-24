@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, VariationPricingMode } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
@@ -49,7 +49,7 @@ export class MenuVariationService {
           name: dto.name,
           description: dto.description,
           sku: dto.sku,
-          price: new Prisma.Decimal(dto.price),
+          ...this.resolvePricingInput(dto),
           sortOrder: dto.sortOrder ?? 0,
           isDefault: dto.isDefault ?? false,
           isActive: dto.isActive ?? true,
@@ -115,8 +115,7 @@ export class MenuVariationService {
           name: dto.name,
           description: dto.description,
           sku: dto.sku,
-          price:
-            dto.price !== undefined ? new Prisma.Decimal(dto.price) : undefined,
+          ...this.resolvePricingInput(dto, variation),
           sortOrder: dto.sortOrder,
           isDefault: dto.isDefault,
           isActive: dto.isActive,
@@ -269,5 +268,53 @@ export class MenuVariationService {
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),
     });
+  }
+
+  private resolvePricingInput(
+    dto: CreateMenuVariationDto | UpdateMenuVariationDto,
+    existing?: {
+      price?: Prisma.Decimal;
+      pricingMode?: VariationPricingMode;
+      adjustmentValue?: Prisma.Decimal | null;
+    },
+  ) {
+    const pricingMode =
+      (dto.pricingMode as VariationPricingMode | undefined) ??
+      existing?.pricingMode ??
+      VariationPricingMode.FIXED;
+
+    if (pricingMode === VariationPricingMode.FIXED) {
+      const nextPrice = dto.price ?? existing?.price;
+
+      if (nextPrice === undefined) {
+        throw new BadRequestException(
+          'price is required when variation pricingMode is FIXED',
+        );
+      }
+
+      return {
+        pricingMode,
+        price: new Prisma.Decimal(nextPrice),
+        adjustmentValue: null,
+      };
+    }
+
+    const nextAdjustmentValue =
+      dto.adjustmentValue ?? existing?.adjustmentValue;
+
+    if (nextAdjustmentValue === undefined || nextAdjustmentValue === null) {
+      throw new BadRequestException(
+        'adjustmentValue is required for non-fixed variation pricing',
+      );
+    }
+
+    return {
+      pricingMode,
+      price:
+        dto.price !== undefined
+          ? new Prisma.Decimal(dto.price)
+          : (existing?.price ?? new Prisma.Decimal(0)),
+      adjustmentValue: new Prisma.Decimal(nextAdjustmentValue),
+    };
   }
 }
