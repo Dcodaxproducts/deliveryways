@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { UserRoleEnum } from '../../../common/enums';
 import { MenuVariationService } from './variation.service';
 
@@ -167,9 +168,14 @@ describe('MenuVariationService', () => {
     });
     prisma.modifier.count.mockResolvedValue(0);
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    variationRepository.create.mockResolvedValue({ id: 'variation-1' });
+    variationRepository.create.mockResolvedValue({
+      id: 'variation-1',
+      pricingMode: 'PERCENTAGE_ADJUSTMENT',
+      price: new Prisma.Decimal(100),
+      adjustmentValue: new Prisma.Decimal(10),
+    });
 
-    await service.create(
+    const result = await service.create(
       {
         uid: 'admin-1',
         tid: 'tenant-1',
@@ -190,6 +196,46 @@ describe('MenuVariationService', () => {
       }),
       expect.anything(),
     );
+    expect(result.data.price).toBeNull();
+  });
+
+  it('hides raw price for non-fixed variations in list responses', async () => {
+    const { service, variationRepository, prisma } = makeService();
+
+    prisma.menuCategory.findUnique.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    variationRepository.list.mockResolvedValue({
+      items: [
+        {
+          id: 'variation-1',
+          pricingMode: 'FLAT_ADJUSTMENT',
+          price: new Prisma.Decimal(100),
+          adjustmentValue: new Prisma.Decimal(50),
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        categoryId: 'category-1',
+        page: 1,
+        limit: 10,
+        sortBy: 'sortOrder',
+        sortOrder: 'asc',
+      },
+    );
+
+    expect(result.data[0].price).toBeNull();
   });
 
   it('blocks business admin variation write outside tenant restaurants', async () => {

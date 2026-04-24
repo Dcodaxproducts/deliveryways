@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, VariationPricingMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -1182,7 +1182,9 @@ export class CustomerAppService {
             imageUrl: await this.resolveMediaUrl(item.category.imageUrl),
           }
         : null,
-      variations: item.variations ?? item.category?.variations ?? [],
+      variations: this.normalizeVariations(
+        item.variations ?? item.category?.variations,
+      ),
       modifierGroups: (item.modifierLinks ?? []).map((link) => ({
         id: link.modifierGroup.id,
         name: link.modifierGroup.name,
@@ -1204,6 +1206,19 @@ export class CustomerAppService {
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
+  }
+
+  private normalizeVariations<T extends {
+    pricingMode?: VariationPricingMode | null;
+    price?: Prisma.Decimal | null;
+  }>(variations: T[] | undefined | null) {
+    return (variations ?? []).map((variation) => ({
+      ...variation,
+      price:
+        variation.pricingMode === VariationPricingMode.FIXED
+          ? variation.price ?? new Prisma.Decimal(0)
+          : null,
+    }));
   }
 
   private async resolveMediaUrl(value: string | null | undefined) {

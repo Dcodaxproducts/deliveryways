@@ -213,7 +213,20 @@ describe('CartService', () => {
         deliveryPriceAdjustment: 0,
         takeawayPriceAdjustment: 0,
         depositAmount: 0,
-        category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+        category: {
+          id: 'cat-1',
+          name: 'Burgers',
+          imageUrl: null,
+          variations: [
+            {
+              id: 'var-1',
+              name: 'Large',
+              price: new Prisma.Decimal(100),
+              pricingMode: 'PERCENTAGE_ADJUSTMENT',
+              adjustmentValue: new Prisma.Decimal(10),
+            },
+          ],
+        },
         variations: [
           {
             id: 'var-1',
@@ -241,11 +254,13 @@ describe('CartService', () => {
       menuItem: {
         unitPrice: number | null;
         selectedVariation: { price: number; adjustmentValue: number | null } | null;
+        category: { variations: Array<{ price: number | null }> };
       } | null;
     };
     expect(firstItem.menuItem?.unitPrice).toBe(550);
     expect(firstItem.menuItem?.selectedVariation?.price).toBe(550);
     expect(firstItem.menuItem?.selectedVariation?.adjustmentValue).toBe(10);
+    expect(firstItem.menuItem?.category.variations[0].price).toBeNull();
   });
 
   it('requires customerId for business-admin cart access', async () => {

@@ -63,7 +63,10 @@ export class MenuVariationService {
         tx,
       );
 
-      return { data, message: 'Menu variation created successfully' };
+      return {
+        data: this.normalizeVariationResponse(data),
+        message: 'Menu variation created successfully',
+      };
     });
   }
 
@@ -79,7 +82,7 @@ export class MenuVariationService {
 
     const { items, total } = await this.variationRepository.list(query);
     return {
-      data: items,
+      data: items.map((item) => this.normalizeVariationResponse(item)),
       message: 'Menu variations fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -131,7 +134,10 @@ export class MenuVariationService {
         );
       }
 
-      return { data, message: 'Menu variation updated successfully' };
+      return {
+        data: this.normalizeVariationResponse(data),
+        message: 'Menu variation updated successfully',
+      };
     });
   }
 
@@ -151,7 +157,23 @@ export class MenuVariationService {
     await this.ensureRestaurantWriteAccess(user, category.restaurantId);
 
     const data = await this.variationRepository.softDelete(id);
-    return { data, message: 'Menu variation deleted successfully' };
+    return {
+      data: this.normalizeVariationResponse(data),
+      message: 'Menu variation deleted successfully',
+    };
+  }
+
+  private normalizeVariationResponse<T extends {
+    pricingMode?: VariationPricingMode | null;
+    price?: Prisma.Decimal | null;
+  }>(variation: T): T & { price: Prisma.Decimal | null } {
+    return {
+      ...variation,
+      price:
+        variation.pricingMode === VariationPricingMode.FIXED
+          ? (variation.price ?? new Prisma.Decimal(0))
+          : null,
+    };
   }
 
   private async ensureRestaurantWriteAccess(

@@ -687,7 +687,12 @@ export class RestaurantMenuService {
                   })),
                 }
               : null,
-          variations: item.menuItem.category?.variations ?? [],
+          variations: this.normalizeVariations(
+            item.menuItem.category?.variations as Array<{
+              pricingMode?: string | null;
+              price?: { toString(): string } | number | null;
+            }> | undefined,
+          ),
           modifierGroups: [
             ...(((
               item.menuItem.category as
@@ -788,5 +793,15 @@ export class RestaurantMenuService {
         },
       })),
     };
+  }
+
+  private normalizeVariations<T extends {
+    pricingMode?: string | null;
+    price?: { toString(): string } | number | null;
+  }>(variations: T[] | undefined | null) {
+    return (variations ?? []).map((variation) => ({
+      ...variation,
+      price: variation.pricingMode === 'FIXED' ? variation.price ?? 0 : null,
+    }));
   }
 }

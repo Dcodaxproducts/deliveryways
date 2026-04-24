@@ -756,7 +756,14 @@ export class CartService {
                 slug: menuItem.slug,
                 description: menuItem.description,
                 imageUrl: menuItem.imageUrl,
-                category: menuItem.category,
+                category: menuItem.category
+                  ? {
+                      ...menuItem.category,
+                      variations: this.normalizeVariations(
+                        menuItem.category.variations,
+                      ),
+                    }
+                  : null,
                 isAvailable: branchOverride?.isAvailable ?? true,
                 pricingMode: menuItem.pricingMode,
                 unitPrice: unitPrice ? Number(unitPrice) : unitPrice,
@@ -849,6 +856,19 @@ export class CartService {
 
   private async resolveMediaResponse<T>(data: T) {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
+  }
+
+  private normalizeVariations<T extends {
+    pricingMode?: VariationPricingMode | null;
+    price?: Prisma.Decimal | null;
+  }>(variations: T[] | undefined | null) {
+    return (variations ?? []).map((variation) => ({
+      ...variation,
+      price:
+        variation.pricingMode === VariationPricingMode.FIXED
+          ? variation.price ?? new Prisma.Decimal(0)
+          : null,
+    }));
   }
 
   private resolveVariationPrice(
