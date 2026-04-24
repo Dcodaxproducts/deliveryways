@@ -45,12 +45,17 @@ describe('RestaurantMenuService', () => {
       $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
     };
 
+    const storageService = {
+      resolveMediaUrlsDeep: jest.fn(async (data) => data),
+    };
+
     const service = new RestaurantMenuService(
       restaurantMenuRepository as never,
       prisma as never,
+      storageService as never,
     );
 
-    return { service, restaurantMenuRepository, prisma };
+    return { service, restaurantMenuRepository, prisma, storageService };
   };
 
   it('creates a timed menu with category links', async () => {
@@ -158,7 +163,7 @@ describe('RestaurantMenuService', () => {
   });
 
   it('lists effective menu items resolved from direct and category links', async () => {
-    const { service, restaurantMenuRepository } = makeService();
+    const { service, restaurantMenuRepository, storageService } = makeService();
 
     restaurantMenuRepository.findById.mockResolvedValue({
       id: 'menu-1',
@@ -170,6 +175,7 @@ describe('RestaurantMenuService', () => {
         {
           id: 'item-1',
           name: 'Burger',
+          imageUrl: 'burger.png',
           menuResolution: { source: 'DIRECT_AND_CATEGORY' },
         },
       ],
@@ -196,6 +202,9 @@ describe('RestaurantMenuService', () => {
       'menu-1',
       expect.objectContaining({ categoryId: 'category-1' }),
     );
+    expect(storageService.resolveMediaUrlsDeep).toHaveBeenCalledWith([
+      expect.objectContaining({ imageUrl: 'burger.png' }),
+    ]);
     expect(result.data[0].menuResolution.source).toBe('DIRECT_AND_CATEGORY');
   });
 

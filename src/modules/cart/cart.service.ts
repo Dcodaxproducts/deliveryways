@@ -13,6 +13,7 @@ import {
 } from '../../common/enums';
 import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { ProfilesRepository } from '../profiles/profiles.repository';
+import { StorageService } from '../storage/storage.service';
 import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
 import {
@@ -74,6 +75,7 @@ export class CartService {
     private readonly cartRepository: CartRepository,
     private readonly ordersService: OrdersService,
     private readonly profilesRepository: ProfilesRepository,
+    private readonly storageService?: StorageService,
   ) {}
 
   async getCart(
@@ -702,7 +704,7 @@ export class CartService {
     const effectiveDeliveryAddressId =
       cart.deliveryAddressId ?? defaultAddressId;
 
-    return {
+    return this.resolveMediaResponse({
       id: cart.id,
       restaurantId: cart.restaurantId,
       branchId: cart.branchId,
@@ -822,7 +824,11 @@ export class CartService {
       }),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
-    };
+    });
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {

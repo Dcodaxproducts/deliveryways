@@ -8,6 +8,7 @@ import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
 import { PrismaService } from '../../../database';
+import { StorageService } from '../../storage/storage.service';
 import {
   AttachRestaurantMenuItemDto,
   CreateRestaurantMenuDto,
@@ -23,6 +24,7 @@ export class RestaurantMenuService {
   constructor(
     private readonly restaurantMenuRepository: RestaurantMenuRepository,
     private readonly prisma: PrismaService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateRestaurantMenuDto) {
@@ -58,7 +60,9 @@ export class RestaurantMenuService {
     const menu = await this.restaurantMenuRepository.findById(data.id);
 
     return {
-      data: menu ?? data,
+      data: await this.resolveMediaResponse(
+        this.attachCategoryVariations(menu ?? data),
+      ),
       message: 'Restaurant menu created successfully',
     };
   }
@@ -75,7 +79,9 @@ export class RestaurantMenuService {
     );
 
     return {
-      data: items.map((item) => this.attachCategoryVariations(item)),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.attachCategoryVariations(item)),
+      ),
       message: 'Restaurant menus fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -90,7 +96,7 @@ export class RestaurantMenuService {
     await this.ensureCanReadRestaurant(user, menu.restaurantId);
 
     return {
-      data: this.attachCategoryVariations(menu),
+      data: await this.resolveMediaResponse(this.attachCategoryVariations(menu)),
       message: 'Restaurant menu fetched successfully',
     };
   }
@@ -134,7 +140,9 @@ export class RestaurantMenuService {
     const updatedMenu = await this.restaurantMenuRepository.findById(id);
 
     return {
-      data: updatedMenu ?? data,
+      data: await this.resolveMediaResponse(
+        this.attachCategoryVariations(updatedMenu ?? data),
+      ),
       message: 'Restaurant menu updated successfully',
     };
   }
@@ -193,10 +201,14 @@ export class RestaurantMenuService {
     );
 
     return {
-      data: items,
+      data: await this.resolveMediaResponse(items),
       message: 'Restaurant menu items fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
+  }
+
+  private async resolveMediaResponse<T>(data: T) {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   async updateItem(
@@ -625,22 +637,21 @@ export class RestaurantMenuService {
     }
   }
 
-  private attachCategoryVariations<
-    T extends {
-      items?: Array<{
-        menuItem: Record<string, unknown> & {
-          category?: { variations?: unknown[] };
-        };
-      }>;
-    },
-  >(menu: T): T {
+  private attachCategoryVariations<T extends Record<string, unknown>>(menu: T): T {
     if (!menu.items) {
       return menu;
     }
 
     return {
       ...menu,
-      items: menu.items.map((item) => ({
+      items: (menu.items as Array<{
+        menuItem: Record<string, unknown> & {
+          category?: { variations?: unknown[] };
+          dietaryFlags?: unknown;
+          modifierLinks?: unknown;
+          id?: string;
+        };
+      }>).map((item) => ({
         ...item,
         menuItem: {
           ...item.menuItem,

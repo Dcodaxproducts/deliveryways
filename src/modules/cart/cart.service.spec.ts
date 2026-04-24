@@ -40,13 +40,24 @@ describe('CartService', () => {
       findByUserId: jest.fn(),
     };
 
+    const storageService = {
+      resolveMediaUrlsDeep: jest.fn(async (data) => data),
+    };
+
     const service = new CartService(
       cartRepository as never,
       ordersService as never,
       profilesRepository as never,
+      storageService as never,
     );
 
-    return { service, cartRepository, ordersService, profilesRepository };
+    return {
+      service,
+      cartRepository,
+      ordersService,
+      profilesRepository,
+      storageService,
+    };
   };
 
   it('returns an empty cart when customer cart does not exist', async () => {
@@ -72,8 +83,13 @@ describe('CartService', () => {
   });
 
   it('returns populated cart item details and selected address state', async () => {
-    const { service, cartRepository, profilesRepository, ordersService } =
-      makeService();
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      storageService,
+    } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
       tenantId: 'tenant-1',
@@ -145,6 +161,15 @@ describe('CartService', () => {
     expect(result.data).not.toHaveProperty('defaultAddressId');
     expect(result.data).not.toHaveProperty('tenantId');
     expect(result.data.couponCode).toBe('SAVE10');
+    expect(storageService.resolveMediaUrlsDeep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            menuItem: expect.objectContaining({ imageUrl: 'burger.png' }),
+          }),
+        ],
+      }),
+    );
     expect(ordersService.quote).not.toHaveBeenCalled();
   });
 
