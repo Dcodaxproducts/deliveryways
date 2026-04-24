@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import {
   AddressRefType,
   OrderStatus,
@@ -168,6 +169,10 @@ export class OrdersService {
           totalAmount: quote.totalAmount,
           paymentStatus: initialPaymentStatus,
           paidAt: processedAt,
+          deliveryOtp:
+            dto.orderType === OrderTypeEnum.DELIVERY
+              ? this.generateDeliveryOtp()
+              : undefined,
           customerNote: dto.customerNote,
           items: {
             create: quote.lines.map((line) => ({
@@ -296,7 +301,7 @@ export class OrdersService {
 
     return {
       data: await this.resolveMediaResponse(
-        await this.toOrderDetailsResponse(order),
+        await this.toOrderDetailsResponse(order, user.role !== 'DELIVERYMAN'),
       ),
       message: 'Order fetched successfully',
     };
@@ -348,6 +353,8 @@ export class OrdersService {
     ) {
       throw new BadRequestException('Invalid order status transition');
     }
+
+    this.assertDeliveryOtpForCompletion(order, dto);
 
     const data = await this.ordersRepository.updateStatus(id, dto.status);
 
@@ -1278,6 +1285,7 @@ export class OrdersService {
   private toOrderMutationResponse<
     T extends {
       tenantId?: string | null;
+      deliveryOtp?: string | null;
       subtotal?: Prisma.Decimal;
       taxAmount?: Prisma.Decimal;
       deliveryFee?: Prisma.Decimal;
@@ -1286,9 +1294,13 @@ export class OrdersService {
       walletAppliedAmount?: Prisma.Decimal;
       totalAmount?: Prisma.Decimal;
     },
-  >(order: T): Omit<T, 'tenantId'> & { payableAmount?: number } {
-    const rest = { ...order } as T & { tenantId?: string | null };
+  >(order: T): Omit<T, 'tenantId' | 'deliveryOtp'> & { payableAmount?: number } {
+    const rest = { ...order } as T & {
+      tenantId?: string | null;
+      deliveryOtp?: string | null;
+    };
     delete rest.tenantId;
+    delete rest.deliveryOtp;
 
     const payableAmount = rest.totalAmount;
     if (
@@ -1484,6 +1496,7 @@ export class OrdersService {
     couponId: string | null;
     deliveryAddressId: string | null;
     deliverymanId: string | null;
+    deliveryOtp: string | null;
     orderType: OrderType;
     paymentMethod: string;
     orderTime?: Date | null;
@@ -1613,7 +1626,7 @@ export class OrdersService {
         category: { id: string; name: string; imageUrl: string | null };
       };
     }>;
-  }) {
+  }, includeDeliveryOtp = false) {
     const groupParticipants = await this.toGroupOrderParticipantsWithItems(
       order.sourceGroupOrder,
       order.branchId,
@@ -1627,6 +1640,7 @@ export class OrdersService {
       couponId: order.couponId,
       deliveryAddressId: order.deliveryAddressId,
       deliverymanId: order.deliverymanId,
+      deliveryOtp: includeDeliveryOtp ? order.deliveryOtp : null,
       orderType: order.orderType,
       paymentMethod: order.paymentMethod,
       orderTime: order.orderTime ?? null,
@@ -2387,6 +2401,41 @@ export class OrdersService {
     );
   }
 
+  private assertDeliveryOtpForCompletion(
+    order: {
+      orderType: OrderType;
+      status: OrderStatus;
+      deliveryOtp?: string | null;
+    },
+    dto: UpdateOrderStatusDto,
+  ) {
+    if (
+      order.orderType !== OrderType.DELIVERY ||
+      order.status !== OrderStatus.OUT_FOR_DELIVERY ||
+      dto.status !== OrderStatus.DELIVERED
+    ) {
+      return;
+    }
+
+    const expectedOtp = order.deliveryOtp?.trim();
+    if (!expectedOtp) {
+      throw new BadRequestException(
+        'Delivery OTP is not configured for this order',
+      );
+    }
+
+    const providedOtp = dto.deliveryOtp?.trim();
+    if (!providedOtp) {
+      throw new BadRequestException(
+        'deliveryOtp is required to complete delivery',
+      );
+    }
+
+    if (providedOtp !== expectedOtp) {
+      throw new BadRequestException('Invalid delivery OTP');
+    }
+  }
+
   private getPreparingTransitions(orderType: OrderType): OrderStatus[] {
     if (orderType === OrderType.TAKEAWAY) {
       return [OrderStatus.READY_FOR_PICKUP, OrderStatus.CANCELLED];
@@ -2631,6 +2680,10 @@ export class OrdersService {
         'Delivery address is outside branch delivery radius',
       );
     }
+  }
+
+  private generateDeliveryOtp(): string {
+    return randomInt(100000, 1000000).toString();
   }
 
   private calculateDistanceKm(

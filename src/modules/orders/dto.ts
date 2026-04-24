@@ -190,6 +190,14 @@ export class UpdateOrderStatusDto {
   @ApiProperty({ enum: OrderStatus })
   @IsEnum(OrderStatus)
   status!: OrderStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'Required when marking a delivery order as DELIVERED after out-for-delivery.',
+  })
+  @IsOptional()
+  @IsString()
+  deliveryOtp?: string;
 }
 
 export class CancelOrderDto {

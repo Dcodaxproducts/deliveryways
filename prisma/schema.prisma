@@ -1029,6 +1029,7 @@ model Order {
   paidAt                DateTime?     @map("paid_at") @db.Timestamptz
   assignedAt            DateTime?     @map("assigned_at") @db.Timestamptz
   deliveredAt           DateTime?     @map("delivered_at") @db.Timestamptz
+  deliveryOtp           String?       @map("delivery_otp") @db.VarChar(10)
   customerNote          String?       @map("customer_note")
   cancelledAt           DateTime?     @map("cancelled_at") @db.Timestamptz
   cancelledByUserId     String?       @map("cancelled_by_user_id")

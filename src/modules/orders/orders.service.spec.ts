@@ -309,12 +309,13 @@ describe('OrdersService - deliveryman order access', () => {
     ).rejects.toThrow('Cross-deliveryman access denied');
   });
 
-  it('allows deliveryman to mark assigned out-for-delivery order as delivered', async () => {
+  it('allows deliveryman to mark assigned out-for-delivery order as delivered with valid otp', async () => {
     ordersRepository.findById.mockResolvedValue({
       id: 'order-1',
       restaurantId: 'restaurant-1',
       customerId: 'customer-1',
       deliverymanId: 'dm-1',
+      deliveryOtp: '123456',
       orderType: 'DELIVERY',
       status: 'OUT_FOR_DELIVERY',
     });
@@ -325,6 +326,7 @@ describe('OrdersService - deliveryman order access', () => {
       restaurantId: 'restaurant-1',
       customerId: 'customer-1',
       deliverymanId: 'dm-1',
+      deliveryOtp: '123456',
     });
 
     Object.assign(service as object, {
@@ -336,6 +338,7 @@ describe('OrdersService - deliveryman order access', () => {
       'order-1',
       {
         status: 'DELIVERED',
+        deliveryOtp: '123456',
       } as never,
     );
 
@@ -344,6 +347,43 @@ describe('OrdersService - deliveryman order access', () => {
       'DELIVERED',
     );
     expect(result.message).toBe('Order status updated successfully');
+  });
+
+  it('requires delivery otp before completing a delivery order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+      deliveryOtp: '123456',
+      orderType: 'DELIVERY',
+      status: 'OUT_FOR_DELIVERY',
+    });
+
+    await expect(
+      service.updateStatus(deliverymanUser as never, 'order-1', {
+        status: 'DELIVERED',
+      } as never),
+    ).rejects.toThrow('deliveryOtp is required to complete delivery');
+  });
+
+  it('rejects wrong delivery otp before completing a delivery order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+      deliveryOtp: '123456',
+      orderType: 'DELIVERY',
+      status: 'OUT_FOR_DELIVERY',
+    });
+
+    await expect(
+      service.updateStatus(deliverymanUser as never, 'order-1', {
+        status: 'DELIVERED',
+        deliveryOtp: '000000',
+      } as never),
+    ).rejects.toThrow('Invalid delivery OTP');
   });
 
   it('blocks deliveryman from updating another deliveryman assigned order', async () => {
@@ -1440,6 +1480,7 @@ describe('OrdersService - wallet payment', () => {
       expect.objectContaining({
         paymentMethod: PaymentMethod.WALLET,
         paymentStatus: PaymentStatus.PAID,
+        deliveryOtp: expect.stringMatching(/^\d{6}$/),
       }),
       expect.anything(),
     );
@@ -1467,6 +1508,49 @@ describe('OrdersService - wallet payment', () => {
       undefined,
       'customer-1',
     );
+  });
+
+  it('strips delivery otp from generic mutation responses', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const response = (
+      service as unknown as {
+        toOrderMutationResponse: (order: {
+          id: string;
+          tenantId: string;
+          deliveryOtp: string;
+          subtotal: Prisma.Decimal;
+          taxAmount: Prisma.Decimal;
+          deliveryFee: Prisma.Decimal;
+          discountAmount: Prisma.Decimal;
+          loyaltyDiscountAmount: Prisma.Decimal;
+          walletAppliedAmount: Prisma.Decimal;
+          totalAmount: Prisma.Decimal;
+        }) => Record<string, unknown>;
+      }
+    ).toOrderMutationResponse({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      deliveryOtp: '123456',
+      subtotal: new Prisma.Decimal(500),
+      taxAmount: new Prisma.Decimal(0),
+      deliveryFee: new Prisma.Decimal(50),
+      discountAmount: new Prisma.Decimal(0),
+      loyaltyDiscountAmount: new Prisma.Decimal(0),
+      walletAppliedAmount: new Prisma.Decimal(0),
+      totalAmount: new Prisma.Decimal(550),
+    });
+
+    expect(response).not.toHaveProperty('tenantId');
+    expect(response).not.toHaveProperty('deliveryOtp');
+    expect(response.payableAmount).toBe(550);
   });
 
   it('rejects wallet payment when wallet balance is insufficient', async () => {
