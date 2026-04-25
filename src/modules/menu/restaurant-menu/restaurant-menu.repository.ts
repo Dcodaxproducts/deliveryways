@@ -45,6 +45,9 @@ export class RestaurantMenuRepository {
                     },
                     variations: {
                       where: { deletedAt: null, isActive: true },
+                      include: {
+                        itemPriceOverrides: true,
+                      },
                       orderBy: { sortOrder: 'asc' },
                     },
                     modifierLinks: {
@@ -183,6 +186,9 @@ export class RestaurantMenuRepository {
                       },
                       variations: {
                         where: { deletedAt: null, isActive: true },
+                        include: {
+                          itemPriceOverrides: true,
+                        },
                         orderBy: { sortOrder: 'asc' },
                       },
                       modifierLinks: {
@@ -442,6 +448,9 @@ export class RestaurantMenuRepository {
                 where: {
                   deletedAt: null,
                   ...(query.includeInactive ? {} : { isActive: true }),
+                },
+                include: {
+                  itemPriceOverrides: true,
                 },
                 orderBy: { sortOrder: 'asc' },
               },

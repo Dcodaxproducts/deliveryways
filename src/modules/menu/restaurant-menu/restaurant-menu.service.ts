@@ -96,7 +96,9 @@ export class RestaurantMenuService {
     await this.ensureCanReadRestaurant(user, menu.restaurantId);
 
     return {
-      data: await this.resolveMediaResponse(this.attachCategoryVariations(menu)),
+      data: await this.resolveMediaResponse(
+        this.attachCategoryVariations(menu),
+      ),
       message: 'Restaurant menu fetched successfully',
     };
   }
@@ -637,21 +639,25 @@ export class RestaurantMenuService {
     }
   }
 
-  private attachCategoryVariations<T extends Record<string, unknown>>(menu: T): T {
+  private attachCategoryVariations<T extends Record<string, unknown>>(
+    menu: T,
+  ): T {
     if (!menu.items) {
       return menu;
     }
 
     return {
       ...menu,
-      items: (menu.items as Array<{
-        menuItem: Record<string, unknown> & {
-          category?: { variations?: unknown[] };
-          dietaryFlags?: unknown;
-          modifierLinks?: unknown;
-          id?: string;
-        };
-      }>).map((item) => ({
+      items: (
+        menu.items as Array<{
+          menuItem: Record<string, unknown> & {
+            category?: { variations?: unknown[] };
+            dietaryFlags?: unknown;
+            modifierLinks?: unknown;
+            id?: string;
+          };
+        }>
+      ).map((item) => ({
         ...item,
         menuItem: {
           ...item.menuItem,
@@ -688,10 +694,20 @@ export class RestaurantMenuService {
                 }
               : null,
           variations: this.normalizeVariations(
-            item.menuItem.category?.variations as Array<{
-              pricingMode?: string | null;
-              price?: { toString(): string } | number | null;
-            }> | undefined,
+            item.menuItem.category?.variations as
+              | Array<{
+                  pricingMode?: string | null;
+                  price?: { toString(): string } | number | null;
+                  adjustmentValue?: { toString(): string } | number | null;
+                  itemPriceOverrides?: Array<{
+                    menuItemId: string;
+                    pricingMode: string;
+                    price: { toString(): string } | number;
+                    adjustmentValue?: { toString(): string } | number | null;
+                  }>;
+                }>
+              | undefined,
+            item.menuItem.id,
           ),
           modifierGroups: [
             ...(((
@@ -795,13 +811,39 @@ export class RestaurantMenuService {
     };
   }
 
-  private normalizeVariations<T extends {
-    pricingMode?: string | null;
-    price?: { toString(): string } | number | null;
-  }>(variations: T[] | undefined | null) {
+  private normalizeVariations<
+    T extends {
+      pricingMode?: string | null;
+      price?: { toString(): string } | number | null;
+      adjustmentValue?: { toString(): string } | number | null;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: string;
+        price: { toString(): string } | number;
+        adjustmentValue?: { toString(): string } | number | null;
+      }>;
+    },
+  >(variations: T[] | undefined | null, menuItemId?: string) {
     return (variations ?? []).map((variation) => ({
       ...variation,
-      price: variation.pricingMode === 'FIXED' ? variation.price ?? 0 : null,
+      pricingMode:
+        variation.itemPriceOverrides?.find(
+          (itemOverride) => itemOverride.menuItemId === menuItemId,
+        )?.pricingMode ?? variation.pricingMode,
+      price:
+        (variation.itemPriceOverrides?.find(
+          (itemOverride) => itemOverride.menuItemId === menuItemId,
+        )?.pricingMode ?? variation.pricingMode) === 'FIXED'
+          ? (variation.itemPriceOverrides?.find(
+              (itemOverride) => itemOverride.menuItemId === menuItemId,
+            )?.price ??
+            variation.price ??
+            0)
+          : null,
+      adjustmentValue:
+        variation.itemPriceOverrides?.find(
+          (itemOverride) => itemOverride.menuItemId === menuItemId,
+        )?.adjustmentValue ?? variation.adjustmentValue,
     }));
   }
 }

@@ -25,6 +25,12 @@ describe('MenuVariationService', () => {
               deleteMany: jest.fn(),
               createMany: jest.fn(),
             },
+            menuItem: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            menuItemVariationPriceOverride: {
+              createMany: jest.fn(),
+            },
           }),
         ),
       ),
@@ -96,6 +102,12 @@ describe('MenuVariationService', () => {
             menuVariationModifierPriceOverride: {
               deleteMany,
               createMany,
+            },
+            menuItem: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            menuItemVariationPriceOverride: {
+              createMany: jest.fn(),
             },
           }),
         ),
@@ -189,13 +201,18 @@ describe('MenuVariationService', () => {
       },
     );
 
-    expect(variationRepository.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pricingMode: 'PERCENTAGE_ADJUSTMENT',
-        adjustmentValue: expect.anything(),
-      }),
-      expect.anything(),
-    );
+    const createCalls = variationRepository.create.mock.calls as Array<
+      [
+        {
+          pricingMode: string;
+          adjustmentValue: Prisma.Decimal;
+        },
+      ]
+    >;
+    const [createInput] = createCalls[0];
+
+    expect(createInput.pricingMode).toBe('PERCENTAGE_ADJUSTMENT');
+    expect(createInput.adjustmentValue).toBeInstanceOf(Prisma.Decimal);
     expect(result.data.price).toBeNull();
   });
 

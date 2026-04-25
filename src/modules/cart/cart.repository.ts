@@ -198,6 +198,7 @@ export class CartRepository {
               },
               include: {
                 modifierPriceOverrides: true,
+                itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
@@ -336,6 +337,7 @@ export class CartRepository {
               },
               include: {
                 modifierPriceOverrides: true,
+                itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },

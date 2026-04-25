@@ -732,8 +732,9 @@ export class CartService {
             ? this.resolveVariationPrice(
                 selectedVariation,
                 branchOverride?.priceOverride ?? menuItem.basePrice,
+                menuItem.id,
               )
-            : branchOverride?.priceOverride ?? menuItem?.basePrice ?? null;
+            : (branchOverride?.priceOverride ?? menuItem?.basePrice ?? null);
         const unitPrice =
           baseUnitPrice === null || baseUnitPrice === undefined || !menuItem
             ? null
@@ -761,6 +762,7 @@ export class CartService {
                       ...menuItem.category,
                       variations: this.normalizeVariations(
                         menuItem.category.variations,
+                        menuItem.id,
                       ),
                     }
                   : null,
@@ -806,6 +808,7 @@ export class CartService {
                         this.resolveVariationPrice(
                           selectedVariation,
                           branchOverride?.priceOverride ?? menuItem.basePrice,
+                          menuItem.id,
                         ),
                       ),
                       pricingMode:
@@ -858,17 +861,35 @@ export class CartService {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
-  private normalizeVariations<T extends {
-    pricingMode?: VariationPricingMode | null;
-    price?: Prisma.Decimal | null;
-  }>(variations: T[] | undefined | null) {
-    return (variations ?? []).map((variation) => ({
-      ...variation,
-      price:
-        variation.pricingMode === VariationPricingMode.FIXED
-          ? variation.price ?? new Prisma.Decimal(0)
-          : null,
-    }));
+  private normalizeVariations<
+    T extends {
+      pricingMode?: VariationPricingMode | null;
+      price?: Prisma.Decimal | null;
+      adjustmentValue?: Prisma.Decimal | null;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: VariationPricingMode;
+        price: Prisma.Decimal;
+        adjustmentValue: Prisma.Decimal | null;
+      }>;
+    },
+  >(variations: T[] | undefined | null, menuItemId?: string) {
+    return (variations ?? []).map((variation) => {
+      const override = variation.itemPriceOverrides?.find(
+        (itemOverride) => itemOverride.menuItemId === menuItemId,
+      );
+      const pricingMode = override?.pricingMode ?? variation.pricingMode;
+
+      return {
+        ...variation,
+        pricingMode,
+        price:
+          pricingMode === VariationPricingMode.FIXED
+            ? (override?.price ?? variation.price ?? new Prisma.Decimal(0))
+            : null,
+        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
+      };
+    });
   }
 
   private resolveVariationPrice(
@@ -876,22 +897,34 @@ export class CartService {
       price: Prisma.Decimal;
       pricingMode?: VariationPricingMode;
       adjustmentValue?: Prisma.Decimal | null;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: VariationPricingMode;
+        price: Prisma.Decimal;
+        adjustmentValue: Prisma.Decimal | null;
+      }>;
     },
     basePrice: Prisma.Decimal,
+    menuItemId?: string,
   ) {
-    if (variation.pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
-      return basePrice.plus(variation.adjustmentValue ?? new Prisma.Decimal(0));
+    const override = variation.itemPriceOverrides?.find(
+      (itemOverride) => itemOverride.menuItemId === menuItemId,
+    );
+    const pricingMode = override?.pricingMode ?? variation.pricingMode;
+    const adjustmentValue =
+      override?.adjustmentValue ??
+      variation.adjustmentValue ??
+      new Prisma.Decimal(0);
+
+    if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
+      return basePrice.plus(adjustmentValue);
     }
 
-    if (
-      variation.pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT
-    ) {
-      return basePrice.plus(
-        basePrice.mul(variation.adjustmentValue ?? new Prisma.Decimal(0)).div(100),
-      );
+    if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
+      return basePrice.plus(basePrice.mul(adjustmentValue).div(100));
     }
 
-    return variation.price;
+    return override?.price ?? variation.price;
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {

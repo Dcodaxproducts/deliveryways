@@ -1121,6 +1121,14 @@ export class CustomerAppService {
         description: string | null;
         price: Prisma.Decimal;
         isDefault: boolean;
+        pricingMode?: VariationPricingMode | null;
+        adjustmentValue?: Prisma.Decimal | null;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          pricingMode: VariationPricingMode;
+          price: Prisma.Decimal;
+          adjustmentValue: Prisma.Decimal | null;
+        }>;
       }>;
     };
     variations?: Array<{
@@ -1129,6 +1137,14 @@ export class CustomerAppService {
       description: string | null;
       price: Prisma.Decimal;
       isDefault: boolean;
+      pricingMode?: VariationPricingMode | null;
+      adjustmentValue?: Prisma.Decimal | null;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: VariationPricingMode;
+        price: Prisma.Decimal;
+        adjustmentValue: Prisma.Decimal | null;
+      }>;
     }>;
     modifierLinks?: Array<{
       sortOrder: number;
@@ -1184,6 +1200,7 @@ export class CustomerAppService {
         : null,
       variations: this.normalizeVariations(
         item.variations ?? item.category?.variations,
+        item.id,
       ),
       modifierGroups: (item.modifierLinks ?? []).map((link) => ({
         id: link.modifierGroup.id,
@@ -1208,16 +1225,39 @@ export class CustomerAppService {
     };
   }
 
-  private normalizeVariations<T extends {
-    pricingMode?: VariationPricingMode | null;
-    price?: Prisma.Decimal | null;
-  }>(variations: T[] | undefined | null) {
+  private normalizeVariations<
+    T extends {
+      pricingMode?: VariationPricingMode | null;
+      price?: Prisma.Decimal | null;
+      adjustmentValue?: Prisma.Decimal | null;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: VariationPricingMode;
+        price: Prisma.Decimal;
+        adjustmentValue: Prisma.Decimal | null;
+      }>;
+    },
+  >(variations: T[] | undefined | null, menuItemId?: string) {
     return (variations ?? []).map((variation) => ({
       ...variation,
+      pricingMode:
+        variation.itemPriceOverrides?.find(
+          (itemOverride) => itemOverride.menuItemId === menuItemId,
+        )?.pricingMode ?? variation.pricingMode,
       price:
-        variation.pricingMode === VariationPricingMode.FIXED
-          ? variation.price ?? new Prisma.Decimal(0)
+        (variation.itemPriceOverrides?.find(
+          (itemOverride) => itemOverride.menuItemId === menuItemId,
+        )?.pricingMode ?? variation.pricingMode) === VariationPricingMode.FIXED
+          ? (variation.itemPriceOverrides?.find(
+              (itemOverride) => itemOverride.menuItemId === menuItemId,
+            )?.price ??
+            variation.price ??
+            new Prisma.Decimal(0))
           : null,
+      adjustmentValue:
+        variation.itemPriceOverrides?.find(
+          (itemOverride) => itemOverride.menuItemId === menuItemId,
+        )?.adjustmentValue ?? variation.adjustmentValue,
     }));
   }
 

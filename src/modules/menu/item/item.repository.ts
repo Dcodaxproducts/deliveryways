@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, VariationPricingMode } from '@prisma/client';
 import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
 import { ListMenuItemsDto } from './dto';
@@ -137,6 +137,7 @@ export class MenuItemRepository {
                 },
                 include: {
                   modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
                 },
                 orderBy: { sortOrder: 'asc' },
               },
@@ -225,16 +226,55 @@ export class MenuItemRepository {
     ]);
 
     return {
-      items: items.map((item) => ({
-        ...item,
-        variations: item.category.variations,
-        _count: {
-          ...item._count,
-          variations: item.category.variations.length,
-        },
-      })),
+      items: items.map((item) => {
+        const variations = this.resolveItemVariations(
+          item.id,
+          item.category.variations,
+        );
+
+        return {
+          ...item,
+          category: {
+            ...item.category,
+            variations,
+          },
+          variations,
+          _count: {
+            ...item._count,
+            variations: variations.length,
+          },
+        };
+      }),
       total,
     };
+  }
+
+  private resolveItemVariations(
+    menuItemId: string,
+    variations: Array<{
+      pricingMode?: VariationPricingMode | null;
+      price: Prisma.Decimal;
+      adjustmentValue?: Prisma.Decimal | null;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: VariationPricingMode;
+        price: Prisma.Decimal;
+        adjustmentValue: Prisma.Decimal | null;
+      }>;
+    }>,
+  ) {
+    return variations.map((variation) => {
+      const override = variation.itemPriceOverrides?.find(
+        (itemOverride) => itemOverride.menuItemId === menuItemId,
+      );
+
+      return {
+        ...variation,
+        pricingMode: override?.pricingMode ?? variation.pricingMode,
+        price: override?.price ?? variation.price,
+        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
+      };
+    });
   }
 
   async update(id: string, data: Prisma.MenuItemUpdateInput, tx?: PrismaTx) {

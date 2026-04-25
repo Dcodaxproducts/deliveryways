@@ -165,6 +165,7 @@ export class CustomerAppRepository {
                 where: { deletedAt: null, isActive: true },
                 include: {
                   modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
                 },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },
@@ -425,6 +426,7 @@ export class CustomerAppRepository {
                 where: { deletedAt: null, isActive: true },
                 include: {
                   modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
                 },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },

@@ -580,6 +580,7 @@ export class OrdersService {
                 where: { deletedAt: null, isActive: true },
                 include: {
                   modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
                 },
               },
             },
@@ -663,6 +664,7 @@ export class OrdersService {
           menuItemVariations,
           requestedItem.variationId,
           branchOverride?.priceOverride ?? menuItem.basePrice,
+          menuItem.id,
         ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       }
 
@@ -764,6 +766,9 @@ export class OrdersService {
                 id: true,
                 variations: {
                   where: { deletedAt: null, isActive: true },
+                  include: {
+                    itemPriceOverrides: true,
+                  },
                 },
               },
             },
@@ -1176,6 +1181,7 @@ export class OrdersService {
   private resolveOrderItemBasePrice(
     menuItem: {
       [key: string]: unknown;
+      id: string;
       basePrice: Prisma.Decimal;
       variations: Array<{
         id: string;
@@ -1196,9 +1202,16 @@ export class OrdersService {
           price: Prisma.Decimal;
           pricingMode?: VariationPricingMode;
           adjustmentValue?: Prisma.Decimal | null;
+          itemPriceOverrides?: Array<{
+            menuItemId: string;
+            pricingMode: VariationPricingMode;
+            price: Prisma.Decimal;
+            adjustmentValue: Prisma.Decimal | null;
+          }>;
         }>,
         variationId,
         branchPriceOverride ?? menuItem.basePrice,
+        menuItem.id,
       );
     }
 
@@ -1302,7 +1315,9 @@ export class OrdersService {
       walletAppliedAmount?: Prisma.Decimal;
       totalAmount?: Prisma.Decimal;
     },
-  >(order: T): Omit<T, 'tenantId' | 'deliveryOtp'> & { payableAmount?: number } {
+  >(
+    order: T,
+  ): Omit<T, 'tenantId' | 'deliveryOtp'> & { payableAmount?: number } {
     const rest = { ...order } as T & {
       tenantId?: string | null;
       deliveryOtp?: string | null;
@@ -1495,146 +1510,149 @@ export class OrdersService {
     };
   }
 
-  private async toOrderDetailsResponse(order: {
-    id: string;
-    tenantId: string;
-    restaurantId: string;
-    branchId: string;
-    customerId: string;
-    couponId: string | null;
-    deliveryAddressId: string | null;
-    deliverymanId: string | null;
-    deliveryOtp: string | null;
-    orderType: OrderType;
-    paymentMethod: string;
-    orderTime?: Date | null;
-    isScheduled?: boolean;
-    status: OrderStatus;
-    paymentStatus: PaymentStatus;
-    subtotal: Prisma.Decimal;
-    taxAmount: Prisma.Decimal;
-    deliveryFee: Prisma.Decimal;
-    discountAmount: Prisma.Decimal;
-    walletAppliedAmount: Prisma.Decimal;
-    loyaltyDiscountAmount: Prisma.Decimal;
-    totalAmount: Prisma.Decimal;
-    customerNote: string | null;
-    assignedAt: Date | null;
-    deliveredAt: Date | null;
-    paidAt: Date | null;
-    cancelledAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-    restaurant: {
+  private async toOrderDetailsResponse(
+    order: {
       id: string;
-      name: string;
-      slug: string;
-      logoUrl: string | null;
-      coverImage: string | null;
-    };
-    branch: {
-      id: string;
-      name: string;
-      logoUrl: string | null;
-      coverImage: string | null;
-    };
-    coupon: { id: string; code: string; title: string } | null;
-    customer: {
-      id: string;
-      email: string;
-      profile: {
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      customerId: string;
+      couponId: string | null;
+      deliveryAddressId: string | null;
+      deliverymanId: string | null;
+      deliveryOtp: string | null;
+      orderType: OrderType;
+      paymentMethod: string;
+      orderTime?: Date | null;
+      isScheduled?: boolean;
+      status: OrderStatus;
+      paymentStatus: PaymentStatus;
+      subtotal: Prisma.Decimal;
+      taxAmount: Prisma.Decimal;
+      deliveryFee: Prisma.Decimal;
+      discountAmount: Prisma.Decimal;
+      walletAppliedAmount: Prisma.Decimal;
+      loyaltyDiscountAmount: Prisma.Decimal;
+      totalAmount: Prisma.Decimal;
+      customerNote: string | null;
+      assignedAt: Date | null;
+      deliveredAt: Date | null;
+      paidAt: Date | null;
+      cancelledAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      restaurant: {
+        id: string;
+        name: string;
+        slug: string;
+        logoUrl: string | null;
+        coverImage: string | null;
+      };
+      branch: {
+        id: string;
+        name: string;
+        logoUrl: string | null;
+        coverImage: string | null;
+      };
+      coupon: { id: string; code: string; title: string } | null;
+      customer: {
+        id: string;
+        email: string;
+        profile: {
+          firstName: string;
+          lastName: string;
+          phone: string | null;
+          avatarUrl: string | null;
+        } | null;
+      };
+      deliveryAddress: {
+        id: string;
+        street: string;
+        area: string | null;
+        city: string;
+        state: string;
+        country: string;
+        lat: Prisma.Decimal | null;
+        lng: Prisma.Decimal | null;
+      } | null;
+      deliveryman: {
+        id: string;
         firstName: string;
         lastName: string;
-        phone: string | null;
-        avatarUrl: string | null;
-      } | null;
-    };
-    deliveryAddress: {
-      id: string;
-      street: string;
-      area: string | null;
-      city: string;
-      state: string;
-      country: string;
-      lat: Prisma.Decimal | null;
-      lng: Prisma.Decimal | null;
-    } | null;
-    deliveryman: {
-      id: string;
-      firstName: string;
-      lastName: string;
-      phone: string;
-      status: string;
-      vehicleType: string | null;
-      vehicleNumber: string | null;
-    } | null;
-    transactions: Array<{
-      id: string;
-      paymentMethod: string;
-      type: PaymentTransactionType;
-      status: PaymentStatus;
-      amount: Prisma.Decimal;
-      currency: string;
-      providerRef: string | null;
-      note: string | null;
-      processedAt: Date | null;
-      createdAt: Date;
-    }>;
-    sourceGroupOrder?: {
-      id: string;
-      inviteCode: string;
-      hostUserId: string;
-      status: string;
-      participants: Array<{
-        id: string;
-        userId: string;
-        isHost: boolean;
+        phone: string;
         status: string;
-        joinedAt: Date;
-        leftAt: Date | null;
-        user: {
-          id: string;
-          email: string;
-          isGuest: boolean;
-          profile: {
-            firstName: string;
-            lastName: string;
-            phone: string | null;
-            avatarUrl: string | null;
-          } | null;
-        };
+        vehicleType: string | null;
+        vehicleNumber: string | null;
+      } | null;
+      transactions: Array<{
+        id: string;
+        paymentMethod: string;
+        type: PaymentTransactionType;
+        status: PaymentStatus;
+        amount: Prisma.Decimal;
+        currency: string;
+        providerRef: string | null;
+        note: string | null;
+        processedAt: Date | null;
+        createdAt: Date;
       }>;
+      sourceGroupOrder?: {
+        id: string;
+        inviteCode: string;
+        hostUserId: string;
+        status: string;
+        participants: Array<{
+          id: string;
+          userId: string;
+          isHost: boolean;
+          status: string;
+          joinedAt: Date;
+          leftAt: Date | null;
+          user: {
+            id: string;
+            email: string;
+            isGuest: boolean;
+            profile: {
+              firstName: string;
+              lastName: string;
+              phone: string | null;
+              avatarUrl: string | null;
+            } | null;
+          };
+        }>;
+        items: Array<{
+          id: string;
+          participantId: string;
+          menuItemId: string;
+          variationId: string | null;
+          quantity: number;
+          note: string | null;
+          modifiers: Prisma.JsonValue | null;
+          createdAt: Date;
+          updatedAt: Date;
+        }>;
+      } | null;
       items: Array<{
         id: string;
-        participantId: string;
         menuItemId: string;
+        menuItemName: string;
         variationId: string | null;
+        variationName: string | null;
+        unitPrice: Prisma.Decimal;
         quantity: number;
+        lineTotal: Prisma.Decimal;
         note: string | null;
-        modifiers: Prisma.JsonValue | null;
-        createdAt: Date;
-        updatedAt: Date;
+        snapshotModifiers: Prisma.JsonValue | null;
+        menuItem: {
+          id: string;
+          slug: string;
+          imageUrl: string | null;
+          category: { id: string; name: string; imageUrl: string | null };
+        };
       }>;
-    } | null;
-    items: Array<{
-      id: string;
-      menuItemId: string;
-      menuItemName: string;
-      variationId: string | null;
-      variationName: string | null;
-      unitPrice: Prisma.Decimal;
-      quantity: number;
-      lineTotal: Prisma.Decimal;
-      note: string | null;
-      snapshotModifiers: Prisma.JsonValue | null;
-      menuItem: {
-        id: string;
-        slug: string;
-        imageUrl: string | null;
-        category: { id: string; name: string; imageUrl: string | null };
-      };
-    }>;
-  }, includeDeliveryOtp = false) {
+    },
+    includeDeliveryOtp = false,
+  ) {
     const groupParticipants = await this.toGroupOrderParticipantsWithItems(
       order.sourceGroupOrder,
       order.branchId,
@@ -2478,9 +2496,16 @@ export class OrdersService {
         modifierId: string;
         priceDelta: Prisma.Decimal;
       }[];
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pricingMode: VariationPricingMode;
+        price: Prisma.Decimal;
+        adjustmentValue: Prisma.Decimal | null;
+      }>;
     }[],
     variationId: string,
     basePrice: Prisma.Decimal,
+    menuItemId?: string,
   ) {
     const variation = variations.find((item) => item.id === variationId);
 
@@ -2488,19 +2513,24 @@ export class OrdersService {
       throw new BadRequestException('Variation not found');
     }
 
-    if (variation.pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
-      return basePrice.plus(variation.adjustmentValue ?? new Prisma.Decimal(0));
+    const override = variation.itemPriceOverrides?.find(
+      (item) => item.menuItemId === menuItemId,
+    );
+    const pricingMode = override?.pricingMode ?? variation.pricingMode;
+    const adjustmentValue =
+      override?.adjustmentValue ??
+      variation.adjustmentValue ??
+      new Prisma.Decimal(0);
+
+    if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
+      return basePrice.plus(adjustmentValue);
     }
 
-    if (
-      variation.pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT
-    ) {
-      return basePrice.plus(
-        basePrice.mul(variation.adjustmentValue ?? new Prisma.Decimal(0)).div(100),
-      );
+    if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
+      return basePrice.plus(basePrice.mul(adjustmentValue).div(100));
     }
 
-    return variation.price;
+    return override?.price ?? variation.price;
   }
 
   private findModifier(

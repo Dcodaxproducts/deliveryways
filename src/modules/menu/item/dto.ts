@@ -12,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
+import { VARIATION_PRICING_MODE_VALUES } from '../variation/dto';
 
 export const MENU_ITEM_PRICING_MODE_VALUES = ['SINGLE', 'MULTIPLE'] as const;
 
@@ -24,6 +25,35 @@ export class MenuItemModifierPriceOverrideDto {
   @Transform(({ value }) => Number(value))
   @IsNumber()
   priceDelta!: number;
+}
+
+export class MenuItemVariationPriceOverrideDto {
+  @ApiProperty()
+  @IsString()
+  variationId!: string;
+
+  @ApiPropertyOptional({
+    enum: VARIATION_PRICING_MODE_VALUES,
+    default: 'FIXED',
+  })
+  @IsOptional()
+  @IsIn(VARIATION_PRICING_MODE_VALUES)
+  pricingMode?: (typeof VARIATION_PRICING_MODE_VALUES)[number];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  price?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Used for FLAT_ADJUSTMENT and PERCENTAGE_ADJUSTMENT pricing modes.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  adjustmentValue?: number;
 }
 
 export class CreateMenuItemDto {
@@ -149,6 +179,13 @@ export class CreateMenuItemDto {
   @ValidateNested({ each: true })
   @Type(() => MenuItemModifierPriceOverrideDto)
   modifierPriceOverrides?: MenuItemModifierPriceOverrideDto[];
+
+  @ApiPropertyOptional({ type: [MenuItemVariationPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemVariationPriceOverrideDto)
+  variationPriceOverrides?: MenuItemVariationPriceOverrideDto[];
 }
 
 export class BulkCreateMenuItemsDto {
@@ -275,6 +312,13 @@ export class UpdateMenuItemDto {
   @ValidateNested({ each: true })
   @Type(() => MenuItemModifierPriceOverrideDto)
   modifierPriceOverrides?: MenuItemModifierPriceOverrideDto[];
+
+  @ApiPropertyOptional({ type: [MenuItemVariationPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemVariationPriceOverrideDto)
+  variationPriceOverrides?: MenuItemVariationPriceOverrideDto[];
 }
 
 export class ListMenuItemsDto extends QueryDto {

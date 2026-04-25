@@ -62,6 +62,16 @@ export class MenuVariationService {
         dto.modifierPriceOverrides,
         tx,
       );
+      await this.seedItemPriceOverridesForVariation(
+        data.id,
+        dto.categoryId,
+        {
+          pricingMode: data.pricingMode,
+          price: data.price ?? new Prisma.Decimal(0),
+          adjustmentValue: data.adjustmentValue ?? null,
+        },
+        tx,
+      );
 
       return {
         data: this.normalizeVariationResponse(data),
@@ -163,10 +173,12 @@ export class MenuVariationService {
     };
   }
 
-  private normalizeVariationResponse<T extends {
-    pricingMode?: VariationPricingMode | null;
-    price?: Prisma.Decimal | null;
-  }>(variation: T): T & { price: Prisma.Decimal | null } {
+  private normalizeVariationResponse<
+    T extends {
+      pricingMode?: VariationPricingMode | null;
+      price?: Prisma.Decimal | null;
+    },
+  >(variation: T): T & { price: Prisma.Decimal | null } {
     return {
       ...variation,
       price:
@@ -289,6 +301,40 @@ export class MenuVariationService {
         modifierId: item.modifierId,
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),
+    });
+  }
+
+  private async seedItemPriceOverridesForVariation(
+    variationId: string,
+    categoryId: string,
+    pricing: {
+      pricingMode: VariationPricingMode;
+      price: Prisma.Decimal;
+      adjustmentValue: Prisma.Decimal | null;
+    },
+    tx: Prisma.TransactionClient,
+  ) {
+    const items = await tx.menuItem.findMany({
+      where: {
+        categoryId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!items.length) {
+      return;
+    }
+
+    await tx.menuItemVariationPriceOverride.createMany({
+      data: items.map((item) => ({
+        menuItemId: item.id,
+        variationId,
+        pricingMode: pricing.pricingMode,
+        price: pricing.price,
+        adjustmentValue: pricing.adjustmentValue,
+      })),
+      skipDuplicates: true,
     });
   }
 
