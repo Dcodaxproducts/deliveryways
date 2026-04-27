@@ -79,6 +79,25 @@ enum VariationPricingMode {
   PERCENTAGE_ADJUSTMENT
 }
 
+enum PackageBillingModel {
+  COMMISSION
+  PLAN
+  HYBRID
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
 enum PaymentMethod {
   COD
   STRIPE
@@ -254,6 +273,8 @@ model Tenant {
   chatThreads         ChatThread[]
   groupOrders         GroupOrderSession[]
   posOrderDrafts      PosOrderDraft[]
+  packagePlans        PackagePlan[]
+  tenantSubscriptions TenantSubscription[]
 
   @@map("tenants")
 }
@@ -303,6 +324,7 @@ model Restaurant {
   chatThreads         ChatThread[]
   groupOrders         GroupOrderSession[]
   posOrderDrafts      PosOrderDraft[]
+  tenantSubscriptions TenantSubscription[]
 
   @@map("restaurants")
 }
@@ -1467,6 +1489,56 @@ model ChatMessage {
   @@index([senderStaffUserId, createdAt])
   @@index([senderDeliverymanId, createdAt])
   @@map("chat_messages")
+}
+
+model PackagePlan {
+  id                   String              @id @default(cuid())
+  tenantId             String?             @map("tenant_id")
+  name                 String
+  description          String?
+  billingModel         PackageBillingModel @map("billing_model")
+  billingInterval      BillingInterval     @default(MONTHLY) @map("billing_interval")
+  planPrice            Decimal             @default(0) @map("plan_price") @db.Decimal(10, 2)
+  commissionPercentage Decimal             @default(0) @map("commission_percentage") @db.Decimal(5, 2)
+  currency             String              @default("PKR") @db.VarChar(10)
+  trialDays            Int                 @default(0) @map("trial_days")
+  features             Json?
+  isActive             Boolean             @default(true) @map("is_active")
+  isDefault            Boolean             @default(false) @map("is_default")
+  deletedAt            DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant        Tenant?              @relation(fields: [tenantId], references: [id])
+  subscriptions TenantSubscription[]
+
+  @@index([tenantId, billingModel, isActive])
+  @@index([isDefault, isActive])
+  @@map("package_plans")
+}
+
+model TenantSubscription {
+  id            String             @id @default(cuid())
+  tenantId      String             @map("tenant_id")
+  restaurantId  String?            @map("restaurant_id")
+  packagePlanId String             @map("package_plan_id")
+  status        SubscriptionStatus @default(ACTIVE)
+  startsAt      DateTime           @default(now()) @map("starts_at") @db.Timestamptz
+  endsAt        DateTime?          @map("ends_at") @db.Timestamptz
+  note          String?
+  createdBy     String?            @map("created_by")
+  updatedBy     String?            @map("updated_by")
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  restaurant  Restaurant? @relation(fields: [restaurantId], references: [id])
+  packagePlan PackagePlan @relation(fields: [packagePlanId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([restaurantId, status])
+  @@index([packagePlanId, status])
+  @@map("tenant_subscriptions")
 }
 
 model GlobalSetting {
