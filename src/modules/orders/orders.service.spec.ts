@@ -630,7 +630,7 @@ describe('OrdersService - coupon quote validation', () => {
               {
                 id: 'var-1',
                 name: 'Large',
-                price: new Prisma.Decimal(0),
+                price: new Prisma.Decimal(100),
                 pricingMode: 'PERCENTAGE_ADJUSTMENT',
                 adjustmentValue: new Prisma.Decimal(10),
                 modifierPriceOverrides: [],
@@ -652,7 +652,7 @@ describe('OrdersService - coupon quote validation', () => {
         validateForCheckout: jest.fn().mockResolvedValue({
           coupon: null,
           discountAmount: new Prisma.Decimal(0),
-          eligibleSubtotal: new Prisma.Decimal(550),
+          eligibleSubtotal: new Prisma.Decimal(110),
         }),
       } as never,
       {} as never,
@@ -664,7 +664,7 @@ describe('OrdersService - coupon quote validation', () => {
           walletAppliedAmount: new Prisma.Decimal(0),
           loyaltyDiscountAmount: new Prisma.Decimal(0),
           loyaltyPointsRedeemed: 0,
-          totalAmount: new Prisma.Decimal(550),
+          totalAmount: new Prisma.Decimal(110),
         }),
       } as never,
     );
@@ -684,8 +684,8 @@ describe('OrdersService - coupon quote validation', () => {
       },
     );
 
-    expect(result.data.items[0].unitPrice).toBe(550);
-    expect(result.data.subtotal).toBe(550);
+    expect(result.data.items[0].unitPrice).toBe(110);
+    expect(result.data.subtotal).toBe(110);
   });
 });
 

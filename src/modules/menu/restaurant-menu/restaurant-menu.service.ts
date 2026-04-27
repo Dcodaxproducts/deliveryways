@@ -826,26 +826,42 @@ export class RestaurantMenuService {
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
-    return (variations ?? []).map((variation) => ({
-      ...variation,
-      pricingMode:
-        variation.itemPriceOverrides?.find(
-          (itemOverride) => itemOverride.menuItemId === menuItemId,
-        )?.pricingMode ?? variation.pricingMode,
-      price:
-        (variation.itemPriceOverrides?.find(
-          (itemOverride) => itemOverride.menuItemId === menuItemId,
-        )?.pricingMode ?? variation.pricingMode) === 'FIXED'
-          ? (variation.itemPriceOverrides?.find(
-              (itemOverride) => itemOverride.menuItemId === menuItemId,
-            )?.price ??
-            variation.price ??
-            0)
-          : null,
-      adjustmentValue:
-        variation.itemPriceOverrides?.find(
-          (itemOverride) => itemOverride.menuItemId === menuItemId,
-        )?.adjustmentValue ?? variation.adjustmentValue,
-    }));
+    return (variations ?? []).map((variation) => {
+      const override = variation.itemPriceOverrides?.find(
+        (itemOverride) => itemOverride.menuItemId === menuItemId,
+      );
+      const pricingMode = override?.pricingMode ?? variation.pricingMode;
+      const sourcePrice = Number(override?.price ?? variation.price ?? 0);
+      const adjustmentValue = Number(
+        override?.adjustmentValue ?? variation.adjustmentValue ?? 0,
+      );
+
+      return {
+        ...variation,
+        pricingMode,
+        price: this.resolveVariationDisplayPrice(
+          sourcePrice,
+          pricingMode,
+          adjustmentValue,
+        ),
+        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
+      };
+    });
+  }
+
+  private resolveVariationDisplayPrice(
+    sourcePrice: number,
+    pricingMode: string | null | undefined,
+    adjustmentValue: number,
+  ) {
+    if (pricingMode === 'FLAT_ADJUSTMENT') {
+      return sourcePrice + adjustmentValue;
+    }
+
+    if (pricingMode === 'PERCENTAGE_ADJUSTMENT') {
+      return sourcePrice + (sourcePrice * adjustmentValue) / 100;
+    }
+
+    return sourcePrice;
   }
 }

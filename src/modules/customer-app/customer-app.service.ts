@@ -1238,27 +1238,45 @@ export class CustomerAppService {
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
-    return (variations ?? []).map((variation) => ({
-      ...variation,
-      pricingMode:
-        variation.itemPriceOverrides?.find(
-          (itemOverride) => itemOverride.menuItemId === menuItemId,
-        )?.pricingMode ?? variation.pricingMode,
-      price:
-        (variation.itemPriceOverrides?.find(
-          (itemOverride) => itemOverride.menuItemId === menuItemId,
-        )?.pricingMode ?? variation.pricingMode) === VariationPricingMode.FIXED
-          ? (variation.itemPriceOverrides?.find(
-              (itemOverride) => itemOverride.menuItemId === menuItemId,
-            )?.price ??
-            variation.price ??
-            new Prisma.Decimal(0))
-          : null,
-      adjustmentValue:
-        variation.itemPriceOverrides?.find(
-          (itemOverride) => itemOverride.menuItemId === menuItemId,
-        )?.adjustmentValue ?? variation.adjustmentValue,
-    }));
+    return (variations ?? []).map((variation) => {
+      const override = variation.itemPriceOverrides?.find(
+        (itemOverride) => itemOverride.menuItemId === menuItemId,
+      );
+      const pricingMode = override?.pricingMode ?? variation.pricingMode;
+      const sourcePrice =
+        override?.price ?? variation.price ?? new Prisma.Decimal(0);
+      const adjustmentValue =
+        override?.adjustmentValue ??
+        variation.adjustmentValue ??
+        new Prisma.Decimal(0);
+
+      return {
+        ...variation,
+        pricingMode,
+        price: this.resolveVariationDisplayPrice(
+          sourcePrice,
+          pricingMode,
+          adjustmentValue,
+        ),
+        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
+      };
+    });
+  }
+
+  private resolveVariationDisplayPrice(
+    sourcePrice: Prisma.Decimal,
+    pricingMode: VariationPricingMode | null | undefined,
+    adjustmentValue: Prisma.Decimal,
+  ) {
+    if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
+      return sourcePrice.plus(adjustmentValue);
+    }
+
+    if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
+      return sourcePrice.plus(sourcePrice.mul(adjustmentValue).div(100));
+    }
+
+    return sourcePrice;
   }
 
   private async resolveMediaUrl(value: string | null | undefined) {

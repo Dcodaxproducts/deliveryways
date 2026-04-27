@@ -174,7 +174,7 @@ describe('CartService', () => {
     expect(ordersService.quote).not.toHaveBeenCalled();
   });
 
-  it('calculates percentage-based variation prices from item base price', async () => {
+  it('calculates percentage-based variation prices from item variation price', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
@@ -232,7 +232,7 @@ describe('CartService', () => {
             id: 'var-1',
             name: 'Large',
             description: null,
-            price: new Prisma.Decimal(0),
+            price: new Prisma.Decimal(100),
             pricingMode: 'PERCENTAGE_ADJUSTMENT',
             adjustmentValue: new Prisma.Decimal(10),
           },
@@ -253,14 +253,17 @@ describe('CartService', () => {
     const firstItem = result.data.items[0] as {
       menuItem: {
         unitPrice: number | null;
-        selectedVariation: { price: number; adjustmentValue: number | null } | null;
+        selectedVariation: {
+          price: number;
+          adjustmentValue: number | null;
+        } | null;
         category: { variations: Array<{ price: number | null }> };
       } | null;
     };
-    expect(firstItem.menuItem?.unitPrice).toBe(550);
-    expect(firstItem.menuItem?.selectedVariation?.price).toBe(550);
+    expect(firstItem.menuItem?.unitPrice).toBe(110);
+    expect(firstItem.menuItem?.selectedVariation?.price).toBe(110);
     expect(firstItem.menuItem?.selectedVariation?.adjustmentValue).toBe(10);
-    expect(firstItem.menuItem?.category.variations[0].price).toBeNull();
+    expect(Number(firstItem.menuItem?.category.variations[0].price)).toBe(110);
   });
 
   it('requires customerId for business-admin cart access', async () => {

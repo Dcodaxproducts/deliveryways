@@ -887,13 +887,21 @@ export class CartService {
       );
       const pricingMode = override?.pricingMode ?? variation.pricingMode;
 
+      const sourcePrice =
+        override?.price ?? variation.price ?? new Prisma.Decimal(0);
+      const adjustmentValue =
+        override?.adjustmentValue ??
+        variation.adjustmentValue ??
+        new Prisma.Decimal(0);
+
       return {
         ...variation,
         pricingMode,
-        price:
-          pricingMode === VariationPricingMode.FIXED
-            ? (override?.price ?? variation.price ?? new Prisma.Decimal(0))
-            : null,
+        price: this.resolveVariationPricingModePrice(
+          sourcePrice,
+          pricingMode ?? undefined,
+          adjustmentValue,
+        ),
         adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
       };
     });
@@ -918,20 +926,33 @@ export class CartService {
       (itemOverride) => itemOverride.menuItemId === menuItemId,
     );
     const pricingMode = override?.pricingMode ?? variation.pricingMode;
+    const sourcePrice = override?.price ?? variation.price ?? basePrice;
     const adjustmentValue =
       override?.adjustmentValue ??
       variation.adjustmentValue ??
       new Prisma.Decimal(0);
 
+    return this.resolveVariationPricingModePrice(
+      sourcePrice,
+      pricingMode,
+      adjustmentValue,
+    );
+  }
+
+  private resolveVariationPricingModePrice(
+    sourcePrice: Prisma.Decimal,
+    pricingMode: VariationPricingMode | undefined,
+    adjustmentValue: Prisma.Decimal,
+  ) {
     if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
-      return basePrice.plus(adjustmentValue);
+      return sourcePrice.plus(adjustmentValue);
     }
 
     if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
-      return basePrice.plus(basePrice.mul(adjustmentValue).div(100));
+      return sourcePrice.plus(sourcePrice.mul(adjustmentValue).div(100));
     }
 
-    return override?.price ?? variation.price;
+    return sourcePrice;
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {

@@ -2517,20 +2517,21 @@ export class OrdersService {
       (item) => item.menuItemId === menuItemId,
     );
     const pricingMode = override?.pricingMode ?? variation.pricingMode;
+    const sourcePrice = override?.price ?? variation.price ?? basePrice;
     const adjustmentValue =
       override?.adjustmentValue ??
       variation.adjustmentValue ??
       new Prisma.Decimal(0);
 
     if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
-      return basePrice.plus(adjustmentValue);
+      return sourcePrice.plus(adjustmentValue);
     }
 
     if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
-      return basePrice.plus(basePrice.mul(adjustmentValue).div(100));
+      return sourcePrice.plus(sourcePrice.mul(adjustmentValue).div(100));
     }
 
-    return override?.price ?? variation.price;
+    return sourcePrice;
   }
 
   private findModifier(
