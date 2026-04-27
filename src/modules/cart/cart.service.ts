@@ -4,12 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  OrderType,
-  PaymentMethod,
-  Prisma,
-  VariationPricingMode,
-} from '@prisma/client';
+import { OrderType, PaymentMethod, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
   OrderTypeEnum,
@@ -811,14 +806,6 @@ export class CartService {
                           menuItem.id,
                         ),
                       ),
-                      pricingMode:
-                        selectedVariation.pricingMode ??
-                        VariationPricingMode.FIXED,
-                      adjustmentValue:
-                        selectedVariation.adjustmentValue !== undefined &&
-                        selectedVariation.adjustmentValue !== null
-                          ? Number(selectedVariation.adjustmentValue)
-                          : null,
                     }
                   : null,
                 modifierGroups: menuItem.modifierLinks.map((link) => ({
@@ -870,14 +857,10 @@ export class CartService {
 
   private normalizeVariations<
     T extends {
-      pricingMode?: VariationPricingMode | null;
       price?: Prisma.Decimal | null;
-      adjustmentValue?: Prisma.Decimal | null;
       itemPriceOverrides?: Array<{
         menuItemId: string;
-        pricingMode: VariationPricingMode;
         price: Prisma.Decimal;
-        adjustmentValue: Prisma.Decimal | null;
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
@@ -885,24 +868,10 @@ export class CartService {
       const override = variation.itemPriceOverrides?.find(
         (itemOverride) => itemOverride.menuItemId === menuItemId,
       );
-      const pricingMode = override?.pricingMode ?? variation.pricingMode;
-
-      const sourcePrice =
-        override?.price ?? variation.price ?? new Prisma.Decimal(0);
-      const adjustmentValue =
-        override?.adjustmentValue ??
-        variation.adjustmentValue ??
-        new Prisma.Decimal(0);
 
       return {
         ...variation,
-        pricingMode,
-        price: this.resolveVariationPricingModePrice(
-          sourcePrice,
-          pricingMode ?? undefined,
-          adjustmentValue,
-        ),
-        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
+        price: override?.price ?? variation.price ?? new Prisma.Decimal(0),
       };
     });
   }
@@ -910,13 +879,9 @@ export class CartService {
   private resolveVariationPrice(
     variation: {
       price: Prisma.Decimal;
-      pricingMode?: VariationPricingMode;
-      adjustmentValue?: Prisma.Decimal | null;
       itemPriceOverrides?: Array<{
         menuItemId: string;
-        pricingMode: VariationPricingMode;
         price: Prisma.Decimal;
-        adjustmentValue: Prisma.Decimal | null;
       }>;
     },
     basePrice: Prisma.Decimal,
@@ -925,34 +890,8 @@ export class CartService {
     const override = variation.itemPriceOverrides?.find(
       (itemOverride) => itemOverride.menuItemId === menuItemId,
     );
-    const pricingMode = override?.pricingMode ?? variation.pricingMode;
-    const sourcePrice = override?.price ?? variation.price ?? basePrice;
-    const adjustmentValue =
-      override?.adjustmentValue ??
-      variation.adjustmentValue ??
-      new Prisma.Decimal(0);
 
-    return this.resolveVariationPricingModePrice(
-      sourcePrice,
-      pricingMode,
-      adjustmentValue,
-    );
-  }
-
-  private resolveVariationPricingModePrice(
-    sourcePrice: Prisma.Decimal,
-    pricingMode: VariationPricingMode | undefined,
-    adjustmentValue: Prisma.Decimal,
-  ) {
-    if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
-      return sourcePrice.plus(adjustmentValue);
-    }
-
-    if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
-      return sourcePrice.plus(sourcePrice.mul(adjustmentValue).div(100));
-    }
-
-    return sourcePrice;
+    return override?.price ?? variation.price ?? basePrice;
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {

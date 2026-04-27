@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, PrismaClient, VariationPricingMode } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
 import { ListMenuItemsDto } from './dto';
@@ -252,14 +252,10 @@ export class MenuItemRepository {
   private resolveItemVariations(
     menuItemId: string,
     variations: Array<{
-      pricingMode?: VariationPricingMode | null;
       price: Prisma.Decimal;
-      adjustmentValue?: Prisma.Decimal | null;
       itemPriceOverrides?: Array<{
         menuItemId: string;
-        pricingMode: VariationPricingMode;
         price: Prisma.Decimal;
-        adjustmentValue: Prisma.Decimal | null;
       }>;
     }>,
   ) {
@@ -270,9 +266,7 @@ export class MenuItemRepository {
 
       return {
         ...variation,
-        pricingMode: override?.pricingMode ?? variation.pricingMode,
         price: override?.price ?? variation.price,
-        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
       };
     });
   }

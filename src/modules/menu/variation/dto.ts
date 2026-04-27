@@ -3,7 +3,6 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
-  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -12,12 +11,6 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
-
-export const VARIATION_PRICING_MODE_VALUES = [
-  'FIXED',
-  'FLAT_ADJUSTMENT',
-  'PERCENTAGE_ADJUSTMENT',
-] as const;
 
 export class MenuVariationModifierPriceOverrideDto {
   @ApiProperty()
@@ -50,27 +43,9 @@ export class CreateMenuVariationDto {
   sku?: string;
 
   @ApiProperty()
-  @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @Transform(({ value }) => Number(value))
   @IsNumber()
-  price?: number;
-
-  @ApiPropertyOptional({
-    enum: VARIATION_PRICING_MODE_VALUES,
-    default: 'FIXED',
-  })
-  @IsOptional()
-  @IsIn(VARIATION_PRICING_MODE_VALUES)
-  pricingMode?: (typeof VARIATION_PRICING_MODE_VALUES)[number];
-
-  @ApiPropertyOptional({
-    description:
-      'Used for FLAT_ADJUSTMENT and PERCENTAGE_ADJUSTMENT pricing modes.',
-  })
-  @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  @IsNumber()
-  adjustmentValue?: number;
+  price!: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
@@ -118,17 +93,6 @@ export class UpdateMenuVariationDto {
   @Transform(({ value }) => Number(value))
   @IsNumber()
   price?: number;
-
-  @ApiPropertyOptional({ enum: VARIATION_PRICING_MODE_VALUES })
-  @IsOptional()
-  @IsIn(VARIATION_PRICING_MODE_VALUES)
-  pricingMode?: (typeof VARIATION_PRICING_MODE_VALUES)[number];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  @IsNumber()
-  adjustmentValue?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

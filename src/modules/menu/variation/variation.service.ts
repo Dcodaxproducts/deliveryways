@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, VariationPricingMode } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
@@ -49,7 +49,7 @@ export class MenuVariationService {
           name: dto.name,
           description: dto.description,
           sku: dto.sku,
-          ...this.resolvePricingInput(dto),
+          price: new Prisma.Decimal(dto.price),
           sortOrder: dto.sortOrder ?? 0,
           isDefault: dto.isDefault ?? false,
           isActive: dto.isActive ?? true,
@@ -65,16 +65,12 @@ export class MenuVariationService {
       await this.seedItemPriceOverridesForVariation(
         data.id,
         dto.categoryId,
-        {
-          pricingMode: data.pricingMode,
-          price: data.price ?? new Prisma.Decimal(0),
-          adjustmentValue: data.adjustmentValue ?? null,
-        },
+        data.price ?? new Prisma.Decimal(0),
         tx,
       );
 
       return {
-        data: this.normalizeVariationResponse(data),
+        data,
         message: 'Menu variation created successfully',
       };
     });
@@ -92,7 +88,7 @@ export class MenuVariationService {
 
     const { items, total } = await this.variationRepository.list(query);
     return {
-      data: items.map((item) => this.normalizeVariationResponse(item)),
+      data: items,
       message: 'Menu variations fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -128,7 +124,8 @@ export class MenuVariationService {
           name: dto.name,
           description: dto.description,
           sku: dto.sku,
-          ...this.resolvePricingInput(dto, variation),
+          price:
+            dto.price !== undefined ? new Prisma.Decimal(dto.price) : undefined,
           sortOrder: dto.sortOrder,
           isDefault: dto.isDefault,
           isActive: dto.isActive,
@@ -145,7 +142,7 @@ export class MenuVariationService {
       }
 
       return {
-        data: this.normalizeVariationResponse(data),
+        data,
         message: 'Menu variation updated successfully',
       };
     });
@@ -168,23 +165,8 @@ export class MenuVariationService {
 
     const data = await this.variationRepository.softDelete(id);
     return {
-      data: this.normalizeVariationResponse(data),
+      data,
       message: 'Menu variation deleted successfully',
-    };
-  }
-
-  private normalizeVariationResponse<
-    T extends {
-      pricingMode?: VariationPricingMode | null;
-      price?: Prisma.Decimal | null;
-    },
-  >(variation: T): T & { price: Prisma.Decimal | null } {
-    return {
-      ...variation,
-      price:
-        variation.pricingMode === VariationPricingMode.FIXED
-          ? (variation.price ?? new Prisma.Decimal(0))
-          : null,
     };
   }
 
@@ -307,11 +289,7 @@ export class MenuVariationService {
   private async seedItemPriceOverridesForVariation(
     variationId: string,
     categoryId: string,
-    pricing: {
-      pricingMode: VariationPricingMode;
-      price: Prisma.Decimal;
-      adjustmentValue: Prisma.Decimal | null;
-    },
+    price: Prisma.Decimal,
     tx: Prisma.TransactionClient,
   ) {
     const items = await tx.menuItem.findMany({
@@ -330,59 +308,9 @@ export class MenuVariationService {
       data: items.map((item) => ({
         menuItemId: item.id,
         variationId,
-        pricingMode: pricing.pricingMode,
-        price: pricing.price,
-        adjustmentValue: pricing.adjustmentValue,
+        price,
       })),
       skipDuplicates: true,
     });
-  }
-
-  private resolvePricingInput(
-    dto: CreateMenuVariationDto | UpdateMenuVariationDto,
-    existing?: {
-      price?: Prisma.Decimal;
-      pricingMode?: VariationPricingMode;
-      adjustmentValue?: Prisma.Decimal | null;
-    },
-  ) {
-    const pricingMode =
-      (dto.pricingMode as VariationPricingMode | undefined) ??
-      existing?.pricingMode ??
-      VariationPricingMode.FIXED;
-
-    if (pricingMode === VariationPricingMode.FIXED) {
-      const nextPrice = dto.price ?? existing?.price;
-
-      if (nextPrice === undefined) {
-        throw new BadRequestException(
-          'price is required when variation pricingMode is FIXED',
-        );
-      }
-
-      return {
-        pricingMode,
-        price: new Prisma.Decimal(nextPrice),
-        adjustmentValue: null,
-      };
-    }
-
-    const nextAdjustmentValue =
-      dto.adjustmentValue ?? existing?.adjustmentValue;
-
-    if (nextAdjustmentValue === undefined || nextAdjustmentValue === null) {
-      throw new BadRequestException(
-        'adjustmentValue is required for non-fixed variation pricing',
-      );
-    }
-
-    return {
-      pricingMode,
-      price:
-        dto.price !== undefined
-          ? new Prisma.Decimal(dto.price)
-          : (existing?.price ?? new Prisma.Decimal(0)),
-      adjustmentValue: new Prisma.Decimal(nextAdjustmentValue),
-    };
   }
 }

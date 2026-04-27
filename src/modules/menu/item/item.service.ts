@@ -4,11 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  MenuItemPricingMode,
-  Prisma,
-  VariationPricingMode,
-} from '@prisma/client';
+import { MenuItemPricingMode, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
@@ -553,9 +549,7 @@ export class MenuItemService {
     overrides:
       | Array<{
           variationId: string;
-          pricingMode?: VariationPricingMode;
-          price?: number;
-          adjustmentValue?: number;
+          price: number;
           modifierPriceOverrides?: Array<{
             modifierId: string;
             priceDelta: number;
@@ -571,9 +565,7 @@ export class MenuItemService {
       },
       select: {
         id: true,
-        pricingMode: true,
         price: true,
-        adjustmentValue: true,
       },
     });
 
@@ -610,14 +602,10 @@ export class MenuItemService {
     await tx.menuItemVariationPriceOverride.createMany({
       data: variations.map((variation) => {
         const override = overrideMap.get(variation.id);
-        const pricing = this.resolveVariationPricingInput(override, variation);
-
         return {
           menuItemId,
           variationId: variation.id,
-          pricingMode: pricing.pricingMode,
-          price: pricing.price,
-          adjustmentValue: pricing.adjustmentValue,
+          price: new Prisma.Decimal(override?.price ?? variation.price),
         };
       }),
     });
@@ -741,51 +729,6 @@ export class MenuItemService {
       takeawayPriceAdjustment: new Prisma.Decimal(
         dto.takeawayPriceAdjustment ?? existing?.takeawayPriceAdjustment ?? 0,
       ),
-    };
-  }
-
-  private resolveVariationPricingInput(
-    override:
-      | {
-          pricingMode?: VariationPricingMode;
-          price?: number;
-          adjustmentValue?: number;
-        }
-      | undefined,
-    existing: {
-      pricingMode: VariationPricingMode;
-      price: Prisma.Decimal;
-      adjustmentValue: Prisma.Decimal | null;
-    },
-  ) {
-    const pricingMode = override?.pricingMode ?? existing.pricingMode;
-
-    if (pricingMode === VariationPricingMode.FIXED) {
-      const nextPrice = override?.price ?? existing.price;
-
-      return {
-        pricingMode,
-        price: new Prisma.Decimal(nextPrice),
-        adjustmentValue: null,
-      };
-    }
-
-    const nextAdjustmentValue =
-      override?.adjustmentValue ?? existing.adjustmentValue;
-
-    if (nextAdjustmentValue === undefined || nextAdjustmentValue === null) {
-      throw new BadRequestException(
-        'adjustmentValue is required for non-fixed variation pricing',
-      );
-    }
-
-    return {
-      pricingMode,
-      price:
-        override?.price !== undefined
-          ? new Prisma.Decimal(override.price)
-          : existing.price,
-      adjustmentValue: new Prisma.Decimal(nextAdjustmentValue),
     };
   }
 

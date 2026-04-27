@@ -696,14 +696,10 @@ export class RestaurantMenuService {
           variations: this.normalizeVariations(
             item.menuItem.category?.variations as
               | Array<{
-                  pricingMode?: string | null;
                   price?: { toString(): string } | number | null;
-                  adjustmentValue?: { toString(): string } | number | null;
                   itemPriceOverrides?: Array<{
                     menuItemId: string;
-                    pricingMode: string;
                     price: { toString(): string } | number;
-                    adjustmentValue?: { toString(): string } | number | null;
                   }>;
                 }>
               | undefined,
@@ -815,14 +811,10 @@ export class RestaurantMenuService {
 
   private normalizeVariations<
     T extends {
-      pricingMode?: string | null;
       price?: { toString(): string } | number | null;
-      adjustmentValue?: { toString(): string } | number | null;
       itemPriceOverrides?: Array<{
         menuItemId: string;
-        pricingMode: string;
         price: { toString(): string } | number;
-        adjustmentValue?: { toString(): string } | number | null;
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
@@ -830,38 +822,11 @@ export class RestaurantMenuService {
       const override = variation.itemPriceOverrides?.find(
         (itemOverride) => itemOverride.menuItemId === menuItemId,
       );
-      const pricingMode = override?.pricingMode ?? variation.pricingMode;
-      const sourcePrice = Number(override?.price ?? variation.price ?? 0);
-      const adjustmentValue = Number(
-        override?.adjustmentValue ?? variation.adjustmentValue ?? 0,
-      );
 
       return {
         ...variation,
-        pricingMode,
-        price: this.resolveVariationDisplayPrice(
-          sourcePrice,
-          pricingMode,
-          adjustmentValue,
-        ),
-        adjustmentValue: override?.adjustmentValue ?? variation.adjustmentValue,
+        price: Number(override?.price ?? variation.price ?? 0),
       };
     });
-  }
-
-  private resolveVariationDisplayPrice(
-    sourcePrice: number,
-    pricingMode: string | null | undefined,
-    adjustmentValue: number,
-  ) {
-    if (pricingMode === 'FLAT_ADJUSTMENT') {
-      return sourcePrice + adjustmentValue;
-    }
-
-    if (pricingMode === 'PERCENTAGE_ADJUSTMENT') {
-      return sourcePrice + (sourcePrice * adjustmentValue) / 100;
-    }
-
-    return sourcePrice;
   }
 }

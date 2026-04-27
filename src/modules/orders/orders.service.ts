@@ -12,7 +12,6 @@ import {
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
-  VariationPricingMode,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -1187,8 +1186,6 @@ export class OrdersService {
         id: string;
         name?: string;
         price: Prisma.Decimal;
-        pricingMode?: VariationPricingMode;
-        adjustmentValue?: Prisma.Decimal | null;
       }>;
     },
     branchPriceOverride: Prisma.Decimal | null | undefined,
@@ -1200,13 +1197,9 @@ export class OrdersService {
           id: string;
           name: string;
           price: Prisma.Decimal;
-          pricingMode?: VariationPricingMode;
-          adjustmentValue?: Prisma.Decimal | null;
           itemPriceOverrides?: Array<{
             menuItemId: string;
-            pricingMode: VariationPricingMode;
             price: Prisma.Decimal;
-            adjustmentValue: Prisma.Decimal | null;
           }>;
         }>,
         variationId,
@@ -2490,17 +2483,13 @@ export class OrdersService {
       id: string;
       price: Prisma.Decimal;
       name: string;
-      pricingMode?: VariationPricingMode;
-      adjustmentValue?: Prisma.Decimal | null;
       modifierPriceOverrides?: {
         modifierId: string;
         priceDelta: Prisma.Decimal;
       }[];
       itemPriceOverrides?: Array<{
         menuItemId: string;
-        pricingMode: VariationPricingMode;
         price: Prisma.Decimal;
-        adjustmentValue: Prisma.Decimal | null;
       }>;
     }[],
     variationId: string,
@@ -2516,22 +2505,8 @@ export class OrdersService {
     const override = variation.itemPriceOverrides?.find(
       (item) => item.menuItemId === menuItemId,
     );
-    const pricingMode = override?.pricingMode ?? variation.pricingMode;
-    const sourcePrice = override?.price ?? variation.price ?? basePrice;
-    const adjustmentValue =
-      override?.adjustmentValue ??
-      variation.adjustmentValue ??
-      new Prisma.Decimal(0);
 
-    if (pricingMode === VariationPricingMode.FLAT_ADJUSTMENT) {
-      return sourcePrice.plus(adjustmentValue);
-    }
-
-    if (pricingMode === VariationPricingMode.PERCENTAGE_ADJUSTMENT) {
-      return sourcePrice.plus(sourcePrice.mul(adjustmentValue).div(100));
-    }
-
-    return sourcePrice;
+    return override?.price ?? variation.price ?? basePrice;
   }
 
   private findModifier(

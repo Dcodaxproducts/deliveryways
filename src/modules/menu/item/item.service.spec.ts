@@ -215,9 +215,7 @@ describe('MenuItemService', () => {
     tx.menuItemVariation.findMany.mockResolvedValue([
       {
         id: 'variation-small',
-        pricingMode: 'FIXED',
         price: new Prisma.Decimal(500),
-        adjustmentValue: null,
       },
     ]);
     itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);

@@ -630,9 +630,7 @@ describe('OrdersService - coupon quote validation', () => {
               {
                 id: 'var-1',
                 name: 'Large',
-                price: new Prisma.Decimal(100),
-                pricingMode: 'PERCENTAGE_ADJUSTMENT',
-                adjustmentValue: new Prisma.Decimal(10),
+                price: new Prisma.Decimal(110),
                 modifierPriceOverrides: [],
               },
             ],

@@ -170,7 +170,7 @@ describe('MenuVariationService', () => {
     });
   });
 
-  it('stores percentage-based variation pricing during create', async () => {
+  it('stores exact variation price during create', async () => {
     const { service, variationRepository, prisma } = makeService();
 
     prisma.menuCategory.findUnique.mockResolvedValue({
@@ -182,9 +182,7 @@ describe('MenuVariationService', () => {
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     variationRepository.create.mockResolvedValue({
       id: 'variation-1',
-      pricingMode: 'PERCENTAGE_ADJUSTMENT',
-      price: new Prisma.Decimal(100),
-      adjustmentValue: new Prisma.Decimal(10),
+      price: new Prisma.Decimal(250),
     });
 
     const result = await service.create(
@@ -196,27 +194,25 @@ describe('MenuVariationService', () => {
       {
         categoryId: 'category-1',
         name: 'Large',
-        pricingMode: 'PERCENTAGE_ADJUSTMENT',
-        adjustmentValue: 10,
+        price: 250,
       },
     );
 
     const createCalls = variationRepository.create.mock.calls as Array<
       [
         {
-          pricingMode: string;
-          adjustmentValue: Prisma.Decimal;
+          price: Prisma.Decimal;
         },
       ]
     >;
     const [createInput] = createCalls[0];
 
-    expect(createInput.pricingMode).toBe('PERCENTAGE_ADJUSTMENT');
-    expect(createInput.adjustmentValue).toBeInstanceOf(Prisma.Decimal);
-    expect(result.data.price).toBeNull();
+    expect(createInput.price).toBeInstanceOf(Prisma.Decimal);
+    expect(Number(createInput.price)).toBe(250);
+    expect(Number(result.data.price)).toBe(250);
   });
 
-  it('hides raw price for non-fixed variations in list responses', async () => {
+  it('returns exact variation prices in list responses', async () => {
     const { service, variationRepository, prisma } = makeService();
 
     prisma.menuCategory.findUnique.mockResolvedValue({
@@ -229,9 +225,7 @@ describe('MenuVariationService', () => {
       items: [
         {
           id: 'variation-1',
-          pricingMode: 'FLAT_ADJUSTMENT',
-          price: new Prisma.Decimal(100),
-          adjustmentValue: new Prisma.Decimal(50),
+          price: new Prisma.Decimal(300),
         },
       ],
       total: 1,
@@ -252,7 +246,7 @@ describe('MenuVariationService', () => {
       },
     );
 
-    expect(result.data[0].price).toBeNull();
+    expect(Number(result.data[0].price)).toBe(300);
   });
 
   it('blocks business admin variation write outside tenant restaurants', async () => {
