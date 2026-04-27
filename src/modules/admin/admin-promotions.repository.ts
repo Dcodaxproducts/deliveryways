@@ -83,48 +83,74 @@ export class AdminPromotionsRepository {
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
     };
+    const activeWhere: Prisma.CouponWhereInput = {
+      status: CouponStatus.ACTIVE,
+      isActive: true,
+      startsAt: { lte: now },
+      expiresAt: { gte: now },
+    };
+    const scheduledWhere: Prisma.CouponWhereInput = {
+      isActive: true,
+      startsAt: { gt: now },
+    };
+    const expiredWhere: Prisma.CouponWhereInput = {
+      expiresAt: { lt: now },
+    };
+    const promotionWhere: Prisma.CouponWhereInput = {
+      ...baseWhere,
+      kind: CouponCampaignKind.PROMOTION,
+    };
+    const couponOrderWhere: Prisma.OrderWhereInput = {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      ...(scope.branchId ? { branchId: scope.branchId } : {}),
+      couponId: { not: null },
+      coupon: { deletedAt: null },
+    };
 
     const [
       activePromotions,
       scheduledPromotions,
       expiredPromotions,
-      promoOrders,
+      totalCoupons,
+      activeCoupons,
+      scheduledCoupons,
+      expiredCoupons,
+      couponRedemptions,
+      couponOrderTotals,
+      activeHappyHours,
     ] = await this.prisma.$transaction([
       this.prisma.coupon.count({
-        where: {
-          ...baseWhere,
-          status: CouponStatus.ACTIVE,
-          isActive: true,
-          startsAt: { lte: now },
-          expiresAt: { gte: now },
-        },
+        where: { ...promotionWhere, ...activeWhere },
       }),
       this.prisma.coupon.count({
-        where: {
-          ...baseWhere,
-          isActive: true,
-          startsAt: { gt: now },
-        },
+        where: { ...promotionWhere, ...scheduledWhere },
       }),
       this.prisma.coupon.count({
+        where: { ...promotionWhere, ...expiredWhere },
+      }),
+      this.prisma.coupon.count({ where: baseWhere }),
+      this.prisma.coupon.count({ where: { ...baseWhere, ...activeWhere } }),
+      this.prisma.coupon.count({ where: { ...baseWhere, ...scheduledWhere } }),
+      this.prisma.coupon.count({ where: { ...baseWhere, ...expiredWhere } }),
+      this.prisma.couponUsage.count({
         where: {
-          ...baseWhere,
-          expiresAt: { lt: now },
+          coupon: baseWhere,
         },
       }),
-      this.prisma.order.findMany({
-        where: {
-          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
-          ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
-          ...(scope.branchId ? { branchId: scope.branchId } : {}),
-          couponId: { not: null },
-          coupon: {
-            deletedAt: null,
-          },
-        },
-        select: {
+      this.prisma.order.aggregate({
+        where: couponOrderWhere,
+        _count: { _all: true },
+        _sum: {
           totalAmount: true,
-          couponId: true,
+          discountAmount: true,
+        },
+      }),
+      this.prisma.coupon.count({
+        where: {
+          ...baseWhere,
+          ...activeWhere,
+          kind: CouponCampaignKind.HAPPY_HOUR,
         },
       }),
     ]);
@@ -133,21 +159,17 @@ export class AdminPromotionsRepository {
       activePromotions,
       scheduledPromotions,
       expiredPromotions,
-      promoDrivenOrders: promoOrders.length,
-      promoDrivenRevenue: promoOrders.reduce(
-        (sum, order) => sum + Number(order.totalAmount),
-        0,
-      ),
-      activeHappyHours: await this.prisma.coupon.count({
-        where: {
-          ...baseWhere,
-          kind: CouponCampaignKind.HAPPY_HOUR,
-          status: CouponStatus.ACTIVE,
-          isActive: true,
-          startsAt: { lte: now },
-          expiresAt: { gte: now },
-        },
-      }),
+      promoDrivenOrders: couponOrderTotals._count._all,
+      promoDrivenRevenue: Number(couponOrderTotals._sum.totalAmount ?? 0),
+      activeHappyHours,
+      totalCoupons,
+      activeCoupons,
+      scheduledCoupons,
+      expiredCoupons,
+      couponRedemptions,
+      couponDrivenOrders: couponOrderTotals._count._all,
+      couponDrivenRevenue: Number(couponOrderTotals._sum.totalAmount ?? 0),
+      couponDiscountGiven: Number(couponOrderTotals._sum.discountAmount ?? 0),
     };
   }
 
