@@ -836,9 +836,16 @@ export class CartService {
                       priceDelta: Number(
                         modifier.variationPriceOverrides?.find(
                           (variationOverride) =>
+                            variationOverride.menuItemId === menuItem.id &&
                             variationOverride.variationId ===
-                            cartItem.variationId,
+                              cartItem.variationId,
                         )?.priceDelta ??
+                          modifier.variationPriceOverrides?.find(
+                            (variationOverride) =>
+                              variationOverride.menuItemId === null &&
+                              variationOverride.variationId ===
+                                cartItem.variationId,
+                          )?.priceDelta ??
                           modifier.itemPriceOverrides?.find(
                             (itemOverride) =>
                               itemOverride.menuItemId === menuItem.id,

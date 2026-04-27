@@ -10,6 +10,7 @@ export class MenuVariationRepository {
 
   private readonly include = {
     modifierPriceOverrides: {
+      where: { menuItemId: null },
       include: {
         modifier: {
           select: {

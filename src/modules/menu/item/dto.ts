@@ -27,6 +27,17 @@ export class MenuItemModifierPriceOverrideDto {
   priceDelta!: number;
 }
 
+export class MenuItemVariationModifierPriceOverrideDto {
+  @ApiProperty()
+  @IsString()
+  modifierId!: string;
+
+  @ApiProperty()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  priceDelta!: number;
+}
+
 export class MenuItemVariationPriceOverrideDto {
   @ApiProperty()
   @IsString()
@@ -54,6 +65,13 @@ export class MenuItemVariationPriceOverrideDto {
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsNumber()
   adjustmentValue?: number;
+
+  @ApiPropertyOptional({ type: [MenuItemVariationModifierPriceOverrideDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemVariationModifierPriceOverrideDto)
+  modifierPriceOverrides?: MenuItemVariationModifierPriceOverrideDto[];
 }
 
 export class CreateMenuItemDto {

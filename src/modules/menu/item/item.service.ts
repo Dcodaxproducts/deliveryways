@@ -37,6 +37,10 @@ export class MenuItemService {
       restaurantId,
       dto.modifierPriceOverrides,
     );
+    await this.assertVariationModifierOverridesBelongToRestaurant(
+      restaurantId,
+      dto.variationPriceOverrides,
+    );
 
     const slug = this.normalizeRequiredString(dto.slug, 'slug');
     const sku = this.resolveOptionalString(dto.sku);
@@ -180,6 +184,10 @@ export class MenuItemService {
     await this.assertModifierOverridesBelongToRestaurant(
       item.restaurantId,
       dto.modifierPriceOverrides,
+    );
+    await this.assertVariationModifierOverridesBelongToRestaurant(
+      item.restaurantId,
+      dto.variationPriceOverrides,
     );
 
     const slug =
@@ -496,6 +504,27 @@ export class MenuItemService {
     }
   }
 
+  private async assertVariationModifierOverridesBelongToRestaurant(
+    restaurantId: string,
+    overrides:
+      | Array<{
+          modifierPriceOverrides?: Array<{
+            modifierId: string;
+            priceDelta: number;
+          }>;
+        }>
+      | undefined,
+  ) {
+    const flattened = (overrides ?? []).flatMap(
+      (override) => override.modifierPriceOverrides ?? [],
+    );
+
+    await this.assertModifierOverridesBelongToRestaurant(
+      restaurantId,
+      flattened,
+    );
+  }
+
   private async syncModifierPriceOverrides(
     menuItemId: string,
     overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
@@ -527,6 +556,10 @@ export class MenuItemService {
           pricingMode?: VariationPricingMode;
           price?: number;
           adjustmentValue?: number;
+          modifierPriceOverrides?: Array<{
+            modifierId: string;
+            priceDelta: number;
+          }>;
         }>
       | undefined,
     tx: Prisma.TransactionClient,
@@ -566,6 +599,9 @@ export class MenuItemService {
     await tx.menuItemVariationPriceOverride.deleteMany({
       where: { menuItemId },
     });
+    await tx.menuVariationModifierPriceOverride.deleteMany({
+      where: { menuItemId },
+    });
 
     if (!variations.length) {
       return;
@@ -584,6 +620,23 @@ export class MenuItemService {
           adjustmentValue: pricing.adjustmentValue,
         };
       }),
+    });
+
+    const modifierPriceOverrides = (overrides ?? []).flatMap((override) =>
+      (override.modifierPriceOverrides ?? []).map((modifierOverride) => ({
+        menuItemId,
+        variationId: override.variationId,
+        modifierId: modifierOverride.modifierId,
+        priceDelta: new Prisma.Decimal(modifierOverride.priceDelta),
+      })),
+    );
+
+    if (!modifierPriceOverrides.length) {
+      return;
+    }
+
+    await tx.menuVariationModifierPriceOverride.createMany({
+      data: modifierPriceOverrides,
     });
   }
 

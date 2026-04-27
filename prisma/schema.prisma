@@ -522,6 +522,7 @@ model MenuItem {
   modifierLinks          MenuItemModifierGroup[]
   modifierPriceOverrides MenuItemModifierPriceOverride[]
   variationPriceOverrides MenuItemVariationPriceOverride[]
+  variationModifierPriceOverrides MenuVariationModifierPriceOverride[]
   branchOverrides        BranchMenuItemOverride[]
   recipes                MenuItemRecipe[]
   couponScopes           Coupon[]
@@ -730,14 +731,17 @@ model MenuItemModifierPriceOverride {
 
 model MenuVariationModifierPriceOverride {
   id          String  @id @default(cuid())
+  menuItemId  String? @map("menu_item_id")
   variationId String  @map("variation_id")
   modifierId  String  @map("modifier_id")
   priceDelta  Decimal @default(0) @map("price_delta") @db.Decimal(10, 2)
 
-  variation MenuItemVariation @relation(fields: [variationId], references: [id])
-  modifier  Modifier          @relation(fields: [modifierId], references: [id])
+  menuItem  MenuItem?          @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  variation MenuItemVariation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
+  modifier  Modifier           @relation(fields: [modifierId], references: [id], onDelete: Cascade)
 
-  @@unique([variationId, modifierId])
+  @@unique([menuItemId, variationId, modifierId])
+  @@index([variationId, modifierId])
   @@map("menu_variation_modifier_price_overrides")
 }
 

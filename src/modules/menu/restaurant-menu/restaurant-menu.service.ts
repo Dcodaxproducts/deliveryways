@@ -743,6 +743,7 @@ export class RestaurantMenuService {
                         priceDelta: { toString(): string } | number;
                       }>;
                       variationPriceOverrides?: Array<{
+                        menuItemId?: string | null;
                         variationId: string;
                         priceDelta: { toString(): string } | number;
                       }>;
@@ -800,6 +801,7 @@ export class RestaurantMenuService {
                   variationPriceOverrides: (
                     modifier.variationPriceOverrides ?? []
                   ).map((override) => ({
+                    menuItemId: override.menuItemId ?? null,
                     variationId: override.variationId,
                     priceDelta: Number(override.priceDelta),
                   })),

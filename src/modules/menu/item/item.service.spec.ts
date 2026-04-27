@@ -23,6 +23,24 @@ describe('MenuItemService', () => {
       hardDelete: jest.fn(),
     };
 
+    const tx = {
+      menuItemModifierPriceOverride: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+      menuItemVariation: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      menuItemVariationPriceOverride: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+      menuVariationModifierPriceOverride: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+    };
+
     const prisma = {
       restaurant: {
         findFirst: jest.fn(),
@@ -34,14 +52,7 @@ describe('MenuItemService', () => {
         count: jest.fn(),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-        Promise.resolve(
-          callback({
-            menuItemModifierPriceOverride: {
-              deleteMany: jest.fn(),
-              createMany: jest.fn(),
-            },
-          }),
-        ),
+        Promise.resolve(callback(tx)),
       ),
     };
 
@@ -55,7 +66,7 @@ describe('MenuItemService', () => {
       storageService as never,
     );
 
-    return { service, itemRepository, prisma, storageService };
+    return { service, itemRepository, prisma, storageService, tx };
   };
 
   it('rejects duplicate menu item slug before hitting the database', async () => {
@@ -194,6 +205,61 @@ describe('MenuItemService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('stores variation modifier prices scoped to the menu item', async () => {
+    const { service, itemRepository, prisma, tx } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    prisma.modifier.count.mockResolvedValue(1);
+    tx.menuItemVariation.findMany.mockResolvedValue([
+      {
+        id: 'variation-small',
+        pricingMode: 'FIXED',
+        price: new Prisma.Decimal(500),
+        adjustmentValue: null,
+      },
+    ]);
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Small Pizza',
+        slug: 'small-pizza',
+        basePrice: 500,
+        variationPriceOverrides: [
+          {
+            variationId: 'variation-small',
+            price: 600,
+            modifierPriceOverrides: [
+              { modifierId: 'modifier-extra-cheese', priceDelta: 50 },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(
+      tx.menuVariationModifierPriceOverride.createMany,
+    ).toHaveBeenCalledWith({
+      data: [
+        {
+          menuItemId: 'item-1',
+          variationId: 'variation-small',
+          modifierId: 'modifier-extra-cheese',
+          priceDelta: new Prisma.Decimal(50),
+        },
+      ],
+    });
   });
 
   it('resets additional prices to zero when pricing mode is SINGLE', async () => {

@@ -608,6 +608,7 @@ export class RestaurantMenuRepository {
                 priceDelta: Prisma.Decimal;
               }>;
               variationPriceOverrides?: Array<{
+                menuItemId?: string | null;
                 variationId: string;
                 priceDelta: Prisma.Decimal;
               }>;
@@ -637,6 +638,7 @@ export class RestaurantMenuRepository {
               priceDelta: Prisma.Decimal;
             }>;
             variationPriceOverrides?: Array<{
+              menuItemId?: string | null;
               variationId: string;
               priceDelta: Prisma.Decimal;
             }>;
@@ -683,6 +685,7 @@ export class RestaurantMenuRepository {
             variationPriceOverrides: (
               modifier.variationPriceOverrides ?? []
             ).map((override) => ({
+              menuItemId: override.menuItemId ?? null,
               variationId: override.variationId,
               priceDelta: Number(override.priceDelta),
             })),

@@ -2546,6 +2546,7 @@ export class OrdersService {
               priceDelta: Prisma.Decimal;
             }[];
             variationPriceOverrides?: {
+              menuItemId: string | null;
               variationId: string;
               priceDelta: Prisma.Decimal;
             }[];
@@ -2563,7 +2564,12 @@ export class OrdersService {
       )?.modifier;
       if (found) {
         const variationOverride = found.variationPriceOverrides?.find(
-          (item) => item.variationId === variationId,
+          (item) =>
+            item.menuItemId === menuItemId && item.variationId === variationId,
+        );
+        const legacyVariationOverride = found.variationPriceOverrides?.find(
+          (item) =>
+            item.menuItemId === null && item.variationId === variationId,
         );
         const override = found.itemPriceOverrides?.find(
           (item) => item.menuItemId === menuItemId,
@@ -2573,6 +2579,7 @@ export class OrdersService {
           ...found,
           priceDelta:
             variationOverride?.priceDelta ??
+            legacyVariationOverride?.priceDelta ??
             override?.priceDelta ??
             found.priceDelta,
         };
