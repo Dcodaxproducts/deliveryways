@@ -24,6 +24,79 @@ export class MenuCategoryRepository {
     return this.prisma.menuCategory.findUnique({ where: { id } });
   }
 
+  async findDetailById(id: string) {
+    return this.prisma.menuCategory.findUnique({
+      where: { id },
+      include: {
+        parent: { select: { id: true, name: true, slug: true } },
+        children: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            sortOrder: true,
+            isActive: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        },
+        items: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            imageUrl: true,
+            pricingMode: true,
+            basePrice: true,
+            isActive: true,
+          },
+          orderBy: [{ createdAt: 'asc' }],
+        },
+        variations: {
+          where: { deletedAt: null },
+          include: { itemPriceOverrides: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        },
+        menuLinks: {
+          orderBy: [{ sortOrder: 'asc' }],
+          include: {
+            restaurantMenu: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+        modifierLinks: {
+          orderBy: [{ sortOrder: 'asc' }],
+          include: {
+            modifierGroup: {
+              include: {
+                modifierLinks: {
+                  where: {
+                    modifier: { deletedAt: null, isActive: true },
+                  },
+                  orderBy: [
+                    { sortOrder: 'asc' },
+                    { modifier: { createdAt: 'asc' } },
+                  ],
+                  include: {
+                    modifier: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        _count: { select: { children: true, items: true } },
+      },
+    });
+  }
+
   async findByRestaurantAndSlug(
     restaurantId: string,
     slug: string,

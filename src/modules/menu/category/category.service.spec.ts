@@ -8,6 +8,7 @@ describe('MenuCategoryService', () => {
       create: jest.fn(),
       createMany: jest.fn(),
       findById: jest.fn(),
+      findDetailById: jest.fn(),
       findByRestaurantAndSlug: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
@@ -284,5 +285,68 @@ describe('MenuCategoryService', () => {
         ],
       }),
     );
+  });
+
+  it('returns category full detail by id', async () => {
+    const { service, categoryRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    categoryRepository.findDetailById.mockResolvedValue({
+      id: 'category-1',
+      restaurantId: 'restaurant-1',
+      name: 'Salads',
+      slug: 'salads',
+      deletedAt: null,
+      parent: null,
+      children: [],
+      items: [{ id: 'item-1', name: 'Greek Salad', slug: 'greek-salad' }],
+      variations: [{ id: 'variation-1', name: 'Medium' }],
+      menuLinks: [],
+      modifierLinks: [
+        {
+          sortOrder: 0,
+          modifierGroup: {
+            id: 'group-1',
+            name: 'Dressing',
+            description: null,
+            minSelect: 1,
+            maxSelect: 1,
+            isRequired: true,
+            modifierLinks: [
+              {
+                sortOrder: 0,
+                modifier: {
+                  id: 'modifier-1',
+                  name: 'Ranch',
+                  priceDelta: 0,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      _count: { children: 0, items: 1 },
+    });
+
+    const result = await service.getById(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'category-1',
+    );
+
+    expect(categoryRepository.findDetailById).toHaveBeenCalledWith(
+      'category-1',
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: 'category-1',
+        items: [{ id: 'item-1', name: 'Greek Salad', slug: 'greek-salad' }],
+        variations: [{ id: 'variation-1', name: 'Medium' }],
+        modifierGroups: [expect.objectContaining({ id: 'group-1' })],
+      }),
+    );
+    expect(result.message).toBe('Menu category fetched successfully');
   });
 });

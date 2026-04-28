@@ -102,6 +102,20 @@ export class MenuCategoryService {
     };
   }
 
+  async getById(user: AuthUserContext, id: string) {
+    const category = await this.categoryRepository.findDetailById(id);
+    if (!category || category.deletedAt) {
+      throw new NotFoundException('Menu category not found');
+    }
+
+    await this.ensureCanAccessRestaurant(user, category.restaurantId);
+
+    return {
+      data: await this.resolveMediaResponse(this.withModifierGroups(category)),
+      message: 'Menu category fetched successfully',
+    };
+  }
+
   async update(user: AuthUserContext, id: string, dto: UpdateMenuCategoryDto) {
     const category = await this.categoryRepository.findById(id);
     if (!category || category.deletedAt) {
