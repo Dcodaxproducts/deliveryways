@@ -291,6 +291,22 @@ export class ModifierRepository {
     });
   }
 
+  listGroupCategories(modifierGroupId: string) {
+    return this.prisma.menuCategoryModifierGroup.findMany({
+      where: {
+        modifierGroupId,
+        category: {
+          deletedAt: null,
+          isActive: true,
+        },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { category: { sortOrder: 'asc' } }],
+      include: {
+        category: true,
+      },
+    });
+  }
+
   private groupInclude(includeInactive?: boolean) {
     return {
       modifierLinks: {

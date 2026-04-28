@@ -15,6 +15,7 @@ describe('ModifierService', () => {
       updateModifier: jest.fn(),
       attachGroupToCategory: jest.fn(),
       listCategoryGroups: jest.fn(),
+      listGroupCategories: jest.fn(),
       deleteGroupItemLinks: jest.fn(),
       deleteGroupCategoryLinks: jest.fn(),
       deleteGroupModifierLinks: jest.fn(),
@@ -324,6 +325,46 @@ describe('ModifierService', () => {
     );
     expect(result.message).toBe(
       'Modifier group attached to category successfully',
+    );
+  });
+
+  it('lists categories assigned to a modifier group', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.listGroupCategories.mockResolvedValue([
+      {
+        id: 'link-1',
+        categoryId: 'category-1',
+        modifierGroupId: 'group-1',
+        sortOrder: 1,
+        category: {
+          id: 'category-1',
+          name: 'Pizza',
+          restaurantId: 'restaurant-1',
+        },
+      },
+    ]);
+
+    const result = await service.listGroupCategories(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'group-1',
+    );
+
+    expect(modifierRepository.listGroupCategories).toHaveBeenCalledWith(
+      'group-1',
+    );
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].category.name).toBe('Pizza');
+    expect(result.message).toBe(
+      'Modifier group categories fetched successfully',
     );
   });
 });

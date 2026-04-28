@@ -406,6 +406,25 @@ export class ModifierService {
     };
   }
 
+  async listGroupCategories(user: AuthUserContext, groupId: string) {
+    const group = await this.modifierRepository.findGroupById(groupId);
+    if (!group || group.deletedAt) {
+      throw new NotFoundException('Modifier group not found');
+    }
+
+    await this.ensureReadAccess(user, group.restaurantId);
+
+    return {
+      data: (await this.modifierRepository.listGroupCategories(groupId)).map(
+        (link) => ({
+          ...link,
+          category: link.category,
+        }),
+      ),
+      message: 'Modifier group categories fetched successfully',
+    };
+  }
+
   private mapGroup(group: {
     id: string;
     name: string;

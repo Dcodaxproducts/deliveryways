@@ -64,6 +64,22 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('modifier-groups/:groupId/categories')
+  listModifierGroupCategories(
+    @CurrentUser() user: AuthUserContext,
+    @Param('groupId') groupId: string,
+  ) {
+    return this.modifierService.listGroupCategories(user, groupId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Patch('modifier-groups/:id')
   updateGroup(
