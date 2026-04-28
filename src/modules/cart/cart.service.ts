@@ -57,6 +57,23 @@ interface CartSnapshot {
   items: CartSnapshotItem[];
 }
 
+interface CartModifierLink {
+  modifierGroup: {
+    modifierLinks: Array<{
+      modifier: {
+        id: string;
+      };
+    }>;
+  };
+}
+
+interface CartModifierSource {
+  modifierLinks: CartModifierLink[];
+  category: {
+    modifierLinks?: CartModifierLink[];
+  };
+}
+
 interface ResolvedCartCustomerScope {
   id: string;
   tenantId: string | null;
@@ -1094,7 +1111,7 @@ export class CartService {
     }
 
     for (const modifier of dto.modifiers ?? []) {
-      const found = menuItem.modifierLinks.some((link) =>
+      const found = this.getAvailableModifierLinks(menuItem).some((link) =>
         link.modifierGroup.modifierLinks.some(
           (candidate) => candidate.modifier.id === modifier.modifierId,
         ),
@@ -1165,7 +1182,7 @@ export class CartService {
       }
 
       for (const modifier of section.modifiers ?? []) {
-        const found = sectionItem.modifierLinks.some((link) =>
+        const found = this.getAvailableModifierLinks(sectionItem).some((link) =>
           link.modifierGroup.modifierLinks.some(
             (candidate) => candidate.modifier.id === modifier.modifierId,
           ),
@@ -1178,6 +1195,10 @@ export class CartService {
         }
       }
     }
+  }
+
+  private getAvailableModifierLinks(item: CartModifierSource) {
+    return [...(item.category.modifierLinks ?? []), ...item.modifierLinks];
   }
 
   private readModifiers(

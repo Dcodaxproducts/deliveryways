@@ -435,6 +435,74 @@ describe('CartService', () => {
     expect(result.message).toBe('Item added to cart successfully');
   });
 
+  it('allows modifiers inherited from the item category', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(existingCart)
+      .mockResolvedValueOnce(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Salad',
+      category: {
+        id: 'category-1',
+        items: [],
+        modifierLinks: [
+          {
+            modifierGroup: {
+              modifierLinks: [{ modifier: { id: 'modifier-1' } }],
+            },
+          },
+        ],
+      },
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    const result = await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        quantity: 1,
+        modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+      },
+    );
+
+    expect(result.message).toBe('Item added to cart successfully');
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+      }),
+    );
+  });
+
   it('requires branchId on first add-item when cart does not exist', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue(null);

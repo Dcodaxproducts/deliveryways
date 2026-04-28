@@ -202,6 +202,31 @@ export class CartRepository {
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
+            modifierLinks: {
+              orderBy: [{ sortOrder: 'asc' }],
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifierLinks: {
+                      where: {
+                        modifier: {
+                          deletedAt: null,
+                          isActive: true,
+                        },
+                      },
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
         modifierLinks: {
@@ -292,6 +317,36 @@ export class CartRepository {
             branchId,
           },
         },
+        category: {
+          select: {
+            id: true,
+            modifierLinks: {
+              orderBy: [{ sortOrder: 'asc' }],
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifierLinks: {
+                      where: {
+                        modifier: {
+                          deletedAt: null,
+                          isActive: true,
+                        },
+                      },
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -340,6 +395,28 @@ export class CartRepository {
                 itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+            modifierLinks: {
+              orderBy: [{ sortOrder: 'asc' }],
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifierLinks: {
+                      where: {
+                        modifier: { deletedAt: null, isActive: true },
+                      },
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },

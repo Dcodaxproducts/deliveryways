@@ -37,6 +37,34 @@ import {
 } from './dto';
 import { OrdersRepository } from './orders.repository';
 
+interface OrderModifierLink {
+  modifierGroup: {
+    modifierLinks: Array<{
+      modifier: {
+        id: string;
+        name: string;
+        priceDelta: Prisma.Decimal;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          priceDelta: Prisma.Decimal;
+        }>;
+        variationPriceOverrides?: Array<{
+          menuItemId: string | null;
+          variationId: string;
+          priceDelta: Prisma.Decimal;
+        }>;
+      };
+    }>;
+  };
+}
+
+interface OrderModifierSource {
+  modifierLinks: OrderModifierLink[];
+  category: {
+    modifierLinks?: OrderModifierLink[];
+  };
+}
+
 type QuoteLine = {
   menuItemId: string;
   categoryId: string;
@@ -582,6 +610,28 @@ export class OrdersService {
                   itemPriceOverrides: true,
                 },
               },
+              modifierLinks: {
+                orderBy: [{ sortOrder: 'asc' }],
+                include: {
+                  modifierGroup: {
+                    include: {
+                      modifierLinks: {
+                        where: {
+                          modifier: { deletedAt: null, isActive: true },
+                        },
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
           modifierLinks: {
@@ -673,7 +723,7 @@ export class OrdersService {
       if (requestedItem.modifiers?.length) {
         for (const requestedModifier of requestedItem.modifiers) {
           const found = this.findModifier(
-            menuItem.modifierLinks,
+            this.getAvailableModifierLinks(menuItem),
             requestedModifier.modifierId,
             menuItem.id,
             requestedItem.variationId,
@@ -769,6 +819,28 @@ export class OrdersService {
                     itemPriceOverrides: true,
                   },
                 },
+                modifierLinks: {
+                  orderBy: [{ sortOrder: 'asc' }],
+                  include: {
+                    modifierGroup: {
+                      include: {
+                        modifierLinks: {
+                          where: {
+                            modifier: { deletedAt: null, isActive: true },
+                          },
+                          include: {
+                            modifier: {
+                              include: {
+                                itemPriceOverrides: true,
+                                variationPriceOverrides: true,
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -819,7 +891,7 @@ export class OrdersService {
 
           for (const requestedModifier of section.modifiers ?? []) {
             const found = this.findModifier(
-              sectionItem.modifierLinks,
+              this.getAvailableModifierLinks(sectionItem),
               requestedModifier.modifierId,
               sectionItem.id,
               requestedItem.variationId,
@@ -2510,26 +2582,7 @@ export class OrdersService {
   }
 
   private findModifier(
-    links: {
-      modifierGroup: {
-        modifierLinks: {
-          modifier: {
-            id: string;
-            name: string;
-            priceDelta: Prisma.Decimal;
-            itemPriceOverrides?: {
-              menuItemId: string;
-              priceDelta: Prisma.Decimal;
-            }[];
-            variationPriceOverrides?: {
-              menuItemId: string | null;
-              variationId: string;
-              priceDelta: Prisma.Decimal;
-            }[];
-          };
-        }[];
-      };
-    }[],
+    links: OrderModifierLink[],
     modifierId: string,
     menuItemId?: string,
     variationId?: string,
@@ -2563,6 +2616,10 @@ export class OrdersService {
     }
 
     return undefined;
+  }
+
+  private getAvailableModifierLinks(item: OrderModifierSource) {
+    return [...(item.category.modifierLinks ?? []), ...item.modifierLinks];
   }
 
   private packOrderSelections(
