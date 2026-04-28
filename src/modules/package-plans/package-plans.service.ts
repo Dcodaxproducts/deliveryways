@@ -7,6 +7,8 @@ import {
 import {
   BillingInterval,
   PackageBillingModel,
+  PackagePayoutCycle,
+  PaymentStatus,
   Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
@@ -30,6 +32,10 @@ interface NormalizedPlanInput {
   billingInterval?: BillingInterval;
   planPrice?: Prisma.Decimal;
   commissionPercentage?: Prisma.Decimal;
+  commissionCapAmount?: Prisma.Decimal | null;
+  vatPercentage?: Prisma.Decimal;
+  payoutCycle?: PackagePayoutCycle;
+  termsDocumentUrl?: string | null;
   currency?: string;
   trialDays?: number;
   features?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
@@ -59,6 +65,10 @@ export class PackagePlansService {
       billingInterval: input.billingInterval ?? BillingInterval.MONTHLY,
       planPrice: input.planPrice ?? new Prisma.Decimal(0),
       commissionPercentage: input.commissionPercentage ?? new Prisma.Decimal(0),
+      commissionCapAmount: input.commissionCapAmount,
+      vatPercentage: input.vatPercentage ?? new Prisma.Decimal(0),
+      payoutCycle: input.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+      termsDocumentUrl: input.termsDocumentUrl,
       currency: input.currency ?? 'PKR',
       trialDays: input.trialDays ?? 0,
       features: input.features,
@@ -80,6 +90,58 @@ export class PackagePlansService {
       data: items,
       message: 'Package plans fetched successfully',
       meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  getFeatureCatalog(user: AuthUserContext) {
+    this.ensureSuperAdmin(user);
+
+    return {
+      data: [
+        {
+          code: 'ORDER_MANAGEMENT',
+          name: 'Order Management',
+          description: 'Create, manage, track, and update orders',
+        },
+        {
+          code: 'MENU_MANAGEMENT',
+          name: 'Menu Management',
+          description:
+            'Create menus, items, categories, modifiers, and pricing',
+        },
+        {
+          code: 'BRANCH_MANAGEMENT',
+          name: 'Branch Management',
+          description: 'Manage branches and branch settings',
+          supportsLimit: true,
+        },
+        {
+          code: 'REPORTS_ANALYTICS',
+          name: 'Reports & Analytics',
+          description: 'Dashboard, sales reports, and performance analytics',
+        },
+        {
+          code: 'PRIORITY_SUPPORT',
+          name: 'Priority Support',
+          description: 'Priority support access for the restaurant',
+        },
+        {
+          code: 'PROMOTIONS_COUPONS',
+          name: 'Promotions & Coupons',
+          description: 'Coupons, campaigns, and promotions',
+        },
+        {
+          code: 'POS',
+          name: 'POS',
+          description: 'Point-of-sale ordering and operational tools',
+        },
+        {
+          code: 'LOYALTY_WALLET',
+          name: 'Loyalty & Wallet',
+          description: 'Customer loyalty, wallet, and reward features',
+        },
+      ],
+      message: 'Package plan feature catalog fetched successfully',
     };
   }
 
@@ -113,6 +175,8 @@ export class PackagePlansService {
       planPrice: input.planPrice ?? existing.planPrice,
       commissionPercentage:
         input.commissionPercentage ?? existing.commissionPercentage,
+      commissionCapAmount:
+        input.commissionCapAmount ?? existing.commissionCapAmount,
     });
 
     if (input.isDefault) {
@@ -188,8 +252,13 @@ export class PackagePlansService {
         : undefined,
       packagePlan: { connect: { id: dto.packagePlanId } },
       status: dto.status ?? SubscriptionStatus.ACTIVE,
+      paymentStatus: dto.paymentStatus ?? PaymentStatus.PENDING,
       startsAt: dto.startsAt ? new Date(dto.startsAt) : new Date(),
       endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
+      nextBillingAt: dto.nextBillingAt
+        ? new Date(dto.nextBillingAt)
+        : this.resolveNextBillingAt(plan.billingInterval, dto.startsAt),
+      planSnapshot: this.buildPlanSnapshot(plan),
       note: dto.note,
       createdBy: user.uid,
       updatedBy: user.uid,
@@ -246,8 +315,12 @@ export class PackagePlansService {
         ? { connect: { id: dto.packagePlanId } }
         : undefined,
       status: dto.status,
+      paymentStatus: dto.paymentStatus,
       startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
       endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
+      nextBillingAt: dto.nextBillingAt
+        ? new Date(dto.nextBillingAt)
+        : undefined,
       note: dto.note,
       updatedBy: user.uid,
     });
@@ -277,6 +350,19 @@ export class PackagePlansService {
         dto.commissionPercentage !== undefined
           ? new Prisma.Decimal(dto.commissionPercentage)
           : undefined,
+      commissionCapAmount:
+        dto.commissionCapAmount !== undefined
+          ? new Prisma.Decimal(dto.commissionCapAmount)
+          : undefined,
+      vatPercentage:
+        dto.vatPercentage !== undefined
+          ? new Prisma.Decimal(dto.vatPercentage)
+          : undefined,
+      payoutCycle: dto.payoutCycle,
+      termsDocumentUrl:
+        dto.termsDocumentUrl !== undefined
+          ? dto.termsDocumentUrl.trim() || null
+          : undefined,
       currency: dto.currency?.trim().toUpperCase(),
       trialDays: dto.trialDays,
       features:
@@ -294,10 +380,12 @@ export class PackagePlansService {
     billingModel?: PackageBillingModel;
     planPrice?: Prisma.Decimal;
     commissionPercentage?: Prisma.Decimal;
+    commissionCapAmount?: Prisma.Decimal | null;
   }): void {
     const planPrice = input.planPrice ?? new Prisma.Decimal(0);
     const commissionPercentage =
       input.commissionPercentage ?? new Prisma.Decimal(0);
+    const commissionCapAmount = input.commissionCapAmount;
 
     if (!input.billingModel) {
       throw new BadRequestException('Billing model is required');
@@ -327,6 +415,12 @@ export class PackagePlansService {
       if (commissionPercentage.greaterThan(0)) {
         throw new BadRequestException(
           'Plan based packages cannot have a commission percentage',
+        );
+      }
+
+      if (commissionCapAmount?.greaterThan(0)) {
+        throw new BadRequestException(
+          'Plan based packages cannot have a commission cap amount',
         );
       }
     }
@@ -374,6 +468,55 @@ export class PackagePlansService {
         'Subscription end date must be after start date',
       );
     }
+  }
+
+  private resolveNextBillingAt(
+    billingInterval: BillingInterval,
+    startsAt?: string,
+  ): Date {
+    const nextBillingAt = startsAt ? new Date(startsAt) : new Date();
+
+    if (billingInterval === BillingInterval.YEARLY) {
+      nextBillingAt.setFullYear(nextBillingAt.getFullYear() + 1);
+      return nextBillingAt;
+    }
+
+    nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
+    return nextBillingAt;
+  }
+
+  private buildPlanSnapshot(plan: {
+    id: string;
+    name: string;
+    description?: string | null;
+    billingModel: PackageBillingModel;
+    billingInterval: BillingInterval;
+    planPrice: Prisma.Decimal;
+    commissionPercentage: Prisma.Decimal;
+    commissionCapAmount?: Prisma.Decimal | null;
+    vatPercentage?: Prisma.Decimal;
+    payoutCycle?: PackagePayoutCycle;
+    currency: string;
+    trialDays: number;
+    features?: Prisma.JsonValue | null;
+    termsDocumentUrl?: string | null;
+  }): Prisma.InputJsonValue {
+    return {
+      id: plan.id,
+      name: plan.name,
+      description: plan.description ?? null,
+      billingModel: plan.billingModel,
+      billingInterval: plan.billingInterval,
+      planPrice: plan.planPrice.toNumber(),
+      commissionPercentage: plan.commissionPercentage.toNumber(),
+      commissionCapAmount: plan.commissionCapAmount?.toNumber() ?? null,
+      vatPercentage: plan.vatPercentage?.toNumber() ?? 0,
+      payoutCycle: plan.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+      currency: plan.currency,
+      trialDays: plan.trialDays,
+      features: plan.features ?? null,
+      termsDocumentUrl: plan.termsDocumentUrl ?? null,
+    };
   }
 
   private ensureSuperAdmin(user: AuthUserContext): void {

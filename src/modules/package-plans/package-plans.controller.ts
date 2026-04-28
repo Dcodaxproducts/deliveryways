@@ -62,6 +62,12 @@ export class PackagePlansController {
     return this.packagePlansService.listSubscriptions(user, query);
   }
 
+  @Get('features/catalog')
+  @ApiOperation({ summary: 'List available package plan feature modules' })
+  getFeatureCatalog(@CurrentUser() user: AuthUserContext) {
+    return this.packagePlansService.getFeatureCatalog(user);
+  }
+
   @Post('subscriptions')
   @ApiOperation({ summary: 'Assign package plan to tenant or restaurant' })
   assignSubscription(

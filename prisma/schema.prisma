@@ -84,6 +84,13 @@ enum BillingInterval {
   YEARLY
 }
 
+enum PackagePayoutCycle {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
 enum SubscriptionStatus {
   TRIALING
   ACTIVE
@@ -1494,6 +1501,10 @@ model PackagePlan {
   billingInterval      BillingInterval     @default(MONTHLY) @map("billing_interval")
   planPrice            Decimal             @default(0) @map("plan_price") @db.Decimal(10, 2)
   commissionPercentage Decimal             @default(0) @map("commission_percentage") @db.Decimal(5, 2)
+  commissionCapAmount  Decimal?            @map("commission_cap_amount") @db.Decimal(10, 2)
+  vatPercentage        Decimal             @default(0) @map("vat_percentage") @db.Decimal(5, 2)
+  payoutCycle          PackagePayoutCycle  @default(WEEKLY) @map("payout_cycle")
+  termsDocumentUrl     String?             @map("terms_document_url")
   currency             String              @default("PKR") @db.VarChar(10)
   trialDays            Int                 @default(0) @map("trial_days")
   features             Json?
@@ -1517,8 +1528,11 @@ model TenantSubscription {
   restaurantId  String?            @map("restaurant_id")
   packagePlanId String             @map("package_plan_id")
   status        SubscriptionStatus @default(ACTIVE)
+  paymentStatus PaymentStatus      @default(PENDING) @map("payment_status")
   startsAt      DateTime           @default(now()) @map("starts_at") @db.Timestamptz
   endsAt        DateTime?          @map("ends_at") @db.Timestamptz
+  nextBillingAt DateTime?          @map("next_billing_at") @db.Timestamptz
+  planSnapshot  Json?              @map("plan_snapshot")
   note          String?
   createdBy     String?            @map("created_by")
   updatedBy     String?            @map("updated_by")

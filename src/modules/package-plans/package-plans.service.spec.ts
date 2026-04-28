@@ -2,6 +2,8 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   BillingInterval,
   PackageBillingModel,
+  PackagePayoutCycle,
+  PaymentStatus,
   Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
@@ -19,6 +21,10 @@ describe('PackagePlansService', () => {
     billingInterval: BillingInterval.MONTHLY,
     planPrice: new Prisma.Decimal(5000),
     commissionPercentage: new Prisma.Decimal(5),
+    commissionCapAmount: new Prisma.Decimal(250),
+    vatPercentage: new Prisma.Decimal(15),
+    payoutCycle: PackagePayoutCycle.WEEKLY,
+    termsDocumentUrl: 'terms/growth.pdf',
     currency: 'PKR',
     trialDays: 0,
     features: null,
@@ -41,6 +47,10 @@ describe('PackagePlansService', () => {
       billingModel: PackageBillingModel.HYBRID,
       planPrice: 5000,
       commissionPercentage: 5,
+      commissionCapAmount: 250,
+      vatPercentage: 15,
+      payoutCycle: PackagePayoutCycle.WEEKLY,
+      termsDocumentUrl: 'terms/growth.pdf',
     });
 
     expect(repository.createPlan).toHaveBeenCalledWith(
@@ -48,6 +58,10 @@ describe('PackagePlansService', () => {
         billingModel: PackageBillingModel.HYBRID,
         planPrice: new Prisma.Decimal(5000),
         commissionPercentage: new Prisma.Decimal(5),
+        commissionCapAmount: new Prisma.Decimal(250),
+        vatPercentage: new Prisma.Decimal(15),
+        payoutCycle: PackagePayoutCycle.WEEKLY,
+        termsDocumentUrl: 'terms/growth.pdf',
       }),
     );
     expect(result.message).toBe('Package plan created successfully');
@@ -64,6 +78,32 @@ describe('PackagePlansService', () => {
         commissionPercentage: 8,
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects fixed plan with commission cap amount', async () => {
+    const service = new PackagePlansService({} as never);
+
+    await expect(
+      service.createPlan(superAdmin, {
+        name: 'Fixed Only',
+        billingModel: PackageBillingModel.PLAN,
+        planPrice: 5000,
+        commissionCapAmount: 250,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('returns feature catalog for super admin', () => {
+    const service = new PackagePlansService({} as never);
+
+    const result = service.getFeatureCatalog(superAdmin);
+
+    expect(result.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'ORDER_MANAGEMENT' }),
+        expect.objectContaining({ code: 'BRANCH_MANAGEMENT' }),
+      ]),
+    );
   });
 
   it('rejects non-super-admin package management', async () => {
@@ -100,8 +140,25 @@ describe('PackagePlansService', () => {
       expect.objectContaining({
         tenant: { connect: { id: 'tenant-1' } },
         packagePlan: { connect: { id: 'plan-1' } },
+        paymentStatus: PaymentStatus.PENDING,
       }),
     );
+    const createCalls = repository.createSubscription.mock.calls as unknown as [
+      {
+        planSnapshot?: {
+          billingModel?: PackageBillingModel;
+          commissionCapAmount?: number | null;
+          vatPercentage?: number;
+          payoutCycle?: PackagePayoutCycle;
+        };
+      },
+    ][];
+    expect(createCalls[0]?.[0].planSnapshot).toMatchObject({
+      billingModel: PackageBillingModel.HYBRID,
+      commissionCapAmount: 250,
+      vatPercentage: 15,
+      payoutCycle: PackagePayoutCycle.WEEKLY,
+    });
     expect(result.message).toBe('Tenant subscription assigned successfully');
   });
 });

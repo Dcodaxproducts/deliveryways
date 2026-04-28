@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   BillingInterval,
   PackageBillingModel,
+  PackagePayoutCycle,
+  PaymentStatus,
   SubscriptionStatus,
 } from '@prisma/client';
 import { Transform } from 'class-transformer';
@@ -65,6 +67,40 @@ export class CreatePackagePlanDto {
   @Min(0)
   @Max(100)
   commissionPercentage?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    description: 'Maximum platform commission amount per order',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  commissionCapAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 100, default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  vatPercentage?: number;
+
+  @ApiPropertyOptional({
+    enum: PackagePayoutCycle,
+    default: PackagePayoutCycle.WEEKLY,
+  })
+  @IsOptional()
+  @IsEnum(PackagePayoutCycle)
+  payoutCycle?: PackagePayoutCycle;
+
+  @ApiPropertyOptional({
+    description: 'Terms and conditions document URL or storage key',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  termsDocumentUrl?: string;
 
   @ApiPropertyOptional({ default: 'PKR' })
   @IsOptional()
@@ -133,6 +169,32 @@ export class UpdatePackagePlanDto {
   @Max(100)
   commissionPercentage?: number;
 
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  commissionCapAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 100 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  vatPercentage?: number;
+
+  @ApiPropertyOptional({ enum: PackagePayoutCycle })
+  @IsOptional()
+  @IsEnum(PackagePayoutCycle)
+  payoutCycle?: PackagePayoutCycle;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  termsDocumentUrl?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -196,6 +258,11 @@ export class AssignTenantSubscriptionDto {
   @IsString()
   packagePlanId!: string;
 
+  @ApiPropertyOptional({ enum: PaymentStatus, default: PaymentStatus.PENDING })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  paymentStatus?: PaymentStatus;
+
   @ApiPropertyOptional({
     enum: SubscriptionStatus,
     default: SubscriptionStatus.ACTIVE,
@@ -216,6 +283,11 @@ export class AssignTenantSubscriptionDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsDateString()
+  nextBillingAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   note?: string;
@@ -232,6 +304,11 @@ export class UpdateTenantSubscriptionDto {
   @IsEnum(SubscriptionStatus)
   status?: SubscriptionStatus;
 
+  @ApiPropertyOptional({ enum: PaymentStatus })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  paymentStatus?: PaymentStatus;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
@@ -241,6 +318,11 @@ export class UpdateTenantSubscriptionDto {
   @IsOptional()
   @IsDateString()
   endsAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  nextBillingAt?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1,11 +1,11 @@
 # Payment & Business Plans — Task Breakdown
 
 ## Phase 1: Complete Plan Management
-- [ ] Add Prisma fields/enums for commission cap, VAT, payout cycle, terms document, subscription snapshot/payment state.
-- [ ] Generate migration safely after DB backup plan.
-- [ ] Update package-plan DTOs, service normalization, and validation.
-- [ ] Update plan list/detail responses and tests.
-- [ ] Add feature catalog endpoint/constants.
+- [x] Add Prisma fields/enums for commission cap, VAT, payout cycle, terms document, subscription snapshot/payment state.
+- [x] Generate migration safely after DB backup plan.
+- [x] Update package-plan DTOs, service normalization, and validation.
+- [x] Update plan list/detail responses and tests.
+- [x] Add feature catalog endpoint/constants.
 
 ## Phase 2: Restaurant Purchase + Current Subscription
 - [ ] Add business-facing routes for active plans and current subscription.
