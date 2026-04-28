@@ -16,6 +16,7 @@ import {
   CreateModifierGroupDto,
   ListModifierGroupsDto,
   ListModifiersDto,
+  SyncModifierGroupCategoriesDto,
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
@@ -422,6 +423,46 @@ export class ModifierService {
         }),
       ),
       message: 'Modifier group categories fetched successfully',
+    };
+  }
+
+  async syncGroupCategories(
+    user: AuthUserContext,
+    groupId: string,
+    dto: SyncModifierGroupCategoriesDto,
+  ) {
+    const group = await this.modifierRepository.findGroupById(groupId);
+    if (!group || group.deletedAt) {
+      throw new NotFoundException('Modifier group not found');
+    }
+
+    await this.ensureWriteAccess(user, group.restaurantId);
+
+    const categoryIds = [...new Set(dto.categoryIds)];
+    const categories = categoryIds.length
+      ? await this.prisma.menuCategory.findMany({
+          where: {
+            id: { in: categoryIds },
+            restaurantId: group.restaurantId,
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : [];
+
+    if (categories.length !== categoryIds.length) {
+      throw new BadRequestException(
+        'All categories must exist in the modifier group restaurant',
+      );
+    }
+
+    const data = await this.prisma.$transaction((tx) =>
+      this.modifierRepository.syncGroupCategories(groupId, categoryIds, tx),
+    );
+
+    return {
+      data,
+      message: 'Modifier group categories updated successfully',
     };
   }
 

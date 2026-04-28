@@ -16,6 +16,7 @@ describe('ModifierService', () => {
       attachGroupToCategory: jest.fn(),
       listCategoryGroups: jest.fn(),
       listGroupCategories: jest.fn(),
+      syncGroupCategories: jest.fn(),
       deleteGroupItemLinks: jest.fn(),
       deleteGroupCategoryLinks: jest.fn(),
       deleteGroupModifierLinks: jest.fn(),
@@ -31,6 +32,7 @@ describe('ModifierService', () => {
       },
       menuCategory: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback({})),
@@ -420,6 +422,50 @@ describe('ModifierService', () => {
     expect(result.data[0].category.name).toBe('Pizza');
     expect(result.message).toBe(
       'Modifier group categories fetched successfully',
+    );
+  });
+
+  it('replaces modifier group category assignments', async () => {
+    const { service, modifierRepository, prisma } = makeService();
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.menuCategory.findMany.mockResolvedValue([
+      { id: 'category-2' },
+      { id: 'category-3' },
+    ]);
+    modifierRepository.syncGroupCategories.mockResolvedValue([
+      {
+        categoryId: 'category-2',
+        modifierGroupId: 'group-1',
+        sortOrder: 0,
+      },
+      {
+        categoryId: 'category-3',
+        modifierGroupId: 'group-1',
+        sortOrder: 1,
+      },
+    ]);
+
+    const result = await service.syncGroupCategories(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'group-1',
+      { categoryIds: ['category-2', 'category-3'] },
+    );
+
+    expect(modifierRepository.syncGroupCategories).toHaveBeenCalledWith(
+      'group-1',
+      ['category-2', 'category-3'],
+      expect.anything(),
+    );
+    expect(result.message).toBe(
+      'Modifier group categories updated successfully',
     );
   });
 });

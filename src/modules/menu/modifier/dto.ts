@@ -201,3 +201,11 @@ export class AttachModifierGroupDto {
 }
 
 export class AttachModifierToGroupDto extends AttachModifierGroupDto {}
+
+export class SyncModifierGroupCategoriesDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  categoryIds!: string[];
+}

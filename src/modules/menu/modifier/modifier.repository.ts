@@ -279,6 +279,34 @@ export class ModifierRepository {
     });
   }
 
+  async syncGroupCategories(
+    modifierGroupId: string,
+    categoryIds: string[],
+    tx?: PrismaTx,
+  ) {
+    await this.client(tx).menuCategoryModifierGroup.deleteMany({
+      where: { modifierGroupId },
+    });
+
+    if (!categoryIds.length) {
+      return [];
+    }
+
+    await this.client(tx).menuCategoryModifierGroup.createMany({
+      data: categoryIds.map((categoryId, index) => ({
+        categoryId,
+        modifierGroupId,
+        sortOrder: index,
+      })),
+      skipDuplicates: true,
+    });
+
+    return this.client(tx).menuCategoryModifierGroup.findMany({
+      where: { modifierGroupId },
+      orderBy: [{ sortOrder: 'asc' }],
+    });
+  }
+
   listCategoryGroups(categoryId: string) {
     return this.prisma.menuCategoryModifierGroup.findMany({
       where: { categoryId },

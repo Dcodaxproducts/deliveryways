@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +26,7 @@ import {
   CreateModifierGroupDto,
   ListModifierGroupsDto,
   ListModifiersDto,
+  SyncModifierGroupCategoriesDto,
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
@@ -96,6 +98,18 @@ export class ModifierController {
   @Delete('modifier-groups/:id')
   removeGroup(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.modifierService.removeGroup(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Put('modifier-groups/:groupId/categories')
+  syncModifierGroupCategories(
+    @CurrentUser() user: AuthUserContext,
+    @Param('groupId') groupId: string,
+    @Body() dto: SyncModifierGroupCategoriesDto,
+  ) {
+    return this.modifierService.syncGroupCategories(user, groupId, dto);
   }
 
   @ApiBearerAuth()
