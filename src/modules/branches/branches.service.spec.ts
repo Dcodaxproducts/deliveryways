@@ -625,4 +625,118 @@ describe('BranchesService', () => {
       true,
     );
   });
+
+  it('temporarily closes a branch with reason and reopen time', async () => {
+    const { service, repository } = makeService();
+    const closedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: { contact: { phone: '123' } },
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      isActive: true,
+      settings: {},
+    });
+
+    const result = await service.updateTemporaryClosure(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        isClosed: true,
+        closedUntil,
+        reason: 'Kitchen maintenance',
+        message: 'We are closed for maintenance',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.any(Object),
+      undefined,
+    );
+    const updateCalls = repository.update.mock.calls as unknown as [
+      string,
+      {
+        settings?: {
+          contact?: { phone?: string };
+          temporaryClosure?: {
+            isClosed?: boolean;
+            closedUntil?: string | null;
+            reason?: string | null;
+            message?: string | null;
+          };
+        };
+      },
+      unknown,
+    ][];
+    const updatePayload = updateCalls[0]?.[1];
+    expect(updatePayload?.settings?.contact?.phone).toBe('123');
+    expect(updatePayload?.settings?.temporaryClosure).toMatchObject({
+      isClosed: true,
+      closedUntil,
+      reason: 'Kitchen maintenance',
+      message: 'We are closed for maintenance',
+    });
+    expect(result.data.availability).toEqual(
+      expect.objectContaining({
+        isAvailable: false,
+        isTemporarilyClosed: true,
+      }),
+    );
+    expect(result.message).toBe('Branch temporarily closed successfully');
+  });
+
+  it('reopens a temporarily closed branch', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: { temporaryClosure: { isClosed: true } },
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      isActive: true,
+      settings: {},
+    });
+
+    const result = await service.updateTemporaryClosure(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      'branch-1',
+      { isClosed: false },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.any(Object),
+      undefined,
+    );
+    const updateCalls = repository.update.mock.calls as unknown as [
+      string,
+      { settings?: { temporaryClosure?: { isClosed?: boolean } } },
+      unknown,
+    ][];
+    const updatePayload = updateCalls[0]?.[1];
+    expect(updatePayload?.settings?.temporaryClosure).toEqual({
+      isClosed: false,
+    });
+    expect(result.message).toBe('Branch reopened successfully');
+  });
 });

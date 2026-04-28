@@ -25,6 +25,7 @@ import {
   UpdateBranchDto,
   UpdateBranchImagesDto,
   UpdateBranchOpeningHoursDto,
+  UpdateBranchTemporaryClosureDto,
 } from './dto';
 
 interface BranchDistanceAddress {
@@ -43,8 +44,17 @@ interface DistanceOrigin {
   lng: number;
 }
 
+export interface BranchTemporaryClosure {
+  isClosed: boolean;
+  closedAt?: string | null;
+  closedUntil?: string | null;
+  reason?: string | null;
+  message?: string | null;
+}
+
 interface BranchSettingsLike {
   openingHours?: BranchOpeningHourItemDto[];
+  temporaryClosure?: BranchTemporaryClosure;
   [key: string]: unknown;
 }
 
@@ -483,6 +493,52 @@ export class BranchesService {
     };
   }
 
+  async updateTemporaryClosure(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchTemporaryClosureDto,
+    tx?: PrismaTx,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
+    const settings = this.readSettings(branch.settings);
+    const temporaryClosure = this.normalizeTemporaryClosure(dto);
+
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        settings: {
+          ...settings,
+          temporaryClosure,
+        } as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: {
+        branchId: data.id,
+        temporaryClosure,
+        availability: this.resolveBranchAvailability({
+          ...data,
+          settings: {
+            ...settings,
+            temporaryClosure,
+          },
+        }),
+      },
+      message: temporaryClosure.isClosed
+        ? 'Branch temporarily closed successfully'
+        : 'Branch reopened successfully',
+    };
+  }
+
   async update(
     user: AuthUserContext,
     id: string,
@@ -758,10 +814,12 @@ export class BranchesService {
       isActive?: boolean;
       logoUrl?: string | null;
       coverImage?: string | null;
+      settings?: unknown;
     },
   >(branch: T) {
     return {
       ...(await this.resolveBranchMedia(branch)),
+      availability: this.resolveBranchAvailability(branch),
       deletionState: {
         isDeleted: !!branch.deletedAt,
         deletionScheduled: false,
@@ -769,6 +827,22 @@ export class BranchesService {
         deleteAfter: null,
         isActive: branch.isActive ?? true,
       },
+    };
+  }
+
+  private resolveBranchAvailability(branch: {
+    isActive?: boolean;
+    settings?: unknown;
+  }) {
+    const temporaryClosure = this.resolveActiveTemporaryClosure(
+      this.readSettings(branch.settings).temporaryClosure,
+    );
+
+    return {
+      isActive: branch.isActive ?? true,
+      isTemporarilyClosed: !!temporaryClosure,
+      isAvailable: (branch.isActive ?? true) && !temporaryClosure,
+      temporaryClosure,
     };
   }
 
@@ -1105,6 +1179,47 @@ export class BranchesService {
     }
 
     return this.normalizeOpeningHours(openingHours);
+  }
+
+  private normalizeTemporaryClosure(
+    dto: UpdateBranchTemporaryClosureDto,
+  ): BranchTemporaryClosure {
+    if (dto.isClosed === false) {
+      return { isClosed: false };
+    }
+
+    const closedUntil = dto.closedUntil?.trim() || undefined;
+    const reason = dto.reason?.trim() || undefined;
+    const message = dto.message?.trim() || undefined;
+
+    if (closedUntil && new Date(closedUntil).getTime() <= Date.now()) {
+      throw new BadRequestException('closedUntil must be in the future');
+    }
+
+    return {
+      isClosed: true,
+      closedAt: new Date().toISOString(),
+      closedUntil: closedUntil ?? null,
+      reason: reason ?? null,
+      message: message ?? null,
+    };
+  }
+
+  private resolveActiveTemporaryClosure(
+    closure: BranchTemporaryClosure | undefined,
+  ): BranchTemporaryClosure | null {
+    if (!closure?.isClosed) {
+      return null;
+    }
+
+    if (
+      closure.closedUntil &&
+      new Date(closure.closedUntil).getTime() <= Date.now()
+    ) {
+      return null;
+    }
+
+    return closure;
   }
 
   private normalizeOpeningHours(

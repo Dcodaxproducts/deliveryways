@@ -12,3 +12,4 @@ export {
   UpdateBranchOpeningHoursDto,
 } from './branch-opening-hours.dto';
 export { CleanupOrphanBranchDto } from './cleanup-orphan-branch.dto';
+export { UpdateBranchTemporaryClosureDto } from './temporary-closure.dto';

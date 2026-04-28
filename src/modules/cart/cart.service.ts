@@ -118,6 +118,14 @@ interface ScopedBranch {
   id: string;
   tenantId: string;
   restaurantId: string;
+  settings?: unknown;
+}
+
+interface CartBranchTemporaryClosure {
+  isClosed: boolean;
+  closedUntil?: string | null;
+  reason?: string | null;
+  message?: string | null;
 }
 
 @Injectable()
@@ -741,7 +749,54 @@ export class CartService {
       );
     }
 
+    this.assertBranchAcceptingCarts(branch.settings);
+
     return branch;
+  }
+
+  private assertBranchAcceptingCarts(settings: unknown) {
+    const temporaryClosure = this.readTemporaryClosure(settings);
+
+    if (!temporaryClosure?.isClosed) {
+      return;
+    }
+
+    if (
+      temporaryClosure.closedUntil &&
+      new Date(temporaryClosure.closedUntil).getTime() <= Date.now()
+    ) {
+      return;
+    }
+
+    throw new BadRequestException({
+      message: temporaryClosure.message ?? 'Branch is temporarily closed',
+      error: 'BRANCH_TEMPORARILY_CLOSED',
+      details: {
+        reason: temporaryClosure.reason ?? null,
+        closedUntil: temporaryClosure.closedUntil ?? null,
+      },
+    });
+  }
+
+  private readTemporaryClosure(
+    settings: unknown,
+  ): CartBranchTemporaryClosure | null {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return null;
+    }
+
+    const temporaryClosure = (settings as { temporaryClosure?: unknown })
+      .temporaryClosure;
+
+    if (
+      !temporaryClosure ||
+      typeof temporaryClosure !== 'object' ||
+      Array.isArray(temporaryClosure)
+    ) {
+      return null;
+    }
+
+    return temporaryClosure as CartBranchTemporaryClosure;
   }
 
   private async buildCartResponse(cart: CartSnapshot) {

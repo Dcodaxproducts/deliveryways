@@ -120,6 +120,7 @@ export class CartRepository {
         id: true,
         tenantId: true,
         restaurantId: true,
+        settings: true,
       },
     });
   }

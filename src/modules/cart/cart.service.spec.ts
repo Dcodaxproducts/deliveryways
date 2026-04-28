@@ -42,7 +42,7 @@ describe('CartService', () => {
     };
 
     const storageService = {
-      resolveMediaUrlsDeep: jest.fn(async (data) => data),
+      resolveMediaUrlsDeep: jest.fn((data: unknown) => Promise.resolve(data)),
     };
 
     const service = new CartService(
@@ -162,15 +162,11 @@ describe('CartService', () => {
     expect(result.data).not.toHaveProperty('defaultAddressId');
     expect(result.data).not.toHaveProperty('tenantId');
     expect(result.data.couponCode).toBe('SAVE10');
-    expect(storageService.resolveMediaUrlsDeep).toHaveBeenCalledWith(
-      expect.objectContaining({
-        items: [
-          expect.objectContaining({
-            menuItem: expect.objectContaining({ imageUrl: 'burger.png' }),
-          }),
-        ],
-      }),
-    );
+    const mediaPayload = storageService.resolveMediaUrlsDeep.mock
+      .calls[0]?.[0] as
+      | { items?: Array<{ menuItem?: { imageUrl?: string | null } }> }
+      | undefined;
+    expect(mediaPayload?.items?.[0]?.menuItem?.imageUrl).toBe('burger.png');
     expect(ordersService.quote).not.toHaveBeenCalled();
   });
 
@@ -560,6 +556,43 @@ describe('CartService', () => {
       customer: { connect: { id: 'user-1' } },
     });
     expect(result.message).toBe('Item added to cart successfully');
+  });
+
+  it('blocks add-item while branch is temporarily closed', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue(null);
+    cartRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: {
+        temporaryClosure: {
+          isClosed: true,
+          reason: 'Kitchen maintenance',
+          message: 'We are closed for maintenance',
+        },
+      },
+    });
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          quantity: 1,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        error: 'BRANCH_TEMPORARILY_CLOSED',
+      },
+    });
   });
 
   it('allows modifiers inherited from the item category', async () => {

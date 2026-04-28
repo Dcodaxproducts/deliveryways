@@ -28,6 +28,7 @@ import {
   UpdateBranchDto,
   UpdateBranchImagesDto,
   UpdateBranchOpeningHoursDto,
+  UpdateBranchTemporaryClosureDto,
 } from './dto';
 
 @ApiTags('Branches')
@@ -167,6 +168,22 @@ export class BranchesController {
     @Body() dto: UpdateBranchOpeningHoursDto,
   ) {
     return this.branchesService.updateOpeningHours(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @Patch(':id/temporary-closure')
+  updateTemporaryClosure(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchTemporaryClosureDto,
+  ) {
+    return this.branchesService.updateTemporaryClosure(user, id, dto);
   }
 
   @ApiBearerAuth()

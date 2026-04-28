@@ -569,6 +569,7 @@ export class OrdersService {
     await this.ensureBranchAccess(user, branch.restaurantId, branch.id);
 
     const settings = this.readBranchSettings(branch.settings);
+    this.assertBranchAcceptingOrders(settings);
     const customer = await this.resolveQuoteCustomer(
       user,
       branch,
@@ -2680,6 +2681,7 @@ export class OrdersService {
       taxation: {
         taxPercentage: 0,
       },
+      temporaryClosure: null,
     };
 
     if (!input || typeof input !== 'object') {
@@ -2712,7 +2714,32 @@ export class OrdersService {
         taxPercentage:
           raw.taxation?.taxPercentage ?? fallback.taxation.taxPercentage,
       },
+      temporaryClosure: raw.temporaryClosure ?? fallback.temporaryClosure,
     };
+  }
+
+  private assertBranchAcceptingOrders(settings: BranchSettings) {
+    const closure = settings.temporaryClosure;
+
+    if (!closure?.isClosed) {
+      return;
+    }
+
+    if (
+      closure.closedUntil &&
+      new Date(closure.closedUntil).getTime() <= Date.now()
+    ) {
+      return;
+    }
+
+    throw new BadRequestException({
+      message: closure.message ?? 'Branch is temporarily closed',
+      error: 'BRANCH_TEMPORARILY_CLOSED',
+      details: {
+        reason: closure.reason ?? null,
+        closedUntil: closure.closedUntil ?? null,
+      },
+    });
   }
 
   private async assertAddressWithinRadius(
@@ -2798,9 +2825,17 @@ export class OrdersService {
   }
 }
 
+type BranchTemporaryClosure = {
+  isClosed: boolean;
+  closedUntil?: string | null;
+  reason?: string | null;
+  message?: string | null;
+};
+
 type BranchSettings = {
   allowedOrderTypes: string[];
   allowedPaymentMethods: string[];
+  temporaryClosure: BranchTemporaryClosure | null;
   deliveryConfig: {
     radiusKm: number;
     minOrderAmount: number;
