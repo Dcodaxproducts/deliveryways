@@ -38,10 +38,13 @@ export class MenuItemService {
       dto.variationPriceOverrides,
     );
 
-    const slug = this.normalizeRequiredString(dto.slug, 'slug');
+    const slug = await this.resolveUniqueSlug(
+      restaurantId,
+      dto.slug ?? dto.name,
+    );
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
-    await this.assertUniqueFields(restaurantId, { slug, sku });
+    await this.assertUniqueFields(restaurantId, { sku });
 
     const data = await this.prisma.$transaction(async (tx) => {
       const created = await this.itemRepository.create(
@@ -106,14 +109,24 @@ export class MenuItemService {
       await this.validateCategory(restaurantId, item.categoryId);
     }
 
-    const payload: Prisma.MenuItemCreateManyInput[] = dto.items.map((item) => {
-      const pricing = this.resolvePricingInput(item);
+    const usedSlugs = new Set<string>();
+    const payload: Prisma.MenuItemCreateManyInput[] = [];
 
-      return {
+    for (const item of dto.items) {
+      const pricing = this.resolvePricingInput(item);
+      const slug = await this.resolveUniqueSlug(
+        restaurantId,
+        item.slug ?? item.name,
+        undefined,
+        usedSlugs,
+      );
+      usedSlugs.add(slug);
+
+      payload.push({
         restaurantId,
         categoryId: item.categoryId,
         name: item.name,
-        slug: item.slug,
+        slug,
         description: item.description,
         ingredients: item.ingredients,
         nutritionalInformation: item.nutritionalInformation,
@@ -134,8 +147,8 @@ export class MenuItemService {
             ? new Prisma.Decimal(item.depositAmount)
             : undefined,
         isActive: item.isActive ?? true,
-      };
-    });
+      });
+    }
 
     const result = await this.itemRepository.createMany(payload);
 
@@ -188,12 +201,12 @@ export class MenuItemService {
 
     const slug =
       dto.slug !== undefined
-        ? this.normalizeRequiredString(dto.slug, 'slug')
+        ? await this.resolveUniqueSlug(item.restaurantId, dto.slug, id)
         : undefined;
     const sku =
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
     const pricing = this.resolvePricingInput(dto, item);
-    await this.assertUniqueFields(item.restaurantId, { slug, sku }, id);
+    await this.assertUniqueFields(item.restaurantId, { sku }, id);
 
     const data = await this.prisma.$transaction(async (tx) => {
       const updated = await this.itemRepository.update(
@@ -398,25 +411,9 @@ export class MenuItemService {
 
   private async assertUniqueFields(
     restaurantId: string,
-    fields: { slug?: string; sku?: string | undefined },
+    fields: { sku?: string | undefined },
     excludeId?: string,
   ) {
-    if (fields.slug) {
-      const existingBySlug = await this.itemRepository.findByRestaurantAndSlug(
-        restaurantId,
-        fields.slug,
-        excludeId,
-      );
-
-      if (existingBySlug) {
-        throw new BadRequestException(
-          existingBySlug.deletedAt
-            ? 'A menu item with this slug already exists in this restaurant, including a deleted item'
-            : 'A menu item with this slug already exists in this restaurant',
-        );
-      }
-    }
-
     if (fields.sku) {
       const existingBySku = await this.itemRepository.findByRestaurantAndSku(
         restaurantId,
@@ -434,14 +431,44 @@ export class MenuItemService {
     }
   }
 
-  private normalizeRequiredString(value: string, field: string) {
-    const normalized = value.trim();
+  private async resolveUniqueSlug(
+    restaurantId: string,
+    value: string,
+    excludeId?: string,
+    reservedSlugs: Set<string> = new Set<string>(),
+  ) {
+    const baseSlug = this.slugify(value);
+    let candidate = baseSlug;
+    let suffix = 2;
 
-    if (!normalized) {
-      throw new BadRequestException(`${field} is required`);
+    while (
+      reservedSlugs.has(candidate) ||
+      (await this.itemRepository.findByRestaurantAndSlug(
+        restaurantId,
+        candidate,
+        excludeId,
+      ))
+    ) {
+      candidate = `${baseSlug}-${suffix}`;
+      suffix += 1;
     }
 
-    return normalized;
+    return candidate;
+  }
+
+  private slugify(value: string) {
+    const slug = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-');
+
+    if (!slug) {
+      throw new BadRequestException('slug source is required');
+    }
+
+    return slug;
   }
 
   private resolveOptionalString(value: string | null | undefined) {

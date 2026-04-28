@@ -69,9 +69,13 @@ export class CreateMenuItemDto {
   @IsString()
   name!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional. Backend generates a unique slug from name when omitted or duplicated.',
+  })
+  @IsOptional()
   @IsString()
-  slug!: string;
+  slug?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

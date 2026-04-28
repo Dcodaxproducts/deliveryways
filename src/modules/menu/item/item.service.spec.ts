@@ -69,38 +69,76 @@ describe('MenuItemService', () => {
     return { service, itemRepository, prisma, storageService, tx };
   };
 
-  it('rejects duplicate menu item slug before hitting the database', async () => {
+  it('generates a unique slug when requested slug already exists', async () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
-    itemRepository.findByRestaurantAndSlug.mockResolvedValue({
-      id: 'item-1',
-      deletedAt: null,
-    });
+    itemRepository.findByRestaurantAndSlug
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        deletedAt: null,
+      })
+      .mockResolvedValueOnce(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-2' });
 
-    await expect(
-      service.create(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          role: UserRoleEnum.BUSINESS_ADMIN,
-        },
-        {
-          restaurantId: 'restaurant-1',
-          categoryId: 'category-1',
-          name: 'Zinger Burger',
-          slug: ' zinger-burger ',
-          basePrice: 650,
-        },
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Zinger Burger',
+        slug: ' zinger-burger ',
+        basePrice: 650,
+      },
+    );
 
     expect(itemRepository.findByRestaurantAndSlug).toHaveBeenCalledWith(
       'restaurant-1',
       'zinger-burger',
       undefined,
     );
-    expect(itemRepository.create).not.toHaveBeenCalled();
+    expect(itemRepository.findByRestaurantAndSlug).toHaveBeenCalledWith(
+      'restaurant-1',
+      'zinger-burger-2',
+      undefined,
+    );
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'zinger-burger-2' }),
+      expect.anything(),
+    );
+  });
+
+  it('generates slug from item name when slug is omitted', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Loaded Fries',
+        basePrice: 450,
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'loaded-fries' }),
+      expect.anything(),
+    );
   });
 
   it('rejects duplicate menu item sku before hitting the database', async () => {
