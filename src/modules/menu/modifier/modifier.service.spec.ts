@@ -45,6 +45,61 @@ describe('ModifierService', () => {
     return { service, modifierRepository, prisma };
   };
 
+  it('includes assigned category ids when listing modifier groups', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.listGroups.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 'group-1',
+          name: 'Sauces',
+          description: null,
+          minSelect: 0,
+          maxSelect: 2,
+          isRequired: false,
+          sortOrder: 0,
+          isActive: true,
+          modifierLinks: [],
+          categoryLinks: [
+            {
+              categoryId: 'category-1',
+              sortOrder: 2,
+              category: {
+                id: 'category-1',
+                name: 'Burgers',
+                slug: 'burgers',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.listGroups(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(result.data[0].categoryIds).toEqual(['category-1']);
+    expect(result.data[0].categories).toEqual([
+      {
+        id: 'category-1',
+        name: 'Burgers',
+        slug: 'burgers',
+        sortOrder: 2,
+      },
+    ]);
+  });
+
   it('lists modifiers for business admin using requested restaurantId in tenant', async () => {
     const { service, modifierRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

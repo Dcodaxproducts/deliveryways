@@ -309,6 +309,18 @@ export class ModifierRepository {
 
   private groupInclude(includeInactive?: boolean) {
     return {
+      categoryLinks: {
+        orderBy: [{ sortOrder: 'asc' }, { category: { sortOrder: 'asc' } }],
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        },
+      },
       modifierLinks: {
         where: includeInactive
           ? undefined

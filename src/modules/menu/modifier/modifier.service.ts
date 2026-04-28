@@ -444,11 +444,25 @@ export class ModifierService {
         isActive: boolean;
       };
     }>;
+    categoryLinks?: Array<{
+      sortOrder: number;
+      categoryId: string;
+      category: {
+        id: string;
+        name: string;
+        slug: string;
+      };
+    }>;
   }) {
     return {
       ...group,
       modifiers: (group.modifierLinks ?? []).map((link) => ({
         ...link.modifier,
+        sortOrder: link.sortOrder,
+      })),
+      categoryIds: (group.categoryLinks ?? []).map((link) => link.categoryId),
+      categories: (group.categoryLinks ?? []).map((link) => ({
+        ...link.category,
         sortOrder: link.sortOrder,
       })),
     };
