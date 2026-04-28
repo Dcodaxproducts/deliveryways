@@ -252,12 +252,139 @@ describe('CartService', () => {
         selectedVariation: {
           price: number;
         } | null;
-        category: { variations: Array<{ price: number | null }> };
+        category: { id: string; name: string; imageUrl: string | null };
       } | null;
     };
     expect(firstItem.menuItem?.unitPrice).toBe(110);
     expect(firstItem.menuItem?.selectedVariation?.price).toBe(110);
-    expect(Number(firstItem.menuItem?.category.variations[0].price)).toBe(110);
+    expect(firstItem.menuItem?.category).toEqual({
+      id: 'cat-1',
+      name: 'Burgers',
+      imageUrl: null,
+    });
+  });
+
+  it('prices selected category modifiers with variation overrides in cart response', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          variationId: 'variation-1',
+          quantity: 1,
+          note: null,
+          modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Salad',
+        slug: 'salad',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(100),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        depositAmount: new Prisma.Decimal(0),
+        category: {
+          id: 'category-1',
+          name: 'Salads',
+          imageUrl: null,
+          items: [],
+          variations: [
+            {
+              id: 'variation-1',
+              name: 'Medium',
+              description: null,
+              price: new Prisma.Decimal(100),
+              itemPriceOverrides: [],
+              modifierPriceOverrides: [],
+            },
+          ],
+          modifierLinks: [
+            {
+              sortOrder: 0,
+              modifierGroup: {
+                id: 'group-1',
+                name: 'Toppings',
+                minSelect: 0,
+                maxSelect: 3,
+                isRequired: false,
+                modifierLinks: [
+                  {
+                    sortOrder: 0,
+                    modifier: {
+                      id: 'modifier-1',
+                      name: 'Avocado',
+                      priceDelta: new Prisma.Decimal(3),
+                      itemPriceOverrides: [],
+                      variationPriceOverrides: [
+                        {
+                          menuItemId: null,
+                          variationId: 'variation-1',
+                          priceDelta: new Prisma.Decimal(21),
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        variations: [
+          {
+            id: 'variation-1',
+            name: 'Medium',
+            description: null,
+            price: new Prisma.Decimal(100),
+            itemPriceOverrides: [],
+          },
+        ],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const firstItem = result.data.items[0] as {
+      selectedModifiers: Array<{ unitPrice: number; total: number }>;
+      modifiersTotal: number;
+      unitPriceWithModifiers: number;
+      lineTotal: number;
+      menuItem: { modifierGroups: Array<{ id: string }> } | null;
+    };
+    expect(firstItem.selectedModifiers[0].unitPrice).toBe(21);
+    expect(firstItem.modifiersTotal).toBe(21);
+    expect(firstItem.unitPriceWithModifiers).toBe(121);
+    expect(firstItem.lineTotal).toBe(121);
+    expect(firstItem.menuItem?.modifierGroups).toEqual([
+      expect.objectContaining({ id: 'group-1' }),
+    ]);
   });
 
   it('requires customerId for business-admin cart access', async () => {

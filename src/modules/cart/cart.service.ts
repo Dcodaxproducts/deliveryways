@@ -58,16 +58,50 @@ interface CartSnapshot {
 }
 
 interface CartModifierLink {
+  sortOrder: number;
   modifierGroup: {
+    id: string;
+    name: string;
+    minSelect: number;
+    maxSelect: number;
+    isRequired: boolean;
     modifierLinks: Array<{
+      sortOrder: number;
       modifier: {
         id: string;
+        name: string;
+        priceDelta: Prisma.Decimal;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          priceDelta: Prisma.Decimal;
+        }>;
+        variationPriceOverrides?: Array<{
+          menuItemId: string | null;
+          variationId: string;
+          priceDelta: Prisma.Decimal;
+        }>;
       };
     }>;
   };
 }
 
+interface CartModifierPricingSource {
+  id: string;
+  name: string;
+  priceDelta: Prisma.Decimal;
+  itemPriceOverrides?: Array<{
+    menuItemId: string;
+    priceDelta: Prisma.Decimal;
+  }>;
+  variationPriceOverrides?: Array<{
+    menuItemId: string | null;
+    variationId: string;
+    priceDelta: Prisma.Decimal;
+  }>;
+}
+
 interface CartModifierSource {
+  id: string;
   modifierLinks: CartModifierLink[];
   category: {
     modifierLinks?: CartModifierLink[];
@@ -753,6 +787,40 @@ export class CartService {
             : new Prisma.Decimal(baseUnitPrice).plus(
                 this.resolveOrderTypePriceAdjustment(menuItem, cart.orderType),
               );
+        const selectedModifiers = this.readModifiers(cartItem.modifiers) ?? [];
+        const selectedModifierDetails = menuItem
+          ? selectedModifiers.map((selectedModifier) => {
+              const modifier = this.findAvailableModifier(
+                menuItem,
+                selectedModifier.modifierId,
+              );
+              const priceDelta = modifier
+                ? this.resolveModifierPriceDelta(
+                    modifier,
+                    menuItem.id,
+                    cartItem.variationId,
+                  )
+                : new Prisma.Decimal(0);
+
+              return {
+                modifierId: selectedModifier.modifierId,
+                name: modifier?.name ?? null,
+                quantity: selectedModifier.quantity ?? 1,
+                unitPrice: Number(priceDelta),
+                total: Number(priceDelta.mul(selectedModifier.quantity ?? 1)),
+              };
+            })
+          : [];
+        const modifiersTotal = selectedModifierDetails.reduce(
+          (total, modifier) => total.plus(modifier.total),
+          new Prisma.Decimal(0),
+        );
+        const unitPriceWithModifiers = unitPrice
+          ? unitPrice.plus(modifiersTotal)
+          : null;
+        const lineTotal = unitPriceWithModifiers
+          ? unitPriceWithModifiers.mul(cartItem.quantity)
+          : null;
 
         return {
           id: cartItem.id,
@@ -760,8 +828,15 @@ export class CartService {
           variationId: cartItem.variationId,
           quantity: cartItem.quantity,
           note: cartItem.note,
-          modifiers: this.readModifiers(cartItem.modifiers),
+          modifiers: selectedModifiers,
+          selectedModifiers: selectedModifierDetails,
           sections: this.readSections(cartItem.modifiers),
+          unitPrice: unitPrice ? Number(unitPrice) : unitPrice,
+          modifiersTotal: Number(modifiersTotal),
+          unitPriceWithModifiers: unitPriceWithModifiers
+            ? Number(unitPriceWithModifiers)
+            : unitPriceWithModifiers,
+          lineTotal: lineTotal ? Number(lineTotal) : lineTotal,
           menuItem: menuItem
             ? {
                 id: menuItem.id,
@@ -771,11 +846,9 @@ export class CartService {
                 imageUrl: menuItem.imageUrl,
                 category: menuItem.category
                   ? {
-                      ...menuItem.category,
-                      variations: this.normalizeVariations(
-                        menuItem.category.variations,
-                        menuItem.id,
-                      ),
+                      id: menuItem.category.id,
+                      name: menuItem.category.name,
+                      imageUrl: menuItem.category.imageUrl,
                     }
                   : null,
                 isAvailable: branchOverride?.isAvailable ?? true,
@@ -825,40 +898,10 @@ export class CartService {
                       ),
                     }
                   : null,
-                modifierGroups: menuItem.modifierLinks.map((link) => ({
-                  id: link.modifierGroup.id,
-                  name: link.modifierGroup.name,
-                  minSelect: link.modifierGroup.minSelect,
-                  maxSelect: link.modifierGroup.maxSelect,
-                  isRequired: link.modifierGroup.isRequired,
-                  sortOrder: link.sortOrder,
-                  modifiers: link.modifierGroup.modifierLinks.map(
-                    ({ modifier, sortOrder }) => ({
-                      id: modifier.id,
-                      name: modifier.name,
-                      sortOrder,
-                      priceDelta: Number(
-                        modifier.variationPriceOverrides?.find(
-                          (variationOverride) =>
-                            variationOverride.menuItemId === menuItem.id &&
-                            variationOverride.variationId ===
-                              cartItem.variationId,
-                        )?.priceDelta ??
-                          modifier.variationPriceOverrides?.find(
-                            (variationOverride) =>
-                              variationOverride.menuItemId === null &&
-                              variationOverride.variationId ===
-                                cartItem.variationId,
-                          )?.priceDelta ??
-                          modifier.itemPriceOverrides?.find(
-                            (itemOverride) =>
-                              itemOverride.menuItemId === menuItem.id,
-                          )?.priceDelta ??
-                          modifier.priceDelta,
-                      ),
-                    }),
-                  ),
-                })),
+                modifierGroups: this.mapCartModifierGroups(
+                  menuItem,
+                  cartItem.variationId,
+                ),
               }
             : null,
         };
@@ -1199,6 +1242,82 @@ export class CartService {
 
   private getAvailableModifierLinks(item: CartModifierSource) {
     return [...(item.category.modifierLinks ?? []), ...item.modifierLinks];
+  }
+
+  private findAvailableModifier(
+    item: CartModifierSource,
+    modifierId: string,
+  ): CartModifierPricingSource | undefined {
+    for (const link of this.getAvailableModifierLinks(item)) {
+      const modifier = link.modifierGroup.modifierLinks.find(
+        (modifierLink) => modifierLink.modifier.id === modifierId,
+      )?.modifier;
+
+      if (modifier) {
+        return modifier;
+      }
+    }
+
+    return undefined;
+  }
+
+  private mapCartModifierGroups(
+    item: CartModifierSource,
+    variationId: string | null,
+  ) {
+    const seenGroupIds = new Set<string>();
+
+    return this.getAvailableModifierLinks(item)
+      .filter((link) => {
+        if (seenGroupIds.has(link.modifierGroup.id)) {
+          return false;
+        }
+
+        seenGroupIds.add(link.modifierGroup.id);
+        return true;
+      })
+      .map((link) => ({
+        id: link.modifierGroup.id,
+        name: link.modifierGroup.name,
+        minSelect: link.modifierGroup.minSelect,
+        maxSelect: link.modifierGroup.maxSelect,
+        isRequired: link.modifierGroup.isRequired,
+        sortOrder: link.sortOrder,
+        modifiers: link.modifierGroup.modifierLinks.map(
+          ({ modifier, sortOrder }) => ({
+            id: modifier.id,
+            name: modifier.name,
+            sortOrder,
+            priceDelta: Number(
+              this.resolveModifierPriceDelta(modifier, item.id, variationId),
+            ),
+          }),
+        ),
+      }));
+  }
+
+  private resolveModifierPriceDelta(
+    modifier: CartModifierPricingSource,
+    menuItemId: string,
+    variationId: string | null,
+  ) {
+    const variationOverride = modifier.variationPriceOverrides?.find(
+      (item) =>
+        item.menuItemId === menuItemId && item.variationId === variationId,
+    );
+    const legacyVariationOverride = modifier.variationPriceOverrides?.find(
+      (item) => item.menuItemId === null && item.variationId === variationId,
+    );
+    const itemOverride = modifier.itemPriceOverrides?.find(
+      (item) => item.menuItemId === menuItemId,
+    );
+
+    return (
+      variationOverride?.priceDelta ??
+      legacyVariationOverride?.priceDelta ??
+      itemOverride?.priceDelta ??
+      modifier.priceDelta
+    );
   }
 
   private readModifiers(
