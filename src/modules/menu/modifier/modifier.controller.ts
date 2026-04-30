@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles } from '../../../common/decorators';
 import { AuthUserContext } from '../../../common/decorators';
 import { RolesEnum } from '../../../common/enums';
@@ -24,6 +24,7 @@ import {
   AttachModifierToGroupDto,
   CreateModifierDto,
   CreateModifierGroupDto,
+  DuplicateModifierDto,
   ListModifierGroupsDto,
   ListModifiersDto,
   SyncModifierGroupCategoriesDto,
@@ -137,6 +138,20 @@ export class ModifierController {
     @Body() dto: CreateModifierDto,
   ) {
     return this.modifierService.createModifier(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('modifiers/:id/duplicate')
+  @ApiOperation({ summary: 'Duplicate a modifier by id' })
+  @ApiBody({ required: false, type: DuplicateModifierDto })
+  duplicateModifier(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto?: DuplicateModifierDto,
+  ) {
+    return this.modifierService.duplicateModifier(user, id, dto ?? {});
   }
 
   @ApiBearerAuth()

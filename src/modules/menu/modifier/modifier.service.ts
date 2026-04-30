@@ -14,6 +14,7 @@ import {
   AttachModifierToGroupDto,
   CreateModifierDto,
   CreateModifierGroupDto,
+  DuplicateModifierDto,
   ListModifierGroupsDto,
   ListModifiersDto,
   SyncModifierGroupCategoriesDto,
@@ -194,6 +195,77 @@ export class ModifierService {
     });
 
     return { data, message: 'Modifier created successfully' };
+  }
+
+  async duplicateModifier(
+    user: AuthUserContext,
+    id: string,
+    dto: DuplicateModifierDto,
+  ) {
+    const modifier = await this.modifierRepository.findModifierById(id);
+    if (!modifier || modifier.deletedAt) {
+      throw new NotFoundException('Modifier not found');
+    }
+
+    await this.ensureWriteAccess(user, modifier.restaurantId);
+
+    const normalizedName = dto.name
+      ? this.normalizeName(dto.name)
+      : await this.generateDuplicateModifierName(
+          modifier.restaurantId,
+          modifier.name,
+        );
+
+    if (dto.name) {
+      const existingModifier =
+        await this.modifierRepository.findModifierByRestaurantAndName(
+          modifier.restaurantId,
+          normalizedName,
+        );
+
+      if (existingModifier) {
+        throw new BadRequestException(
+          'A modifier with this name already exists in this restaurant',
+        );
+      }
+    }
+
+    const modifierGroupIds =
+      dto.modifierGroupIds ??
+      modifier.groupLinks.map((link) => link.modifierGroup.id);
+
+    const groups = modifierGroupIds.length
+      ? await this.modifierRepository.findGroupsByIds(modifierGroupIds)
+      : [];
+
+    this.assertValidModifierGroups(groups, modifierGroupIds);
+    this.assertGroupsBelongToRestaurant(groups, modifier.restaurantId);
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const duplicated = await this.modifierRepository.createModifier(
+        {
+          restaurant: { connect: { id: modifier.restaurantId } },
+          name: normalizedName,
+          priceDelta: new Prisma.Decimal(dto.priceDelta ?? modifier.priceDelta),
+          sortOrder: dto.sortOrder ?? modifier.sortOrder,
+          isActive: true,
+        },
+        tx,
+      );
+
+      if (modifierGroupIds.length) {
+        await this.modifierRepository.syncModifierGroups(
+          duplicated.id,
+          modifierGroupIds,
+          dto.sortOrder ?? modifier.sortOrder,
+          tx,
+        );
+      }
+
+      return duplicated;
+    });
+
+    return { data, message: 'Modifier duplicated successfully' };
   }
 
   async updateModifier(
@@ -537,6 +609,27 @@ export class ModifierService {
         sortOrder: link.sortOrder,
       })),
     };
+  }
+
+  private async generateDuplicateModifierName(
+    restaurantId: string,
+    sourceName: string,
+  ) {
+    const baseName = `${this.normalizeName(sourceName)} Copy`;
+    let candidate = baseName;
+    let suffix = 2;
+
+    while (
+      await this.modifierRepository.findModifierByRestaurantAndName(
+        restaurantId,
+        candidate,
+      )
+    ) {
+      candidate = `${baseName} ${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
   }
 
   private normalizeName(value: string) {

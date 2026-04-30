@@ -209,3 +209,36 @@ export class SyncModifierGroupCategoriesDto {
   @IsString({ each: true })
   categoryIds!: string[];
 }
+
+export class DuplicateModifierDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional duplicate name. If omitted, backend generates a unique copy name.',
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional target groups; defaults to source modifier groups',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  modifierGroupIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  priceDelta?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+}

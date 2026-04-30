@@ -301,6 +301,50 @@ describe('ModifierService', () => {
     expect(result.message).toBe('Modifier created successfully');
   });
 
+  it('duplicates a modifier by id with an auto-generated name', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findModifierById.mockResolvedValue({
+      id: 'modifier-1',
+      restaurantId: 'restaurant-1',
+      name: 'Extra Sauce',
+      priceDelta: 50,
+      sortOrder: 2,
+      groupLinks: [
+        { modifierGroup: { id: 'group-1', restaurantId: 'restaurant-1' } },
+      ],
+      deletedAt: null,
+    });
+    modifierRepository.findModifierByRestaurantAndName.mockResolvedValue(null);
+    modifierRepository.findGroupsByIds.mockResolvedValue([
+      { id: 'group-1', restaurantId: 'restaurant-1', deletedAt: null },
+    ]);
+    modifierRepository.createModifier.mockResolvedValue({
+      id: 'modifier-2',
+    });
+
+    const result = await service.duplicateModifier(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'modifier-1',
+      {},
+    );
+
+    expect(modifierRepository.createModifier).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Extra Sauce Copy' }),
+      expect.anything(),
+    );
+    expect(modifierRepository.syncModifierGroups).toHaveBeenCalledWith(
+      'modifier-2',
+      ['group-1'],
+      2,
+      expect.anything(),
+    );
+    expect(result.message).toBe('Modifier duplicated successfully');
+  });
+
   it('updates modifier and syncs bulk group selection', async () => {
     const { service, modifierRepository } = makeService();
     modifierRepository.findModifierById.mockResolvedValue({
