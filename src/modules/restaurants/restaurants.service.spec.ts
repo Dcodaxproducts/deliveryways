@@ -68,6 +68,7 @@ describe('RestaurantsService notification settings', () => {
         customerApp: {
           privacyPolicy: 'privacy',
           helpSupport: 'help',
+          allergenPdfUrl: 'https://cdn.example.com/allergens.pdf',
           faqs: [
             {
               id: 'faq-1',
@@ -101,6 +102,9 @@ describe('RestaurantsService notification settings', () => {
     });
     expect(result.data.privacyPolicy).toBe('privacy');
     expect(result.data.helpSupport).toBe('help');
+    expect(result.data.allergenPdfUrl).toBe(
+      'https://cdn.example.com/allergens.pdf',
+    );
     expect(result.data.faqCategories).toEqual([
       'Orders',
       'Delivery',

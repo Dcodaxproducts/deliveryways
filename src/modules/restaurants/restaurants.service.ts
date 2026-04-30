@@ -589,6 +589,9 @@ export class RestaurantsService {
         ['helpSupport'],
         ['help_support'],
       ]),
+      allergenPdfUrl: await this.resolveMediaUrl(
+        this.readRestaurantAllergenPdfUrl(restaurant.settings),
+      ),
       faqCategories: extractCustomerAppFaqCategories(
         this.extractCustomerAppFaqs(restaurant.settings),
       ),
@@ -610,6 +613,17 @@ export class RestaurantsService {
     ]);
   }
 
+  private readRestaurantAllergenPdfUrl(settings: Prisma.JsonValue | null) {
+    return this.readStringValue(settings, [
+      ['customerApp', 'allergenPdfUrl'],
+      ['customerApp', 'allergensPdfUrl'],
+      ['publicContent', 'allergenPdfUrl'],
+      ['settings', 'allergenPdfUrl'],
+      ['allergenPdfUrl'],
+      ['allergensPdfUrl'],
+    ]);
+  }
+
   private mergeCustomerAppContent(
     currentSettings: Prisma.JsonValue | null,
     dto: UpdateRestaurantCustomerAppContentDto,
@@ -627,6 +641,9 @@ export class RestaurantsService {
           : {}),
         ...(dto.helpSupport !== undefined
           ? { helpSupport: dto.helpSupport }
+          : {}),
+        ...(dto.allergenPdfUrl !== undefined
+          ? { allergenPdfUrl: dto.allergenPdfUrl }
           : {}),
         ...(dto.faqs !== undefined
           ? {

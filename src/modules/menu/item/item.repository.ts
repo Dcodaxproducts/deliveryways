@@ -111,6 +111,7 @@ export class MenuItemRepository {
               slug: true,
               logoUrl: true,
               coverImage: true,
+              settings: true,
             },
           },
           category: {

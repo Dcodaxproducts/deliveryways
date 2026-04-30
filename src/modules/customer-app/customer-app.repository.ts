@@ -154,7 +154,13 @@ export class CustomerAppRepository {
         orderBy: [{ updatedAt: 'desc' }],
         include: {
           restaurant: {
-            select: { id: true, name: true, logoUrl: true, tagline: true },
+            select: {
+              id: true,
+              name: true,
+              logoUrl: true,
+              tagline: true,
+              settings: true,
+            },
           },
           category: {
             select: {
@@ -415,7 +421,13 @@ export class CustomerAppRepository {
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         include: {
           restaurant: {
-            select: { id: true, name: true, logoUrl: true, tagline: true },
+            select: {
+              id: true,
+              name: true,
+              logoUrl: true,
+              tagline: true,
+              settings: true,
+            },
           },
           category: {
             select: {
@@ -508,7 +520,13 @@ export class CustomerAppRepository {
       },
       include: {
         restaurant: {
-          select: { id: true, name: true, logoUrl: true, tagline: true },
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            tagline: true,
+            settings: true,
+          },
         },
         category: {
           select: {
@@ -597,7 +615,13 @@ export class CustomerAppRepository {
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       include: {
         restaurant: {
-          select: { id: true, name: true, logoUrl: true, tagline: true },
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            tagline: true,
+            settings: true,
+          },
         },
         category: {
           select: {

@@ -1110,6 +1110,7 @@ export class CustomerAppService {
       name: string;
       logoUrl?: string | null;
       tagline?: string | null;
+      settings?: unknown;
     };
     category?: {
       id: string;
@@ -1179,7 +1180,8 @@ export class CustomerAppService {
       ingredients: item.ingredients,
       nutritionalInformation: item.nutritionalInformation,
       allergenPdfUrl: await this.resolveMediaUrl(
-        (item as { allergenPdfUrl?: string | null }).allergenPdfUrl,
+        this.resolveRestaurantAllergenPdfUrl(item.restaurant?.settings) ??
+          (item as { allergenPdfUrl?: string | null }).allergenPdfUrl,
       ),
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
@@ -1187,8 +1189,10 @@ export class CustomerAppService {
       prepTimeMinutes: item.prepTimeMinutes,
       restaurant: item.restaurant
         ? {
-            ...item.restaurant,
+            id: item.restaurant.id,
+            name: item.restaurant.name,
             logoUrl: await this.resolveMediaUrl(item.restaurant.logoUrl),
+            tagline: item.restaurant.tagline ?? null,
           }
         : null,
       category: item.category
@@ -1274,6 +1278,15 @@ export class CustomerAppService {
       logoUrl: await this.resolveMediaUrl(branch.logoUrl ?? null),
       coverImage: await this.resolveMediaUrl(branch.coverImage ?? null),
     };
+  }
+
+  private resolveRestaurantAllergenPdfUrl(settings: unknown) {
+    return this.readStringValue(settings, [
+      ['customerApp', 'allergenPdfUrl'],
+      ['customerApp', 'allergensPdfUrl'],
+      ['allergenPdfUrl'],
+      ['allergensPdfUrl'],
+    ]);
   }
 
   private readStringValue(source: unknown, paths: string[][]): string | null {

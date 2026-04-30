@@ -20,6 +20,13 @@ export class UpdateRestaurantCustomerAppContentDto {
   @IsString()
   helpSupport?: string;
 
+  @ApiPropertyOptional({
+    description: 'Restaurant-level allergens PDF URL shown on menu items',
+  })
+  @IsOptional()
+  @IsString()
+  allergenPdfUrl?: string;
+
   @ApiPropertyOptional({ type: [RestaurantCustomerAppFaqDto] })
   @IsOptional()
   @IsArray()

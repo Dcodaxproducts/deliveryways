@@ -176,7 +176,9 @@ export class MenuItemService {
     return {
       data: await this.resolveMediaResponse(
         items.map((item) =>
-          this.withSplitPizzaMetadata(this.withCategoryModifierGroups(item)),
+          this.withRestaurantAllergenPdfUrl(
+            this.withSplitPizzaMetadata(this.withCategoryModifierGroups(item)),
+          ),
         ),
       ),
       message: 'Menu items fetched successfully',
@@ -779,6 +781,44 @@ export class MenuItemService {
     return nextFlags;
   }
 
+  private withRestaurantAllergenPdfUrl<T extends Record<string, unknown>>(
+    item: T,
+  ): T {
+    const restaurantSettings =
+      item.restaurant &&
+      typeof item.restaurant === 'object' &&
+      !Array.isArray(item.restaurant)
+        ? (item.restaurant as { settings?: unknown }).settings
+        : undefined;
+    const restaurantAllergenPdfUrl =
+      this.readStringPath(restaurantSettings, [
+        'customerApp',
+        'allergenPdfUrl',
+      ]) ??
+      this.readStringPath(restaurantSettings, [
+        'customerApp',
+        'allergensPdfUrl',
+      ]) ??
+      this.readStringPath(restaurantSettings, ['allergenPdfUrl']) ??
+      this.readStringPath(restaurantSettings, ['allergensPdfUrl']);
+
+    let restaurant = item.restaurant;
+    if (
+      item.restaurant &&
+      typeof item.restaurant === 'object' &&
+      !Array.isArray(item.restaurant)
+    ) {
+      restaurant = { ...(item.restaurant as Record<string, unknown>) };
+      delete (restaurant as Record<string, unknown>).settings;
+    }
+
+    return {
+      ...item,
+      restaurant,
+      allergenPdfUrl: restaurantAllergenPdfUrl ?? item.allergenPdfUrl ?? null,
+    };
+  }
+
   private withSplitPizzaMetadata<T extends Record<string, unknown>>(
     item: T,
   ): T {
@@ -815,6 +855,22 @@ export class MenuItemService {
           }
         : null,
     };
+  }
+
+  private readStringPath(input: unknown, path: string[]) {
+    let cursor = input;
+
+    for (const key of path) {
+      if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) {
+        return null;
+      }
+
+      cursor = (cursor as Record<string, unknown>)[key];
+    }
+
+    return typeof cursor === 'string' && cursor.trim().length
+      ? cursor.trim()
+      : null;
   }
 
   private readStringArray(input: unknown): string[] {
