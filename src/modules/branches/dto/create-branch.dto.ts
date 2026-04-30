@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsInt,
   IsLatitude,
   IsLongitude,
   IsNotEmpty,
@@ -12,6 +13,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -69,6 +71,16 @@ class BranchContactDto {
 }
 
 export class BranchSettingsDto {
+  @ApiPropertyOptional({
+    description:
+      'Customer-facing estimated delivery time in minutes for this branch',
+    example: 45,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  deliveryTime?: number;
+
   @ApiPropertyOptional({
     description:
       'Whether customers can create table reservations for this branch',

@@ -478,6 +478,7 @@ export class BranchesService {
       {
         settings: {
           ...settings,
+          ...(dto.settings ?? {}),
           openingHours,
         } as unknown as Prisma.InputJsonValue,
       },

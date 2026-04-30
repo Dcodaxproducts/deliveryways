@@ -140,16 +140,35 @@ describe('BranchesService', () => {
         country: 'Pakistan',
         lat: '31.5204',
         lng: '74.3587',
+        settings: {
+          deliveryTime: 45,
+          allowedOrderTypes: [],
+          allowedPaymentMethods: [],
+          deliveryConfig: {
+            radiusKm: 5,
+            minOrderAmount: 0,
+            deliveryFee: 100,
+            isFreeDelivery: false,
+          },
+          automation: { autoAcceptOrders: false, estimatedPrepTime: 20 },
+          taxation: { taxPercentage: 0 },
+        },
       },
     );
 
-    expect(repository.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
-      }),
-      undefined,
-    );
+    const [createPayload] = repository.create.mock.calls[0] as [
+      {
+        tenantId: string;
+        restaurantId: string;
+        settings?: { deliveryTime?: number };
+      },
+      unknown,
+    ];
+    expect(createPayload).toMatchObject({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    expect(createPayload.settings?.deliveryTime).toBe(45);
     expect(result.message).toBe('Branch created successfully');
   });
 
@@ -511,7 +530,7 @@ describe('BranchesService', () => {
       restaurantId: 'restaurant-1',
       isActive: true,
       deletedAt: null,
-      settings: { contact: { phone: '123' } },
+      settings: { contact: { phone: '123' }, deliveryTime: 30 },
     });
     repository.update.mockResolvedValue({ id: 'branch-1' });
 
@@ -535,6 +554,10 @@ describe('BranchesService', () => {
             isClosed: true,
           },
         ],
+        settings: {
+          contact: { phone: '3444', whatsapp: '3444' },
+          deliveryTime: 45,
+        },
       },
     );
 
@@ -542,7 +565,8 @@ describe('BranchesService', () => {
       'branch-1',
       expect.objectContaining({
         settings: {
-          contact: { phone: '123' },
+          contact: { phone: '3444', whatsapp: '3444' },
+          deliveryTime: 45,
           openingHours: [
             {
               dayOfWeek: BranchScheduleDayEnum.MONDAY,

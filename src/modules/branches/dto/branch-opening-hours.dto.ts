@@ -5,6 +5,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -64,4 +65,13 @@ export class UpdateBranchOpeningHoursDto {
   @ValidateNested({ each: true })
   @Type(() => BranchOpeningHourItemDto)
   openingHours!: BranchOpeningHourItemDto[];
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Optional branch settings payload merged with existing settings when updating opening hours.',
+  })
+  @IsOptional()
+  @IsObject()
+  settings?: Record<string, unknown>;
 }
