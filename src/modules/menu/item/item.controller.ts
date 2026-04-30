@@ -22,6 +22,7 @@ import {
   BulkCreateMenuItemsDto,
   CreateMenuItemDto,
   ListMenuItemsDto,
+  ReorderMenuItemsDto,
   UpdateMenuItemDto,
 } from './dto';
 import { MenuItemService } from './item.service';
@@ -48,6 +49,17 @@ export class MenuItemController {
     @Body() dto: BulkCreateMenuItemsDto,
   ) {
     return this.menuItemService.createBulk(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('reorder')
+  reorder(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ReorderMenuItemsDto,
+  ) {
+    return this.menuItemService.reorder(user, dto);
   }
 
   @ApiBearerAuth()

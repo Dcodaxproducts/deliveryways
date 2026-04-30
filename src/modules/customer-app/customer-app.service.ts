@@ -1124,6 +1124,8 @@ export class CustomerAppService {
         itemPriceOverrides?: Array<{
           menuItemId: string;
           price: Prisma.Decimal;
+          pickupPrice: Prisma.Decimal | null;
+          displayText: string | null;
         }>;
       }>;
     };
@@ -1136,6 +1138,8 @@ export class CustomerAppService {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
+        pickupPrice: Prisma.Decimal | null;
+        displayText: string | null;
       }>;
     }>;
     modifierLinks?: Array<{
@@ -1174,6 +1178,9 @@ export class CustomerAppService {
       description: item.description,
       ingredients: item.ingredients,
       nutritionalInformation: item.nutritionalInformation,
+      allergenPdfUrl: await this.resolveMediaUrl(
+        (item as { allergenPdfUrl?: string | null }).allergenPdfUrl,
+      ),
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       basePrice: branchOverride?.priceOverride ?? item.basePrice,
       depositAmount: item.depositAmount ? Number(item.depositAmount) : null,
@@ -1223,6 +1230,8 @@ export class CustomerAppService {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
+        pickupPrice: Prisma.Decimal | null;
+        displayText: string | null;
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
@@ -1234,6 +1243,8 @@ export class CustomerAppService {
       return {
         ...variation,
         price: override?.price ?? variation.price ?? new Prisma.Decimal(0),
+        pickupPrice: override?.pickupPrice ?? null,
+        displayText: override?.displayText ?? null,
       };
     });
   }

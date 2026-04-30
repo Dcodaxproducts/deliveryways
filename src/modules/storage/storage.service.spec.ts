@@ -88,7 +88,26 @@ describe('StorageService', () => {
     expect(result.fileUrl).toContain(result.key);
   });
 
-  it('rejects non-image upload content types', async () => {
+  it('allows PDF upload content types', async () => {
+    const result = await service.createPresignedUploadUrl(
+      {
+        uid: 'user-2',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        fileName: 'allergens.pdf',
+        contentType: 'application/pdf',
+      },
+    );
+
+    expect(result.method).toBe('PUT');
+    expect(result.headers).toEqual({ 'Content-Type': 'application/pdf' });
+  });
+
+  it('rejects non-image and non-PDF upload content types', async () => {
     await expect(
       service.createPresignedUploadUrl(
         {
@@ -99,11 +118,11 @@ describe('StorageService', () => {
           role: UserRoleEnum.CUSTOMER,
         },
         {
-          fileName: 'menu.pdf',
-          contentType: 'application/pdf',
+          fileName: 'menu.txt',
+          contentType: 'text/plain',
         },
       ),
-    ).rejects.toThrow('Only image uploads are supported');
+    ).rejects.toThrow('Only image and PDF uploads are supported');
   });
 
   it('creates presigned view URL from fileUrl for customer upload', async () => {

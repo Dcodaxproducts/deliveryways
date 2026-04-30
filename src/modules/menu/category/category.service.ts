@@ -14,6 +14,7 @@ import {
   BulkCreateMenuCategoriesDto,
   CreateMenuCategoryDto,
   ListMenuCategoriesDto,
+  ReorderMenuCategoriesDto,
   UpdateMenuCategoryDto,
 } from './dto';
 import { MenuCategoryRepository } from './category.repository';
@@ -157,6 +158,93 @@ export class MenuCategoryService {
     };
   }
 
+  async reorder(user: AuthUserContext, dto: ReorderMenuCategoriesDto) {
+    if (!dto.items.length) {
+      throw new BadRequestException('At least one category is required');
+    }
+
+    const ids = dto.items.map((item) => item.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Category reorder ids must be unique');
+    }
+
+    if (dto.menuId) {
+      const menu = await this.prisma.restaurantMenu.findUnique({
+        where: { id: dto.menuId },
+        select: { id: true, restaurantId: true, deletedAt: true },
+      });
+
+      if (!menu || menu.deletedAt) {
+        throw new NotFoundException('Restaurant menu not found');
+      }
+
+      await this.ensureCanAccessRestaurant(user, menu.restaurantId);
+
+      const links = await this.prisma.restaurantMenuCategory.findMany({
+        where: { restaurantMenuId: dto.menuId, menuCategoryId: { in: ids } },
+        select: { id: true, menuCategoryId: true },
+      });
+
+      if (links.length !== ids.length) {
+        throw new BadRequestException(
+          'All categories must be attached to the menu',
+        );
+      }
+
+      const sortOrderByCategoryId = new Map(
+        dto.items.map((item) => [item.id, item.sortOrder]),
+      );
+
+      await this.prisma.$transaction(
+        links.map((link) =>
+          this.prisma.restaurantMenuCategory.update({
+            where: { id: link.id },
+            data: {
+              sortOrder: sortOrderByCategoryId.get(link.menuCategoryId) ?? 0,
+            },
+          }),
+        ),
+      );
+    } else {
+      const categories = await this.prisma.menuCategory.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true, restaurantId: true },
+      });
+
+      if (categories.length !== ids.length) {
+        throw new BadRequestException('One or more categories were not found');
+      }
+
+      const restaurantIds = new Set(
+        categories.map((category) => category.restaurantId),
+      );
+      if (restaurantIds.size !== 1) {
+        throw new BadRequestException(
+          'All categories must belong to one restaurant',
+        );
+      }
+
+      await this.ensureCanAccessRestaurant(user, [...restaurantIds][0]);
+
+      const sortOrderById = new Map(
+        dto.items.map((item) => [item.id, item.sortOrder]),
+      );
+      await this.prisma.$transaction(
+        categories.map((category) =>
+          this.prisma.menuCategory.update({
+            where: { id: category.id },
+            data: { sortOrder: sortOrderById.get(category.id) ?? 0 },
+          }),
+        ),
+      );
+    }
+
+    return {
+      data: { count: dto.items.length },
+      message: 'Menu categories reordered successfully',
+    };
+  }
+
   async remove(user: AuthUserContext, id: string) {
     const category = await this.categoryRepository.findById(id);
     if (!category || category.deletedAt) {
@@ -185,6 +273,7 @@ export class MenuCategoryService {
     const data = await this.prisma.$transaction(async (tx) => {
       await this.categoryRepository.clearCouponScopes(id, tx);
       await this.categoryRepository.deleteBranchOverrides(id, tx);
+      await this.categoryRepository.deleteVariations(id, tx);
       return this.categoryRepository.hardDelete(id, tx);
     });
 

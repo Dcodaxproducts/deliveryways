@@ -16,6 +16,7 @@ describe('MenuCategoryService', () => {
       countItems: jest.fn(),
       clearCouponScopes: jest.fn(),
       deleteBranchOverrides: jest.fn(),
+      deleteVariations: jest.fn(),
       hardDelete: jest.fn(),
     };
 
@@ -189,6 +190,10 @@ describe('MenuCategoryService', () => {
       expect.anything(),
     );
     expect(categoryRepository.deleteBranchOverrides).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(categoryRepository.deleteVariations).toHaveBeenCalledWith(
       'category-1',
       expect.anything(),
     );

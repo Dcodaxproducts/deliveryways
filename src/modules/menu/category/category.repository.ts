@@ -248,6 +248,12 @@ export class MenuCategoryRepository {
     });
   }
 
+  deleteVariations(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemVariation.deleteMany({
+      where: { categoryId },
+    });
+  }
+
   hardDelete(id: string, tx?: PrismaTx) {
     return this.client(tx).menuCategory.delete({ where: { id } });
   }

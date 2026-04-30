@@ -815,6 +815,8 @@ export class RestaurantMenuService {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: { toString(): string } | number;
+        pickupPrice?: { toString(): string } | number | null;
+        displayText?: string | null;
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
@@ -826,6 +828,11 @@ export class RestaurantMenuService {
       return {
         ...variation,
         price: Number(override?.price ?? variation.price ?? 0),
+        pickupPrice:
+          override?.pickupPrice !== undefined && override?.pickupPrice !== null
+            ? Number(override.pickupPrice)
+            : null,
+        displayText: override?.displayText ?? null,
       };
     });
   }

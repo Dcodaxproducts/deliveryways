@@ -99,9 +99,10 @@ export class MenuItemRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: {
-          [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
-        },
+        orderBy: [
+          { sortOrder: 'asc' },
+          { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
+        ],
         include: {
           restaurant: {
             select: {
@@ -128,7 +129,7 @@ export class MenuItemRepository {
                   name: true,
                   slug: true,
                 },
-                orderBy: [{ createdAt: 'asc' }],
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },
               variations: {
                 where: {
@@ -256,6 +257,8 @@ export class MenuItemRepository {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
+        pickupPrice: Prisma.Decimal | null;
+        displayText: string | null;
       }>;
     }>,
   ) {
@@ -267,6 +270,8 @@ export class MenuItemRepository {
       return {
         ...variation,
         price: override?.price ?? variation.price,
+        pickupPrice: override?.pickupPrice ?? null,
+        displayText: override?.displayText ?? null,
       };
     });
   }

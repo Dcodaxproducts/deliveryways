@@ -22,6 +22,7 @@ import {
   BulkCreateMenuCategoriesDto,
   CreateMenuCategoryDto,
   ListMenuCategoriesDto,
+  ReorderMenuCategoriesDto,
   UpdateMenuCategoryDto,
 } from './dto';
 import { MenuCategoryService } from './category.service';
@@ -51,6 +52,17 @@ export class MenuCategoryController {
     @Body() dto: BulkCreateMenuCategoriesDto,
   ) {
     return this.menuCategoryService.createBulk(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('reorder')
+  reorder(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ReorderMenuCategoriesDto,
+  ) {
+    return this.menuCategoryService.reorder(user, dto);
   }
 
   @ApiBearerAuth()

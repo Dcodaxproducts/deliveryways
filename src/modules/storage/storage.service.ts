@@ -98,8 +98,12 @@ export class StorageService {
     user: AuthUserContext | undefined,
     dto: CreatePresignedUploadUrlDto,
   ) {
-    if (!dto.contentType.toLowerCase().startsWith('image/')) {
-      throw new BadRequestException('Only image uploads are supported');
+    const normalizedContentType = dto.contentType.toLowerCase();
+    if (
+      !normalizedContentType.startsWith('image/') &&
+      normalizedContentType !== 'application/pdf'
+    ) {
+      throw new BadRequestException('Only image and PDF uploads are supported');
     }
 
     const folder = StorageFolderEnum.UPLOADS;
@@ -326,6 +330,7 @@ export class StorageService {
     return (
       key === 'avatarUrl' ||
       key === 'imageUrl' ||
+      key === 'allergenPdfUrl' ||
       key === 'logoUrl' ||
       key === 'coverImage'
     );

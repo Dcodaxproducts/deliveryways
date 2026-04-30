@@ -133,3 +133,30 @@ export class ListMenuCategoriesDto extends QueryDto {
   @IsBoolean()
   includeInactive?: boolean;
 }
+
+export class ReorderMenuCategoryEntryDto {
+  @ApiProperty()
+  @IsString()
+  id!: string;
+
+  @ApiProperty({ minimum: 0 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  sortOrder!: number;
+}
+
+export class ReorderMenuCategoriesDto {
+  @ApiPropertyOptional({
+    description: 'When provided, reorders category links inside this menu',
+  })
+  @IsOptional()
+  @IsString()
+  menuId?: string;
+
+  @ApiProperty({ type: [ReorderMenuCategoryEntryDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReorderMenuCategoryEntryDto)
+  items!: ReorderMenuCategoryEntryDto[];
+}

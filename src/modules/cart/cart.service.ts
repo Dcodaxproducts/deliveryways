@@ -834,13 +834,24 @@ export class CartService {
                 selectedVariation,
                 branchOverride?.priceOverride ?? menuItem.basePrice,
                 menuItem.id,
+                cart.orderType,
               )
             : (branchOverride?.priceOverride ?? menuItem?.basePrice ?? null);
         const unitPrice =
           baseUnitPrice === null || baseUnitPrice === undefined || !menuItem
             ? null
             : new Prisma.Decimal(baseUnitPrice).plus(
-                this.resolveOrderTypePriceAdjustment(menuItem, cart.orderType),
+                selectedVariation &&
+                  this.variationHasPickupPrice(
+                    selectedVariation,
+                    menuItem.id,
+                    cart.orderType,
+                  )
+                  ? new Prisma.Decimal(0)
+                  : this.resolveOrderTypePriceAdjustment(
+                      menuItem,
+                      cart.orderType,
+                    ),
               );
         const selectedModifiers = this.readModifiers(cartItem.modifiers) ?? [];
         const selectedModifierDetails = menuItem
@@ -943,12 +954,24 @@ export class CartService {
                   ? {
                       id: selectedVariation.id,
                       name: selectedVariation.name,
-                      description: selectedVariation.description ?? null,
+                      description:
+                        selectedVariation.itemPriceOverrides?.find(
+                          (itemOverride) =>
+                            itemOverride.menuItemId === menuItem.id,
+                        )?.displayText ??
+                        selectedVariation.description ??
+                        null,
+                      displayText:
+                        selectedVariation.itemPriceOverrides?.find(
+                          (itemOverride) =>
+                            itemOverride.menuItemId === menuItem.id,
+                        )?.displayText ?? null,
                       price: Number(
                         this.resolveVariationPrice(
                           selectedVariation,
                           branchOverride?.priceOverride ?? menuItem.basePrice,
                           menuItem.id,
+                          cart.orderType,
                         ),
                       ),
                     }
@@ -976,6 +999,8 @@ export class CartService {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
+        pickupPrice?: Prisma.Decimal | null;
+        displayText?: string | null;
       }>;
     },
   >(variations: T[] | undefined | null, menuItemId?: string) {
@@ -987,6 +1012,8 @@ export class CartService {
       return {
         ...variation,
         price: override?.price ?? variation.price ?? new Prisma.Decimal(0),
+        pickupPrice: override?.pickupPrice ?? null,
+        displayText: override?.displayText ?? null,
       };
     });
   }
@@ -997,16 +1024,42 @@ export class CartService {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
+        pickupPrice?: Prisma.Decimal | null;
+        displayText?: string | null;
       }>;
     },
     basePrice: Prisma.Decimal,
     menuItemId?: string,
+    orderType?: OrderType,
   ) {
     const override = variation.itemPriceOverrides?.find(
       (itemOverride) => itemOverride.menuItemId === menuItemId,
     );
 
+    if (orderType === OrderType.TAKEAWAY && override?.pickupPrice) {
+      return override.pickupPrice;
+    }
+
     return override?.price ?? variation.price ?? basePrice;
+  }
+
+  private variationHasPickupPrice(
+    variation: {
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pickupPrice?: Prisma.Decimal | null;
+      }>;
+    },
+    menuItemId: string,
+    orderType: OrderType,
+  ) {
+    return (
+      orderType === OrderType.TAKEAWAY &&
+      !!variation.itemPriceOverrides?.find(
+        (itemOverride) =>
+          itemOverride.menuItemId === menuItemId && !!itemOverride.pickupPrice,
+      )
+    );
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {

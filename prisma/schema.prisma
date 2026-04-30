@@ -501,9 +501,11 @@ model MenuItem {
   slug                    String
   description             String?
   ingredients             String?
+  allergenPdfUrl          String?             @map("allergen_pdf_url")
   nutritionalInformation  String?             @map("nutritional_information")
   imageUrl                String?             @map("image_url")
   sku                     String?
+  sortOrder               Int                 @default(0) @map("sort_order")
   pricingMode             MenuItemPricingMode @default(SINGLE) @map("pricing_mode")
   basePrice               Decimal             @default(0) @map("base_price") @db.Decimal(10, 2)
   deliveryPriceAdjustment Decimal             @default(0) @map("delivery_price_adjustment") @db.Decimal(10, 2)
@@ -616,6 +618,8 @@ model MenuItemVariationPriceOverride {
   menuItemId  String   @map("menu_item_id")
   variationId String   @map("variation_id")
   price       Decimal  @default(0) @db.Decimal(10, 2)
+  pickupPrice Decimal? @map("pickup_price") @db.Decimal(10, 2)
+  displayText String?  @map("display_text")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

@@ -47,6 +47,23 @@ export class MenuItemVariationPriceOverrideDto {
   @IsNumber()
   price!: number;
 
+  @ApiPropertyOptional({
+    description: 'Optional exact pickup/takeaway price for this item variation',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  pickupPrice?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional item-specific variation text/label shown on item variation screen',
+  })
+  @IsOptional()
+  @IsString()
+  displayText?: string;
+
   @ApiPropertyOptional({ type: [MenuItemVariationModifierPriceOverrideDto] })
   @IsOptional()
   @IsArray()
@@ -92,6 +109,11 @@ export class CreateMenuItemDto {
   @IsString()
   nutritionalInformation?: string;
 
+  @ApiPropertyOptional({ description: 'Uploaded allergens PDF URL' })
+  @IsOptional()
+  @IsString()
+  allergenPdfUrl?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -101,6 +123,13 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsString()
   sku?: string;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 
   @ApiPropertyOptional({
     enum: MENU_ITEM_PRICING_MODE_VALUES,
@@ -235,6 +264,11 @@ export class UpdateMenuItemDto {
   @IsString()
   nutritionalInformation?: string;
 
+  @ApiPropertyOptional({ description: 'Uploaded allergens PDF URL' })
+  @IsOptional()
+  @IsString()
+  allergenPdfUrl?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -244,6 +278,13 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsString()
   sku?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 
   @ApiPropertyOptional({ enum: MENU_ITEM_PRICING_MODE_VALUES })
   @IsOptional()
@@ -353,4 +394,31 @@ export class ListMenuItemsDto extends QueryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   includeInactive?: boolean;
+}
+
+export class ReorderMenuEntryDto {
+  @ApiProperty()
+  @IsString()
+  id!: string;
+
+  @ApiProperty({ minimum: 0 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  sortOrder!: number;
+}
+
+export class ReorderMenuItemsDto {
+  @ApiPropertyOptional({
+    description: 'When provided, reorders menu item links inside this menu',
+  })
+  @IsOptional()
+  @IsString()
+  menuId?: string;
+
+  @ApiProperty({ type: [ReorderMenuEntryDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReorderMenuEntryDto)
+  items!: ReorderMenuEntryDto[];
 }

@@ -14,6 +14,7 @@ import {
   BulkCreateMenuItemsDto,
   CreateMenuItemDto,
   ListMenuItemsDto,
+  ReorderMenuItemsDto,
   UpdateMenuItemDto,
 } from './dto';
 import { MenuItemRepository } from './item.repository';
@@ -55,9 +56,11 @@ export class MenuItemService {
           slug,
           description: dto.description,
           ingredients: dto.ingredients,
+          allergenPdfUrl: dto.allergenPdfUrl,
           nutritionalInformation: dto.nutritionalInformation,
           imageUrl: dto.imageUrl,
           sku,
+          sortOrder: dto.sortOrder ?? 0,
           pricingMode: pricing.pricingMode,
           basePrice: new Prisma.Decimal(dto.basePrice),
           deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
@@ -129,9 +132,11 @@ export class MenuItemService {
         slug,
         description: item.description,
         ingredients: item.ingredients,
+        allergenPdfUrl: item.allergenPdfUrl,
         nutritionalInformation: item.nutritionalInformation,
         imageUrl: item.imageUrl,
         sku: item.sku,
+        sortOrder: item.sortOrder ?? 0,
         pricingMode: pricing.pricingMode,
         basePrice: new Prisma.Decimal(item.basePrice),
         deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
@@ -219,9 +224,11 @@ export class MenuItemService {
           slug,
           description: dto.description,
           ingredients: dto.ingredients,
+          allergenPdfUrl: dto.allergenPdfUrl,
           nutritionalInformation: dto.nutritionalInformation,
           imageUrl: dto.imageUrl,
           sku,
+          sortOrder: dto.sortOrder ?? 0,
           pricingMode: pricing.pricingMode,
           basePrice:
             dto.basePrice !== undefined
@@ -268,6 +275,87 @@ export class MenuItemService {
     return {
       data: await this.resolveMediaResponse(this.withSplitPizzaMetadata(data)),
       message: 'Menu item updated successfully',
+    };
+  }
+
+  async reorder(user: AuthUserContext, dto: ReorderMenuItemsDto) {
+    if (!dto.items.length) {
+      throw new BadRequestException('At least one item is required');
+    }
+
+    const ids = dto.items.map((item) => item.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Menu item reorder ids must be unique');
+    }
+
+    if (dto.menuId) {
+      const menu = await this.prisma.restaurantMenu.findUnique({
+        where: { id: dto.menuId },
+        select: { id: true, restaurantId: true, deletedAt: true },
+      });
+
+      if (!menu || menu.deletedAt) {
+        throw new NotFoundException('Restaurant menu not found');
+      }
+
+      await this.ensureCanAccessRestaurant(user, menu.restaurantId);
+
+      const links = await this.prisma.restaurantMenuItem.findMany({
+        where: { restaurantMenuId: dto.menuId, menuItemId: { in: ids } },
+        select: { id: true, menuItemId: true },
+      });
+
+      if (links.length !== ids.length) {
+        throw new BadRequestException('All items must be attached to the menu');
+      }
+
+      const sortOrderByItemId = new Map(
+        dto.items.map((item) => [item.id, item.sortOrder]),
+      );
+
+      await this.prisma.$transaction(
+        links.map((link) =>
+          this.prisma.restaurantMenuItem.update({
+            where: { id: link.id },
+            data: { sortOrder: sortOrderByItemId.get(link.menuItemId) ?? 0 },
+          }),
+        ),
+      );
+    } else {
+      const items = await this.prisma.menuItem.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true, restaurantId: true },
+      });
+
+      if (items.length !== ids.length) {
+        throw new BadRequestException('One or more menu items were not found');
+      }
+
+      const restaurantIds = new Set(items.map((item) => item.restaurantId));
+      if (restaurantIds.size !== 1) {
+        throw new BadRequestException(
+          'All menu items must belong to one restaurant',
+        );
+      }
+
+      await this.ensureCanAccessRestaurant(user, [...restaurantIds][0]);
+
+      const sortOrderById = new Map(
+        dto.items.map((item) => [item.id, item.sortOrder]),
+      );
+      await this.prisma.$transaction(
+        items.map((item) =>
+          this.prisma.menuItem.update({
+            where: { id: item.id },
+            data: { sortOrder: sortOrderById.get(item.id) ?? 0 },
+          }),
+        ),
+      );
+    }
+
+    return {
+      data: { count: dto.items.length },
+      message: 'Menu items reordered successfully',
     };
   }
 
@@ -577,6 +665,8 @@ export class MenuItemService {
       | Array<{
           variationId: string;
           price: number;
+          pickupPrice?: number;
+          displayText?: string;
           modifierPriceOverrides?: Array<{
             modifierId: string;
             priceDelta: number;
@@ -633,6 +723,11 @@ export class MenuItemService {
           menuItemId,
           variationId: variation.id,
           price: new Prisma.Decimal(override?.price ?? variation.price),
+          pickupPrice:
+            override?.pickupPrice !== undefined
+              ? new Prisma.Decimal(override.pickupPrice)
+              : null,
+          displayText: this.resolveNullableString(override?.displayText),
         };
       }),
     });
@@ -653,6 +748,15 @@ export class MenuItemService {
     await tx.menuVariationModifierPriceOverride.createMany({
       data: modifierPriceOverrides,
     });
+  }
+
+  private resolveNullableString(value: string | null | undefined) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const normalized = value.trim();
+    return normalized.length ? normalized : null;
   }
 
   private readonly splitPizzaDietaryFlag = '__SPLIT_PIZZA_ENABLED__';

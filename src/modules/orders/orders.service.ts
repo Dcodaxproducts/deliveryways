@@ -715,7 +715,12 @@ export class OrdersService {
           requestedItem.variationId,
           branchOverride?.priceOverride ?? menuItem.basePrice,
           menuItem.id,
-        ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
+          dto.orderType,
+        ).plus(
+          this.variationHasPickupPrice(variation, menuItem.id, dto.orderType)
+            ? new Prisma.Decimal(0)
+            : this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType),
+        );
       }
 
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
@@ -1273,11 +1278,14 @@ export class OrdersService {
           itemPriceOverrides?: Array<{
             menuItemId: string;
             price: Prisma.Decimal;
+            pickupPrice: Prisma.Decimal | null;
+            displayText: string | null;
           }>;
         }>,
         variationId,
         branchPriceOverride ?? menuItem.basePrice,
         menuItem.id,
+        undefined,
       );
     }
 
@@ -2563,11 +2571,14 @@ export class OrdersService {
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
+        pickupPrice?: Prisma.Decimal | null;
+        displayText?: string | null;
       }>;
     }[],
     variationId: string,
     basePrice: Prisma.Decimal,
     menuItemId?: string,
+    orderType?: OrderTypeEnum | OrderType,
   ) {
     const variation = variations.find((item) => item.id === variationId);
 
@@ -2579,7 +2590,30 @@ export class OrdersService {
       (item) => item.menuItemId === menuItemId,
     );
 
+    if (orderType === OrderTypeEnum.TAKEAWAY && override?.pickupPrice) {
+      return override.pickupPrice;
+    }
+
     return override?.price ?? variation.price ?? basePrice;
+  }
+
+  private variationHasPickupPrice(
+    variation: {
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        pickupPrice?: Prisma.Decimal | null;
+      }>;
+    },
+    menuItemId: string,
+    orderType: OrderTypeEnum | OrderType,
+  ) {
+    return (
+      orderType === OrderTypeEnum.TAKEAWAY &&
+      !!variation.itemPriceOverrides?.find(
+        (itemOverride) =>
+          itemOverride.menuItemId === menuItemId && !!itemOverride.pickupPrice,
+      )
+    );
   }
 
   private findModifier(
