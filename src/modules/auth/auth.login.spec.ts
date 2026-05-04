@@ -18,8 +18,9 @@ describe('AuthService login', () => {
   >;
   let prismaService: {
     branch: { findFirst: jest.Mock };
+    deliveryman: { findUnique: jest.Mock; update: jest.Mock };
   };
-  let jwtService: { signAsync: jest.Mock };
+  let jwtService: { signAsync: jest.Mock; verifyAsync: jest.Mock };
 
   beforeEach(() => {
     usersService = {
@@ -39,6 +40,10 @@ describe('AuthService login', () => {
       branch: {
         findFirst: jest.fn(),
       },
+      deliveryman: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
     };
 
     jwtService = {
@@ -48,6 +53,7 @@ describe('AuthService login', () => {
         .mockResolvedValueOnce('refresh-token')
         .mockResolvedValueOnce('access-token-2')
         .mockResolvedValueOnce('refresh-token-2'),
+      verifyAsync: jest.fn(),
     };
 
     service = new AuthService(
@@ -336,5 +342,35 @@ describe('AuthService login', () => {
         password: 'Password@123',
       }),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('refreshes deliveryman tokens with the deliveryman actor store', async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      uid: 'deliveryman-1',
+      type: 'refresh',
+      actorType: 'DELIVERYMAN',
+    });
+    prismaService.deliveryman.findUnique.mockResolvedValue({
+      id: 'deliveryman-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      refreshTokenHash: 'hashed-refresh',
+      deletedAt: null,
+    });
+
+    const result = await service.refreshTokens({
+      refreshToken: 'refresh-token',
+    });
+
+    expect(prismaService.deliveryman.findUnique).toHaveBeenCalledWith({
+      where: { id: 'deliveryman-1' },
+    });
+    expect(prismaService.deliveryman.update).toHaveBeenCalledWith({
+      where: { id: 'deliveryman-1' },
+      data: { refreshTokenHash: 'hashed-refresh' },
+    });
+    expect(result.data.accessToken).toBe('access-token');
+    expect(result.data.refreshToken).toBe('refresh-token');
   });
 });

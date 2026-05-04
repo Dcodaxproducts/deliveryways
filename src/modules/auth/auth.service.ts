@@ -3,7 +3,9 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -47,6 +49,8 @@ import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -79,6 +83,10 @@ export class AuthService {
     const verificationOtpExpiresAt = shouldAutoVerifyUser
       ? null
       : this.generateOtpExpiry();
+
+    if (emailEnabled && verificationOtp) {
+      await this.ensureVerificationEmailCanBeSent(dto.user.email);
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await this.tenantsService.create(
@@ -263,6 +271,10 @@ export class AuthService {
     const verificationOtpExpiresAt = shouldAutoVerifyUser
       ? null
       : this.generateOtpExpiry();
+
+    if (emailEnabled && verificationOtp) {
+      await this.ensureVerificationEmailCanBeSent(dto.email);
+    }
 
     const createdUser = await this.prisma.$transaction(async (tx) => {
       return this.usersService.create(
@@ -857,6 +869,45 @@ export class AuthService {
         ownerUserId: staff.ownerUserId,
         staffRoleId: staff.staffRoleId,
         panelType: staff.panelType,
+      });
+
+      return {
+        data: {
+          accessToken: auth.accessToken,
+          refreshToken: auth.refreshToken,
+        },
+        message: 'Token refreshed',
+      };
+    }
+
+    if (payload.actorType === 'DELIVERYMAN') {
+      const deliveryman = await this.prisma.deliveryman.findUnique({
+        where: { id: payload.uid },
+      });
+
+      if (
+        !deliveryman ||
+        !deliveryman.refreshTokenHash ||
+        deliveryman.deletedAt
+      ) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const isValid = await bcrypt.compare(
+        dto.refreshToken,
+        deliveryman.refreshTokenHash,
+      );
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const auth = await this.issueAuthTokens({
+        uid: deliveryman.id,
+        actorType: 'DELIVERYMAN',
+        role: 'DELIVERYMAN',
+        tid: deliveryman.tenantId,
+        rid: deliveryman.restaurantId,
+        bid: deliveryman.branchId,
       });
 
       return {
@@ -1762,6 +1813,20 @@ export class AuthService {
 
   private shouldExposeDevToken(emailEnabled: boolean): boolean {
     return !emailEnabled && process.env.NODE_ENV !== 'production';
+  }
+
+  private async ensureVerificationEmailCanBeSent(email: string): Promise<void> {
+    try {
+      await this.mailerService.verifyConnection();
+    } catch (error) {
+      this.logger.error(
+        `SMTP verification failed before registration for ${email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new ServiceUnavailableException(
+        'Email service is unavailable. Please try again later.',
+      );
+    }
   }
 
   private async issueVerificationOtp(

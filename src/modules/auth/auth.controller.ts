@@ -157,6 +157,14 @@ export class AuthController {
     return this.authService.resendOtp(dto);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Post('resend-verification')
+  resendVerification(@CurrentUser() user: AuthUserContext) {
+    return this.authService.resendVerification(user);
+  }
+
   @Public()
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {

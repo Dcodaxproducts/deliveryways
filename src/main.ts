@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import * as compressionModule from 'compression';
+import { Response } from 'express';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { ResponseInterceptor } from './common/interceptors';
@@ -75,6 +76,9 @@ async function bootstrap(): Promise<void> {
 
       const document = SwaggerModule.createDocument(app, swaggerConfig);
       SwaggerModule.setup('docs', app, document);
+      app.getHttpAdapter().get('/', (_req: unknown, res: Response): void => {
+        res.redirect('/docs');
+      });
     }
 
     const host = configService.get<string>('HOST', '0.0.0.0');

@@ -59,6 +59,14 @@ export class MailerService {
     return this.configService.get<string>('EMAIL_ENABLED', 'false') === 'true';
   }
 
+  async verifyConnection(): Promise<void> {
+    if (!this.isEmailEnabled()) {
+      return;
+    }
+
+    await this.transporter.verify();
+  }
+
   async sendEmail(to: string, subject: string, text: string): Promise<void> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(

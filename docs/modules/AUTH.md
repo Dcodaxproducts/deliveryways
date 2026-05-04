@@ -121,7 +121,7 @@ Deletion-state contract:
 Body:
 - `refreshToken`
 
-Returns new access/refresh token pair.
+Returns new access/refresh token pair for user, staff, and deliveryman actors.
 
 #### `POST /auth/dev-token`
 Dev helper to mint an access token from supplied payload.
@@ -192,6 +192,11 @@ Rules:
 
 #### `POST /auth/resend-verification`
 Generates a fresh email-verification OTP for the logged-in user.
+
+Rules:
+- bearer token required
+- rate-limited
+- returns generic success when already verified or account is unavailable
 
 #### `DELETE /auth/account`
 Soft-deletes current user account.
