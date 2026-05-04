@@ -810,19 +810,8 @@ export class CartService {
     const effectiveDeliveryAddressId =
       cart.deliveryAddressId ?? defaultAddressId;
 
-    return this.resolveMediaResponse({
-      id: cart.id,
-      restaurantId: cart.restaurantId,
-      branchId: cart.branchId,
-      customerId: cart.customerId,
-      restaurantMenuId: cart.restaurantMenuId,
-      orderType: cart.orderType,
-      deliveryAddressId: effectiveDeliveryAddressId,
-      couponCode: cart.couponCode,
-      paymentMethod: cart.paymentMethod,
-      orderTime: cart.orderTime,
-      customerNote: cart.customerNote,
-      items: cart.items.map((cartItem) => {
+    const items = await Promise.all(
+      cart.items.map(async (cartItem) => {
         const menuItem = menuItemMap.get(cartItem.menuItemId);
         const selectedVariation = menuItem?.variations.find(
           (variation) => variation.id === cartItem.variationId,
@@ -837,7 +826,7 @@ export class CartService {
                 cart.orderType,
               )
             : (branchOverride?.priceOverride ?? menuItem?.basePrice ?? null);
-        const unitPrice =
+        let unitPrice =
           baseUnitPrice === null || baseUnitPrice === undefined || !menuItem
             ? null
             : new Prisma.Decimal(baseUnitPrice).plus(
@@ -854,6 +843,7 @@ export class CartService {
                     ),
               );
         const selectedModifiers = this.readModifiers(cartItem.modifiers) ?? [];
+        const sections = this.readSections(cartItem.modifiers);
         const selectedModifierDetails = menuItem
           ? selectedModifiers.map((selectedModifier) => {
               const modifier = this.findAvailableModifier(
@@ -877,10 +867,101 @@ export class CartService {
               };
             })
           : [];
-        const modifiersTotal = selectedModifierDetails.reduce(
-          (total, modifier) => total.plus(modifier.total),
-          new Prisma.Decimal(0),
-        );
+        const selectedSectionDetails = [];
+        let sectionModifiersTotal = new Prisma.Decimal(0);
+
+        if (menuItem && sections?.length && this.supportsSplitPizza(menuItem)) {
+          const splitItems = await this.cartRepository.findSplitSectionItems(
+            [...new Set(sections.map((section) => section.menuItemId))],
+            cart.restaurantId,
+            cart.branchId,
+            menuItem.category.id,
+          );
+          const splitItemMap = new Map(
+            splitItems.map((item) => [item.id, item]),
+          );
+          const sectionUnitPrices: Prisma.Decimal[] = [];
+
+          for (const section of sections) {
+            const sectionItem = splitItemMap.get(section.menuItemId);
+            if (!sectionItem) {
+              continue;
+            }
+
+            const sectionVariation = sectionItem.category.variations.find(
+              (variation) => variation.id === cartItem.variationId,
+            );
+            const sectionBranchOverride = sectionItem.branchOverrides[0];
+            const sectionBasePrice = sectionVariation
+              ? this.resolveVariationPrice(
+                  sectionVariation,
+                  sectionBranchOverride?.priceOverride ?? sectionItem.basePrice,
+                  sectionItem.id,
+                  cart.orderType,
+                )
+              : (sectionBranchOverride?.priceOverride ?? sectionItem.basePrice);
+            const sectionUnitPrice = new Prisma.Decimal(sectionBasePrice).plus(
+              sectionVariation &&
+                this.variationHasPickupPrice(
+                  sectionVariation,
+                  sectionItem.id,
+                  cart.orderType,
+                )
+                ? new Prisma.Decimal(0)
+                : this.resolveOrderTypePriceAdjustment(
+                    sectionItem,
+                    cart.orderType,
+                  ),
+            );
+            sectionUnitPrices.push(sectionUnitPrice);
+
+            const sectionModifierDetails = (section.modifiers ?? []).map(
+              (selectedModifier) => {
+                const modifier = this.findAvailableModifier(
+                  sectionItem,
+                  selectedModifier.modifierId,
+                );
+                const priceDelta = modifier
+                  ? this.resolveModifierPriceDelta(
+                      modifier,
+                      sectionItem.id,
+                      cartItem.variationId,
+                    )
+                  : new Prisma.Decimal(0);
+                const quantity = selectedModifier.quantity ?? 1;
+                const total = priceDelta.mul(quantity);
+                sectionModifiersTotal = sectionModifiersTotal.plus(total);
+
+                return {
+                  modifierId: selectedModifier.modifierId,
+                  name: modifier?.name ?? null,
+                  quantity,
+                  unitPrice: Number(priceDelta),
+                  total: Number(total),
+                };
+              },
+            );
+
+            selectedSectionDetails.push({
+              slot: section.slot,
+              menuItemId: sectionItem.id,
+              menuItemName: sectionItem.name,
+              unitPrice: Number(sectionUnitPrice),
+              modifiers: sectionModifierDetails,
+            });
+          }
+
+          if (sectionUnitPrices.length) {
+            unitPrice = Prisma.Decimal.max(...sectionUnitPrices);
+          }
+        }
+
+        const modifiersTotal = selectedModifierDetails
+          .reduce(
+            (total, modifier) => total.plus(modifier.total),
+            new Prisma.Decimal(0),
+          )
+          .plus(sectionModifiersTotal);
         const unitPriceWithModifiers = unitPrice
           ? unitPrice.plus(modifiersTotal)
           : null;
@@ -896,7 +977,8 @@ export class CartService {
           note: cartItem.note,
           modifiers: selectedModifiers,
           selectedModifiers: selectedModifierDetails,
-          sections: this.readSections(cartItem.modifiers),
+          sections,
+          selectedSections: selectedSectionDetails,
           unitPrice: unitPrice ? Number(unitPrice) : unitPrice,
           modifiersTotal: Number(modifiersTotal),
           unitPriceWithModifiers: unitPriceWithModifiers
@@ -984,6 +1066,21 @@ export class CartService {
             : null,
         };
       }),
+    );
+
+    return this.resolveMediaResponse({
+      id: cart.id,
+      restaurantId: cart.restaurantId,
+      branchId: cart.branchId,
+      customerId: cart.customerId,
+      restaurantMenuId: cart.restaurantMenuId,
+      orderType: cart.orderType,
+      deliveryAddressId: effectiveDeliveryAddressId,
+      couponCode: cart.couponCode,
+      paymentMethod: cart.paymentMethod,
+      orderTime: cart.orderTime,
+      customerNote: cart.customerNote,
+      items,
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });

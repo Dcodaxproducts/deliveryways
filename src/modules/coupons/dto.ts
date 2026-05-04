@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 
-export class CreateCouponDto {
+export class CouponInputDto {
   @ApiProperty()
   @IsString()
   code!: string;
@@ -84,7 +84,17 @@ export class CreateCouponDto {
   scopeCategoryId?: string;
 }
 
-export class UpdateCouponDto extends PartialType(CreateCouponDto) {
+export class CreateCouponDto extends CouponInputDto {
+  @ApiPropertyOptional({
+    description:
+      'Required when the authenticated user does not have restaurant context.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+}
+
+export class UpdateCouponDto extends PartialType(CouponInputDto) {
   @ApiPropertyOptional({ enum: CouponStatus })
   @IsOptional()
   @IsEnum(CouponStatus)

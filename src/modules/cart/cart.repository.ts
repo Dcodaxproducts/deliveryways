@@ -321,6 +321,15 @@ export class CartRepository {
         category: {
           select: {
             id: true,
+            variations: {
+              where: {
+                deletedAt: null,
+                isActive: true,
+              },
+              include: {
+                itemPriceOverrides: true,
+              },
+            },
             modifierLinks: {
               orderBy: [{ sortOrder: 'asc' }],
               include: {

@@ -47,7 +47,7 @@ export class CouponsService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateCouponDto) {
-    const restaurantId = await this.requireRestaurantId(user);
+    const restaurantId = await this.requireRestaurantId(user, dto.restaurantId);
 
     await this.validateScopeReferences(
       restaurantId,
@@ -367,8 +367,14 @@ export class CouponsService {
     return user.rid;
   }
 
-  private async requireRestaurantId(user: AuthUserContext): Promise<string> {
-    const restaurantId = await this.resolveRestaurantId(user);
+  private async requireRestaurantId(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ): Promise<string> {
+    const restaurantId = await this.resolveRestaurantId(
+      user,
+      requestedRestaurantId,
+    );
 
     if (!restaurantId) {
       throw new BadRequestException('restaurantId is required');
