@@ -36,4 +36,4 @@ ALTER TABLE "menu_category_variations" ADD CONSTRAINT "menu_category_variations_
 
 -- Keep old category_id for backward compatibility, but enforce central uniqueness going forward.
 DROP INDEX IF EXISTS "menu_item_variations_category_id_name_key";
-CREATE UNIQUE INDEX IF NOT EXISTS "menu_item_variations_restaurant_id_name_key" ON "menu_item_variations"("restaurant_id", "name");
+CREATE INDEX IF NOT EXISTS "menu_item_variations_restaurant_id_name_idx" ON "menu_item_variations"("restaurant_id", "name");

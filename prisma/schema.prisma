@@ -614,7 +614,7 @@ model MenuItemVariation {
   modifierPriceOverrides MenuVariationModifierPriceOverride[]
   itemPriceOverrides     MenuItemVariationPriceOverride[]
 
-  @@unique([restaurantId, name])
+  @@index([restaurantId, name])
   @@index([categoryId])
   @@map("menu_item_variations")
 }
