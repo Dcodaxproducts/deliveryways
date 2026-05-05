@@ -30,10 +30,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS "menu_category_variations_category_id_variatio
 CREATE INDEX IF NOT EXISTS "menu_category_variations_variation_id_idx" ON "menu_category_variations"("variation_id");
 CREATE INDEX IF NOT EXISTS "menu_item_variations_category_id_idx" ON "menu_item_variations"("category_id");
 
-ALTER TABLE "menu_item_variations" ADD CONSTRAINT "menu_item_variations_restaurant_id_fkey" FOREIGN KEY ("restaurant_id") REFERENCES "restaurants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "menu_category_variations" ADD CONSTRAINT "menu_category_variations_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "menu_categories"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "menu_category_variations" ADD CONSTRAINT "menu_category_variations_variation_id_fkey" FOREIGN KEY ("variation_id") REFERENCES "menu_item_variations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'menu_item_variations_restaurant_id_fkey'
+  ) THEN
+    ALTER TABLE "menu_item_variations"
+      ADD CONSTRAINT "menu_item_variations_restaurant_id_fkey"
+      FOREIGN KEY ("restaurant_id") REFERENCES "restaurants"("id")
+      ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- Keep old category_id for backward compatibility, but enforce central uniqueness going forward.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'menu_category_variations_category_id_fkey'
+  ) THEN
+    ALTER TABLE "menu_category_variations"
+      ADD CONSTRAINT "menu_category_variations_category_id_fkey"
+      FOREIGN KEY ("category_id") REFERENCES "menu_categories"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'menu_category_variations_variation_id_fkey'
+  ) THEN
+    ALTER TABLE "menu_category_variations"
+      ADD CONSTRAINT "menu_category_variations_variation_id_fkey"
+      FOREIGN KEY ("variation_id") REFERENCES "menu_item_variations"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+-- Keep old category_id for backward compatibility. Do not enforce restaurant/name uniqueness because legacy data can have Small/Medium/Large repeated across categories.
 DROP INDEX IF EXISTS "menu_item_variations_category_id_name_key";
+DROP INDEX IF EXISTS "menu_item_variations_restaurant_id_name_key";
 CREATE INDEX IF NOT EXISTS "menu_item_variations_restaurant_id_name_idx" ON "menu_item_variations"("restaurant_id", "name");
