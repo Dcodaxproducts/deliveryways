@@ -309,6 +309,7 @@ model Restaurant {
   menuItems           MenuItem[]
   modifierGroups      ModifierGroup[]
   modifiers           Modifier[]
+  menuItemVariations  MenuItemVariation[]
   inventoryCategories InventoryCategory[]
   inventoryItems      InventoryItem[]
   coupons             Coupon[]
@@ -482,10 +483,11 @@ model MenuCategory {
   restaurant    Restaurant                  @relation(fields: [restaurantId], references: [id])
   parent        MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
   children      MenuCategory[]              @relation("MenuCategoryTree")
-  items         MenuItem[]
-  variations    MenuItemVariation[]
-  menuLinks     RestaurantMenuCategory[]
-  modifierLinks MenuCategoryModifierGroup[]
+  items          MenuItem[]
+  variations     MenuItemVariation[]
+  variationLinks MenuCategoryVariation[]
+  menuLinks      RestaurantMenuCategory[]
+  modifierLinks  MenuCategoryModifierGroup[]
   overrides     BranchCategoryOverride[]
   couponScopes  Coupon[]
 
@@ -592,25 +594,47 @@ model RestaurantMenuItem {
 }
 
 model MenuItemVariation {
-  id          String    @id @default(cuid())
-  categoryId  String    @map("category_id")
-  name        String
-  description String?
-  sku         String?
-  price       Decimal   @default(0) @db.Decimal(10, 2)
-  sortOrder   Int       @default(0) @map("sort_order")
-  isDefault   Boolean   @default(false) @map("is_default")
-  isActive    Boolean   @default(true) @map("is_active")
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id           String    @id @default(cuid())
+  restaurantId String    @map("restaurant_id")
+  categoryId   String?   @map("category_id")
+  name         String
+  description  String?
+  sku          String?
+  price        Decimal   @default(0) @db.Decimal(10, 2)
+  sortOrder    Int       @default(0) @map("sort_order")
+  isDefault    Boolean   @default(false) @map("is_default")
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  category               MenuCategory                         @relation(fields: [categoryId], references: [id])
+  restaurant             Restaurant                           @relation(fields: [restaurantId], references: [id])
+  category               MenuCategory?                        @relation(fields: [categoryId], references: [id])
+  categoryLinks          MenuCategoryVariation[]
   modifierPriceOverrides MenuVariationModifierPriceOverride[]
   itemPriceOverrides     MenuItemVariationPriceOverride[]
 
-  @@unique([categoryId, name])
+  @@unique([restaurantId, name])
+  @@index([categoryId])
   @@map("menu_item_variations")
+}
+
+model MenuCategoryVariation {
+  id          String   @id @default(cuid())
+  categoryId  String   @map("category_id")
+  variationId String   @map("variation_id")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isDefault   Boolean  @default(false) @map("is_default")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  category  MenuCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  variation MenuItemVariation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, variationId])
+  @@index([variationId])
+  @@map("menu_category_variations")
 }
 
 model MenuItemVariationPriceOverride {

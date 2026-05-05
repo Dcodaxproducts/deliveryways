@@ -203,6 +203,21 @@ export class CartRepository {
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
+            variationLinks: {
+              where: {
+                isActive: true,
+                variation: { deletedAt: null, isActive: true },
+              },
+              include: {
+                variation: {
+                  include: {
+                    modifierPriceOverrides: true,
+                    itemPriceOverrides: true,
+                  },
+                },
+              },
+              orderBy: [{ sortOrder: 'asc' }],
+            },
             modifierLinks: {
               orderBy: [{ sortOrder: 'asc' }],
               include: {
@@ -265,7 +280,7 @@ export class CartRepository {
     return item
       ? {
           ...item,
-          variations: item.category.variations,
+          variations: this.resolveCategoryVariations(item.category),
         }
       : null;
   }
@@ -329,6 +344,14 @@ export class CartRepository {
               include: {
                 itemPriceOverrides: true,
               },
+            },
+            variationLinks: {
+              where: {
+                isActive: true,
+                variation: { deletedAt: null, isActive: true },
+              },
+              include: { variation: { include: { itemPriceOverrides: true } } },
+              orderBy: [{ sortOrder: 'asc' }],
             },
             modifierLinks: {
               orderBy: [{ sortOrder: 'asc' }],
@@ -406,6 +429,21 @@ export class CartRepository {
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
+            variationLinks: {
+              where: {
+                isActive: true,
+                variation: { deletedAt: null, isActive: true },
+              },
+              include: {
+                variation: {
+                  include: {
+                    modifierPriceOverrides: true,
+                    itemPriceOverrides: true,
+                  },
+                },
+              },
+              orderBy: [{ sortOrder: 'asc' }],
+            },
             modifierLinks: {
               orderBy: [{ sortOrder: 'asc' }],
               include: {
@@ -466,7 +504,47 @@ export class CartRepository {
 
     return items.map((item) => ({
       ...item,
-      variations: item.category.variations,
+      variations: this.resolveCategoryVariations(item.category),
     }));
+  }
+  private resolveCategoryVariations(category: {
+    variations: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+      price: Prisma.Decimal;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        price: Prisma.Decimal;
+        pickupPrice?: Prisma.Decimal | null;
+        displayText?: string | null;
+      }>;
+    }>;
+    variationLinks?: Array<{
+      sortOrder: number;
+      isDefault: boolean;
+      isActive: boolean;
+      variation: {
+        id: string;
+        name: string;
+        description?: string | null;
+        price: Prisma.Decimal;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          price: Prisma.Decimal;
+          pickupPrice?: Prisma.Decimal | null;
+          displayText?: string | null;
+        }>;
+      };
+    }>;
+  }) {
+    return category.variationLinks?.length
+      ? category.variationLinks.map((link) => ({
+          ...link.variation,
+          sortOrder: link.sortOrder,
+          isDefault: link.isDefault,
+          isActive: link.isActive,
+        }))
+      : category.variations;
   }
 }

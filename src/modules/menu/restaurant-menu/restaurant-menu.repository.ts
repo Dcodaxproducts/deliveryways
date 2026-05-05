@@ -50,6 +50,16 @@ export class RestaurantMenuRepository {
                       },
                       orderBy: { sortOrder: 'asc' },
                     },
+                    variationLinks: {
+                      where: {
+                        isActive: true,
+                        variation: { deletedAt: null, isActive: true },
+                      },
+                      include: {
+                        variation: { include: { itemPriceOverrides: true } },
+                      },
+                      orderBy: [{ sortOrder: 'asc' }],
+                    },
                     modifierLinks: {
                       orderBy: [{ sortOrder: 'asc' }],
                       include: {
@@ -454,6 +464,16 @@ export class RestaurantMenuRepository {
                 },
                 orderBy: { sortOrder: 'asc' },
               },
+              variationLinks: {
+                where: {
+                  ...(query.includeInactive ? {} : { isActive: true }),
+                  variation: { deletedAt: null },
+                },
+                include: {
+                  variation: { include: { itemPriceOverrides: true } },
+                },
+                orderBy: [{ sortOrder: 'asc' }],
+              },
               modifierLinks: {
                 orderBy: [{ sortOrder: 'asc' }],
                 include: {
@@ -559,7 +579,7 @@ export class RestaurantMenuRepository {
           prepTimeMinutes: item.prepTimeMinutes,
           isActive: item.isActive,
           category: item.category,
-          variations: item.category.variations,
+          variations: this.resolveCategoryVariations(item.category),
           modifierGroups: this.buildModifierGroups(item),
           menuResolution: {
             source,
@@ -582,6 +602,25 @@ export class RestaurantMenuRepository {
 
   async removeMenuItemLink(id: string, tx?: PrismaTx) {
     return this.client(tx).restaurantMenuItem.delete({ where: { id } });
+  }
+
+  private resolveCategoryVariations(category: {
+    variations?: Array<Record<string, unknown>>;
+    variationLinks?: Array<{
+      sortOrder: number;
+      isDefault: boolean;
+      isActive: boolean;
+      variation: Record<string, unknown>;
+    }>;
+  }) {
+    return category.variationLinks?.length
+      ? category.variationLinks.map((link) => ({
+          ...link.variation,
+          sortOrder: link.sortOrder,
+          isDefault: link.isDefault,
+          isActive: link.isActive,
+        }))
+      : (category.variations ?? []);
   }
 
   private buildModifierGroups(item: {
@@ -685,7 +724,9 @@ export class RestaurantMenuRepository {
             variationPriceOverrides: (
               modifier.variationPriceOverrides ?? []
             ).map((override) => ({
-              menuItemId: override.menuItemId ?? null,
+              ...(override.menuItemId
+                ? { menuItemId: override.menuItemId }
+                : {}),
               variationId: override.variationId,
               priceDelta: Number(override.priceDelta),
             })),

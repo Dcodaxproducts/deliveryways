@@ -797,7 +797,9 @@ export class RestaurantMenuService {
                   variationPriceOverrides: (
                     modifier.variationPriceOverrides ?? []
                   ).map((override) => ({
-                    menuItemId: override.menuItemId ?? null,
+                    ...(override.menuItemId
+                      ? { menuItemId: override.menuItemId }
+                      : {}),
                     variationId: override.variationId,
                     priceDelta: Number(override.priceDelta),
                   })),

@@ -317,6 +317,14 @@ export class GroupOrdersRepository {
               where: { deletedAt: null, isActive: true },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             },
+            variationLinks: {
+              where: {
+                isActive: true,
+                variation: { deletedAt: null, isActive: true },
+              },
+              include: { variation: true },
+              orderBy: [{ sortOrder: 'asc' }],
+            },
           },
         },
         branchOverrides: {
@@ -330,7 +338,7 @@ export class GroupOrdersRepository {
     return item
       ? {
           ...item,
-          variations: item.category.variations,
+          variations: this.resolveCategoryVariations(item.category),
         }
       : null;
   }
@@ -358,6 +366,14 @@ export class GroupOrdersRepository {
             variations: {
               where: { deletedAt: null, isActive: true },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+            variationLinks: {
+              where: {
+                isActive: true,
+                variation: { deletedAt: null, isActive: true },
+              },
+              include: { variation: true },
+              orderBy: [{ sortOrder: 'asc' }],
             },
           },
         },
@@ -392,7 +408,25 @@ export class GroupOrdersRepository {
 
     return items.map((item) => ({
       ...item,
-      variations: item.category.variations,
+      variations: this.resolveCategoryVariations(item.category),
     }));
+  }
+  private resolveCategoryVariations(category: {
+    variations: Array<Record<string, unknown>>;
+    variationLinks?: Array<{
+      sortOrder: number;
+      isDefault: boolean;
+      isActive: boolean;
+      variation: Record<string, unknown>;
+    }>;
+  }) {
+    return category.variationLinks?.length
+      ? category.variationLinks.map((link) => ({
+          ...link.variation,
+          sortOrder: link.sortOrder,
+          isDefault: link.isDefault,
+          isActive: link.isActive,
+        }))
+      : category.variations;
   }
 }

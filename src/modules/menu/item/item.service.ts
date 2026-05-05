@@ -677,16 +677,30 @@ export class MenuItemService {
       | undefined,
     tx: Prisma.TransactionClient,
   ) {
-    const variations = await tx.menuItemVariation.findMany({
-      where: {
-        categoryId,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        price: true,
-      },
-    });
+    const variations = tx.menuCategoryVariation
+      ? (
+          await tx.menuCategoryVariation.findMany({
+            where: {
+              categoryId,
+              isActive: true,
+              variation: { deletedAt: null },
+            },
+            select: {
+              variation: { select: { id: true, price: true } },
+            },
+            orderBy: [{ sortOrder: 'asc' }],
+          })
+        ).map((link) => link.variation)
+      : await tx.menuItemVariation.findMany({
+          where: {
+            categoryId,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            price: true,
+          },
+        });
 
     const overrideMap = new Map(
       (overrides ?? []).map((item) => [item.variationId, item]),

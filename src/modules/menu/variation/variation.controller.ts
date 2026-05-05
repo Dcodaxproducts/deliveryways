@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -21,19 +22,20 @@ import {
 import {
   CreateMenuVariationDto,
   ListMenuVariationsDto,
+  SyncCategoryVariationsDto,
   UpdateMenuVariationDto,
 } from './dto';
 import { MenuVariationService } from './variation.service';
 
 @ApiTags('Menu Variations')
-@Controller('menu/variations')
+@Controller('menu')
 export class MenuVariationController {
   constructor(private readonly menuVariationService: MenuVariationService) {}
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
-  @Post()
+  @Post('variations')
   create(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: CreateMenuVariationDto,
@@ -49,7 +51,7 @@ export class MenuVariationController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
   )
-  @Get()
+  @Get('variations')
   list(
     @CurrentUser() user: AuthUserContext,
     @Query() query: ListMenuVariationsDto,
@@ -60,7 +62,20 @@ export class MenuVariationController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
-  @Patch(':id')
+  @Put('categories/:categoryId/variations')
+  syncCategoryVariations(
+    @CurrentUser() user: AuthUserContext,
+    @Param('categoryId') categoryId: string,
+    @Body() dto: SyncCategoryVariationsDto,
+  ) {
+    return this.menuVariationService.syncCategoryVariations(
+      user,
+      categoryId,
+      dto,
+    );
+  }
+
+  @Patch('variations/:id')
   update(
     @CurrentUser() user: AuthUserContext,
     @Param('id') id: string,
@@ -72,7 +87,7 @@ export class MenuVariationController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
-  @Delete(':id')
+  @Delete('variations/:id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.menuVariationService.remove(user, id);
   }

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsInt,
@@ -24,9 +25,18 @@ export class MenuVariationModifierPriceOverrideDto {
 }
 
 export class CreateMenuVariationDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  categoryId!: string;
+  restaurantId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional category to assign this centralized variation immediately',
+  })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 
   @ApiProperty()
   @IsString()
@@ -42,10 +52,14 @@ export class CreateMenuVariationDto {
   @IsString()
   sku?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Deprecated default price. Use item variation price overrides for actual item pricing.',
+  })
+  @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsNumber()
-  price!: number;
+  price?: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
@@ -88,7 +102,10 @@ export class UpdateMenuVariationDto {
   @IsString()
   sku?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Deprecated default price. Use item variation price overrides for actual item pricing.',
+  })
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsNumber()
@@ -120,7 +137,23 @@ export class UpdateMenuVariationDto {
 }
 
 export class ListMenuVariationsDto extends QueryDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  categoryId!: string;
+  restaurantId?: string;
+
+  @ApiPropertyOptional({
+    description: 'When provided, lists variations assigned to this category',
+  })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+}
+
+export class SyncCategoryVariationsDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  variationIds!: string[];
 }

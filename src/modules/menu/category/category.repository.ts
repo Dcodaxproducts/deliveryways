@@ -58,6 +58,11 @@ export class MenuCategoryRepository {
           include: { itemPriceOverrides: true },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         },
+        variationLinks: {
+          where: { isActive: true, variation: { deletedAt: null } },
+          include: { variation: { include: { itemPriceOverrides: true } } },
+          orderBy: [{ sortOrder: 'asc' }],
+        },
         menuLinks: {
           orderBy: [{ sortOrder: 'asc' }],
           include: {
@@ -178,6 +183,14 @@ export class MenuCategoryRepository {
               },
             },
           },
+          variationLinks: {
+            where: {
+              ...(query.includeInactive ? {} : { isActive: true }),
+              variation: { deletedAt: null },
+            },
+            include: { variation: true },
+            orderBy: [{ sortOrder: 'asc' }],
+          },
           modifierLinks: {
             orderBy: [{ sortOrder: 'asc' }],
             include: {
@@ -249,7 +262,7 @@ export class MenuCategoryRepository {
   }
 
   deleteVariations(categoryId: string, tx?: PrismaTx) {
-    return this.client(tx).menuItemVariation.deleteMany({
+    return this.client(tx).menuCategoryVariation.deleteMany({
       where: { categoryId },
     });
   }

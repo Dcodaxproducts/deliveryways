@@ -9,6 +9,14 @@ export class MenuVariationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly include = {
+    categoryLinks: {
+      include: {
+        category: {
+          select: { id: true, name: true, slug: true },
+        },
+      },
+      orderBy: [{ sortOrder: 'asc' }],
+    },
     modifierPriceOverrides: {
       where: { menuItemId: null },
       include: {
@@ -41,21 +49,33 @@ export class MenuVariationRepository {
     });
   }
 
-  async list(query: ListMenuVariationsDto) {
+  async list(restaurantId: string | undefined, query: ListMenuVariationsDto) {
     const where: Prisma.MenuItemVariationWhereInput = {
-      categoryId: query.categoryId,
+      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
+      ...(query.categoryId
+        ? { categoryLinks: { some: { categoryId: query.categoryId } } }
+        : {}),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
         : {}),
     };
+
+    const orderBy: Prisma.MenuItemVariationOrderByWithRelationInput[] =
+      query.categoryId
+        ? [
+            { categoryLinks: { _count: 'desc' } },
+            { sortOrder: 'asc' },
+            { createdAt: 'desc' },
+          ]
+        : [{ sortOrder: 'asc' }, { createdAt: 'desc' }];
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.menuItemVariation.findMany({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        orderBy,
         include: this.include,
       }),
       this.prisma.menuItemVariation.count({ where }),
@@ -65,7 +85,7 @@ export class MenuVariationRepository {
   }
 
   async resetDefaults(categoryId: string, tx?: PrismaTx) {
-    return this.client(tx).menuItemVariation.updateMany({
+    return this.client(tx).menuCategoryVariation.updateMany({
       where: { categoryId },
       data: { isDefault: false },
     });

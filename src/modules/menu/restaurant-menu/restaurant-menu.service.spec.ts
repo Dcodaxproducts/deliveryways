@@ -46,7 +46,7 @@ describe('RestaurantMenuService', () => {
     };
 
     const storageService = {
-      resolveMediaUrlsDeep: jest.fn(async (data) => data),
+      resolveMediaUrlsDeep: jest.fn(<T>(data: T) => Promise.resolve(data)),
     };
 
     const service = new RestaurantMenuService(

@@ -143,6 +143,18 @@ export class MenuItemRepository {
                 },
                 orderBy: { sortOrder: 'asc' },
               },
+              variationLinks: {
+                where: { ...(query.includeInactive ? {} : { isActive: true }) },
+                include: {
+                  variation: {
+                    include: {
+                      modifierPriceOverrides: true,
+                      itemPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [{ sortOrder: 'asc' }],
+              },
               menuLinks: {
                 orderBy: [{ sortOrder: 'asc' }],
                 include: {
@@ -229,9 +241,17 @@ export class MenuItemRepository {
 
     return {
       items: items.map((item) => {
+        const categoryVariations = item.category.variationLinks.length
+          ? item.category.variationLinks.map((link) => ({
+              ...link.variation,
+              sortOrder: link.sortOrder,
+              isDefault: link.isDefault,
+              isActive: link.isActive,
+            }))
+          : item.category.variations;
         const variations = this.resolveItemVariations(
           item.id,
-          item.category.variations,
+          categoryVariations,
         );
 
         return {

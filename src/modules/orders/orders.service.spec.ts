@@ -1569,11 +1569,12 @@ describe('OrdersService - wallet payment', () => {
     expect(result.data.totalAmount).toBe(500);
     expect(result.data.payableAmount).toBe(0);
     expect(result.data.walletAppliedAmount).toBe(500);
+    const deliveryOtpMatcher = expect.stringMatching(/^\d{6}$/) as unknown;
     expect(ordersRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentMethod: PaymentMethod.WALLET,
         paymentStatus: PaymentStatus.PAID,
-        deliveryOtp: expect.stringMatching(/^\d{6}$/),
+        deliveryOtp: deliveryOtpMatcher,
       }),
       expect.anything(),
     );

@@ -611,6 +611,21 @@ export class OrdersService {
                   itemPriceOverrides: true,
                 },
               },
+              variationLinks: {
+                where: {
+                  isActive: true,
+                  variation: { deletedAt: null, isActive: true },
+                },
+                include: {
+                  variation: {
+                    include: {
+                      modifierPriceOverrides: true,
+                      itemPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [{ sortOrder: 'asc' }],
+              },
               modifierLinks: {
                 orderBy: [{ sortOrder: 'asc' }],
                 include: {
@@ -690,7 +705,7 @@ export class OrdersService {
       let unitPrice = this.resolveOrderItemBasePrice(
         {
           ...menuItem,
-          variations: menuItem.category.variations,
+          variations: this.resolveCategoryVariations(menuItem.category),
         },
         branchOverride?.priceOverride,
         requestedItem.variationId,
@@ -698,7 +713,9 @@ export class OrdersService {
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
 
       let variationName: string | undefined;
-      const menuItemVariations = menuItem.category.variations;
+      const menuItemVariations = this.resolveCategoryVariations(
+        menuItem.category,
+      );
 
       if (requestedItem.variationId) {
         const variation = menuItemVariations.find(
@@ -825,6 +842,16 @@ export class OrdersService {
                     itemPriceOverrides: true,
                   },
                 },
+                variationLinks: {
+                  where: {
+                    isActive: true,
+                    variation: { deletedAt: null, isActive: true },
+                  },
+                  include: {
+                    variation: { include: { itemPriceOverrides: true } },
+                  },
+                  orderBy: [{ sortOrder: 'asc' }],
+                },
                 modifierLinks: {
                   orderBy: [{ sortOrder: 'asc' }],
                   include: {
@@ -883,7 +910,7 @@ export class OrdersService {
           let sectionPrice = this.resolveOrderItemBasePrice(
             {
               ...sectionItem,
-              variations: sectionItem.category.variations,
+              variations: this.resolveCategoryVariations(sectionItem.category),
             },
             sectionBranchOverride?.priceOverride,
             requestedItem.variationId,
@@ -926,7 +953,9 @@ export class OrdersService {
             this.resolveOrderItemBasePrice(
               {
                 ...sectionItem,
-                variations: sectionItem.category.variations,
+                variations: this.resolveCategoryVariations(
+                  sectionItem.category,
+                ),
               },
               sectionBranchOverride?.priceOverride,
               requestedItem.variationId,
@@ -1889,6 +1918,16 @@ export class OrdersService {
                     },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
+                  variationLinks: {
+                    where: {
+                      isActive: true,
+                      variation: { deletedAt: null, isActive: true },
+                    },
+                    include: {
+                      variation: { include: { modifierPriceOverrides: true } },
+                    },
+                    orderBy: [{ sortOrder: 'asc' }],
+                  },
                 },
               },
               modifierLinks: {
@@ -1925,7 +1964,7 @@ export class OrdersService {
           .then((items) =>
             items.map((item) => ({
               ...item,
-              variations: item.category.variations ?? [],
+              variations: this.resolveCategoryVariations(item.category),
             })),
           )
       : [];
@@ -2557,6 +2596,53 @@ export class OrdersService {
     }
 
     return settings.allowedPaymentMethods.includes(paymentMethod);
+  }
+
+  private resolveCategoryVariations(category: {
+    variations?: Array<{
+      id: string;
+      name: string;
+      price: Prisma.Decimal;
+      modifierPriceOverrides?: Array<{
+        modifierId: string;
+        priceDelta: Prisma.Decimal;
+      }>;
+      itemPriceOverrides?: Array<{
+        menuItemId: string;
+        price: Prisma.Decimal;
+        pickupPrice?: Prisma.Decimal | null;
+        displayText?: string | null;
+      }>;
+    }>;
+    variationLinks?: Array<{
+      sortOrder: number;
+      isDefault: boolean;
+      isActive: boolean;
+      variation: {
+        id: string;
+        name: string;
+        price: Prisma.Decimal;
+        modifierPriceOverrides?: Array<{
+          modifierId: string;
+          priceDelta: Prisma.Decimal;
+        }>;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          price: Prisma.Decimal;
+          pickupPrice?: Prisma.Decimal | null;
+          displayText?: string | null;
+        }>;
+      };
+    }>;
+  }) {
+    return category.variationLinks?.length
+      ? category.variationLinks.map((link) => ({
+          ...link.variation,
+          sortOrder: link.sortOrder,
+          isDefault: link.isDefault,
+          isActive: link.isActive,
+        }))
+      : (category.variations ?? []);
   }
 
   private resolveVariationPrice(

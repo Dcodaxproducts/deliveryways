@@ -147,7 +147,7 @@ describe('MenuVariationService', () => {
       },
     });
     expect(deleteMany).toHaveBeenCalledWith({
-      where: { variationId: 'variation-1' },
+      where: { variationId: 'variation-1', menuItemId: null },
     });
     expect(createMany).toHaveBeenCalledTimes(1);
     const [createManyArg] = createMany.mock.calls[0] as [
