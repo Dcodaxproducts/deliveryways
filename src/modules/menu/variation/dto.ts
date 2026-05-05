@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
-  ArrayUnique,
   IsArray,
   IsBoolean,
   IsInt,
@@ -29,14 +28,6 @@ export class CreateMenuVariationDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Optional category to assign this centralized variation immediately',
-  })
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
 
   @ApiProperty()
   @IsString()
@@ -141,19 +132,4 @@ export class ListMenuVariationsDto extends QueryDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
-
-  @ApiPropertyOptional({
-    description: 'When provided, lists variations assigned to this category',
-  })
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
-}
-
-export class SyncCategoryVariationsDto {
-  @ApiProperty({ type: [String] })
-  @IsArray()
-  @ArrayUnique()
-  @IsString({ each: true })
-  variationIds!: string[];
 }

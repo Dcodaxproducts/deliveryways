@@ -12,7 +12,6 @@ import { PrismaService } from '../../../database';
 import {
   CreateMenuVariationDto,
   ListMenuVariationsDto,
-  SyncCategoryVariationsDto,
   UpdateMenuVariationDto,
 } from './dto';
 import { MenuVariationRepository } from './variation.repository';
@@ -25,22 +24,7 @@ export class MenuVariationService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuVariationDto) {
-    const restaurantId = await this.resolveRestaurantIdForCreate(user, dto);
-    const category = dto.categoryId
-      ? await this.prisma.menuCategory.findUnique({
-          where: { id: dto.categoryId },
-        })
-      : null;
-
-    if (dto.categoryId && (!category || category.deletedAt)) {
-      throw new NotFoundException('Menu category not found');
-    }
-
-    if (category && category.restaurantId !== restaurantId) {
-      throw new BadRequestException(
-        'Menu variation and category must belong to the same restaurant',
-      );
-    }
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
 
     await this.ensureRestaurantWriteAccess(user, restaurantId);
     await this.assertUniqueVariationName(restaurantId, dto.name);
@@ -50,16 +34,9 @@ export class MenuVariationService {
     );
 
     return this.prisma.$transaction(async (tx) => {
-      if (dto.categoryId && dto.isDefault) {
-        await this.variationRepository.resetDefaults(dto.categoryId, tx);
-      }
-
       const data = await this.variationRepository.create(
         {
           restaurant: { connect: { id: restaurantId } },
-          category: dto.categoryId
-            ? { connect: { id: dto.categoryId } }
-            : undefined,
           name: dto.name.trim(),
           description: dto.description,
           sku: dto.sku,
@@ -67,16 +44,6 @@ export class MenuVariationService {
           sortOrder: dto.sortOrder ?? 0,
           isDefault: dto.isDefault ?? false,
           isActive: dto.isActive ?? true,
-          categoryLinks: dto.categoryId
-            ? {
-                create: {
-                  categoryId: dto.categoryId,
-                  sortOrder: dto.sortOrder ?? 0,
-                  isDefault: dto.isDefault ?? false,
-                  isActive: dto.isActive ?? true,
-                },
-              }
-            : undefined,
         },
         tx,
       );
@@ -87,15 +54,6 @@ export class MenuVariationService {
         tx,
       );
 
-      if (dto.categoryId) {
-        await this.seedItemPriceOverridesForVariation(
-          data.id,
-          dto.categoryId,
-          new Prisma.Decimal(dto.price ?? 0),
-          tx,
-        );
-      }
-
       return {
         data,
         message: 'Menu variation created successfully',
@@ -104,9 +62,10 @@ export class MenuVariationService {
   }
 
   async list(user: AuthUserContext, query: ListMenuVariationsDto) {
-    const restaurantId = query.categoryId
-      ? await this.resolveRestaurantIdFromCategory(user, query.categoryId)
-      : await this.resolveRestaurantIdForList(user, query.restaurantId);
+    const restaurantId = await this.resolveRestaurantIdForList(
+      user,
+      query.restaurantId,
+    );
 
     const { items, total } = await this.variationRepository.list(
       restaurantId,
@@ -116,75 +75,6 @@ export class MenuVariationService {
       data: items,
       message: 'Menu variations fetched successfully',
       meta: buildPaginationMeta(query, total),
-    };
-  }
-
-  async syncCategoryVariations(
-    user: AuthUserContext,
-    categoryId: string,
-    dto: SyncCategoryVariationsDto,
-  ) {
-    const category = await this.prisma.menuCategory.findUnique({
-      where: { id: categoryId },
-    });
-    if (!category || category.deletedAt) {
-      throw new NotFoundException('Menu category not found');
-    }
-
-    await this.ensureRestaurantWriteAccess(user, category.restaurantId);
-
-    const variationIds = [...new Set(dto.variationIds)];
-    const variations = variationIds.length
-      ? await this.prisma.menuItemVariation.findMany({
-          where: {
-            id: { in: variationIds },
-            restaurantId: category.restaurantId,
-            deletedAt: null,
-          },
-          select: { id: true, price: true },
-        })
-      : [];
-
-    if (variations.length !== variationIds.length) {
-      throw new BadRequestException(
-        'All variations must exist in the category restaurant',
-      );
-    }
-
-    const data = await this.prisma.$transaction(async (tx) => {
-      await tx.menuCategoryVariation.deleteMany({ where: { categoryId } });
-      if (variationIds.length) {
-        await tx.menuCategoryVariation.createMany({
-          data: variationIds.map((variationId, index) => ({
-            categoryId,
-            variationId,
-            sortOrder: index,
-            isDefault: index === 0,
-            isActive: true,
-          })),
-          skipDuplicates: true,
-        });
-
-        for (const variation of variations) {
-          await this.seedItemPriceOverridesForVariation(
-            variation.id,
-            categoryId,
-            variation.price,
-            tx,
-          );
-        }
-      }
-
-      return tx.menuCategoryVariation.findMany({
-        where: { categoryId },
-        include: { variation: true },
-        orderBy: [{ sortOrder: 'asc' }],
-      });
-    });
-
-    return {
-      data,
-      message: 'Category variations updated successfully',
     };
   }
 
@@ -252,36 +142,6 @@ export class MenuVariationService {
       data,
       message: 'Menu variation deleted successfully',
     };
-  }
-
-  private async resolveRestaurantIdForCreate(
-    user: AuthUserContext,
-    dto: CreateMenuVariationDto,
-  ) {
-    if (dto.restaurantId) {
-      return this.resolveRestaurantId(user, dto.restaurantId);
-    }
-
-    if (dto.categoryId) {
-      return this.resolveRestaurantIdFromCategory(user, dto.categoryId);
-    }
-
-    return this.resolveRestaurantId(user, undefined);
-  }
-
-  private async resolveRestaurantIdFromCategory(
-    user: AuthUserContext,
-    categoryId: string,
-  ) {
-    const category = await this.prisma.menuCategory.findUnique({
-      where: { id: categoryId },
-    });
-    if (!category || category.deletedAt) {
-      throw new NotFoundException('Menu category not found');
-    }
-
-    await this.ensureRestaurantReadAccess(user, category.restaurantId);
-    return category.restaurantId;
   }
 
   private async resolveRestaurantId(
@@ -454,14 +314,6 @@ export class MenuVariationService {
         id: { in: modifierIds },
         deletedAt: null,
         restaurantId,
-        groupLinks: {
-          some: {
-            modifierGroup: {
-              restaurantId,
-              deletedAt: null,
-            },
-          },
-        },
       },
     });
 
@@ -491,34 +343,6 @@ export class MenuVariationService {
         modifierId: item.modifierId,
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),
-    });
-  }
-
-  private async seedItemPriceOverridesForVariation(
-    variationId: string,
-    categoryId: string,
-    price: Prisma.Decimal,
-    tx: Prisma.TransactionClient,
-  ) {
-    const items = await tx.menuItem.findMany({
-      where: {
-        categoryId,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-
-    if (!items.length) {
-      return;
-    }
-
-    await tx.menuItemVariationPriceOverride.createMany({
-      data: items.map((item) => ({
-        menuItemId: item.id,
-        variationId,
-        price,
-      })),
-      skipDuplicates: true,
     });
   }
 }

@@ -269,6 +269,26 @@ export class CartRepository {
             },
           },
         },
+        modifierPriceOverrides: {
+          include: {
+            modifier: {
+              include: {
+                itemPriceOverrides: true,
+                variationPriceOverrides: true,
+              },
+            },
+          },
+        },
+        variationPriceOverrides: {
+          include: {
+            variation: {
+              include: {
+                modifierPriceOverrides: true,
+                itemPriceOverrides: true,
+              },
+            },
+          },
+        },
         branchOverrides: {
           where: {
             branchId,
@@ -280,7 +300,9 @@ export class CartRepository {
     return item
       ? {
           ...item,
-          variations: this.resolveCategoryVariations(item.category),
+          variations: item.variationPriceOverrides.length
+            ? this.resolveItemVariations(item.id, item.variationPriceOverrides)
+            : this.resolveCategoryVariations(item.category),
         }
       : null;
   }
@@ -494,6 +516,26 @@ export class CartRepository {
             },
           },
         },
+        modifierPriceOverrides: {
+          include: {
+            modifier: {
+              include: {
+                itemPriceOverrides: true,
+                variationPriceOverrides: true,
+              },
+            },
+          },
+        },
+        variationPriceOverrides: {
+          include: {
+            variation: {
+              include: {
+                modifierPriceOverrides: true,
+                itemPriceOverrides: true,
+              },
+            },
+          },
+        },
         branchOverrides: {
           where: { branchId },
           select: { priceOverride: true, isAvailable: true },
@@ -504,9 +546,40 @@ export class CartRepository {
 
     return items.map((item) => ({
       ...item,
-      variations: this.resolveCategoryVariations(item.category),
+      variations: item.variationPriceOverrides.length
+        ? this.resolveItemVariations(item.id, item.variationPriceOverrides)
+        : this.resolveCategoryVariations(item.category),
     }));
   }
+  private resolveItemVariations(
+    menuItemId: string,
+    overrides: Array<{
+      price: Prisma.Decimal;
+      pickupPrice?: Prisma.Decimal | null;
+      displayText?: string | null;
+      variation: {
+        id: string;
+        name: string;
+        description?: string | null;
+        price: Prisma.Decimal;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          price: Prisma.Decimal;
+          pickupPrice?: Prisma.Decimal | null;
+          displayText?: string | null;
+        }>;
+      };
+    }>,
+  ) {
+    return overrides.map((override) => ({
+      ...override.variation,
+      price: override.price,
+      pickupPrice: override.pickupPrice ?? null,
+      displayText: override.displayText ?? null,
+      itemPriceOverrides: [{ ...override, menuItemId }],
+    }));
+  }
+
   private resolveCategoryVariations(category: {
     variations: Array<{
       id: string;

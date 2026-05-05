@@ -53,22 +53,15 @@ export class MenuVariationRepository {
     const where: Prisma.MenuItemVariationWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
-      ...(query.categoryId
-        ? { categoryLinks: { some: { categoryId: query.categoryId } } }
-        : {}),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
         : {}),
     };
 
-    const orderBy: Prisma.MenuItemVariationOrderByWithRelationInput[] =
-      query.categoryId
-        ? [
-            { categoryLinks: { _count: 'desc' } },
-            { sortOrder: 'asc' },
-            { createdAt: 'desc' },
-          ]
-        : [{ sortOrder: 'asc' }, { createdAt: 'desc' }];
+    const orderBy: Prisma.MenuItemVariationOrderByWithRelationInput[] = [
+      { sortOrder: 'asc' },
+      { createdAt: 'desc' },
+    ];
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.menuItemVariation.findMany({

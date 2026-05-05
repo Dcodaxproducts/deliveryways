@@ -228,6 +228,28 @@ export class MenuItemRepository {
               },
             },
           },
+          modifierPriceOverrides: {
+            include: {
+              modifier: {
+                include: {
+                  itemPriceOverrides: true,
+                  variationPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ modifier: { sortOrder: 'asc' } }],
+          },
+          variationPriceOverrides: {
+            include: {
+              variation: {
+                include: {
+                  modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ variation: { sortOrder: 'asc' } }],
+          },
           _count: {
             select: {
               modifierLinks: true,
@@ -241,18 +263,20 @@ export class MenuItemRepository {
 
     return {
       items: items.map((item) => {
-        const categoryVariations = item.category.variationLinks.length
-          ? item.category.variationLinks.map((link) => ({
-              ...link.variation,
-              sortOrder: link.sortOrder,
-              isDefault: link.isDefault,
-              isActive: link.isActive,
+        const itemVariations = item.variationPriceOverrides.length
+          ? item.variationPriceOverrides.map((override) => ({
+              ...override.variation,
+              itemPriceOverrides: [override],
             }))
-          : item.category.variations;
-        const variations = this.resolveItemVariations(
-          item.id,
-          categoryVariations,
-        );
+          : item.category.variationLinks.length
+            ? item.category.variationLinks.map((link) => ({
+                ...link.variation,
+                sortOrder: link.sortOrder,
+                isDefault: link.isDefault,
+                isActive: link.isActive,
+              }))
+            : item.category.variations;
+        const variations = this.resolveItemVariations(item.id, itemVariations);
 
         return {
           ...item,

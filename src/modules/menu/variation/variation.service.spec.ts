@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { UserRoleEnum } from '../../../common/enums';
 import { MenuVariationService } from './variation.service';
@@ -46,11 +46,6 @@ describe('MenuVariationService', () => {
 
   it('allows business admin to create variation for a tenant restaurant even when token rid is null', async () => {
     const { service, variationRepository, prisma } = makeService();
-    prisma.menuCategory.findUnique.mockResolvedValue({
-      id: 'category-1',
-      restaurantId: 'restaurant-1',
-      deletedAt: null,
-    });
     prisma.modifier.count.mockResolvedValue(0);
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     variationRepository.create.mockResolvedValue({ id: 'variation-1' });
@@ -62,7 +57,7 @@ describe('MenuVariationService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       {
-        categoryId: 'category-1',
+        restaurantId: 'restaurant-1',
         name: 'Large',
         description: 'Best for sharing',
         price: 100,
@@ -88,11 +83,6 @@ describe('MenuVariationService', () => {
     const deleteMany = jest.fn();
     const createMany = jest.fn();
 
-    prisma.menuCategory.findUnique.mockResolvedValue({
-      id: 'category-1',
-      restaurantId: 'restaurant-1',
-      deletedAt: null,
-    });
     prisma.modifier.count.mockResolvedValue(2);
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     prisma.$transaction.mockImplementation(
@@ -121,7 +111,7 @@ describe('MenuVariationService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       {
-        categoryId: 'category-1',
+        restaurantId: 'restaurant-1',
         name: 'Large',
         price: 100,
         modifierPriceOverrides: [
@@ -136,14 +126,6 @@ describe('MenuVariationService', () => {
         id: { in: ['modifier-1', 'modifier-2'] },
         deletedAt: null,
         restaurantId: 'restaurant-1',
-        groupLinks: {
-          some: {
-            modifierGroup: {
-              restaurantId: 'restaurant-1',
-              deletedAt: null,
-            },
-          },
-        },
       },
     });
     expect(deleteMany).toHaveBeenCalledWith({
@@ -173,11 +155,6 @@ describe('MenuVariationService', () => {
   it('stores exact variation price during create', async () => {
     const { service, variationRepository, prisma } = makeService();
 
-    prisma.menuCategory.findUnique.mockResolvedValue({
-      id: 'category-1',
-      restaurantId: 'restaurant-1',
-      deletedAt: null,
-    });
     prisma.modifier.count.mockResolvedValue(0);
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     variationRepository.create.mockResolvedValue({
@@ -192,7 +169,7 @@ describe('MenuVariationService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       {
-        categoryId: 'category-1',
+        restaurantId: 'restaurant-1',
         name: 'Large',
         price: 250,
       },
@@ -215,11 +192,6 @@ describe('MenuVariationService', () => {
   it('returns exact variation prices in list responses', async () => {
     const { service, variationRepository, prisma } = makeService();
 
-    prisma.menuCategory.findUnique.mockResolvedValue({
-      id: 'category-1',
-      restaurantId: 'restaurant-1',
-      deletedAt: null,
-    });
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     variationRepository.list.mockResolvedValue({
       items: [
@@ -238,7 +210,7 @@ describe('MenuVariationService', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
       {
-        categoryId: 'category-1',
+        restaurantId: 'restaurant-1',
         page: 1,
         limit: 10,
         sortBy: 'sortOrder',
@@ -251,11 +223,6 @@ describe('MenuVariationService', () => {
 
   it('blocks business admin variation write outside tenant restaurants', async () => {
     const { service, prisma } = makeService();
-    prisma.menuCategory.findUnique.mockResolvedValue({
-      id: 'category-1',
-      restaurantId: 'restaurant-2',
-      deletedAt: null,
-    });
     prisma.modifier.count.mockResolvedValue(0);
     prisma.restaurant.findFirst.mockResolvedValue(null);
 
@@ -267,7 +234,7 @@ describe('MenuVariationService', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
         },
         {
-          categoryId: 'category-1',
+          restaurantId: 'restaurant-1',
           name: 'Large',
           price: 100,
         },
@@ -275,10 +242,8 @@ describe('MenuVariationService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('throws when menu item is missing', async () => {
-    const { service, prisma } = makeService();
-    prisma.menuCategory.findUnique.mockResolvedValue(null);
-
+  it('throws when restaurant context is missing', async () => {
+    const { service } = makeService();
     await expect(
       service.create(
         {
@@ -287,11 +252,10 @@ describe('MenuVariationService', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
         },
         {
-          categoryId: 'missing-category',
           name: 'Large',
           price: 100,
         },
       ),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

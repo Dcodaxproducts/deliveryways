@@ -100,9 +100,15 @@ interface CartModifierPricingSource {
   }>;
 }
 
+interface CartDirectModifierOverride {
+  priceDelta: Prisma.Decimal;
+  modifier: CartModifierPricingSource;
+}
+
 interface CartModifierSource {
   id: string;
   modifierLinks: CartModifierLink[];
+  modifierPriceOverrides?: CartDirectModifierOverride[];
   category: {
     modifierLinks?: CartModifierLink[];
   };
@@ -1058,6 +1064,10 @@ export class CartService {
                       ),
                     }
                   : null,
+                modifiers: this.mapCartDirectModifiers(
+                  menuItem,
+                  cartItem.variationId,
+                ),
                 modifierGroups: this.mapCartModifierGroups(
                   menuItem,
                   cartItem.variationId,
@@ -1359,11 +1369,7 @@ export class CartService {
     }
 
     for (const modifier of dto.modifiers ?? []) {
-      const found = this.getAvailableModifierLinks(menuItem).some((link) =>
-        link.modifierGroup.modifierLinks.some(
-          (candidate) => candidate.modifier.id === modifier.modifierId,
-        ),
-      );
+      const found = this.findAvailableModifier(menuItem, modifier.modifierId);
 
       if (!found) {
         throw new BadRequestException(
@@ -1430,10 +1436,9 @@ export class CartService {
       }
 
       for (const modifier of section.modifiers ?? []) {
-        const found = this.getAvailableModifierLinks(sectionItem).some((link) =>
-          link.modifierGroup.modifierLinks.some(
-            (candidate) => candidate.modifier.id === modifier.modifierId,
-          ),
+        const found = this.findAvailableModifier(
+          sectionItem,
+          modifier.modifierId,
         );
 
         if (!found) {
@@ -1453,6 +1458,20 @@ export class CartService {
     item: CartModifierSource,
     modifierId: string,
   ): CartModifierPricingSource | undefined {
+    const directModifier = item.modifierPriceOverrides?.find(
+      (override) => override.modifier.id === modifierId,
+    );
+
+    if (directModifier) {
+      return {
+        ...directModifier.modifier,
+        itemPriceOverrides: [
+          ...(directModifier.modifier.itemPriceOverrides ?? []),
+          { menuItemId: item.id, priceDelta: directModifier.priceDelta },
+        ],
+      };
+    }
+
     for (const link of this.getAvailableModifierLinks(item)) {
       const modifier = link.modifierGroup.modifierLinks.find(
         (modifierLink) => modifierLink.modifier.id === modifierId,
@@ -1464,6 +1483,30 @@ export class CartService {
     }
 
     return undefined;
+  }
+
+  private mapCartDirectModifiers(
+    item: CartModifierSource,
+    variationId: string | null,
+  ) {
+    return (item.modifierPriceOverrides ?? []).map((override) => {
+      const modifier = {
+        ...override.modifier,
+        itemPriceOverrides: [
+          ...(override.modifier.itemPriceOverrides ?? []),
+          { menuItemId: item.id, priceDelta: override.priceDelta },
+        ],
+      };
+
+      return {
+        id: modifier.id,
+        name: modifier.name,
+        sortOrder: 0,
+        priceDelta: Number(
+          this.resolveModifierPriceDelta(modifier, item.id, variationId),
+        ),
+      };
+    });
   }
 
   private mapCartModifierGroups(

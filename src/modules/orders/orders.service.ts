@@ -58,8 +58,28 @@ interface OrderModifierLink {
   };
 }
 
+interface OrderDirectModifierOverride {
+  priceDelta: Prisma.Decimal;
+  modifier: {
+    id: string;
+    name: string;
+    priceDelta: Prisma.Decimal;
+    itemPriceOverrides?: Array<{
+      menuItemId: string;
+      priceDelta: Prisma.Decimal;
+    }>;
+    variationPriceOverrides?: Array<{
+      menuItemId: string | null;
+      variationId: string;
+      priceDelta: Prisma.Decimal;
+    }>;
+  };
+}
+
 interface OrderModifierSource {
+  id: string;
   modifierLinks: OrderModifierLink[];
+  modifierPriceOverrides?: OrderDirectModifierOverride[];
   category: {
     modifierLinks?: OrderModifierLink[];
   };
@@ -671,6 +691,26 @@ export class OrdersService {
               },
             },
           },
+          modifierPriceOverrides: {
+            include: {
+              modifier: {
+                include: {
+                  itemPriceOverrides: true,
+                  variationPriceOverrides: true,
+                },
+              },
+            },
+          },
+          variationPriceOverrides: {
+            include: {
+              variation: {
+                include: {
+                  modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
+                },
+              },
+            },
+          },
           branchOverrides: {
             where: {
               branchId: branch.id,
@@ -705,7 +745,7 @@ export class OrdersService {
       let unitPrice = this.resolveOrderItemBasePrice(
         {
           ...menuItem,
-          variations: this.resolveCategoryVariations(menuItem.category),
+          variations: this.resolveItemVariations(menuItem),
         },
         branchOverride?.priceOverride,
         requestedItem.variationId,
@@ -746,7 +786,7 @@ export class OrdersService {
       if (requestedItem.modifiers?.length) {
         for (const requestedModifier of requestedItem.modifiers) {
           const found = this.findModifier(
-            this.getAvailableModifierLinks(menuItem),
+            menuItem,
             requestedModifier.modifierId,
             menuItem.id,
             requestedItem.variationId,
@@ -910,7 +950,7 @@ export class OrdersService {
           let sectionPrice = this.resolveOrderItemBasePrice(
             {
               ...sectionItem,
-              variations: this.resolveCategoryVariations(sectionItem.category),
+              variations: this.resolveItemVariations(sectionItem),
             },
             sectionBranchOverride?.priceOverride,
             requestedItem.variationId,
@@ -924,7 +964,7 @@ export class OrdersService {
 
           for (const requestedModifier of section.modifiers ?? []) {
             const found = this.findModifier(
-              this.getAvailableModifierLinks(sectionItem),
+              sectionItem,
               requestedModifier.modifierId,
               sectionItem.id,
               requestedItem.variationId,
@@ -1956,6 +1996,26 @@ export class OrdersService {
                   },
                 },
               },
+              modifierPriceOverrides: {
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+              },
+              variationPriceOverrides: {
+                include: {
+                  variation: {
+                    include: {
+                      modifierPriceOverrides: true,
+                      itemPriceOverrides: true,
+                    },
+                  },
+                },
+              },
               branchOverrides: {
                 where: { branchId },
               },
@@ -1964,7 +2024,7 @@ export class OrdersService {
           .then((items) =>
             items.map((item) => ({
               ...item,
-              variations: this.resolveCategoryVariations(item.category),
+              variations: this.resolveItemVariations(item),
             })),
           )
       : [];
@@ -2598,6 +2658,40 @@ export class OrdersService {
     return settings.allowedPaymentMethods.includes(paymentMethod);
   }
 
+  private resolveItemVariations(item: {
+    variationPriceOverrides?: Array<{
+      price: Prisma.Decimal;
+      pickupPrice?: Prisma.Decimal | null;
+      displayText?: string | null;
+      variation: {
+        id: string;
+        name: string;
+        price: Prisma.Decimal;
+        modifierPriceOverrides?: Array<{
+          modifierId: string;
+          priceDelta: Prisma.Decimal;
+        }>;
+        itemPriceOverrides?: Array<{
+          menuItemId: string;
+          price: Prisma.Decimal;
+          pickupPrice?: Prisma.Decimal | null;
+          displayText?: string | null;
+        }>;
+      };
+    }>;
+    category: Parameters<OrdersService['resolveCategoryVariations']>[0];
+  }) {
+    return item.variationPriceOverrides?.length
+      ? item.variationPriceOverrides.map((override) => ({
+          ...override.variation,
+          price: override.price,
+          pickupPrice: override.pickupPrice ?? null,
+          displayText: override.displayText ?? null,
+          itemPriceOverrides: [override],
+        }))
+      : this.resolveCategoryVariations(item.category);
+  }
+
   private resolveCategoryVariations(category: {
     variations?: Array<{
       id: string;
@@ -2703,40 +2797,66 @@ export class OrdersService {
   }
 
   private findModifier(
-    links: OrderModifierLink[],
+    item: OrderModifierSource,
     modifierId: string,
     menuItemId?: string,
     variationId?: string,
   ) {
-    for (const link of links) {
+    const directModifier = item.modifierPriceOverrides?.find(
+      (override) => override.modifier.id === modifierId,
+    );
+
+    if (directModifier) {
+      return this.resolveModifierPricing(
+        {
+          ...directModifier.modifier,
+          itemPriceOverrides: [
+            ...(directModifier.modifier.itemPriceOverrides ?? []),
+            { menuItemId: item.id, priceDelta: directModifier.priceDelta },
+          ],
+        },
+        menuItemId,
+        variationId,
+      );
+    }
+
+    for (const link of this.getAvailableModifierLinks(item)) {
       const found = link.modifierGroup.modifierLinks.find(
         (modifierLink) => modifierLink.modifier.id === modifierId,
       )?.modifier;
-      if (found) {
-        const variationOverride = found.variationPriceOverrides?.find(
-          (item) =>
-            item.menuItemId === menuItemId && item.variationId === variationId,
-        );
-        const legacyVariationOverride = found.variationPriceOverrides?.find(
-          (item) =>
-            item.menuItemId === null && item.variationId === variationId,
-        );
-        const override = found.itemPriceOverrides?.find(
-          (item) => item.menuItemId === menuItemId,
-        );
 
-        return {
-          ...found,
-          priceDelta:
-            variationOverride?.priceDelta ??
-            legacyVariationOverride?.priceDelta ??
-            override?.priceDelta ??
-            found.priceDelta,
-        };
+      if (found) {
+        return this.resolveModifierPricing(found, menuItemId, variationId);
       }
     }
 
     return undefined;
+  }
+
+  private resolveModifierPricing(
+    modifier: OrderDirectModifierOverride['modifier'],
+    menuItemId?: string,
+    variationId?: string,
+  ) {
+    const variationOverride = modifier.variationPriceOverrides?.find(
+      (item) =>
+        item.menuItemId === menuItemId && item.variationId === variationId,
+    );
+    const legacyVariationOverride = modifier.variationPriceOverrides?.find(
+      (item) => item.menuItemId === null && item.variationId === variationId,
+    );
+    const override = modifier.itemPriceOverrides?.find(
+      (item) => item.menuItemId === menuItemId,
+    );
+
+    return {
+      ...modifier,
+      priceDelta:
+        variationOverride?.priceDelta ??
+        legacyVariationOverride?.priceDelta ??
+        override?.priceDelta ??
+        modifier.priceDelta,
+    };
   }
 
   private getAvailableModifierLinks(item: OrderModifierSource) {

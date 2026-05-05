@@ -87,7 +87,7 @@ export class MenuItemService {
       );
       await this.syncVariationPriceOverrides(
         created.id,
-        dto.categoryId,
+        restaurantId,
         dto.variationPriceOverrides,
         tx,
       );
@@ -265,7 +265,7 @@ export class MenuItemService {
       if (dto.categoryId || dto.variationPriceOverrides !== undefined) {
         await this.syncVariationPriceOverrides(
           id,
-          dto.categoryId ?? item.categoryId,
+          item.restaurantId,
           dto.variationPriceOverrides,
           tx,
         );
@@ -599,14 +599,6 @@ export class MenuItemService {
         id: { in: modifierIds },
         deletedAt: null,
         restaurantId,
-        groupLinks: {
-          some: {
-            modifierGroup: {
-              restaurantId,
-              deletedAt: null,
-            },
-          },
-        },
       },
     });
 
@@ -662,7 +654,7 @@ export class MenuItemService {
 
   private async syncVariationPriceOverrides(
     menuItemId: string,
-    categoryId: string,
+    restaurantId: string,
     overrides:
       | Array<{
           variationId: string;
@@ -677,31 +669,6 @@ export class MenuItemService {
       | undefined,
     tx: Prisma.TransactionClient,
   ) {
-    const variations = tx.menuCategoryVariation
-      ? (
-          await tx.menuCategoryVariation.findMany({
-            where: {
-              categoryId,
-              isActive: true,
-              variation: { deletedAt: null },
-            },
-            select: {
-              variation: { select: { id: true, price: true } },
-            },
-            orderBy: [{ sortOrder: 'asc' }],
-          })
-        ).map((link) => link.variation)
-      : await tx.menuItemVariation.findMany({
-          where: {
-            categoryId,
-            deletedAt: null,
-          },
-          select: {
-            id: true,
-            price: true,
-          },
-        });
-
     const overrideMap = new Map(
       (overrides ?? []).map((item) => [item.variationId, item]),
     );
@@ -712,13 +679,21 @@ export class MenuItemService {
       );
     }
 
-    const categoryVariationIds = new Set(variations.map((item) => item.id));
-    for (const variationId of overrideMap.keys()) {
-      if (!categoryVariationIds.has(variationId)) {
-        throw new BadRequestException(
-          'One or more variation price overrides are invalid for this category',
-        );
-      }
+    const variations = overrideMap.size
+      ? await tx.menuItemVariation.findMany({
+          where: {
+            id: { in: [...overrideMap.keys()] },
+            restaurantId,
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : [];
+
+    if (variations.length !== overrideMap.size) {
+      throw new BadRequestException(
+        'One or more variation price overrides are invalid for this restaurant',
+      );
     }
 
     await tx.menuItemVariationPriceOverride.deleteMany({
@@ -728,27 +703,24 @@ export class MenuItemService {
       where: { menuItemId },
     });
 
-    if (!variations.length) {
+    if (!overrides?.length) {
       return;
     }
 
     await tx.menuItemVariationPriceOverride.createMany({
-      data: variations.map((variation) => {
-        const override = overrideMap.get(variation.id);
-        return {
-          menuItemId,
-          variationId: variation.id,
-          price: new Prisma.Decimal(override?.price ?? variation.price),
-          pickupPrice:
-            override?.pickupPrice !== undefined
-              ? new Prisma.Decimal(override.pickupPrice)
-              : null,
-          displayText: this.resolveNullableString(override?.displayText),
-        };
-      }),
+      data: overrides.map((override) => ({
+        menuItemId,
+        variationId: override.variationId,
+        price: new Prisma.Decimal(override.price),
+        pickupPrice:
+          override.pickupPrice !== undefined
+            ? new Prisma.Decimal(override.pickupPrice)
+            : null,
+        displayText: this.resolveNullableString(override.displayText),
+      })),
     });
 
-    const modifierPriceOverrides = (overrides ?? []).flatMap((override) =>
+    const modifierPriceOverrides = overrides.flatMap((override) =>
       (override.modifierPriceOverrides ?? []).map((modifierOverride) => ({
         menuItemId,
         variationId: override.variationId,

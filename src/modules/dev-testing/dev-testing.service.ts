@@ -121,7 +121,7 @@ export class DevTestingService {
     });
 
     await this.menuVariationService.create(ownerContext, {
-      categoryId: burgerCategory.data.id,
+      restaurantId: ownerContext.rid,
       name: 'Large',
       price: 740,
       sortOrder: 1,

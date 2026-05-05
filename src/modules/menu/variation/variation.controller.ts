@@ -6,7 +6,6 @@ import {
   Param,
   Patch,
   Post,
-  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -22,7 +21,6 @@ import {
 import {
   CreateMenuVariationDto,
   ListMenuVariationsDto,
-  SyncCategoryVariationsDto,
   UpdateMenuVariationDto,
 } from './dto';
 import { MenuVariationService } from './variation.service';
@@ -57,22 +55,6 @@ export class MenuVariationController {
     @Query() query: ListMenuVariationsDto,
   ) {
     return this.menuVariationService.list(user, query);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
-  @Put('categories/:categoryId/variations')
-  syncCategoryVariations(
-    @CurrentUser() user: AuthUserContext,
-    @Param('categoryId') categoryId: string,
-    @Body() dto: SyncCategoryVariationsDto,
-  ) {
-    return this.menuVariationService.syncCategoryVariations(
-      user,
-      categoryId,
-      dto,
-    );
   }
 
   @Patch('variations/:id')
