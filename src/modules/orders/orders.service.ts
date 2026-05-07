@@ -836,7 +836,6 @@ export class OrdersService {
               ],
             },
             restaurantId: branch.restaurantId,
-            categoryId: menuItem.category.id,
             deletedAt: null,
             isActive: true,
           },

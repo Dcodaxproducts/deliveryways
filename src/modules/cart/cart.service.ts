@@ -880,7 +880,6 @@ export class CartService {
             [...new Set(sections.map((section) => section.menuItemId))],
             cart.restaurantId,
             cart.branchId,
-            menuItem.category.id,
           );
           const splitItemMap = new Map(
             splitItems.map((item) => [item.id, item]),
@@ -1381,7 +1380,6 @@ export class CartService {
       [...new Set(sections.map((section) => section.menuItemId))],
       menuItem.restaurantId,
       branchId,
-      menuItem.category.id,
     );
     const splitItemMap = new Map(splitItems.map((item) => [item.id, item]));
 

@@ -311,7 +311,6 @@ export class CartRepository {
     menuItemIds: string[],
     restaurantId: string,
     branchId: string,
-    categoryId: string,
   ) {
     if (!menuItemIds.length) {
       return [];
@@ -321,7 +320,6 @@ export class CartRepository {
       where: {
         id: { in: menuItemIds },
         restaurantId,
-        categoryId,
         deletedAt: null,
         isActive: true,
       },
