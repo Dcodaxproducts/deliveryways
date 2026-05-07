@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS "menu_variation_modifier_price_overrides_variation_id_modifier_i";
+DROP INDEX IF EXISTS "menu_variation_modifier_price_overrides_variation_id_modifier_id_key";
+DROP INDEX IF EXISTS "menu_variation_modifier_price_overrides_variationId_modifierId_key";
