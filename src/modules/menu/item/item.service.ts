@@ -48,54 +48,82 @@ export class MenuItemService {
     const pricing = this.resolvePricingInput(dto);
     await this.assertUniqueFields(restaurantId, { sku });
 
-    const data = await this.prisma.$transaction(async (tx) => {
-      const created = await this.itemRepository.create(
-        {
-          restaurant: { connect: { id: restaurantId } },
-          category: { connect: { id: dto.categoryId } },
-          name: dto.name,
-          slug,
-          description: dto.description,
-          ingredients: dto.ingredients,
-          allergenPdfUrl: dto.allergenPdfUrl,
-          nutritionalInformation: dto.nutritionalInformation,
-          imageUrl: dto.imageUrl,
-          sku,
-          sortOrder: dto.sortOrder ?? 0,
-          pricingMode: pricing.pricingMode,
-          basePrice: new Prisma.Decimal(dto.basePrice),
-          deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
-          takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
-          prepTimeMinutes: dto.prepTimeMinutes,
-          dietaryFlags: this.toStoredDietaryFlags(
-            dto.dietaryFlags,
-            dto.supportsSplitPizza,
-          ) as unknown as Prisma.InputJsonValue,
-          allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
-          depositAmount:
-            dto.depositAmount !== undefined
-              ? new Prisma.Decimal(dto.depositAmount)
-              : undefined,
-          isActive: dto.isActive ?? true,
-        },
-        tx,
-      );
-
-      await this.syncModifierPriceOverrides(created.id, modifiers, tx);
-      await this.syncVariationPriceOverrides(
-        created.id,
-        restaurantId,
-        dto.variationPriceOverrides,
-        tx,
-      );
-
-      return created;
-    });
+    const data = await this.createItemWithAssignments(
+      restaurantId,
+      dto,
+      slug,
+      sku,
+      pricing,
+      modifiers,
+    );
 
     return {
       data: await this.resolveMediaResponse(this.withSplitPizzaMetadata(data)),
       message: 'Menu item created successfully',
     };
+  }
+
+  private async createItemWithAssignments(
+    restaurantId: string,
+    dto: CreateMenuItemDto,
+    slug: string,
+    sku: string | undefined,
+    pricing: {
+      pricingMode: MenuItemPricingMode;
+      deliveryPriceAdjustment: Prisma.Decimal;
+      takeawayPriceAdjustment: Prisma.Decimal;
+    },
+    modifiers: Array<{ modifierId: string; priceDelta: number }> | undefined,
+  ) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await this.itemRepository.create(
+          {
+            restaurant: { connect: { id: restaurantId } },
+            category: { connect: { id: dto.categoryId } },
+            name: dto.name,
+            slug,
+            description: dto.description,
+            ingredients: dto.ingredients,
+            allergenPdfUrl: dto.allergenPdfUrl,
+            nutritionalInformation: dto.nutritionalInformation,
+            imageUrl: dto.imageUrl,
+            sku,
+            sortOrder: dto.sortOrder ?? 0,
+            pricingMode: pricing.pricingMode,
+            basePrice: new Prisma.Decimal(dto.basePrice),
+            deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
+            takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
+            prepTimeMinutes: dto.prepTimeMinutes,
+            dietaryFlags: this.toStoredDietaryFlags(
+              dto.dietaryFlags,
+              dto.supportsSplitPizza,
+            ) as unknown as Prisma.InputJsonValue,
+            allergenFlags:
+              dto.allergenFlags as unknown as Prisma.InputJsonValue,
+            depositAmount:
+              dto.depositAmount !== undefined
+                ? new Prisma.Decimal(dto.depositAmount)
+                : undefined,
+            isActive: dto.isActive ?? true,
+          },
+          tx,
+        );
+
+        await this.syncModifierPriceOverrides(created.id, modifiers, tx);
+        await this.syncVariationPriceOverrides(
+          created.id,
+          restaurantId,
+          dto.variationPriceOverrides,
+          tx,
+        );
+
+        return created;
+      });
+    } catch (error) {
+      this.throwMenuItemUniqueError(error);
+      throw error;
+    }
   }
 
   async createBulk(user: AuthUserContext, dto: BulkCreateMenuItemsDto) {
@@ -516,6 +544,47 @@ export class MenuItemService {
         );
       }
     }
+  }
+
+  private throwMenuItemUniqueError(error: unknown) {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== 'P2002'
+    ) {
+      return;
+    }
+
+    const target = Array.isArray(error.meta?.target)
+      ? (error.meta?.target as string[])
+      : [];
+
+    if (target.includes('slug')) {
+      throw new BadRequestException(
+        'A menu item with this slug already exists in this restaurant',
+      );
+    }
+
+    if (target.includes('sku')) {
+      throw new BadRequestException(
+        'A menu item with this SKU already exists in this restaurant',
+      );
+    }
+
+    if (target.includes('modifier_id')) {
+      throw new BadRequestException(
+        'Modifier assignments must contain unique modifierIds',
+      );
+    }
+
+    if (target.includes('variation_id')) {
+      throw new BadRequestException(
+        'Variation price overrides must contain unique variationIds',
+      );
+    }
+
+    throw new BadRequestException(
+      'Menu item contains a duplicate unique assignment',
+    );
   }
 
   private async resolveUniqueSlug(
