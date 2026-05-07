@@ -96,6 +96,17 @@ export class MenuVariationRepository {
     });
   }
 
+  async updateCategoryLinkSortOrder(
+    variationId: string,
+    sortOrder: number,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).menuCategoryVariation.updateMany({
+      where: { variationId },
+      data: { sortOrder },
+    });
+  }
+
   async softDelete(id: string, tx?: PrismaTx) {
     return this.client(tx).menuItemVariation.update({
       where: { id },

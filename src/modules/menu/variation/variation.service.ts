@@ -113,6 +113,14 @@ export class MenuVariationService {
         tx,
       );
 
+      if (dto.sortOrder !== undefined) {
+        await this.variationRepository.updateCategoryLinkSortOrder(
+          id,
+          dto.sortOrder,
+          tx,
+        );
+      }
+
       if (dto.modifierPriceOverrides !== undefined) {
         await this.syncModifierPriceOverrides(
           id,

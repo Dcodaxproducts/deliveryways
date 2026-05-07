@@ -15,6 +15,7 @@ describe('MenuVariationService', () => {
       list: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
+      updateCategoryLinkSortOrder: jest.fn(),
       softDelete: jest.fn(),
     };
 
@@ -248,6 +249,34 @@ describe('MenuVariationService', () => {
       expect.objectContaining({ name: 'Large' }),
       expect.anything(),
     );
+  });
+
+  it('syncs linked category variation sort order when updating variation sort order', async () => {
+    const { service, variationRepository, prisma } = makeService();
+
+    prisma.modifier.count.mockResolvedValue(0);
+    variationRepository.findById.mockResolvedValue({
+      id: 'variation-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    variationRepository.update.mockResolvedValue({
+      id: 'variation-1',
+      sortOrder: 3,
+    });
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'variation-1',
+      { sortOrder: 3 },
+    );
+
+    expect(
+      variationRepository.updateCategoryLinkSortOrder,
+    ).toHaveBeenCalledWith('variation-1', 3, expect.anything());
   });
 
   it('updates a variation without blocking on duplicate legacy names', async () => {
