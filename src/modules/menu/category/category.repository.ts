@@ -148,7 +148,11 @@ export class MenuCategoryRepository {
             ],
           }
         : {}),
-      ...(query.includeInactive ? {} : { isActive: true }),
+      ...(query.inactive
+        ? { isActive: false }
+        : query.includeInactive
+          ? {}
+          : { isActive: true }),
       ...(query.search
         ? {
             OR: [

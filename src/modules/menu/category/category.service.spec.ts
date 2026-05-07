@@ -76,6 +76,33 @@ describe('MenuCategoryService', () => {
     expect(categoryRepository.create).not.toHaveBeenCalled();
   });
 
+  it('passes inactive category filter to repository', async () => {
+    const { service, categoryRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    categoryRepository.list.mockResolvedValue({ items: [], total: 0 });
+
+    await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        inactive: true,
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(categoryRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.objectContaining({ inactive: true }),
+    );
+  });
+
   it('allows updating a category with its own slug', async () => {
     const { service, categoryRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
