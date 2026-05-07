@@ -420,6 +420,14 @@ export class ListMenuItemsDto extends QueryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   includeInactive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'When true, returns only items with split pizza enabled',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  supportsSplitPizza?: boolean;
 }
 
 export class ReorderMenuEntryDto {

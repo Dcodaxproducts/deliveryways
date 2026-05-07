@@ -498,6 +498,33 @@ describe('MenuItemService', () => {
     );
   });
 
+  it('passes split pizza filter to repository', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    itemRepository.list.mockResolvedValue({ items: [], total: 0 });
+
+    await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        supportsSplitPizza: true,
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(itemRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.objectContaining({ supportsSplitPizza: true }),
+    );
+  });
+
   it('includes category-level modifier groups in item list responses', async () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

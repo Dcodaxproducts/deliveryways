@@ -83,6 +83,9 @@ export class MenuItemRepository {
           }
         : {}),
       ...(query.includeInactive ? {} : { isActive: true }),
+      ...(query.supportsSplitPizza
+        ? { dietaryFlags: { array_contains: ['__SPLIT_PIZZA_ENABLED__'] } }
+        : {}),
       ...(query.search
         ? {
             OR: [
