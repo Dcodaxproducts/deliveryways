@@ -57,6 +57,9 @@ export class MenuVariationController {
     return this.menuVariationService.list(user, query);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Patch('variations/:id')
   update(
     @CurrentUser() user: AuthUserContext,

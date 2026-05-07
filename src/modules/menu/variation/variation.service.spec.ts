@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { UserRoleEnum } from '../../../common/enums';
 import { MenuVariationService } from './variation.service';
@@ -219,6 +223,81 @@ describe('MenuVariationService', () => {
     );
 
     expect(Number(result.data[0].price)).toBe(300);
+  });
+
+  it('allows duplicate variation names because definitions can be category-scoped legacy data', async () => {
+    const { service, variationRepository, prisma } = makeService();
+
+    prisma.modifier.count.mockResolvedValue(0);
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    variationRepository.create.mockResolvedValue({ id: 'variation-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        name: 'Large',
+      },
+    );
+
+    expect(variationRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Large' }),
+      expect.anything(),
+    );
+  });
+
+  it('updates a variation without blocking on duplicate legacy names', async () => {
+    const { service, variationRepository, prisma } = makeService();
+
+    prisma.modifier.count.mockResolvedValue(0);
+    variationRepository.findById.mockResolvedValue({
+      id: 'variation-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    variationRepository.update.mockResolvedValue({
+      id: 'variation-1',
+      name: 'Large',
+    });
+
+    const result = await service.update(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'variation-1',
+      { name: 'Large' },
+    );
+
+    expect(variationRepository.update).toHaveBeenCalledWith(
+      'variation-1',
+      expect.objectContaining({ name: 'Large' }),
+      expect.anything(),
+    );
+    expect(result.message).toBe('Menu variation updated successfully');
+  });
+
+  it('returns not found for super admin create with an invalid restaurant id', async () => {
+    const { service, prisma } = makeService();
+
+    prisma.restaurant.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        {
+          restaurantId: 'missing-restaurant',
+          name: 'Large',
+        },
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('blocks business admin variation write outside tenant restaurants', async () => {

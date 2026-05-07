@@ -26,8 +26,11 @@ export class MenuVariationService {
   async create(user: AuthUserContext, dto: CreateMenuVariationDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
 
+    if (!dto.name.trim().length) {
+      throw new BadRequestException('name is required');
+    }
+
     await this.ensureRestaurantWriteAccess(user, restaurantId);
-    await this.assertUniqueVariationName(restaurantId, dto.name);
     await this.assertModifierOverridesBelongToRestaurant(
       restaurantId,
       dto.modifierPriceOverrides,
@@ -90,12 +93,8 @@ export class MenuVariationService {
       dto.modifierPriceOverrides,
     );
 
-    if (dto.name !== undefined) {
-      await this.assertUniqueVariationName(
-        variation.restaurantId,
-        dto.name,
-        id,
-      );
+    if (dto.name !== undefined && !dto.name.trim().length) {
+      throw new BadRequestException('name is required');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -167,6 +166,7 @@ export class MenuVariationService {
         throw new BadRequestException('restaurantId is required');
       }
 
+      await this.assertRestaurantExists(requestedRestaurantId);
       return requestedRestaurantId;
     }
 
@@ -271,32 +271,14 @@ export class MenuVariationService {
     }
   }
 
-  private async assertUniqueVariationName(
-    restaurantId: string,
-    name: string,
-    excludeId?: string,
-  ) {
-    const normalizedName = name.trim();
-    if (!normalizedName.length) {
-      throw new BadRequestException('name is required');
-    }
+  private async assertRestaurantExists(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      select: { id: true },
+    });
 
-    const variationClient = this.prisma.menuItemVariation;
-    const existing = variationClient?.findFirst
-      ? await variationClient.findFirst({
-          where: {
-            restaurantId,
-            name: normalizedName,
-            ...(excludeId ? { id: { not: excludeId } } : {}),
-          },
-          select: { id: true, deletedAt: true },
-        })
-      : null;
-
-    if (existing && !existing.deletedAt) {
-      throw new BadRequestException(
-        'A variation with this name already exists in this restaurant',
-      );
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
     }
   }
 
