@@ -53,15 +53,16 @@ export class MenuVariationRepository {
     const where: Prisma.MenuItemVariationWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
+      ...(query.includeInactive ? {} : { isActive: query.isActive ?? true }),
+      ...(query.categoryId
+        ? { categoryLinks: { some: { categoryId: query.categoryId } } }
+        : {}),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
         : {}),
     };
 
-    const orderBy: Prisma.MenuItemVariationOrderByWithRelationInput[] = [
-      { sortOrder: 'asc' },
-      { createdAt: 'desc' },
-    ];
+    const orderBy = this.resolveOrderBy(query);
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.menuItemVariation.findMany({
@@ -75,6 +76,31 @@ export class MenuVariationRepository {
     ]);
 
     return { items, total };
+  }
+
+  private resolveOrderBy(
+    query: ListMenuVariationsDto,
+  ): Prisma.MenuItemVariationOrderByWithRelationInput[] {
+    const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+    const sortBy = query.sortBy;
+
+    if (sortBy === 'name') {
+      return [{ name: direction }, { createdAt: 'desc' }];
+    }
+
+    if (sortBy === 'price') {
+      return [{ price: direction }, { createdAt: 'desc' }];
+    }
+
+    if (sortBy === 'isActive') {
+      return [{ isActive: direction }, { sortOrder: 'asc' }];
+    }
+
+    if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+      return [{ [sortBy]: direction }, { sortOrder: 'asc' }];
+    }
+
+    return [{ sortOrder: direction }, { createdAt: 'desc' }];
   }
 
   async resetDefaults(categoryId: string, tx?: PrismaTx) {

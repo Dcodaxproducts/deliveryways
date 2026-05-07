@@ -194,6 +194,42 @@ describe('MenuVariationService', () => {
     expect(Number(result.data.price)).toBe(250);
   });
 
+  it('passes variation list filters and sorting to repository', async () => {
+    const { service, variationRepository, prisma } = makeService();
+
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    variationRepository.list.mockResolvedValue({ items: [], total: 0 });
+
+    await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        includeInactive: true,
+        isActive: false,
+        page: 1,
+        limit: 10,
+        sortBy: 'name',
+        sortOrder: 'ASC',
+      },
+    );
+
+    expect(variationRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.objectContaining({
+        categoryId: 'category-1',
+        includeInactive: true,
+        isActive: false,
+        sortBy: 'name',
+        sortOrder: 'ASC',
+      }),
+    );
+  });
+
   it('returns exact variation prices in list responses', async () => {
     const { service, variationRepository, prisma } = makeService();
 
