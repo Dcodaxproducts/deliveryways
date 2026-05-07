@@ -632,6 +632,8 @@ export class MenuItemService {
     overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
     tx: Prisma.TransactionClient,
   ) {
+    this.assertUniqueModifierOverrides(overrides);
+
     await tx.menuItemModifierPriceOverride.deleteMany({
       where: { menuItemId },
     });
@@ -726,6 +728,10 @@ export class MenuItemService {
       })),
     });
 
+    for (const override of overrides) {
+      this.assertUniqueModifierOverrides(override.modifierPriceOverrides);
+    }
+
     const modifierPriceOverrides = overrides.flatMap((override) =>
       (override.modifierPriceOverrides ?? []).map((modifierOverride) => ({
         menuItemId,
@@ -742,6 +748,21 @@ export class MenuItemService {
     await tx.menuVariationModifierPriceOverride.createMany({
       data: modifierPriceOverrides,
     });
+  }
+
+  private assertUniqueModifierOverrides(
+    overrides: Array<{ modifierId: string }> | undefined,
+  ) {
+    if (!overrides?.length) {
+      return;
+    }
+
+    const modifierIds = overrides.map((item) => item.modifierId);
+    if (new Set(modifierIds).size !== modifierIds.length) {
+      throw new BadRequestException(
+        'Modifier assignments must contain unique modifierIds',
+      );
+    }
   }
 
   private resolveNullableString(value: string | null | undefined) {

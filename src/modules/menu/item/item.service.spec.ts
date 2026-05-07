@@ -245,6 +245,38 @@ describe('MenuItemService', () => {
     );
   });
 
+  it('rejects duplicate direct modifier assignments before hitting the database', async () => {
+    const { service, itemRepository, prisma } = makeService();
+
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    prisma.modifier.count.mockResolvedValue(1);
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          restaurantId: 'restaurant-1',
+          categoryId: 'category-1',
+          name: 'Burger',
+          slug: 'burger',
+          basePrice: 500,
+          modifiers: [
+            { modifierId: 'modifier-1', priceDelta: 50 },
+            { modifierId: 'modifier-1', priceDelta: 75 },
+          ],
+        },
+      ),
+    ).rejects.toThrow('Modifier assignments must contain unique modifierIds');
+  });
+
   it('stores variation modifier prices scoped to the menu item', async () => {
     const { service, itemRepository, prisma, tx } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
