@@ -132,7 +132,7 @@ export class CreateModifierDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  modifierGroupId?: string;
+  restaurantId?: string;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

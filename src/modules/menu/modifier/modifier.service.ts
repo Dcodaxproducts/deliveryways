@@ -138,7 +138,6 @@ export class ModifierService {
 
   async createModifier(user: AuthUserContext, dto: CreateModifierDto) {
     const modifierGroupIds = this.normalizeModifierGroupIds(
-      dto.modifierGroupId,
       dto.modifierGroupIds,
     );
     const groups = modifierGroupIds.length
@@ -151,7 +150,7 @@ export class ModifierService {
 
     const restaurantId = groups.length
       ? groups[0].restaurantId
-      : await this.resolveRestaurantId(user, undefined);
+      : await this.resolveRestaurantId(user, dto.restaurantId);
 
     this.assertGroupsBelongToRestaurant(groups, restaurantId);
 
@@ -642,15 +641,8 @@ export class ModifierService {
     return normalized;
   }
 
-  private normalizeModifierGroupIds(
-    modifierGroupId?: string,
-    modifierGroupIds?: string[],
-  ) {
-    return [
-      ...new Set(
-        [modifierGroupId, ...(modifierGroupIds ?? [])].filter(Boolean),
-      ),
-    ] as string[];
+  private normalizeModifierGroupIds(modifierGroupIds?: string[]) {
+    return [...new Set((modifierGroupIds ?? []).filter(Boolean))] as string[];
   }
 
   private assertValidModifierGroups(

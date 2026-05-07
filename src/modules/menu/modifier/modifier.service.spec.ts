@@ -156,6 +156,41 @@ describe('ModifierService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('creates modifier without a modifier group id using explicit restaurantId', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findModifierByRestaurantAndName.mockResolvedValue(null);
+    modifierRepository.createModifier.mockResolvedValue({
+      id: 'modifier-1',
+      name: 'Extra Cheese',
+    });
+
+    const result = await service.createModifier(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        name: ' Extra Cheese ',
+        priceDelta: 50,
+      },
+    );
+
+    expect(modifierRepository.findGroupsByIds).not.toHaveBeenCalled();
+    expect(
+      modifierRepository.findModifierByRestaurantAndName,
+    ).toHaveBeenCalledWith('restaurant-1', 'Extra Cheese');
+    expect(modifierRepository.createModifier).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Extra Cheese',
+        restaurant: { connect: { id: 'restaurant-1' } },
+      }),
+      expect.anything(),
+    );
+    expect(modifierRepository.syncModifierGroups).not.toHaveBeenCalled();
+    expect(result.message).toBe('Modifier created successfully');
+  });
+
   it('rejects duplicate modifier names in the same group before hitting the database', async () => {
     const { service, modifierRepository } = makeService();
     modifierRepository.findGroupsByIds.mockResolvedValue([
@@ -178,7 +213,7 @@ describe('ModifierService', () => {
           role: UserRoleEnum.SUPER_ADMIN,
         },
         {
-          modifierGroupId: 'group-1',
+          modifierGroupIds: ['group-1'],
           name: ' Extra Cheese ',
           priceDelta: 50,
         },
