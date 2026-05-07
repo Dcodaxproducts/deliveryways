@@ -372,15 +372,13 @@ describe('CartService', () => {
       modifiersTotal: number;
       unitPriceWithModifiers: number;
       lineTotal: number;
-      menuItem: { modifierGroups: Array<{ id: string }> } | null;
+      menuItem: Record<string, unknown> | null;
     };
     expect(firstItem.selectedModifiers[0].unitPrice).toBe(21);
     expect(firstItem.modifiersTotal).toBe(21);
     expect(firstItem.unitPriceWithModifiers).toBe(121);
     expect(firstItem.lineTotal).toBe(121);
-    expect(firstItem.menuItem?.modifierGroups).toEqual([
-      expect.objectContaining({ id: 'group-1' }),
-    ]);
+    expect('modifierGroups' in (firstItem.menuItem ?? {})).toBe(false);
   });
 
   it('requires customerId for business-admin cart access', async () => {

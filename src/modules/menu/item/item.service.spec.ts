@@ -525,7 +525,7 @@ describe('MenuItemService', () => {
     );
   });
 
-  it('includes category-level modifier groups in item list responses', async () => {
+  it('does not expose legacy category modifier groups in item list responses', async () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     itemRepository.list.mockResolvedValue({
@@ -582,15 +582,7 @@ describe('MenuItemService', () => {
       },
     );
 
-    expect(result.data[0]).toEqual(
-      expect.objectContaining({
-        categoryModifierGroups: [
-          expect.objectContaining({
-            id: 'group-1',
-            name: 'Size',
-          }),
-        ],
-      }),
-    );
+    expect('categoryModifierGroups' in result.data[0]).toBe(false);
+    expect('modifierLinks' in result.data[0]).toBe(false);
   });
 });

@@ -587,7 +587,6 @@ export class RestaurantMenuRepository {
           category: item.category,
           variations: this.resolveCategoryVariations(item.category),
           modifiers: this.buildDirectModifiers(item),
-          modifierGroups: this.buildModifierGroups(item),
           menuResolution: {
             source,
             directLink,
@@ -648,117 +647,5 @@ export class RestaurantMenuRepository {
       sortOrder: override.modifier.sortOrder,
       priceDelta: Number(override.priceDelta),
     }));
-  }
-
-  private buildModifierGroups(item: {
-    id: string;
-    category: {
-      modifierLinks: Array<{
-        sortOrder: number;
-        modifierGroup: {
-          id: string;
-          name: string;
-          description?: string | null;
-          minSelect: number;
-          maxSelect: number;
-          isRequired: boolean;
-          modifierLinks: Array<{
-            sortOrder: number;
-            modifier: {
-              id: string;
-              name: string;
-              description?: string | null;
-              priceDelta: Prisma.Decimal;
-              itemPriceOverrides?: Array<{
-                menuItemId: string;
-                priceDelta: Prisma.Decimal;
-              }>;
-              variationPriceOverrides?: Array<{
-                menuItemId?: string | null;
-                variationId: string;
-                priceDelta: Prisma.Decimal;
-              }>;
-            };
-          }>;
-        };
-      }>;
-    };
-    modifierLinks: Array<{
-      sortOrder: number;
-      modifierGroup: {
-        id: string;
-        name: string;
-        description?: string | null;
-        minSelect: number;
-        maxSelect: number;
-        isRequired: boolean;
-        modifierLinks: Array<{
-          sortOrder: number;
-          modifier: {
-            id: string;
-            name: string;
-            description?: string | null;
-            priceDelta: Prisma.Decimal;
-            itemPriceOverrides?: Array<{
-              menuItemId: string;
-              priceDelta: Prisma.Decimal;
-            }>;
-            variationPriceOverrides?: Array<{
-              menuItemId?: string | null;
-              variationId: string;
-              priceDelta: Prisma.Decimal;
-            }>;
-          };
-        }>;
-      };
-    }>;
-  }) {
-    const categoryGroupIds = new Set(
-      item.category.modifierLinks.map((link) => link.modifierGroup.id),
-    );
-
-    return [...item.category.modifierLinks, ...item.modifierLinks]
-      .filter(
-        (link, index, links) =>
-          links.findIndex(
-            (candidate) => candidate.modifierGroup.id === link.modifierGroup.id,
-          ) === index,
-      )
-      .map((link) => ({
-        id: link.modifierGroup.id,
-        name: link.modifierGroup.name,
-        description: link.modifierGroup.description ?? null,
-        minSelect: link.modifierGroup.minSelect,
-        maxSelect: link.modifierGroup.maxSelect,
-        isRequired: link.modifierGroup.isRequired,
-        sortOrder: link.sortOrder,
-        source: categoryGroupIds.has(link.modifierGroup.id)
-          ? 'CATEGORY'
-          : 'ITEM',
-        modifiers: (link.modifierGroup.modifierLinks ?? []).map(
-          ({ modifier, sortOrder }) => ({
-            id: modifier.id,
-            name: modifier.name,
-            description: modifier.description ?? null,
-            sortOrder,
-            priceDelta: Number(modifier.priceDelta),
-            itemPriceOverrides: (modifier.itemPriceOverrides ?? [])
-              .filter((override) => override.menuItemId === item.id)
-              .map((override) => ({
-                menuItemId: override.menuItemId,
-                priceDelta: Number(override.priceDelta),
-              })),
-            variationPriceOverrides: (
-              modifier.variationPriceOverrides ?? []
-            ).map((override) => ({
-              ...(override.menuItemId
-                ? { menuItemId: override.menuItemId }
-                : {}),
-              variationId: override.variationId,
-              priceDelta: Number(override.priceDelta),
-            })),
-          }),
-        ),
-      }));
   }
 }

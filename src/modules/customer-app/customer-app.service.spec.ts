@@ -321,27 +321,10 @@ describe('CustomerAppService', () => {
 
     expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
     expect(result.data[0].depositAmount).toBe(100);
-    expect(result.data[0].modifierGroups).toEqual([
-      {
-        id: 'group-1',
-        name: 'Toppings',
-        minSelect: 0,
-        maxSelect: 3,
-        isRequired: false,
-        sortOrder: 1,
-        modifiers: [
-          {
-            id: 'modifier-1',
-            name: 'Extra Cheese',
-            priceDelta: 150,
-            sortOrder: 1,
-          },
-        ],
-      },
-    ]);
+    expect('modifierGroups' in result.data[0]).toBe(false);
   });
 
-  it('fetches public item by slug with modifier groups', async () => {
+  it('fetches public item by slug without legacy modifier groups', async () => {
     const { service, repository } = makeService();
     repository.findPublicMenuItemBySlug.mockResolvedValue(itemFixture);
 
@@ -362,7 +345,7 @@ describe('CustomerAppService', () => {
     expect(result.data.nutritionalInformation).toBe('520 kcal');
     expect(result.data.prepTimeMinutes).toBe(15);
     expect(result.data.depositAmount).toBe(100);
-    expect(result.data.modifierGroups).toHaveLength(1);
+    expect('modifierGroups' in result.data).toBe(false);
   });
 
   it('includes restaurant cover image on home-screen/public content responses', async () => {

@@ -1037,10 +1037,6 @@ export class CartService {
                   menuItem,
                   cartItem.variationId,
                 ),
-                modifierGroups: this.mapCartModifierGroups(
-                  menuItem,
-                  cartItem.variationId,
-                ),
               }
             : null,
         };

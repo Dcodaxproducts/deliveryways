@@ -1219,25 +1219,6 @@ export class CustomerAppService {
         sortOrder: override.modifier.sortOrder,
         priceDelta: override.priceDelta,
       })),
-      modifierGroups: (item.modifierLinks ?? []).map((link) => ({
-        id: link.modifierGroup.id,
-        name: link.modifierGroup.name,
-        minSelect: link.modifierGroup.minSelect,
-        maxSelect: link.modifierGroup.maxSelect,
-        isRequired: link.modifierGroup.isRequired,
-        sortOrder: link.sortOrder,
-        modifiers: link.modifierGroup.modifierLinks.map(
-          ({ modifier, sortOrder }) => ({
-            id: modifier.id,
-            name: modifier.name,
-            sortOrder,
-            priceDelta:
-              modifier.itemPriceOverrides?.find(
-                (itemOverride) => itemOverride.menuItemId === item.id,
-              )?.priceDelta ?? modifier.priceDelta,
-          }),
-        ),
-      })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
   }

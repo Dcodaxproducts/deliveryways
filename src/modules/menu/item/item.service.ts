@@ -202,7 +202,7 @@ export class MenuItemService {
       data: await this.resolveMediaResponse(
         items.map((item) =>
           this.withRestaurantAllergenPdfUrl(
-            this.withSplitPizzaMetadata(this.withCategoryModifierGroups(item)),
+            this.withoutLegacyModifierGroups(this.withSplitPizzaMetadata(item)),
           ),
         ),
       ),
@@ -1001,60 +1001,27 @@ export class MenuItemService {
     };
   }
 
-  private withCategoryModifierGroups<T extends { category?: unknown }>(
+  private withoutLegacyModifierGroups<T extends { category?: unknown }>(
     item: T,
   ) {
-    const rawCategory = item.category;
+    const rest = { ...(item as Record<string, unknown>) };
+    delete rest.modifierLinks;
+    delete rest.categoryModifierGroups;
 
     if (
-      !rawCategory ||
-      typeof rawCategory !== 'object' ||
-      Array.isArray(rawCategory)
+      !rest.category ||
+      typeof rest.category !== 'object' ||
+      Array.isArray(rest.category)
     ) {
-      return item;
+      return rest as T;
     }
 
-    const category = rawCategory as {
-      modifierLinks?: Array<{
-        sortOrder: number;
-        modifierGroup: {
-          id: string;
-          name: string;
-          description?: string | null;
-          minSelect: number;
-          maxSelect: number;
-          isRequired: boolean;
-          modifierLinks: Array<{
-            sortOrder: number;
-            modifier: {
-              id: string;
-              name: string;
-              priceDelta: Prisma.Decimal;
-            };
-          }>;
-        };
-      }>;
-    };
+    const category = { ...(rest.category as Record<string, unknown>) };
+    delete category.modifierLinks;
 
     return {
-      ...item,
-      categoryModifierGroups: (category.modifierLinks ?? []).map((link) => ({
-        id: link.modifierGroup.id,
-        name: link.modifierGroup.name,
-        description: link.modifierGroup.description ?? null,
-        minSelect: link.modifierGroup.minSelect,
-        maxSelect: link.modifierGroup.maxSelect,
-        isRequired: link.modifierGroup.isRequired,
-        sortOrder: link.sortOrder,
-        modifiers: link.modifierGroup.modifierLinks.map(
-          ({ modifier, sortOrder }) => ({
-            id: modifier.id,
-            name: modifier.name,
-            priceDelta: modifier.priceDelta,
-            sortOrder,
-          }),
-        ),
-      })),
-    };
+      ...rest,
+      category,
+    } as T;
   }
 }
