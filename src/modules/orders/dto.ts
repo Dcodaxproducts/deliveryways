@@ -37,13 +37,6 @@ export class OrderItemSectionDto {
   @ApiProperty()
   @IsString()
   menuItemId!: string;
-
-  @ApiPropertyOptional({ type: [OrderItemModifierDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => OrderItemModifierDto)
-  modifiers?: OrderItemModifierDto[];
 }
 
 export class OrderItemDto {

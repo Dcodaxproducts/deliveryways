@@ -874,7 +874,6 @@ export class CartService {
             })
           : [];
         const selectedSectionDetails = [];
-        let sectionModifiersTotal = new Prisma.Decimal(0);
 
         if (menuItem && sections?.length && this.supportsSplitPizza(menuItem)) {
           const splitItems = await this.cartRepository.findSplitSectionItems(
@@ -921,39 +920,11 @@ export class CartService {
             );
             sectionUnitPrices.push(sectionUnitPrice);
 
-            const sectionModifierDetails = (section.modifiers ?? []).map(
-              (selectedModifier) => {
-                const modifier = this.findAvailableModifier(
-                  sectionItem,
-                  selectedModifier.modifierId,
-                );
-                const priceDelta = modifier
-                  ? this.resolveModifierPriceDelta(
-                      modifier,
-                      sectionItem.id,
-                      cartItem.variationId,
-                    )
-                  : new Prisma.Decimal(0);
-                const quantity = selectedModifier.quantity ?? 1;
-                const total = priceDelta.mul(quantity);
-                sectionModifiersTotal = sectionModifiersTotal.plus(total);
-
-                return {
-                  modifierId: selectedModifier.modifierId,
-                  name: modifier?.name ?? null,
-                  quantity,
-                  unitPrice: Number(priceDelta),
-                  total: Number(total),
-                };
-              },
-            );
-
             selectedSectionDetails.push({
               slot: section.slot,
               menuItemId: sectionItem.id,
               menuItemName: sectionItem.name,
               unitPrice: Number(sectionUnitPrice),
-              modifiers: sectionModifierDetails,
             });
           }
 
@@ -962,12 +933,10 @@ export class CartService {
           }
         }
 
-        const modifiersTotal = selectedModifierDetails
-          .reduce(
-            (total, modifier) => total.plus(modifier.total),
-            new Prisma.Decimal(0),
-          )
-          .plus(sectionModifiersTotal);
+        const modifiersTotal = selectedModifierDetails.reduce(
+          (total, modifier) => total.plus(modifier.total),
+          new Prisma.Decimal(0),
+        );
         const unitPriceWithModifiers = unitPrice
           ? unitPrice.plus(modifiersTotal)
           : null;
@@ -1434,19 +1403,6 @@ export class CartService {
           `Split section flavor unavailable at branch: ${sectionItem.name}`,
         );
       }
-
-      for (const modifier of section.modifiers ?? []) {
-        const found = this.findAvailableModifier(
-          sectionItem,
-          modifier.modifierId,
-        );
-
-        if (!found) {
-          throw new BadRequestException(
-            `Modifier not found for split section item: ${sectionItem.name}`,
-          );
-        }
-      }
     }
   }
 
@@ -1637,7 +1593,6 @@ export class CartService {
       sections.push({
         slot: raw.slot,
         menuItemId: raw.menuItemId,
-        modifiers: this.readModifiers(raw.modifiers ?? null),
       });
     }
 
@@ -1657,7 +1612,6 @@ export class CartService {
       sections: sections.map((section) => ({
         slot: section.slot,
         menuItemId: section.menuItemId,
-        modifiers: section.modifiers?.length ? section.modifiers : [],
       })),
     };
   }

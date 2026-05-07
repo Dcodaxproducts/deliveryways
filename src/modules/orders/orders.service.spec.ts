@@ -1938,14 +1938,12 @@ describe('OrdersService - wallet payment', () => {
         menuItemId: 'flavor-1',
         menuItemName: 'Fajita Pizza',
         unitPrice: 1200,
-        modifiers: [],
       },
       {
         slot: 'RIGHT',
         menuItemId: 'flavor-2',
         menuItemName: 'Pepperoni Pizza',
         unitPrice: 1000,
-        modifiers: [],
       },
     ]);
   });

@@ -35,13 +35,6 @@ export class CartItemSectionDto {
   @ApiProperty()
   @IsString()
   menuItemId!: string;
-
-  @ApiPropertyOptional({ type: [CartItemModifierDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CartItemModifierDto)
-  modifiers?: CartItemModifierDto[];
 }
 
 export class AddCartItemDto {

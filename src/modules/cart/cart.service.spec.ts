@@ -839,8 +839,8 @@ describe('CartService', () => {
         modifiers: {
           modifiers: [],
           sections: [
-            { slot: 'LEFT', menuItemId: 'flavor-1', modifiers: [] },
-            { slot: 'RIGHT', menuItemId: 'flavor-2', modifiers: [] },
+            { slot: 'LEFT', menuItemId: 'flavor-1' },
+            { slot: 'RIGHT', menuItemId: 'flavor-2' },
           ],
         },
       }),

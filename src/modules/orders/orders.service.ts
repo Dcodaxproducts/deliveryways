@@ -107,12 +107,6 @@ type QuoteLine = {
     menuItemId: string;
     menuItemName: string;
     unitPrice: number;
-    modifiers: {
-      modifierId: string;
-      name: string;
-      quantity: number;
-      unitPrice: number;
-    }[];
   }[];
 };
 
@@ -920,7 +914,6 @@ export class OrdersService {
         });
         const splitItemMap = new Map(splitItems.map((item) => [item.id, item]));
         const sectionUnitPrices: Prisma.Decimal[] = [];
-        let sectionModifiersTotal = new Prisma.Decimal(0);
 
         for (const section of requestedItem.sections) {
           const sectionItem = splitItemMap.get(section.menuItemId);
@@ -947,7 +940,7 @@ export class OrdersService {
             );
           }
 
-          let sectionPrice = this.resolveOrderItemBasePrice(
+          const sectionPrice = this.resolveOrderItemBasePrice(
             {
               ...sectionItem,
               variations: this.resolveItemVariations(sectionItem),
@@ -957,37 +950,6 @@ export class OrdersService {
           ).plus(
             this.resolveOrderTypePriceAdjustment(sectionItem, dto.orderType),
           );
-
-          const sectionSnapshotModifiers: NonNullable<
-            QuoteLine['snapshotSections']
-          >[number]['modifiers'] = [];
-
-          for (const requestedModifier of section.modifiers ?? []) {
-            const found = this.findModifier(
-              sectionItem,
-              requestedModifier.modifierId,
-              sectionItem.id,
-              requestedItem.variationId,
-            );
-
-            if (!found) {
-              throw new BadRequestException(
-                `Modifier not found for split section item: ${sectionItem.name}`,
-              );
-            }
-
-            const modifierQty = requestedModifier.quantity ?? 1;
-            const modifierTotal = found.priceDelta.mul(modifierQty);
-            sectionPrice = sectionPrice.plus(modifierTotal);
-            sectionModifiersTotal = sectionModifiersTotal.plus(modifierTotal);
-
-            sectionSnapshotModifiers.push({
-              modifierId: found.id,
-              name: found.name,
-              quantity: modifierQty,
-              unitPrice: Number(found.priceDelta),
-            });
-          }
 
           sectionUnitPrices.push(
             this.resolveOrderItemBasePrice(
@@ -1009,19 +971,15 @@ export class OrdersService {
             menuItemId: sectionItem.id,
             menuItemName: sectionItem.name,
             unitPrice: Number(sectionPrice.toDecimalPlaces(2)),
-            modifiers: sectionSnapshotModifiers,
           });
         }
 
-        unitPrice = Prisma.Decimal.max(...sectionUnitPrices)
-          .plus(
-            snapshotModifiers.reduce(
-              (sum, modifier) =>
-                sum.plus(modifier.unitPrice * modifier.quantity),
-              new Prisma.Decimal(0),
-            ),
-          )
-          .plus(sectionModifiersTotal);
+        unitPrice = Prisma.Decimal.max(...sectionUnitPrices).plus(
+          snapshotModifiers.reduce(
+            (sum, modifier) => sum.plus(modifier.unitPrice * modifier.quantity),
+            new Prisma.Decimal(0),
+          ),
+        );
       }
 
       const lineTotal = unitPrice
