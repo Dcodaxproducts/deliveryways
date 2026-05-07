@@ -148,11 +148,7 @@ export class MenuCategoryRepository {
             ],
           }
         : {}),
-      ...(query.inactive
-        ? { isActive: false }
-        : query.includeInactive
-          ? {}
-          : { isActive: true }),
+      ...this.resolveActiveFilter(query),
       ...(query.search
         ? {
             OR: [
@@ -223,6 +219,18 @@ export class MenuCategoryRepository {
     ]);
 
     return { items, total };
+  }
+
+  private resolveActiveFilter(query: ListMenuCategoriesDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
   }
 
   async update(

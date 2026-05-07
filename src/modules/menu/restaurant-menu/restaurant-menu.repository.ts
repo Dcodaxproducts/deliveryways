@@ -140,7 +140,7 @@ export class RestaurantMenuRepository {
     const where: Prisma.RestaurantMenuWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
-      ...(query.includeInactive ? {} : { isActive: true }),
+      ...this.resolveMenuActiveFilter(query),
       ...(query.search
         ? {
             OR: [
@@ -378,6 +378,30 @@ export class RestaurantMenuRepository {
     return (latest?.sortOrder ?? -1) + 1;
   }
 
+  private resolveMenuActiveFilter(query: ListRestaurantMenusDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
+  }
+
+  private resolveMenuItemActiveFilter(query: ListRestaurantMenuItemsDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
+  }
+
   async listMenuItems(
     restaurantMenuId: string,
     query: ListRestaurantMenuItemsDto,
@@ -391,7 +415,7 @@ export class RestaurantMenuRepository {
 
     const where: Prisma.MenuItemWhereInput = {
       deletedAt: null,
-      ...(query.includeInactive ? {} : { isActive: true }),
+      ...this.resolveMenuItemActiveFilter(query),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(requestedItemIds.length ? { id: { in: requestedItemIds } } : {}),
       ...(query.search

@@ -53,7 +53,7 @@ export class MenuVariationRepository {
     const where: Prisma.MenuItemVariationWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
-      ...(query.includeInactive ? {} : { isActive: query.isActive ?? true }),
+      ...this.resolveActiveFilter(query),
       ...(query.categoryId
         ? { categoryLinks: { some: { categoryId: query.categoryId } } }
         : {}),
@@ -76,6 +76,18 @@ export class MenuVariationRepository {
     ]);
 
     return { items, total };
+  }
+
+  private resolveActiveFilter(query: ListMenuVariationsDto) {
+    if (query.inactive || query.isActive === false) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
   }
 
   private resolveOrderBy(

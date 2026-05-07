@@ -82,7 +82,7 @@ export class MenuItemRepository {
             ],
           }
         : {}),
-      ...(query.includeInactive ? {} : { isActive: true }),
+      ...this.resolveActiveFilter(query),
       ...(query.supportsSplitPizza
         ? { dietaryFlags: { array_contains: ['__SPLIT_PIZZA_ENABLED__'] } }
         : {}),
@@ -301,6 +301,18 @@ export class MenuItemRepository {
       }),
       total,
     };
+  }
+
+  private resolveActiveFilter(query: ListMenuItemsDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
   }
 
   private resolveItemModifiers(

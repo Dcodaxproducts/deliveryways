@@ -23,7 +23,7 @@ export class ModifierRepository {
     const where: Prisma.ModifierGroupWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
-      ...(query.includeInactive ? {} : { isActive: true }),
+      ...this.resolveGroupActiveFilter(query),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
         : {}),
@@ -49,7 +49,7 @@ export class ModifierRepository {
   ) {
     const where: Prisma.ModifierWhereInput = {
       deletedAt: null,
-      ...(query.includeInactive ? {} : { isActive: true }),
+      ...this.resolveModifierActiveFilter(query),
       ...(restaurantId ? { restaurantId } : {}),
       ...(query.modifierGroupId
         ? {
@@ -96,6 +96,30 @@ export class ModifierRepository {
     ]);
 
     return { items, total };
+  }
+
+  private resolveGroupActiveFilter(query: ListModifierGroupsDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
+  }
+
+  private resolveModifierActiveFilter(query: ListModifiersDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
   }
 
   async findGroupById(id: string) {

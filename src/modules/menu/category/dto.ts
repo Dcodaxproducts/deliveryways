@@ -134,6 +134,14 @@ export class ListMenuCategoriesDto extends QueryDto {
   includeInactive?: boolean;
 
   @ApiPropertyOptional({
+    description: 'When true, returns both active and inactive categories',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  all?: boolean;
+
+  @ApiPropertyOptional({
     description: 'When true, returns only inactive categories',
   })
   @IsOptional()

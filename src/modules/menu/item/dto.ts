@@ -422,6 +422,22 @@ export class ListMenuItemsDto extends QueryDto {
   includeInactive?: boolean;
 
   @ApiPropertyOptional({
+    description: 'When true, returns both active and inactive items',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  all?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'When true, returns only inactive items',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  inactive?: boolean;
+
+  @ApiPropertyOptional({
     description: 'When true, returns only items with split pizza enabled',
   })
   @IsOptional()

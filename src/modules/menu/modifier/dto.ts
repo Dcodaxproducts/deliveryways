@@ -108,6 +108,18 @@ export class ListModifierGroupsDto extends QueryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   includeInactive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  all?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  inactive?: boolean;
 }
 
 export class ListModifiersDto extends QueryDto {
@@ -126,6 +138,18 @@ export class ListModifiersDto extends QueryDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   includeInactive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  all?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  inactive?: boolean;
 }
 
 export class CreateModifierDto {
