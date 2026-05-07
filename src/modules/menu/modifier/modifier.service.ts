@@ -137,22 +137,7 @@ export class ModifierService {
   }
 
   async createModifier(user: AuthUserContext, dto: CreateModifierDto) {
-    const modifierGroupIds = this.normalizeModifierGroupIds(
-      dto.modifierGroupIds,
-    );
-    const groups = modifierGroupIds.length
-      ? await this.modifierRepository.findGroupsByIds(modifierGroupIds)
-      : [];
-
-    if (modifierGroupIds.length) {
-      this.assertValidModifierGroups(groups, modifierGroupIds);
-    }
-
-    const restaurantId = groups.length
-      ? groups[0].restaurantId
-      : await this.resolveRestaurantId(user, dto.restaurantId);
-
-    this.assertGroupsBelongToRestaurant(groups, restaurantId);
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
 
     await this.ensureWriteAccess(user, restaurantId);
 
@@ -180,15 +165,6 @@ export class ModifierService {
         },
         tx,
       );
-
-      if (modifierGroupIds.length) {
-        await this.modifierRepository.syncModifierGroups(
-          modifier.id,
-          modifierGroupIds,
-          dto.sortOrder ?? 0,
-          tx,
-        );
-      }
 
       return modifier;
     });
@@ -229,17 +205,6 @@ export class ModifierService {
       }
     }
 
-    const modifierGroupIds =
-      dto.modifierGroupIds ??
-      modifier.groupLinks.map((link) => link.modifierGroup.id);
-
-    const groups = modifierGroupIds.length
-      ? await this.modifierRepository.findGroupsByIds(modifierGroupIds)
-      : [];
-
-    this.assertValidModifierGroups(groups, modifierGroupIds);
-    this.assertGroupsBelongToRestaurant(groups, modifier.restaurantId);
-
     const data = await this.prisma.$transaction(async (tx) => {
       const duplicated = await this.modifierRepository.createModifier(
         {
@@ -251,15 +216,6 @@ export class ModifierService {
         },
         tx,
       );
-
-      if (modifierGroupIds.length) {
-        await this.modifierRepository.syncModifierGroups(
-          duplicated.id,
-          modifierGroupIds,
-          dto.sortOrder ?? modifier.sortOrder,
-          tx,
-        );
-      }
 
       return duplicated;
     });
@@ -278,15 +234,6 @@ export class ModifierService {
     }
 
     await this.ensureWriteAccess(user, modifier.restaurantId);
-
-    if (dto.modifierGroupIds !== undefined) {
-      const groups = dto.modifierGroupIds.length
-        ? await this.modifierRepository.findGroupsByIds(dto.modifierGroupIds)
-        : [];
-
-      this.assertValidModifierGroups(groups, dto.modifierGroupIds);
-      this.assertGroupsBelongToRestaurant(groups, modifier.restaurantId);
-    }
 
     const normalizedName =
       dto.name !== undefined ? this.normalizeName(dto.name) : undefined;
@@ -307,7 +254,7 @@ export class ModifierService {
     }
 
     const data = await this.prisma.$transaction(async (tx) => {
-      const updatedModifier = await this.modifierRepository.updateModifier(
+      return this.modifierRepository.updateModifier(
         id,
         {
           name: normalizedName,
@@ -320,17 +267,6 @@ export class ModifierService {
         },
         tx,
       );
-
-      if (dto.modifierGroupIds !== undefined) {
-        await this.modifierRepository.syncModifierGroups(
-          id,
-          dto.modifierGroupIds,
-          dto.sortOrder ?? updatedModifier.sortOrder,
-          tx,
-        );
-      }
-
-      return updatedModifier;
     });
 
     return { data, message: 'Modifier updated successfully' };
@@ -639,10 +575,6 @@ export class ModifierService {
     }
 
     return normalized;
-  }
-
-  private normalizeModifierGroupIds(modifierGroupIds?: string[]) {
-    return [...new Set((modifierGroupIds ?? []).filter(Boolean))] as string[];
   }
 
   private assertValidModifierGroups(

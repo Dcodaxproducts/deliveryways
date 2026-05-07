@@ -134,13 +134,6 @@ export class CreateModifierDto {
   @IsString()
   restaurantId?: string;
 
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @ArrayUnique()
-  @IsString({ each: true })
-  modifierGroupIds?: string[];
-
   @ApiProperty()
   @IsString()
   name!: string;
@@ -164,13 +157,6 @@ export class UpdateModifierDto {
   @IsOptional()
   @IsString()
   name?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @ArrayUnique()
-  @IsString({ each: true })
-  modifierGroupIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -218,16 +204,6 @@ export class DuplicateModifierDto {
   @IsOptional()
   @IsString()
   name?: string;
-
-  @ApiPropertyOptional({
-    type: [String],
-    description: 'Optional target groups; defaults to source modifier groups',
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayUnique()
-  @IsString({ each: true })
-  modifierGroupIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

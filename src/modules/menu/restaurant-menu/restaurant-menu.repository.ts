@@ -537,6 +537,12 @@ export class RestaurantMenuRepository {
               },
             },
           },
+          modifierPriceOverrides: {
+            include: {
+              modifier: true,
+            },
+            orderBy: [{ modifier: { sortOrder: 'asc' } }],
+          },
         },
       }),
       this.prisma.menuItem.count({ where }),
@@ -580,6 +586,7 @@ export class RestaurantMenuRepository {
           isActive: item.isActive,
           category: item.category,
           variations: this.resolveCategoryVariations(item.category),
+          modifiers: this.buildDirectModifiers(item),
           modifierGroups: this.buildModifierGroups(item),
           menuResolution: {
             source,
@@ -621,6 +628,26 @@ export class RestaurantMenuRepository {
           isActive: link.isActive,
         }))
       : (category.variations ?? []);
+  }
+
+  private buildDirectModifiers(item: {
+    modifierPriceOverrides?: Array<{
+      priceDelta: Prisma.Decimal;
+      modifier: {
+        id: string;
+        name: string;
+        description?: string | null;
+        sortOrder: number;
+      };
+    }>;
+  }) {
+    return (item.modifierPriceOverrides ?? []).map((override) => ({
+      id: override.modifier.id,
+      name: override.modifier.name,
+      description: override.modifier.description ?? null,
+      sortOrder: override.modifier.sortOrder,
+      priceDelta: Number(override.priceDelta),
+    }));
   }
 
   private buildModifierGroups(item: {

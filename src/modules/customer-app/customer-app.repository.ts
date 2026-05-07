@@ -203,6 +203,17 @@ export class CustomerAppRepository {
               },
             },
           },
+          modifierPriceOverrides: {
+            include: {
+              modifier: {
+                include: {
+                  itemPriceOverrides: true,
+                  variationPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ modifier: { sortOrder: 'asc' } }],
+          },
           branchOverrides: branchId
             ? {
                 where: { branchId },
@@ -470,6 +481,17 @@ export class CustomerAppRepository {
               },
             },
           },
+          modifierPriceOverrides: {
+            include: {
+              modifier: {
+                include: {
+                  itemPriceOverrides: true,
+                  variationPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ modifier: { sortOrder: 'asc' } }],
+          },
           branchOverrides: branchId
             ? {
                 where: { branchId },
@@ -568,6 +590,17 @@ export class CustomerAppRepository {
             },
           },
         },
+        modifierPriceOverrides: {
+          include: {
+            modifier: {
+              include: {
+                itemPriceOverrides: true,
+                variationPriceOverrides: true,
+              },
+            },
+          },
+          orderBy: [{ modifier: { sortOrder: 'asc' } }],
+        },
         branchOverrides: branchId
           ? {
               where: { branchId },
@@ -662,6 +695,17 @@ export class CustomerAppRepository {
               },
             },
           },
+        },
+        modifierPriceOverrides: {
+          include: {
+            modifier: {
+              include: {
+                itemPriceOverrides: true,
+                variationPriceOverrides: true,
+              },
+            },
+          },
+          orderBy: [{ modifier: { sortOrder: 'asc' } }],
         },
         branchOverrides: branchId
           ? {

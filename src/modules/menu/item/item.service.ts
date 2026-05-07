@@ -29,10 +29,11 @@ export class MenuItemService {
 
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    const modifiers = this.resolveDirectModifiers(dto);
     await this.validateCategory(restaurantId, dto.categoryId);
     await this.assertModifierOverridesBelongToRestaurant(
       restaurantId,
-      dto.modifierPriceOverrides,
+      modifiers,
     );
     await this.assertVariationModifierOverridesBelongToRestaurant(
       restaurantId,
@@ -80,11 +81,7 @@ export class MenuItemService {
         tx,
       );
 
-      await this.syncModifierPriceOverrides(
-        created.id,
-        dto.modifierPriceOverrides,
-        tx,
-      );
+      await this.syncModifierPriceOverrides(created.id, modifiers, tx);
       await this.syncVariationPriceOverrides(
         created.id,
         restaurantId,
@@ -193,13 +190,14 @@ export class MenuItemService {
     }
 
     await this.ensureCanAccessRestaurant(user, item.restaurantId);
+    const modifiers = this.resolveDirectModifiers(dto);
 
     if (dto.categoryId) {
       await this.validateCategory(item.restaurantId, dto.categoryId);
     }
     await this.assertModifierOverridesBelongToRestaurant(
       item.restaurantId,
-      dto.modifierPriceOverrides,
+      modifiers,
     );
     await this.assertVariationModifierOverridesBelongToRestaurant(
       item.restaurantId,
@@ -254,12 +252,11 @@ export class MenuItemService {
         tx,
       );
 
-      if (dto.modifierPriceOverrides !== undefined) {
-        await this.syncModifierPriceOverrides(
-          id,
-          dto.modifierPriceOverrides,
-          tx,
-        );
+      if (
+        dto.modifiers !== undefined ||
+        dto.modifierPriceOverrides !== undefined
+      ) {
+        await this.syncModifierPriceOverrides(id, modifiers, tx);
       }
 
       if (dto.categoryId || dto.variationPriceOverrides !== undefined) {
@@ -650,6 +647,15 @@ export class MenuItemService {
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),
     });
+  }
+
+  private resolveDirectModifiers(
+    dto: Pick<
+      CreateMenuItemDto | UpdateMenuItemDto,
+      'modifiers' | 'modifierPriceOverrides'
+    >,
+  ) {
+    return dto.modifiers ?? dto.modifierPriceOverrides;
   }
 
   private async syncVariationPriceOverrides(

@@ -1143,6 +1143,14 @@ export class CustomerAppService {
         displayText: string | null;
       }>;
     }>;
+    modifierPriceOverrides?: Array<{
+      priceDelta: Prisma.Decimal;
+      modifier: {
+        id: string;
+        name: string;
+        sortOrder: number;
+      };
+    }>;
     modifierLinks?: Array<{
       sortOrder: number;
       modifierGroup: {
@@ -1205,6 +1213,12 @@ export class CustomerAppService {
         item.variations ?? item.category?.variations,
         item.id,
       ),
+      modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
+        id: override.modifier.id,
+        name: override.modifier.name,
+        sortOrder: override.modifier.sortOrder,
+        priceDelta: override.priceDelta,
+      })),
       modifierGroups: (item.modifierLinks ?? []).map((link) => ({
         id: link.modifierGroup.id,
         name: link.modifierGroup.name,

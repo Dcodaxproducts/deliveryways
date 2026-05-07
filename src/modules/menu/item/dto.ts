@@ -205,7 +205,20 @@ export class CreateMenuItemDto {
   @IsBoolean()
   supportsSplitPizza?: boolean;
 
-  @ApiPropertyOptional({ type: [MenuItemModifierPriceOverrideDto] })
+  @ApiPropertyOptional({
+    type: [MenuItemModifierPriceOverrideDto],
+    description: 'Direct modifiers assigned to this item',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemModifierPriceOverrideDto)
+  modifiers?: MenuItemModifierPriceOverrideDto[];
+
+  @ApiPropertyOptional({
+    type: [MenuItemModifierPriceOverrideDto],
+    description: 'Deprecated alias. Use modifiers for direct item assignment.',
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -350,7 +363,20 @@ export class UpdateMenuItemDto {
   @IsBoolean()
   supportsSplitPizza?: boolean;
 
-  @ApiPropertyOptional({ type: [MenuItemModifierPriceOverrideDto] })
+  @ApiPropertyOptional({
+    type: [MenuItemModifierPriceOverrideDto],
+    description: 'Direct modifiers assigned to this item',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemModifierPriceOverrideDto)
+  modifiers?: MenuItemModifierPriceOverrideDto[];
+
+  @ApiPropertyOptional({
+    type: [MenuItemModifierPriceOverrideDto],
+    description: 'Deprecated alias. Use modifiers for direct item assignment.',
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

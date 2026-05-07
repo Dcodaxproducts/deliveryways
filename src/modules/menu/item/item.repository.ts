@@ -277,6 +277,9 @@ export class MenuItemRepository {
               }))
             : item.category.variations;
         const variations = this.resolveItemVariations(item.id, itemVariations);
+        const modifiers = this.resolveItemModifiers(
+          item.modifierPriceOverrides,
+        );
 
         return {
           ...item,
@@ -285,14 +288,35 @@ export class MenuItemRepository {
             variations,
           },
           variations,
+          modifiers,
           _count: {
             ...item._count,
             variations: variations.length,
+            modifiers: modifiers.length,
           },
         };
       }),
       total,
     };
+  }
+
+  private resolveItemModifiers(
+    modifierPriceOverrides: Array<{
+      priceDelta: Prisma.Decimal;
+      modifier: {
+        id: string;
+        name: string;
+        priceDelta: Prisma.Decimal;
+        sortOrder: number;
+      };
+    }>,
+  ) {
+    return modifierPriceOverrides.map((override) => ({
+      id: override.modifier.id,
+      name: override.modifier.name,
+      priceDelta: override.priceDelta,
+      sortOrder: override.modifier.sortOrder,
+    }));
   }
 
   private resolveItemVariations(
