@@ -694,20 +694,90 @@ export class RestaurantMenuService {
                 }
               : null,
           variations: this.normalizeVariations(
-            item.menuItem.category?.variations as
-              | Array<{
-                  price?: { toString(): string } | number | null;
-                  itemPriceOverrides?: Array<{
-                    menuItemId: string;
-                    price: { toString(): string } | number;
-                  }>;
-                }>
-              | undefined,
+            this.resolveItemVariationSource(item.menuItem),
             item.menuItem.id,
           ),
+          modifiers: this.normalizeDirectModifiers(item.menuItem),
         },
       })),
     };
+  }
+
+  private resolveItemVariationSource(item: Record<string, unknown>) {
+    const category = item.category as
+      | {
+          variations?: Array<{
+            price?: { toString(): string } | number | null;
+            itemPriceOverrides?: Array<{
+              menuItemId: string;
+              price: { toString(): string } | number;
+            }>;
+          }>;
+          variationLinks?: Array<{
+            sortOrder?: number;
+            isDefault?: boolean;
+            isActive?: boolean;
+            variation: {
+              price?: { toString(): string } | number | null;
+              itemPriceOverrides?: Array<{
+                menuItemId: string;
+                price: { toString(): string } | number;
+              }>;
+            };
+          }>;
+        }
+      | undefined;
+    const variationPriceOverrides = item.variationPriceOverrides as
+      | Array<{
+          variation: {
+            price?: { toString(): string } | number | null;
+            itemPriceOverrides?: Array<{
+              menuItemId: string;
+              price: { toString(): string } | number;
+            }>;
+          };
+        }>
+      | undefined;
+
+    if (variationPriceOverrides?.length) {
+      return variationPriceOverrides.map((override) => ({
+        ...override.variation,
+        itemPriceOverrides: override.variation.itemPriceOverrides,
+      }));
+    }
+
+    if (category?.variationLinks?.length) {
+      return category.variationLinks.map((link) => ({
+        ...link.variation,
+        sortOrder: link.sortOrder,
+        isDefault: link.isDefault,
+        isActive: link.isActive,
+      }));
+    }
+
+    return category?.variations;
+  }
+
+  private normalizeDirectModifiers(item: Record<string, unknown>) {
+    const modifierPriceOverrides = item.modifierPriceOverrides as
+      | Array<{
+          priceDelta: { toString(): string } | number;
+          modifier: {
+            id: string;
+            name: string;
+            description?: string | null;
+            sortOrder: number;
+          };
+        }>
+      | undefined;
+
+    return (modifierPriceOverrides ?? []).map((override) => ({
+      id: override.modifier.id,
+      name: override.modifier.name,
+      description: override.modifier.description ?? null,
+      sortOrder: override.modifier.sortOrder,
+      priceDelta: Number(override.priceDelta),
+    }));
   }
 
   private normalizeVariations<

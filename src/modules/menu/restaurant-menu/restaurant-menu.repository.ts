@@ -114,6 +114,22 @@ export class RestaurantMenuRepository {
                     },
                   },
                 },
+                modifierPriceOverrides: {
+                  include: {
+                    modifier: true,
+                  },
+                  orderBy: [{ modifier: { sortOrder: 'asc' } }],
+                },
+                variationPriceOverrides: {
+                  include: {
+                    variation: {
+                      include: {
+                        itemPriceOverrides: true,
+                      },
+                    },
+                  },
+                  orderBy: [{ variation: { sortOrder: 'asc' } }],
+                },
               },
             },
           },
@@ -201,6 +217,16 @@ export class RestaurantMenuRepository {
                         },
                         orderBy: { sortOrder: 'asc' },
                       },
+                      variationLinks: {
+                        where: {
+                          isActive: true,
+                          variation: { deletedAt: null, isActive: true },
+                        },
+                        include: {
+                          variation: { include: { itemPriceOverrides: true } },
+                        },
+                        orderBy: [{ sortOrder: 'asc' }],
+                      },
                       modifierLinks: {
                         orderBy: [{ sortOrder: 'asc' }],
                         include: {
@@ -249,6 +275,22 @@ export class RestaurantMenuRepository {
                         },
                       },
                     },
+                  },
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: true,
+                    },
+                    orderBy: [{ modifier: { sortOrder: 'asc' } }],
+                  },
+                  variationPriceOverrides: {
+                    include: {
+                      variation: {
+                        include: {
+                          itemPriceOverrides: true,
+                        },
+                      },
+                    },
+                    orderBy: [{ variation: { sortOrder: 'asc' } }],
                   },
                 },
               },

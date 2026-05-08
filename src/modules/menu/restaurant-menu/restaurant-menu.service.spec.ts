@@ -390,4 +390,92 @@ describe('RestaurantMenuService', () => {
 
     expect('modifierGroups' in result.data.items[0].menuItem).toBe(false);
   });
+
+  it('exposes direct item variations and modifiers when fetching a menu', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      items: [
+        {
+          id: 'link-1',
+          menuItem: {
+            id: 'item-1',
+            category: {
+              variations: [],
+            },
+            variationPriceOverrides: [
+              {
+                variation: {
+                  id: 'variation-1',
+                  name: 'Large',
+                  price: { toString: () => '0' },
+                  itemPriceOverrides: [
+                    {
+                      menuItemId: 'item-1',
+                      price: { toString: () => '12.50' },
+                      pickupPrice: { toString: () => '11.00' },
+                      displayText: 'Large 12.50',
+                    },
+                  ],
+                },
+              },
+            ],
+            modifierPriceOverrides: [
+              {
+                priceDelta: { toString: () => '1.75' },
+                modifier: {
+                  id: 'modifier-1',
+                  name: 'Extra Cheese',
+                  description: 'More cheese',
+                  sortOrder: 1,
+                },
+              },
+            ],
+            modifierLinks: [],
+          },
+        },
+      ],
+      categories: [],
+    });
+
+    const result = (await service.getById(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'menu-1',
+    )) as unknown as {
+      data: {
+        items: Array<{
+          menuItem: {
+            variations: Array<Record<string, unknown>>;
+            modifiers: Array<Record<string, unknown>>;
+          };
+        }>;
+      };
+    };
+
+    expect(result.data.items[0].menuItem.variations).toEqual([
+      expect.objectContaining({
+        id: 'variation-1',
+        name: 'Large',
+        price: 12.5,
+        pickupPrice: 11,
+        displayText: 'Large 12.50',
+      }),
+    ]);
+    expect(result.data.items[0].menuItem.modifiers).toEqual([
+      {
+        id: 'modifier-1',
+        name: 'Extra Cheese',
+        description: 'More cheese',
+        sortOrder: 1,
+        priceDelta: 1.75,
+      },
+    ]);
+  });
 });
