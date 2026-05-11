@@ -205,6 +205,16 @@ export class GroupOrdersRepository {
     return this.client(tx).groupOrderItem.delete({ where: { id } });
   }
 
+  async deleteItems(ids: string[], tx?: PrismaTx) {
+    if (!ids.length) {
+      return { count: 0 };
+    }
+
+    return this.client(tx).groupOrderItem.deleteMany({
+      where: { id: { in: ids } },
+    });
+  }
+
   async findItemById(id: string) {
     return this.prisma.groupOrderItem.findUnique({ where: { id } });
   }

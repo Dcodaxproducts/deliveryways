@@ -182,7 +182,10 @@ export class GroupOrdersService {
     return {
       data: await this.resolveMediaResponse(
         await Promise.all(
-          items.map(async (item) => this.buildSessionResponse(user, item)),
+          items.map(async (item) => {
+            const session = await this.pruneInvalidActiveItems(user, item);
+            return this.buildSessionResponse(user, session);
+          }),
         ),
       ),
       message: 'Group orders fetched successfully',
@@ -191,7 +194,10 @@ export class GroupOrdersService {
   }
 
   async details(user: AuthUserContext, id: string) {
-    const session = await this.getSessionForReadOrThrow(user, id);
+    const session = await this.pruneInvalidActiveItems(
+      user,
+      await this.getSessionForReadOrThrow(user, id),
+    );
 
     return {
       data: await this.resolveMediaResponse(
@@ -292,7 +298,10 @@ export class GroupOrdersService {
   }
 
   async addItem(user: AuthUserContext, id: string, dto: AddGroupOrderItemDto) {
-    const session = await this.getSessionForMemberOrThrow(user, id);
+    const session = await this.pruneInvalidActiveItems(
+      user,
+      await this.getSessionForMemberOrThrow(user, id),
+    );
     this.assertSessionOpenForContribution(session.status, session.expiresAt);
     const participant = this.getActiveParticipant(session, user.uid);
     if (!participant) {
@@ -331,7 +340,10 @@ export class GroupOrdersService {
     itemId: string,
     dto: UpdateGroupOrderItemDto,
   ) {
-    const session = await this.getSessionForMemberOrThrow(user, id);
+    const session = await this.pruneInvalidActiveItems(
+      user,
+      await this.getSessionForMemberOrThrow(user, id),
+    );
     this.assertSessionOpenForContribution(session.status, session.expiresAt);
     const item = await this.groupOrdersRepository.findItemById(itemId);
     if (!item || item.sessionId !== session.id) {
@@ -487,7 +499,10 @@ export class GroupOrdersService {
   }
 
   async quote(user: AuthUserContext, id: string) {
-    const session = await this.getSessionForMemberOrThrow(user, id);
+    const session = await this.pruneInvalidActiveItems(
+      user,
+      await this.getSessionForMemberOrThrow(user, id),
+    );
     const quotePayload = this.toOrderQuotePayload(session);
     const quote = await this.ordersService.quoteForCouponValidation(
       user,
@@ -508,7 +523,10 @@ export class GroupOrdersService {
     id: string,
     dto: CheckoutGroupOrderDto,
   ) {
-    const session = await this.getSessionForHostOrThrow(user, id);
+    const session = await this.pruneInvalidActiveItems(
+      user,
+      await this.getSessionForHostOrThrow(user, id),
+    );
     this.assertSessionCheckoutReady(session.status, session.expiresAt);
     if (!this.getActiveItems(session).length) {
       throw new BadRequestException('Group order is empty');
@@ -835,6 +853,85 @@ export class GroupOrdersService {
         },
       ],
     });
+  }
+
+  private async pruneInvalidActiveItems(
+    user: AuthUserContext,
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+  ) {
+    if (
+      session.finalOrderId ||
+      (session.status !== GroupOrderStatus.OPEN &&
+        session.status !== GroupOrderStatus.LOCKED)
+    ) {
+      return session;
+    }
+
+    const invalidItemIds: string[] = [];
+
+    for (const item of this.getActiveItems(session)) {
+      try {
+        await this.ordersService.quoteForCouponValidation(user, {
+          branchId: session.branchId,
+          restaurantMenuId: session.restaurantMenuId ?? undefined,
+          orderType: this.toOrderTypeEnum(session.orderType),
+          deliveryAddressId: session.deliveryAddressId ?? undefined,
+          orderTime: (session.orderTime ?? new Date()).toISOString(),
+          items: [
+            {
+              menuItemId: item.menuItemId,
+              variationId: item.variationId ?? undefined,
+              quantity: item.quantity,
+              note: item.note ?? undefined,
+              modifiers: this.readStoredModifiers(item.modifiers),
+              sections: this.readStoredSections(item.modifiers),
+            },
+          ],
+        });
+      } catch (error) {
+        if (this.isStaleSelectionError(error)) {
+          invalidItemIds.push(item.id);
+          continue;
+        }
+
+        if (error instanceof BadRequestException) {
+          return session;
+        }
+
+        throw error;
+      }
+    }
+
+    if (!invalidItemIds.length) {
+      return session;
+    }
+
+    await this.groupOrdersRepository.deleteItems(invalidItemIds);
+
+    const refreshedSession = await this.groupOrdersRepository.findSessionById(
+      session.id,
+    );
+
+    return refreshedSession ?? session;
+  }
+
+  private isStaleSelectionError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const message = error.message;
+
+    return (
+      message.startsWith('Variation not found') ||
+      message.startsWith('Modifier not found') ||
+      message.startsWith('Menu item not found') ||
+      message.startsWith('Menu item unavailable') ||
+      message.startsWith('Split section flavor not found') ||
+      message.startsWith('Split section flavor unavailable')
+    );
   }
 
   private async assertValidSessionItem(

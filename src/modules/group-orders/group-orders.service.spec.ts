@@ -22,6 +22,7 @@ describe('GroupOrdersService', () => {
       createItem: jest.fn(),
       updateItem: jest.fn(),
       deleteItem: jest.fn(),
+      deleteItems: jest.fn(),
       findItemById: jest.fn(),
       findSessionById: jest.fn(),
       findRestaurantInTenant: jest.fn(),
@@ -1370,6 +1371,7 @@ describe('GroupOrdersService', () => {
       sortOrder: 'DESC',
     });
 
+    expect(groupOrdersRepository.deleteItems).toHaveBeenCalledWith(['item-1']);
     expect(result.data[0].summary).toEqual(
       expect.objectContaining({
         source: 'session',
