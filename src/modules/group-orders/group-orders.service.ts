@@ -308,23 +308,23 @@ export class GroupOrdersService {
       throw new ForbiddenException('Only active participants can add items');
     }
 
-    await this.assertValidSessionItem(
+    const itemSelection = await this.resolveValidSessionItemSelection(
       session.restaurantId,
       session.branchId,
       dto,
     );
-    await this.assertValidOrderItemSelection(user, session, dto);
+    await this.assertValidOrderItemSelection(user, session, itemSelection);
 
     await this.groupOrdersRepository.createItem({
       session: { connect: { id } },
       participant: { connect: { id: participant.id } },
-      menuItemId: dto.menuItemId,
-      variationId: dto.variationId,
-      quantity: dto.quantity,
-      note: this.resolveOptionalString(dto.note),
+      menuItemId: itemSelection.menuItemId,
+      variationId: itemSelection.variationId,
+      quantity: itemSelection.quantity,
+      note: this.resolveOptionalString(itemSelection.note),
       modifiers: this.packGroupOrderSelections(
-        dto.modifiers,
-        dto.sections,
+        itemSelection.modifiers,
+        itemSelection.sections,
       ) as unknown as Prisma.InputJsonValue,
     });
 
@@ -361,6 +361,12 @@ export class GroupOrdersService {
       throw new BadRequestException('quantity must be at least 1');
     }
 
+    let nextItemSelection:
+      | Awaited<
+          ReturnType<GroupOrdersService['resolveValidSessionItemSelection']>
+        >
+      | undefined;
+
     if (
       dto.quantity !== undefined ||
       dto.variationId !== undefined ||
@@ -388,16 +394,23 @@ export class GroupOrdersService {
             : (dto.sections ?? undefined),
       };
 
-      await this.assertValidSessionItem(
+      nextItemSelection = await this.resolveValidSessionItemSelection(
         session.restaurantId,
         session.branchId,
         nextItem,
       );
-      await this.assertValidOrderItemSelection(user, session, nextItem);
+      await this.assertValidOrderItemSelection(
+        user,
+        session,
+        nextItemSelection,
+      );
     }
 
     await this.groupOrdersRepository.updateItem(itemId, {
-      variationId: dto.variationId === undefined ? undefined : dto.variationId,
+      variationId:
+        dto.variationId === undefined
+          ? undefined
+          : (nextItemSelection?.variationId ?? null),
       quantity: dto.quantity,
       note:
         dto.note === undefined
@@ -406,12 +419,8 @@ export class GroupOrdersService {
       modifiers:
         dto.modifiers !== undefined || dto.sections !== undefined
           ? (this.packGroupOrderSelections(
-              dto.modifiers !== undefined
-                ? (dto.modifiers ?? undefined)
-                : this.readStoredModifiers(item.modifiers),
-              dto.sections !== undefined
-                ? (dto.sections ?? undefined)
-                : this.readStoredSections(item.modifiers),
+              nextItemSelection?.modifiers,
+              nextItemSelection?.sections,
             ) as Prisma.InputJsonValue | undefined)
           : undefined,
     });
@@ -934,16 +943,16 @@ export class GroupOrdersService {
     );
   }
 
-  private async assertValidSessionItem(
+  private async resolveValidSessionItemSelection(
     restaurantId: string,
     branchId: string,
     dto: {
       menuItemId: string;
       variationId?: string;
       quantity?: number;
-      note?: string;
-      modifiers?: unknown;
-      sections?: unknown;
+      note?: string | null;
+      modifiers?: GroupOrderItemModifierDto[] | null;
+      sections?: GroupOrderItemSectionDto[] | null;
     },
   ) {
     const menuItem = await this.groupOrdersRepository.findMenuItemForSession(
@@ -962,16 +971,20 @@ export class GroupOrdersService {
       );
     }
 
-    if (dto.variationId) {
-      const variation = menuItem.variations.find(
-        (item) => item.id === dto.variationId,
-      );
-      if (!variation) {
-        throw new BadRequestException(
-          'Variation not found for selected menu item',
-        );
-      }
-    }
+    const variationId =
+      dto.variationId &&
+      menuItem.variations.some((item) => item.id === dto.variationId)
+        ? dto.variationId
+        : undefined;
+
+    return {
+      menuItemId: dto.menuItemId,
+      variationId,
+      quantity: dto.quantity ?? 1,
+      note: dto.note ?? undefined,
+      modifiers: dto.modifiers ?? undefined,
+      sections: dto.sections ?? undefined,
+    };
   }
 
   private getActiveParticipantIds(
