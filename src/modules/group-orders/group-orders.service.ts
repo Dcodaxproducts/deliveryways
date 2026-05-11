@@ -837,31 +837,47 @@ export class GroupOrdersService {
       sections?: unknown;
     },
   ) {
-    await this.ordersService.quoteForCouponValidation(user, {
-      branchId: session.branchId,
-      restaurantMenuId: session.restaurantMenuId ?? undefined,
-      orderType: this.toOrderTypeEnum(session.orderType),
-      deliveryAddressId: session.deliveryAddressId ?? undefined,
-      orderTime: (session.orderTime ?? new Date()).toISOString(),
-      items: [
-        {
-          menuItemId: dto.menuItemId,
-          variationId: dto.variationId ?? undefined,
-          quantity: dto.quantity ?? 1,
-          note: dto.note ?? undefined,
-          modifiers:
-            (dto.modifiers as Array<{
-              modifierId: string;
-              quantity?: number;
-            }> | null) ?? undefined,
-          sections:
-            (dto.sections as Array<{
-              slot: 'LEFT' | 'RIGHT';
-              menuItemId: string;
-            }> | null) ?? undefined,
-        },
-      ],
-    });
+    try {
+      await this.ordersService.quoteForCouponValidation(user, {
+        branchId: session.branchId,
+        restaurantMenuId: session.restaurantMenuId ?? undefined,
+        orderType: this.toOrderTypeEnum(session.orderType),
+        deliveryAddressId: session.deliveryAddressId ?? undefined,
+        orderTime: (session.orderTime ?? new Date()).toISOString(),
+        items: [
+          {
+            menuItemId: dto.menuItemId,
+            variationId: dto.variationId ?? undefined,
+            quantity: dto.quantity ?? 1,
+            note: dto.note ?? undefined,
+            modifiers:
+              (dto.modifiers as Array<{
+                modifierId: string;
+                quantity?: number;
+              }> | null) ?? undefined,
+            sections:
+              (dto.sections as Array<{
+                slot: 'LEFT' | 'RIGHT';
+                menuItemId: string;
+              }> | null) ?? undefined,
+          },
+        ],
+      });
+    } catch (error) {
+      if (
+        dto.variationId &&
+        error instanceof BadRequestException &&
+        error.message.startsWith('Variation not found')
+      ) {
+        await this.assertValidOrderItemSelection(user, session, {
+          ...dto,
+          variationId: undefined,
+        });
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private async pruneInvalidActiveItems(
