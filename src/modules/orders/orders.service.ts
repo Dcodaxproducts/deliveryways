@@ -76,10 +76,20 @@ interface OrderDirectModifierOverride {
   };
 }
 
+interface OrderVariationModifierOverride {
+  modifierId: string;
+  priceDelta: Prisma.Decimal;
+  modifier: OrderDirectModifierOverride['modifier'];
+}
+
 interface OrderModifierSource {
   id: string;
   modifierLinks: OrderModifierLink[];
   modifierPriceOverrides?: OrderDirectModifierOverride[];
+  variations?: Array<{
+    id: string;
+    modifierPriceOverrides?: OrderVariationModifierOverride[];
+  }>;
   category: {
     modifierLinks?: OrderModifierLink[];
   };
@@ -621,7 +631,16 @@ export class OrdersService {
               variations: {
                 where: { deletedAt: null, isActive: true },
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
                   itemPriceOverrides: true,
                 },
               },
@@ -633,7 +652,16 @@ export class OrdersService {
                 include: {
                   variation: {
                     include: {
-                      modifierPriceOverrides: true,
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
                       itemPriceOverrides: true,
                     },
                   },
@@ -699,7 +727,16 @@ export class OrdersService {
             include: {
               variation: {
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
                   itemPriceOverrides: true,
                 },
               },
@@ -780,7 +817,12 @@ export class OrdersService {
       if (requestedItem.modifiers?.length) {
         for (const requestedModifier of requestedItem.modifiers) {
           const found = this.findModifier(
-            menuItem,
+            {
+              ...menuItem,
+              variations: this.resolveItemVariations(
+                menuItem,
+              ) as OrderModifierSource['variations'],
+            },
             requestedModifier.modifierId,
             menuItem.id,
             requestedItem.variationId,
@@ -1911,7 +1953,16 @@ export class OrdersService {
                   variations: {
                     where: { deletedAt: null, isActive: true },
                     include: {
-                      modifierPriceOverrides: true,
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
                     },
                     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
                   },
@@ -1921,7 +1972,20 @@ export class OrdersService {
                       variation: { deletedAt: null, isActive: true },
                     },
                     include: {
-                      variation: { include: { modifierPriceOverrides: true } },
+                      variation: {
+                        include: {
+                          modifierPriceOverrides: {
+                            include: {
+                              modifier: {
+                                include: {
+                                  itemPriceOverrides: true,
+                                  variationPriceOverrides: true,
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
                     },
                     orderBy: [{ sortOrder: 'asc' }],
                   },
@@ -1967,7 +2031,16 @@ export class OrdersService {
                 include: {
                   variation: {
                     include: {
-                      modifierPriceOverrides: true,
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
                       itemPriceOverrides: true,
                     },
                   },
@@ -2759,6 +2832,30 @@ export class OrdersService {
     menuItemId?: string,
     variationId?: string,
   ) {
+    const variationModifier = item.variations
+      ?.find((variation) => variation.id === variationId)
+      ?.modifierPriceOverrides?.find(
+        (override) => override.modifierId === modifierId,
+      );
+
+    if (variationModifier) {
+      return this.resolveModifierPricing(
+        {
+          ...variationModifier.modifier,
+          variationPriceOverrides: [
+            ...(variationModifier.modifier.variationPriceOverrides ?? []),
+            {
+              menuItemId: item.id,
+              variationId: variationId as string,
+              priceDelta: variationModifier.priceDelta,
+            },
+          ],
+        },
+        menuItemId,
+        variationId,
+      );
+    }
+
     const directModifier = item.modifierPriceOverrides?.find(
       (override) => override.modifier.id === modifierId,
     );

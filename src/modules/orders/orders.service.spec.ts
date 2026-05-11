@@ -685,6 +685,128 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.items[0].unitPrice).toBe(110);
     expect(result.data.subtotal).toBe(110);
   });
+
+  it('accepts modifiers configured on the selected item variation in quotes', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: { taxPercentage: 0 },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Zingory cheese',
+          restaurantId: 'restaurant-1',
+          pricingMode: 'SINGLE',
+          basePrice: new Prisma.Decimal(100),
+          deliveryPriceAdjustment: new Prisma.Decimal(0),
+          takeawayPriceAdjustment: new Prisma.Decimal(0),
+          depositAmount: new Prisma.Decimal(0),
+          category: {
+            id: 'cat-1',
+            variations: [
+              {
+                id: 'var-1',
+                name: 'Large',
+                price: new Prisma.Decimal(100),
+                itemPriceOverrides: [],
+                modifierPriceOverrides: [
+                  {
+                    modifierId: 'modifier-cheese',
+                    priceDelta: new Prisma.Decimal(25),
+                    modifier: {
+                      id: 'modifier-cheese',
+                      name: 'Extra Cheese',
+                      priceDelta: new Prisma.Decimal(0),
+                      itemPriceOverrides: [],
+                      variationPriceOverrides: [],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          variations: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          branchOverrides: [],
+        }),
+      },
+      address: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn().mockResolvedValue({
+          coupon: null,
+          discountAmount: new Prisma.Decimal(0),
+          eligibleSubtotal: new Prisma.Decimal(125),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(125),
+        }),
+      } as never,
+    );
+
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            variationId: 'var-1',
+            quantity: 1,
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items[0].snapshotModifiers).toEqual([
+      {
+        modifierId: 'modifier-cheese',
+        name: 'Extra Cheese',
+        quantity: 1,
+        unitPrice: 25,
+      },
+    ]);
+    expect(result.data.items[0].unitPrice).toBe(125);
+    expect(result.data.subtotal).toBe(125);
+  });
 });
 
 describe('OrdersService - branch address lookup', () => {
