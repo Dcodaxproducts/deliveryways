@@ -90,8 +90,12 @@ export class AuthService {
   }
 
   async registerTenant(dto: RegisterTenantDto) {
-    const existing = await this.usersService.findByEmail(dto.user.email);
-    if (existing) {
+    const ownerEmail = dto.user.email.trim().toLowerCase();
+    const existingBusinessAdmin = await this.usersService.existsByEmailAndRole({
+      email: ownerEmail,
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+    if (existingBusinessAdmin) {
       throw new BadRequestException('User already exists');
     }
 
@@ -111,7 +115,7 @@ export class AuthService {
       : this.generateOtpExpiry();
 
     if (emailEnabled && verificationOtp) {
-      await this.ensureVerificationEmailCanBeSent(dto.user.email);
+      await this.ensureVerificationEmailCanBeSent(ownerEmail);
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -195,7 +199,7 @@ export class AuthService {
 
       const user = await this.usersService.create(
         {
-          email: dto.user.email,
+          email: ownerEmail,
           password: await bcrypt.hash(dto.user.password, 10),
           role: UserRoleEnum.BUSINESS_ADMIN,
           tenantId: tenant.id,
@@ -229,7 +233,7 @@ export class AuthService {
 
     if (emailEnabled && verificationOtp) {
       await this.mailerService.sendVerificationEmail(
-        dto.user.email,
+        ownerEmail,
         verificationOtp,
       );
     }

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -69,6 +70,90 @@ describe('AuthService checkEmailRole', () => {
     });
     expect(result.data.exists).toBe(false);
     expect(result.message).toBe('Email is available for this role');
+  });
+});
+
+describe('AuthService registerTenant duplicate email checks', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+  const tenantsService = {
+    findBySlug: jest.fn(),
+  };
+
+  const registerTenantDto = {
+    user: {
+      email: ' Owner@Example.COM ',
+      password: 'password123',
+      firstName: 'Owner',
+      lastName: 'User',
+    },
+    tenant: {
+      name: 'Tenant',
+      slug: 'tenant',
+    },
+    restaurant: {
+      name: 'Restaurant',
+      slug: 'restaurant',
+    },
+    branch: {
+      name: 'Main',
+      street: 'Street',
+      city: 'City',
+      state: 'State',
+      country: 'PK',
+      lat: '33.6844',
+      lng: '73.0479',
+    },
+  };
+
+  beforeEach(() => {
+    usersService = {
+      existsByEmailAndRole: jest.fn(),
+      findByEmail: jest.fn(),
+    };
+    tenantsService.findBySlug.mockReset();
+
+    service = new AuthService(
+      {} as never,
+      {} as never,
+      tenantsService as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('blocks tenant registration only when a business admin email already exists', async () => {
+    usersService.existsByEmailAndRole!.mockResolvedValue(true);
+
+    await expect(service.registerTenant(registerTenantDto)).rejects.toThrow(
+      BadRequestException,
+    );
+
+    expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
+      email: 'owner@example.com',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+    expect(usersService.findByEmail).not.toHaveBeenCalled();
+    expect(tenantsService.findBySlug).not.toHaveBeenCalled();
+  });
+
+  it('does not block tenant registration just because the email exists for another role', async () => {
+    usersService.existsByEmailAndRole!.mockResolvedValue(false);
+    tenantsService.findBySlug.mockResolvedValue({ id: 'tenant-1' });
+
+    await expect(service.registerTenant(registerTenantDto)).rejects.toThrow(
+      ConflictException,
+    );
+
+    expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
+      email: 'owner@example.com',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+    expect(usersService.findByEmail).not.toHaveBeenCalled();
+    expect(tenantsService.findBySlug).toHaveBeenCalledWith('tenant');
   });
 });
 
