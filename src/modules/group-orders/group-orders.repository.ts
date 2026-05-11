@@ -345,6 +345,12 @@ export class GroupOrdersRepository {
             },
           },
         },
+        variationPriceOverrides: {
+          include: {
+            variation: true,
+          },
+          orderBy: [{ variation: { sortOrder: 'asc' } }],
+        },
         branchOverrides: {
           where: { branchId },
           select: { priceOverride: true, isAvailable: true },
@@ -356,7 +362,7 @@ export class GroupOrdersRepository {
     return item
       ? {
           ...item,
-          variations: this.resolveCategoryVariations(item.category),
+          variations: this.resolveItemVariations(item),
         }
       : null;
   }
@@ -395,6 +401,12 @@ export class GroupOrdersRepository {
             },
           },
         },
+        variationPriceOverrides: {
+          include: {
+            variation: true,
+          },
+          orderBy: [{ variation: { sortOrder: 'asc' } }],
+        },
         modifierLinks: {
           orderBy: [{ sortOrder: 'asc' }],
           include: {
@@ -426,9 +438,30 @@ export class GroupOrdersRepository {
 
     return items.map((item) => ({
       ...item,
-      variations: this.resolveCategoryVariations(item.category),
+      variations: this.resolveItemVariations(item),
     }));
   }
+
+  private resolveItemVariations(item: {
+    variationPriceOverrides?: Array<{
+      variation: Record<string, unknown>;
+      price: Prisma.Decimal;
+      pickupPrice?: Prisma.Decimal | null;
+      displayText?: string | null;
+    }>;
+    category: Parameters<GroupOrdersRepository['resolveCategoryVariations']>[0];
+  }) {
+    return item.variationPriceOverrides?.length
+      ? item.variationPriceOverrides.map((override) => ({
+          ...override.variation,
+          price: override.price,
+          pickupPrice: override.pickupPrice ?? null,
+          displayText: override.displayText ?? null,
+          itemPriceOverrides: [override],
+        }))
+      : this.resolveCategoryVariations(item.category);
+  }
+
   private resolveCategoryVariations(category: {
     variations: Array<Record<string, unknown>>;
     variationLinks?: Array<{
