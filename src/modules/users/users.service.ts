@@ -125,6 +125,14 @@ export class UsersService {
     );
   }
 
+  async existsByEmailAndRole(options: {
+    email: string;
+    role: UserRole;
+    restaurantId?: string;
+  }) {
+    return this.usersRepository.existsByEmailAndRole(options);
+  }
+
   async findById(id: string) {
     return this.usersRepository.findById(id);
   }

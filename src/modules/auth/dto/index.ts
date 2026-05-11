@@ -1,4 +1,5 @@
 export { RegisterTenantDto } from './register-tenant.dto';
+export { CheckEmailRoleDto } from './check-email-role.dto';
 export { RegisterCustomerDto } from './register-customer.dto';
 export { RegisterGuestCustomerDto } from './register-guest-customer.dto';
 export { LoginDto } from './login.dto';

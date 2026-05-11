@@ -40,3 +40,28 @@ describe('AuthController guest registration throttling', () => {
     expect(tracker({})).toBe('unknown-ip:unknown-restaurant');
   });
 });
+
+describe('AuthController checkEmailRole', () => {
+  it('delegates email-role checks to the auth service', () => {
+    const authService = {
+      checkEmailRole: jest.fn().mockReturnValue({
+        data: { exists: false },
+        message: 'Email is available for this role',
+      }),
+    };
+    const controller = new AuthController(authService as never);
+    const dto = {
+      email: 'customer@example.com',
+      role: 'CUSTOMER',
+      restaurantId: 'restaurant-1',
+    } as never;
+
+    const result = controller.checkEmailRole(dto);
+
+    expect(authService.checkEmailRole).toHaveBeenCalledWith(dto);
+    expect(result).toEqual({
+      data: { exists: false },
+      message: 'Email is available for this role',
+    });
+  });
+});

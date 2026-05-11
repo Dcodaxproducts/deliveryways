@@ -8,6 +8,70 @@ import { AuthService } from './auth.service';
 import { UserRoleEnum } from '../../common/enums';
 import { UsersService } from '../users/users.service';
 
+describe('AuthService checkEmailRole', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+
+  beforeEach(() => {
+    usersService = {
+      existsByEmailAndRole: jest.fn(),
+    };
+
+    service = new AuthService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('returns true when the email already exists for the role and scope', async () => {
+    usersService.existsByEmailAndRole!.mockResolvedValue(true);
+
+    const result = await service.checkEmailRole({
+      email: ' Customer@Example.COM ',
+      role: UserRoleEnum.CUSTOMER,
+      restaurantId: 'restaurant-1',
+    });
+
+    expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
+      email: 'customer@example.com',
+      role: UserRoleEnum.CUSTOMER,
+      restaurantId: 'restaurant-1',
+    });
+    expect(result).toEqual({
+      data: {
+        exists: true,
+        email: 'customer@example.com',
+        role: UserRoleEnum.CUSTOMER,
+        restaurantId: 'restaurant-1',
+      },
+      message: 'Email already exists for this role',
+    });
+  });
+
+  it('returns false when the email is available for the role', async () => {
+    usersService.existsByEmailAndRole!.mockResolvedValue(false);
+
+    const result = await service.checkEmailRole({
+      email: 'owner@example.com',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+
+    expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
+      email: 'owner@example.com',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      restaurantId: undefined,
+    });
+    expect(result.data.exists).toBe(false);
+    expect(result.message).toBe('Email is available for this role');
+  });
+});
+
 describe('AuthService listCustomers and customerDetails', () => {
   let service: AuthService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;

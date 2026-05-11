@@ -21,6 +21,7 @@ import {
 import {
   CancelDeletionByLoginDto,
   ChangePasswordDto,
+  CheckEmailRoleDto,
   CustomerDetailsQueryDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
@@ -62,6 +63,31 @@ export class AuthService {
     private readonly staffManagementRepository: StaffManagementRepository,
     private readonly storageService?: StorageService,
   ) {}
+
+  async checkEmailRole(dto: CheckEmailRoleDto) {
+    const email = dto.email.trim().toLowerCase();
+    const trimmedRestaurantId = dto.restaurantId?.trim();
+    const restaurantId = trimmedRestaurantId?.length
+      ? trimmedRestaurantId
+      : undefined;
+    const exists = await this.usersService.existsByEmailAndRole({
+      email,
+      role: dto.role,
+      restaurantId: restaurantId ?? undefined,
+    });
+
+    return {
+      data: {
+        exists,
+        email,
+        role: dto.role,
+        restaurantId,
+      },
+      message: exists
+        ? 'Email already exists for this role'
+        : 'Email is available for this role',
+    };
+  }
 
   async registerTenant(dto: RegisterTenantDto) {
     const existing = await this.usersService.findByEmail(dto.user.email);

@@ -45,6 +45,25 @@ export class UsersRepository {
     });
   }
 
+  async existsByEmailAndRole(options: {
+    email: string;
+    role: UserRole;
+    restaurantId?: string;
+  }) {
+    const count = await this.prisma.user.count({
+      where: {
+        email: options.email,
+        role: options.role,
+        deletedAt: null,
+        ...(options.restaurantId !== undefined
+          ? { restaurantId: options.restaurantId }
+          : {}),
+      },
+    });
+
+    return count > 0;
+  }
+
   async findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },

@@ -13,6 +13,7 @@ import { AuthService } from './auth.service';
 import {
   CancelDeletionByLoginDto,
   ChangePasswordDto,
+  CheckEmailRoleDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
   ForgotPasswordDto,
@@ -57,6 +58,13 @@ const getGuestRegistrationTracker = (req: Record<string, unknown>): string => {
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  @Post('check-email-role')
+  checkEmailRole(@Body() dto: CheckEmailRoleDto) {
+    return this.authService.checkEmailRole(dto);
+  }
 
   @Public()
   @Post('register-tenant')
