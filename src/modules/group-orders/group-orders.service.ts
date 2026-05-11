@@ -21,6 +21,8 @@ import { StorageService } from '../storage/storage.service';
 import {
   AddGroupOrderItemDto,
   CheckoutGroupOrderDto,
+  GroupOrderItemModifierDto,
+  GroupOrderItemSectionDto,
   CreateGroupOrderSessionDto,
   JoinGroupOrderDto,
   ListGroupOrdersDto,
@@ -311,7 +313,10 @@ export class GroupOrdersService {
       variationId: dto.variationId,
       quantity: dto.quantity,
       note: this.resolveOptionalString(dto.note),
-      modifiers: dto.modifiers as unknown as Prisma.InputJsonValue,
+      modifiers: this.packGroupOrderSelections(
+        dto.modifiers,
+        dto.sections,
+      ) as unknown as Prisma.InputJsonValue,
     });
 
     return {
@@ -347,7 +352,8 @@ export class GroupOrdersService {
     if (
       dto.quantity !== undefined ||
       dto.variationId !== undefined ||
-      dto.modifiers !== undefined
+      dto.modifiers !== undefined ||
+      dto.sections !== undefined
     ) {
       const nextItem = {
         menuItemId: item.menuItemId,
@@ -362,8 +368,12 @@ export class GroupOrdersService {
             : (dto.note ?? undefined),
         modifiers:
           dto.modifiers === undefined
-            ? (item.modifiers as never)
+            ? this.readStoredModifiers(item.modifiers)
             : (dto.modifiers ?? undefined),
+        sections:
+          dto.sections === undefined
+            ? this.readStoredSections(item.modifiers)
+            : (dto.sections ?? undefined),
       };
 
       await this.assertValidSessionItem(
@@ -382,9 +392,16 @@ export class GroupOrdersService {
           ? undefined
           : this.resolveOptionalString(dto.note),
       modifiers:
-        dto.modifiers === undefined
-          ? undefined
-          : (dto.modifiers as unknown as Prisma.InputJsonValue),
+        dto.modifiers !== undefined || dto.sections !== undefined
+          ? (this.packGroupOrderSelections(
+              dto.modifiers !== undefined
+                ? (dto.modifiers ?? undefined)
+                : this.readStoredModifiers(item.modifiers),
+              dto.sections !== undefined
+                ? (dto.sections ?? undefined)
+                : this.readStoredSections(item.modifiers),
+            ) as Prisma.InputJsonValue | undefined)
+          : undefined,
     });
 
     return {
@@ -790,6 +807,7 @@ export class GroupOrdersService {
       quantity?: number;
       note?: string | null;
       modifiers?: unknown;
+      sections?: unknown;
     },
   ) {
     await this.ordersService.quoteForCouponValidation(user, {
@@ -809,6 +827,11 @@ export class GroupOrdersService {
               modifierId: string;
               quantity?: number;
             }> | null) ?? undefined,
+          sections:
+            (dto.sections as Array<{
+              slot: 'LEFT' | 'RIGHT';
+              menuItemId: string;
+            }> | null) ?? undefined,
         },
       ],
     });
@@ -823,6 +846,7 @@ export class GroupOrdersService {
       quantity?: number;
       note?: string;
       modifiers?: unknown;
+      sections?: unknown;
     },
   ) {
     const menuItem = await this.groupOrdersRepository.findMenuItemForSession(
@@ -1065,6 +1089,55 @@ export class GroupOrdersService {
     }
   }
 
+  private readStoredModifiers(
+    input: Prisma.JsonValue | null,
+  ): GroupOrderItemModifierDto[] | undefined {
+    if (Array.isArray(input)) {
+      return input as unknown as GroupOrderItemModifierDto[];
+    }
+
+    if (!input || typeof input !== 'object') {
+      return undefined;
+    }
+
+    const modifiers = (input as { modifiers?: unknown }).modifiers;
+
+    return Array.isArray(modifiers)
+      ? (modifiers as GroupOrderItemModifierDto[])
+      : undefined;
+  }
+
+  private readStoredSections(
+    input: Prisma.JsonValue | null,
+  ): GroupOrderItemSectionDto[] | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const sections = (input as { sections?: unknown }).sections;
+
+    return Array.isArray(sections)
+      ? (sections as GroupOrderItemSectionDto[])
+      : undefined;
+  }
+
+  private packGroupOrderSelections(
+    modifiers?: GroupOrderItemModifierDto[],
+    sections?: GroupOrderItemSectionDto[],
+  ) {
+    if (!sections?.length) {
+      return modifiers?.length ? modifiers : undefined;
+    }
+
+    return {
+      modifiers: modifiers?.length ? modifiers : [],
+      sections: sections.map((section) => ({
+        slot: section.slot,
+        menuItemId: section.menuItemId,
+      })),
+    };
+  }
+
   private toUserSummary(user: {
     id: string;
     email: string;
@@ -1129,11 +1202,8 @@ export class GroupOrdersService {
         variationId: item.variationId ?? undefined,
         quantity: item.quantity,
         note: item.note ?? undefined,
-        modifiers:
-          (item.modifiers as Array<{
-            modifierId: string;
-            quantity?: number;
-          }> | null) ?? undefined,
+        modifiers: this.readStoredModifiers(item.modifiers),
+        sections: this.readStoredSections(item.modifiers),
       })),
     };
   }

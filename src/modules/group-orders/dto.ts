@@ -5,6 +5,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -13,6 +14,8 @@ import {
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
+
+export const GROUP_ORDER_ITEM_SECTION_SLOT_VALUES = ['LEFT', 'RIGHT'] as const;
 
 export class GroupOrderItemModifierDto {
   @ApiProperty()
@@ -24,6 +27,16 @@ export class GroupOrderItemModifierDto {
   @IsInt()
   @Min(1)
   quantity?: number;
+}
+
+export class GroupOrderItemSectionDto {
+  @ApiProperty({ enum: GROUP_ORDER_ITEM_SECTION_SLOT_VALUES })
+  @IsIn(GROUP_ORDER_ITEM_SECTION_SLOT_VALUES)
+  slot!: (typeof GROUP_ORDER_ITEM_SECTION_SLOT_VALUES)[number];
+
+  @ApiProperty()
+  @IsString()
+  menuItemId!: string;
 }
 
 export class CreateGroupOrderSessionDto {
@@ -111,6 +124,13 @@ export class AddGroupOrderItemDto {
   @Type(() => GroupOrderItemModifierDto)
   modifiers?: GroupOrderItemModifierDto[];
 
+  @ApiPropertyOptional({ type: [GroupOrderItemSectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GroupOrderItemSectionDto)
+  sections?: GroupOrderItemSectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -135,6 +155,13 @@ export class UpdateGroupOrderItemDto {
   @ValidateNested({ each: true })
   @Type(() => GroupOrderItemModifierDto)
   modifiers?: GroupOrderItemModifierDto[] | null;
+
+  @ApiPropertyOptional({ type: [GroupOrderItemSectionDto], nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GroupOrderItemSectionDto)
+  sections?: GroupOrderItemSectionDto[] | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
