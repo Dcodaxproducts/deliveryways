@@ -302,6 +302,7 @@ export class GroupOrdersService {
       session.branchId,
       dto,
     );
+    await this.assertValidOrderItemSelection(user, session, dto);
 
     await this.groupOrdersRepository.createItem({
       session: { connect: { id } },
@@ -343,27 +344,34 @@ export class GroupOrdersService {
       throw new BadRequestException('quantity must be at least 1');
     }
 
-    if (dto.variationId !== undefined || dto.modifiers !== undefined) {
+    if (
+      dto.quantity !== undefined ||
+      dto.variationId !== undefined ||
+      dto.modifiers !== undefined
+    ) {
+      const nextItem = {
+        menuItemId: item.menuItemId,
+        variationId:
+          dto.variationId === undefined
+            ? (item.variationId ?? undefined)
+            : (dto.variationId ?? undefined),
+        quantity: dto.quantity ?? item.quantity,
+        note:
+          dto.note === undefined
+            ? (item.note ?? undefined)
+            : (dto.note ?? undefined),
+        modifiers:
+          dto.modifiers === undefined
+            ? (item.modifiers as never)
+            : (dto.modifiers ?? undefined),
+      };
+
       await this.assertValidSessionItem(
         session.restaurantId,
         session.branchId,
-        {
-          menuItemId: item.menuItemId,
-          variationId:
-            dto.variationId === undefined
-              ? (item.variationId ?? undefined)
-              : (dto.variationId ?? undefined),
-          quantity: dto.quantity ?? item.quantity,
-          note:
-            dto.note === undefined
-              ? (item.note ?? undefined)
-              : (dto.note ?? undefined),
-          modifiers:
-            dto.modifiers === undefined
-              ? (item.modifiers as never)
-              : (dto.modifiers ?? undefined),
-        },
+        nextItem,
       );
+      await this.assertValidOrderItemSelection(user, session, nextItem);
     }
 
     await this.groupOrdersRepository.updateItem(itemId, {
@@ -419,10 +427,10 @@ export class GroupOrdersService {
     }
     this.assertSessionMutable(session.status, session.expiresAt);
 
-    await this.groupOrdersRepository.updateParticipant(participant.id, {
-      status: GroupOrderParticipantStatus.LEFT,
-      leftAt: new Date(),
-    });
+    await this.groupOrdersRepository.markParticipantLeftAndDeleteItems(
+      participant.id,
+      new Date(),
+    );
 
     return {
       data: await this.buildSessionResponseOrThrow(user, id),
@@ -485,7 +493,7 @@ export class GroupOrdersService {
   ) {
     const session = await this.getSessionForHostOrThrow(user, id);
     this.assertSessionCheckoutReady(session.status, session.expiresAt);
-    if (!session.items.length) {
+    if (!this.getActiveItems(session).length) {
       throw new BadRequestException('Group order is empty');
     }
 
@@ -771,6 +779,41 @@ export class GroupOrdersService {
     );
   }
 
+  private async assertValidOrderItemSelection(
+    user: AuthUserContext,
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+    dto: {
+      menuItemId: string;
+      variationId?: string;
+      quantity?: number;
+      note?: string | null;
+      modifiers?: unknown;
+    },
+  ) {
+    await this.ordersService.quoteForCouponValidation(user, {
+      branchId: session.branchId,
+      restaurantMenuId: session.restaurantMenuId ?? undefined,
+      orderType: this.toOrderTypeEnum(session.orderType),
+      deliveryAddressId: session.deliveryAddressId ?? undefined,
+      orderTime: (session.orderTime ?? new Date()).toISOString(),
+      items: [
+        {
+          menuItemId: dto.menuItemId,
+          variationId: dto.variationId ?? undefined,
+          quantity: dto.quantity ?? 1,
+          note: dto.note ?? undefined,
+          modifiers:
+            (dto.modifiers as Array<{
+              modifierId: string;
+              quantity?: number;
+            }> | null) ?? undefined,
+        },
+      ],
+    });
+  }
+
   private async assertValidSessionItem(
     restaurantId: string,
     branchId: string,
@@ -810,6 +853,32 @@ export class GroupOrdersService {
     }
   }
 
+  private getActiveParticipantIds(
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+  ) {
+    return new Set(
+      session.participants
+        .filter(
+          (participant) =>
+            participant.status === GroupOrderParticipantStatus.ACTIVE,
+        )
+        .map((participant) => participant.id),
+    );
+  }
+
+  private getActiveItems(
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+    activeParticipantIds = this.getActiveParticipantIds(session),
+  ) {
+    return session.items.filter((item) =>
+      activeParticipantIds.has(item.participantId),
+    );
+  }
+
   private async buildSessionResponseOrThrow(user: AuthUserContext, id: string) {
     const session = await this.groupOrdersRepository.findSessionById(id);
     if (!session) {
@@ -824,21 +893,18 @@ export class GroupOrdersService {
       Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
     >,
   ) {
+    const participantIds = this.getActiveParticipantIds(session);
+    const activeItems = this.getActiveItems(session, participantIds);
     const menuItems = await this.groupOrdersRepository.findMenuItemsForResponse(
-      [...new Set(session.items.map((item) => item.menuItemId))],
+      [...new Set(activeItems.map((item) => item.menuItemId))],
       session.restaurantId,
       session.branchId,
     );
     const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
-    const participantIds = new Set(
-      session.participants
-        .filter(
-          (participant) =>
-            participant.status === GroupOrderParticipantStatus.ACTIVE,
-        )
-        .map((participant) => participant.id),
-    );
-    const summary = await this.buildSessionSummary(user, session);
+    const summary = await this.buildSessionSummary(user, {
+      ...session,
+      items: activeItems,
+    });
 
     return {
       id: session.id,
@@ -883,7 +949,7 @@ export class GroupOrdersService {
         joinedAt: participant.joinedAt,
         leftAt: participant.leftAt,
         user: this.toUserSummary(participant.user),
-        items: session.items
+        items: activeItems
           .filter((item) => item.participantId === participant.id)
           .map((item) => ({
             id: item.id,
@@ -898,7 +964,7 @@ export class GroupOrdersService {
           })),
       })),
       participantCount: participantIds.size,
-      itemCount: session.items.length,
+      itemCount: activeItems.length,
     };
   }
 
@@ -972,10 +1038,7 @@ export class GroupOrdersService {
         itemCount: session.items.length,
       };
     } catch (error) {
-      if (
-        error instanceof BadRequestException &&
-        error.message === 'Order type is not supported by this branch'
-      ) {
+      if (error instanceof BadRequestException) {
         return {
           source: 'session' as const,
           branchId: session.branchId,
@@ -1031,7 +1094,7 @@ export class GroupOrdersService {
     >,
     couponCode: string,
   ) {
-    if (!session.items.length) {
+    if (!this.getActiveItems(session).length) {
       throw new BadRequestException('Add items before applying a coupon');
     }
 
@@ -1049,7 +1112,8 @@ export class GroupOrdersService {
       Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
     >,
   ) {
-    if (!session.items.length) {
+    const activeItems = this.getActiveItems(session);
+    if (!activeItems.length) {
       throw new BadRequestException('Group order is empty');
     }
 
@@ -1060,7 +1124,7 @@ export class GroupOrdersService {
       deliveryAddressId: session.deliveryAddressId ?? undefined,
       couponCode: session.couponCode ?? undefined,
       orderTime: (session.orderTime ?? new Date()).toISOString(),
-      items: session.items.map((item) => ({
+      items: activeItems.map((item) => ({
         menuItemId: item.menuItemId,
         variationId: item.variationId ?? undefined,
         quantity: item.quantity,

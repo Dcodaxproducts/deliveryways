@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
+import {
+  GroupOrderParticipantStatus,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 import { ListGroupOrdersDto } from './dto';
@@ -161,6 +165,20 @@ export class GroupOrdersRepository {
     return this.client(tx).groupOrderParticipant.update({
       where: { id },
       data,
+    });
+  }
+
+  async markParticipantLeftAndDeleteItems(id: string, leftAt: Date) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.groupOrderItem.deleteMany({ where: { participantId: id } });
+
+      return tx.groupOrderParticipant.update({
+        where: { id },
+        data: {
+          status: GroupOrderParticipantStatus.LEFT,
+          leftAt,
+        },
+      });
     });
   }
 

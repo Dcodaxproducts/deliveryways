@@ -18,8 +18,14 @@ describe('GroupOrdersService', () => {
       listForAdmin: jest.fn(),
       createParticipant: jest.fn(),
       updateParticipant: jest.fn(),
+      markParticipantLeftAndDeleteItems: jest.fn(),
+      createItem: jest.fn(),
+      updateItem: jest.fn(),
+      deleteItem: jest.fn(),
+      findItemById: jest.fn(),
       findSessionById: jest.fn(),
       findRestaurantInTenant: jest.fn(),
+      findMenuItemForSession: jest.fn(),
       findMenuItemsForResponse: jest.fn(),
     };
 
@@ -1054,5 +1060,278 @@ describe('GroupOrdersService', () => {
       }),
     );
     expect(result.message).toBe('Group order updated successfully');
+  });
+
+  it('validates modifiers through the order quote path before adding group-order items', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [],
+    };
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findMenuItemForSession.mockResolvedValue({
+      id: 'menu-1',
+      branchOverrides: [],
+      variations: [{ id: 'variation-1' }],
+    });
+    ordersService.quoteForCouponValidation.mockRejectedValue(
+      new BadRequestException('Modifier not found for item: Zingory cheese'),
+    );
+
+    await expect(
+      service.addItem(customerUser, 'session-1', {
+        menuItemId: 'menu-1',
+        variationId: 'variation-1',
+        quantity: 1,
+        modifiers: [{ modifierId: 'bad-modifier', quantity: 1 }],
+      }),
+    ).rejects.toThrow('Modifier not found for item: Zingory cheese');
+
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
+      customerUser,
+      expect.objectContaining({
+        branchId: 'branch-1',
+        items: [
+          expect.objectContaining({
+            menuItemId: 'menu-1',
+            variationId: 'variation-1',
+            modifiers: [{ modifierId: 'bad-modifier', quantity: 1 }],
+          }),
+        ],
+      }),
+    );
+    expect(groupOrdersRepository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('keeps group-order list/details readable when stored item selections become invalid', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: 'variation-1',
+          quantity: 1,
+          note: null,
+          modifiers: [{ modifierId: 'deleted-modifier', quantity: 1 }],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    groupOrdersRepository.listForUser.mockResolvedValue({
+      items: [session],
+      total: 1,
+    });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quoteForCouponValidation.mockRejectedValue(
+      new BadRequestException('Modifier not found for item: Zingory cheese'),
+    );
+
+    const result = await service.list(customerUser, {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(result.data[0].summary).toEqual(
+      expect.objectContaining({
+        source: 'session',
+        orderType: 'TAKEAWAY',
+        itemCount: 1,
+        totalAmount: 0,
+      }),
+    );
+  });
+
+  it('deletes participant items when a participant leaves a group order', async () => {
+    const { service, groupOrdersRepository } = makeService();
+    const leftSession = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'host-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'host-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-1',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.LEFT,
+          isHost: false,
+          joinedAt: new Date(),
+          leftAt: new Date(),
+          user: {
+            id: 'customer-1',
+            email: 'customer@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    groupOrdersRepository.findSessionById
+      .mockResolvedValueOnce({
+        ...leftSession,
+        participants: [
+          {
+            ...leftSession.participants[0],
+            status: GroupOrderParticipantStatus.ACTIVE,
+            leftAt: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce(leftSession);
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+
+    const result = await service.leave(customerUser, 'session-1');
+
+    expect(
+      groupOrdersRepository.markParticipantLeftAndDeleteItems,
+    ).toHaveBeenCalledWith('participant-1', expect.any(Date));
+    expect(result.data.participants[0].items).toEqual([]);
+    expect(result.data.itemCount).toBe(0);
   });
 });
