@@ -308,12 +308,15 @@ export class GroupOrdersService {
       throw new ForbiddenException('Only active participants can add items');
     }
 
-    const itemSelection = await this.resolveValidSessionItemSelection(
-      session.restaurantId,
-      session.branchId,
-      dto,
+    const itemSelection = await this.assertValidOrderItemSelection(
+      user,
+      session,
+      await this.resolveValidSessionItemSelection(
+        session.restaurantId,
+        session.branchId,
+        dto,
+      ),
     );
-    await this.assertValidOrderItemSelection(user, session, itemSelection);
 
     await this.groupOrdersRepository.createItem({
       session: { connect: { id } },
@@ -394,15 +397,14 @@ export class GroupOrdersService {
             : (dto.sections ?? undefined),
       };
 
-      nextItemSelection = await this.resolveValidSessionItemSelection(
-        session.restaurantId,
-        session.branchId,
-        nextItem,
-      );
-      await this.assertValidOrderItemSelection(
+      nextItemSelection = await this.assertValidOrderItemSelection(
         user,
         session,
-        nextItemSelection,
+        await this.resolveValidSessionItemSelection(
+          session.restaurantId,
+          session.branchId,
+          nextItem,
+        ),
       );
     }
 
@@ -823,12 +825,8 @@ export class GroupOrdersService {
     );
   }
 
-  private async assertValidOrderItemSelection(
-    user: AuthUserContext,
-    session: NonNullable<
-      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
-    >,
-    dto: {
+  private async assertValidOrderItemSelection<
+    T extends {
       menuItemId: string;
       variationId?: string;
       quantity?: number;
@@ -836,7 +834,13 @@ export class GroupOrdersService {
       modifiers?: unknown;
       sections?: unknown;
     },
-  ) {
+  >(
+    user: AuthUserContext,
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+    dto: T,
+  ): Promise<T> {
     try {
       await this.ordersService.quoteForCouponValidation(user, {
         branchId: session.branchId,
@@ -863,17 +867,17 @@ export class GroupOrdersService {
           },
         ],
       });
+      return dto;
     } catch (error) {
       if (
         dto.variationId &&
         error instanceof BadRequestException &&
         error.message.startsWith('Variation not found')
       ) {
-        await this.assertValidOrderItemSelection(user, session, {
+        return this.assertValidOrderItemSelection(user, session, {
           ...dto,
           variationId: undefined,
         });
-        return;
       }
 
       throw error;
