@@ -17,9 +17,16 @@ describe('MenuItemService', () => {
       deleteMenuLinks: jest.fn(),
       deleteVariations: jest.fn(),
       deleteModifierLinks: jest.fn(),
+      deleteModifierPriceOverrides: jest.fn(),
+      deleteVariationPriceOverrides: jest.fn(),
+      deleteVariationModifierPriceOverrides: jest.fn(),
+      deleteCartItems: jest.fn(),
+      deleteGroupOrderItems: jest.fn(),
+      deletePosDraftItems: jest.fn(),
       deleteBranchOverrides: jest.fn(),
       deleteRecipes: jest.fn(),
       clearCouponScopes: jest.fn(),
+      softDelete: jest.fn(),
       hardDelete: jest.fn(),
     };
 
@@ -388,7 +395,7 @@ describe('MenuItemService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('hard deletes menu item after clearing config references', async () => {
+  it('hard deletes menu item after clearing active flow and config references', async () => {
     const { service, itemRepository } = makeService();
     itemRepository.findById.mockResolvedValue({
       id: 'item-1',
@@ -407,6 +414,18 @@ describe('MenuItemService', () => {
       'item-1',
     );
 
+    expect(itemRepository.deleteCartItems).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteGroupOrderItems).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deletePosDraftItems).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
     expect(itemRepository.deleteMenuLinks).toHaveBeenCalledWith(
       'item-1',
       expect.anything(),
@@ -415,6 +434,17 @@ describe('MenuItemService', () => {
       'item-1',
       expect.anything(),
     );
+    expect(itemRepository.deleteModifierPriceOverrides).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteVariationPriceOverrides).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(
+      itemRepository.deleteVariationModifierPriceOverrides,
+    ).toHaveBeenCalledWith('item-1', expect.anything());
     expect(itemRepository.deleteBranchOverrides).toHaveBeenCalledWith(
       'item-1',
       expect.anything(),
@@ -434,7 +464,7 @@ describe('MenuItemService', () => {
     expect(result.message).toBe('Menu item deleted successfully');
   });
 
-  it('blocks permanent item delete when order history exists', async () => {
+  it('soft deletes menu item after clearing active references when order history exists', async () => {
     const { service, itemRepository } = makeService();
     itemRepository.findById.mockResolvedValue({
       id: 'item-1',
@@ -442,18 +472,36 @@ describe('MenuItemService', () => {
       deletedAt: null,
     });
     itemRepository.countOrderItems.mockResolvedValue(1);
+    itemRepository.softDelete.mockResolvedValue({ id: 'item-1' });
 
-    await expect(
-      service.remove(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          role: UserRoleEnum.SUPER_ADMIN,
-        },
-        'item-1',
-      ),
-    ).rejects.toThrow(
-      'Menu item cannot be permanently deleted because it is used in orders',
+    const result = await service.remove(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'item-1',
+    );
+
+    expect(itemRepository.deleteCartItems).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deleteGroupOrderItems).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.deletePosDraftItems).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.softDelete).toHaveBeenCalledWith(
+      'item-1',
+      expect.anything(),
+    );
+    expect(itemRepository.hardDelete).not.toHaveBeenCalled();
+    expect(result.message).toBe(
+      'Menu item removed from active flows and archived because it is used in orders',
     );
   });
 

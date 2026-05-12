@@ -389,6 +389,42 @@ export class MenuItemRepository {
     });
   }
 
+  deleteModifierPriceOverrides(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemModifierPriceOverride.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteVariationPriceOverrides(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemVariationPriceOverride.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteVariationModifierPriceOverrides(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).menuVariationModifierPriceOverride.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteCartItems(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).cartItem.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deleteGroupOrderItems(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).groupOrderItem.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
+  deletePosDraftItems(menuItemId: string, tx?: PrismaTx) {
+    return this.client(tx).posOrderDraftItem.deleteMany({
+      where: { menuItemId },
+    });
+  }
+
   deleteBranchOverrides(menuItemId: string, tx?: PrismaTx) {
     return this.client(tx).branchMenuItemOverride.deleteMany({
       where: { menuItemId },

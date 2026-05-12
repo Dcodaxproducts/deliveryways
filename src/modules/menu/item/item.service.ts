@@ -396,22 +396,40 @@ export class MenuItemService {
 
     const orderItemsCount = await this.itemRepository.countOrderItems(id);
 
-    if (orderItemsCount > 0) {
-      throw new BadRequestException(
-        'Menu item cannot be permanently deleted because it is used in orders',
-      );
-    }
-
     const data = await this.prisma.$transaction(async (tx) => {
-      await this.itemRepository.deleteMenuLinks(id, tx);
-      await this.itemRepository.deleteModifierLinks(id, tx);
-      await this.itemRepository.deleteBranchOverrides(id, tx);
-      await this.itemRepository.deleteRecipes(id, tx);
-      await this.itemRepository.clearCouponScopes(id, tx);
+      await this.cleanupMenuItemReferences(id, tx);
+
+      if (orderItemsCount > 0) {
+        return this.itemRepository.softDelete(id, tx);
+      }
+
       return this.itemRepository.hardDelete(id, tx);
     });
 
-    return { data, message: 'Menu item deleted successfully' };
+    return {
+      data,
+      message:
+        orderItemsCount > 0
+          ? 'Menu item removed from active flows and archived because it is used in orders'
+          : 'Menu item deleted successfully',
+    };
+  }
+
+  private async cleanupMenuItemReferences(
+    id: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    await this.itemRepository.deleteCartItems(id, tx);
+    await this.itemRepository.deleteGroupOrderItems(id, tx);
+    await this.itemRepository.deletePosDraftItems(id, tx);
+    await this.itemRepository.deleteMenuLinks(id, tx);
+    await this.itemRepository.deleteModifierLinks(id, tx);
+    await this.itemRepository.deleteModifierPriceOverrides(id, tx);
+    await this.itemRepository.deleteVariationPriceOverrides(id, tx);
+    await this.itemRepository.deleteVariationModifierPriceOverrides(id, tx);
+    await this.itemRepository.deleteBranchOverrides(id, tx);
+    await this.itemRepository.deleteRecipes(id, tx);
+    await this.itemRepository.clearCouponScopes(id, tx);
   }
 
   private async resolveRestaurantId(
