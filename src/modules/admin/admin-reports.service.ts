@@ -15,7 +15,9 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
+  AdminReportsScopedQueryDto,
 } from './dto';
 
 @Injectable()
@@ -176,6 +178,53 @@ export class AdminReportsService {
     };
   }
 
+  async listInvoices(user: AuthUserContext, query: AdminInvoicesQueryDto) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const invoices = await this.adminReportsRepository.listInvoices(scope, {
+      ...query,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
+    });
+
+    return {
+      data: invoices.map((invoice) => this.toInvoiceSummary(invoice)),
+      message: 'Invoices fetched successfully',
+    };
+  }
+
+  async getInvoice(
+    user: AuthUserContext,
+    orderId: string,
+    query: AdminReportsScopedQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const invoice = await this.adminReportsRepository.findInvoiceOrder(
+      scope,
+      orderId,
+      {
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+    );
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    return {
+      data: this.toInvoiceDetails(invoice),
+      message: 'Invoice fetched successfully',
+    };
+  }
+
   async getOrdersReport(
     user: AuthUserContext,
     query: AdminOrdersReportQueryDto,
@@ -236,6 +285,85 @@ export class AdminReportsService {
       },
       message: 'Financial report fetched successfully',
     };
+  }
+
+  private toInvoiceSummary(
+    invoice: Awaited<
+      ReturnType<AdminReportsRepository['listInvoices']>
+    >[number],
+  ) {
+    return {
+      invoiceNumber: this.buildInvoiceNumber(invoice.id),
+      orderId: invoice.id,
+      restaurant: invoice.restaurant,
+      branch: invoice.branch,
+      customer: this.toInvoiceCustomer(invoice.customer),
+      orderType: invoice.orderType,
+      orderStatus: invoice.status,
+      paymentStatus: invoice.paymentStatus,
+      paymentMethod: invoice.paymentMethod,
+      subtotal: Number(invoice.subtotal),
+      taxAmount: Number(invoice.taxAmount),
+      deliveryFee: Number(invoice.deliveryFee),
+      discountAmount: Number(invoice.discountAmount),
+      walletAppliedAmount: Number(invoice.walletAppliedAmount),
+      loyaltyDiscountAmount: Number(invoice.loyaltyDiscountAmount),
+      totalAmount: Number(invoice.totalAmount),
+      paidAt: invoice.paidAt,
+      issuedAt: invoice.createdAt,
+      dueAt: invoice.paymentStatus === 'PAID' ? invoice.paidAt : null,
+      orderTime: invoice.orderTime,
+      itemsCount: invoice._count.items,
+      transactions: invoice.transactions.map((transaction) => ({
+        ...transaction,
+        amount: Number(transaction.amount),
+      })),
+    };
+  }
+
+  private toInvoiceDetails(
+    invoice: NonNullable<
+      Awaited<ReturnType<AdminReportsRepository['findInvoiceOrder']>>
+    >,
+  ) {
+    return {
+      ...this.toInvoiceSummary({
+        ...invoice,
+        _count: { items: invoice.items.length },
+      }),
+      tenantId: invoice.tenantId,
+      couponCode: invoice.coupon?.code ?? null,
+      items: invoice.items.map((item) => ({
+        ...item,
+        unitPrice: Number(item.unitPrice),
+        lineTotal: Number(item.lineTotal),
+      })),
+    };
+  }
+
+  private toInvoiceCustomer(customer: {
+    id: string;
+    email: string;
+    profile: {
+      firstName: string | null;
+      lastName: string | null;
+      phone: string | null;
+    } | null;
+  }) {
+    return {
+      id: customer.id,
+      email: customer.email,
+      firstName: customer.profile?.firstName ?? null,
+      lastName: customer.profile?.lastName ?? null,
+      phone: customer.profile?.phone ?? null,
+      name:
+        `${customer.profile?.firstName ?? ''} ${customer.profile?.lastName ?? ''}`.trim() ||
+        customer.email,
+    };
+  }
+
+  private buildInvoiceNumber(orderId: string) {
+    return `INV-${orderId.slice(-8).toUpperCase()}`;
   }
 
   private async resolveScope(

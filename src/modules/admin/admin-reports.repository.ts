@@ -11,6 +11,7 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
 } from './dto';
 
@@ -243,6 +244,137 @@ export class AdminReportsRepository {
           select: {
             customerOrders: true,
             couponUsages: true,
+          },
+        },
+      },
+    });
+  }
+
+  async listInvoices(scope: AdminReportsScope, query: AdminInvoicesQueryDto) {
+    return this.prisma.order.findMany({
+      where: this.buildOrderWhere(scope, query),
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        restaurantId: true,
+        branchId: true,
+        orderType: true,
+        status: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        subtotal: true,
+        taxAmount: true,
+        deliveryFee: true,
+        discountAmount: true,
+        walletAppliedAmount: true,
+        loyaltyDiscountAmount: true,
+        totalAmount: true,
+        paidAt: true,
+        createdAt: true,
+        orderTime: true,
+        restaurant: { select: { id: true, name: true, slug: true } },
+        branch: { select: { id: true, name: true } },
+        customer: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: { firstName: true, lastName: true, phone: true },
+            },
+          },
+        },
+        transactions: {
+          orderBy: [{ createdAt: 'desc' }],
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            amount: true,
+            currency: true,
+            paymentMethod: true,
+            providerRef: true,
+            processedAt: true,
+            createdAt: true,
+          },
+        },
+        _count: { select: { items: true } },
+      },
+    });
+  }
+
+  async findInvoiceOrder(
+    scope: AdminReportsScope,
+    orderId: string,
+    query: AdminReportsScope,
+  ) {
+    return this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
+        ...(query.branchId ? { branchId: query.branchId } : {}),
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        orderType: true,
+        status: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        subtotal: true,
+        taxAmount: true,
+        deliveryFee: true,
+        discountAmount: true,
+        walletAppliedAmount: true,
+        loyaltyDiscountAmount: true,
+        totalAmount: true,
+        paidAt: true,
+        createdAt: true,
+        orderTime: true,
+        restaurant: { select: { id: true, name: true, slug: true } },
+        branch: { select: { id: true, name: true } },
+        customer: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: { firstName: true, lastName: true, phone: true },
+            },
+          },
+        },
+        coupon: { select: { code: true } },
+        items: {
+          orderBy: [{ createdAt: 'asc' }],
+          select: {
+            id: true,
+            menuItemId: true,
+            menuItemName: true,
+            variationId: true,
+            variationName: true,
+            unitPrice: true,
+            quantity: true,
+            lineTotal: true,
+            note: true,
+            snapshotModifiers: true,
+            createdAt: true,
+          },
+        },
+        transactions: {
+          orderBy: [{ createdAt: 'desc' }],
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            amount: true,
+            currency: true,
+            paymentMethod: true,
+            providerRef: true,
+            processedAt: true,
+            createdAt: true,
           },
         },
       },

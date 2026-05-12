@@ -300,6 +300,38 @@ export class AdminFinancialReportQueryDto extends AdminReportsScopedQueryDto {
   toDate?: string;
 }
 
+export class AdminInvoicesQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional({ enum: OrderStatus })
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
+  @ApiPropertyOptional({ enum: OrderTypeEnum })
+  @IsOptional()
+  @IsEnum(OrderTypeEnum)
+  orderType?: OrderTypeEnum;
+
+  @ApiPropertyOptional({ enum: PaymentStatus })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  paymentStatus?: PaymentStatus;
+
+  @ApiPropertyOptional({ enum: ['order', 'group-orders'] })
+  @IsOptional()
+  @IsIn(['order', 'group-orders'])
+  kind?: 'order' | 'group-orders';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
 export class AdminPromotionsOverviewQueryDto extends AdminReportsScopedQueryDto {}
 
 export class AdminListPromotionsQueryDto extends AdminListQueryDto {

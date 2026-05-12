@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -12,7 +12,9 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
+  AdminReportsScopedQueryDto,
 } from './dto';
 import { AdminReportsService } from './admin-reports.service';
 
@@ -63,6 +65,35 @@ export class AdminReportsController {
     @Query() query: AdminExportCustomersCsvQueryDto,
   ) {
     return this.adminReportsService.exportCustomersCsv(user, query);
+  }
+
+  @Get('invoices')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'List generated order invoices for admin finance' })
+  listInvoices(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminInvoicesQueryDto,
+  ) {
+    return this.adminReportsService.listInvoices(user, query);
+  }
+
+  @Get('invoices/:orderId')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Get generated invoice details for an order' })
+  getInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Param('orderId') orderId: string,
+    @Query() query: AdminReportsScopedQueryDto,
+  ) {
+    return this.adminReportsService.getInvoice(user, orderId, query);
   }
 
   @Get('orders')
