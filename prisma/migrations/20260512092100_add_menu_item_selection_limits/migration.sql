@@ -1,0 +1,4 @@
+ALTER TABLE "menu_items"
+  ADD COLUMN "is_required" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN "min_select" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "max_select" INTEGER;

@@ -593,6 +593,77 @@ describe('CartService', () => {
     });
   });
 
+  it('increments quantity for identical cart item selections', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          variationId: 'variation-1',
+          quantity: 2,
+          note: null,
+          modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(existingCart)
+      .mockResolvedValueOnce({
+        ...existingCart,
+        items: [{ ...existingCart.items[0], quantity: 5 }],
+      });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      category: { id: 'category-1', items: [], modifierLinks: [] },
+      variations: [{ id: 'variation-1', isActive: true }],
+      modifierLinks: [],
+      modifierPriceOverrides: [{ modifier: { id: 'modifier-1' } }],
+      branchOverrides: [],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        variationId: 'variation-1',
+        quantity: 3,
+        modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+      },
+    );
+
+    expect(cartRepository.updateItem).toHaveBeenCalledWith('cart-item-1', {
+      quantity: 5,
+    });
+    expect(cartRepository.createItem).not.toHaveBeenCalled();
+  });
+
   it('allows modifiers inherited from the item category', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const existingCart = {

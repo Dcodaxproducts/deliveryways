@@ -2976,6 +2976,7 @@ export class OrdersService {
         taxPercentage: 0,
       },
       temporaryClosure: null,
+      holidayOpeningHours: [],
     };
 
     if (!input || typeof input !== 'object') {
@@ -3009,31 +3010,51 @@ export class OrdersService {
           raw.taxation?.taxPercentage ?? fallback.taxation.taxPercentage,
       },
       temporaryClosure: raw.temporaryClosure ?? fallback.temporaryClosure,
+      holidayOpeningHours:
+        raw.holidayOpeningHours ?? fallback.holidayOpeningHours,
     };
   }
 
   private assertBranchAcceptingOrders(settings: BranchSettings) {
     const closure = settings.temporaryClosure;
-
-    if (!closure?.isClosed) {
-      return;
-    }
+    const holidayOpeningHour = this.resolveTodayHolidayOpeningHour(
+      settings.holidayOpeningHours,
+    );
 
     if (
+      closure?.isClosed &&
       closure.closedUntil &&
       new Date(closure.closedUntil).getTime() <= Date.now()
     ) {
-      return;
+      // Expired closures reopen automatically; keep checking holiday rules.
+    } else if (closure?.isClosed) {
+      throw new BadRequestException({
+        message: closure.message ?? 'Branch is temporarily closed',
+        error: 'BRANCH_TEMPORARILY_CLOSED',
+        details: {
+          reason: closure.reason ?? null,
+          closedUntil: closure.closedUntil ?? null,
+        },
+      });
     }
 
-    throw new BadRequestException({
-      message: closure.message ?? 'Branch is temporarily closed',
-      error: 'BRANCH_TEMPORARILY_CLOSED',
-      details: {
-        reason: closure.reason ?? null,
-        closedUntil: closure.closedUntil ?? null,
-      },
-    });
+    if (holidayOpeningHour?.isClosed) {
+      throw new BadRequestException({
+        message: holidayOpeningHour.note ?? 'Branch is closed for holiday',
+        error: 'BRANCH_HOLIDAY_CLOSED',
+        details: {
+          date: holidayOpeningHour.date,
+          note: holidayOpeningHour.note ?? null,
+        },
+      });
+    }
+  }
+
+  private resolveTodayHolidayOpeningHour(
+    holidayOpeningHours: BranchHolidayOpeningHour[],
+  ): BranchHolidayOpeningHour | null {
+    const today = new Date().toISOString().slice(0, 10);
+    return holidayOpeningHours.find((item) => item.date === today) ?? null;
   }
 
   private async assertAddressWithinRadius(
@@ -3126,10 +3147,19 @@ type BranchTemporaryClosure = {
   message?: string | null;
 };
 
+type BranchHolidayOpeningHour = {
+  date: string;
+  isClosed: boolean;
+  openTime?: string | null;
+  closeTime?: string | null;
+  note?: string | null;
+};
+
 type BranchSettings = {
   allowedOrderTypes: string[];
   allowedPaymentMethods: string[];
   temporaryClosure: BranchTemporaryClosure | null;
+  holidayOpeningHours: BranchHolidayOpeningHour[];
   deliveryConfig: {
     radiusKm: number;
     minOrderAmount: number;

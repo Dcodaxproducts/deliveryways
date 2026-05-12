@@ -134,6 +134,14 @@ interface CartBranchTemporaryClosure {
   message?: string | null;
 }
 
+interface CartBranchHolidayOpeningHour {
+  date: string;
+  isClosed: boolean;
+  openTime?: string | null;
+  closeTime?: string | null;
+  note?: string | null;
+}
+
 @Injectable()
 export class CartService {
   constructor(
@@ -398,17 +406,33 @@ export class CartService {
       restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
     });
 
-    await this.cartRepository.createItem({
-      cart: { connect: { id: cart.id } },
-      menuItemId: dto.menuItemId,
-      variationId: dto.variationId,
-      quantity: dto.quantity,
-      note: dto.note,
-      modifiers: this.packCartSelections(
-        dto.modifiers,
-        dto.sections,
-      ) as unknown as Prisma.InputJsonValue,
-    });
+    const packedSelections = this.packCartSelections(
+      dto.modifiers,
+      dto.sections,
+    );
+    const matchingItem = cart.items.find((item) =>
+      this.isSameCartSelection(item, {
+        menuItemId: dto.menuItemId,
+        variationId: dto.variationId ?? null,
+        note: this.resolveOptionalString(dto.note) ?? null,
+        modifiers: packedSelections as Prisma.JsonValue | null | undefined,
+      }),
+    );
+
+    if (matchingItem) {
+      await this.cartRepository.updateItem(matchingItem.id, {
+        quantity: matchingItem.quantity + dto.quantity,
+      });
+    } else {
+      await this.cartRepository.createItem({
+        cart: { connect: { id: cart.id } },
+        menuItemId: dto.menuItemId,
+        variationId: dto.variationId,
+        quantity: dto.quantity,
+        note: this.resolveOptionalString(dto.note),
+        modifiers: packedSelections as unknown as Prisma.InputJsonValue,
+      });
+    }
 
     const updatedCart = await this.getExistingCartOrThrow(
       user,
@@ -762,26 +786,37 @@ export class CartService {
 
   private assertBranchAcceptingCarts(settings: unknown) {
     const temporaryClosure = this.readTemporaryClosure(settings);
-
-    if (!temporaryClosure?.isClosed) {
-      return;
-    }
+    const holidayOpeningHour = this.readTodayHolidayOpeningHour(settings);
 
     if (
+      temporaryClosure?.isClosed &&
       temporaryClosure.closedUntil &&
       new Date(temporaryClosure.closedUntil).getTime() <= Date.now()
     ) {
-      return;
+      // Expired closures reopen automatically; keep checking holiday rules.
+    } else if (temporaryClosure?.isClosed) {
+      throw new BadRequestException({
+        message: temporaryClosure.message ?? 'Branch is temporarily closed',
+        error: 'BRANCH_TEMPORARILY_CLOSED',
+        details: {
+          reason: temporaryClosure.reason ?? null,
+          closedUntil: temporaryClosure.closedUntil ?? null,
+        },
+      });
     }
 
-    throw new BadRequestException({
-      message: temporaryClosure.message ?? 'Branch is temporarily closed',
-      error: 'BRANCH_TEMPORARILY_CLOSED',
-      details: {
-        reason: temporaryClosure.reason ?? null,
-        closedUntil: temporaryClosure.closedUntil ?? null,
-      },
-    });
+    if (holidayOpeningHour?.isClosed) {
+      throw new BadRequestException({
+        message: holidayOpeningHour.note ?? 'Branch is closed for holiday',
+        error: 'BRANCH_HOLIDAY_CLOSED',
+        details: {
+          date: holidayOpeningHour.date,
+          note: holidayOpeningHour.note ?? null,
+        },
+      });
+    }
+
+    return;
   }
 
   private readTemporaryClosure(
@@ -803,6 +838,31 @@ export class CartService {
     }
 
     return temporaryClosure as CartBranchTemporaryClosure;
+  }
+
+  private readTodayHolidayOpeningHour(
+    settings: unknown,
+  ): CartBranchHolidayOpeningHour | null {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return null;
+    }
+
+    const holidayOpeningHours = (settings as { holidayOpeningHours?: unknown })
+      .holidayOpeningHours;
+    if (!Array.isArray(holidayOpeningHours)) {
+      return null;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const holidayOpeningHour = holidayOpeningHours.find(
+      (item): item is CartBranchHolidayOpeningHour =>
+        !!item &&
+        typeof item === 'object' &&
+        !Array.isArray(item) &&
+        (item as { date?: unknown }).date === today,
+    );
+
+    return holidayOpeningHour ?? null;
   }
 
   private async buildCartResponse(cart: CartSnapshot) {
@@ -1608,6 +1668,48 @@ export class CartService {
         menuItemId: section.menuItemId,
       })),
     };
+  }
+
+  private isSameCartSelection(
+    existing: CartSnapshotItem,
+    incoming: {
+      menuItemId: string;
+      variationId: string | null;
+      note: string | null;
+      modifiers: Prisma.JsonValue | null | undefined;
+    },
+  ) {
+    return (
+      existing.menuItemId === incoming.menuItemId &&
+      (existing.variationId ?? null) === incoming.variationId &&
+      (this.resolveOptionalString(existing.note) ?? null) === incoming.note &&
+      this.stableJson(existing.modifiers ?? null) ===
+        this.stableJson(incoming.modifiers ?? null)
+    );
+  }
+
+  private stableJson(value: Prisma.JsonValue | null): string {
+    return JSON.stringify(this.sortJson(value));
+  }
+
+  private sortJson(value: Prisma.JsonValue | null): Prisma.JsonValue | null {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => this.sortJson(item))
+        .sort((left, right) =>
+          JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        );
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, this.sortJson(item as Prisma.JsonValue)]),
+    ) as Prisma.JsonObject;
   }
 
   private supportsSplitPizza(menuItem: { dietaryFlags?: unknown }) {

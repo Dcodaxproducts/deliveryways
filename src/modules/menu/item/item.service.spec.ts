@@ -52,6 +52,9 @@ describe('MenuItemService', () => {
     };
 
     const prisma = {
+      menuItem: {
+        findUnique: jest.fn(),
+      },
       restaurant: {
         findFirst: jest.fn(),
       },
@@ -253,6 +256,67 @@ describe('MenuItemService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('stores predefined labels and item selection limits', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Spicy Vegan Burger',
+        basePrice: 650,
+        labels: ['SPICY', 'VEGAN'],
+        isRequired: true,
+        minSelect: 1,
+        maxSelect: 2,
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dietaryFlags: ['SPICY', 'VEGAN'],
+        isRequired: true,
+        minSelect: 1,
+        maxSelect: 2,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('rejects required menu items without a minimum selection', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          restaurantId: 'restaurant-1',
+          categoryId: 'category-1',
+          name: 'Required Burger',
+          basePrice: 650,
+          isRequired: true,
+          minSelect: 0,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects duplicate direct modifier assignments before hitting the database', async () => {

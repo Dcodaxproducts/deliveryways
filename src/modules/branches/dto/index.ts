@@ -11,5 +11,9 @@ export {
   BranchOpeningHourItemDto,
   UpdateBranchOpeningHoursDto,
 } from './branch-opening-hours.dto';
+export {
+  BranchHolidayOpeningHourItemDto,
+  UpdateBranchHolidayOpeningHoursDto,
+} from './holiday-opening-hours.dto';
 export { CleanupOrphanBranchDto } from './cleanup-orphan-branch.dto';
 export { UpdateBranchTemporaryClosureDto } from './temporary-closure.dto';

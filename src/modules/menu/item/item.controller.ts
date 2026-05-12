@@ -21,6 +21,7 @@ import {
 import {
   BulkCreateMenuItemsDto,
   CreateMenuItemDto,
+  DuplicateMenuItemDto,
   ListMenuItemsDto,
   ReorderMenuItemsDto,
   UpdateMenuItemDto,
@@ -60,6 +61,31 @@ export class MenuItemController {
     @Body() dto: ReorderMenuItemsDto,
   ) {
     return this.menuItemService.reorder(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('labels')
+  labels() {
+    return this.menuItemService.getLabels();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post(':id/duplicate')
+  duplicate(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: DuplicateMenuItemDto,
+  ) {
+    return this.menuItemService.duplicate(user, id, dto);
   }
 
   @ApiBearerAuth()

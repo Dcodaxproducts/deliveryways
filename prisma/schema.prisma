@@ -516,6 +516,9 @@ model MenuItem {
   dietaryFlags            Json?               @map("dietary_flags")
   allergenFlags           Json?               @map("allergen_flags")
   depositAmount           Decimal?            @map("deposit_amount") @db.Decimal(10, 2)
+  isRequired              Boolean             @default(false) @map("is_required")
+  minSelect               Int                 @default(0) @map("min_select")
+  maxSelect               Int?                @map("max_select")
   isActive                Boolean             @default(true) @map("is_active")
   deletedAt               DateTime?           @map("deleted_at") @db.Timestamptz
   createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz

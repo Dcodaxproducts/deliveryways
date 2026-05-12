@@ -16,6 +16,7 @@ import { StorageService } from '../storage/storage.service';
 import { BranchesRepository } from './branches.repository';
 import {
   BranchOpeningHourItemDto,
+  BranchHolidayOpeningHourItemDto,
   BranchScheduleDayEnum,
   BulkCreateBranchesDto,
   CleanupOrphanBranchDto,
@@ -24,6 +25,7 @@ import {
   ListPublicBranchesDto,
   UpdateBranchDto,
   UpdateBranchImagesDto,
+  UpdateBranchHolidayOpeningHoursDto,
   UpdateBranchOpeningHoursDto,
   UpdateBranchTemporaryClosureDto,
 } from './dto';
@@ -54,6 +56,7 @@ export interface BranchTemporaryClosure {
 
 interface BranchSettingsLike {
   openingHours?: BranchOpeningHourItemDto[];
+  holidayOpeningHours?: BranchHolidayOpeningHourItemDto[];
   temporaryClosure?: BranchTemporaryClosure;
   [key: string]: unknown;
 }
@@ -456,6 +459,64 @@ export class BranchesService {
     };
   }
 
+  async getHolidayOpeningHours(user: AuthUserContext, id: string) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+
+    return {
+      data: this.readHolidayOpeningHours(branch.settings),
+      message: 'Branch holiday opening hours fetched successfully',
+    };
+  }
+
+  async updateHolidayOpeningHours(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchHolidayOpeningHoursDto,
+    tx?: PrismaTx,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
+    const settings = this.readSettings(branch.settings);
+    const holidayOpeningHours = this.normalizeHolidayOpeningHours(
+      dto.holidayOpeningHours,
+    );
+
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        settings: {
+          ...settings,
+          holidayOpeningHours,
+        } as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: {
+        branchId: data.id,
+        holidayOpeningHours,
+        availability: this.resolveBranchAvailability({
+          ...data,
+          settings: { ...settings, holidayOpeningHours },
+        }),
+      },
+      message: 'Branch holiday opening hours updated successfully',
+    };
+  }
+
   async updateOpeningHours(
     user: AuthUserContext,
     id: string,
@@ -835,15 +896,23 @@ export class BranchesService {
     isActive?: boolean;
     settings?: unknown;
   }) {
+    const settings = this.readSettings(branch.settings);
     const temporaryClosure = this.resolveActiveTemporaryClosure(
-      this.readSettings(branch.settings).temporaryClosure,
+      settings.temporaryClosure,
     );
+    const holidayOpeningHour = this.resolveTodayHolidayOpeningHour(
+      settings.holidayOpeningHours,
+    );
+    const isHolidayClosed = !!holidayOpeningHour?.isClosed;
 
     return {
       isActive: branch.isActive ?? true,
       isTemporarilyClosed: !!temporaryClosure,
-      isAvailable: (branch.isActive ?? true) && !temporaryClosure,
+      isHolidayClosed,
+      isAvailable:
+        (branch.isActive ?? true) && !temporaryClosure && !isHolidayClosed,
       temporaryClosure,
+      holidayOpeningHour,
     };
   }
 
@@ -1182,6 +1251,19 @@ export class BranchesService {
     return this.normalizeOpeningHours(openingHours);
   }
 
+  private readHolidayOpeningHours(
+    value: unknown,
+  ): BranchHolidayOpeningHourItemDto[] {
+    const settings = this.readSettings(value);
+    const holidayOpeningHours = settings.holidayOpeningHours;
+
+    if (!Array.isArray(holidayOpeningHours)) {
+      return [];
+    }
+
+    return this.normalizeHolidayOpeningHours(holidayOpeningHours);
+  }
+
   private normalizeTemporaryClosure(
     dto: UpdateBranchTemporaryClosureDto,
   ): BranchTemporaryClosure {
@@ -1276,6 +1358,76 @@ export class BranchesService {
         BRANCH_OPENING_DAY_ORDER.indexOf(a.dayOfWeek) -
         BRANCH_OPENING_DAY_ORDER.indexOf(b.dayOfWeek),
     );
+  }
+
+  private normalizeHolidayOpeningHours(
+    holidayOpeningHours: BranchHolidayOpeningHourItemDto[],
+  ): BranchHolidayOpeningHourItemDto[] {
+    const seenDates = new Set<string>();
+    const normalized = holidayOpeningHours.map((item) => {
+      if (seenDates.has(item.date)) {
+        throw new BadRequestException(
+          `Duplicate holiday opening-hours entry for ${item.date}`,
+        );
+      }
+      seenDates.add(item.date);
+
+      const parsedDate = new Date(`${item.date}T00:00:00.000Z`);
+      if (
+        Number.isNaN(parsedDate.getTime()) ||
+        parsedDate.toISOString().slice(0, 10) !== item.date
+      ) {
+        throw new BadRequestException('date must be a valid calendar date');
+      }
+
+      const note =
+        item.note === undefined || item.note === null
+          ? undefined
+          : item.note.trim() || undefined;
+
+      if (item.isClosed) {
+        return {
+          date: item.date,
+          isClosed: true,
+          openTime: null,
+          closeTime: null,
+          ...(note ? { note } : {}),
+        };
+      }
+
+      if (!item.openTime || !item.closeTime) {
+        throw new BadRequestException(
+          `openTime and closeTime are required for ${item.date}`,
+        );
+      }
+
+      if (item.openTime >= item.closeTime) {
+        throw new BadRequestException(
+          `closeTime must be later than openTime for ${item.date}`,
+        );
+      }
+
+      return {
+        date: item.date,
+        isClosed: false,
+        openTime: item.openTime,
+        closeTime: item.closeTime,
+        ...(note ? { note } : {}),
+      };
+    });
+
+    return normalized.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  private resolveTodayHolidayOpeningHour(
+    holidayOpeningHours: BranchHolidayOpeningHourItemDto[] | undefined,
+  ): BranchHolidayOpeningHourItemDto | null {
+    if (!Array.isArray(holidayOpeningHours)) {
+      return null;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    return holidayOpeningHours.find((item) => item.date === today) ?? null;
   }
 
   private calculateDistanceKm(

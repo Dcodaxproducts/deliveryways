@@ -590,6 +590,77 @@ describe('BranchesService', () => {
     ).toHaveLength(2);
   });
 
+  it('updates date-specific holiday opening hours with notes', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: { contact: { phone: '123' } },
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      isActive: true,
+      settings: {},
+    });
+
+    const result = await service.updateHolidayOpeningHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        holidayOpeningHours: [
+          {
+            date: '2026-12-25',
+            isClosed: true,
+            note: 'Christmas holiday',
+          },
+          {
+            date: '2026-12-31',
+            isClosed: false,
+            openTime: '10:00',
+            closeTime: '18:00',
+            note: 'New year eve custom hours',
+          },
+        ],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      {
+        settings: {
+          contact: { phone: '123' },
+          holidayOpeningHours: [
+            {
+              date: '2026-12-25',
+              isClosed: true,
+              openTime: null,
+              closeTime: null,
+              note: 'Christmas holiday',
+            },
+            {
+              date: '2026-12-31',
+              isClosed: false,
+              openTime: '10:00',
+              closeTime: '18:00',
+              note: 'New year eve custom hours',
+            },
+          ],
+        },
+      },
+      undefined,
+    );
+    expect(result.message).toBe(
+      'Branch holiday opening hours updated successfully',
+    );
+  });
+
   it('blocks branch admin from updating another branch opening hours', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({

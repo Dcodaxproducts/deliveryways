@@ -13,7 +13,9 @@ import { StorageService } from '../../storage/storage.service';
 import {
   BulkCreateMenuItemsDto,
   CreateMenuItemDto,
+  DuplicateMenuItemDto,
   ListMenuItemsDto,
+  MENU_ITEM_LABEL_VALUES,
   ReorderMenuItemsDto,
   UpdateMenuItemDto,
 } from './dto';
@@ -46,6 +48,7 @@ export class MenuItemService {
     );
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
+    this.assertSelectionLimits(dto);
     await this.assertUniqueFields(restaurantId, { sku });
 
     const data = await this.createItemWithAssignments(
@@ -96,7 +99,7 @@ export class MenuItemService {
             takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
             prepTimeMinutes: dto.prepTimeMinutes,
             dietaryFlags: this.toStoredDietaryFlags(
-              dto.dietaryFlags,
+              dto.labels ?? dto.dietaryFlags,
               dto.supportsSplitPizza,
             ) as unknown as Prisma.InputJsonValue,
             allergenFlags:
@@ -105,6 +108,9 @@ export class MenuItemService {
               dto.depositAmount !== undefined
                 ? new Prisma.Decimal(dto.depositAmount)
                 : undefined,
+            isRequired: dto.isRequired ?? false,
+            minSelect: dto.minSelect ?? 0,
+            maxSelect: dto.maxSelect ?? null,
             isActive: dto.isActive ?? true,
           },
           tx,
@@ -142,6 +148,7 @@ export class MenuItemService {
 
     for (const item of dto.items) {
       const pricing = this.resolvePricingInput(item);
+      this.assertSelectionLimits(item);
       const slug = await this.resolveUniqueSlug(
         restaurantId,
         item.slug ?? item.name,
@@ -168,7 +175,7 @@ export class MenuItemService {
         takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
         prepTimeMinutes: item.prepTimeMinutes,
         dietaryFlags: this.toStoredDietaryFlags(
-          item.dietaryFlags,
+          item.labels ?? item.dietaryFlags,
           item.supportsSplitPizza,
         ) as unknown as Prisma.InputJsonValue,
         allergenFlags: item.allergenFlags as unknown as Prisma.InputJsonValue,
@@ -176,6 +183,9 @@ export class MenuItemService {
           item.depositAmount !== undefined
             ? new Prisma.Decimal(item.depositAmount)
             : undefined,
+        isRequired: item.isRequired ?? false,
+        minSelect: item.minSelect ?? 0,
+        maxSelect: item.maxSelect ?? null,
         isActive: item.isActive ?? true,
       });
     }
@@ -239,6 +249,7 @@ export class MenuItemService {
     const sku =
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
     const pricing = this.resolvePricingInput(dto, item);
+    this.assertSelectionLimits(dto, item);
     await this.assertUniqueFields(item.restaurantId, { sku }, id);
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -266,7 +277,7 @@ export class MenuItemService {
           takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
           prepTimeMinutes: dto.prepTimeMinutes,
           dietaryFlags: this.toStoredDietaryFlags(
-            dto.dietaryFlags,
+            dto.labels ?? dto.dietaryFlags,
             dto.supportsSplitPizza,
             item.dietaryFlags,
           ) as unknown as Prisma.InputJsonValue,
@@ -275,6 +286,9 @@ export class MenuItemService {
             dto.depositAmount !== undefined
               ? new Prisma.Decimal(dto.depositAmount)
               : undefined,
+          isRequired: dto.isRequired,
+          minSelect: dto.minSelect,
+          maxSelect: dto.maxSelect,
           isActive: dto.isActive,
         },
         tx,
@@ -302,6 +316,124 @@ export class MenuItemService {
     return {
       data: await this.resolveMediaResponse(this.withSplitPizzaMetadata(data)),
       message: 'Menu item updated successfully',
+    };
+  }
+
+  getLabels() {
+    return {
+      data: MENU_ITEM_LABEL_VALUES.map((value) => ({
+        value,
+        label: value
+          .toLowerCase()
+          .split('_')
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' '),
+      })),
+      message: 'Menu item labels fetched successfully',
+    };
+  }
+
+  async duplicate(
+    user: AuthUserContext,
+    id: string,
+    dto: DuplicateMenuItemDto,
+  ) {
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id },
+      include: {
+        modifierPriceOverrides: true,
+        variationPriceOverrides: {
+          include: { variation: true },
+        },
+        variationModifierPriceOverrides: true,
+      },
+    });
+
+    if (!item || item.deletedAt) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    await this.ensureCanAccessRestaurant(user, item.restaurantId);
+
+    const name = dto.name?.trim() || `${item.name} Copy`;
+    const slug = await this.resolveUniqueSlug(
+      item.restaurantId,
+      dto.slug ?? `${item.slug}-copy`,
+    );
+    const sku =
+      dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
+    await this.assertUniqueFields(item.restaurantId, { sku });
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const copy = await this.itemRepository.create(
+        {
+          restaurant: { connect: { id: item.restaurantId } },
+          category: { connect: { id: item.categoryId } },
+          name,
+          slug,
+          description: item.description,
+          ingredients: item.ingredients,
+          allergenPdfUrl: item.allergenPdfUrl,
+          nutritionalInformation: item.nutritionalInformation,
+          imageUrl: item.imageUrl,
+          sku,
+          sortOrder: item.sortOrder + 1,
+          pricingMode: item.pricingMode,
+          basePrice: item.basePrice,
+          deliveryPriceAdjustment: item.deliveryPriceAdjustment,
+          takeawayPriceAdjustment: item.takeawayPriceAdjustment,
+          prepTimeMinutes: item.prepTimeMinutes,
+          dietaryFlags: item.dietaryFlags as Prisma.InputJsonValue,
+          allergenFlags: item.allergenFlags as Prisma.InputJsonValue,
+          depositAmount: item.depositAmount,
+          isRequired: item.isRequired,
+          minSelect: item.minSelect,
+          maxSelect: item.maxSelect,
+          isActive: item.isActive,
+        },
+        tx,
+      );
+
+      await this.syncModifierPriceOverrides(
+        copy.id,
+        item.modifierPriceOverrides.map((override) => ({
+          modifierId: override.modifierId,
+          priceDelta: Number(override.priceDelta),
+        })),
+        tx,
+      );
+      await this.syncVariationPriceOverrides(
+        copy.id,
+        item.restaurantId,
+        item.variationPriceOverrides.map((override) => ({
+          variationId: override.variationId,
+          price: Number(override.price),
+          pickupPrice:
+            override.pickupPrice === null
+              ? undefined
+              : Number(override.pickupPrice),
+          displayText: override.displayText ?? undefined,
+          modifierPriceOverrides: item.variationModifierPriceOverrides
+            .filter(
+              (modifierOverride) =>
+                modifierOverride.variationId === override.variationId,
+            )
+            .map((modifierOverride) => ({
+              modifierId: modifierOverride.modifierId,
+              priceDelta: Number(modifierOverride.priceDelta),
+            })),
+        })),
+        tx,
+      );
+
+      return copy;
+    });
+
+    return {
+      data: await this.resolveMediaResponse(
+        this.withSplitPizzaMetadata(created),
+      ),
+      message: 'Menu item duplicated successfully',
     };
   }
 
@@ -861,6 +993,37 @@ export class MenuItemService {
     return normalized.length ? normalized : null;
   }
 
+  private assertSelectionLimits(
+    dto: Pick<
+      CreateMenuItemDto | UpdateMenuItemDto,
+      'isRequired' | 'minSelect' | 'maxSelect'
+    >,
+    existing?: {
+      isRequired?: boolean;
+      minSelect?: number;
+      maxSelect?: number | null;
+    },
+  ) {
+    const isRequired = dto.isRequired ?? existing?.isRequired ?? false;
+    const minSelect = dto.minSelect ?? existing?.minSelect ?? 0;
+    const maxSelect =
+      dto.maxSelect !== undefined
+        ? dto.maxSelect
+        : (existing?.maxSelect ?? null);
+
+    if (isRequired && minSelect < 1) {
+      throw new BadRequestException(
+        'minSelect must be at least 1 when item is required',
+      );
+    }
+
+    if (maxSelect !== null && maxSelect < minSelect) {
+      throw new BadRequestException(
+        'maxSelect must be greater than or equal to minSelect',
+      );
+    }
+  }
+
   private readonly splitPizzaDietaryFlag = '__SPLIT_PIZZA_ENABLED__';
 
   private toStoredDietaryFlags(
@@ -941,6 +1104,7 @@ export class MenuItemService {
     return {
       ...item,
       dietaryFlags: publicDietaryFlags,
+      labels: publicDietaryFlags,
       supportsSplitPizza,
       splitPizza: supportsSplitPizza
         ? {

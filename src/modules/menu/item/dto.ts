@@ -14,6 +14,13 @@ import {
 import { QueryDto } from '../../../common/dto';
 
 export const MENU_ITEM_PRICING_MODE_VALUES = ['SINGLE', 'MULTIPLE'] as const;
+export const MENU_ITEM_LABEL_VALUES = [
+  'SPICY',
+  'NON_ALCOHOLIC',
+  'ALCOHOLIC',
+  'VEGAN',
+  'VEGETARIAN',
+] as const;
 
 const parseJsonArray = (value: unknown): unknown => {
   if (Array.isArray(value) || value === undefined || value === null) {
@@ -193,8 +200,14 @@ export class CreateMenuItemDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
   dietaryFlags?: string[];
+
+  @ApiPropertyOptional({ enum: MENU_ITEM_LABEL_VALUES, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
+  labels?: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -214,6 +227,25 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isRequired?: boolean;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  minSelect?: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => (value === null ? null : Number(value)))
+  @IsInt()
+  @Min(1)
+  maxSelect?: number | null;
 
   @ApiPropertyOptional({
     description: 'Enables half-and-half split pizza selection for this item',
@@ -354,8 +386,14 @@ export class UpdateMenuItemDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
   dietaryFlags?: string[];
+
+  @ApiPropertyOptional({ enum: MENU_ITEM_LABEL_VALUES, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
+  labels?: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -375,6 +413,25 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isRequired?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  minSelect?: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => (value === null ? null : Number(value)))
+  @IsInt()
+  @Min(1)
+  maxSelect?: number | null;
 
   @ApiPropertyOptional({
     description: 'Enables half-and-half split pizza selection for this item',
@@ -412,6 +469,23 @@ export class UpdateMenuItemDto {
   @ValidateNested({ each: true })
   @Type(() => MenuItemVariationPriceOverrideDto)
   variationPriceOverrides?: MenuItemVariationPriceOverrideDto[];
+}
+
+export class DuplicateMenuItemDto {
+  @ApiPropertyOptional({ description: 'Optional duplicated item name' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Optional duplicated item slug' })
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  @ApiPropertyOptional({ description: 'Optional duplicated item SKU' })
+  @IsOptional()
+  @IsString()
+  sku?: string;
 }
 
 export class ListMenuItemsDto extends QueryDto {
