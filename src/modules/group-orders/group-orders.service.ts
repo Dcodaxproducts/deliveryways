@@ -1055,10 +1055,17 @@ export class GroupOrdersService {
       session.branchId,
     );
     const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
-    const summary = await this.buildSessionSummary(user, {
+    const liveQuote = await this.buildLiveSessionQuote(user, {
       ...session,
       items: activeItems,
     });
+    const itemPricingById = new Map(
+      activeItems.map((item, index) => [
+        item.id,
+        this.toGroupOrderItemPricing(liveQuote?.items?.[index]),
+      ]),
+    );
+    const summary = this.buildSessionSummary(session, activeItems, liveQuote);
 
     return {
       id: session.id,
@@ -1114,6 +1121,7 @@ export class GroupOrdersService {
             modifiers: item.modifiers,
             createdAt: item.createdAt,
             updatedAt: item.updatedAt,
+            pricing: itemPricingById.get(item.id) ?? null,
             menuItem: menuItemMap.get(item.menuItemId) ?? null,
           })),
       })),
@@ -1122,11 +1130,40 @@ export class GroupOrdersService {
     };
   }
 
-  private async buildSessionSummary(
+  private async buildLiveSessionQuote(
     user: AuthUserContext,
     session: NonNullable<
       Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
     >,
+  ) {
+    if (session.finalOrder || !session.items.length) {
+      return null;
+    }
+
+    try {
+      const quote = await this.ordersService.quoteForCouponValidation(
+        user,
+        this.toOrderQuotePayload(session),
+      );
+
+      return quote.data;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  private buildSessionSummary(
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+    activeItems: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >['items'],
+    liveQuote: Awaited<ReturnType<GroupOrdersService['buildLiveSessionQuote']>>,
   ) {
     if (session.finalOrder) {
       return {
@@ -1149,11 +1186,11 @@ export class GroupOrdersService {
         discountAmount: Number(session.finalOrder.discountAmount),
         totalAmount: Number(session.finalOrder.totalAmount),
         couponCode: session.couponCode,
-        itemCount: session.items.length,
+        itemCount: activeItems.length,
       };
     }
 
-    if (!session.items.length) {
+    if (!activeItems.length || !liveQuote) {
       return {
         source: 'session' as const,
         branchId: session.branchId,
@@ -1170,53 +1207,47 @@ export class GroupOrdersService {
         discountAmount: 0,
         totalAmount: 0,
         couponCode: session.couponCode,
-        itemCount: 0,
+        itemCount: activeItems.length,
       };
     }
 
-    try {
-      const quote = await this.ordersService.quoteForCouponValidation(
-        user,
-        this.toOrderQuotePayload(session),
-      );
+    const quoteSummary = { ...liveQuote };
+    delete (quoteSummary as { items?: unknown }).items;
 
-      const quoteSummary = {
-        ...quote.data,
-      };
-      delete (quoteSummary as { items?: unknown }).items;
+    return {
+      source: 'quote' as const,
+      ...quoteSummary,
+      couponCode: liveQuote.couponCode ?? session.couponCode,
+      itemCount: activeItems.length,
+    };
+  }
 
-      return {
-        source: 'quote' as const,
-        ...quoteSummary,
-        couponCode: quote.data.couponCode ?? session.couponCode,
-        itemCount: session.items.length,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        return {
-          source: 'session' as const,
-          branchId: session.branchId,
-          restaurantId: session.restaurantId,
-          customerId: session.hostUserId,
-          orderType: this.toOrderTypeEnum(session.orderType),
-          orderTime: (session.orderTime ?? new Date()).toISOString(),
-          isScheduled: Boolean(
-            session.orderTime
-              ? session.orderTime.getTime() > Date.now()
-              : false,
-          ),
-          subtotal: 0,
-          taxAmount: 0,
-          deliveryFee: 0,
-          discountAmount: 0,
-          totalAmount: 0,
-          couponCode: session.couponCode,
-          itemCount: session.items.length,
-        };
-      }
-
-      throw error;
+  private toGroupOrderItemPricing(
+    quoteItem:
+      | {
+          unitPrice?: number;
+          lineTotal?: number;
+          depositAmount?: number;
+          snapshotModifiers?: unknown;
+          snapshotSections?: unknown;
+        }
+      | undefined,
+  ) {
+    if (!quoteItem) {
+      return null;
     }
+
+    return {
+      unitPrice: quoteItem.unitPrice ?? 0,
+      lineTotal: quoteItem.lineTotal ?? 0,
+      depositAmount: quoteItem.depositAmount ?? 0,
+      modifiers: Array.isArray(quoteItem.snapshotModifiers)
+        ? quoteItem.snapshotModifiers
+        : [],
+      sections: Array.isArray(quoteItem.snapshotSections)
+        ? quoteItem.snapshotSections
+        : [],
+    };
   }
 
   private readStoredModifiers(

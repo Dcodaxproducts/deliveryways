@@ -422,6 +422,144 @@ describe('GroupOrdersService', () => {
     );
   });
 
+  it('includes quote pricing with modifier totals on participant items', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    groupOrdersRepository.findSessionById.mockResolvedValue({
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: 'variation-1',
+          quantity: 2,
+          note: null,
+          modifiers: [{ modifierId: 'modifier-cheese', quantity: 2 }],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        branchId: 'branch-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        orderType: 'TAKEAWAY',
+        orderTime: new Date().toISOString(),
+        isScheduled: false,
+        subtotal: 300,
+        taxAmount: 0,
+        deliveryFee: 0,
+        discountAmount: 0,
+        totalAmount: 300,
+        couponCode: null,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            menuItemName: 'Pizza',
+            variationId: 'variation-1',
+            variationName: 'Large',
+            quantity: 2,
+            depositAmount: 0,
+            unitPrice: 150,
+            lineTotal: 300,
+            snapshotModifiers: [
+              {
+                modifierId: 'modifier-cheese',
+                name: 'Cheese',
+                quantity: 2,
+                unitPrice: 25,
+              },
+            ],
+            snapshotSections: [],
+          },
+        ],
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.details(customerUser, 'session-1');
+
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
+      customerUser,
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 2 }],
+          }),
+        ],
+      }),
+    );
+    expect(result.data.summary).toEqual(
+      expect.objectContaining({ subtotal: 300, totalAmount: 300 }),
+    );
+    expect(result.data.participants[0].items[0].pricing).toEqual({
+      unitPrice: 150,
+      lineTotal: 300,
+      depositAmount: 0,
+      modifiers: [
+        {
+          modifierId: 'modifier-cheese',
+          name: 'Cheese',
+          quantity: 2,
+          unitPrice: 25,
+        },
+      ],
+      sections: [],
+    });
+  });
+
   it('includes live order summary on group-order details', async () => {
     const { service, groupOrdersRepository, ordersService } = makeService();
     groupOrdersRepository.findSessionById.mockResolvedValue({
