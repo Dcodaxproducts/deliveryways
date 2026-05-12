@@ -15,6 +15,23 @@ import { QueryDto } from '../../../common/dto';
 
 export const MENU_ITEM_PRICING_MODE_VALUES = ['SINGLE', 'MULTIPLE'] as const;
 
+const parseJsonArray = (value: unknown): unknown => {
+  if (Array.isArray(value) || value === undefined || value === null) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : value;
+  } catch {
+    return value;
+  }
+};
+
 export class MenuItemModifierPriceOverrideDto {
   @ApiProperty()
   @IsString()
@@ -210,6 +227,7 @@ export class CreateMenuItemDto {
     description: 'Direct modifiers assigned to this item',
   })
   @IsOptional()
+  @Transform(({ value }) => parseJsonArray(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemModifierPriceOverrideDto)
@@ -220,6 +238,7 @@ export class CreateMenuItemDto {
     description: 'Deprecated alias. Use modifiers for direct item assignment.',
   })
   @IsOptional()
+  @Transform(({ value }) => parseJsonArray(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemModifierPriceOverrideDto)
@@ -227,6 +246,7 @@ export class CreateMenuItemDto {
 
   @ApiPropertyOptional({ type: [MenuItemVariationPriceOverrideDto] })
   @IsOptional()
+  @Transform(({ value }) => parseJsonArray(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemVariationPriceOverrideDto)
@@ -368,6 +388,7 @@ export class UpdateMenuItemDto {
     description: 'Direct modifiers assigned to this item',
   })
   @IsOptional()
+  @Transform(({ value }) => parseJsonArray(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemModifierPriceOverrideDto)
@@ -378,6 +399,7 @@ export class UpdateMenuItemDto {
     description: 'Deprecated alias. Use modifiers for direct item assignment.',
   })
   @IsOptional()
+  @Transform(({ value }) => parseJsonArray(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemModifierPriceOverrideDto)
@@ -385,6 +407,7 @@ export class UpdateMenuItemDto {
 
   @ApiPropertyOptional({ type: [MenuItemVariationPriceOverrideDto] })
   @IsOptional()
+  @Transform(({ value }) => parseJsonArray(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemVariationPriceOverrideDto)

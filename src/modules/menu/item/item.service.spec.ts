@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import { UserRoleEnum } from '../../../common/enums';
+import { UpdateMenuItemDto } from './dto';
 import { MenuItemService } from './item.service';
 
 describe('MenuItemService', () => {
@@ -393,6 +396,64 @@ describe('MenuItemService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('clears item modifiers and variation overrides when update sends empty arrays', async () => {
+    const { service, itemRepository, prisma, tx } = makeService();
+    itemRepository.findById.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      pricingMode: 'SINGLE',
+      basePrice: new Prisma.Decimal(500),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      dietaryFlags: [],
+    });
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.update.mockResolvedValue({ id: 'item-1' });
+    prisma.modifier.count.mockResolvedValue(0);
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'item-1',
+      {
+        modifiers: [],
+        variationPriceOverrides: [],
+      },
+    );
+
+    expect(tx.menuItemModifierPriceOverride.deleteMany).toHaveBeenCalledWith({
+      where: { menuItemId: 'item-1' },
+    });
+    expect(tx.menuItemModifierPriceOverride.createMany).not.toHaveBeenCalled();
+    expect(tx.menuItemVariationPriceOverride.deleteMany).toHaveBeenCalledWith({
+      where: { menuItemId: 'item-1' },
+    });
+    expect(
+      tx.menuVariationModifierPriceOverride.deleteMany,
+    ).toHaveBeenCalledWith({ where: { menuItemId: 'item-1' } });
+    expect(tx.menuItemVariationPriceOverride.createMany).not.toHaveBeenCalled();
+    expect(
+      tx.menuVariationModifierPriceOverride.createMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('parses stringified empty modifier and variation arrays on update DTO', () => {
+    const dto = plainToInstance(UpdateMenuItemDto, {
+      modifiers: '[]',
+      variationPriceOverrides: '[]',
+    });
+
+    const errors = validateSync(dto);
+
+    expect(errors).toEqual([]);
+    expect(dto.modifiers).toEqual([]);
+    expect(dto.variationPriceOverrides).toEqual([]);
   });
 
   it('hard deletes menu item after clearing active flow and config references', async () => {
