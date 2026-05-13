@@ -236,6 +236,11 @@ export class OrdersRepository {
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(customerId ? { customerId } : {}),
       ...(deliverymanId ? { deliverymanId } : {}),
+      ...(query.search
+        ? {
+            OR: [{ id: { contains: query.search, mode: 'insensitive' } }],
+          }
+        : {}),
       ...(query.kind === 'group-orders'
         ? { sourceGroupOrder: { isNot: null } }
         : query.kind === 'order'
