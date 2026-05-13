@@ -257,4 +257,114 @@ describe('AdminReportsService', () => {
     );
     expect(result.message).toBe('Invoice fetched successfully');
   });
+
+  it('generates invoice PDF and sends it to customer email', async () => {
+    const repository = {
+      findInvoiceOrder: jest.fn().mockResolvedValue({
+        id: 'order-12345678',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        orderType: 'DELIVERY',
+        status: 'DELIVERED',
+        paymentStatus: 'PAID',
+        paymentMethod: 'CARD',
+        subtotal: 1000,
+        taxAmount: 50,
+        deliveryFee: 100,
+        discountAmount: 25,
+        walletAppliedAmount: 0,
+        loyaltyDiscountAmount: 0,
+        totalAmount: 1125,
+        paidAt: new Date('2026-05-12T10:00:00.000Z'),
+        createdAt: new Date('2026-05-12T09:55:00.000Z'),
+        orderTime: new Date('2026-05-12T09:55:00.000Z'),
+        restaurant: {
+          id: 'restaurant-1',
+          name: 'Restaurant',
+          slug: 'restaurant',
+        },
+        branch: { id: 'branch-1', name: 'Main' },
+        customer: {
+          id: 'customer-1',
+          email: 'customer@test.com',
+          profile: { firstName: 'Ali', lastName: 'Khan', phone: '123' },
+        },
+        coupon: null,
+        items: [
+          {
+            id: 'order-item-1',
+            menuItemId: 'item-1',
+            menuItemName: 'Burger',
+            variationId: null,
+            variationName: null,
+            unitPrice: 1000,
+            quantity: 1,
+            lineTotal: 1000,
+            note: null,
+            snapshotModifiers: null,
+            createdAt: new Date('2026-05-12T09:55:00.000Z'),
+          },
+        ],
+        transactions: [
+          {
+            id: 'txn-1',
+            type: 'CHARGE',
+            status: 'PAID',
+            amount: 1125,
+            currency: 'PKR',
+            paymentMethod: 'CARD',
+            providerRef: 'ref-1',
+            processedAt: new Date('2026-05-12T10:00:00.000Z'),
+            createdAt: new Date('2026-05-12T10:00:00.000Z'),
+          },
+        ],
+      }),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const service = new AdminReportsService(
+      repository as never,
+      mailerService as never,
+    );
+
+    const result = await service.sendInvoiceEmail(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'order-12345678',
+      {},
+    );
+
+    expect(repository.findInvoiceOrder).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      'order-12345678',
+      { restaurantId: 'restaurant-1', branchId: undefined },
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'customer@test.com',
+      'Invoice INV-12345678 for order order-12345678',
+      expect.stringContaining('Please find attached invoice INV-12345678'),
+      {
+        attachments: [
+          expect.objectContaining({
+            filename: 'INV-12345678.pdf',
+            contentType: 'application/pdf',
+          }),
+        ],
+      },
+    );
+    expect(result).toEqual({
+      data: {
+        invoiceNumber: 'INV-12345678',
+        orderId: 'order-12345678',
+        sentTo: 'customer@test.com',
+        fileName: 'INV-12345678.pdf',
+        mimeType: 'application/pdf',
+      },
+      message: 'Invoice generated and sent successfully',
+    });
+  });
 });

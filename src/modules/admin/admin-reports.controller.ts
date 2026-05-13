@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -94,6 +102,24 @@ export class AdminReportsController {
     @Query() query: AdminReportsScopedQueryDto,
   ) {
     return this.adminReportsService.getInvoice(user, orderId, query);
+  }
+
+  @Post('invoices/:orderId/send-email')
+  @HttpCode(200)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({
+    summary: 'Generate invoice PDF and send it to customer email',
+  })
+  sendInvoiceEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Param('orderId') orderId: string,
+    @Query() query: AdminReportsScopedQueryDto,
+  ) {
+    return this.adminReportsService.sendInvoiceEmail(user, orderId, query);
   }
 
   @Get('orders')

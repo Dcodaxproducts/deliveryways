@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthUserContext } from '../../common/decorators';
+import { MailerService } from '../mailer/mailer.service';
 import { UserRoleEnum } from '../../common/enums';
 import {
   AdminReportsRepository,
@@ -20,10 +22,15 @@ import {
   AdminReportsScopedQueryDto,
 } from './dto';
 
+type InvoiceOrder = NonNullable<
+  Awaited<ReturnType<AdminReportsRepository['findInvoiceOrder']>>
+>;
+
 @Injectable()
 export class AdminReportsService {
   constructor(
     private readonly adminReportsRepository: AdminReportsRepository,
+    private readonly mailerService?: MailerService,
   ) {}
 
   async exportMenuCsv(
@@ -225,6 +232,68 @@ export class AdminReportsService {
     };
   }
 
+  async sendInvoiceEmail(
+    user: AuthUserContext,
+    orderId: string,
+    query: AdminReportsScopedQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const invoice = await this.adminReportsRepository.findInvoiceOrder(
+      scope,
+      orderId,
+      {
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+    );
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const details = this.toInvoiceDetails(invoice);
+    const invoiceNumber = details.invoiceNumber;
+    const fileName = `${invoiceNumber}.pdf`;
+    const pdf = this.generateInvoicePdf(invoice);
+    const recipientEmail = invoice.customer.email;
+
+    if (!this.mailerService) {
+      throw new InternalServerErrorException(
+        'Mailer service is not configured',
+      );
+    }
+
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `Invoice ${invoiceNumber} for order ${invoice.id}`,
+      this.buildInvoiceEmailBody(invoice, invoiceNumber),
+      {
+        attachments: [
+          {
+            filename: fileName,
+            content: pdf,
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    );
+
+    return {
+      data: {
+        invoiceNumber,
+        orderId: invoice.id,
+        sentTo: recipientEmail,
+        fileName,
+        mimeType: 'application/pdf',
+      },
+      message: 'Invoice generated and sent successfully',
+    };
+  }
+
   async getOrdersReport(
     user: AuthUserContext,
     query: AdminOrdersReportQueryDto,
@@ -285,6 +354,114 @@ export class AdminReportsService {
       },
       message: 'Financial report fetched successfully',
     };
+  }
+
+  private generateInvoicePdf(invoice: InvoiceOrder) {
+    const summary = this.toInvoiceDetails(invoice);
+    const lines = [
+      `Invoice ${summary.invoiceNumber}`,
+      `Order ID: ${summary.orderId}`,
+      `Restaurant: ${summary.restaurant.name}`,
+      `Branch: ${summary.branch.name}`,
+      `Customer: ${summary.customer.name}`,
+      `Email: ${summary.customer.email}`,
+      `Issued At: ${this.formatDate(summary.issuedAt)}`,
+      `Paid At: ${this.formatDate(summary.paidAt)}`,
+      `Order Type: ${summary.orderType}`,
+      `Order Status: ${summary.orderStatus}`,
+      `Payment Status: ${summary.paymentStatus}`,
+      `Payment Method: ${summary.paymentMethod}`,
+      '',
+      'Items',
+      ...summary.items.flatMap((item) =>
+        this.wrapPdfLine(
+          `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)} = ${this.formatMoney(item.lineTotal)}`,
+        ),
+      ),
+      '',
+      `Subtotal: ${this.formatMoney(summary.subtotal)}`,
+      `Tax: ${this.formatMoney(summary.taxAmount)}`,
+      `Delivery Fee: ${this.formatMoney(summary.deliveryFee)}`,
+      `Discount: ${this.formatMoney(summary.discountAmount)}`,
+      `Wallet Applied: ${this.formatMoney(summary.walletAppliedAmount)}`,
+      `Loyalty Discount: ${this.formatMoney(summary.loyaltyDiscountAmount)}`,
+      `Total: ${this.formatMoney(summary.totalAmount)}`,
+    ];
+
+    return this.buildSimplePdf(lines);
+  }
+
+  private buildInvoiceEmailBody(invoice: InvoiceOrder, invoiceNumber: string) {
+    const customerName = this.toInvoiceCustomer(invoice.customer).name;
+
+    return [
+      `Hi ${customerName},`,
+      '',
+      `Please find attached invoice ${invoiceNumber} for your order ${invoice.id}.`,
+      '',
+      `Restaurant: ${invoice.restaurant.name}`,
+      `Branch: ${invoice.branch.name}`,
+      `Total: ${this.formatMoney(Number(invoice.totalAmount))} ${invoice.transactions[0]?.currency ?? 'PKR'}`,
+      '',
+      'Thank you for ordering with DeliveryWays.',
+    ].join('\n');
+  }
+
+  private buildSimplePdf(lines: string[]) {
+    const escapedLines = lines
+      .slice(0, 52)
+      .map((line) => `0 -14 Td (${this.escapePdfText(line)}) Tj`)
+      .join('\n');
+    const stream = `BT\n/F1 10 Tf\n50 800 Td\n${escapedLines}\nET`;
+    const objects = [
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n',
+      `5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj\n`,
+    ];
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+
+    for (const object of objects) {
+      offsets.push(Buffer.byteLength(pdf, 'utf8'));
+      pdf += object;
+    }
+
+    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+    for (const offset of offsets.slice(1)) {
+      pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`;
+    }
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+    return Buffer.from(pdf, 'utf8');
+  }
+
+  private wrapPdfLine(line: string) {
+    const chunks: string[] = [];
+    for (let index = 0; index < line.length; index += 78) {
+      chunks.push(line.slice(index, index + 78));
+    }
+
+    return chunks.length > 0 ? chunks : [''];
+  }
+
+  private escapePdfText(text: string) {
+    return text
+      .replace(/[^\x20-\x7E]/g, '?')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)');
+  }
+
+  private formatDate(value: Date | null) {
+    return value ? value.toISOString() : 'N/A';
+  }
+
+  private formatMoney(value: number) {
+    return Number(value).toFixed(2);
   }
 
   private toInvoiceSummary(

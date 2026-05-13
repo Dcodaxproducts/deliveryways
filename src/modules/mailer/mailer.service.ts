@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import { Transporter } from 'nodemailer';
+import { SendMailOptions, Transporter } from 'nodemailer';
 
 @Injectable()
 export class MailerService {
@@ -67,7 +67,12 @@ export class MailerService {
     await this.transporter.verify();
   }
 
-  async sendEmail(to: string, subject: string, text: string): Promise<void> {
+  async sendEmail(
+    to: string,
+    subject: string,
+    text: string,
+    options?: Pick<SendMailOptions, 'attachments'>,
+  ): Promise<void> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(
         `EMAIL_ENABLED=false, using json transport for email to ${to}`,
@@ -79,6 +84,7 @@ export class MailerService {
       from: this.fromAddress,
       subject,
       text,
+      attachments: options?.attachments,
     });
 
     this.logger.log(`Email queued for ${to} with subject "${subject}"`);

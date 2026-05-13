@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { UsersModule } from '../users/users.module';
 import { SystemHealthModule } from '../system-health/system-health.module';
+import { MailerModule } from '../mailer/mailer.module';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
 import { AdminPromotionsService } from './admin-promotions.service';
@@ -18,7 +19,7 @@ import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 
 @Module({
-  imports: [UsersModule, DatabaseModule, SystemHealthModule],
+  imports: [UsersModule, DatabaseModule, SystemHealthModule, MailerModule],
   controllers: [
     AdminUsersController,
     AdminDashboardController,
