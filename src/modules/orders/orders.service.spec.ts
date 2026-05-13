@@ -214,9 +214,13 @@ describe('OrdersService - deliveryman order access', () => {
     list: jest.Mock;
     findById: jest.Mock;
     updateStatus: jest.Mock;
+    assignDeliveryman: jest.Mock;
   };
   let notificationsService: { notifyOrderStatusChanged: jest.Mock };
-  let chatService: { syncDeliveryThreadForOrderLifecycle: jest.Mock };
+  let chatService: {
+    syncDeliveryThreadForOrderLifecycle: jest.Mock;
+    ensureDeliveryThreadForOrder: jest.Mock;
+  };
   let orderTrackingRealtimeService: { emitTrackingUpdate: jest.Mock };
 
   const deliverymanUser = {
@@ -232,6 +236,7 @@ describe('OrdersService - deliveryman order access', () => {
         .mockResolvedValue({ items: [{ id: 'order-1' }], total: 1 }),
       findById: jest.fn(),
       updateStatus: jest.fn(),
+      assignDeliveryman: jest.fn(),
     };
 
     notificationsService = {
@@ -242,6 +247,7 @@ describe('OrdersService - deliveryman order access', () => {
       syncDeliveryThreadForOrderLifecycle: jest
         .fn()
         .mockResolvedValue(undefined),
+      ensureDeliveryThreadForOrder: jest.fn().mockResolvedValue(undefined),
     };
 
     orderTrackingRealtimeService = {
@@ -401,6 +407,68 @@ describe('OrdersService - deliveryman order access', () => {
         status: 'DELIVERED',
       } as never),
     ).rejects.toThrow('Cross-deliveryman access denied');
+  });
+
+  it('allows deliveryman to accept an unassigned same-branch delivery order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'PREPARING',
+    });
+    ordersRepository.assignDeliveryman.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+      orderType: 'DELIVERY',
+      status: 'OUT_FOR_DELIVERY',
+    });
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    const result = await service.acceptDeliverymanOrder(
+      deliverymanUser as never,
+      'order-1',
+      'branch-1',
+      'restaurant-1',
+    );
+
+    expect(ordersRepository.assignDeliveryman).toHaveBeenCalledWith(
+      'order-1',
+      'dm-1',
+    );
+    expect(chatService.ensureDeliveryThreadForOrder).toHaveBeenCalledWith(
+      'order-1',
+      'dm-1',
+    );
+    expect(result).toEqual({ id: 'order-1' });
+  });
+
+  it('rejects deliveryman accept when order already has a deliveryman', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-2',
+      orderType: 'DELIVERY',
+      status: 'PREPARING',
+    });
+
+    await expect(
+      service.acceptDeliverymanOrder(
+        deliverymanUser as never,
+        'order-1',
+        'branch-1',
+        'restaurant-1',
+      ),
+    ).rejects.toThrow('Order is already assigned to a deliveryman');
+    expect(ordersRepository.assignDeliveryman).not.toHaveBeenCalled();
   });
 });
 

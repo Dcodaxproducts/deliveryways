@@ -52,6 +52,11 @@ describe('DeliverymenService', () => {
         status: 'OUT_FOR_DELIVERY',
         deliverymanId: 'dm-1',
       }),
+      acceptDeliverymanOrder: jest.fn().mockResolvedValue({
+        id: 'order-1',
+        status: 'OUT_FOR_DELIVERY',
+        deliverymanId: 'dm-1',
+      }),
     };
 
     service = new DeliverymenService(
@@ -102,6 +107,61 @@ describe('DeliverymenService', () => {
     await expect(
       service.assignOrder(adminUser, 'dm-1', { orderId: 'order-1' }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects assignment when deliveryman already has active delivery order', async () => {
+    repository.findById!.mockResolvedValue({
+      ...deliveryman,
+      status: DeliverymanStatus.BUSY,
+      orders: [{ id: 'active-order-1' }],
+    });
+
+    await expect(
+      service.assignOrder(adminUser, 'dm-1', { orderId: 'order-2' }),
+    ).rejects.toThrow('Deliveryman already has an active delivery order');
+    expect(ordersService.assignDeliveryman).not.toHaveBeenCalled();
+  });
+
+  it('allows deliveryman to accept an order and marks deliveryman busy', async () => {
+    const result = await service.acceptOrder(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      { orderId: 'order-1' },
+    );
+
+    expect(ordersService.acceptDeliverymanOrder).toHaveBeenCalledWith(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      },
+      'order-1',
+      'branch-1',
+      'restaurant-1',
+    );
+    expect(repository.update).toHaveBeenCalledWith('dm-1', {
+      status: DeliverymanStatus.BUSY,
+    });
+    expect(result.message).toBe('Order accepted by deliveryman successfully');
+  });
+
+  it('rejects order accept when deliveryman already has active delivery order', async () => {
+    repository.findById!.mockResolvedValue({
+      ...deliveryman,
+      orders: [{ id: 'active-order-1' }],
+    });
+
+    await expect(
+      service.acceptOrder(
+        {
+          uid: 'dm-1',
+          role: 'DELIVERYMAN',
+        } as never,
+        { orderId: 'order-2' },
+      ),
+    ).rejects.toThrow('Deliveryman already has an active delivery order');
+    expect(ordersService.acceptDeliverymanOrder).not.toHaveBeenCalled();
   });
 
   it('blocks branch admins from cross-branch deliverymen', async () => {

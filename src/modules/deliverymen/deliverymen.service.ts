@@ -202,6 +202,8 @@ export class DeliverymenService {
       );
     }
 
+    this.assertNoActiveDeliveryOrder(deliveryman);
+
     const orderAssignment = await this.ordersService.assignDeliveryman(
       user,
       dto.orderId,
@@ -227,6 +229,55 @@ export class DeliverymenService {
         order: orderAssignment,
       },
       message: 'Order assigned to deliveryman successfully',
+    };
+  }
+
+  async acceptOrder(user: AuthUserContext, dto: AssignDeliverymanOrderDto) {
+    if (user.role !== 'DELIVERYMAN') {
+      throw new ForbiddenException('Only deliverymen can accept orders');
+    }
+
+    const deliveryman = await this.deliverymenRepository.findById(user.uid);
+
+    if (!deliveryman || deliveryman.deletedAt || !deliveryman.isActive) {
+      throw new NotFoundException('Deliveryman not found');
+    }
+
+    if (
+      deliveryman.status !== DeliverymanStatus.AVAILABLE &&
+      deliveryman.status !== DeliverymanStatus.BUSY
+    ) {
+      throw new BadRequestException(
+        'Deliveryman must be available or busy to accept an order',
+      );
+    }
+
+    this.assertNoActiveDeliveryOrder(deliveryman);
+
+    const orderAssignment = await this.ordersService.acceptDeliverymanOrder(
+      user,
+      dto.orderId,
+      deliveryman.branchId,
+      deliveryman.restaurantId,
+    );
+
+    if (deliveryman.status !== DeliverymanStatus.BUSY) {
+      await this.deliverymenRepository.update(deliveryman.id, {
+        status: DeliverymanStatus.BUSY,
+      });
+    }
+
+    return {
+      data: {
+        deliveryman: {
+          id: deliveryman.id,
+          firstName: deliveryman.firstName,
+          lastName: deliveryman.lastName,
+          status: DeliverymanStatus.BUSY,
+        },
+        order: orderAssignment,
+      },
+      message: 'Order accepted by deliveryman successfully',
     };
   }
 
@@ -296,6 +347,16 @@ export class DeliverymenService {
       data: this.withDeletionState(data),
       message: 'Deliveryman removed successfully',
     };
+  }
+
+  private assertNoActiveDeliveryOrder(deliveryman: {
+    orders?: Array<{ id: string }>;
+  }) {
+    if ((deliveryman.orders?.length ?? 0) > 0) {
+      throw new BadRequestException(
+        'Deliveryman already has an active delivery order',
+      );
+    }
   }
 
   private withDeletionState<

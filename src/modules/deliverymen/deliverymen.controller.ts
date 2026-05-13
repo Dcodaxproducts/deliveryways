@@ -35,6 +35,18 @@ export class DeliverymenController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Post('me/accept-order')
+  @ApiOperation({ summary: 'Accept an available delivery order' })
+  acceptOrder(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: AssignDeliverymanOrderDto,
+  ) {
+    return this.deliverymenService.acceptOrder(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,

@@ -481,50 +481,42 @@ export class OrdersService {
       true,
     );
 
-    if (order.orderType !== OrderType.DELIVERY) {
-      throw new BadRequestException('Only delivery orders can be assigned');
-    }
-
-    const blockedStatuses: OrderStatus[] = [
-      OrderStatus.CANCELLED,
-      OrderStatus.REJECTED,
-      OrderStatus.DELIVERED,
-      OrderStatus.PICKED_UP,
-      OrderStatus.SERVED,
-    ];
-
-    if (blockedStatuses.includes(order.status)) {
-      throw new BadRequestException(
-        'Order cannot receive a deliveryman in current state',
-      );
-    }
-
-    if (order.restaurantId !== deliverymanRestaurantId) {
-      throw new ForbiddenException('Cross-restaurant assignment denied');
-    }
-
-    if (order.branchId !== deliverymanBranchId) {
-      throw new BadRequestException(
-        'Deliveryman branch does not match order branch',
-      );
-    }
-
-    if (order.deliverymanId && order.deliverymanId !== deliverymanId) {
-      throw new BadRequestException(
-        'Order is already assigned to another deliveryman',
-      );
-    }
-
-    const data = await this.ordersRepository.assignDeliveryman(
-      order.id,
+    return this.assignDeliverymanToOrder(
+      order,
       deliverymanId,
+      deliverymanBranchId,
+      deliverymanRestaurantId,
     );
+  }
 
-    await this.notificationsService.notifyOrderStatusChanged(data.id);
-    await this.chatService.ensureDeliveryThreadForOrder(data.id, deliverymanId);
-    await this.emitTrackingUpdate(data.id);
+  async acceptDeliverymanOrder(
+    user: AuthUserContext,
+    orderId: string,
+    deliverymanBranchId: string,
+    deliverymanRestaurantId: string,
+  ) {
+    if (user.role !== 'DELIVERYMAN') {
+      throw new ForbiddenException('Only deliverymen can accept orders');
+    }
 
-    return this.toOrderMutationResponse(data);
+    const order = await this.ordersRepository.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.deliverymanId) {
+      throw new BadRequestException(
+        'Order is already assigned to a deliveryman',
+      );
+    }
+
+    return this.assignDeliverymanToOrder(
+      order,
+      user.uid,
+      deliverymanBranchId,
+      deliverymanRestaurantId,
+    );
   }
 
   async getTrackingSnapshot(user: AuthUserContext, id: string) {
@@ -2499,6 +2491,65 @@ export class OrdersService {
         'You cannot access resources outside your branch',
       );
     }
+  }
+
+  private async assignDeliverymanToOrder(
+    order: {
+      id: string;
+      orderType: OrderType;
+      status: OrderStatus;
+      restaurantId: string;
+      branchId: string;
+      deliverymanId?: string | null;
+    },
+    deliverymanId: string,
+    deliverymanBranchId: string,
+    deliverymanRestaurantId: string,
+  ) {
+    if (order.orderType !== OrderType.DELIVERY) {
+      throw new BadRequestException('Only delivery orders can be assigned');
+    }
+
+    const blockedStatuses: OrderStatus[] = [
+      OrderStatus.CANCELLED,
+      OrderStatus.REJECTED,
+      OrderStatus.DELIVERED,
+      OrderStatus.PICKED_UP,
+      OrderStatus.SERVED,
+    ];
+
+    if (blockedStatuses.includes(order.status)) {
+      throw new BadRequestException(
+        'Order cannot receive a deliveryman in current state',
+      );
+    }
+
+    if (order.restaurantId !== deliverymanRestaurantId) {
+      throw new ForbiddenException('Cross-restaurant assignment denied');
+    }
+
+    if (order.branchId !== deliverymanBranchId) {
+      throw new BadRequestException(
+        'Deliveryman branch does not match order branch',
+      );
+    }
+
+    if (order.deliverymanId && order.deliverymanId !== deliverymanId) {
+      throw new BadRequestException(
+        'Order is already assigned to another deliveryman',
+      );
+    }
+
+    const data = await this.ordersRepository.assignDeliveryman(
+      order.id,
+      deliverymanId,
+    );
+
+    await this.notificationsService.notifyOrderStatusChanged(data.id);
+    await this.chatService.ensureDeliveryThreadForOrder(data.id, deliverymanId);
+    await this.emitTrackingUpdate(data.id);
+
+    return this.toOrderMutationResponse(data);
   }
 
   private async assertOrderAccess(
