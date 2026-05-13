@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   BillingInterval,
   PackageBillingModel,
+  PackageCommissionType,
   PackagePayoutCycle,
   PaymentStatus,
   SubscriptionStatus,
@@ -60,6 +61,14 @@ export class CreatePackagePlanDto {
   @Min(0)
   planPrice?: number;
 
+  @ApiPropertyOptional({
+    enum: PackageCommissionType,
+    default: PackageCommissionType.PERCENTAGE,
+  })
+  @IsOptional()
+  @IsEnum(PackageCommissionType)
+  commissionType?: PackageCommissionType;
+
   @ApiPropertyOptional({ minimum: 0, maximum: 100, default: 0 })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
@@ -67,6 +76,13 @@ export class CreatePackagePlanDto {
   @Min(0)
   @Max(100)
   commissionPercentage?: number;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  commissionFixedAmount?: number;
 
   @ApiPropertyOptional({
     minimum: 0,
@@ -161,6 +177,11 @@ export class UpdatePackagePlanDto {
   @Min(0)
   planPrice?: number;
 
+  @ApiPropertyOptional({ enum: PackageCommissionType })
+  @IsOptional()
+  @IsEnum(PackageCommissionType)
+  commissionType?: PackageCommissionType;
+
   @ApiPropertyOptional({ minimum: 0, maximum: 100 })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
@@ -168,6 +189,13 @@ export class UpdatePackagePlanDto {
   @Min(0)
   @Max(100)
   commissionPercentage?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0)
+  commissionFixedAmount?: number;
 
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional()

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   BillingInterval,
   PackageBillingModel,
+  PackageCommissionType,
   PackagePayoutCycle,
   PaymentStatus,
   Prisma,
@@ -20,7 +21,9 @@ describe('PackagePlansService', () => {
     billingModel: PackageBillingModel.HYBRID,
     billingInterval: BillingInterval.MONTHLY,
     planPrice: new Prisma.Decimal(5000),
+    commissionType: PackageCommissionType.PERCENTAGE,
     commissionPercentage: new Prisma.Decimal(5),
+    commissionFixedAmount: new Prisma.Decimal(0),
     commissionCapAmount: new Prisma.Decimal(250),
     vatPercentage: new Prisma.Decimal(15),
     payoutCycle: PackagePayoutCycle.WEEKLY,
@@ -47,7 +50,9 @@ describe('PackagePlansService', () => {
       billingModel: PackageBillingModel.HYBRID,
       planPrice: 5000,
       commissionPercentage: 5,
+      commissionType: PackageCommissionType.PERCENTAGE,
       commissionCapAmount: 250,
+      commissionFixedAmount: 0,
       vatPercentage: 15,
       payoutCycle: PackagePayoutCycle.WEEKLY,
       termsDocumentUrl: 'terms/growth.pdf',
@@ -57,11 +62,46 @@ describe('PackagePlansService', () => {
       expect.objectContaining({
         billingModel: PackageBillingModel.HYBRID,
         planPrice: new Prisma.Decimal(5000),
+        commissionType: PackageCommissionType.PERCENTAGE,
         commissionPercentage: new Prisma.Decimal(5),
+        commissionFixedAmount: new Prisma.Decimal(0),
         commissionCapAmount: new Prisma.Decimal(250),
         vatPercentage: new Prisma.Decimal(15),
         payoutCycle: PackagePayoutCycle.WEEKLY,
         termsDocumentUrl: 'terms/growth.pdf',
+      }),
+    );
+    expect(result.message).toBe('Package plan created successfully');
+  });
+
+  it('creates commission package plan with fixed per-order commission', async () => {
+    const repository = {
+      createPlan: jest.fn().mockResolvedValue(
+        makePlan({
+          billingModel: PackageBillingModel.COMMISSION,
+          planPrice: new Prisma.Decimal(0),
+          commissionType: PackageCommissionType.FIXED,
+          commissionPercentage: new Prisma.Decimal(0),
+          commissionFixedAmount: new Prisma.Decimal(75),
+          commissionCapAmount: null,
+        }),
+      ),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.createPlan(superAdmin, {
+      name: 'Fixed Per Order',
+      billingModel: PackageBillingModel.COMMISSION,
+      commissionType: PackageCommissionType.FIXED,
+      commissionFixedAmount: 75,
+    });
+
+    expect(repository.createPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        billingModel: PackageBillingModel.COMMISSION,
+        commissionType: PackageCommissionType.FIXED,
+        commissionPercentage: new Prisma.Decimal(0),
+        commissionFixedAmount: new Prisma.Decimal(75),
       }),
     );
     expect(result.message).toBe('Package plan created successfully');
@@ -147,7 +187,9 @@ describe('PackagePlansService', () => {
       {
         planSnapshot?: {
           billingModel?: PackageBillingModel;
+          commissionType?: PackageCommissionType;
           commissionCapAmount?: number | null;
+          commissionFixedAmount?: number;
           vatPercentage?: number;
           payoutCycle?: PackagePayoutCycle;
         };

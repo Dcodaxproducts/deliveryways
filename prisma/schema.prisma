@@ -79,6 +79,11 @@ enum PackageBillingModel {
   HYBRID
 }
 
+enum PackageCommissionType {
+  PERCENTAGE
+  FIXED
+}
+
 enum BillingInterval {
   MONTHLY
   YEARLY
@@ -480,16 +485,16 @@ model MenuCategory {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant    Restaurant                  @relation(fields: [restaurantId], references: [id])
-  parent        MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
-  children      MenuCategory[]              @relation("MenuCategoryTree")
+  restaurant     Restaurant                  @relation(fields: [restaurantId], references: [id])
+  parent         MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
+  children       MenuCategory[]              @relation("MenuCategoryTree")
   items          MenuItem[]
   variations     MenuItemVariation[]
   variationLinks MenuCategoryVariation[]
   menuLinks      RestaurantMenuCategory[]
   modifierLinks  MenuCategoryModifierGroup[]
-  overrides     BranchCategoryOverride[]
-  couponScopes  Coupon[]
+  overrides      BranchCategoryOverride[]
+  couponScopes   Coupon[]
 
   @@unique([restaurantId, slug])
   @@map("menu_categories")
@@ -632,8 +637,8 @@ model MenuCategoryVariation {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  category  MenuCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  variation MenuItemVariation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
+  category  MenuCategory      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  variation MenuItemVariation @relation(fields: [variationId], references: [id], onDelete: Cascade)
 
   @@unique([categoryId, variationId])
   @@index([variationId])
@@ -1524,26 +1529,28 @@ model ChatMessage {
 }
 
 model PackagePlan {
-  id                   String              @id @default(cuid())
-  tenantId             String?             @map("tenant_id")
-  name                 String
-  description          String?
-  billingModel         PackageBillingModel @map("billing_model")
-  billingInterval      BillingInterval     @default(MONTHLY) @map("billing_interval")
-  planPrice            Decimal             @default(0) @map("plan_price") @db.Decimal(10, 2)
-  commissionPercentage Decimal             @default(0) @map("commission_percentage") @db.Decimal(5, 2)
-  commissionCapAmount  Decimal?            @map("commission_cap_amount") @db.Decimal(10, 2)
-  vatPercentage        Decimal             @default(0) @map("vat_percentage") @db.Decimal(5, 2)
-  payoutCycle          PackagePayoutCycle  @default(WEEKLY) @map("payout_cycle")
-  termsDocumentUrl     String?             @map("terms_document_url")
-  currency             String              @default("PKR") @db.VarChar(10)
-  trialDays            Int                 @default(0) @map("trial_days")
-  features             Json?
-  isActive             Boolean             @default(true) @map("is_active")
-  isDefault            Boolean             @default(false) @map("is_default")
-  deletedAt            DateTime?           @map("deleted_at") @db.Timestamptz
-  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String                @id @default(cuid())
+  tenantId              String?               @map("tenant_id")
+  name                  String
+  description           String?
+  billingModel          PackageBillingModel   @map("billing_model")
+  billingInterval       BillingInterval       @default(MONTHLY) @map("billing_interval")
+  planPrice             Decimal               @default(0) @map("plan_price") @db.Decimal(10, 2)
+  commissionType        PackageCommissionType @default(PERCENTAGE) @map("commission_type")
+  commissionPercentage  Decimal               @default(0) @map("commission_percentage") @db.Decimal(5, 2)
+  commissionFixedAmount Decimal               @default(0) @map("commission_fixed_amount") @db.Decimal(10, 2)
+  commissionCapAmount   Decimal?              @map("commission_cap_amount") @db.Decimal(10, 2)
+  vatPercentage         Decimal               @default(0) @map("vat_percentage") @db.Decimal(5, 2)
+  payoutCycle           PackagePayoutCycle    @default(WEEKLY) @map("payout_cycle")
+  termsDocumentUrl      String?               @map("terms_document_url")
+  currency              String                @default("PKR") @db.VarChar(10)
+  trialDays             Int                   @default(0) @map("trial_days")
+  features              Json?
+  isActive              Boolean               @default(true) @map("is_active")
+  isDefault             Boolean               @default(false) @map("is_default")
+  deletedAt             DateTime?             @map("deleted_at") @db.Timestamptz
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant        Tenant?              @relation(fields: [tenantId], references: [id])
   subscriptions TenantSubscription[]

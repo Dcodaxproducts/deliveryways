@@ -7,6 +7,7 @@ import {
 import {
   BillingInterval,
   PackageBillingModel,
+  PackageCommissionType,
   PackagePayoutCycle,
   PaymentStatus,
   Prisma,
@@ -31,7 +32,9 @@ interface NormalizedPlanInput {
   billingModel?: PackageBillingModel;
   billingInterval?: BillingInterval;
   planPrice?: Prisma.Decimal;
+  commissionType?: PackageCommissionType;
   commissionPercentage?: Prisma.Decimal;
+  commissionFixedAmount?: Prisma.Decimal;
   commissionCapAmount?: Prisma.Decimal | null;
   vatPercentage?: Prisma.Decimal;
   payoutCycle?: PackagePayoutCycle;
@@ -64,7 +67,10 @@ export class PackagePlansService {
       billingModel: this.requireBillingModel(input.billingModel),
       billingInterval: input.billingInterval ?? BillingInterval.MONTHLY,
       planPrice: input.planPrice ?? new Prisma.Decimal(0),
+      commissionType: input.commissionType ?? PackageCommissionType.PERCENTAGE,
       commissionPercentage: input.commissionPercentage ?? new Prisma.Decimal(0),
+      commissionFixedAmount:
+        input.commissionFixedAmount ?? new Prisma.Decimal(0),
       commissionCapAmount: input.commissionCapAmount,
       vatPercentage: input.vatPercentage ?? new Prisma.Decimal(0),
       payoutCycle: input.payoutCycle ?? PackagePayoutCycle.WEEKLY,
@@ -173,8 +179,11 @@ export class PackagePlansService {
     this.assertBillingModelAmounts({
       billingModel: input.billingModel ?? existing.billingModel,
       planPrice: input.planPrice ?? existing.planPrice,
+      commissionType: input.commissionType ?? existing.commissionType,
       commissionPercentage:
         input.commissionPercentage ?? existing.commissionPercentage,
+      commissionFixedAmount:
+        input.commissionFixedAmount ?? existing.commissionFixedAmount,
       commissionCapAmount:
         input.commissionCapAmount ?? existing.commissionCapAmount,
     });
@@ -346,9 +355,14 @@ export class PackagePlansService {
         dto.planPrice !== undefined
           ? new Prisma.Decimal(dto.planPrice)
           : undefined,
+      commissionType: dto.commissionType,
       commissionPercentage:
         dto.commissionPercentage !== undefined
           ? new Prisma.Decimal(dto.commissionPercentage)
+          : undefined,
+      commissionFixedAmount:
+        dto.commissionFixedAmount !== undefined
+          ? new Prisma.Decimal(dto.commissionFixedAmount)
           : undefined,
       commissionCapAmount:
         dto.commissionCapAmount !== undefined
@@ -379,12 +393,18 @@ export class PackagePlansService {
   private assertBillingModelAmounts(input: {
     billingModel?: PackageBillingModel;
     planPrice?: Prisma.Decimal;
+    commissionType?: PackageCommissionType;
     commissionPercentage?: Prisma.Decimal;
+    commissionFixedAmount?: Prisma.Decimal;
     commissionCapAmount?: Prisma.Decimal | null;
   }): void {
     const planPrice = input.planPrice ?? new Prisma.Decimal(0);
+    const commissionType =
+      input.commissionType ?? PackageCommissionType.PERCENTAGE;
     const commissionPercentage =
       input.commissionPercentage ?? new Prisma.Decimal(0);
+    const commissionFixedAmount =
+      input.commissionFixedAmount ?? new Prisma.Decimal(0);
     const commissionCapAmount = input.commissionCapAmount;
 
     if (!input.billingModel) {
@@ -398,11 +418,12 @@ export class PackagePlansService {
         );
       }
 
-      if (commissionPercentage.lessThanOrEqualTo(0)) {
-        throw new BadRequestException(
-          'Commission based plans require a commission percentage',
-        );
-      }
+      this.assertCommissionAmount(
+        commissionType,
+        commissionPercentage,
+        commissionFixedAmount,
+        'Commission based plans',
+      );
     }
 
     if (input.billingModel === PackageBillingModel.PLAN) {
@@ -412,9 +433,12 @@ export class PackagePlansService {
         );
       }
 
-      if (commissionPercentage.greaterThan(0)) {
+      if (
+        commissionPercentage.greaterThan(0) ||
+        commissionFixedAmount.greaterThan(0)
+      ) {
         throw new BadRequestException(
-          'Plan based packages cannot have a commission percentage',
+          'Plan based packages cannot have commission charges',
         );
       }
 
@@ -427,11 +451,42 @@ export class PackagePlansService {
 
     if (
       input.billingModel === PackageBillingModel.HYBRID &&
-      (planPrice.lessThanOrEqualTo(0) ||
-        commissionPercentage.lessThanOrEqualTo(0))
+      planPrice.lessThanOrEqualTo(0)
     ) {
       throw new BadRequestException(
-        'Hybrid packages require both plan price and commission percentage',
+        'Hybrid packages require a fixed plan price',
+      );
+    }
+
+    if (input.billingModel === PackageBillingModel.HYBRID) {
+      this.assertCommissionAmount(
+        commissionType,
+        commissionPercentage,
+        commissionFixedAmount,
+        'Hybrid packages',
+      );
+    }
+  }
+
+  private assertCommissionAmount(
+    commissionType: PackageCommissionType,
+    commissionPercentage: Prisma.Decimal,
+    commissionFixedAmount: Prisma.Decimal,
+    label: string,
+  ) {
+    if (commissionType === PackageCommissionType.PERCENTAGE) {
+      if (commissionPercentage.lessThanOrEqualTo(0)) {
+        throw new BadRequestException(
+          `${label} require a commission percentage`,
+        );
+      }
+
+      return;
+    }
+
+    if (commissionFixedAmount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException(
+        `${label} require a fixed commission amount`,
       );
     }
   }
@@ -492,7 +547,9 @@ export class PackagePlansService {
     billingModel: PackageBillingModel;
     billingInterval: BillingInterval;
     planPrice: Prisma.Decimal;
+    commissionType?: PackageCommissionType;
     commissionPercentage: Prisma.Decimal;
+    commissionFixedAmount?: Prisma.Decimal;
     commissionCapAmount?: Prisma.Decimal | null;
     vatPercentage?: Prisma.Decimal;
     payoutCycle?: PackagePayoutCycle;
@@ -508,7 +565,9 @@ export class PackagePlansService {
       billingModel: plan.billingModel,
       billingInterval: plan.billingInterval,
       planPrice: plan.planPrice.toNumber(),
+      commissionType: plan.commissionType ?? PackageCommissionType.PERCENTAGE,
       commissionPercentage: plan.commissionPercentage.toNumber(),
+      commissionFixedAmount: plan.commissionFixedAmount?.toNumber() ?? 0,
       commissionCapAmount: plan.commissionCapAmount?.toNumber() ?? null,
       vatPercentage: plan.vatPercentage?.toNumber() ?? 0,
       payoutCycle: plan.payoutCycle ?? PackagePayoutCycle.WEEKLY,
