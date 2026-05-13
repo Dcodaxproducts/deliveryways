@@ -286,6 +286,91 @@ export class AdminExportCustomersCsvQueryDto extends AdminReportsScopedQueryDto 
   toDate?: string;
 }
 
+export const ADMIN_REPORT_EXPORT_EMAIL_TYPES = [
+  'menu',
+  'orders',
+  'customers',
+] as const;
+export type AdminReportExportEmailType =
+  (typeof ADMIN_REPORT_EXPORT_EMAIL_TYPES)[number];
+
+export class AdminEmailReportExportDto extends AdminReportsScopedQueryDto {
+  @ApiProperty({ enum: ADMIN_REPORT_EXPORT_EMAIL_TYPES })
+  @IsIn(ADMIN_REPORT_EXPORT_EMAIL_TYPES)
+  type!: AdminReportExportEmailType;
+
+  @ApiProperty({ example: 'manager@example.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ description: 'Optional restaurant menu filter' })
+  @IsOptional()
+  @IsString()
+  menuId?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  includeInactive?: boolean;
+
+  @ApiPropertyOptional({ enum: OrderStatus })
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
+  @ApiPropertyOptional({ enum: OrderTypeEnum })
+  @IsOptional()
+  @IsEnum(OrderTypeEnum)
+  orderType?: OrderTypeEnum;
+
+  @ApiPropertyOptional({ enum: PaymentStatus })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  paymentStatus?: PaymentStatus;
+
+  @ApiPropertyOptional({ enum: ['order', 'group-orders'] })
+  @IsOptional()
+  @IsIn(['order', 'group-orders'])
+  kind?: 'order' | 'group-orders';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isVerified?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
 export class AdminOrdersReportQueryDto extends AdminExportOrdersCsvQueryDto {}
 
 export class AdminFinancialReportQueryDto extends AdminReportsScopedQueryDto {

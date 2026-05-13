@@ -13,6 +13,7 @@ import {
   AdminReportsScope,
 } from './admin-reports.repository';
 import {
+  AdminEmailReportExportDto,
   AdminExportCustomersCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
@@ -185,6 +186,51 @@ export class AdminReportsService {
     };
   }
 
+  async sendExportEmail(user: AuthUserContext, dto: AdminEmailReportExportDto) {
+    const exportResult = await this.generateReportExport(user, dto);
+    const { fileName, mimeType, rowCount, content } = exportResult.data;
+
+    if (!this.mailerService) {
+      throw new InternalServerErrorException(
+        'Mailer service is not configured',
+      );
+    }
+
+    await this.mailerService.sendEmail(
+      dto.email,
+      `DeliveryWays ${this.getReportExportLabel(dto.type)} export`,
+      [
+        `Hi,`,
+        '',
+        `Your ${this.getReportExportLabel(dto.type)} export is attached.`,
+        `Rows: ${rowCount}`,
+        `File: ${fileName}`,
+        '',
+        'DeliveryWays',
+      ].join('\n'),
+      {
+        attachments: [
+          {
+            filename: fileName,
+            content: Buffer.from(content, 'utf8'),
+            contentType: mimeType,
+          },
+        ],
+      },
+    );
+
+    return {
+      data: {
+        type: dto.type,
+        sentTo: dto.email,
+        fileName,
+        mimeType,
+        rowCount,
+      },
+      message: 'Report export generated and sent successfully',
+    };
+  }
+
   async listInvoices(user: AuthUserContext, query: AdminInvoicesQueryDto) {
     const scope = await this.resolveScope(
       user,
@@ -354,6 +400,33 @@ export class AdminReportsService {
       },
       message: 'Financial report fetched successfully',
     };
+  }
+
+  private generateReportExport(
+    user: AuthUserContext,
+    dto: AdminEmailReportExportDto,
+  ) {
+    if (dto.type === 'menu') {
+      return this.exportMenuCsv(user, dto);
+    }
+
+    if (dto.type === 'orders') {
+      return this.exportOrdersCsv(user, dto);
+    }
+
+    return this.exportCustomersCsv(user, dto);
+  }
+
+  private getReportExportLabel(type: AdminEmailReportExportDto['type']) {
+    if (type === 'menu') {
+      return 'menu';
+    }
+
+    if (type === 'orders') {
+      return 'orders';
+    }
+
+    return 'customers';
   }
 
   private generateInvoicePdf(invoice: InvoiceOrder) {

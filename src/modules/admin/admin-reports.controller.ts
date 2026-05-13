@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -16,6 +17,7 @@ import {
   TenantAccessGuard,
 } from '../../common/guards';
 import {
+  AdminEmailReportExportDto,
   AdminExportCustomersCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
@@ -73,6 +75,21 @@ export class AdminReportsController {
     @Query() query: AdminExportCustomersCsvQueryDto,
   ) {
     return this.adminReportsService.exportCustomersCsv(user, query);
+  }
+
+  @Post('export/send-email')
+  @HttpCode(200)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Generate report export CSV and send it by email' })
+  sendExportEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: AdminEmailReportExportDto,
+  ) {
+    return this.adminReportsService.sendExportEmail(user, dto);
   }
 
   @Get('invoices')
