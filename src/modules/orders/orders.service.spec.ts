@@ -875,6 +875,79 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.items[0].unitPrice).toBe(125);
     expect(result.data.subtotal).toBe(125);
   });
+
+  it('rejects order item quantity above item maxSelect', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: { taxPercentage: 0 },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          isRequired: false,
+          minSelect: 0,
+          maxSelect: 2,
+          pricingMode: 'SINGLE',
+          basePrice: new Prisma.Decimal(100),
+          deliveryPriceAdjustment: new Prisma.Decimal(0),
+          takeawayPriceAdjustment: new Prisma.Decimal(0),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-1', variations: [] },
+          variations: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          branchOverrides: [],
+        }),
+      },
+      address: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      { validateForCheckout: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.quoteForCouponValidation(
+        {
+          uid: 'customer-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          orderType: OrderTypeEnum.DELIVERY,
+          items: [{ menuItemId: 'menu-1', quantity: 3 }],
+          orderTime: '2026-03-24T19:30:00.000Z',
+        },
+      ),
+    ).rejects.toThrow('Burger allows at most 2 item(s)');
+  });
 });
 
 describe('OrdersService - branch address lookup', () => {
