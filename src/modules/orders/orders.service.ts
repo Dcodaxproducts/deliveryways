@@ -94,6 +94,8 @@ interface OrderModifierSource {
   isRequired?: boolean;
   minSelect?: number;
   maxSelect?: number | null;
+  minQuantity?: number;
+  maxQuantity?: number | null;
   modifierLinks: OrderModifierLink[];
   modifierPriceOverrides?: OrderDirectModifierOverride[];
   variations?: Array<{
@@ -852,6 +854,7 @@ export class OrdersService {
         menuItem,
         requestedItem.modifiers ?? [],
       );
+      this.assertItemQuantityLimits(menuItem, requestedItem.quantity);
 
       if (requestedItem.sections?.length) {
         if (!this.supportsSplitPizza(menuItem)) {
@@ -3003,6 +3006,26 @@ export class OrdersService {
     if (maxSelect !== null && totalSelected > maxSelect) {
       throw new BadRequestException(
         `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} modifier selection(s)`,
+      );
+    }
+  }
+
+  private assertItemQuantityLimits(
+    menuItem: OrderModifierSource,
+    quantity: number,
+  ) {
+    const minQuantity = menuItem.minQuantity ?? 1;
+    const maxQuantity = menuItem.maxQuantity ?? null;
+
+    if (quantity < minQuantity) {
+      throw new BadRequestException(
+        `${menuItem.name ?? 'Menu item'} requires at least ${minQuantity} item(s)`,
+      );
+    }
+
+    if (maxQuantity !== null && quantity > maxQuantity) {
+      throw new BadRequestException(
+        `${menuItem.name ?? 'Menu item'} allows at most ${maxQuantity} item(s)`,
       );
     }
   }

@@ -798,6 +798,104 @@ describe('CartService', () => {
     ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
   });
 
+  it('rejects cart item quantity above item maxQuantity', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: null,
+      minQuantity: 1,
+      maxQuantity: 2,
+      category: { id: 'category-1', items: [], modifierLinks: [] },
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          quantity: 3,
+        },
+      ),
+    ).rejects.toThrow('Burger allows at most 2 item(s)');
+  });
+
+  it('rejects cart item quantity below item minQuantity', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: null,
+      minQuantity: 2,
+      maxQuantity: 5,
+      category: { id: 'category-1', items: [], modifierLinks: [] },
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          quantity: 1,
+        },
+      ),
+    ).rejects.toThrow('Burger requires at least 2 item(s)');
+  });
+
   it('requires branchId on first add-item when cart does not exist', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue(null);

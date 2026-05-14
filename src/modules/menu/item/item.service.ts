@@ -118,6 +118,8 @@ export class MenuItemService {
             isRequired: dto.isRequired ?? false,
             minSelect: dto.minSelect ?? 0,
             maxSelect: dto.maxSelect ?? null,
+            minQuantity: dto.minQuantity ?? 1,
+            maxQuantity: dto.maxQuantity ?? null,
             isActive: dto.isActive ?? true,
           },
           tx,
@@ -199,6 +201,8 @@ export class MenuItemService {
         isRequired: item.isRequired ?? false,
         minSelect: item.minSelect ?? 0,
         maxSelect: item.maxSelect ?? null,
+        minQuantity: item.minQuantity ?? 1,
+        maxQuantity: item.maxQuantity ?? null,
         isActive: item.isActive ?? true,
       });
     }
@@ -311,6 +315,8 @@ export class MenuItemService {
           isRequired: dto.isRequired,
           minSelect: dto.minSelect,
           maxSelect: dto.maxSelect,
+          minQuantity: dto.minQuantity,
+          maxQuantity: dto.maxQuantity,
           isActive: dto.isActive,
         },
         tx,
@@ -672,6 +678,8 @@ export class MenuItemService {
           isRequired: item.isRequired,
           minSelect: item.minSelect,
           maxSelect: item.maxSelect,
+          minQuantity: item.minQuantity,
+          maxQuantity: item.maxQuantity,
           isActive: item.isActive,
         },
         tx,
@@ -1279,12 +1287,14 @@ export class MenuItemService {
   private assertSelectionLimits(
     dto: Pick<
       CreateMenuItemDto | UpdateMenuItemDto,
-      'isRequired' | 'minSelect' | 'maxSelect'
+      'isRequired' | 'minSelect' | 'maxSelect' | 'minQuantity' | 'maxQuantity'
     >,
     existing?: {
       isRequired?: boolean;
       minSelect?: number;
       maxSelect?: number | null;
+      minQuantity?: number;
+      maxQuantity?: number | null;
     },
   ) {
     const isRequired = dto.isRequired ?? existing?.isRequired ?? false;
@@ -1303,6 +1313,18 @@ export class MenuItemService {
     if (maxSelect !== null && maxSelect < minSelect) {
       throw new BadRequestException(
         'maxSelect must be greater than or equal to minSelect',
+      );
+    }
+
+    const minQuantity = dto.minQuantity ?? existing?.minQuantity ?? 1;
+    const maxQuantity =
+      dto.maxQuantity !== undefined
+        ? dto.maxQuantity
+        : (existing?.maxQuantity ?? null);
+
+    if (maxQuantity !== null && maxQuantity < minQuantity) {
+      throw new BadRequestException(
+        'maxQuantity must be greater than or equal to minQuantity',
       );
     }
   }

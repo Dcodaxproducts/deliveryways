@@ -111,6 +111,8 @@ interface CartModifierSource {
   isRequired?: boolean;
   minSelect?: number;
   maxSelect?: number | null;
+  minQuantity?: number;
+  maxQuantity?: number | null;
   modifierLinks: CartModifierLink[];
   modifierPriceOverrides?: CartDirectModifierOverride[];
   category?: {
@@ -424,6 +426,12 @@ export class CartService {
     );
 
     if (matchingItem) {
+      await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
+        ...dto,
+        quantity: matchingItem.quantity + dto.quantity,
+        restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
+      });
+
       await this.cartRepository.updateItem(matchingItem.id, {
         quantity: matchingItem.quantity + dto.quantity,
       });
@@ -1406,6 +1414,7 @@ export class CartService {
       }
     }
 
+    this.assertItemQuantityLimits(menuItem, dto.quantity);
     this.assertModifierSelectionLimits(menuItem, dto.modifiers ?? []);
 
     await this.assertValidSplitSections(menuItem, branchId, dto);
@@ -1431,6 +1440,26 @@ export class CartService {
     if (maxSelect !== null && totalSelected > maxSelect) {
       throw new BadRequestException(
         `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} modifier selection(s)`,
+      );
+    }
+  }
+
+  private assertItemQuantityLimits(
+    menuItem: CartModifierSource,
+    quantity: number,
+  ) {
+    const minQuantity = menuItem.minQuantity ?? 1;
+    const maxQuantity = menuItem.maxQuantity ?? null;
+
+    if (quantity < minQuantity) {
+      throw new BadRequestException(
+        `${menuItem.name ?? 'Menu item'} requires at least ${minQuantity} item(s)`,
+      );
+    }
+
+    if (maxQuantity !== null && quantity > maxQuantity) {
+      throw new BadRequestException(
+        `${menuItem.name ?? 'Menu item'} allows at most ${maxQuantity} item(s)`,
       );
     }
   }

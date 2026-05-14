@@ -524,6 +524,8 @@ model MenuItem {
   isRequired              Boolean             @default(false) @map("is_required")
   minSelect               Int                 @default(0) @map("min_select")
   maxSelect               Int?                @map("max_select")
+  minQuantity             Int                 @default(1) @map("min_quantity")
+  maxQuantity             Int?                @map("max_quantity")
   isActive                Boolean             @default(true) @map("is_active")
   deletedAt               DateTime?           @map("deleted_at") @db.Timestamptz
   createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz

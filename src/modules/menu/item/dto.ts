@@ -368,6 +368,30 @@ export class CreateMenuItemDto {
   maxSelect?: number | null;
 
   @ApiPropertyOptional({
+    default: 1,
+    description:
+      'Minimum quantity of this same item that can be added to cart/order.',
+    example: 1,
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  minQuantity?: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Maximum quantity of this same item that can be added to cart/order. Null means no maximum.',
+    example: 5,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === null ? null : Number(value)))
+  @IsInt()
+  @Min(1)
+  maxQuantity?: number | null;
+
+  @ApiPropertyOptional({
     description: 'Enables half-and-half split pizza selection for this item',
   })
   @IsOptional()
@@ -575,6 +599,29 @@ export class UpdateMenuItemDto {
   @IsInt()
   @Min(1)
   maxSelect?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Minimum quantity of this same item that can be added to cart/order.',
+    example: 1,
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  minQuantity?: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Maximum quantity of this same item that can be added to cart/order. Null means no maximum.',
+    example: 5,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === null ? null : Number(value)))
+  @IsInt()
+  @Min(1)
+  maxQuantity?: number | null;
 
   @ApiPropertyOptional({
     description: 'Enables half-and-half split pizza selection for this item',
