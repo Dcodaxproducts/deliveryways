@@ -20,6 +20,7 @@ import {
 } from '../../../common/guards';
 import {
   BulkCreateMenuItemsDto,
+  CreateProductLabelDto,
   CreateMenuItemDto,
   DuplicateMenuItemDto,
   ListMenuItemsDto,
@@ -75,6 +76,14 @@ export class MenuItemController {
   @Get('labels')
   labels() {
     return this.menuItemService.getLabels();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('labels')
+  createLabel(@Body() dto: CreateProductLabelDto) {
+    return this.menuItemService.createLabel(dto);
   }
 
   @ApiBearerAuth()

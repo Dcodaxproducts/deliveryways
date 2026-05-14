@@ -23,6 +23,15 @@ export const MENU_ITEM_LABEL_VALUES = [
   'VEGETARIAN',
 ] as const;
 
+export const DEFAULT_MENU_ITEM_LABELS = MENU_ITEM_LABEL_VALUES.map((value) => ({
+  value,
+  label: value
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' '),
+}));
+
 const parseJsonArray = (value: unknown): unknown => {
   if (Array.isArray(value) || value === undefined || value === null) {
     return value;
@@ -85,6 +94,18 @@ export class UpdateAllergenAdditiveTemplatesDto {
   @ValidateNested({ each: true })
   @Type(() => AllergenAdditiveTemplateEntryDto)
   additives?: AllergenAdditiveTemplateEntryDto[];
+}
+
+export class CreateProductLabelDto {
+  @ApiPropertyOptional({ description: 'Stable value, e.g. SPICY' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  value?: string;
+
+  @ApiProperty({ description: 'Customer/admin display text, e.g. Spicy' })
+  @IsString()
+  label!: string;
 }
 
 export class MenuItemModifierPriceOverrideDto {
@@ -248,13 +269,13 @@ export class CreateMenuItemDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
-  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
+  @IsString({ each: true })
   dietaryFlags?: string[];
 
-  @ApiPropertyOptional({ enum: MENU_ITEM_LABEL_VALUES, isArray: true })
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
-  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
+  @IsString({ each: true })
   labels?: string[];
 
   @ApiPropertyOptional({ type: [String] })
@@ -445,13 +466,13 @@ export class UpdateMenuItemDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
-  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
+  @IsString({ each: true })
   dietaryFlags?: string[];
 
-  @ApiPropertyOptional({ enum: MENU_ITEM_LABEL_VALUES, isArray: true })
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
-  @IsIn(MENU_ITEM_LABEL_VALUES, { each: true })
+  @IsString({ each: true })
   labels?: string[];
 
   @ApiPropertyOptional({ type: [String] })

@@ -65,6 +65,9 @@ describe('MenuItemService', () => {
       modifier: {
         count: jest.fn(),
       },
+      globalSetting: {
+        upsert: jest.fn().mockResolvedValue({ productLabels: null }),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback(tx)),
       ),
@@ -294,6 +297,38 @@ describe('MenuItemService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('creates product labels for checkbox selection', async () => {
+    const { service, prisma } = makeService();
+    prisma.globalSetting.upsert
+      .mockResolvedValueOnce({ productLabels: null })
+      .mockResolvedValueOnce({ productLabels: null });
+
+    const result = await service.createLabel({ label: 'Halal' });
+
+    const upsertMock = prisma.globalSetting.upsert;
+    const calls = upsertMock.mock.calls as Array<
+      [
+        {
+          update: { productLabels: Array<{ value: string; label: string }> };
+          create: { productLabels: Array<{ value: string; label: string }> };
+        },
+      ]
+    >;
+    const lastCall = calls[calls.length - 1][0];
+    expect(lastCall.update.productLabels).toContainEqual({
+      value: 'HALAL',
+      label: 'Halal',
+    });
+    expect(lastCall.create.productLabels).toContainEqual({
+      value: 'HALAL',
+      label: 'Halal',
+    });
+    expect(result).toEqual({
+      data: { value: 'HALAL', label: 'Halal' },
+      message: 'Menu item label created successfully',
+    });
   });
 
   it('stores allergen/additive codes from comma-separated item input', async () => {

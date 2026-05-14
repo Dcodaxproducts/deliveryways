@@ -12,10 +12,11 @@ import { PrismaService } from '../../../database';
 import { StorageService } from '../../storage/storage.service';
 import {
   BulkCreateMenuItemsDto,
+  CreateProductLabelDto,
   CreateMenuItemDto,
+  DEFAULT_MENU_ITEM_LABELS,
   DuplicateMenuItemDto,
   ListMenuItemsDto,
-  MENU_ITEM_LABEL_VALUES,
   ReorderMenuItemsDto,
   UpdateAllergenAdditiveTemplatesDto,
   UpdateMenuItemDto,
@@ -50,6 +51,7 @@ export class MenuItemService {
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
     this.assertSelectionLimits(dto);
+    await this.assertKnownLabels(dto.labels ?? dto.dietaryFlags);
     await this.assertUniqueFields(restaurantId, { sku });
 
     const data = await this.createItemWithAssignments(
@@ -151,6 +153,7 @@ export class MenuItemService {
     for (const item of dto.items) {
       const pricing = this.resolvePricingInput(item);
       this.assertSelectionLimits(item);
+      await this.assertKnownLabels(item.labels ?? item.dietaryFlags);
       const slug = await this.resolveUniqueSlug(
         restaurantId,
         item.slug ?? item.name,
@@ -254,6 +257,7 @@ export class MenuItemService {
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
     const pricing = this.resolvePricingInput(dto, item);
     this.assertSelectionLimits(dto, item);
+    await this.assertKnownLabels(dto.labels ?? dto.dietaryFlags);
     await this.assertUniqueFields(item.restaurantId, { sku }, id);
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -328,17 +332,34 @@ export class MenuItemService {
     };
   }
 
-  getLabels() {
+  async getLabels() {
+    const labels = await this.getProductLabels();
+
     return {
-      data: MENU_ITEM_LABEL_VALUES.map((value) => ({
-        value,
-        label: value
-          .toLowerCase()
-          .split('_')
-          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(' '),
-      })),
+      data: labels,
       message: 'Menu item labels fetched successfully',
+    };
+  }
+
+  async createLabel(dto: CreateProductLabelDto) {
+    const current = await this.getProductLabels();
+    const value = this.normalizeLabelValue(dto.value ?? dto.label);
+    const label = dto.label.trim();
+
+    if (!label) {
+      throw new BadRequestException('label is required');
+    }
+
+    if (current.some((item) => item.value === value)) {
+      throw new BadRequestException('Product label already exists');
+    }
+
+    const labels = [...current, { value, label }];
+    await this.saveProductLabels(labels);
+
+    return {
+      data: { value, label },
+      message: 'Menu item label created successfully',
     };
   }
 
@@ -1106,6 +1127,88 @@ export class MenuItemService {
   }
 
   private readonly splitPizzaDietaryFlag = '__SPLIT_PIZZA_ENABLED__';
+
+  private async assertKnownLabels(labels: string[] | undefined) {
+    if (!labels?.length) {
+      return;
+    }
+
+    const knownLabels = await this.getProductLabels();
+    const knownValues = new Set(knownLabels.map((label) => label.value));
+    const unknownLabel = labels.find((label) => !knownValues.has(label));
+
+    if (unknownLabel) {
+      throw new BadRequestException(`Unknown product label: ${unknownLabel}`);
+    }
+  }
+
+  private async getProductLabels() {
+    const settings = await this.prisma.globalSetting.upsert({
+      where: { scopeKey: 'GLOBAL' },
+      update: {},
+      create: {
+        scopeKey: 'GLOBAL',
+        productLabels:
+          DEFAULT_MENU_ITEM_LABELS as unknown as Prisma.InputJsonValue,
+      },
+      select: { productLabels: true },
+    });
+
+    const labels = this.readProductLabels(settings.productLabels);
+    return labels.length ? labels : DEFAULT_MENU_ITEM_LABELS;
+  }
+
+  private async saveProductLabels(
+    labels: Array<{ value: string; label: string }>,
+  ) {
+    await this.prisma.globalSetting.upsert({
+      where: { scopeKey: 'GLOBAL' },
+      update: { productLabels: labels as unknown as Prisma.InputJsonValue },
+      create: {
+        scopeKey: 'GLOBAL',
+        productLabels: labels as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  private readProductLabels(input: unknown) {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          return null;
+        }
+
+        const value = (entry as Record<string, unknown>).value;
+        const label = (entry as Record<string, unknown>).label;
+
+        if (typeof value !== 'string' || typeof label !== 'string') {
+          return null;
+        }
+
+        return { value: value.trim(), label: label.trim() };
+      })
+      .filter(
+        (entry): entry is { value: string; label: string } =>
+          !!entry && entry.value.length > 0 && entry.label.length > 0,
+      );
+  }
+
+  private normalizeLabelValue(value: string) {
+    const normalized = value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_');
+
+    if (!normalized) {
+      throw new BadRequestException('label value is required');
+    }
+
+    return normalized;
+  }
 
   private toStoredDietaryFlags(
     dietaryFlags: string[] | undefined,
