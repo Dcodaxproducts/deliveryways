@@ -848,7 +848,6 @@ export class OrdersService {
         }
       }
 
-      this.assertItemSelectionLimits(menuItem, requestedItem.quantity);
       this.assertModifierSelectionLimits(
         menuItem,
         requestedItem.modifiers ?? [],
@@ -2984,54 +2983,27 @@ export class OrdersService {
     return [...(item.category?.modifierLinks ?? []), ...item.modifierLinks];
   }
 
-  private assertItemSelectionLimits(
-    menuItem: OrderModifierSource,
-    quantity: number,
-  ) {
-    const minSelect = menuItem.minSelect ?? 0;
-    const maxSelect = menuItem.maxSelect ?? null;
-
-    if ((menuItem.isRequired || minSelect > 0) && quantity < minSelect) {
-      throw new BadRequestException(
-        `${menuItem.name ?? 'Menu item'} requires at least ${minSelect} item(s)`,
-      );
-    }
-
-    if (maxSelect !== null && quantity > maxSelect) {
-      throw new BadRequestException(
-        `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} item(s)`,
-      );
-    }
-  }
-
   private assertModifierSelectionLimits(
     menuItem: OrderModifierSource,
     modifiers: OrderItemModifierDto[],
   ) {
-    for (const link of this.getAvailableModifierLinks(menuItem)) {
-      const modifierIds = new Set(
-        link.modifierGroup.modifierLinks.map(
-          (modifierLink) => modifierLink.modifier.id,
-        ),
+    const totalSelected = modifiers.reduce(
+      (sum, modifier) => sum + (modifier.quantity ?? 1),
+      0,
+    );
+    const minSelect = menuItem.minSelect ?? 0;
+    const maxSelect = menuItem.maxSelect ?? null;
+
+    if ((menuItem.isRequired || minSelect > 0) && totalSelected < minSelect) {
+      throw new BadRequestException(
+        `${menuItem.name ?? 'Menu item'} requires at least ${minSelect} modifier selection(s)`,
       );
-      const selectedCount = modifiers
-        .filter((modifier) => modifierIds.has(modifier.modifierId))
-        .reduce((sum, modifier) => sum + (modifier.quantity ?? 1), 0);
+    }
 
-      if (
-        (link.modifierGroup.isRequired || link.modifierGroup.minSelect > 0) &&
-        selectedCount < link.modifierGroup.minSelect
-      ) {
-        throw new BadRequestException(
-          `${link.modifierGroup.name} requires at least ${link.modifierGroup.minSelect} selection(s)`,
-        );
-      }
-
-      if (selectedCount > link.modifierGroup.maxSelect) {
-        throw new BadRequestException(
-          `${link.modifierGroup.name} allows at most ${link.modifierGroup.maxSelect} selection(s)`,
-        );
-      }
+    if (maxSelect !== null && totalSelected > maxSelect) {
+      throw new BadRequestException(
+        `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} modifier selection(s)`,
+      );
     }
   }
 

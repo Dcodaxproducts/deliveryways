@@ -732,7 +732,7 @@ describe('CartService', () => {
     );
   });
 
-  it('rejects cart modifier selections above group maxSelect', async () => {
+  it('rejects cart modifier selections above item maxSelect', async () => {
     const { service, cartRepository } = makeService();
     const existingCart = {
       id: 'cart-1',
@@ -754,6 +754,9 @@ describe('CartService', () => {
     cartRepository.findMenuItemForCart.mockResolvedValue({
       id: 'menu-1',
       name: 'Burger',
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: 1,
       category: { id: 'category-1', items: [], modifierLinks: [] },
       variations: [],
       modifierLinks: [
@@ -762,7 +765,7 @@ describe('CartService', () => {
             id: 'group-1',
             name: 'Sauces',
             minSelect: 0,
-            maxSelect: 1,
+            maxSelect: 99,
             isRequired: false,
             modifierLinks: [
               { modifier: { id: 'modifier-1' } },
@@ -792,55 +795,7 @@ describe('CartService', () => {
           ],
         },
       ),
-    ).rejects.toThrow('Sauces allows at most 1 selection(s)');
-  });
-
-  it('rejects cart item quantity above item maxSelect', async () => {
-    const { service, cartRepository } = makeService();
-    const existingCart = {
-      id: 'cart-1',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-      customerId: 'user-1',
-      orderType: 'DELIVERY',
-      deliveryAddressId: null,
-      couponCode: null,
-      paymentMethod: null,
-      orderTime: null,
-      customerNote: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      items: [],
-    };
-    cartRepository.findByCustomerId.mockResolvedValue(existingCart);
-    cartRepository.findMenuItemForCart.mockResolvedValue({
-      id: 'menu-1',
-      name: 'Burger',
-      isRequired: false,
-      minSelect: 0,
-      maxSelect: 2,
-      category: { id: 'category-1', items: [], modifierLinks: [] },
-      variations: [],
-      modifierLinks: [],
-      branchOverrides: [],
-    });
-
-    await expect(
-      service.addItem(
-        {
-          uid: 'user-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.CUSTOMER,
-        },
-        {
-          branchId: 'branch-1',
-          menuItemId: 'menu-1',
-          quantity: 3,
-        },
-      ),
-    ).rejects.toThrow('Burger allows at most 2 item(s)');
+    ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
   });
 
   it('requires branchId on first add-item when cart does not exist', async () => {

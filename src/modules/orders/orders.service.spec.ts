@@ -876,7 +876,7 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.subtotal).toBe(125);
   });
 
-  it('rejects order item quantity above item maxSelect', async () => {
+  it('rejects order modifiers above item maxSelect', async () => {
     const prisma = {
       branch: {
         findFirst: jest.fn().mockResolvedValue({
@@ -904,15 +904,45 @@ describe('OrdersService - coupon quote validation', () => {
           restaurantId: 'restaurant-1',
           isRequired: false,
           minSelect: 0,
-          maxSelect: 2,
+          maxSelect: 1,
           pricingMode: 'SINGLE',
           basePrice: new Prisma.Decimal(100),
           deliveryPriceAdjustment: new Prisma.Decimal(0),
           takeawayPriceAdjustment: new Prisma.Decimal(0),
           depositAmount: new Prisma.Decimal(0),
-          category: { id: 'cat-1', variations: [] },
+          category: { id: 'cat-1', variations: [], modifierLinks: [] },
           variations: [],
-          modifierLinks: [],
+          modifierLinks: [
+            {
+              modifierGroup: {
+                id: 'group-1',
+                name: 'Sauces',
+                minSelect: 0,
+                maxSelect: 99,
+                isRequired: false,
+                modifierLinks: [
+                  {
+                    modifier: {
+                      id: 'modifier-1',
+                      name: 'Sauce 1',
+                      priceDelta: new Prisma.Decimal(0),
+                      itemPriceOverrides: [],
+                      variationPriceOverrides: [],
+                    },
+                  },
+                  {
+                    modifier: {
+                      id: 'modifier-2',
+                      name: 'Sauce 2',
+                      priceDelta: new Prisma.Decimal(0),
+                      itemPriceOverrides: [],
+                      variationPriceOverrides: [],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
           modifierPriceOverrides: [],
           branchOverrides: [],
         }),
@@ -942,11 +972,20 @@ describe('OrdersService - coupon quote validation', () => {
         {
           branchId: 'branch-1',
           orderType: OrderTypeEnum.DELIVERY,
-          items: [{ menuItemId: 'menu-1', quantity: 3 }],
+          items: [
+            {
+              menuItemId: 'menu-1',
+              quantity: 1,
+              modifiers: [
+                { modifierId: 'modifier-1', quantity: 1 },
+                { modifierId: 'modifier-2', quantity: 1 },
+              ],
+            },
+          ],
           orderTime: '2026-03-24T19:30:00.000Z',
         },
       ),
-    ).rejects.toThrow('Burger allows at most 2 item(s)');
+    ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
   });
 });
 
