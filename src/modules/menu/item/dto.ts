@@ -334,19 +334,33 @@ export class CreateMenuItemDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'When true, the item must have at least minSelect modifier selections in cart/order flows.',
+  })
   @IsOptional()
   @IsBoolean()
   isRequired?: boolean;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'Minimum total modifier selections required for this item. This is item-level modifier count, not item quantity and not per modifier/group.',
+    example: 1,
+  })
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(0)
   minSelect?: number;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Maximum total modifier selections allowed for this item. This is item-level modifier count, not item quantity and not per modifier/group. Null means no maximum.',
+    example: 3,
+  })
   @IsOptional()
   @Transform(({ value }) => (value === null ? null : Number(value)))
   @IsInt()
@@ -531,19 +545,31 @@ export class UpdateMenuItemDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'When true, the item must have at least minSelect modifier selections in cart/order flows.',
+  })
   @IsOptional()
   @IsBoolean()
   isRequired?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Minimum total modifier selections required for this item. This is item-level modifier count, not item quantity and not per modifier/group.',
+    example: 1,
+  })
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(0)
   minSelect?: number;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Maximum total modifier selections allowed for this item. This is item-level modifier count, not item quantity and not per modifier/group. Null means no maximum.',
+    example: 3,
+  })
   @IsOptional()
   @Transform(({ value }) => (value === null ? null : Number(value)))
   @IsInt()
