@@ -349,9 +349,15 @@ export class CouponsService {
 
       if (requestedRestaurantId) {
         await this.assertRestaurantInTenant(tenantId, requestedRestaurantId);
+        return requestedRestaurantId;
       }
 
-      return requestedRestaurantId;
+      if (user.rid) {
+        await this.assertRestaurantInTenant(tenantId, user.rid);
+        return user.rid;
+      }
+
+      return this.resolveSingleTenantRestaurantId(tenantId);
     }
 
     if (!user.rid) {
@@ -404,6 +410,16 @@ export class CouponsService {
         'You cannot access resources outside your restaurant',
       );
     }
+  }
+
+  private async resolveSingleTenantRestaurantId(tenantId: string) {
+    const restaurants = await this.prisma.restaurant.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true },
+      take: 2,
+    });
+
+    return restaurants.length === 1 ? restaurants[0].id : undefined;
   }
 
   private async assertRestaurantInTenant(

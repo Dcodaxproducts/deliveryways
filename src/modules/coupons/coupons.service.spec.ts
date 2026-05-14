@@ -3,9 +3,15 @@ import { CouponDiscountType, CouponStatus, Prisma } from '@prisma/client';
 import { CouponsService, CouponValidationInput } from './coupons.service';
 import { CouponsRepository } from './coupons.repository';
 
-describe('CouponsService - validateForCheckout', () => {
+describe('CouponsService', () => {
   let service: CouponsService;
   let repository: Partial<Record<keyof CouponsRepository, jest.Mock>>;
+  let prisma: {
+    restaurant: {
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+    };
+  };
 
   const makeCoupon = (overrides: Record<string, unknown> = {}) => ({
     id: 'cpn-1',
@@ -49,14 +55,75 @@ describe('CouponsService - validateForCheckout', () => {
 
   beforeEach(() => {
     repository = {
+      create: jest.fn(),
       findByCode: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
+    };
+    prisma = {
+      restaurant: {
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+      },
     };
 
     service = new CouponsService(
       repository as unknown as CouponsRepository,
-      {} as never,
+      prisma as never,
     );
+  });
+
+  it('creates coupon for the only tenant restaurant when business admin has no restaurant context', async () => {
+    prisma.restaurant.findMany.mockResolvedValue([{ id: 'rid-1' }]);
+    repository.create!.mockResolvedValue({ id: 'coupon-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tid-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        code: 'SAVE20',
+        title: 'Save 20',
+        discountType: CouponDiscountType.PERCENTAGE,
+        discountValue: 20,
+        startsAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-12-31T23:59:59.000Z',
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant: { connect: { id: 'tid-1' } },
+        restaurant: { connect: { id: 'rid-1' } },
+        code: 'SAVE20',
+      }),
+    );
+  });
+
+  it('still requires restaurantId when business admin tenant has multiple restaurants and no restaurant context', async () => {
+    prisma.restaurant.findMany.mockResolvedValue([
+      { id: 'rid-1' },
+      { id: 'rid-2' },
+    ]);
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          tid: 'tid-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {
+          code: 'SAVE20',
+          title: 'Save 20',
+          discountType: CouponDiscountType.PERCENTAGE,
+          discountValue: 20,
+          startsAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-12-31T23:59:59.000Z',
+        },
+      ),
+    ).rejects.toThrow('restaurantId is required');
   });
 
   it('returns correct percentage discount capped by maxDiscountAmount', async () => {
