@@ -19,14 +19,17 @@ import {
   TenantAccessGuard,
 } from '../../../common/guards';
 import {
+  AllergenAdditiveTemplateEntryDto,
   BulkCreateMenuItemsDto,
   CreateProductLabelDto,
   CreateMenuItemDto,
   DuplicateMenuItemDto,
   ListMenuItemsDto,
   ReorderMenuItemsDto,
+  UpdateAllergenAdditiveTemplateEntryDto,
   UpdateAllergenAdditiveTemplatesDto,
   UpdateMenuItemDto,
+  UpdateProductLabelDto,
 } from './dto';
 import { MenuItemService } from './item.service';
 
@@ -88,6 +91,25 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Patch('labels/:value')
+  updateLabel(
+    @Param('value') value: string,
+    @Body() dto: UpdateProductLabelDto,
+  ) {
+    return this.menuItemService.updateLabel(value, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Delete('labels/:value')
+  deleteLabel(@Param('value') value: string) {
+    return this.menuItemService.deleteLabel(value);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -114,6 +136,62 @@ export class MenuItemController {
     @Body() dto: UpdateAllergenAdditiveTemplatesDto,
   ) {
     return this.menuItemService.updateAllergenAdditiveTemplates(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('allergen-additive-templates/:type')
+  createAllergenAdditiveTemplateEntry(
+    @CurrentUser() user: AuthUserContext,
+    @Param('type') type: string,
+    @Body() dto: AllergenAdditiveTemplateEntryDto,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.createAllergenAdditiveTemplateEntry(
+      user,
+      type,
+      dto,
+      restaurantId,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('allergen-additive-templates/:type/:code')
+  updateAllergenAdditiveTemplateEntry(
+    @CurrentUser() user: AuthUserContext,
+    @Param('type') type: string,
+    @Param('code') code: string,
+    @Body() dto: UpdateAllergenAdditiveTemplateEntryDto,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.updateAllergenAdditiveTemplateEntry(
+      user,
+      type,
+      code,
+      dto,
+      restaurantId,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Delete('allergen-additive-templates/:type/:code')
+  deleteAllergenAdditiveTemplateEntry(
+    @CurrentUser() user: AuthUserContext,
+    @Param('type') type: string,
+    @Param('code') code: string,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.deleteAllergenAdditiveTemplateEntry(
+      user,
+      type,
+      code,
+      restaurantId,
+    );
   }
 
   @ApiBearerAuth()

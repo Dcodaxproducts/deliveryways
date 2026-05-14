@@ -108,6 +108,32 @@ export class CreateProductLabelDto {
   label!: string;
 }
 
+export class UpdateProductLabelDto {
+  @ApiPropertyOptional({ description: 'New stable value, e.g. HOT' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  value?: string;
+
+  @ApiPropertyOptional({ description: 'Customer/admin display text' })
+  @IsOptional()
+  @IsString()
+  label?: string;
+}
+
+export class UpdateAllergenAdditiveTemplateEntryDto {
+  @ApiPropertyOptional({ description: 'New short code, e.g. B or 2' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  code?: string;
+
+  @ApiPropertyOptional({ description: 'Full customer-facing text' })
+  @IsOptional()
+  @IsString()
+  label?: string;
+}
+
 export class MenuItemModifierPriceOverrideDto {
   @ApiProperty()
   @IsString()

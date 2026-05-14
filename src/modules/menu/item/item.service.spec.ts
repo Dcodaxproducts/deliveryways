@@ -53,6 +53,7 @@ describe('MenuItemService', () => {
 
     const prisma = {
       menuItem: {
+        count: jest.fn().mockResolvedValue(0),
         findUnique: jest.fn(),
       },
       restaurant: {
@@ -331,6 +332,30 @@ describe('MenuItemService', () => {
     });
   });
 
+  it('updates and deletes product labels when not assigned to items', async () => {
+    const { service, prisma } = makeService();
+    prisma.globalSetting.upsert
+      .mockResolvedValueOnce({
+        productLabels: [{ value: 'HALAL', label: 'Halal' }],
+      })
+      .mockResolvedValueOnce({ productLabels: null })
+      .mockResolvedValueOnce({
+        productLabels: [{ value: 'HOT', label: 'Hot' }],
+      })
+      .mockResolvedValueOnce({ productLabels: null });
+
+    await expect(
+      service.updateLabel('HALAL', { value: 'HOT', label: 'Hot' }),
+    ).resolves.toMatchObject({
+      data: { value: 'HOT', label: 'Hot' },
+      message: 'Menu item label updated successfully',
+    });
+    await expect(service.deleteLabel('HOT')).resolves.toMatchObject({
+      data: { value: 'HOT' },
+      message: 'Menu item label deleted successfully',
+    });
+  });
+
   it('stores allergen/additive codes from comma-separated item input', async () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
@@ -398,6 +423,77 @@ describe('MenuItemService', () => {
     expect(result.data).toEqual({
       allergens: [{ code: 'A', label: 'Gluten' }],
       additives: [{ code: '1', label: 'Coloring' }],
+    });
+  });
+
+  it('creates, updates, and deletes allergen template entries', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst
+      .mockResolvedValueOnce({ settings: { customerApp: {} } })
+      .mockResolvedValueOnce({
+        settings: {
+          customerApp: {
+            allergenAdditiveTemplates: {
+              allergens: [{ code: 'A', label: 'Gluten' }],
+              additives: [],
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          customerApp: {
+            allergenAdditiveTemplates: {
+              allergens: [{ code: 'B', label: 'Barley' }],
+              additives: [],
+            },
+          },
+        },
+      });
+    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    await expect(
+      service.createAllergenAdditiveTemplateEntry(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'allergens',
+        { code: 'A', label: 'Gluten' },
+        'restaurant-1',
+      ),
+    ).resolves.toMatchObject({
+      data: { code: 'A', label: 'Gluten' },
+      message: 'Allergen/additive template entry created successfully',
+    });
+    await expect(
+      service.updateAllergenAdditiveTemplateEntry(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'allergens',
+        'A',
+        { code: 'B', label: 'Barley' },
+        'restaurant-1',
+      ),
+    ).resolves.toMatchObject({
+      data: { code: 'B', label: 'Barley' },
+      message: 'Allergen/additive template entry updated successfully',
+    });
+    await expect(
+      service.deleteAllergenAdditiveTemplateEntry(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'allergens',
+        'B',
+        'restaurant-1',
+      ),
+    ).resolves.toMatchObject({
+      data: { code: 'B' },
+      message: 'Allergen/additive template entry deleted successfully',
     });
   });
 

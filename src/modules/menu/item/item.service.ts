@@ -11,6 +11,7 @@ import { buildPaginationMeta } from '../../../common/utils';
 import { PrismaService } from '../../../database';
 import { StorageService } from '../../storage/storage.service';
 import {
+  AllergenAdditiveTemplateEntryDto,
   BulkCreateMenuItemsDto,
   CreateProductLabelDto,
   CreateMenuItemDto,
@@ -18,8 +19,10 @@ import {
   DuplicateMenuItemDto,
   ListMenuItemsDto,
   ReorderMenuItemsDto,
+  UpdateAllergenAdditiveTemplateEntryDto,
   UpdateAllergenAdditiveTemplatesDto,
   UpdateMenuItemDto,
+  UpdateProductLabelDto,
 } from './dto';
 import { MenuItemRepository } from './item.repository';
 
@@ -363,6 +366,68 @@ export class MenuItemService {
     };
   }
 
+  async updateLabel(value: string, dto: UpdateProductLabelDto) {
+    const current = await this.getProductLabels();
+    const normalizedValue = this.normalizeLabelValue(value);
+    const index = current.findIndex((item) => item.value === normalizedValue);
+
+    if (index === -1) {
+      throw new NotFoundException('Product label not found');
+    }
+
+    const nextValue = dto.value
+      ? this.normalizeLabelValue(dto.value)
+      : normalizedValue;
+    const nextLabel = dto.label?.trim() ?? current[index].label;
+
+    if (!nextLabel) {
+      throw new BadRequestException('label is required');
+    }
+
+    if (
+      nextValue !== normalizedValue &&
+      current.some((item) => item.value === nextValue)
+    ) {
+      throw new BadRequestException('Product label already exists');
+    }
+
+    if (nextValue !== normalizedValue) {
+      await this.assertProductLabelNotInUse(normalizedValue);
+    }
+
+    const labels = current.map((item) =>
+      item.value === normalizedValue
+        ? { value: nextValue, label: nextLabel }
+        : item,
+    );
+    await this.saveProductLabels(labels);
+
+    return {
+      data: { value: nextValue, label: nextLabel },
+      message: 'Menu item label updated successfully',
+    };
+  }
+
+  async deleteLabel(value: string) {
+    const current = await this.getProductLabels();
+    const normalizedValue = this.normalizeLabelValue(value);
+    const exists = current.some((item) => item.value === normalizedValue);
+
+    if (!exists) {
+      throw new NotFoundException('Product label not found');
+    }
+
+    await this.assertProductLabelNotInUse(normalizedValue);
+    await this.saveProductLabels(
+      current.filter((item) => item.value !== normalizedValue),
+    );
+
+    return {
+      data: { value: normalizedValue },
+      message: 'Menu item label deleted successfully',
+    };
+  }
+
   async getAllergenAdditiveTemplates(
     user: AuthUserContext,
     requestedRestaurantId?: string,
@@ -432,6 +497,134 @@ export class MenuItemService {
     return {
       data: templates,
       message: 'Allergen and additive templates updated successfully',
+    };
+  }
+
+  async createAllergenAdditiveTemplateEntry(
+    user: AuthUserContext,
+    type: string,
+    dto: AllergenAdditiveTemplateEntryDto,
+    requestedRestaurantId?: string,
+  ) {
+    const templateType = this.resolveTemplateType(type);
+    const { restaurantId, settings, templates } =
+      await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
+    const entries = templates[templateType];
+    const entry = { code: dto.code.trim(), label: dto.label.trim() };
+
+    if (!entry.code || !entry.label) {
+      throw new BadRequestException('code and label are required');
+    }
+
+    if (entries.some((item) => item.code === entry.code)) {
+      throw new BadRequestException('Template code already exists');
+    }
+
+    const nextTemplates = {
+      ...templates,
+      [templateType]: [...entries, entry],
+    };
+    await this.saveAllergenAdditiveTemplates(
+      restaurantId,
+      settings,
+      nextTemplates,
+    );
+
+    return {
+      data: entry,
+      message: 'Allergen/additive template entry created successfully',
+    };
+  }
+
+  async updateAllergenAdditiveTemplateEntry(
+    user: AuthUserContext,
+    type: string,
+    code: string,
+    dto: UpdateAllergenAdditiveTemplateEntryDto,
+    requestedRestaurantId?: string,
+  ) {
+    const templateType = this.resolveTemplateType(type);
+    const { restaurantId, settings, templates } =
+      await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
+    const entries = templates[templateType];
+    const currentCode = code.trim();
+    const index = entries.findIndex((entry) => entry.code === currentCode);
+
+    if (index === -1) {
+      throw new NotFoundException('Allergen/additive template entry not found');
+    }
+
+    const nextCode = dto.code?.trim() ?? currentCode;
+    const nextLabel = dto.label?.trim() ?? entries[index].label;
+
+    if (!nextCode || !nextLabel) {
+      throw new BadRequestException('code and label are required');
+    }
+
+    if (
+      nextCode !== currentCode &&
+      entries.some((entry) => entry.code === nextCode)
+    ) {
+      throw new BadRequestException('Template code already exists');
+    }
+
+    if (nextCode !== currentCode) {
+      await this.assertAllergenCodeNotInUse(restaurantId, currentCode);
+    }
+
+    const nextEntry = { code: nextCode, label: nextLabel };
+    const nextTemplates = {
+      ...templates,
+      [templateType]: entries.map((entry) =>
+        entry.code === currentCode ? nextEntry : entry,
+      ),
+    };
+    await this.saveAllergenAdditiveTemplates(
+      restaurantId,
+      settings,
+      nextTemplates,
+    );
+
+    return {
+      data: nextEntry,
+      message: 'Allergen/additive template entry updated successfully',
+    };
+  }
+
+  async deleteAllergenAdditiveTemplateEntry(
+    user: AuthUserContext,
+    type: string,
+    code: string,
+    requestedRestaurantId?: string,
+  ) {
+    const templateType = this.resolveTemplateType(type);
+    const { restaurantId, settings, templates } =
+      await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
+    const currentCode = code.trim();
+    const exists = templates[templateType].some(
+      (entry) => entry.code === currentCode,
+    );
+
+    if (!exists) {
+      throw new NotFoundException('Allergen/additive template entry not found');
+    }
+
+    await this.assertAllergenCodeNotInUse(restaurantId, currentCode);
+    const nextTemplates = {
+      ...templates,
+      [templateType]: templates[templateType].filter(
+        (entry) => entry.code !== currentCode,
+      ),
+    };
+    await this.saveAllergenAdditiveTemplates(
+      restaurantId,
+      settings,
+      nextTemplates,
+    );
+
+    return {
+      data: { code: currentCode },
+      message: 'Allergen/additive template entry deleted successfully',
     };
   }
 
@@ -1142,6 +1335,21 @@ export class MenuItemService {
     }
   }
 
+  private async assertProductLabelNotInUse(value: string) {
+    const count = await this.prisma.menuItem.count({
+      where: {
+        deletedAt: null,
+        dietaryFlags: { array_contains: [value] },
+      },
+    });
+
+    if (count > 0) {
+      throw new BadRequestException(
+        'Product label is assigned to menu items and cannot be changed or deleted',
+      );
+    }
+  }
+
   private async getProductLabels() {
     const settings = await this.prisma.globalSetting.upsert({
       where: { scopeKey: 'GLOBAL' },
@@ -1208,6 +1416,81 @@ export class MenuItemService {
     }
 
     return normalized;
+  }
+
+  private resolveTemplateType(type: string): 'allergens' | 'additives' {
+    if (type === 'allergens' || type === 'allergen') {
+      return 'allergens';
+    }
+
+    if (type === 'additives' || type === 'additive') {
+      return 'additives';
+    }
+
+    throw new BadRequestException('type must be allergens or additives');
+  }
+
+  private async loadAllergenAdditiveTemplateState(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    const restaurantId = await this.resolveRestaurantId(
+      user,
+      requestedRestaurantId,
+    );
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+      },
+      select: { settings: true },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const settings = this.toJsonObject(restaurant.settings);
+
+    return {
+      restaurantId,
+      settings,
+      templates: this.readAllergenAdditiveTemplates(settings),
+    };
+  }
+
+  private async saveAllergenAdditiveTemplates(
+    restaurantId: string,
+    settings: Prisma.JsonObject,
+    templates: {
+      allergens: Array<{ code: string; label: string }>;
+      additives: Array<{ code: string; label: string }>;
+    },
+  ) {
+    const customerApp = this.toJsonObject(settings.customerApp);
+    customerApp.allergenAdditiveTemplates = templates;
+    settings.customerApp = customerApp;
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurantId },
+      data: { settings: settings as Prisma.InputJsonValue },
+    });
+  }
+
+  private async assertAllergenCodeNotInUse(restaurantId: string, code: string) {
+    const count = await this.prisma.menuItem.count({
+      where: {
+        restaurantId,
+        deletedAt: null,
+        allergenFlags: { array_contains: [code] },
+      },
+    });
+
+    if (count > 0) {
+      throw new BadRequestException(
+        'Allergen/additive code is assigned to menu items and cannot be changed or deleted',
+      );
+    }
   }
 
   private toStoredDietaryFlags(
