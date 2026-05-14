@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -150,24 +149,18 @@ export class TenantsService {
     }
 
     const summary = await this.tenantsRepository.getDeleteSummary(tenantId);
-    const blockers = Object.entries(summary)
-      .filter(([, count]) => count > 0)
-      .map(([key, count]) => ({ resource: key, count }));
-
-    if (blockers.length > 0) {
-      throw new BadRequestException({
-        message:
-          'Tenant cannot be force deleted while related records still exist',
-        blockers,
-      });
-    }
-
-    const data = await this.tenantsRepository.forceDelete(tenantId);
+    const data = await this.prismaTransaction((tx) =>
+      this.tenantsRepository.forceDeleteWithRelations(tenantId, tx),
+    );
 
     return {
-      data,
+      data: { ...data, deletionSummary: summary },
       message: 'Tenant force deleted successfully',
     };
+  }
+
+  private prismaTransaction<T>(callback: (tx: PrismaTx) => Promise<T>) {
+    return this.tenantsRepository.transaction(callback);
   }
 
   private withDeletionState<

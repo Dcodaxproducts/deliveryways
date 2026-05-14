@@ -12,6 +12,10 @@ export class TenantsRepository {
     return tx ?? this.prisma;
   }
 
+  transaction<T>(callback: (tx: PrismaTx) => Promise<T>) {
+    return this.prisma.$transaction(callback);
+  }
+
   async create(data: Prisma.TenantCreateInput, tx?: PrismaTx) {
     return this.client(tx).tenant.create({ data });
   }
@@ -114,5 +118,146 @@ export class TenantsRepository {
     return this.client(tx).tenant.delete({
       where: { id: tenantId },
     });
+  }
+
+  async forceDeleteWithRelations(tenantId: string, tx: PrismaTx) {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: { owner: { disconnect: true } },
+    });
+    await tx.branch.updateMany({
+      where: { tenantId },
+      data: { managerId: null },
+    });
+
+    await tx.notification.deleteMany({ where: { tenantId } });
+    await tx.chatMessage.deleteMany({ where: { thread: { tenantId } } });
+    await tx.chatThread.deleteMany({ where: { tenantId } });
+
+    await tx.groupOrderItem.deleteMany({
+      where: { session: { tenantId } },
+    });
+    await tx.groupOrderParticipant.deleteMany({
+      where: { session: { tenantId } },
+    });
+    await tx.groupOrderSession.deleteMany({ where: { tenantId } });
+
+    await tx.posOrderDraftItem.deleteMany({
+      where: { draft: { tenantId } },
+    });
+    await tx.posOrderDraft.deleteMany({ where: { tenantId } });
+
+    await tx.cartItem.deleteMany({ where: { cart: { tenantId } } });
+    await tx.cart.deleteMany({ where: { tenantId } });
+
+    await tx.couponUsage.deleteMany({
+      where: {
+        OR: [
+          { coupon: { tenantId } },
+          { customer: { tenantId } },
+          { order: { tenantId } },
+        ],
+      },
+    });
+
+    await tx.walletTransaction.deleteMany({ where: { tenantId } });
+    await tx.loyaltyTransaction.deleteMany({ where: { tenantId } });
+    await tx.orderItem.deleteMany({ where: { order: { tenantId } } });
+    await tx.order.deleteMany({ where: { tenantId } });
+    await tx.paymentTransaction.deleteMany({ where: { tenantId } });
+
+    await tx.walletAccount.deleteMany({ where: { tenantId } });
+    await tx.loyaltyAccount.deleteMany({ where: { tenantId } });
+    await tx.loyaltyProgram.deleteMany({ where: { tenantId } });
+    await tx.coupon.deleteMany({ where: { tenantId } });
+
+    await tx.inventoryMovement.deleteMany({
+      where: {
+        OR: [
+          { inventoryItem: { restaurant: { tenantId } } },
+          { branch: { tenantId } },
+          { createdBy: { tenantId } },
+        ],
+      },
+    });
+    await tx.menuItemRecipe.deleteMany({
+      where: {
+        OR: [
+          { menuItem: { restaurant: { tenantId } } },
+          { inventoryItem: { restaurant: { tenantId } } },
+        ],
+      },
+    });
+    await tx.inventoryItem.deleteMany({
+      where: { restaurant: { tenantId } },
+    });
+    await tx.inventoryCategory.deleteMany({
+      where: { restaurant: { tenantId } },
+    });
+
+    await tx.restaurantMenuCategory.deleteMany({
+      where: { restaurantMenu: { restaurant: { tenantId } } },
+    });
+    await tx.restaurantMenuItem.deleteMany({
+      where: { restaurantMenu: { restaurant: { tenantId } } },
+    });
+    await tx.menuCategoryVariation.deleteMany({
+      where: { category: { restaurant: { tenantId } } },
+    });
+    await tx.menuItemVariationPriceOverride.deleteMany({
+      where: { menuItem: { restaurant: { tenantId } } },
+    });
+    await tx.menuVariationModifierPriceOverride.deleteMany({
+      where: { menuItem: { restaurant: { tenantId } } },
+    });
+    await tx.menuCategoryModifierGroup.deleteMany({
+      where: { category: { restaurant: { tenantId } } },
+    });
+    await tx.menuItemModifierGroup.deleteMany({
+      where: { menuItem: { restaurant: { tenantId } } },
+    });
+    await tx.menuItemModifierPriceOverride.deleteMany({
+      where: { menuItem: { restaurant: { tenantId } } },
+    });
+    await tx.modifierGroupModifier.deleteMany({
+      where: { modifierGroup: { restaurant: { tenantId } } },
+    });
+    await tx.branchMenuItemOverride.deleteMany({
+      where: { branch: { tenantId } },
+    });
+    await tx.branchCategoryOverride.deleteMany({
+      where: { branch: { tenantId } },
+    });
+
+    await tx.menuItem.deleteMany({ where: { restaurant: { tenantId } } });
+    await tx.menuItemVariation.deleteMany({
+      where: { restaurant: { tenantId } },
+    });
+    await tx.modifier.deleteMany({ where: { restaurant: { tenantId } } });
+    await tx.modifierGroup.deleteMany({
+      where: { restaurant: { tenantId } },
+    });
+    await tx.restaurantMenu.deleteMany({
+      where: { restaurant: { tenantId } },
+    });
+    await tx.menuCategory.updateMany({
+      where: { restaurant: { tenantId } },
+      data: { parentCategoryId: null },
+    });
+    await tx.menuCategory.deleteMany({ where: { restaurant: { tenantId } } });
+
+    await tx.deliveryman.deleteMany({ where: { tenantId } });
+    await tx.staffUser.deleteMany({ where: { tenantId } });
+    await tx.staffRole.deleteMany({ where: { tenantId } });
+    await tx.profile.deleteMany({ where: { user: { tenantId } } });
+    await tx.user.deleteMany({ where: { tenantId } });
+
+    await tx.address.deleteMany({ where: { tenantId } });
+    await tx.tenantSubscription.deleteMany({ where: { tenantId } });
+    await tx.packagePlan.deleteMany({ where: { tenantId } });
+    await tx.branch.deleteMany({ where: { tenantId } });
+    await tx.restaurant.deleteMany({ where: { tenantId } });
+
+    return tx.tenant.delete({ where: { id: tenantId } });
   }
 }

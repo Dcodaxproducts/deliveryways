@@ -14,6 +14,10 @@ describe('TenantsService', () => {
       analytics: jest.fn(),
       getDeleteSummary: jest.fn(),
       forceDelete: jest.fn(),
+      forceDeleteWithRelations: jest.fn(),
+      transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) =>
+        callback({}),
+      ),
     };
     const storageService = {
       resolveMediaUrlsDeep: jest.fn(
@@ -80,6 +84,57 @@ describe('TenantsService', () => {
         'tenant-1',
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('force deletes tenant and related records for super admin', async () => {
+    const { service, tenantsRepository } = makeService();
+    tenantsRepository.findById.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'tenant-one',
+      isActive: true,
+      deletedAt: null,
+    });
+    tenantsRepository.getDeleteSummary.mockResolvedValue({
+      restaurants: 1,
+      branches: 2,
+      users: 3,
+      orders: 4,
+      coupons: 5,
+      transactions: 6,
+    });
+    tenantsRepository.forceDeleteWithRelations.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'tenant-one',
+    });
+
+    const result = await service.forceDeleteTenant(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'tenant-1',
+    );
+
+    expect(tenantsRepository.transaction).toHaveBeenCalledTimes(1);
+    expect(tenantsRepository.forceDeleteWithRelations).toHaveBeenCalledWith(
+      'tenant-1',
+      {},
+    );
+    expect(result).toEqual({
+      data: {
+        id: 'tenant-1',
+        slug: 'tenant-one',
+        deletionSummary: {
+          restaurants: 1,
+          branches: 2,
+          users: 3,
+          orders: 4,
+          coupons: 5,
+          transactions: 6,
+        },
+      },
+      message: 'Tenant force deleted successfully',
+    });
   });
 
   it('throws not found when tenant does not exist', async () => {
