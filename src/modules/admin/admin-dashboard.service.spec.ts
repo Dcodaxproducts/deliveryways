@@ -388,6 +388,27 @@ describe('AdminDashboardService', () => {
     });
   });
 
+  it('returns business owner stats for super admin dashboard', async () => {
+    const repository = {
+      getBusinessOwnersStats: jest.fn().mockResolvedValue({
+        totalBusinessOwners: 12,
+        activeBusinessOwners: 9,
+        inactiveBusinessOwners: 3,
+      }),
+    };
+
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(service.getBusinessOwnersStats()).resolves.toEqual({
+      data: {
+        totalBusinessOwners: 12,
+        activeBusinessOwners: 9,
+        inactiveBusinessOwners: 3,
+      },
+      message: 'Admin dashboard business owner stats fetched successfully',
+    });
+  });
+
   it('returns deliverymen stats for business admin scope', async () => {
     const repository = {
       getDeliverymenStats: jest.fn().mockResolvedValue({

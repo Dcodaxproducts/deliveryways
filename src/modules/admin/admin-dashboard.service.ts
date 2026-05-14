@@ -9,6 +9,7 @@ import { UserRoleEnum } from '../../common/enums';
 import {
   AdminDashboardDeliverymenStats,
   AdminDashboardEmployeesStats,
+  AdminDashboardBusinessOwnersStats,
   AdminDashboardCustomersStats,
   AdminDashboardOrdersTrend,
   AdminDashboardOrdersStats,
@@ -174,6 +175,18 @@ export class AdminDashboardService {
     return {
       data,
       message: 'Admin dashboard customer stats fetched successfully',
+    };
+  }
+
+  async getBusinessOwnersStats(): Promise<{
+    data: AdminDashboardBusinessOwnersStats;
+    message: string;
+  }> {
+    const data = await this.adminDashboardRepository.getBusinessOwnersStats();
+
+    return {
+      data,
+      message: 'Admin dashboard business owner stats fetched successfully',
     };
   }
 

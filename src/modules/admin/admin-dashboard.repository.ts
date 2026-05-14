@@ -94,6 +94,12 @@ export interface AdminDashboardCustomersStats {
   newCustomersLast30Days: number;
 }
 
+export interface AdminDashboardBusinessOwnersStats {
+  totalBusinessOwners: number;
+  activeBusinessOwners: number;
+  inactiveBusinessOwners: number;
+}
+
 export interface AdminDashboardRestaurantOverview {
   totalOrders: number;
   totalRevenue: number;
@@ -414,6 +420,24 @@ export class AdminDashboardRepository {
       activeCustomers,
       inactiveCustomers: totalCustomers - activeCustomers,
       newCustomersLast30Days,
+    };
+  }
+
+  async getBusinessOwnersStats(): Promise<AdminDashboardBusinessOwnersStats> {
+    const where = {
+      deletedAt: null,
+      role: UserRole.BUSINESS_ADMIN,
+    };
+    const [totalBusinessOwners, activeBusinessOwners] =
+      await this.prisma.$transaction([
+        this.prisma.user.count({ where }),
+        this.prisma.user.count({ where: { ...where, isActive: true } }),
+      ]);
+
+    return {
+      totalBusinessOwners,
+      activeBusinessOwners,
+      inactiveBusinessOwners: totalBusinessOwners - activeBusinessOwners,
     };
   }
 

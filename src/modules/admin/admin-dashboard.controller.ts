@@ -133,6 +133,15 @@ export class AdminDashboardController {
     return this.adminDashboardService.getCustomersStats(user, query);
   }
 
+  @Get('business-owners/stats')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Get business owner stats for super-admin dashboard summary cards',
+  })
+  getBusinessOwnersStats() {
+    return this.adminDashboardService.getBusinessOwnersStats();
+  }
+
   @Get('deliverymen/stats')
   @Roles(
     RolesEnum.SUPER_ADMIN,
