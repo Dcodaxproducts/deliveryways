@@ -3,7 +3,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { UserRoleEnum } from '../../../common/enums';
-import { UpdateMenuItemDto } from './dto';
+import { CreateMenuItemDto, UpdateMenuItemDto } from './dto';
 import { MenuItemService } from './item.service';
 
 describe('MenuItemService', () => {
@@ -57,6 +57,7 @@ describe('MenuItemService', () => {
       },
       restaurant: {
         findFirst: jest.fn(),
+        update: jest.fn(),
       },
       menuCategory: {
         findFirst: jest.fn(),
@@ -293,6 +294,76 @@ describe('MenuItemService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('stores allergen/additive codes from comma-separated item input', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+    const dto = plainToInstance(CreateMenuItemDto, {
+      restaurantId: 'restaurant-1',
+      categoryId: 'category-1',
+      name: 'Allergen Burger',
+      basePrice: 650,
+      allergenCodes: 'A, 1',
+    });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      dto,
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ allergenFlags: ['A', '1'] }),
+      expect.anything(),
+    );
+  });
+
+  it('updates restaurant allergen/additive templates', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      settings: { customerApp: { currency: 'EUR' } },
+    });
+    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    const result = await service.updateAllergenAdditiveTemplates(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        allergens: [{ code: 'A', label: 'Gluten' }],
+        additives: [{ code: '1', label: 'Coloring' }],
+      },
+    );
+
+    expect(prisma.restaurant.update).toHaveBeenCalledWith({
+      where: { id: 'restaurant-1' },
+      data: {
+        settings: {
+          customerApp: {
+            currency: 'EUR',
+            allergenAdditiveTemplates: {
+              allergens: [{ code: 'A', label: 'Gluten' }],
+              additives: [{ code: '1', label: 'Coloring' }],
+            },
+          },
+        },
+      },
+    });
+    expect(result.data).toEqual({
+      allergens: [{ code: 'A', label: 'Gluten' }],
+      additives: [{ code: '1', label: 'Coloring' }],
+    });
   });
 
   it('rejects required menu items without a minimum selection', async () => {

@@ -1101,6 +1101,8 @@ export class CustomerAppService {
     description: string | null;
     ingredients: string | null;
     nutritionalInformation: string | null;
+    dietaryFlags?: Prisma.JsonValue | null;
+    allergenFlags?: Prisma.JsonValue | null;
     imageUrl: string | null;
     basePrice: Prisma.Decimal;
     depositAmount?: Prisma.Decimal | null;
@@ -1187,6 +1189,14 @@ export class CustomerAppService {
       description: item.description,
       ingredients: item.ingredients,
       nutritionalInformation: item.nutritionalInformation,
+      labels: this.readStringArray(item.dietaryFlags).filter(
+        (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
+      ),
+      allergenCodes: this.readStringArray(item.allergenFlags),
+      allergenAdditives: this.resolveAllergenAdditiveText(
+        item.allergenFlags,
+        item.restaurant?.settings,
+      ),
       allergenPdfUrl: await this.resolveMediaUrl(
         this.resolveRestaurantAllergenPdfUrl(item.restaurant?.settings) ??
           (item as { allergenPdfUrl?: string | null }).allergenPdfUrl,
@@ -1282,6 +1292,86 @@ export class CustomerAppService {
       ['allergenPdfUrl'],
       ['allergensPdfUrl'],
     ]);
+  }
+
+  private resolveAllergenAdditiveText(
+    codesInput: unknown,
+    restaurantSettings: unknown,
+  ) {
+    const codes = this.readStringArray(codesInput);
+    if (!codes.length) {
+      return [];
+    }
+
+    const templates = this.readAllergenAdditiveTemplates(restaurantSettings);
+    const byCode = new Map(
+      [...templates.allergens, ...templates.additives].map((entry) => [
+        entry.code,
+        entry,
+      ]),
+    );
+
+    return codes.map((code) => ({
+      code,
+      label: byCode.get(code)?.label ?? code,
+    }));
+  }
+
+  private readAllergenAdditiveTemplates(settings: unknown) {
+    const templates =
+      this.readPath(settings, ['customerApp', 'allergenAdditiveTemplates']) ??
+      this.readPath(settings, ['allergenAdditiveTemplates']);
+
+    return {
+      allergens: this.readTemplateEntries(
+        this.readObjectValue(templates, 'allergens'),
+      ),
+      additives: this.readTemplateEntries(
+        this.readObjectValue(templates, 'additives'),
+      ),
+    };
+  }
+
+  private readTemplateEntries(input: unknown) {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          return null;
+        }
+
+        const code = (entry as Record<string, unknown>).code;
+        const label = (entry as Record<string, unknown>).label;
+
+        if (typeof code !== 'string' || typeof label !== 'string') {
+          return null;
+        }
+
+        return { code: code.trim(), label: label.trim() };
+      })
+      .filter(
+        (entry): entry is { code: string; label: string } =>
+          !!entry && entry.code.length > 0 && entry.label.length > 0,
+      );
+  }
+
+  private readObjectValue(input: unknown, key: string) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    return (input as Record<string, unknown>)[key];
+  }
+
+  private readStringArray(input: unknown): string[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((value): value is string => typeof value === 'string');
   }
 
   private readStringValue(source: unknown, paths: string[][]): string | null {

@@ -24,6 +24,7 @@ import {
   DuplicateMenuItemDto,
   ListMenuItemsDto,
   ReorderMenuItemsDto,
+  UpdateAllergenAdditiveTemplatesDto,
   UpdateMenuItemDto,
 } from './dto';
 import { MenuItemService } from './item.service';
@@ -74,6 +75,36 @@ export class MenuItemController {
   @Get('labels')
   labels() {
     return this.menuItemService.getLabels();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('allergen-additive-templates')
+  getAllergenAdditiveTemplates(
+    @CurrentUser() user: AuthUserContext,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.getAllergenAdditiveTemplates(
+      user,
+      restaurantId,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('allergen-additive-templates')
+  updateAllergenAdditiveTemplates(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateAllergenAdditiveTemplatesDto,
+  ) {
+    return this.menuItemService.updateAllergenAdditiveTemplates(user, dto);
   }
 
   @ApiBearerAuth()

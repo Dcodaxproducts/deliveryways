@@ -17,6 +17,7 @@ import {
   ListMenuItemsDto,
   MENU_ITEM_LABEL_VALUES,
   ReorderMenuItemsDto,
+  UpdateAllergenAdditiveTemplatesDto,
   UpdateMenuItemDto,
 } from './dto';
 import { MenuItemRepository } from './item.repository';
@@ -102,8 +103,9 @@ export class MenuItemService {
               dto.labels ?? dto.dietaryFlags,
               dto.supportsSplitPizza,
             ) as unknown as Prisma.InputJsonValue,
-            allergenFlags:
-              dto.allergenFlags as unknown as Prisma.InputJsonValue,
+            allergenFlags: this.resolveAllergenCodes(
+              dto,
+            ) as unknown as Prisma.InputJsonValue,
             depositAmount:
               dto.depositAmount !== undefined
                 ? new Prisma.Decimal(dto.depositAmount)
@@ -178,7 +180,9 @@ export class MenuItemService {
           item.labels ?? item.dietaryFlags,
           item.supportsSplitPizza,
         ) as unknown as Prisma.InputJsonValue,
-        allergenFlags: item.allergenFlags as unknown as Prisma.InputJsonValue,
+        allergenFlags: this.resolveAllergenCodes(
+          item,
+        ) as unknown as Prisma.InputJsonValue,
         depositAmount:
           item.depositAmount !== undefined
             ? new Prisma.Decimal(item.depositAmount)
@@ -281,7 +285,12 @@ export class MenuItemService {
             dto.supportsSplitPizza,
             item.dietaryFlags,
           ) as unknown as Prisma.InputJsonValue,
-          allergenFlags: dto.allergenFlags as unknown as Prisma.InputJsonValue,
+          allergenFlags:
+            dto.allergenFlags !== undefined || dto.allergenCodes !== undefined
+              ? (this.resolveAllergenCodes(
+                  dto,
+                ) as unknown as Prisma.InputJsonValue)
+              : undefined,
           depositAmount:
             dto.depositAmount !== undefined
               ? new Prisma.Decimal(dto.depositAmount)
@@ -330,6 +339,78 @@ export class MenuItemService {
           .join(' '),
       })),
       message: 'Menu item labels fetched successfully',
+    };
+  }
+
+  async getAllergenAdditiveTemplates(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    const restaurantId = await this.resolveRestaurantIdForList(
+      user,
+      requestedRestaurantId,
+    );
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+      },
+      select: { settings: true },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    return {
+      data: this.readAllergenAdditiveTemplates(restaurant.settings),
+      message: 'Allergen and additive templates fetched successfully',
+    };
+  }
+
+  async updateAllergenAdditiveTemplates(
+    user: AuthUserContext,
+    dto: UpdateAllergenAdditiveTemplatesDto,
+  ) {
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    this.assertUniqueTemplateCodes(dto.allergens ?? [], 'allergens');
+    this.assertUniqueTemplateCodes(dto.additives ?? [], 'additives');
+
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+      },
+      select: { settings: true },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const settings = this.toJsonObject(restaurant.settings);
+    const customerApp = this.toJsonObject(settings.customerApp);
+    const existingTemplates = this.readAllergenAdditiveTemplates(settings);
+    const templates = {
+      allergens: this.normalizeTemplateEntries(
+        dto.allergens ?? existingTemplates.allergens,
+      ),
+      additives: this.normalizeTemplateEntries(
+        dto.additives ?? existingTemplates.additives,
+      ),
+    };
+
+    customerApp.allergenAdditiveTemplates = templates;
+    settings.customerApp = customerApp;
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurantId },
+      data: { settings: settings as Prisma.InputJsonValue },
+    });
+
+    return {
+      data: templates,
+      message: 'Allergen and additive templates updated successfully',
     };
   }
 
@@ -1044,6 +1125,13 @@ export class MenuItemService {
     return nextFlags;
   }
 
+  private resolveAllergenCodes(dto: {
+    allergenFlags?: string[];
+    allergenCodes?: string[];
+  }) {
+    return dto.allergenCodes ?? dto.allergenFlags ?? [];
+  }
+
   private withRestaurantAllergenPdfUrl<T extends Record<string, unknown>>(
     item: T,
   ): T {
@@ -1079,7 +1167,109 @@ export class MenuItemService {
       ...item,
       restaurant,
       allergenPdfUrl: restaurantAllergenPdfUrl ?? item.allergenPdfUrl ?? null,
+      allergenCodes: this.readStringArray(item.allergenFlags),
+      allergenAdditives: this.resolveAllergenAdditiveText(
+        item.allergenFlags,
+        restaurantSettings,
+      ),
     };
+  }
+
+  private resolveAllergenAdditiveText(
+    codesInput: unknown,
+    restaurantSettings: unknown,
+  ) {
+    const codes = this.readStringArray(codesInput);
+    if (!codes.length) {
+      return [];
+    }
+
+    const templates = this.readAllergenAdditiveTemplates(restaurantSettings);
+    const byCode = new Map(
+      [...templates.allergens, ...templates.additives].map((entry) => [
+        entry.code,
+        entry,
+      ]),
+    );
+
+    return codes.map((code) => ({
+      code,
+      label: byCode.get(code)?.label ?? code,
+    }));
+  }
+
+  private readAllergenAdditiveTemplates(settings: unknown) {
+    const templates =
+      this.readPath(settings, ['customerApp', 'allergenAdditiveTemplates']) ??
+      this.readPath(settings, ['allergenAdditiveTemplates']);
+
+    return {
+      allergens: this.readTemplateEntries(
+        this.readObjectValue(templates, 'allergens'),
+      ),
+      additives: this.readTemplateEntries(
+        this.readObjectValue(templates, 'additives'),
+      ),
+    };
+  }
+
+  private readTemplateEntries(input: unknown) {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          return null;
+        }
+
+        const code = (entry as Record<string, unknown>).code;
+        const label = (entry as Record<string, unknown>).label;
+
+        if (typeof code !== 'string' || typeof label !== 'string') {
+          return null;
+        }
+
+        return { code: code.trim(), label: label.trim() };
+      })
+      .filter(
+        (entry): entry is { code: string; label: string } =>
+          !!entry && entry.code.length > 0 && entry.label.length > 0,
+      );
+  }
+
+  private readObjectValue(input: unknown, key: string) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    return (input as Record<string, unknown>)[key];
+  }
+
+  private toJsonObject(input: unknown): Prisma.JsonObject {
+    return input && typeof input === 'object' && !Array.isArray(input)
+      ? { ...(input as Prisma.JsonObject) }
+      : {};
+  }
+
+  private assertUniqueTemplateCodes(
+    entries: Array<{ code: string }>,
+    field: string,
+  ) {
+    const codes = entries.map((entry) => entry.code.trim());
+    if (new Set(codes).size !== codes.length) {
+      throw new BadRequestException(`${field} template codes must be unique`);
+    }
+  }
+
+  private normalizeTemplateEntries(
+    entries: Array<{ code: string; label: string }>,
+  ) {
+    return entries.map((entry) => ({
+      code: entry.code.trim(),
+      label: entry.label.trim(),
+    }));
   }
 
   private withSplitPizzaMetadata<T extends Record<string, unknown>>(
@@ -1122,19 +1312,25 @@ export class MenuItemService {
   }
 
   private readStringPath(input: unknown, path: string[]) {
+    const cursor = this.readPath(input, path);
+
+    return typeof cursor === 'string' && cursor.trim().length
+      ? cursor.trim()
+      : null;
+  }
+
+  private readPath(input: unknown, path: string[]) {
     let cursor = input;
 
     for (const key of path) {
       if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) {
-        return null;
+        return undefined;
       }
 
       cursor = (cursor as Record<string, unknown>)[key];
     }
 
-    return typeof cursor === 'string' && cursor.trim().length
-      ? cursor.trim()
-      : null;
+    return cursor;
   }
 
   private readStringArray(input: unknown): string[] {

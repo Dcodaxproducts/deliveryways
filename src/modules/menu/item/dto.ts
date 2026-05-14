@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -38,6 +39,53 @@ const parseJsonArray = (value: unknown): unknown => {
     return value;
   }
 };
+
+const parseStringList = (value: unknown): unknown => {
+  if (Array.isArray(value) || value === undefined || value === null) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+export class AllergenAdditiveTemplateEntryDto {
+  @ApiProperty({ description: 'Short code used on menu items, e.g. A or 1' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  code!: string;
+
+  @ApiProperty({ description: 'Full customer-facing text for this code' })
+  @IsString()
+  label!: string;
+}
+
+export class UpdateAllergenAdditiveTemplatesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional({ type: [AllergenAdditiveTemplateEntryDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AllergenAdditiveTemplateEntryDto)
+  allergens?: AllergenAdditiveTemplateEntryDto[];
+
+  @ApiPropertyOptional({ type: [AllergenAdditiveTemplateEntryDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AllergenAdditiveTemplateEntryDto)
+  additives?: AllergenAdditiveTemplateEntryDto[];
+}
 
 export class MenuItemModifierPriceOverrideDto {
   @ApiProperty()
@@ -211,9 +259,20 @@ export class CreateMenuItemDto {
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
+  @Transform(({ value }) => parseStringList(value))
   @IsArray()
   @IsString({ each: true })
   allergenFlags?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Allergen/additive template codes, e.g. "A,1"',
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseStringList(value))
+  @IsArray()
+  @IsString({ each: true })
+  allergenCodes?: string[];
 
   @ApiPropertyOptional({
     description: 'Optional separate drink deposit (Pfand) amount',
@@ -397,9 +456,20 @@ export class UpdateMenuItemDto {
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
+  @Transform(({ value }) => parseStringList(value))
   @IsArray()
   @IsString({ each: true })
   allergenFlags?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Allergen/additive template codes, e.g. "A,1"',
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseStringList(value))
+  @IsArray()
+  @IsString({ each: true })
+  allergenCodes?: string[];
 
   @ApiPropertyOptional({
     description: 'Optional separate drink deposit (Pfand) amount',

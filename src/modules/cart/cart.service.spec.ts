@@ -732,6 +732,69 @@ describe('CartService', () => {
     );
   });
 
+  it('rejects cart modifier selections above group maxSelect', async () => {
+    const { service, cartRepository } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId.mockResolvedValue(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      category: { id: 'category-1', items: [], modifierLinks: [] },
+      variations: [],
+      modifierLinks: [
+        {
+          modifierGroup: {
+            id: 'group-1',
+            name: 'Sauces',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              { modifier: { id: 'modifier-1' } },
+              { modifier: { id: 'modifier-2' } },
+            ],
+          },
+        },
+      ],
+      branchOverrides: [],
+    });
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          quantity: 1,
+          modifiers: [
+            { modifierId: 'modifier-1', quantity: 1 },
+            { modifierId: 'modifier-2', quantity: 1 },
+          ],
+        },
+      ),
+    ).rejects.toThrow('Sauces allows at most 1 selection(s)');
+  });
+
   it('requires branchId on first add-item when cart does not exist', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue(null);
