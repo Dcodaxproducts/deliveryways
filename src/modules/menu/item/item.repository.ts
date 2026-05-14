@@ -115,6 +115,7 @@ export class MenuItemRepository {
               logoUrl: true,
               coverImage: true,
               settings: true,
+              tenant: { select: { settings: true } },
             },
           },
           category: {

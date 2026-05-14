@@ -77,35 +77,48 @@ export class MenuItemController {
     RolesEnum.CUSTOMER,
   )
   @Get('labels')
-  labels() {
-    return this.menuItemService.getLabels();
+  labels(
+    @CurrentUser() user: AuthUserContext,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.getLabels(user, restaurantId);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Post('labels')
-  createLabel(@Body() dto: CreateProductLabelDto) {
-    return this.menuItemService.createLabel(dto);
+  createLabel(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateProductLabelDto,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.createLabel(user, dto, restaurantId);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Patch('labels/:value')
   updateLabel(
+    @CurrentUser() user: AuthUserContext,
     @Param('value') value: string,
     @Body() dto: UpdateProductLabelDto,
+    @Query('restaurantId') restaurantId?: string,
   ) {
-    return this.menuItemService.updateLabel(value, dto);
+    return this.menuItemService.updateLabel(user, value, dto, restaurantId);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Delete('labels/:value')
-  deleteLabel(@Param('value') value: string) {
-    return this.menuItemService.deleteLabel(value);
+  deleteLabel(
+    @CurrentUser() user: AuthUserContext,
+    @Param('value') value: string,
+    @Query('restaurantId') restaurantId?: string,
+  ) {
+    return this.menuItemService.deleteLabel(user, value, restaurantId);
   }
 
   @ApiBearerAuth()

@@ -160,6 +160,7 @@ export class CustomerAppRepository {
               logoUrl: true,
               tagline: true,
               settings: true,
+              tenant: { select: { settings: true } },
             },
           },
           category: {
@@ -438,6 +439,7 @@ export class CustomerAppRepository {
               logoUrl: true,
               tagline: true,
               settings: true,
+              tenant: { select: { settings: true } },
             },
           },
           category: {
@@ -548,6 +550,7 @@ export class CustomerAppRepository {
             logoUrl: true,
             tagline: true,
             settings: true,
+            tenant: { select: { settings: true } },
           },
         },
         category: {
@@ -654,6 +657,7 @@ export class CustomerAppRepository {
             logoUrl: true,
             tagline: true,
             settings: true,
+            tenant: { select: { settings: true } },
           },
         },
         category: {

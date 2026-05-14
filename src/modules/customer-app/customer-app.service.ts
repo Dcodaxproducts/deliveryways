@@ -1113,6 +1113,7 @@ export class CustomerAppService {
       logoUrl?: string | null;
       tagline?: string | null;
       settings?: unknown;
+      tenant?: { settings?: unknown } | null;
     };
     category?: {
       id: string;
@@ -1195,7 +1196,7 @@ export class CustomerAppService {
       allergenCodes: this.readStringArray(item.allergenFlags),
       allergenAdditives: this.resolveAllergenAdditiveText(
         item.allergenFlags,
-        item.restaurant?.settings,
+        item.restaurant?.tenant?.settings ?? item.restaurant?.settings,
       ),
       allergenPdfUrl: await this.resolveMediaUrl(
         this.resolveRestaurantAllergenPdfUrl(item.restaurant?.settings) ??

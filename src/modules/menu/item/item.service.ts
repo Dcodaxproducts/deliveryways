@@ -54,7 +54,7 @@ export class MenuItemService {
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
     this.assertSelectionLimits(dto);
-    await this.assertKnownLabels(dto.labels ?? dto.dietaryFlags);
+    await this.assertKnownLabels(restaurantId, dto.labels ?? dto.dietaryFlags);
     await this.assertUniqueFields(restaurantId, { sku });
 
     const data = await this.createItemWithAssignments(
@@ -156,7 +156,10 @@ export class MenuItemService {
     for (const item of dto.items) {
       const pricing = this.resolvePricingInput(item);
       this.assertSelectionLimits(item);
-      await this.assertKnownLabels(item.labels ?? item.dietaryFlags);
+      await this.assertKnownLabels(
+        restaurantId,
+        item.labels ?? item.dietaryFlags,
+      );
       const slug = await this.resolveUniqueSlug(
         restaurantId,
         item.slug ?? item.name,
@@ -260,7 +263,10 @@ export class MenuItemService {
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
     const pricing = this.resolvePricingInput(dto, item);
     this.assertSelectionLimits(dto, item);
-    await this.assertKnownLabels(dto.labels ?? dto.dietaryFlags);
+    await this.assertKnownLabels(
+      item.restaurantId,
+      dto.labels ?? dto.dietaryFlags,
+    );
     await this.assertUniqueFields(item.restaurantId, { sku }, id);
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -335,8 +341,11 @@ export class MenuItemService {
     };
   }
 
-  async getLabels() {
-    const labels = await this.getProductLabels();
+  async getLabels(user: AuthUserContext, requestedRestaurantId?: string) {
+    const labels = await this.getProductLabelsForUser(
+      user,
+      requestedRestaurantId,
+    );
 
     return {
       data: labels,
@@ -344,8 +353,12 @@ export class MenuItemService {
     };
   }
 
-  async createLabel(dto: CreateProductLabelDto) {
-    const current = await this.getProductLabels();
+  async createLabel(
+    user: AuthUserContext,
+    dto: CreateProductLabelDto,
+    requestedRestaurantId?: string,
+  ) {
+    const state = await this.loadProductLabelState(user, requestedRestaurantId);
     const value = this.normalizeLabelValue(dto.value ?? dto.label);
     const label = dto.label.trim();
 
@@ -353,12 +366,12 @@ export class MenuItemService {
       throw new BadRequestException('label is required');
     }
 
-    if (current.some((item) => item.value === value)) {
+    if (state.labels.some((item) => item.value === value)) {
       throw new BadRequestException('Product label already exists');
     }
 
-    const labels = [...current, { value, label }];
-    await this.saveProductLabels(labels);
+    const labels = [...state.labels, { value, label }];
+    await this.saveProductLabels(state.tenantId, state.settings, labels);
 
     return {
       data: { value, label },
@@ -366,10 +379,17 @@ export class MenuItemService {
     };
   }
 
-  async updateLabel(value: string, dto: UpdateProductLabelDto) {
-    const current = await this.getProductLabels();
+  async updateLabel(
+    user: AuthUserContext,
+    value: string,
+    dto: UpdateProductLabelDto,
+    requestedRestaurantId?: string,
+  ) {
+    const state = await this.loadProductLabelState(user, requestedRestaurantId);
     const normalizedValue = this.normalizeLabelValue(value);
-    const index = current.findIndex((item) => item.value === normalizedValue);
+    const index = state.labels.findIndex(
+      (item) => item.value === normalizedValue,
+    );
 
     if (index === -1) {
       throw new NotFoundException('Product label not found');
@@ -378,7 +398,7 @@ export class MenuItemService {
     const nextValue = dto.value
       ? this.normalizeLabelValue(dto.value)
       : normalizedValue;
-    const nextLabel = dto.label?.trim() ?? current[index].label;
+    const nextLabel = dto.label?.trim() ?? state.labels[index].label;
 
     if (!nextLabel) {
       throw new BadRequestException('label is required');
@@ -386,21 +406,21 @@ export class MenuItemService {
 
     if (
       nextValue !== normalizedValue &&
-      current.some((item) => item.value === nextValue)
+      state.labels.some((item) => item.value === nextValue)
     ) {
       throw new BadRequestException('Product label already exists');
     }
 
     if (nextValue !== normalizedValue) {
-      await this.assertProductLabelNotInUse(normalizedValue);
+      await this.assertProductLabelNotInUse(state.tenantId, normalizedValue);
     }
 
-    const labels = current.map((item) =>
+    const labels = state.labels.map((item) =>
       item.value === normalizedValue
         ? { value: nextValue, label: nextLabel }
         : item,
     );
-    await this.saveProductLabels(labels);
+    await this.saveProductLabels(state.tenantId, state.settings, labels);
 
     return {
       data: { value: nextValue, label: nextLabel },
@@ -408,18 +428,24 @@ export class MenuItemService {
     };
   }
 
-  async deleteLabel(value: string) {
-    const current = await this.getProductLabels();
+  async deleteLabel(
+    user: AuthUserContext,
+    value: string,
+    requestedRestaurantId?: string,
+  ) {
+    const state = await this.loadProductLabelState(user, requestedRestaurantId);
     const normalizedValue = this.normalizeLabelValue(value);
-    const exists = current.some((item) => item.value === normalizedValue);
+    const exists = state.labels.some((item) => item.value === normalizedValue);
 
     if (!exists) {
       throw new NotFoundException('Product label not found');
     }
 
-    await this.assertProductLabelNotInUse(normalizedValue);
+    await this.assertProductLabelNotInUse(state.tenantId, normalizedValue);
     await this.saveProductLabels(
-      current.filter((item) => item.value !== normalizedValue),
+      state.tenantId,
+      state.settings,
+      state.labels.filter((item) => item.value !== normalizedValue),
     );
 
     return {
@@ -432,24 +458,13 @@ export class MenuItemService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ) {
-    const restaurantId = await this.resolveRestaurantIdForList(
+    const state = await this.loadAllergenAdditiveTemplateState(
       user,
       requestedRestaurantId,
     );
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: {
-        id: restaurantId,
-        deletedAt: null,
-      },
-      select: { settings: true },
-    });
-
-    if (!restaurant) {
-      throw new NotFoundException('Restaurant not found');
-    }
 
     return {
-      data: this.readAllergenAdditiveTemplates(restaurant.settings),
+      data: state.templates,
       message: 'Allergen and additive templates fetched successfully',
     };
   }
@@ -458,41 +473,26 @@ export class MenuItemService {
     user: AuthUserContext,
     dto: UpdateAllergenAdditiveTemplatesDto,
   ) {
-    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     this.assertUniqueTemplateCodes(dto.allergens ?? [], 'allergens');
     this.assertUniqueTemplateCodes(dto.additives ?? [], 'additives');
-
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: {
-        id: restaurantId,
-        deletedAt: null,
-      },
-      select: { settings: true },
-    });
-
-    if (!restaurant) {
-      throw new NotFoundException('Restaurant not found');
-    }
-
-    const settings = this.toJsonObject(restaurant.settings);
-    const customerApp = this.toJsonObject(settings.customerApp);
-    const existingTemplates = this.readAllergenAdditiveTemplates(settings);
+    const state = await this.loadAllergenAdditiveTemplateState(
+      user,
+      dto.restaurantId,
+    );
     const templates = {
       allergens: this.normalizeTemplateEntries(
-        dto.allergens ?? existingTemplates.allergens,
+        dto.allergens ?? state.templates.allergens,
       ),
       additives: this.normalizeTemplateEntries(
-        dto.additives ?? existingTemplates.additives,
+        dto.additives ?? state.templates.additives,
       ),
     };
 
-    customerApp.allergenAdditiveTemplates = templates;
-    settings.customerApp = customerApp;
-
-    await this.prisma.restaurant.update({
-      where: { id: restaurantId },
-      data: { settings: settings as Prisma.InputJsonValue },
-    });
+    await this.saveAllergenAdditiveTemplates(
+      state.tenantId,
+      state.settings,
+      templates,
+    );
 
     return {
       data: templates,
@@ -507,7 +507,7 @@ export class MenuItemService {
     requestedRestaurantId?: string,
   ) {
     const templateType = this.resolveTemplateType(type);
-    const { restaurantId, settings, templates } =
+    const { tenantId, settings, templates } =
       await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
     const entries = templates[templateType];
     const entry = { code: dto.code.trim(), label: dto.label.trim() };
@@ -524,11 +524,7 @@ export class MenuItemService {
       ...templates,
       [templateType]: [...entries, entry],
     };
-    await this.saveAllergenAdditiveTemplates(
-      restaurantId,
-      settings,
-      nextTemplates,
-    );
+    await this.saveAllergenAdditiveTemplates(tenantId, settings, nextTemplates);
 
     return {
       data: entry,
@@ -544,7 +540,7 @@ export class MenuItemService {
     requestedRestaurantId?: string,
   ) {
     const templateType = this.resolveTemplateType(type);
-    const { restaurantId, settings, templates } =
+    const { tenantId, settings, templates } =
       await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
     const entries = templates[templateType];
     const currentCode = code.trim();
@@ -569,7 +565,7 @@ export class MenuItemService {
     }
 
     if (nextCode !== currentCode) {
-      await this.assertAllergenCodeNotInUse(restaurantId, currentCode);
+      await this.assertAllergenCodeNotInUse(tenantId, currentCode);
     }
 
     const nextEntry = { code: nextCode, label: nextLabel };
@@ -579,11 +575,7 @@ export class MenuItemService {
         entry.code === currentCode ? nextEntry : entry,
       ),
     };
-    await this.saveAllergenAdditiveTemplates(
-      restaurantId,
-      settings,
-      nextTemplates,
-    );
+    await this.saveAllergenAdditiveTemplates(tenantId, settings, nextTemplates);
 
     return {
       data: nextEntry,
@@ -598,7 +590,7 @@ export class MenuItemService {
     requestedRestaurantId?: string,
   ) {
     const templateType = this.resolveTemplateType(type);
-    const { restaurantId, settings, templates } =
+    const { tenantId, settings, templates } =
       await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
     const currentCode = code.trim();
     const exists = templates[templateType].some(
@@ -609,18 +601,14 @@ export class MenuItemService {
       throw new NotFoundException('Allergen/additive template entry not found');
     }
 
-    await this.assertAllergenCodeNotInUse(restaurantId, currentCode);
+    await this.assertAllergenCodeNotInUse(tenantId, currentCode);
     const nextTemplates = {
       ...templates,
       [templateType]: templates[templateType].filter(
         (entry) => entry.code !== currentCode,
       ),
     };
-    await this.saveAllergenAdditiveTemplates(
-      restaurantId,
-      settings,
-      nextTemplates,
-    );
+    await this.saveAllergenAdditiveTemplates(tenantId, settings, nextTemplates);
 
     return {
       data: { code: currentCode },
@@ -1321,12 +1309,15 @@ export class MenuItemService {
 
   private readonly splitPizzaDietaryFlag = '__SPLIT_PIZZA_ENABLED__';
 
-  private async assertKnownLabels(labels: string[] | undefined) {
+  private async assertKnownLabels(
+    restaurantId: string,
+    labels: string[] | undefined,
+  ) {
     if (!labels?.length) {
       return;
     }
 
-    const knownLabels = await this.getProductLabels();
+    const knownLabels = await this.getProductLabelsForRestaurant(restaurantId);
     const knownValues = new Set(knownLabels.map((label) => label.value));
     const unknownLabel = labels.find((label) => !knownValues.has(label));
 
@@ -1335,9 +1326,10 @@ export class MenuItemService {
     }
   }
 
-  private async assertProductLabelNotInUse(value: string) {
+  private async assertProductLabelNotInUse(tenantId: string, value: string) {
     const count = await this.prisma.menuItem.count({
       where: {
+        restaurant: { tenantId },
         deletedAt: null,
         dietaryFlags: { array_contains: [value] },
       },
@@ -1350,7 +1342,39 @@ export class MenuItemService {
     }
   }
 
-  private async getProductLabels() {
+  private async getProductLabelsForUser(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN && !requestedRestaurantId) {
+      return this.getGlobalProductLabels();
+    }
+
+    const state = await this.loadProductLabelState(user, requestedRestaurantId);
+    return state.labels;
+  }
+
+  private async getProductLabelsForRestaurant(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      select: { tenant: { select: { settings: true } } },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const tenantSettings = (
+      restaurant as { tenant?: { settings?: unknown } | null }
+    ).tenant?.settings;
+    const labels = this.readProductLabels(
+      this.readPath(tenantSettings, ['productLabels']) ??
+        this.readPath(tenantSettings, ['menu', 'productLabels']),
+    );
+    return labels.length ? labels : DEFAULT_MENU_ITEM_LABELS;
+  }
+
+  private async getGlobalProductLabels() {
     const settings = await this.prisma.globalSetting.upsert({
       where: { scopeKey: 'GLOBAL' },
       update: {},
@@ -1366,16 +1390,35 @@ export class MenuItemService {
     return labels.length ? labels : DEFAULT_MENU_ITEM_LABELS;
   }
 
+  private async loadProductLabelState(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    const { tenantId, settings } = await this.loadTenantSettingsState(
+      user,
+      requestedRestaurantId,
+    );
+    const labels = this.readProductLabels(
+      this.readPath(settings, ['productLabels']) ??
+        this.readPath(settings, ['menu', 'productLabels']),
+    );
+
+    return {
+      tenantId,
+      settings,
+      labels: labels.length ? labels : DEFAULT_MENU_ITEM_LABELS,
+    };
+  }
+
   private async saveProductLabels(
+    tenantId: string,
+    settings: Prisma.JsonObject,
     labels: Array<{ value: string; label: string }>,
   ) {
-    await this.prisma.globalSetting.upsert({
-      where: { scopeKey: 'GLOBAL' },
-      update: { productLabels: labels as unknown as Prisma.InputJsonValue },
-      create: {
-        scopeKey: 'GLOBAL',
-        productLabels: labels as unknown as Prisma.InputJsonValue,
-      },
+    settings.productLabels = labels as unknown as Prisma.JsonValue;
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { settings: settings as Prisma.InputJsonValue },
     });
   }
 
@@ -1434,33 +1477,87 @@ export class MenuItemService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ) {
-    const restaurantId = await this.resolveRestaurantId(
+    const { tenantId, settings } = await this.loadTenantSettingsState(
       user,
       requestedRestaurantId,
     );
+
+    return {
+      tenantId,
+      settings,
+      templates: this.readAllergenAdditiveTemplates(settings),
+    };
+  }
+
+  private async loadTenantSettingsState(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      if (requestedRestaurantId) {
+        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      }
+
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { id: user.tid, deletedAt: null },
+        select: { settings: true },
+      });
+
+      if (!tenant) {
+        throw new NotFoundException('Tenant not found');
+      }
+
+      return {
+        tenantId: user.tid,
+        settings: this.toJsonObject(tenant.settings),
+      };
+    }
+
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      if (!requestedRestaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: { id: requestedRestaurantId, deletedAt: null },
+        select: { tenantId: true, tenant: { select: { settings: true } } },
+      });
+
+      if (!restaurant) {
+        throw new NotFoundException('Restaurant not found');
+      }
+
+      return {
+        tenantId: restaurant.tenantId,
+        settings: this.toJsonObject(restaurant.tenant.settings),
+      };
+    }
+
+    if (!user.rid) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
     const restaurant = await this.prisma.restaurant.findFirst({
-      where: {
-        id: restaurantId,
-        deletedAt: null,
-      },
-      select: { settings: true },
+      where: { id: user.rid, deletedAt: null },
+      select: { tenantId: true, tenant: { select: { settings: true } } },
     });
 
     if (!restaurant) {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const settings = this.toJsonObject(restaurant.settings);
-
     return {
-      restaurantId,
-      settings,
-      templates: this.readAllergenAdditiveTemplates(settings),
+      tenantId: restaurant.tenantId,
+      settings: this.toJsonObject(restaurant.tenant.settings),
     };
   }
 
   private async saveAllergenAdditiveTemplates(
-    restaurantId: string,
+    tenantId: string,
     settings: Prisma.JsonObject,
     templates: {
       allergens: Array<{ code: string; label: string }>;
@@ -1471,16 +1568,16 @@ export class MenuItemService {
     customerApp.allergenAdditiveTemplates = templates;
     settings.customerApp = customerApp;
 
-    await this.prisma.restaurant.update({
-      where: { id: restaurantId },
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
       data: { settings: settings as Prisma.InputJsonValue },
     });
   }
 
-  private async assertAllergenCodeNotInUse(restaurantId: string, code: string) {
+  private async assertAllergenCodeNotInUse(tenantId: string, code: string) {
     const count = await this.prisma.menuItem.count({
       where: {
-        restaurantId,
+        restaurant: { tenantId },
         deletedAt: null,
         allergenFlags: { array_contains: [code] },
       },
@@ -1527,6 +1624,13 @@ export class MenuItemService {
       !Array.isArray(item.restaurant)
         ? (item.restaurant as { settings?: unknown }).settings
         : undefined;
+    const tenantSettings =
+      item.restaurant &&
+      typeof item.restaurant === 'object' &&
+      !Array.isArray(item.restaurant)
+        ? (item.restaurant as { tenant?: { settings?: unknown } }).tenant
+            ?.settings
+        : undefined;
     const restaurantAllergenPdfUrl =
       this.readStringPath(restaurantSettings, [
         'customerApp',
@@ -1556,7 +1660,7 @@ export class MenuItemService {
       allergenCodes: this.readStringArray(item.allergenFlags),
       allergenAdditives: this.resolveAllergenAdditiveText(
         item.allergenFlags,
-        restaurantSettings,
+        tenantSettings ?? restaurantSettings,
       ),
     };
   }

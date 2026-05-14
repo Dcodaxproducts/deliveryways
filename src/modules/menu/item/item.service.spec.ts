@@ -60,6 +60,10 @@ describe('MenuItemService', () => {
         findFirst: jest.fn(),
         update: jest.fn(),
       },
+      tenant: {
+        findFirst: jest.fn().mockResolvedValue({ settings: null }),
+        update: jest.fn(),
+      },
       menuCategory: {
         findFirst: jest.fn(),
       },
@@ -302,27 +306,27 @@ describe('MenuItemService', () => {
 
   it('creates product labels for checkbox selection', async () => {
     const { service, prisma } = makeService();
-    prisma.globalSetting.upsert
-      .mockResolvedValueOnce({ productLabels: null })
-      .mockResolvedValueOnce({ productLabels: null });
+    prisma.tenant.findFirst.mockResolvedValue({ settings: null });
 
-    const result = await service.createLabel({ label: 'Halal' });
+    const result = await service.createLabel(
+      { uid: 'admin-1', tid: 'tenant-1', role: UserRoleEnum.BUSINESS_ADMIN },
+      { label: 'Halal' },
+    );
 
-    const upsertMock = prisma.globalSetting.upsert;
+    const upsertMock = prisma.tenant.update;
     const calls = upsertMock.mock.calls as Array<
       [
         {
-          update: { productLabels: Array<{ value: string; label: string }> };
-          create: { productLabels: Array<{ value: string; label: string }> };
+          data: {
+            settings: {
+              productLabels: Array<{ value: string; label: string }>;
+            };
+          };
         },
       ]
     >;
     const lastCall = calls[calls.length - 1][0];
-    expect(lastCall.update.productLabels).toContainEqual({
-      value: 'HALAL',
-      label: 'Halal',
-    });
-    expect(lastCall.create.productLabels).toContainEqual({
+    expect(lastCall.data.settings.productLabels).toContainEqual({
       value: 'HALAL',
       label: 'Halal',
     });
@@ -334,23 +338,27 @@ describe('MenuItemService', () => {
 
   it('updates and deletes product labels when not assigned to items', async () => {
     const { service, prisma } = makeService();
-    prisma.globalSetting.upsert
+    prisma.tenant.findFirst
       .mockResolvedValueOnce({
-        productLabels: [{ value: 'HALAL', label: 'Halal' }],
+        settings: { productLabels: [{ value: 'HALAL', label: 'Halal' }] },
       })
-      .mockResolvedValueOnce({ productLabels: null })
       .mockResolvedValueOnce({
-        productLabels: [{ value: 'HOT', label: 'Hot' }],
-      })
-      .mockResolvedValueOnce({ productLabels: null });
+        settings: { productLabels: [{ value: 'HOT', label: 'Hot' }] },
+      });
+
+    const user = {
+      uid: 'admin-1',
+      tid: 'tenant-1',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    };
 
     await expect(
-      service.updateLabel('HALAL', { value: 'HOT', label: 'Hot' }),
+      service.updateLabel(user, 'HALAL', { value: 'HOT', label: 'Hot' }),
     ).resolves.toMatchObject({
       data: { value: 'HOT', label: 'Hot' },
       message: 'Menu item label updated successfully',
     });
-    await expect(service.deleteLabel('HOT')).resolves.toMatchObject({
+    await expect(service.deleteLabel(user, 'HOT')).resolves.toMatchObject({
       data: { value: 'HOT' },
       message: 'Menu item label deleted successfully',
     });
@@ -388,10 +396,11 @@ describe('MenuItemService', () => {
 
   it('updates restaurant allergen/additive templates', async () => {
     const { service, prisma } = makeService();
-    prisma.restaurant.findFirst.mockResolvedValue({
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.tenant.findFirst.mockResolvedValue({
       settings: { customerApp: { currency: 'EUR' } },
     });
-    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.tenant.update.mockResolvedValue({ id: 'tenant-1' });
 
     const result = await service.updateAllergenAdditiveTemplates(
       {
@@ -406,8 +415,8 @@ describe('MenuItemService', () => {
       },
     );
 
-    expect(prisma.restaurant.update).toHaveBeenCalledWith({
-      where: { id: 'restaurant-1' },
+    expect(prisma.tenant.update).toHaveBeenCalledWith({
+      where: { id: 'tenant-1' },
       data: {
         settings: {
           customerApp: {
@@ -428,7 +437,7 @@ describe('MenuItemService', () => {
 
   it('creates, updates, and deletes allergen template entries', async () => {
     const { service, prisma } = makeService();
-    prisma.restaurant.findFirst
+    prisma.tenant.findFirst
       .mockResolvedValueOnce({ settings: { customerApp: {} } })
       .mockResolvedValueOnce({
         settings: {
@@ -450,17 +459,17 @@ describe('MenuItemService', () => {
           },
         },
       });
-    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.tenant.update.mockResolvedValue({ id: 'tenant-1' });
 
     await expect(
       service.createAllergenAdditiveTemplateEntry(
         {
           uid: 'admin-1',
-          role: UserRoleEnum.SUPER_ADMIN,
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
         },
         'allergens',
         { code: 'A', label: 'Gluten' },
-        'restaurant-1',
       ),
     ).resolves.toMatchObject({
       data: { code: 'A', label: 'Gluten' },
@@ -470,12 +479,12 @@ describe('MenuItemService', () => {
       service.updateAllergenAdditiveTemplateEntry(
         {
           uid: 'admin-1',
-          role: UserRoleEnum.SUPER_ADMIN,
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
         },
         'allergens',
         'A',
         { code: 'B', label: 'Barley' },
-        'restaurant-1',
       ),
     ).resolves.toMatchObject({
       data: { code: 'B', label: 'Barley' },
@@ -485,11 +494,11 @@ describe('MenuItemService', () => {
       service.deleteAllergenAdditiveTemplateEntry(
         {
           uid: 'admin-1',
-          role: UserRoleEnum.SUPER_ADMIN,
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
         },
         'allergens',
         'B',
-        'restaurant-1',
       ),
     ).resolves.toMatchObject({
       data: { code: 'B' },
