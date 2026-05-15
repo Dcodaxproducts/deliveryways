@@ -35,6 +35,32 @@ import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
 
+type PublicMenuItemVariation = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: Prisma.Decimal;
+  isDefault: boolean;
+  itemPriceOverrides?: Array<{
+    menuItemId: string;
+    price: Prisma.Decimal;
+    pickupPrice: Prisma.Decimal | null;
+    displayText: string | null;
+  }>;
+  modifierPriceOverrides?: Array<{
+    modifierId: string;
+    priceDelta: Prisma.Decimal;
+  }>;
+};
+
+type PublicMenuItemVariationOverride = {
+  menuItemId: string;
+  price: Prisma.Decimal;
+  pickupPrice: Prisma.Decimal | null;
+  displayText: string | null;
+  variation: PublicMenuItemVariation;
+};
+
 interface FavoriteMetadataShape {
   customerApp?: {
     favoriteMenuItemIds?: string[];
@@ -1119,33 +1145,16 @@ export class CustomerAppService {
       id: string;
       name: string;
       imageUrl?: string | null;
-      variations?: Array<{
-        id: string;
-        name: string;
-        description: string | null;
-        price: Prisma.Decimal;
+      variations?: PublicMenuItemVariation[];
+      variationLinks?: Array<{
+        sortOrder: number;
         isDefault: boolean;
-        itemPriceOverrides?: Array<{
-          menuItemId: string;
-          price: Prisma.Decimal;
-          pickupPrice: Prisma.Decimal | null;
-          displayText: string | null;
-        }>;
+        isActive: boolean;
+        variation: PublicMenuItemVariation;
       }>;
     };
-    variations?: Array<{
-      id: string;
-      name: string;
-      description: string | null;
-      price: Prisma.Decimal;
-      isDefault: boolean;
-      itemPriceOverrides?: Array<{
-        menuItemId: string;
-        price: Prisma.Decimal;
-        pickupPrice: Prisma.Decimal | null;
-        displayText: string | null;
-      }>;
-    }>;
+    variations?: PublicMenuItemVariation[];
+    variationPriceOverrides?: PublicMenuItemVariationOverride[];
     modifierPriceOverrides?: Array<{
       priceDelta: Prisma.Decimal;
       modifier: {
@@ -1182,6 +1191,7 @@ export class CustomerAppService {
     }>;
   }) {
     const branchOverride = item.branchOverrides?.[0];
+    const variations = this.resolvePublicItemVariations(item);
 
     return {
       id: item.id,
@@ -1220,10 +1230,7 @@ export class CustomerAppService {
             imageUrl: await this.resolveMediaUrl(item.category.imageUrl),
           }
         : null,
-      variations: this.normalizeVariations(
-        item.variations ?? item.category?.variations,
-        item.id,
-      ),
+      variations: this.normalizeVariations(variations, item.id),
       modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
         id: override.modifier.id,
         name: override.modifier.name,
@@ -1232,6 +1239,42 @@ export class CustomerAppService {
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
+  }
+
+  private resolvePublicItemVariations(item: {
+    id: string;
+    variations?: PublicMenuItemVariation[];
+    variationPriceOverrides?: PublicMenuItemVariationOverride[];
+    category?: {
+      variations?: PublicMenuItemVariation[];
+      variationLinks?: Array<{
+        sortOrder: number;
+        isDefault: boolean;
+        isActive: boolean;
+        variation: PublicMenuItemVariation;
+      }>;
+    };
+  }) {
+    if (item.variationPriceOverrides?.length) {
+      return item.variationPriceOverrides.map((override) => ({
+        ...override.variation,
+        price: override.price,
+        pickupPrice: override.pickupPrice ?? null,
+        displayText: override.displayText ?? null,
+        itemPriceOverrides: [{ ...override, menuItemId: override.menuItemId }],
+      }));
+    }
+
+    if (item.category?.variationLinks?.length) {
+      return item.category.variationLinks.map((link) => ({
+        ...link.variation,
+        sortOrder: link.sortOrder,
+        isDefault: link.isDefault,
+        isActive: link.isActive,
+      }));
+    }
+
+    return item.variations ?? item.category?.variations;
   }
 
   private normalizeVariations<

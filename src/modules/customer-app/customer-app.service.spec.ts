@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { CustomerAppService } from './customer-app.service';
 
@@ -24,8 +25,25 @@ describe('CustomerAppService', () => {
       id: 'category-1',
       name: 'Burgers',
       imageUrl: 'https://cdn.example.com/category.png',
+      variations: [],
     },
-    variations: [],
+    variationPriceOverrides: [
+      {
+        menuItemId: 'item-1',
+        price: new Prisma.Decimal(899),
+        pickupPrice: null,
+        displayText: 'Large',
+        variation: {
+          id: 'variation-1',
+          name: 'Large',
+          description: null,
+          price: new Prisma.Decimal(0),
+          isDefault: false,
+          itemPriceOverrides: [],
+          modifierPriceOverrides: [],
+        },
+      },
+    ],
     modifierLinks: [
       {
         sortOrder: 1,
@@ -51,6 +69,16 @@ describe('CustomerAppService', () => {
               },
             },
           ],
+        },
+      },
+    ],
+    modifierPriceOverrides: [
+      {
+        priceDelta: 150,
+        modifier: {
+          id: 'modifier-1',
+          name: 'Extra Cheese',
+          sortOrder: 1,
         },
       },
     ],
@@ -321,7 +349,69 @@ describe('CustomerAppService', () => {
 
     expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
     expect(result.data[0].depositAmount).toBe(100);
+    expect(result.data[0].variations).toEqual([
+      expect.objectContaining({
+        id: 'variation-1',
+        name: 'Large',
+        price: new Prisma.Decimal(899),
+        pickupPrice: null,
+        displayText: 'Large',
+      }),
+    ]);
     expect('modifierGroups' in result.data[0]).toBe(false);
+  });
+
+  it('uses the same menu item shape for cuisine items', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.findPublicCuisine.mockResolvedValue({
+      id: 'category-1',
+      name: 'Burgers',
+      slug: 'burgers',
+      description: null,
+      imageUrl: 'https://cdn.example.com/category.png',
+    });
+    repository.listCuisineMenuItems.mockResolvedValue({
+      items: [itemFixture],
+      total: 1,
+    });
+
+    const result = await service.listCuisineItems('category-1', {
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(result.data.items[0]).toEqual(
+      expect.objectContaining({
+        id: 'item-1',
+        variations: [
+          expect.objectContaining({
+            id: 'variation-1',
+            price: new Prisma.Decimal(899),
+          }),
+        ],
+        modifiers: [
+          expect.objectContaining({
+            id: 'modifier-1',
+            priceDelta: 150,
+          }),
+        ],
+      }),
+    );
+    expect('modifierGroups' in result.data.items[0]).toBe(false);
   });
 
   it('fetches public item by slug without legacy modifier groups', async () => {

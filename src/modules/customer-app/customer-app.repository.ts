@@ -176,6 +176,18 @@ export class CustomerAppRepository {
                 },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },
+              variationLinks: {
+                where: { isActive: true },
+                include: {
+                  variation: {
+                    include: {
+                      modifierPriceOverrides: true,
+                      itemPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [{ sortOrder: 'asc' }],
+              },
             },
           },
           modifierLinks: {
@@ -214,6 +226,17 @@ export class CustomerAppRepository {
               },
             },
             orderBy: [{ modifier: { sortOrder: 'asc' } }],
+          },
+          variationPriceOverrides: {
+            include: {
+              variation: {
+                include: {
+                  modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ variation: { sortOrder: 'asc' } }],
           },
           branchOverrides: branchId
             ? {
@@ -455,6 +478,18 @@ export class CustomerAppRepository {
                 },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               },
+              variationLinks: {
+                where: { isActive: true },
+                include: {
+                  variation: {
+                    include: {
+                      modifierPriceOverrides: true,
+                      itemPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [{ sortOrder: 'asc' }],
+              },
             },
           },
           modifierLinks: {
@@ -493,6 +528,17 @@ export class CustomerAppRepository {
               },
             },
             orderBy: [{ modifier: { sortOrder: 'asc' } }],
+          },
+          variationPriceOverrides: {
+            include: {
+              variation: {
+                include: {
+                  modifierPriceOverrides: true,
+                  itemPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ variation: { sortOrder: 'asc' } }],
           },
           branchOverrides: branchId
             ? {
@@ -562,8 +608,21 @@ export class CustomerAppRepository {
               where: { deletedAt: null, isActive: true },
               include: {
                 modifierPriceOverrides: true,
+                itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+            variationLinks: {
+              where: { isActive: true },
+              include: {
+                variation: {
+                  include: {
+                    modifierPriceOverrides: true,
+                    itemPriceOverrides: true,
+                  },
+                },
+              },
+              orderBy: [{ sortOrder: 'asc' }],
             },
           },
         },
@@ -603,6 +662,17 @@ export class CustomerAppRepository {
             },
           },
           orderBy: [{ modifier: { sortOrder: 'asc' } }],
+        },
+        variationPriceOverrides: {
+          include: {
+            variation: {
+              include: {
+                modifierPriceOverrides: true,
+                itemPriceOverrides: true,
+              },
+            },
+          },
+          orderBy: [{ variation: { sortOrder: 'asc' } }],
         },
         branchOverrides: branchId
           ? {
@@ -669,8 +739,21 @@ export class CustomerAppRepository {
               where: { deletedAt: null, isActive: true },
               include: {
                 modifierPriceOverrides: true,
+                itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+            variationLinks: {
+              where: { isActive: true },
+              include: {
+                variation: {
+                  include: {
+                    modifierPriceOverrides: true,
+                    itemPriceOverrides: true,
+                  },
+                },
+              },
+              orderBy: [{ sortOrder: 'asc' }],
             },
           },
         },
@@ -710,6 +793,17 @@ export class CustomerAppRepository {
             },
           },
           orderBy: [{ modifier: { sortOrder: 'asc' } }],
+        },
+        variationPriceOverrides: {
+          include: {
+            variation: {
+              include: {
+                modifierPriceOverrides: true,
+                itemPriceOverrides: true,
+              },
+            },
+          },
+          orderBy: [{ variation: { sortOrder: 'asc' } }],
         },
         branchOverrides: branchId
           ? {
