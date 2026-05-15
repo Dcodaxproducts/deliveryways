@@ -788,9 +788,7 @@ export class OrdersService {
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
 
       let variationName: string | undefined;
-      const menuItemVariations = this.resolveCategoryVariations(
-        menuItem.category,
-      );
+      const menuItemVariations = this.resolveItemVariations(menuItem);
 
       if (requestedItem.variationId) {
         const variation = menuItemVariations.find(
@@ -1006,9 +1004,7 @@ export class OrdersService {
             this.resolveOrderItemBasePrice(
               {
                 ...sectionItem,
-                variations: this.resolveCategoryVariations(
-                  sectionItem.category,
-                ),
+                variations: this.resolveItemVariations(sectionItem),
               },
               sectionBranchOverride?.priceOverride,
               requestedItem.variationId,
@@ -2759,6 +2755,7 @@ export class OrdersService {
 
   private resolveItemVariations(item: {
     variationPriceOverrides?: Array<{
+      menuItemId: string;
       price: Prisma.Decimal;
       pickupPrice?: Prisma.Decimal | null;
       displayText?: string | null;
@@ -2786,7 +2783,9 @@ export class OrdersService {
           price: override.price,
           pickupPrice: override.pickupPrice ?? null,
           displayText: override.displayText ?? null,
-          itemPriceOverrides: [override],
+          itemPriceOverrides: [
+            { ...override, menuItemId: override.menuItemId },
+          ],
         }))
       : this.resolveCategoryVariations(item.category);
   }
