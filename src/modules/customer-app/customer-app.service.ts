@@ -48,7 +48,26 @@ type PublicMenuItemVariation = {
     displayText: string | null;
   }>;
   modifierPriceOverrides?: Array<{
+    menuItemId?: string | null;
     modifierId: string;
+    priceDelta: Prisma.Decimal;
+    modifier?: PublicMenuItemModifier;
+  }>;
+};
+
+type PublicMenuItemModifier = {
+  id: string;
+  name: string;
+  priceDelta?: Prisma.Decimal;
+  sortOrder: number;
+  isActive?: boolean;
+  itemPriceOverrides?: Array<{
+    menuItemId: string;
+    priceDelta: Prisma.Decimal;
+  }>;
+  variationPriceOverrides?: Array<{
+    menuItemId?: string | null;
+    variationId: string;
     priceDelta: Prisma.Decimal;
   }>;
 };
@@ -1156,12 +1175,10 @@ export class CustomerAppService {
     variations?: PublicMenuItemVariation[];
     variationPriceOverrides?: PublicMenuItemVariationOverride[];
     modifierPriceOverrides?: Array<{
+      menuItemId?: string | null;
+      modifierId?: string;
       priceDelta: Prisma.Decimal;
-      modifier: {
-        id: string;
-        name: string;
-        sortOrder: number;
-      };
+      modifier: PublicMenuItemModifier;
     }>;
     modifierLinks?: Array<{
       sortOrder: number;
@@ -1200,6 +1217,10 @@ export class CustomerAppService {
       description: item.description,
       ingredients: item.ingredients,
       nutritionalInformation: item.nutritionalInformation,
+      dietaryFlags: this.readStringArray(item.dietaryFlags).filter(
+        (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
+      ),
+      allergenFlags: this.readStringArray(item.allergenFlags),
       labels: this.readStringArray(item.dietaryFlags).filter(
         (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
       ),
@@ -1231,6 +1252,8 @@ export class CustomerAppService {
           }
         : null,
       variations: this.normalizeVariations(variations, item.id),
+      modifierLinks: item.modifierLinks ?? [],
+      modifierPriceOverrides: item.modifierPriceOverrides ?? [],
       modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
         id: override.modifier.id,
         name: override.modifier.name,

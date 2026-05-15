@@ -171,7 +171,16 @@ export class CustomerAppRepository {
               variations: {
                 where: { deletedAt: null, isActive: true },
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
                   itemPriceOverrides: true,
                 },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -181,7 +190,16 @@ export class CustomerAppRepository {
                 include: {
                   variation: {
                     include: {
-                      modifierPriceOverrides: true,
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
                       itemPriceOverrides: true,
                     },
                   },
@@ -231,7 +249,16 @@ export class CustomerAppRepository {
             include: {
               variation: {
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
                   itemPriceOverrides: true,
                 },
               },
@@ -473,7 +500,16 @@ export class CustomerAppRepository {
               variations: {
                 where: { deletedAt: null, isActive: true },
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
                   itemPriceOverrides: true,
                 },
                 orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -483,7 +519,16 @@ export class CustomerAppRepository {
                 include: {
                   variation: {
                     include: {
-                      modifierPriceOverrides: true,
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
                       itemPriceOverrides: true,
                     },
                   },
@@ -533,7 +578,16 @@ export class CustomerAppRepository {
             include: {
               variation: {
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
                   itemPriceOverrides: true,
                 },
               },
@@ -607,7 +661,16 @@ export class CustomerAppRepository {
             variations: {
               where: { deletedAt: null, isActive: true },
               include: {
-                modifierPriceOverrides: true,
+                modifierPriceOverrides: {
+                  include: {
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
+                  },
+                },
                 itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -617,7 +680,16 @@ export class CustomerAppRepository {
               include: {
                 variation: {
                   include: {
-                    modifierPriceOverrides: true,
+                    modifierPriceOverrides: {
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                    },
                     itemPriceOverrides: true,
                   },
                 },
@@ -667,7 +739,16 @@ export class CustomerAppRepository {
           include: {
             variation: {
               include: {
-                modifierPriceOverrides: true,
+                modifierPriceOverrides: {
+                  include: {
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
+                  },
+                },
                 itemPriceOverrides: true,
               },
             },
@@ -738,7 +819,16 @@ export class CustomerAppRepository {
             variations: {
               where: { deletedAt: null, isActive: true },
               include: {
-                modifierPriceOverrides: true,
+                modifierPriceOverrides: {
+                  include: {
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
+                  },
+                },
                 itemPriceOverrides: true,
               },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -748,7 +838,16 @@ export class CustomerAppRepository {
               include: {
                 variation: {
                   include: {
-                    modifierPriceOverrides: true,
+                    modifierPriceOverrides: {
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                    },
                     itemPriceOverrides: true,
                   },
                 },
@@ -798,7 +897,16 @@ export class CustomerAppRepository {
           include: {
             variation: {
               include: {
-                modifierPriceOverrides: true,
+                modifierPriceOverrides: {
+                  include: {
+                    modifier: {
+                      include: {
+                        itemPriceOverrides: true,
+                        variationPriceOverrides: true,
+                      },
+                    },
+                  },
+                },
                 itemPriceOverrides: true,
               },
             },

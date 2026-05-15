@@ -15,6 +15,8 @@ describe('CustomerAppService', () => {
     basePrice: 799,
     depositAmount: 100,
     prepTimeMinutes: 15,
+    dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
+    allergenFlags: ['A'],
     restaurant: {
       id: 'restaurant-1',
       name: 'DeliveryWays Kitchen',
@@ -74,11 +76,15 @@ describe('CustomerAppService', () => {
     ],
     modifierPriceOverrides: [
       {
+        menuItemId: 'item-1',
+        modifierId: 'modifier-1',
         priceDelta: 150,
         modifier: {
           id: 'modifier-1',
           name: 'Extra Cheese',
+          priceDelta: 100,
           sortOrder: 1,
+          isActive: true,
         },
       },
     ],
@@ -349,6 +355,12 @@ describe('CustomerAppService', () => {
 
     expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
     expect(result.data[0].depositAmount).toBe(100);
+    expect(result.data[0].dietaryFlags).toEqual(['NON_ALCOHOLIC', 'VEGAN']);
+    expect(result.data[0].allergenFlags).toEqual(['A']);
+    expect(result.data[0].modifierLinks).toBe(itemFixture.modifierLinks);
+    expect(result.data[0].modifierPriceOverrides).toBe(
+      itemFixture.modifierPriceOverrides,
+    );
     expect(result.data[0].variations).toEqual([
       expect.objectContaining({
         id: 'variation-1',
@@ -409,6 +421,10 @@ describe('CustomerAppService', () => {
             priceDelta: 150,
           }),
         ],
+        dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
+        allergenFlags: ['A'],
+        modifierLinks: itemFixture.modifierLinks,
+        modifierPriceOverrides: itemFixture.modifierPriceOverrides,
       }),
     );
     expect('modifierGroups' in result.data.items[0]).toBe(false);
