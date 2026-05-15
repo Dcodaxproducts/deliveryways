@@ -1679,6 +1679,14 @@ export class MenuItemService {
       ...item,
       restaurant,
       allergenPdfUrl: restaurantAllergenPdfUrl ?? item.allergenPdfUrl ?? null,
+      productLabels: this.resolveProductLabelText(
+        item.dietaryFlags,
+        tenantSettings ?? restaurantSettings,
+      ),
+      ...this.resolveAllergenAdditiveLabels(
+        item.allergenFlags,
+        tenantSettings ?? restaurantSettings,
+      ),
       allergenCodes: this.readStringArray(item.allergenFlags),
       allergenAdditives: this.resolveAllergenAdditiveText(
         item.allergenFlags,
@@ -1708,6 +1716,54 @@ export class MenuItemService {
       code,
       label: byCode.get(code)?.label ?? code,
     }));
+  }
+
+  private resolveProductLabelText(codesInput: unknown, settings: unknown) {
+    const codes = this.readStringArray(codesInput).filter(
+      (flag) => flag !== this.splitPizzaDietaryFlag,
+    );
+    const configuredLabels = this.readProductLabels(
+      this.readPath(settings, ['productLabels']) ??
+        this.readPath(settings, ['menu', 'productLabels']),
+    );
+    const labels = configuredLabels.length
+      ? configuredLabels
+      : DEFAULT_MENU_ITEM_LABELS;
+    const byValue = new Map(labels.map((entry) => [entry.value, entry]));
+
+    return codes.map((value) => ({
+      value,
+      label: byValue.get(value)?.label ?? value,
+    }));
+  }
+
+  private resolveAllergenAdditiveLabels(
+    codesInput: unknown,
+    restaurantSettings: unknown,
+  ) {
+    const codes = this.readStringArray(codesInput);
+    const templates = this.readAllergenAdditiveTemplates(restaurantSettings);
+    const allergensByCode = new Map(
+      templates.allergens.map((entry) => [entry.code, entry]),
+    );
+    const additivesByCode = new Map(
+      templates.additives.map((entry) => [entry.code, entry]),
+    );
+    const allergens: Array<{ code: string; label: string }> = [];
+    const additives: Array<{ code: string; label: string }> = [];
+
+    for (const code of codes) {
+      const additive = additivesByCode.get(code);
+      if (additive) {
+        additives.push({ code, label: additive.label });
+        continue;
+      }
+
+      const allergen = allergensByCode.get(code);
+      allergens.push({ code, label: allergen?.label ?? code });
+    }
+
+    return { allergens, additives };
   }
 
   private readAllergenAdditiveTemplates(settings: unknown) {

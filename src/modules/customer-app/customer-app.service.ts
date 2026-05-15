@@ -34,6 +34,7 @@ import { CustomerAppRepository } from './customer-app.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
+import { DEFAULT_MENU_ITEM_LABELS } from '../menu/item/dto';
 
 type PublicMenuItemVariation = {
   id: string;
@@ -1209,6 +1210,16 @@ export class CustomerAppService {
   }) {
     const branchOverride = item.branchOverrides?.[0];
     const variations = this.resolvePublicItemVariations(item);
+    const settings =
+      item.restaurant?.tenant?.settings ?? item.restaurant?.settings;
+    const dietaryFlags = this.readStringArray(item.dietaryFlags).filter(
+      (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
+    );
+    const productLabels = this.resolveProductLabels(dietaryFlags, settings);
+    const allergenAdditiveLabels = this.resolveAllergenAdditiveLabels(
+      item.allergenFlags,
+      settings,
+    );
 
     return {
       id: item.id,
@@ -1217,18 +1228,17 @@ export class CustomerAppService {
       description: item.description,
       ingredients: item.ingredients,
       nutritionalInformation: item.nutritionalInformation,
-      dietaryFlags: this.readStringArray(item.dietaryFlags).filter(
-        (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
-      ),
+      dietaryFlags,
       allergenFlags: this.readStringArray(item.allergenFlags),
-      labels: this.readStringArray(item.dietaryFlags).filter(
-        (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
-      ),
+      labels: dietaryFlags,
+      productLabels,
+      allergens: allergenAdditiveLabels.allergens,
+      additives: allergenAdditiveLabels.additives,
       allergenCodes: this.readStringArray(item.allergenFlags),
-      allergenAdditives: this.resolveAllergenAdditiveText(
-        item.allergenFlags,
-        item.restaurant?.tenant?.settings ?? item.restaurant?.settings,
-      ),
+      allergenAdditives: [
+        ...allergenAdditiveLabels.allergens,
+        ...allergenAdditiveLabels.additives,
+      ],
       allergenPdfUrl: await this.resolveMediaUrl(
         this.resolveRestaurantAllergenPdfUrl(item.restaurant?.settings) ??
           (item as { allergenPdfUrl?: string | null }).allergenPdfUrl,
@@ -1359,6 +1369,77 @@ export class CustomerAppService {
       ['allergenPdfUrl'],
       ['allergensPdfUrl'],
     ]);
+  }
+
+  private resolveProductLabels(codes: string[], settings: unknown) {
+    const configuredLabels = this.readProductLabels(
+      this.readPath(settings, ['productLabels']) ??
+        this.readPath(settings, ['menu', 'productLabels']),
+    );
+    const labels = configuredLabels.length
+      ? configuredLabels
+      : DEFAULT_MENU_ITEM_LABELS;
+    const byValue = new Map(labels.map((entry) => [entry.value, entry]));
+
+    return codes.map((value) => ({
+      value,
+      label: byValue.get(value)?.label ?? value,
+    }));
+  }
+
+  private readProductLabels(input: unknown) {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          return null;
+        }
+
+        const value = (entry as Record<string, unknown>).value;
+        const label = (entry as Record<string, unknown>).label;
+
+        if (typeof value !== 'string' || typeof label !== 'string') {
+          return null;
+        }
+
+        return { value: value.trim(), label: label.trim() };
+      })
+      .filter(
+        (entry): entry is { value: string; label: string } =>
+          !!entry && entry.value.length > 0 && entry.label.length > 0,
+      );
+  }
+
+  private resolveAllergenAdditiveLabels(
+    codesInput: unknown,
+    restaurantSettings: unknown,
+  ) {
+    const codes = this.readStringArray(codesInput);
+    const templates = this.readAllergenAdditiveTemplates(restaurantSettings);
+    const allergensByCode = new Map(
+      templates.allergens.map((entry) => [entry.code, entry]),
+    );
+    const additivesByCode = new Map(
+      templates.additives.map((entry) => [entry.code, entry]),
+    );
+    const allergens: Array<{ code: string; label: string }> = [];
+    const additives: Array<{ code: string; label: string }> = [];
+
+    for (const code of codes) {
+      const additive = additivesByCode.get(code);
+      if (additive) {
+        additives.push({ code, label: additive.label });
+        continue;
+      }
+
+      const allergen = allergensByCode.get(code);
+      allergens.push({ code, label: allergen?.label ?? code });
+    }
+
+    return { allergens, additives };
   }
 
   private resolveAllergenAdditiveText(

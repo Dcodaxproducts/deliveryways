@@ -364,6 +364,54 @@ describe('MenuItemService', () => {
     });
   });
 
+  it('returns label objects for product labels, allergens, and additives in item lists', async () => {
+    const { service, itemRepository } = makeService();
+    itemRepository.list.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 'item-1',
+          name: 'Vegan Burger',
+          dietaryFlags: ['VEGAN', 'NON_ALCOHOLIC'],
+          allergenFlags: ['A', '1'],
+          allergenPdfUrl: null,
+          restaurant: {
+            id: 'restaurant-1',
+            settings: {},
+            tenant: {
+              settings: {
+                productLabels: [
+                  { value: 'VEGAN', label: 'Vegan' },
+                  { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
+                ],
+                customerApp: {
+                  allergenAdditiveTemplates: {
+                    allergens: [{ code: 'A', label: 'Gluten' }],
+                    additives: [{ code: '1', label: 'Coloring' }],
+                  },
+                },
+              },
+            },
+          },
+          category: { items: [] },
+        },
+      ],
+    });
+
+    const result = await service.list(
+      { uid: 'admin-1', tid: 'tenant-1', role: UserRoleEnum.BUSINESS_ADMIN },
+      { page: 1, limit: 10 } as never,
+    );
+
+    const item = result.data[0] as Record<string, unknown>;
+    expect(item.productLabels).toEqual([
+      { value: 'VEGAN', label: 'Vegan' },
+      { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
+    ]);
+    expect(item.allergens).toEqual([{ code: 'A', label: 'Gluten' }]);
+    expect(item.additives).toEqual([{ code: '1', label: 'Coloring' }]);
+  });
+
   it('stores allergen/additive codes from comma-separated item input', async () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

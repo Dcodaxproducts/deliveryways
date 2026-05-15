@@ -16,12 +16,27 @@ describe('CustomerAppService', () => {
     depositAmount: 100,
     prepTimeMinutes: 15,
     dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
-    allergenFlags: ['A'],
+    allergenFlags: ['A', '1'],
     restaurant: {
       id: 'restaurant-1',
       name: 'DeliveryWays Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       tagline: 'Fresh food fast',
+      settings: {},
+      tenant: {
+        settings: {
+          productLabels: [
+            { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
+            { value: 'VEGAN', label: 'Vegan' },
+          ],
+          customerApp: {
+            allergenAdditiveTemplates: {
+              allergens: [{ code: 'A', label: 'Gluten' }],
+              additives: [{ code: '1', label: 'Coloring' }],
+            },
+          },
+        },
+      },
     },
     category: {
       id: 'category-1',
@@ -353,10 +368,23 @@ describe('CustomerAppService', () => {
       limit: 10,
     });
 
-    expect(result.data[0].restaurant).toEqual(itemFixture.restaurant);
+    expect(result.data[0].restaurant).toEqual({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      tagline: 'Fresh food fast',
+    });
     expect(result.data[0].depositAmount).toBe(100);
     expect(result.data[0].dietaryFlags).toEqual(['NON_ALCOHOLIC', 'VEGAN']);
-    expect(result.data[0].allergenFlags).toEqual(['A']);
+    expect(result.data[0].productLabels).toEqual([
+      { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
+      { value: 'VEGAN', label: 'Vegan' },
+    ]);
+    expect(result.data[0].allergenFlags).toEqual(['A', '1']);
+    expect(result.data[0].allergens).toEqual([{ code: 'A', label: 'Gluten' }]);
+    expect(result.data[0].additives).toEqual([
+      { code: '1', label: 'Coloring' },
+    ]);
     expect(result.data[0].modifierLinks).toBe(itemFixture.modifierLinks);
     expect(result.data[0].modifierPriceOverrides).toBe(
       itemFixture.modifierPriceOverrides,
@@ -422,7 +450,13 @@ describe('CustomerAppService', () => {
           }),
         ],
         dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
-        allergenFlags: ['A'],
+        productLabels: [
+          { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
+          { value: 'VEGAN', label: 'Vegan' },
+        ],
+        allergenFlags: ['A', '1'],
+        allergens: [{ code: 'A', label: 'Gluten' }],
+        additives: [{ code: '1', label: 'Coloring' }],
         modifierLinks: itemFixture.modifierLinks,
         modifierPriceOverrides: itemFixture.modifierPriceOverrides,
       }),
