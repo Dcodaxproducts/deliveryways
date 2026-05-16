@@ -6,9 +6,12 @@ import {
   Param,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -119,6 +122,33 @@ export class AdminReportsController {
     @Query() query: AdminReportsScopedQueryDto,
   ) {
     return this.adminReportsService.getInvoice(user, orderId, query);
+  }
+
+  @Get('invoices/:orderId/pdf')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Download generated invoice PDF for an order' })
+  async downloadInvoicePdf(
+    @CurrentUser() user: AuthUserContext,
+    @Param('orderId') orderId: string,
+    @Query() query: AdminReportsScopedQueryDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.adminReportsService.downloadInvoicePdf(
+      user,
+      orderId,
+      query,
+    );
+
+    response.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `attachment; filename="${file.fileName}"`,
+    });
+
+    return new StreamableFile(file.content);
   }
 
   @Post('invoices/:orderId/send-email')

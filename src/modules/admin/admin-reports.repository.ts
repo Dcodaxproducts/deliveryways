@@ -333,10 +333,19 @@ export class AdminReportsRepository {
         loyaltyDiscountAmount: true,
         totalAmount: true,
         paidAt: true,
+        deliveredAt: true,
         createdAt: true,
         orderTime: true,
-        restaurant: { select: { id: true, name: true, slug: true } },
-        branch: { select: { id: true, name: true } },
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            supportContact: true,
+            settings: true,
+          },
+        },
+        branch: { select: { id: true, name: true, settings: true } },
         customer: {
           select: {
             id: true,
@@ -347,6 +356,16 @@ export class AdminReportsRepository {
           },
         },
         coupon: { select: { code: true } },
+        deliveryAddress: {
+          select: {
+            id: true,
+            street: true,
+            area: true,
+            city: true,
+            state: true,
+            country: true,
+          },
+        },
         items: {
           orderBy: [{ createdAt: 'asc' }],
           select: {

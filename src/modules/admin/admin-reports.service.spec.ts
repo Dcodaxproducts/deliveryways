@@ -202,14 +202,39 @@ describe('AdminReportsService', () => {
           id: 'restaurant-1',
           name: 'Restaurant',
           slug: 'restaurant',
+          supportContact: { email: 'billing@restaurant.test', phone: '555' },
+          settings: {
+            invoice: {
+              businessName: 'Restaurant GmbH',
+              taxNumber: 'VAT-123',
+              billingAddress: {
+                street: 'Main Street 1',
+                city: 'Berlin',
+                country: 'Germany',
+              },
+              bankDetails: {
+                accountHolder: 'Restaurant GmbH',
+                bankName: 'Demo Bank',
+                iban: 'DE123',
+              },
+            },
+          },
         },
-        branch: { id: 'branch-1', name: 'Main' },
+        branch: { id: 'branch-1', name: 'Main', settings: null },
         customer: {
           id: 'customer-1',
           email: 'customer@test.com',
           profile: null,
         },
         coupon: null,
+        deliveryAddress: {
+          id: 'address-1',
+          street: 'Customer Street 2',
+          area: null,
+          city: 'Berlin',
+          state: 'BE',
+          country: 'Germany',
+        },
         items: [
           {
             id: 'order-item-1',
@@ -255,7 +280,109 @@ describe('AdminReportsService', () => {
     expect(result.data.items[0]).toEqual(
       expect.objectContaining({ menuItemName: 'Burger', lineTotal: 500 }),
     );
+    expect(result.data.business).toEqual(
+      expect.objectContaining({
+        name: 'Restaurant GmbH',
+        taxNumber: 'VAT-123',
+      }),
+    );
+    expect(result.data.business.billingAddress.formatted).toBe(
+      'Main Street 1, Berlin, Germany',
+    );
+    expect(result.data.business.bankDetails.iban).toBe('DE123');
+    expect(result.data.customerBillingAddress.formatted).toBe(
+      'Customer Street 2, Berlin, BE, Germany',
+    );
+    expect(result.data.taxBreakdown).toEqual({
+      label: 'VAT/Tax',
+      taxableAmount: 500,
+      taxAmount: 0,
+      ratePercentage: 0,
+    });
+    expect(result.data.payment).toEqual(
+      expect.objectContaining({ currency: 'PKR', providerReference: null }),
+    );
     expect(result.message).toBe('Invoice fetched successfully');
+  });
+
+  it('returns generated invoice PDF content for download', async () => {
+    const repository = {
+      findInvoiceOrder: jest.fn().mockResolvedValue({
+        id: 'order-12345678',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        orderType: 'DELIVERY',
+        status: 'DELIVERED',
+        paymentStatus: 'PAID',
+        paymentMethod: 'CARD',
+        subtotal: 1000,
+        taxAmount: 50,
+        deliveryFee: 100,
+        discountAmount: 25,
+        walletAppliedAmount: 0,
+        loyaltyDiscountAmount: 0,
+        totalAmount: 1125,
+        paidAt: new Date('2026-05-12T10:00:00.000Z'),
+        deliveredAt: new Date('2026-05-12T10:20:00.000Z'),
+        createdAt: new Date('2026-05-12T09:55:00.000Z'),
+        orderTime: new Date('2026-05-12T09:55:00.000Z'),
+        restaurant: {
+          id: 'restaurant-1',
+          name: 'Restaurant',
+          slug: 'restaurant',
+          supportContact: null,
+          settings: {
+            invoice: {
+              businessName: 'Restaurant GmbH',
+              taxNumber: 'VAT-123',
+              bankDetails: { bankName: 'Demo Bank', iban: 'DE123' },
+            },
+          },
+        },
+        branch: { id: 'branch-1', name: 'Main', settings: null },
+        customer: {
+          id: 'customer-1',
+          email: 'customer@test.com',
+          profile: { firstName: 'Ali', lastName: 'Khan', phone: '123' },
+        },
+        coupon: null,
+        deliveryAddress: null,
+        items: [
+          {
+            id: 'order-item-1',
+            menuItemId: 'item-1',
+            menuItemName: 'Burger',
+            variationId: null,
+            variationName: null,
+            unitPrice: 1000,
+            quantity: 1,
+            lineTotal: 1000,
+            note: null,
+            snapshotModifiers: null,
+            createdAt: new Date('2026-05-12T09:55:00.000Z'),
+          },
+        ],
+        transactions: [],
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.downloadInvoicePdf(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'order-12345678',
+      {},
+    );
+
+    expect(result.fileName).toBe('INV-12345678.pdf');
+    expect(result.mimeType).toBe('application/pdf');
+    expect(result.content.toString('utf8')).toContain('%PDF-1.4');
+    expect(result.content.toString('utf8')).toContain('Restaurant GmbH');
   });
 
   it('generates report export CSV and sends it to email', async () => {

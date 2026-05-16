@@ -278,28 +278,28 @@ export class AdminReportsService {
     };
   }
 
+  async downloadInvoicePdf(
+    user: AuthUserContext,
+    orderId: string,
+    query: AdminReportsScopedQueryDto,
+  ) {
+    const invoice = await this.getInvoiceOrder(user, orderId, query);
+    const details = this.toInvoiceDetails(invoice);
+    const invoiceNumber = details.invoiceNumber;
+
+    return {
+      fileName: `${invoiceNumber}.pdf`,
+      mimeType: 'application/pdf',
+      content: this.generateInvoicePdf(invoice),
+    };
+  }
+
   async sendInvoiceEmail(
     user: AuthUserContext,
     orderId: string,
     query: AdminReportsScopedQueryDto,
   ) {
-    const scope = await this.resolveScope(
-      user,
-      query.restaurantId,
-      query.branchId,
-    );
-    const invoice = await this.adminReportsRepository.findInvoiceOrder(
-      scope,
-      orderId,
-      {
-        restaurantId: scope.restaurantId,
-        branchId: scope.branchId,
-      },
-    );
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
+    const invoice = await this.getInvoiceOrder(user, orderId, query);
 
     const details = this.toInvoiceDetails(invoice);
     const invoiceNumber = details.invoiceNumber;
@@ -338,6 +338,32 @@ export class AdminReportsService {
       },
       message: 'Invoice generated and sent successfully',
     };
+  }
+
+  private async getInvoiceOrder(
+    user: AuthUserContext,
+    orderId: string,
+    query: AdminReportsScopedQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const invoice = await this.adminReportsRepository.findInvoiceOrder(
+      scope,
+      orderId,
+      {
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+    );
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    return invoice;
   }
 
   async getOrdersReport(
@@ -431,14 +457,29 @@ export class AdminReportsService {
 
   private generateInvoicePdf(invoice: InvoiceOrder) {
     const summary = this.toInvoiceDetails(invoice);
+    const business = summary.business;
+    const customer = summary.customer;
     const lines = [
       `Invoice ${summary.invoiceNumber}`,
+      `Invoice Date: ${this.formatDate(summary.issuedAt)}`,
+      `Service Period: ${this.formatDate(summary.servicePeriod.from)} - ${this.formatDate(summary.servicePeriod.to)}`,
+      '',
+      'Seller',
+      `${business.name}`,
+      `Address: ${business.billingAddress.formatted ?? 'N/A'}`,
+      `Email: ${business.email ?? 'N/A'}`,
+      `Phone: ${business.phone ?? 'N/A'}`,
+      `Tax/VAT No: ${business.taxNumber ?? 'N/A'}`,
+      '',
+      'Customer',
+      `${customer.name}`,
+      `Email: ${customer.email}`,
+      `Phone: ${customer.phone ?? 'N/A'}`,
+      `Address: ${summary.customerBillingAddress.formatted ?? 'N/A'}`,
+      '',
       `Order ID: ${summary.orderId}`,
       `Restaurant: ${summary.restaurant.name}`,
       `Branch: ${summary.branch.name}`,
-      `Customer: ${summary.customer.name}`,
-      `Email: ${summary.customer.email}`,
-      `Issued At: ${this.formatDate(summary.issuedAt)}`,
       `Paid At: ${this.formatDate(summary.paidAt)}`,
       `Order Type: ${summary.orderType}`,
       `Order Status: ${summary.orderStatus}`,
@@ -459,6 +500,11 @@ export class AdminReportsService {
       `Wallet Applied: ${this.formatMoney(summary.walletAppliedAmount)}`,
       `Loyalty Discount: ${this.formatMoney(summary.loyaltyDiscountAmount)}`,
       `Total: ${this.formatMoney(summary.totalAmount)}`,
+      '',
+      'Bank Details',
+      `Account Holder: ${business.bankDetails.accountHolder ?? 'N/A'}`,
+      `Bank Name: ${business.bankDetails.bankName ?? 'N/A'}`,
+      `IBAN/Account: ${business.bankDetails.iban ?? business.bankDetails.accountNumber ?? 'N/A'}`,
     ];
 
     return this.buildSimplePdf(lines);
@@ -576,6 +622,12 @@ export class AdminReportsService {
       Awaited<ReturnType<AdminReportsRepository['findInvoiceOrder']>>
     >,
   ) {
+    const business = this.toInvoiceBusiness(invoice);
+    const customerBillingAddress = this.toInvoiceAddress(
+      invoice.deliveryAddress,
+    );
+    const taxBreakdown = this.toInvoiceTaxBreakdown(invoice);
+
     return {
       ...this.toInvoiceSummary({
         ...invoice,
@@ -583,11 +635,34 @@ export class AdminReportsService {
       }),
       tenantId: invoice.tenantId,
       couponCode: invoice.coupon?.code ?? null,
+      business,
+      customerBillingAddress,
+      servicePeriod: {
+        from: invoice.orderTime ?? invoice.createdAt,
+        to: invoice.deliveredAt ?? invoice.paidAt ?? invoice.createdAt,
+      },
+      taxBreakdown,
+      payment: {
+        method: invoice.paymentMethod,
+        status: invoice.paymentStatus,
+        currency: invoice.transactions[0]?.currency ?? business.currency,
+        paidAt: invoice.paidAt,
+        providerReference: invoice.transactions[0]?.providerRef ?? null,
+      },
       items: invoice.items.map((item) => ({
         ...item,
         unitPrice: Number(item.unitPrice),
         lineTotal: Number(item.lineTotal),
       })),
+      totals: {
+        subtotal: Number(invoice.subtotal),
+        taxAmount: Number(invoice.taxAmount),
+        deliveryFee: Number(invoice.deliveryFee),
+        discountAmount: Number(invoice.discountAmount),
+        walletAppliedAmount: Number(invoice.walletAppliedAmount),
+        loyaltyDiscountAmount: Number(invoice.loyaltyDiscountAmount),
+        totalAmount: Number(invoice.totalAmount),
+      },
     };
   }
 
@@ -610,6 +685,219 @@ export class AdminReportsService {
         `${customer.profile?.firstName ?? ''} ${customer.profile?.lastName ?? ''}`.trim() ||
         customer.email,
     };
+  }
+
+  private toInvoiceBusiness(invoice: InvoiceOrder) {
+    const restaurantSettings = this.asObject(invoice.restaurant.settings);
+    const branchSettings = this.asObject(invoice.branch.settings);
+    const supportContact = this.asObject(invoice.restaurant.supportContact);
+    const currency =
+      invoice.transactions[0]?.currency ??
+      this.readSettingsString(
+        [branchSettings, restaurantSettings],
+        [['invoice', 'currency'], ['billing', 'currency'], ['currency']],
+      ) ??
+      'PKR';
+
+    return {
+      id: invoice.restaurant.id,
+      name:
+        this.readSettingsString(
+          [branchSettings, restaurantSettings],
+          [
+            ['invoice', 'businessName'],
+            ['billing', 'businessName'],
+            ['legalName'],
+          ],
+        ) ?? invoice.restaurant.name,
+      tradeName: invoice.restaurant.name,
+      branchName: invoice.branch.name,
+      email:
+        this.readSettingsString(
+          [branchSettings, restaurantSettings],
+          [['invoice', 'email'], ['billing', 'email'], ['email']],
+        ) ?? this.readStringValue(supportContact.email),
+      phone:
+        this.readSettingsString(
+          [branchSettings, restaurantSettings],
+          [['invoice', 'phone'], ['billing', 'phone'], ['phone']],
+        ) ?? this.readStringValue(supportContact.phone),
+      taxNumber: this.readSettingsString(
+        [branchSettings, restaurantSettings],
+        [
+          ['invoice', 'taxNumber'],
+          ['invoice', 'vatNumber'],
+          ['billing', 'taxNumber'],
+          ['billing', 'vatNumber'],
+          ['taxNumber'],
+          ['vatNumber'],
+        ],
+      ),
+      registrationNumber: this.readSettingsString(
+        [branchSettings, restaurantSettings],
+        [
+          ['invoice', 'registrationNumber'],
+          ['billing', 'registrationNumber'],
+          ['registrationNumber'],
+        ],
+      ),
+      currency,
+      billingAddress: this.readSettingsAddress([
+        branchSettings,
+        restaurantSettings,
+      ]),
+      bankDetails: this.readSettingsBankDetails([
+        branchSettings,
+        restaurantSettings,
+      ]),
+    };
+  }
+
+  private toInvoiceTaxBreakdown(invoice: InvoiceOrder) {
+    const subtotal = Number(invoice.subtotal);
+    const taxAmount = Number(invoice.taxAmount);
+
+    return {
+      label: 'VAT/Tax',
+      taxableAmount: subtotal,
+      taxAmount,
+      ratePercentage:
+        subtotal > 0 ? Number(((taxAmount / subtotal) * 100).toFixed(2)) : 0,
+    };
+  }
+
+  private readSettingsAddress(settings: Record<string, unknown>[]) {
+    for (const source of settings) {
+      const address = this.asObject(
+        this.readFirstPath(source, [
+          ['invoice', 'billingAddress'],
+          ['invoice', 'businessAddress'],
+          ['billing', 'address'],
+          ['billingAddress'],
+          ['address'],
+        ]),
+      );
+      const result = this.toInvoiceAddress({
+        street: this.readStringValue(address.street),
+        area: this.readStringValue(address.area),
+        city: this.readStringValue(address.city),
+        state: this.readStringValue(address.state),
+        country: this.readStringValue(address.country),
+      });
+
+      if (result.formatted) {
+        return result;
+      }
+    }
+
+    return this.toInvoiceAddress(null);
+  }
+
+  private readSettingsBankDetails(settings: Record<string, unknown>[]) {
+    const bank = this.asObject(
+      settings
+        .map((source) =>
+          this.readFirstPath(source, [
+            ['invoice', 'bankDetails'],
+            ['billing', 'bankDetails'],
+            ['bankDetails'],
+          ]),
+        )
+        .find((value) => value && typeof value === 'object'),
+    );
+
+    return {
+      accountHolder: this.readStringValue(bank.accountHolder),
+      bankName: this.readStringValue(bank.bankName),
+      accountNumber: this.readStringValue(bank.accountNumber),
+      iban: this.readStringValue(bank.iban),
+      bic: this.readStringValue(bank.bic),
+      routingNumber: this.readStringValue(bank.routingNumber),
+    };
+  }
+
+  private toInvoiceAddress(
+    address:
+      | {
+          street?: string | null;
+          area?: string | null;
+          city?: string | null;
+          state?: string | null;
+          country?: string | null;
+        }
+      | null
+      | undefined,
+  ) {
+    const parts = [
+      address?.street,
+      address?.area,
+      address?.city,
+      address?.state,
+      address?.country,
+    ].filter((part): part is string => Boolean(part));
+
+    return {
+      street: address?.street ?? null,
+      area: address?.area ?? null,
+      city: address?.city ?? null,
+      state: address?.state ?? null,
+      country: address?.country ?? null,
+      formatted: parts.length ? parts.join(', ') : null,
+    };
+  }
+
+  private readSettingsString(
+    settings: Record<string, unknown>[],
+    paths: string[][],
+  ) {
+    for (const source of settings) {
+      const value = this.readFirstPath(source, paths);
+      const text = this.readStringValue(value);
+
+      if (text) {
+        return text;
+      }
+    }
+
+    return null;
+  }
+
+  private readFirstPath(source: Record<string, unknown>, paths: string[][]) {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+
+      if (value !== undefined && value !== null) {
+        return value;
+      }
+    }
+
+    return undefined;
+  }
+
+  private readPath(source: Record<string, unknown>, path: string[]) {
+    let current: unknown = source;
+
+    for (const segment of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return undefined;
+      }
+
+      current = (current as Record<string, unknown>)[segment];
+    }
+
+    return current;
+  }
+
+  private asObject(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private readStringValue(value: unknown) {
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : null;
   }
 
   private buildInvoiceNumber(orderId: string) {
