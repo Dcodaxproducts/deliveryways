@@ -157,7 +157,7 @@ export class BranchesService {
           password: await bcrypt.hash(plainPassword, 10),
           role: UserRoleEnum.BRANCH_ADMIN,
           tenantId: user.tid,
-          restaurantId: dto.restaurantId,
+          restaurantId: effectiveRestaurantId,
           branchId: branch.id,
           isVerified: true,
           isApproved: true,

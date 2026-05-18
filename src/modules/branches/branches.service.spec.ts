@@ -172,6 +172,62 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch created successfully');
   });
 
+  it('creates branch admin with resolved restaurant scope for business admin', async () => {
+    const { service, repository, usersService, prisma } = makeService();
+    repository.create.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      managerId: 'branch-admin-1',
+    });
+    usersService.findByEmail.mockResolvedValue(null);
+    usersService.create.mockResolvedValue({
+      id: 'branch-admin-1',
+      email: 'branch.admin@example.com',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.createFromUser(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        name: 'Main Branch',
+        street: 'Street 12',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: '31.5204',
+        lng: '74.3587',
+        branchAdmin: {
+          email: 'branch.admin@example.com',
+          password: 'Admin@12345',
+          firstName: 'Branch',
+          lastName: 'Admin',
+        },
+      },
+    );
+
+    expect(usersService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      }),
+      expect.any(Object),
+    );
+    expect(result.message).toBe('Branch and branch user created successfully');
+  });
+
   it('fetches branch details with populated address', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({
