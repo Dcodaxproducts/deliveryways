@@ -353,6 +353,16 @@ export class CartRepository {
             branchId,
           },
         },
+        variationPriceOverrides: {
+          include: {
+            variation: {
+              include: {
+                modifierPriceOverrides: true,
+                itemPriceOverrides: true,
+              },
+            },
+          },
+        },
         category: {
           select: {
             id: true,
@@ -403,7 +413,12 @@ export class CartRepository {
       },
     });
 
-    return items;
+    return items.map((item) => ({
+      ...item,
+      variations: item.variationPriceOverrides.length
+        ? this.resolveItemVariations(item.id, item.variationPriceOverrides)
+        : this.resolveCategoryVariations(item.category),
+    }));
   }
 
   async findMenuItemsForResponse(

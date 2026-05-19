@@ -964,7 +964,7 @@ export class CartService {
               continue;
             }
 
-            const sectionVariation = sectionItem.category.variations.find(
+            const sectionVariation = sectionItem.variations.find(
               (variation) => variation.id === cartItem.variationId,
             );
             const sectionBranchOverride = sectionItem.branchOverrides[0];

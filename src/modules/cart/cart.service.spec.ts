@@ -266,6 +266,160 @@ describe('CartService', () => {
     });
   });
 
+  it('uses pickup variation prices and highest section price for split pizza cart totals', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-parent',
+          variationId: 'var-large',
+          quantity: 1,
+          note: null,
+          modifiers: {
+            modifiers: [],
+            sections: [
+              { slot: 'LEFT', menuItemId: 'flavor-1' },
+              { slot: 'RIGHT', menuItemId: 'flavor-2' },
+            ],
+          },
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-parent',
+        name: 'Half And Half Pizza',
+        slug: 'half-and-half-pizza',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(900),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        depositAmount: new Prisma.Decimal(0),
+        dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+        category: {
+          id: 'cat-pizza',
+          name: 'Pizza',
+          imageUrl: null,
+          items: [
+            { id: 'flavor-1', name: 'Fajita Pizza', slug: 'fajita-pizza' },
+            {
+              id: 'flavor-2',
+              name: 'Pepperoni Pizza',
+              slug: 'pepperoni-pizza',
+            },
+          ],
+        },
+        variations: [
+          {
+            id: 'var-large',
+            name: 'Large',
+            description: null,
+            price: new Prisma.Decimal(900),
+            itemPriceOverrides: [],
+          },
+        ],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    cartRepository.findSplitSectionItems.mockResolvedValue([
+      {
+        id: 'flavor-1',
+        name: 'Fajita Pizza',
+        basePrice: new Prisma.Decimal(1000),
+        pricingMode: 'MULTIPLE',
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(200),
+        variations: [
+          {
+            id: 'var-large',
+            name: 'Large',
+            price: new Prisma.Decimal(1200),
+            itemPriceOverrides: [
+              {
+                menuItemId: 'flavor-1',
+                price: new Prisma.Decimal(1200),
+                pickupPrice: new Prisma.Decimal(1300),
+              },
+            ],
+          },
+        ],
+        category: { variations: [] },
+        branchOverrides: [],
+      },
+      {
+        id: 'flavor-2',
+        name: 'Pepperoni Pizza',
+        basePrice: new Prisma.Decimal(1100),
+        pricingMode: 'MULTIPLE',
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(200),
+        variations: [
+          {
+            id: 'var-large',
+            name: 'Large',
+            price: new Prisma.Decimal(1400),
+            itemPriceOverrides: [
+              {
+                menuItemId: 'flavor-2',
+                price: new Prisma.Decimal(1400),
+                pickupPrice: new Prisma.Decimal(1500),
+              },
+            ],
+          },
+        ],
+        category: { variations: [] },
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const firstItem = result.data.items[0] as {
+      unitPrice: number | null;
+      lineTotal: number | null;
+      selectedSections: Array<{ menuItemId: string; unitPrice: number }>;
+    };
+    expect(firstItem.selectedSections).toEqual([
+      {
+        slot: 'LEFT',
+        menuItemId: 'flavor-1',
+        menuItemName: 'Fajita Pizza',
+        unitPrice: 1300,
+      },
+      {
+        slot: 'RIGHT',
+        menuItemId: 'flavor-2',
+        menuItemName: 'Pepperoni Pizza',
+        unitPrice: 1500,
+      },
+    ]);
+    expect(firstItem.unitPrice).toBe(1500);
+    expect(firstItem.lineTotal).toBe(1500);
+  });
+
   it('prices selected category modifiers with variation overrides in cart response', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
