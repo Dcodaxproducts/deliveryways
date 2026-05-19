@@ -1922,8 +1922,12 @@ export class MenuItemService {
       takeawayPriceAdjustment?: Prisma.Decimal | null;
     },
   ) {
+    const hasPriceAdjustment =
+      dto.deliveryPriceAdjustment !== undefined ||
+      dto.takeawayPriceAdjustment !== undefined;
     const pricingMode =
       (dto.pricingMode as MenuItemPricingMode | undefined) ??
+      (hasPriceAdjustment ? MenuItemPricingMode.MULTIPLE : undefined) ??
       existing?.pricingMode ??
       MenuItemPricingMode.SINGLE;
 

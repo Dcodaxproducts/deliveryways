@@ -721,6 +721,46 @@ describe('MenuItemService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('stores update price adjustments when pricing mode is omitted', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    itemRepository.findById.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      pricingMode: 'SINGLE',
+      basePrice: new Prisma.Decimal(500),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      dietaryFlags: [],
+    });
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.update.mockResolvedValue({ id: 'item-1' });
+    prisma.modifier.count.mockResolvedValue(0);
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'item-1',
+      {
+        deliveryPriceAdjustment: 10,
+        takeawayPriceAdjustment: 20,
+      },
+    );
+
+    expect(itemRepository.update).toHaveBeenCalledWith(
+      'item-1',
+      expect.objectContaining({
+        pricingMode: 'MULTIPLE',
+        deliveryPriceAdjustment: new Prisma.Decimal(10),
+        takeawayPriceAdjustment: new Prisma.Decimal(20),
+      }),
+      expect.anything(),
+    );
+  });
+
   it('clears item modifiers and variation overrides when update sends empty arrays', async () => {
     const { service, itemRepository, prisma, tx } = makeService();
     itemRepository.findById.mockResolvedValue({
