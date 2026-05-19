@@ -177,7 +177,7 @@ export class CartService {
     }
 
     return {
-      data: await this.buildCartResponse(cart),
+      data: await this.buildCartResponse(cart, user),
       message: 'Cart fetched successfully',
     };
   }
@@ -877,7 +877,7 @@ export class CartService {
     return holidayOpeningHour ?? null;
   }
 
-  private async buildCartResponse(cart: CartSnapshot) {
+  private async buildCartResponse(cart: CartSnapshot, user?: AuthUserContext) {
     const menuItems = await this.cartRepository.findMenuItemsForResponse(
       [...new Set(cart.items.map((item) => item.menuItemId))],
       cart.restaurantId,
@@ -996,6 +996,33 @@ export class CartService {
               menuItemId: sectionItem.id,
               menuItemName: sectionItem.name,
               unitPrice: Number(sectionUnitPrice),
+              selectedVariation: sectionVariation
+                ? {
+                    id: sectionVariation.id,
+                    name: sectionVariation.name,
+                    description:
+                      sectionVariation.itemPriceOverrides?.find(
+                        (itemOverride) =>
+                          itemOverride.menuItemId === sectionItem.id,
+                      )?.displayText ??
+                      sectionVariation.description ??
+                      null,
+                    displayText:
+                      sectionVariation.itemPriceOverrides?.find(
+                        (itemOverride) =>
+                          itemOverride.menuItemId === sectionItem.id,
+                      )?.displayText ?? null,
+                    price: Number(
+                      this.resolveVariationPrice(
+                        sectionVariation,
+                        sectionBranchOverride?.priceOverride ??
+                          sectionItem.basePrice,
+                        sectionItem.id,
+                        cart.orderType,
+                      ),
+                    ),
+                  }
+                : null,
             });
           }
 
@@ -1122,6 +1149,10 @@ export class CartService {
       }),
     );
 
+    const quote = user?.uid
+      ? await this.ordersService.quote(user, await this.toQuotePayload(cart))
+      : null;
+
     return this.resolveMediaResponse({
       id: cart.id,
       restaurantId: cart.restaurantId,
@@ -1135,6 +1166,7 @@ export class CartService {
       orderTime: cart.orderTime,
       customerNote: cart.customerNote,
       items,
+      ...(quote ? { quote: quote.data } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });

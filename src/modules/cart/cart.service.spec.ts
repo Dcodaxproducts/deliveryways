@@ -67,7 +67,6 @@ describe('CartService', () => {
     profilesRepository.findByUserId.mockResolvedValue({
       metadata: { defaultAddressId: 'address-1' },
     });
-
     const result = await service.getCart({
       uid: 'user-1',
       tid: 'tenant-1',
@@ -137,6 +136,10 @@ describe('CartService', () => {
     profilesRepository.findByUserId.mockResolvedValue({
       metadata: { defaultAddressId: 'address-1' },
     });
+    ordersService.quote.mockResolvedValue({
+      data: { deliveryFee: 250, totalAmount: 800 },
+      message: 'Order quote generated successfully',
+    });
 
     const result = await service.getCart({
       uid: 'user-1',
@@ -173,7 +176,18 @@ describe('CartService', () => {
       | { items?: Array<{ menuItem?: { imageUrl?: string | null } }> }
       | undefined;
     expect(mediaPayload?.items?.[0]?.menuItem?.imageUrl).toBe('burger.png');
-    expect(ordersService.quote).not.toHaveBeenCalled();
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'user-1' }),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        orderType: OrderTypeEnum.DELIVERY,
+      }),
+    );
+    expect(
+      (result.data as { quote?: { deliveryFee: number; totalAmount: number } })
+        .quote,
+    ).toEqual({ deliveryFee: 250, totalAmount: 800 });
   });
 
   it('uses exact item variation price in cart totals', async () => {
@@ -356,6 +370,7 @@ describe('CartService', () => {
                 menuItemId: 'flavor-1',
                 price: new Prisma.Decimal(1200),
                 pickupPrice: new Prisma.Decimal(1300),
+                displayText: 'Fajita large pickup',
               },
             ],
           },
@@ -400,7 +415,11 @@ describe('CartService', () => {
     const firstItem = result.data.items[0] as {
       unitPrice: number | null;
       lineTotal: number | null;
-      selectedSections: Array<{ menuItemId: string; unitPrice: number }>;
+      selectedSections: Array<{
+        menuItemId: string;
+        unitPrice: number;
+        selectedVariation: { id: string; name: string; price: number } | null;
+      }>;
     };
     expect(firstItem.selectedSections).toEqual([
       {
@@ -408,12 +427,26 @@ describe('CartService', () => {
         menuItemId: 'flavor-1',
         menuItemName: 'Fajita Pizza',
         unitPrice: 1300,
+        selectedVariation: {
+          id: 'var-large',
+          name: 'Large',
+          description: 'Fajita large pickup',
+          displayText: 'Fajita large pickup',
+          price: 1300,
+        },
       },
       {
         slot: 'RIGHT',
         menuItemId: 'flavor-2',
         menuItemName: 'Pepperoni Pizza',
         unitPrice: 1500,
+        selectedVariation: {
+          id: 'var-large',
+          name: 'Large',
+          description: null,
+          displayText: null,
+          price: 1500,
+        },
       },
     ]);
     expect(firstItem.unitPrice).toBe(1500);
