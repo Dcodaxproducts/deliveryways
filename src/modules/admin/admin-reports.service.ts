@@ -489,7 +489,7 @@ export class AdminReportsService {
       'Items',
       ...summary.items.flatMap((item) =>
         this.wrapPdfLine(
-          `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)} = ${this.formatMoney(item.lineTotal)}`,
+          `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)}${item.depositAmount > 0 ? ` + Pfand ${this.formatMoney(item.depositAmount)}` : ''} = ${this.formatMoney(item.lineTotal)}`,
         ),
       ),
       '',
@@ -652,6 +652,7 @@ export class AdminReportsService {
       items: invoice.items.map((item) => ({
         ...item,
         unitPrice: Number(item.unitPrice),
+        depositAmount: Number(item.depositAmount),
         lineTotal: Number(item.lineTotal),
       })),
       totals: {

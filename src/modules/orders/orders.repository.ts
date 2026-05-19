@@ -301,6 +301,7 @@ export class OrdersRepository {
               variationId: true,
               variationName: true,
               unitPrice: true,
+              depositAmount: true,
               quantity: true,
               lineTotal: true,
               note: true,

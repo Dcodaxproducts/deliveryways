@@ -147,6 +147,9 @@ describe('CartService', () => {
 
     const firstItem = result.data.items[0] as {
       menuItemId: string;
+      depositAmount: number;
+      depositTotal: number;
+      lineTotal: number;
       menuItem: {
         name: string;
         depositAmount: number | null;
@@ -156,6 +159,9 @@ describe('CartService', () => {
     expect(firstItem.menuItem?.name).toBe('Burger');
     expect(firstItem.menuItem?.unitPrice).toBe(500);
     expect(firstItem.menuItem?.depositAmount).toBe(50);
+    expect(firstItem.depositAmount).toBe(50);
+    expect(firstItem.depositTotal).toBe(50);
+    expect(firstItem.lineTotal).toBe(550);
     expect(firstItem.menuItemId).toBe('menu-1');
     expect(result.data.deliveryAddressId).toBe('address-1');
     expect(result.data).not.toHaveProperty('selectedAddressId');

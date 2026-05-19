@@ -1011,8 +1011,14 @@ export class CartService {
         const unitPriceWithModifiers = unitPrice
           ? unitPrice.plus(modifiersTotal)
           : null;
+        const depositAmount =
+          menuItem?.depositAmount !== undefined &&
+          menuItem.depositAmount !== null
+            ? new Prisma.Decimal(menuItem.depositAmount)
+            : new Prisma.Decimal(0);
+        const depositTotal = depositAmount.mul(cartItem.quantity);
         const lineTotal = unitPriceWithModifiers
-          ? unitPriceWithModifiers.mul(cartItem.quantity)
+          ? unitPriceWithModifiers.mul(cartItem.quantity).plus(depositTotal)
           : null;
 
         return {
@@ -1030,6 +1036,8 @@ export class CartService {
           unitPriceWithModifiers: unitPriceWithModifiers
             ? Number(unitPriceWithModifiers)
             : unitPriceWithModifiers,
+          depositAmount: Number(depositAmount),
+          depositTotal: Number(depositTotal),
           lineTotal: lineTotal ? Number(lineTotal) : lineTotal,
           menuItem: menuItem
             ? {

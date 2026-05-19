@@ -245,6 +245,7 @@ export class OrdersService {
               variationId: line.variationId,
               variationName: line.variationName,
               unitPrice: line.unitPrice,
+              depositAmount: line.depositAmount,
               quantity: line.quantity,
               lineTotal: line.lineTotal,
               note: line.note,
@@ -1560,6 +1561,7 @@ export class OrdersService {
       unitPrice: Prisma.Decimal;
       quantity: number;
       lineTotal: Prisma.Decimal;
+      depositAmount: Prisma.Decimal;
       note: string | null;
       snapshotModifiers: Prisma.JsonValue | null;
       menuItem: { imageUrl: string | null } | null;
@@ -1650,6 +1652,7 @@ export class OrdersService {
         variationName: item.variationName,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice),
+        depositAmount: Number(item.depositAmount),
         lineTotal: Number(item.lineTotal),
         note: item.note,
         snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
@@ -1787,6 +1790,7 @@ export class OrdersService {
         variationId: string | null;
         variationName: string | null;
         unitPrice: Prisma.Decimal;
+        depositAmount: Prisma.Decimal;
         quantity: number;
         lineTotal: Prisma.Decimal;
         note: string | null;
@@ -1858,6 +1862,7 @@ export class OrdersService {
         variationName: item.variationName,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice),
+        depositAmount: Number(item.depositAmount),
         lineTotal: Number(item.lineTotal),
         note: item.note,
         snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
@@ -1888,6 +1893,7 @@ export class OrdersService {
         variationId: item.variationId,
         variationName: item.variationName,
         unitPrice: Number(item.unitPrice),
+        depositAmount: Number(item.depositAmount),
         quantity: item.quantity,
         lineTotal: Number(item.lineTotal),
         note: item.note,

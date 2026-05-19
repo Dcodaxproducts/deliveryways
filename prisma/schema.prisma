@@ -1155,6 +1155,7 @@ model OrderItem {
   variationId       String?  @map("variation_id")
   variationName     String?  @map("variation_name")
   unitPrice         Decimal  @map("unit_price") @db.Decimal(10, 2)
+  depositAmount     Decimal  @default(0) @map("deposit_amount") @db.Decimal(10, 2)
   quantity          Int
   lineTotal         Decimal  @map("line_total") @db.Decimal(10, 2)
   note              String?

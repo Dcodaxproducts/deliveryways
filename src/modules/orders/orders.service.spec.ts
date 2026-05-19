@@ -1567,6 +1567,7 @@ describe('OrdersService - response mapping', () => {
           variationId: null,
           variationName: null,
           unitPrice: new Prisma.Decimal(500),
+          depositAmount: new Prisma.Decimal(0),
           quantity: 1,
           lineTotal: new Prisma.Decimal(500),
           note: null,
@@ -1653,6 +1654,7 @@ describe('OrdersService - response mapping', () => {
         variationName: null,
         quantity: 1,
         unitPrice: 500,
+        depositAmount: 0,
         lineTotal: 500,
         note: null,
         snapshotModifiers: [],
@@ -2022,7 +2024,17 @@ describe('OrdersService - wallet payment', () => {
           },
         },
         customer: { customerId: 'customer-1' },
-        lines: [],
+        lines: [
+          {
+            menuItemId: 'menu-1',
+            categoryId: 'cat-1',
+            menuItemName: 'Glass Bottle Cola',
+            quantity: 1,
+            depositAmount: new Prisma.Decimal(50),
+            unitPrice: new Prisma.Decimal(450),
+            lineTotal: new Prisma.Decimal(500),
+          },
+        ],
         subtotal: new Prisma.Decimal(500),
         taxAmount: new Prisma.Decimal(0),
         deliveryFee: new Prisma.Decimal(0),
@@ -2059,6 +2071,15 @@ describe('OrdersService - wallet payment', () => {
         paymentMethod: PaymentMethod.WALLET,
         paymentStatus: PaymentStatus.PAID,
         deliveryOtp: deliveryOtpMatcher,
+        items: {
+          create: [
+            expect.objectContaining({
+              depositAmount: new Prisma.Decimal(50),
+              unitPrice: new Prisma.Decimal(450),
+              lineTotal: new Prisma.Decimal(500),
+            }),
+          ],
+        },
       }),
       expect.anything(),
     );
