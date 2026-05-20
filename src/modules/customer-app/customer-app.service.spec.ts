@@ -435,6 +435,81 @@ describe('CustomerAppService', () => {
     expect('modifierGroups' in result.data[0]).toBe(false);
   });
 
+  it('includes promotion metadata on cuisine categories and promotional cuisine list', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listCuisineCategories.mockResolvedValue({
+      items: [
+        {
+          id: 'category-1',
+          name: 'Burgers',
+          slug: 'burgers',
+          description: null,
+          imageUrl: 'category.png',
+          sortOrder: 0,
+          _count: { items: 3 },
+        },
+      ],
+      total: 1,
+    });
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger week',
+        description: 'Category deal',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(15),
+        maxDiscountAmount: new Prisma.Decimal(200),
+        scopeMenuItem: null,
+        scopeCategory: { id: 'category-1' },
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.listCuisines({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(result.data[0].promotion).toEqual({
+      promotionId: 'promo-1',
+      title: 'Burger week',
+      description: 'Category deal',
+      applyMode: 'SCOPED_ITEMS',
+      discountType: 'PERCENTAGE',
+      discountValue: 15,
+      maxDiscountAmount: 200,
+    });
+
+    await service.listPromotionalCuisines({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(repository.listCuisineCategories).toHaveBeenLastCalledWith(
+      expect.objectContaining({ restaurantId: 'restaurant-1' }),
+      { categoryIds: ['category-1'] },
+    );
+  });
+
   it('uses the same menu item shape for cuisine items', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

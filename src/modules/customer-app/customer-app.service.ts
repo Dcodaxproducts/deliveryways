@@ -345,20 +345,18 @@ export class CustomerAppService {
   async listCuisines(query: ListCuisinesQueryDto, user?: AuthUserContext) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     await this.getPublicContent(resolvedQuery, user);
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
     const { items, total } =
       await this.customerAppRepository.listCuisineCategories(resolvedQuery);
 
     return {
       data: await Promise.all(
-        items.map(async (item) => ({
-          id: item.id,
-          name: item.name,
-          slug: item.slug,
-          description: item.description,
-          imageUrl: await this.resolveMediaUrl(item.imageUrl),
-          sortOrder: item.sortOrder,
-          itemCount: item._count.items,
-        })),
+        items.map((item) =>
+          this.mapCuisineCategory(item, promotionContext.promotions),
+        ),
       ),
       message: 'Cuisines fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -402,6 +400,41 @@ export class CustomerAppService {
         ),
       },
       message: 'Cuisine items fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async listPromotionalCuisines(
+    query: ListCuisinesQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+
+    if (!promotionContext.categoryIds.length) {
+      return {
+        data: [],
+        message: 'Promotional cuisines fetched successfully',
+        meta: buildPaginationMeta(query, 0),
+      };
+    }
+
+    const { items, total } =
+      await this.customerAppRepository.listCuisineCategories(resolvedQuery, {
+        categoryIds: promotionContext.categoryIds,
+      });
+
+    return {
+      data: await Promise.all(
+        items.map((item) =>
+          this.mapCuisineCategory(item, promotionContext.promotions),
+        ),
+      ),
+      message: 'Promotional cuisines fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
   }
@@ -526,13 +559,9 @@ export class CustomerAppService {
           ? this.resolveBranchClosedPeriodPopup(branch.settings)
           : null,
         cuisines: await Promise.all(
-          cuisines.items.map(async (item) => ({
-            id: item.id,
-            name: item.name,
-            slug: item.slug,
-            imageUrl: await this.resolveMediaUrl(item.imageUrl),
-            itemCount: item._count.items,
-          })),
+          cuisines.items.map((item) =>
+            this.mapCuisineCategory(item, promotionContext.promotions),
+          ),
         ),
         promotionalItems: await Promise.all(
           promotionalItems.map((item) =>
@@ -1360,6 +1389,70 @@ export class CustomerAppService {
         priceDelta: override.priceDelta,
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
+    };
+  }
+
+  private async mapCuisineCategory(
+    item: {
+      id: string;
+      name: string;
+      slug: string;
+      description?: string | null;
+      imageUrl?: string | null;
+      sortOrder?: number;
+      _count: { items: number };
+    },
+    promotions: Array<Record<string, unknown>> = [],
+  ) {
+    return {
+      id: item.id,
+      name: item.name,
+      slug: item.slug,
+      description: item.description ?? null,
+      imageUrl: await this.resolveMediaUrl(item.imageUrl),
+      sortOrder: item.sortOrder,
+      itemCount: item._count.items,
+      promotion: this.resolveBestCategoryPromotion(item.id, promotions),
+    };
+  }
+
+  private resolveBestCategoryPromotion(
+    categoryId: string,
+    promotions: Array<Record<string, unknown>>,
+  ) {
+    const matched = promotions.find((promotion) => {
+      if ((promotion.applyMode as string) !== 'SCOPED_ITEMS') {
+        return false;
+      }
+
+      const scopedCategoryIds = this.collectPromotionScopeIds(
+        (promotion.scopeCategory as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (promotion.scopeCategories as Array<{
+            menuCategory: { id: string };
+          }>) ?? []
+        ).map((entry) => entry.menuCategory.id),
+      );
+
+      return scopedCategoryIds.includes(categoryId);
+    });
+
+    if (!matched) {
+      return null;
+    }
+
+    return {
+      promotionId: matched.id,
+      title: matched.title,
+      description: matched.description ?? null,
+      applyMode: matched.applyMode,
+      discountType: matched.discountType,
+      discountValue: Number(matched.discountValue),
+      maxDiscountAmount:
+        matched.maxDiscountAmount instanceof Prisma.Decimal
+          ? Number(matched.maxDiscountAmount)
+          : (matched.maxDiscountAmount ?? null),
     };
   }
 

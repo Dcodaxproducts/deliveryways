@@ -354,12 +354,17 @@ export class CustomerAppRepository {
     });
   }
 
-  async listCuisineCategories(query: ListCuisinesQueryDto) {
+  async listCuisineCategories(
+    query: ListCuisinesQueryDto,
+    scope?: { categoryIds?: string[] },
+  ) {
     const branchId = query.branchId;
+    const categoryIds = scope?.categoryIds ?? [];
     const where: Prisma.MenuCategoryWhereInput = {
       restaurantId: query.restaurantId,
       deletedAt: null,
       isActive: true,
+      ...(categoryIds.length ? { id: { in: categoryIds } } : {}),
       ...(branchId
         ? {
             OR: [

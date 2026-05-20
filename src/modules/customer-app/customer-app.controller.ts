@@ -162,6 +162,19 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @Get('promotional-cuisines')
+  @ApiOperation({
+    summary: 'List public cuisines/categories with active promotions',
+  })
+  listPromotionalCuisines(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListCuisinesQueryDto,
+  ) {
+    return this.customerAppService.listPromotionalCuisines(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('promotional-items')
   @ApiOperation({ summary: 'List home-screen promotional menu items' })
   listPromotionalItems(
