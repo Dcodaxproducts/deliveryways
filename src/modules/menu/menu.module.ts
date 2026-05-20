@@ -18,9 +18,10 @@ import { RestaurantMenuController } from './restaurant-menu/restaurant-menu.cont
 import { RestaurantMenuService } from './restaurant-menu/restaurant-menu.service';
 import { RestaurantMenuRepository } from './restaurant-menu/restaurant-menu.repository';
 import { StorageModule } from '../storage/storage.module';
+import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
-  imports: [StorageModule],
+  imports: [StorageModule, CouponsModule],
   controllers: [
     MenuCategoryController,
     MenuItemController,

@@ -81,14 +81,25 @@ describe('MenuItemService', () => {
     const storageService = {
       resolveMediaUrlsDeep: jest.fn((value) => Promise.resolve(value)),
     };
+    const couponsService = {
+      getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
+    };
 
     const service = new MenuItemService(
       itemRepository as never,
       prisma as never,
       storageService as never,
+      couponsService as never,
     );
 
-    return { service, itemRepository, prisma, storageService, tx };
+    return {
+      service,
+      itemRepository,
+      prisma,
+      storageService,
+      couponsService,
+      tx,
+    };
   };
 
   it('generates a unique slug when requested slug already exists', async () => {
@@ -362,6 +373,75 @@ describe('MenuItemService', () => {
       data: { value: 'HOT' },
       message: 'Menu item label deleted successfully',
     });
+  });
+
+  it('attaches promotion metadata on /menu/items responses when item has active promotion', async () => {
+    const { service, itemRepository, couponsService, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    itemRepository.list.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 'item-1',
+          name: 'Vegan Burger',
+          basePrice: new Prisma.Decimal(800),
+          dietaryFlags: ['VEGAN'],
+          allergenFlags: [],
+          allergenPdfUrl: null,
+          restaurant: {
+            id: 'restaurant-1',
+            settings: {},
+            tenant: { settings: {} },
+          },
+          category: { id: 'category-1', items: [] },
+          variations: [
+            {
+              id: 'variation-1',
+              name: 'Large',
+              price: new Prisma.Decimal(900),
+            },
+          ],
+        },
+      ],
+    });
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: '10% off',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.list(
+      { uid: 'admin-1', tid: 'tenant-1', role: UserRoleEnum.BUSINESS_ADMIN },
+      { page: 1, limit: 10, restaurantId: 'restaurant-1' } as never,
+    );
+
+    const data = result.data as Array<{
+      discountedBasePrice: number | null;
+      promotion: Record<string, unknown> | null;
+      variations: Array<Record<string, unknown>>;
+    }>;
+    expect(data[0].discountedBasePrice).toBe(720);
+    expect(data[0].promotion).toEqual(
+      expect.objectContaining({
+        promotionId: 'promo-1',
+        discountAmount: 80,
+        discountedAmount: 720,
+      }),
+    );
+    expect(data[0].variations[0].discountedPrice).toBe(810);
+    expect(
+      (data[0].variations[0].promotion as { promotionId: string }).promotionId,
+    ).toBe('promo-1');
   });
 
   it('returns label objects for product labels, allergens, and additives in item lists', async () => {

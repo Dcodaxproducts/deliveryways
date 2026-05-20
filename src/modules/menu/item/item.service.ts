@@ -11,6 +11,10 @@ import { buildPaginationMeta } from '../../../common/utils';
 import { PrismaService } from '../../../database';
 import { StorageService } from '../../storage/storage.service';
 import {
+  CouponsService,
+  PromotionPreview,
+} from '../../coupons/coupons.service';
+import {
   AllergenAdditiveTemplateEntryDto,
   BulkCreateMenuItemsDto,
   CreateProductLabelDto,
@@ -32,6 +36,7 @@ export class MenuItemService {
     private readonly itemRepository: MenuItemRepository,
     private readonly prisma: PrismaService,
     private readonly storageService?: StorageService,
+    private readonly couponsService?: CouponsService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
@@ -224,12 +229,23 @@ export class MenuItemService {
       restaurantId,
       query,
     );
+    const promotions = restaurantId
+      ? ((await this.couponsService?.getActiveAutoApplyPromotions(
+          restaurantId,
+          user.role === UserRoleEnum.BRANCH_ADMIN ? user.bid : undefined,
+        )) ?? [])
+      : [];
 
     return {
       data: await this.resolveMediaResponse(
         items.map((item) =>
-          this.withRestaurantAllergenPdfUrl(
-            this.withoutLegacyModifierGroups(this.withSplitPizzaMetadata(item)),
+          this.withPromotionMetadata(
+            this.withRestaurantAllergenPdfUrl(
+              this.withoutLegacyModifierGroups(
+                this.withSplitPizzaMetadata(item),
+              ),
+            ),
+            promotions,
           ),
         ),
       ),
@@ -345,6 +361,166 @@ export class MenuItemService {
       data: await this.resolveMediaResponse(this.withSplitPizzaMetadata(data)),
       message: 'Menu item updated successfully',
     };
+  }
+
+  private withPromotionMetadata<
+    T extends {
+      id: string;
+      basePrice?: Prisma.Decimal | number | null;
+      category?: { id?: string | null } | null;
+      variations?: Array<{
+        price?: Prisma.Decimal | number | null;
+        [key: string]: unknown;
+      }>;
+    },
+  >(item: T, promotions: Array<Record<string, unknown>>) {
+    const itemPromotion = this.resolveBestScopedPromotion(
+      item.id,
+      item.category?.id ?? null,
+      item.basePrice ?? null,
+      promotions,
+    );
+
+    const variations = (item.variations ?? []).map((variation) => {
+      const promotion = this.resolveBestScopedPromotion(
+        item.id,
+        item.category?.id ?? null,
+        variation.price ?? null,
+        promotions,
+      );
+
+      return {
+        ...variation,
+        discountedPrice: promotion?.discountedAmount ?? null,
+        promotion: promotion ?? null,
+      };
+    });
+
+    return {
+      ...item,
+      discountedBasePrice: itemPromotion?.discountedAmount ?? null,
+      promotion: itemPromotion ?? null,
+      variations,
+    };
+  }
+
+  private resolveBestScopedPromotion(
+    menuItemId: string,
+    categoryId: string | null,
+    amount: Prisma.Decimal | number | null,
+    promotions: Array<Record<string, unknown>>,
+  ): PromotionPreview | null {
+    if (amount === null || amount === undefined) {
+      return null;
+    }
+
+    let best: PromotionPreview | null = null;
+
+    for (const promotion of promotions) {
+      if ((promotion.applyMode as string) !== 'SCOPED_ITEMS') {
+        continue;
+      }
+
+      const scopedMenuItemIds = this.collectPromotionScopeIds(
+        (promotion.scopeMenuItem as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (promotion.scopeMenuItems as Array<{ menuItem: { id: string } }>) ??
+          []
+        ).map((entry) => entry.menuItem.id),
+      );
+      const scopedCategoryIds = this.collectPromotionScopeIds(
+        (promotion.scopeCategory as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (promotion.scopeCategories as Array<{
+            menuCategory: { id: string };
+          }>) ?? []
+        ).map((entry) => entry.menuCategory.id),
+      );
+
+      const matches =
+        (!scopedMenuItemIds.length && !scopedCategoryIds.length) ||
+        scopedMenuItemIds.includes(menuItemId) ||
+        (!!categoryId && scopedCategoryIds.includes(categoryId));
+
+      if (!matches) {
+        continue;
+      }
+
+      const preview = this.buildPromotionPreview(
+        promotion as {
+          id: string;
+          title: string;
+          description: string | null;
+          applyMode: string;
+          discountType: string;
+          discountValue: Prisma.Decimal;
+          maxDiscountAmount: Prisma.Decimal | null;
+        },
+        amount,
+      );
+
+      if (!best || preview.discountAmount > best.discountAmount) {
+        best = preview;
+      }
+    }
+
+    return best;
+  }
+
+  private buildPromotionPreview(
+    promotion: {
+      id: string;
+      title: string;
+      description: string | null;
+      applyMode: string;
+      discountType: string;
+      discountValue: Prisma.Decimal;
+      maxDiscountAmount: Prisma.Decimal | null;
+    },
+    amount: Prisma.Decimal | number,
+  ): PromotionPreview {
+    const base =
+      amount instanceof Prisma.Decimal ? amount : new Prisma.Decimal(amount);
+    let discountAmount = new Prisma.Decimal(0);
+
+    if (promotion.discountType === 'FLAT') {
+      discountAmount = Prisma.Decimal.min(base, promotion.discountValue);
+    } else {
+      discountAmount = base.mul(promotion.discountValue).div(100);
+      if (promotion.maxDiscountAmount) {
+        discountAmount = Prisma.Decimal.min(
+          discountAmount,
+          promotion.maxDiscountAmount,
+        );
+      }
+      discountAmount = Prisma.Decimal.min(discountAmount, base);
+    }
+
+    discountAmount = discountAmount.toDecimalPlaces(2);
+    const discountedAmount = Prisma.Decimal.max(
+      base.minus(discountAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+
+    return {
+      promotionId: promotion.id,
+      title: promotion.title,
+      description: promotion.description,
+      applyMode: promotion.applyMode as PromotionPreview['applyMode'],
+      discountType: promotion.discountType as PromotionPreview['discountType'],
+      discountValue: Number(promotion.discountValue),
+      maxDiscountAmount: promotion.maxDiscountAmount
+        ? Number(promotion.maxDiscountAmount)
+        : null,
+      discountAmount: Number(discountAmount),
+      discountedAmount: Number(discountedAmount),
+    };
+  }
+
+  private collectPromotionScopeIds(primary: string | null, extras: string[]) {
+    return [...new Set([...(primary ? [primary] : []), ...extras])];
   }
 
   async getLabels(user: AuthUserContext, requestedRestaurantId?: string) {
