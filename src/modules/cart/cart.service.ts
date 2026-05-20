@@ -895,6 +895,10 @@ export class CartService {
           (variation) => variation.id === cartItem.variationId,
         );
         const branchOverride = menuItem?.branchOverrides?.[0];
+        const selectedVariationOverride =
+          selectedVariation?.itemPriceOverrides?.find(
+            (itemOverride) => itemOverride.menuItemId === menuItem?.id,
+          );
         const baseUnitPrice =
           selectedVariation && menuItem
             ? this.resolveVariationPrice(
@@ -968,6 +972,10 @@ export class CartService {
               (variation) => variation.id === cartItem.variationId,
             );
             const sectionBranchOverride = sectionItem.branchOverrides[0];
+            const sectionVariationOverride =
+              sectionVariation?.itemPriceOverrides?.find(
+                (itemOverride) => itemOverride.menuItemId === sectionItem.id,
+              );
             const sectionBasePrice = sectionVariation
               ? this.resolveVariationPrice(
                   sectionVariation,
@@ -1001,17 +1009,10 @@ export class CartService {
                     id: sectionVariation.id,
                     name: sectionVariation.name,
                     description:
-                      sectionVariation.itemPriceOverrides?.find(
-                        (itemOverride) =>
-                          itemOverride.menuItemId === sectionItem.id,
-                      )?.displayText ??
+                      sectionVariationOverride?.displayText ??
                       sectionVariation.description ??
                       null,
-                    displayText:
-                      sectionVariation.itemPriceOverrides?.find(
-                        (itemOverride) =>
-                          itemOverride.menuItemId === sectionItem.id,
-                      )?.displayText ?? null,
+                    displayText: sectionVariationOverride?.displayText ?? null,
                     price: Number(
                       this.resolveVariationPrice(
                         sectionVariation,
@@ -1021,6 +1022,11 @@ export class CartService {
                         cart.orderType,
                       ),
                     ),
+                    pickupPrice:
+                      sectionVariationOverride?.pickupPrice !== undefined &&
+                      sectionVariationOverride?.pickupPrice !== null
+                        ? Number(sectionVariationOverride.pickupPrice)
+                        : null,
                   }
                 : null,
             });
@@ -1118,17 +1124,11 @@ export class CartService {
                       id: selectedVariation.id,
                       name: selectedVariation.name,
                       description:
-                        selectedVariation.itemPriceOverrides?.find(
-                          (itemOverride) =>
-                            itemOverride.menuItemId === menuItem.id,
-                        )?.displayText ??
+                        selectedVariationOverride?.displayText ??
                         selectedVariation.description ??
                         null,
                       displayText:
-                        selectedVariation.itemPriceOverrides?.find(
-                          (itemOverride) =>
-                            itemOverride.menuItemId === menuItem.id,
-                        )?.displayText ?? null,
+                        selectedVariationOverride?.displayText ?? null,
                       price: Number(
                         this.resolveVariationPrice(
                           selectedVariation,
@@ -1137,6 +1137,11 @@ export class CartService {
                           cart.orderType,
                         ),
                       ),
+                      pickupPrice:
+                        selectedVariationOverride?.pickupPrice !== undefined &&
+                        selectedVariationOverride?.pickupPrice !== null
+                          ? Number(selectedVariationOverride.pickupPrice)
+                          : null,
                     }
                   : null,
                 modifiers: this.mapCartDirectModifiers(

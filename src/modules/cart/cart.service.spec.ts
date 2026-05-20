@@ -267,16 +267,114 @@ describe('CartService', () => {
         unitPrice: number | null;
         selectedVariation: {
           price: number;
+          pickupPrice: number | null;
         } | null;
         category: { id: string; name: string; imageUrl: string | null };
       } | null;
     };
     expect(firstItem.menuItem?.unitPrice).toBe(110);
     expect(firstItem.menuItem?.selectedVariation?.price).toBe(110);
+    expect(firstItem.menuItem?.selectedVariation?.pickupPrice).toBeNull();
     expect(firstItem.menuItem?.category).toEqual({
       id: 'cat-1',
       name: 'Burgers',
       imageUrl: null,
+    });
+  });
+
+  it('exposes selected variation pickup price in cart response', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: 'var-1',
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: 'Beef burger',
+        imageUrl: 'burger.png',
+        pricingMode: 'MULTIPLE',
+        basePrice: new Prisma.Decimal(500),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(20),
+        depositAmount: 0,
+        category: {
+          id: 'cat-1',
+          name: 'Burgers',
+          imageUrl: null,
+          variations: [],
+        },
+        variations: [
+          {
+            id: 'var-1',
+            name: 'Large',
+            description: null,
+            price: new Prisma.Decimal(550),
+            itemPriceOverrides: [
+              {
+                menuItemId: 'menu-1',
+                price: new Prisma.Decimal(550),
+                pickupPrice: new Prisma.Decimal(600),
+                displayText: 'Large pickup',
+              },
+            ],
+          },
+        ],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const firstItem = result.data.items[0] as {
+      unitPrice: number | null;
+      menuItem: {
+        selectedVariation: {
+          price: number;
+          pickupPrice: number | null;
+          displayText: string | null;
+        } | null;
+      } | null;
+    };
+
+    expect(firstItem.unitPrice).toBe(600);
+    expect(firstItem.menuItem?.selectedVariation).toEqual({
+      price: 600,
+      pickupPrice: 600,
+      displayText: 'Large pickup',
+      id: 'var-1',
+      name: 'Large',
+      description: 'Large pickup',
     });
   });
 
@@ -418,7 +516,12 @@ describe('CartService', () => {
       selectedSections: Array<{
         menuItemId: string;
         unitPrice: number;
-        selectedVariation: { id: string; name: string; price: number } | null;
+        selectedVariation: {
+          id: string;
+          name: string;
+          price: number;
+          pickupPrice: number | null;
+        } | null;
       }>;
     };
     expect(firstItem.selectedSections).toEqual([
@@ -433,6 +536,7 @@ describe('CartService', () => {
           description: 'Fajita large pickup',
           displayText: 'Fajita large pickup',
           price: 1300,
+          pickupPrice: 1300,
         },
       },
       {
@@ -446,6 +550,7 @@ describe('CartService', () => {
           description: null,
           displayText: null,
           price: 1500,
+          pickupPrice: 1500,
         },
       },
     ]);
