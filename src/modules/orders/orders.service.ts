@@ -778,40 +778,48 @@ export class OrdersService {
         );
       }
 
+      const hasSplitSections = !!requestedItem.sections?.length;
+      const menuItemVariations = this.resolveItemVariations(menuItem);
+      const parentVariation = requestedItem.variationId
+        ? menuItemVariations.find((v) => v.id === requestedItem.variationId)
+        : undefined;
       let unitPrice = this.resolveOrderItemBasePrice(
         {
           ...menuItem,
-          variations: this.resolveItemVariations(menuItem),
+          variations: menuItemVariations,
         },
         branchOverride?.priceOverride,
-        requestedItem.variationId,
+        hasSplitSections ? undefined : requestedItem.variationId,
       ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
 
       let variationName: string | undefined;
-      const menuItemVariations = this.resolveItemVariations(menuItem);
 
       if (requestedItem.variationId) {
-        const variation = menuItemVariations.find(
-          (v) => v.id === requestedItem.variationId,
-        );
-        if (!variation) {
+        if (!parentVariation && !hasSplitSections) {
           throw new BadRequestException(
             `Variation not found for item: ${menuItem.name}`,
           );
         }
-        variationName = variation.name;
-        unitPrice = this.resolveVariationPrice(
-          menuItemVariations,
-          requestedItem.variationId,
-          branchOverride?.priceOverride ?? menuItem.basePrice,
-          menuItem.id,
-          dto.orderType,
-        ).plus(
-          this.variationHasPickupPrice(variation, menuItem.id, dto.orderType)
-            ? new Prisma.Decimal(0)
-            : this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType),
-        );
+
+        if (parentVariation) {
+          variationName = parentVariation.name;
+          unitPrice = this.resolveVariationPrice(
+            menuItemVariations,
+            requestedItem.variationId,
+            branchOverride?.priceOverride ?? menuItem.basePrice,
+            menuItem.id,
+            dto.orderType,
+          ).plus(
+            this.variationHasPickupPrice(
+              parentVariation,
+              menuItem.id,
+              dto.orderType,
+            )
+              ? new Prisma.Decimal(0)
+              : this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType),
+          );
+        }
       }
 
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
@@ -990,10 +998,25 @@ export class OrdersService {
             );
           }
 
+          const sectionVariations = this.resolveItemVariations(sectionItem);
+          const sectionVariation = requestedItem.variationId
+            ? sectionVariations.find(
+                (item) => item.id === requestedItem.variationId,
+              )
+            : undefined;
+
+          if (requestedItem.variationId && !sectionVariation) {
+            throw new BadRequestException(
+              `Variation not found for split section: ${sectionItem.name}`,
+            );
+          }
+
+          variationName ??= sectionVariation?.name;
+
           const sectionPrice = this.resolveOrderItemBasePrice(
             {
               ...sectionItem,
-              variations: this.resolveItemVariations(sectionItem),
+              variations: sectionVariations,
             },
             sectionBranchOverride?.priceOverride,
             requestedItem.variationId,
@@ -1001,18 +1024,7 @@ export class OrdersService {
             this.resolveOrderTypePriceAdjustment(sectionItem, dto.orderType),
           );
 
-          sectionUnitPrices.push(
-            this.resolveOrderItemBasePrice(
-              {
-                ...sectionItem,
-                variations: this.resolveItemVariations(sectionItem),
-              },
-              sectionBranchOverride?.priceOverride,
-              requestedItem.variationId,
-            ).plus(
-              this.resolveOrderTypePriceAdjustment(sectionItem, dto.orderType),
-            ),
-          );
+          sectionUnitPrices.push(sectionPrice);
 
           snapshotSections.push({
             slot: section.slot,
