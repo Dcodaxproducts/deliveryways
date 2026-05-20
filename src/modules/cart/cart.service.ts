@@ -141,7 +141,9 @@ interface CartBranchTemporaryClosure {
 }
 
 interface CartBranchHolidayOpeningHour {
-  date: string;
+  date?: string;
+  fromDate?: string;
+  toDate?: string;
   isClosed: boolean;
   openTime?: string | null;
   closeTime?: string | null;
@@ -822,7 +824,9 @@ export class CartService {
         message: holidayOpeningHour.note ?? 'Branch is closed for holiday',
         error: 'BRANCH_HOLIDAY_CLOSED',
         details: {
-          date: holidayOpeningHour.date,
+          date: holidayOpeningHour.date ?? null,
+          fromDate: holidayOpeningHour.fromDate ?? null,
+          toDate: holidayOpeningHour.toDate ?? null,
           note: holidayOpeningHour.note ?? null,
         },
       });
@@ -871,10 +875,23 @@ export class CartService {
         !!item &&
         typeof item === 'object' &&
         !Array.isArray(item) &&
-        (item as { date?: unknown }).date === today,
+        this.isHolidayDateMatch(item as CartBranchHolidayOpeningHour, today),
     );
 
     return holidayOpeningHour ?? null;
+  }
+
+  private isHolidayDateMatch(item: CartBranchHolidayOpeningHour, date: string) {
+    if (item.date) {
+      return item.date === date;
+    }
+
+    return (
+      !!item.fromDate &&
+      !!item.toDate &&
+      item.fromDate <= date &&
+      item.toDate >= date
+    );
   }
 
   private async buildCartResponse(cart: CartSnapshot, user?: AuthUserContext) {

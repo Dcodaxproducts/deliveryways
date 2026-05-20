@@ -15,6 +15,7 @@ import { UsersService } from '../users/users.service';
 import { StorageService } from '../storage/storage.service';
 import { BranchesRepository } from './branches.repository';
 import {
+  BranchOpeningHourBreakDto,
   BranchOpeningHourItemDto,
   BranchHolidayOpeningHourItemDto,
   BranchScheduleDayEnum,
@@ -54,9 +55,15 @@ export interface BranchTemporaryClosure {
   message?: string | null;
 }
 
+export interface NormalizedBranchHolidayOpeningHour extends BranchHolidayOpeningHourItemDto {
+  date?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
 interface BranchSettingsLike {
   openingHours?: BranchOpeningHourItemDto[];
-  holidayOpeningHours?: BranchHolidayOpeningHourItemDto[];
+  holidayOpeningHours?: NormalizedBranchHolidayOpeningHour[];
   temporaryClosure?: BranchTemporaryClosure;
   [key: string]: unknown;
 }
@@ -1253,7 +1260,7 @@ export class BranchesService {
 
   private readHolidayOpeningHours(
     value: unknown,
-  ): BranchHolidayOpeningHourItemDto[] {
+  ): NormalizedBranchHolidayOpeningHour[] {
     const settings = this.readSettings(value);
     const holidayOpeningHours = settings.holidayOpeningHours;
 
@@ -1344,11 +1351,19 @@ export class BranchesService {
         );
       }
 
+      const breakTimes = this.normalizeOpeningHourBreakTimes(
+        item.breakTimes ?? [],
+        item.openTime,
+        item.closeTime,
+        item.dayOfWeek,
+      );
+
       return {
         dayOfWeek: item.dayOfWeek,
         isClosed: false,
         openTime: item.openTime,
         closeTime: item.closeTime,
+        ...(breakTimes.length ? { breakTimes } : {}),
         ...(note ? { note } : {}),
       };
     });
@@ -1360,34 +1375,108 @@ export class BranchesService {
     );
   }
 
-  private normalizeHolidayOpeningHours(
-    holidayOpeningHours: BranchHolidayOpeningHourItemDto[],
-  ): BranchHolidayOpeningHourItemDto[] {
-    const seenDates = new Set<string>();
-    const normalized = holidayOpeningHours.map((item) => {
-      if (seenDates.has(item.date)) {
+  private normalizeOpeningHourBreakTimes(
+    breakTimes: BranchOpeningHourBreakDto[],
+    openTime: string,
+    closeTime: string,
+    dayOfWeek: BranchScheduleDayEnum,
+  ): BranchOpeningHourBreakDto[] {
+    const normalized = breakTimes.map((breakTime) => {
+      if (breakTime.startTime >= breakTime.endTime) {
         throw new BadRequestException(
-          `Duplicate holiday opening-hours entry for ${item.date}`,
+          `break endTime must be later than startTime for ${dayOfWeek}`,
         );
       }
-      seenDates.add(item.date);
 
-      const parsedDate = new Date(`${item.date}T00:00:00.000Z`);
-      if (
-        Number.isNaN(parsedDate.getTime()) ||
-        parsedDate.toISOString().slice(0, 10) !== item.date
-      ) {
-        throw new BadRequestException('date must be a valid calendar date');
+      if (breakTime.startTime < openTime || breakTime.endTime > closeTime) {
+        throw new BadRequestException(
+          `breakTimes must be inside openTime and closeTime for ${dayOfWeek}`,
+        );
       }
+
+      const note =
+        breakTime.note === undefined || breakTime.note === null
+          ? undefined
+          : breakTime.note.trim() || undefined;
+
+      return {
+        startTime: breakTime.startTime,
+        endTime: breakTime.endTime,
+        ...(note ? { note } : {}),
+      };
+    });
+
+    const sorted = normalized.sort((a, b) =>
+      a.startTime.localeCompare(b.startTime),
+    );
+
+    for (let index = 1; index < sorted.length; index += 1) {
+      if (sorted[index - 1].endTime > sorted[index].startTime) {
+        throw new BadRequestException(
+          `breakTimes cannot overlap for ${dayOfWeek}`,
+        );
+      }
+    }
+
+    return sorted;
+  }
+
+  private normalizeHolidayOpeningHours(
+    holidayOpeningHours: BranchHolidayOpeningHourItemDto[],
+  ): NormalizedBranchHolidayOpeningHour[] {
+    const seenPeriods = new Set<string>();
+    const normalized = holidayOpeningHours.map((item) => {
+      const date = item.date?.trim() || undefined;
+      const fromDate = item.fromDate?.trim() || undefined;
+      const toDate = item.toDate?.trim() || undefined;
+
+      if (!date && (!fromDate || !toDate)) {
+        throw new BadRequestException(
+          'date or fromDate/toDate is required for holiday opening hours',
+        );
+      }
+
+      if (date && (fromDate || toDate)) {
+        throw new BadRequestException(
+          'Use either date or fromDate/toDate for holiday opening hours',
+        );
+      }
+
+      const normalizedFromDate = date ?? fromDate;
+      const normalizedToDate = date ?? toDate;
+
+      if (!normalizedFromDate || !normalizedToDate) {
+        throw new BadRequestException(
+          'fromDate and toDate are both required for holiday ranges',
+        );
+      }
+
+      this.assertValidDateOnly(normalizedFromDate, 'fromDate');
+      this.assertValidDateOnly(normalizedToDate, 'toDate');
+
+      if (normalizedFromDate > normalizedToDate) {
+        throw new BadRequestException('toDate must be same or after fromDate');
+      }
+
+      const periodKey = date ?? `${normalizedFromDate}:${normalizedToDate}`;
+      if (seenPeriods.has(periodKey)) {
+        throw new BadRequestException(
+          `Duplicate holiday opening-hours entry for ${periodKey}`,
+        );
+      }
+      seenPeriods.add(periodKey);
 
       const note =
         item.note === undefined || item.note === null
           ? undefined
           : item.note.trim() || undefined;
+      const period = date
+        ? { date }
+        : { fromDate: normalizedFromDate, toDate: normalizedToDate };
 
       if (item.isClosed) {
         return {
-          date: item.date,
+          ...period,
           isClosed: true,
           openTime: null,
           closeTime: null,
@@ -1397,18 +1486,18 @@ export class BranchesService {
 
       if (!item.openTime || !item.closeTime) {
         throw new BadRequestException(
-          `openTime and closeTime are required for ${item.date}`,
+          `openTime and closeTime are required for ${periodKey}`,
         );
       }
 
       if (item.openTime >= item.closeTime) {
         throw new BadRequestException(
-          `closeTime must be later than openTime for ${item.date}`,
+          `closeTime must be later than openTime for ${periodKey}`,
         );
       }
 
       return {
-        date: item.date,
+        ...period,
         isClosed: false,
         openTime: item.openTime,
         closeTime: item.closeTime,
@@ -1416,18 +1505,54 @@ export class BranchesService {
       };
     });
 
-    return normalized.sort((a, b) => a.date.localeCompare(b.date));
+    return normalized.sort((a, b) => {
+      const aDate = a.date ?? a.fromDate ?? '';
+      const bDate = b.date ?? b.fromDate ?? '';
+      return aDate.localeCompare(bDate);
+    });
   }
 
   private resolveTodayHolidayOpeningHour(
-    holidayOpeningHours: BranchHolidayOpeningHourItemDto[] | undefined,
-  ): BranchHolidayOpeningHourItemDto | null {
+    holidayOpeningHours: NormalizedBranchHolidayOpeningHour[] | undefined,
+  ): NormalizedBranchHolidayOpeningHour | null {
     if (!Array.isArray(holidayOpeningHours)) {
       return null;
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    return holidayOpeningHours.find((item) => item.date === today) ?? null;
+    return (
+      holidayOpeningHours.find((item) =>
+        this.isDateInHolidayPeriod(item, today),
+      ) ?? null
+    );
+  }
+
+  private isDateInHolidayPeriod(
+    item: NormalizedBranchHolidayOpeningHour,
+    date: string,
+  ) {
+    if (item.date) {
+      return item.date === date;
+    }
+
+    return (
+      !!item.fromDate &&
+      !!item.toDate &&
+      item.fromDate <= date &&
+      item.toDate >= date
+    );
+  }
+
+  private assertValidDateOnly(value: string, fieldName: string) {
+    const parsedDate = new Date(`${value}T00:00:00.000Z`);
+    if (
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== value
+    ) {
+      throw new BadRequestException(
+        `${fieldName} must be a valid calendar date`,
+      );
+    }
   }
 
   private calculateDistanceKm(

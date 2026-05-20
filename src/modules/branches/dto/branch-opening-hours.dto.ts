@@ -26,6 +26,23 @@ export enum BranchScheduleDayEnum {
 
 const TIME_24H_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+export class BranchOpeningHourBreakDto {
+  @ApiProperty({ example: '14:00' })
+  @IsString()
+  @Matches(TIME_24H_REGEX, { message: 'startTime must be in HH:mm format' })
+  startTime!: string;
+
+  @ApiProperty({ example: '15:00' })
+  @IsString()
+  @Matches(TIME_24H_REGEX, { message: 'endTime must be in HH:mm format' })
+  endTime!: string;
+
+  @ApiProperty({ required: false, example: 'Lunch break', nullable: true })
+  @IsOptional()
+  @IsString()
+  note?: string | null;
+}
+
 export class BranchOpeningHourItemDto {
   @ApiProperty({ enum: BranchScheduleDayEnum })
   @IsEnum(BranchScheduleDayEnum)
@@ -46,6 +63,19 @@ export class BranchOpeningHourItemDto {
   @IsString()
   @Matches(TIME_24H_REGEX, { message: 'closeTime must be in HH:mm format' })
   closeTime?: string | null;
+
+  @ApiProperty({
+    required: false,
+    type: BranchOpeningHourBreakDto,
+    isArray: true,
+    description: 'Regular break times inside this opening window.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => BranchOpeningHourBreakDto)
+  breakTimes?: BranchOpeningHourBreakDto[];
 
   @ApiProperty({
     required: false,

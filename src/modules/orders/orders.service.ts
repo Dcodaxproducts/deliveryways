@@ -3167,7 +3167,9 @@ export class OrdersService {
         message: holidayOpeningHour.note ?? 'Branch is closed for holiday',
         error: 'BRANCH_HOLIDAY_CLOSED',
         details: {
-          date: holidayOpeningHour.date,
+          date: holidayOpeningHour.date ?? null,
+          fromDate: holidayOpeningHour.fromDate ?? null,
+          toDate: holidayOpeningHour.toDate ?? null,
           note: holidayOpeningHour.note ?? null,
         },
       });
@@ -3178,7 +3180,24 @@ export class OrdersService {
     holidayOpeningHours: BranchHolidayOpeningHour[],
   ): BranchHolidayOpeningHour | null {
     const today = new Date().toISOString().slice(0, 10);
-    return holidayOpeningHours.find((item) => item.date === today) ?? null;
+    return (
+      holidayOpeningHours.find((item) =>
+        this.isHolidayDateMatch(item, today),
+      ) ?? null
+    );
+  }
+
+  private isHolidayDateMatch(item: BranchHolidayOpeningHour, date: string) {
+    if (item.date) {
+      return item.date === date;
+    }
+
+    return (
+      !!item.fromDate &&
+      !!item.toDate &&
+      item.fromDate <= date &&
+      item.toDate >= date
+    );
   }
 
   private async assertAddressWithinRadius(
@@ -3272,7 +3291,9 @@ type BranchTemporaryClosure = {
 };
 
 type BranchHolidayOpeningHour = {
-  date: string;
+  date?: string;
+  fromDate?: string;
+  toDate?: string;
   isClosed: boolean;
   openTime?: string | null;
   closeTime?: string | null;

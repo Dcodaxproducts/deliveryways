@@ -16,10 +16,28 @@ const TIME_24H_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export class BranchHolidayOpeningHourItemDto {
-  @ApiProperty({ example: '2026-12-25' })
+  @ApiPropertyOptional({
+    example: '2026-12-25',
+    description: 'Single holiday date. Use fromDate/toDate for a date range.',
+  })
+  @IsOptional()
   @IsString()
   @Matches(DATE_ONLY_REGEX, { message: 'date must be in YYYY-MM-DD format' })
-  date!: string;
+  date?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-25' })
+  @IsOptional()
+  @IsString()
+  @Matches(DATE_ONLY_REGEX, {
+    message: 'fromDate must be in YYYY-MM-DD format',
+  })
+  fromDate?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-27' })
+  @IsOptional()
+  @IsString()
+  @Matches(DATE_ONLY_REGEX, { message: 'toDate must be in YYYY-MM-DD format' })
+  toDate?: string;
 
   @ApiProperty({ example: true })
   @IsBoolean()

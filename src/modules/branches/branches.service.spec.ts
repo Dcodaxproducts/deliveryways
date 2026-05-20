@@ -646,6 +646,73 @@ describe('BranchesService', () => {
     ).toHaveLength(2);
   });
 
+  it('updates branch opening hours with regular break times', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {},
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    const result = await service.updateOpeningHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        openingHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.MONDAY,
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '22:00',
+            breakTimes: [
+              {
+                startTime: '14:00',
+                endTime: '15:00',
+                note: 'Lunch break',
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({
+        settings: {
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.MONDAY,
+              isClosed: false,
+              openTime: '09:00',
+              closeTime: '22:00',
+              breakTimes: [
+                {
+                  startTime: '14:00',
+                  endTime: '15:00',
+                  note: 'Lunch break',
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      undefined,
+    );
+    expect(
+      (result.data as { openingHours: Array<{ breakTimes?: unknown[] }> })
+        .openingHours[0].breakTimes,
+    ).toHaveLength(1);
+  });
+
   it('updates date-specific holiday opening hours with notes', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({
@@ -714,6 +781,61 @@ describe('BranchesService', () => {
     );
     expect(result.message).toBe(
       'Branch holiday opening hours updated successfully',
+    );
+  });
+
+  it('updates holiday opening hours with date ranges', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {},
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      isActive: true,
+      settings: {},
+    });
+
+    await service.updateHolidayOpeningHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        holidayOpeningHours: [
+          {
+            fromDate: '2026-06-17',
+            toDate: '2026-06-19',
+            isClosed: true,
+            note: 'Eid holidays',
+          },
+        ],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      {
+        settings: {
+          holidayOpeningHours: [
+            {
+              fromDate: '2026-06-17',
+              toDate: '2026-06-19',
+              isClosed: true,
+              openTime: null,
+              closeTime: null,
+              note: 'Eid holidays',
+            },
+          ],
+        },
+      },
+      undefined,
     );
   });
 
