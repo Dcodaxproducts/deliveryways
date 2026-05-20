@@ -522,6 +522,9 @@ export class CustomerAppService {
               ]),
             }
           : null,
+        landingPopup: branch
+          ? this.resolveBranchClosedPeriodPopup(branch.settings)
+          : null,
         cuisines: await Promise.all(
           cuisines.items.map(async (item) => ({
             id: item.id,
@@ -1358,6 +1361,138 @@ export class CustomerAppService {
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
+  }
+
+  private resolveBranchClosedPeriodPopup(settings: unknown) {
+    const temporaryClosure = this.resolveActiveTemporaryClosure(settings);
+    if (temporaryClosure) {
+      return {
+        show: true,
+        type: 'TEMPORARY_CLOSURE',
+        title: 'Branch temporarily closed',
+        message:
+          temporaryClosure.message ??
+          temporaryClosure.reason ??
+          'This branch is temporarily closed.',
+        period: {
+          fromDate: temporaryClosure.closedAt ?? null,
+          toDate: temporaryClosure.closedUntil ?? null,
+        },
+        temporaryClosure,
+      };
+    }
+
+    const holiday = this.resolveCurrentOrUpcomingHoliday(settings);
+    if (holiday) {
+      const fromDate = holiday.date ?? holiday.fromDate ?? null;
+      const toDate = holiday.date ?? holiday.toDate ?? null;
+      return {
+        show: true,
+        type: 'HOLIDAY_CLOSURE',
+        title: 'Holiday / vacation closure',
+        message: holiday.note ?? 'This branch has upcoming holiday hours.',
+        period: {
+          fromDate,
+          toDate,
+        },
+        holidayOpeningHour: holiday,
+      };
+    }
+
+    return null;
+  }
+
+  private resolveActiveTemporaryClosure(settings: unknown) {
+    const closure = this.readPath(settings, ['temporaryClosure']);
+    if (!closure || typeof closure !== 'object' || Array.isArray(closure)) {
+      return null;
+    }
+
+    const normalized = closure as {
+      isClosed?: boolean;
+      closedAt?: string | null;
+      closedUntil?: string | null;
+      reason?: string | null;
+      message?: string | null;
+    };
+
+    if (!normalized.isClosed) {
+      return null;
+    }
+
+    if (
+      normalized.closedUntil &&
+      new Date(normalized.closedUntil).getTime() <= Date.now()
+    ) {
+      return null;
+    }
+
+    return {
+      isClosed: true,
+      closedAt: normalized.closedAt ?? null,
+      closedUntil: normalized.closedUntil ?? null,
+      reason: normalized.reason ?? null,
+      message: normalized.message ?? null,
+    };
+  }
+
+  private resolveCurrentOrUpcomingHoliday(settings: unknown) {
+    const holidays = this.readPath(settings, ['holidayOpeningHours']);
+    if (!Array.isArray(holidays)) {
+      return null;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    return (
+      holidays
+        .map((item) => this.normalizeHolidayOpeningHour(item))
+        .filter((item): item is NonNullable<typeof item> => !!item)
+        .filter(
+          (item) => item.isClosed && this.resolveHolidayEndDate(item) >= today,
+        )
+        .sort((a, b) =>
+          this.resolveHolidayStartDate(a).localeCompare(
+            this.resolveHolidayStartDate(b),
+          ),
+        )[0] ?? null
+    );
+  }
+
+  private normalizeHolidayOpeningHour(input: unknown) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return null;
+    }
+
+    const item = input as Record<string, unknown>;
+    const date = typeof item.date === 'string' ? item.date : undefined;
+    const fromDate =
+      typeof item.fromDate === 'string' ? item.fromDate : undefined;
+    const toDate = typeof item.toDate === 'string' ? item.toDate : undefined;
+
+    if (!date && (!fromDate || !toDate)) {
+      return null;
+    }
+
+    return {
+      date,
+      fromDate,
+      toDate,
+      isClosed: item.isClosed === true,
+      openTime: typeof item.openTime === 'string' ? item.openTime : null,
+      closeTime: typeof item.closeTime === 'string' ? item.closeTime : null,
+      note: typeof item.note === 'string' ? item.note : null,
+    };
+  }
+
+  private resolveHolidayStartDate(holiday: {
+    date?: string;
+    fromDate?: string;
+  }) {
+    return holiday.date ?? holiday.fromDate ?? '';
+  }
+
+  private resolveHolidayEndDate(holiday: { date?: string; toDate?: string }) {
+    return holiday.date ?? holiday.toDate ?? '';
   }
 
   private async loadPromotionContext(restaurantId: string, branchId?: string) {

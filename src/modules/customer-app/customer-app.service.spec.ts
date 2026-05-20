@@ -568,6 +568,115 @@ describe('CustomerAppService', () => {
     });
   });
 
+  it('returns temporary closure popup on home screen', async () => {
+    const { service, repository } = makeService();
+    const closedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: {
+        temporaryClosure: {
+          isClosed: true,
+          closedAt: '2026-05-20T09:00:00.000Z',
+          closedUntil,
+          reason: 'Maintenance',
+          message: 'We are closed for maintenance',
+        },
+      },
+    });
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(result.data.landingPopup).toEqual({
+      show: true,
+      type: 'TEMPORARY_CLOSURE',
+      title: 'Branch temporarily closed',
+      message: 'We are closed for maintenance',
+      period: {
+        fromDate: '2026-05-20T09:00:00.000Z',
+        toDate: closedUntil,
+      },
+      temporaryClosure: {
+        isClosed: true,
+        closedAt: '2026-05-20T09:00:00.000Z',
+        closedUntil,
+        reason: 'Maintenance',
+        message: 'We are closed for maintenance',
+      },
+    });
+  });
+
+  it('returns holiday range popup on home screen', async () => {
+    const { service, repository } = makeService();
+    const today = new Date().toISOString().slice(0, 10);
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: {
+        holidayOpeningHours: [
+          {
+            fromDate: today,
+            toDate: today,
+            isClosed: true,
+            note: 'Eid holiday',
+          },
+        ],
+      },
+    });
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(result.data.landingPopup).toMatchObject({
+      show: true,
+      type: 'HOLIDAY_CLOSURE',
+      title: 'Holiday / vacation closure',
+      message: 'Eid holiday',
+      period: { fromDate: today, toDate: today },
+    });
+  });
+
   it('returns currency config on home screen when restaurant settings include it', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
