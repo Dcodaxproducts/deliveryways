@@ -21,6 +21,7 @@ import {
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
+  ListCustomerPromotionsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
   PublicMenuItemBySlugQueryDto,
@@ -36,6 +37,16 @@ import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
 import { DEFAULT_MENU_ITEM_LABELS } from '../menu/item/dto';
 import { CouponsService, PromotionPreview } from '../coupons/coupons.service';
+
+type AutoApplyPromotion = Awaited<
+  ReturnType<CouponsService['getActiveAutoApplyPromotions']>
+>[number];
+
+type PublicPromotionScopeEntity = {
+  id: string;
+  name: string;
+  imageUrl?: string | null;
+};
 
 type PublicMenuItemVariation = {
   id: string;
@@ -474,6 +485,26 @@ export class CustomerAppService {
         ),
       ),
       message: 'Promotional items fetched successfully',
+    };
+  }
+
+  async listPromotions(
+    query: ListCustomerPromotionsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+    const promotions = promotionContext.promotions.slice(0, query.limit);
+
+    return {
+      data: await Promise.all(
+        promotions.map((promotion) => this.mapPublicPromotion(promotion)),
+      ),
+      message: 'Promotions fetched successfully',
     };
   }
 
@@ -1589,7 +1620,7 @@ export class CustomerAppService {
   }
 
   private async loadPromotionContext(restaurantId: string, branchId?: string) {
-    const promotions =
+    const promotions: AutoApplyPromotion[] =
       (await this.couponsService?.getActiveAutoApplyPromotions(
         restaurantId,
         branchId,
@@ -1620,6 +1651,75 @@ export class CustomerAppService {
       menuItemIds: [...menuItemIds],
       categoryIds: [...categoryIds],
     };
+  }
+
+  private async mapPublicPromotion(promotion: AutoApplyPromotion) {
+    return {
+      id: promotion.id,
+      title: promotion.title,
+      description: promotion.description,
+      applyMode: promotion.applyMode,
+      discountType: promotion.discountType,
+      discountValue: Number(promotion.discountValue),
+      maxDiscountAmount: promotion.maxDiscountAmount
+        ? Number(promotion.maxDiscountAmount)
+        : null,
+      minOrderAmount: promotion.minOrderAmount
+        ? Number(promotion.minOrderAmount)
+        : null,
+      startsAt: promotion.startsAt,
+      expiresAt: promotion.expiresAt,
+      branch: promotion.branch
+        ? {
+            id: promotion.branch.id,
+            name: promotion.branch.name,
+            logoUrl: await this.resolveMediaUrl(promotion.branch.logoUrl),
+            coverImage: await this.resolveMediaUrl(promotion.branch.coverImage),
+          }
+        : null,
+      restaurant: promotion.restaurant
+        ? {
+            id: promotion.restaurant.id,
+            name: promotion.restaurant.name,
+            slug: promotion.restaurant.slug,
+            logoUrl: await this.resolveMediaUrl(promotion.restaurant.logoUrl),
+            coverImage: await this.resolveMediaUrl(
+              promotion.restaurant.coverImage,
+            ),
+          }
+        : null,
+      scopeMenuItems: await Promise.all(
+        this.mergePromotionScopeEntities(
+          promotion.scopeMenuItem,
+          (promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem),
+        ).map((item) => this.mapPromotionScopeEntity(item)),
+      ),
+      scopeCategories: await Promise.all(
+        this.mergePromotionScopeEntities(
+          promotion.scopeCategory,
+          (promotion.scopeCategories ?? []).map((entry) => entry.menuCategory),
+        ).map((category) => this.mapPromotionScopeEntity(category)),
+      ),
+    };
+  }
+
+  private async mapPromotionScopeEntity(entity: PublicPromotionScopeEntity) {
+    return {
+      id: entity.id,
+      name: entity.name,
+      imageUrl: await this.resolveMediaUrl(entity.imageUrl),
+    };
+  }
+
+  private mergePromotionScopeEntities<T extends PublicPromotionScopeEntity>(
+    primary: T | null | undefined,
+    extras: T[],
+  ) {
+    const items = [...(primary ? [primary] : []), ...extras];
+    return items.filter(
+      (item, index, all) =>
+        all.findIndex((entry) => entry.id === item.id) === index,
+    );
   }
 
   private resolveBestScopedItemPromotion(

@@ -30,6 +30,7 @@ import {
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
+  ListCustomerPromotionsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
   PublicMenuItemBySlugQueryDto,
@@ -182,6 +183,17 @@ export class CustomerAppController {
     @Query() query: ListPromotionalItemsQueryDto,
   ) {
     return this.customerAppService.listPromotionalItems(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('promotions')
+  @ApiOperation({ summary: 'List active public promotion campaigns' })
+  listPromotions(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListCustomerPromotionsQueryDto,
+  ) {
+    return this.customerAppService.listPromotions(query, user);
   }
 
   @Public()

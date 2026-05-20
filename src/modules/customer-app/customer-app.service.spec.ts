@@ -435,6 +435,85 @@ describe('CustomerAppService', () => {
     expect('modifierGroups' in result.data[0]).toBe(false);
   });
 
+  it('lists active promotion campaigns for customer app', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'restaurant-logo.png',
+      coverImage: 'restaurant-cover.png',
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: 'Auto discount',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        minOrderAmount: new Prisma.Decimal(500),
+        startsAt: new Date('2026-05-20T00:00:00.000Z'),
+        expiresAt: new Date('2026-05-25T00:00:00.000Z'),
+        restaurant: {
+          id: 'restaurant-1',
+          name: 'DeliveryWays Kitchen',
+          slug: 'deliveryways-kitchen',
+          logoUrl: 'restaurant-logo.png',
+          coverImage: 'restaurant-cover.png',
+        },
+        branch: null,
+        scopeMenuItem: {
+          id: 'item-1',
+          name: 'Zinger Burger',
+          imageUrl: 'zinger.png',
+        },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [
+          {
+            menuCategory: {
+              id: 'category-1',
+              name: 'Burgers',
+              imageUrl: 'burgers.png',
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await service.listPromotions({
+      restaurantId: 'restaurant-1',
+      limit: 10,
+    });
+
+    expect(couponsService.getActiveAutoApplyPromotions).toHaveBeenCalledWith(
+      'restaurant-1',
+      undefined,
+    );
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'promo-1',
+        title: 'Burger Deal',
+        discountType: 'PERCENTAGE',
+        discountValue: 10,
+        maxDiscountAmount: 100,
+        minOrderAmount: 500,
+        scopeMenuItems: [
+          { id: 'item-1', name: 'Zinger Burger', imageUrl: 'zinger.png' },
+        ],
+        scopeCategories: [
+          { id: 'category-1', name: 'Burgers', imageUrl: 'burgers.png' },
+        ],
+      }),
+    ]);
+  });
+
   it('includes promotion metadata on cuisine categories and promotional cuisine list', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

@@ -116,6 +116,16 @@ export class ListPromotionalItemsQueryDto extends PublicRestaurantQueryDto {
   limit = 8;
 }
 
+export class ListCustomerPromotionsQueryDto extends PublicRestaurantQueryDto {
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit = 20;
+}
+
 export class HomeScreenQueryDto extends PublicRestaurantQueryDto {
   @ApiPropertyOptional({ default: 8, minimum: 1, maximum: 25 })
   @IsOptional()
