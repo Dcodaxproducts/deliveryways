@@ -286,5 +286,19 @@ export class AdminPromotionsRepository {
     scopeCategory: {
       select: { id: true, name: true },
     },
+    scopeMenuItems: {
+      select: {
+        menuItem: {
+          select: { id: true, name: true },
+        },
+      },
+    },
+    scopeCategories: {
+      select: {
+        menuCategory: {
+          select: { id: true, name: true },
+        },
+      },
+    },
   } satisfies Prisma.CouponInclude;
 }

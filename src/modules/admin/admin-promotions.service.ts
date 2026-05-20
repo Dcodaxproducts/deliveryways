@@ -5,11 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CouponApplyMode,
   CouponCampaignKind,
   CouponDiscountType,
   CouponStatus,
   Prisma,
 } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -111,23 +113,26 @@ export class AdminPromotionsService {
   async createPromotion(user: AuthUserContext, dto: CreateAdminPromotionDto) {
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
+    const scopeIds = this.normalizeScopeIds(dto);
 
     await this.validateScopeReferences(
       scope.restaurantId,
-      dto.scopeMenuItemId,
-      dto.scopeCategoryId,
+      scopeIds.menuItemIds,
+      scopeIds.categoryIds,
     );
 
     const data = await this.adminPromotionsRepository.create({
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
       restaurant: { connect: { id: this.requireRestaurantIdFromScope(scope) } },
       branch: scope.branchId ? { connect: { id: scope.branchId } } : undefined,
-      code: dto.code.trim().toUpperCase(),
+      code: this.resolvePromotionCode(dto.code),
       title: dto.title,
       description: dto.description,
       kind: CouponCampaignKind.PROMOTION,
       status:
         dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
+      applyMode: (dto.applyMode ?? 'SCOPED_ITEMS') as CouponApplyMode,
+      autoApply: dto.autoApply ?? true,
       discountType: dto.discountType as CouponDiscountType,
       discountValue: new Prisma.Decimal(dto.discountValue),
       maxDiscountAmount:
@@ -142,12 +147,32 @@ export class AdminPromotionsService {
       maxUsesPerCustomer: dto.maxUsesPerCustomer,
       startsAt: new Date(dto.startsAt),
       expiresAt: new Date(dto.expiresAt),
-      scopeMenuItem: dto.scopeMenuItemId
-        ? { connect: { id: dto.scopeMenuItemId } }
-        : undefined,
-      scopeCategory: dto.scopeCategoryId
-        ? { connect: { id: dto.scopeCategoryId } }
-        : undefined,
+      scopeMenuItem:
+        scopeIds.menuItemIds.length === 1
+          ? { connect: { id: scopeIds.menuItemIds[0] } }
+          : undefined,
+      scopeCategory:
+        scopeIds.categoryIds.length === 1
+          ? { connect: { id: scopeIds.categoryIds[0] } }
+          : undefined,
+      ...(scopeIds.menuItemIds.length
+        ? {
+            scopeMenuItems: {
+              create: scopeIds.menuItemIds.map((menuItemId) => ({
+                menuItem: { connect: { id: menuItemId } },
+              })),
+            },
+          }
+        : {}),
+      ...(scopeIds.categoryIds.length
+        ? {
+            scopeCategories: {
+              create: scopeIds.categoryIds.map((menuCategoryId) => ({
+                menuCategory: { connect: { id: menuCategoryId } },
+              })),
+            },
+          }
+        : {}),
       isActive: dto.isActive ?? true,
     });
 
@@ -180,14 +205,17 @@ export class AdminPromotionsService {
       dto.startsAt ?? existing.startsAt.toISOString(),
       dto.expiresAt ?? existing.expiresAt.toISOString(),
     );
+    const scopeIds = this.normalizeScopeIds(dto, existing);
     await this.validateScopeReferences(
       scope.restaurantId,
-      dto.scopeMenuItemId ?? existing.scopeMenuItemId ?? undefined,
-      dto.scopeCategoryId ?? existing.scopeCategoryId ?? undefined,
+      scopeIds.menuItemIds,
+      scopeIds.categoryIds,
     );
 
     const data = await this.adminPromotionsRepository.update(id, {
-      ...(dto.code ? { code: dto.code.trim().toUpperCase() } : {}),
+      ...(dto.code !== undefined
+        ? { code: this.resolvePromotionCode(dto.code) }
+        : {}),
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.description !== undefined
         ? { description: dto.description }
@@ -202,6 +230,8 @@ export class AdminPromotionsService {
       ...(dto.discountType
         ? { discountType: dto.discountType as CouponDiscountType }
         : {}),
+      ...(dto.applyMode ? { applyMode: dto.applyMode as CouponApplyMode } : {}),
+      ...(dto.autoApply !== undefined ? { autoApply: dto.autoApply } : {}),
       ...(dto.discountValue !== undefined
         ? { discountValue: new Prisma.Decimal(dto.discountValue) }
         : {}),
@@ -217,18 +247,36 @@ export class AdminPromotionsService {
         : {}),
       ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
       ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
-      ...(dto.scopeMenuItemId !== undefined
+      ...(this.hasScopeInput(dto)
         ? {
-            scopeMenuItem: dto.scopeMenuItemId
-              ? { connect: { id: dto.scopeMenuItemId } }
-              : { disconnect: true },
-          }
-        : {}),
-      ...(dto.scopeCategoryId !== undefined
-        ? {
-            scopeCategory: dto.scopeCategoryId
-              ? { connect: { id: dto.scopeCategoryId } }
-              : { disconnect: true },
+            scopeMenuItem:
+              scopeIds.menuItemIds.length === 1
+                ? { connect: { id: scopeIds.menuItemIds[0] } }
+                : { disconnect: true },
+            scopeCategory:
+              scopeIds.categoryIds.length === 1
+                ? { connect: { id: scopeIds.categoryIds[0] } }
+                : { disconnect: true },
+            scopeMenuItems: {
+              deleteMany: {},
+              ...(scopeIds.menuItemIds.length
+                ? {
+                    create: scopeIds.menuItemIds.map((menuItemId) => ({
+                      menuItem: { connect: { id: menuItemId } },
+                    })),
+                  }
+                : {}),
+            },
+            scopeCategories: {
+              deleteMany: {},
+              ...(scopeIds.categoryIds.length
+                ? {
+                    create: scopeIds.categoryIds.map((menuCategoryId) => ({
+                      menuCategory: { connect: { id: menuCategoryId } },
+                    })),
+                  }
+                : {}),
+            },
           }
         : {}),
       ...(dto.isActive !== undefined
@@ -278,22 +326,25 @@ export class AdminPromotionsService {
     this.assertValidDailyWindow(dto.dailyStartTime, dto.dailyEndTime);
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
+    const scopeIds = this.normalizeScopeIds(dto);
     await this.validateScopeReferences(
       scope.restaurantId,
-      dto.scopeMenuItemId,
-      dto.scopeCategoryId,
+      scopeIds.menuItemIds,
+      scopeIds.categoryIds,
     );
 
     const data = await this.adminPromotionsRepository.create({
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
       restaurant: { connect: { id: this.requireRestaurantIdFromScope(scope) } },
       branch: scope.branchId ? { connect: { id: scope.branchId } } : undefined,
-      code: dto.code.trim().toUpperCase(),
+      code: this.resolvePromotionCode(dto.code, 'HAPPY'),
       title: dto.title,
       description: dto.description,
       kind: CouponCampaignKind.HAPPY_HOUR,
       status:
         dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
+      applyMode: (dto.applyMode ?? 'SCOPED_ITEMS') as CouponApplyMode,
+      autoApply: dto.autoApply ?? true,
       discountType: dto.discountType as CouponDiscountType,
       discountValue: new Prisma.Decimal(dto.discountValue),
       maxDiscountAmount:
@@ -311,12 +362,32 @@ export class AdminPromotionsService {
       activeDays: dto.activeDays,
       dailyStartTime: dto.dailyStartTime,
       dailyEndTime: dto.dailyEndTime,
-      scopeMenuItem: dto.scopeMenuItemId
-        ? { connect: { id: dto.scopeMenuItemId } }
-        : undefined,
-      scopeCategory: dto.scopeCategoryId
-        ? { connect: { id: dto.scopeCategoryId } }
-        : undefined,
+      scopeMenuItem:
+        scopeIds.menuItemIds.length === 1
+          ? { connect: { id: scopeIds.menuItemIds[0] } }
+          : undefined,
+      scopeCategory:
+        scopeIds.categoryIds.length === 1
+          ? { connect: { id: scopeIds.categoryIds[0] } }
+          : undefined,
+      ...(scopeIds.menuItemIds.length
+        ? {
+            scopeMenuItems: {
+              create: scopeIds.menuItemIds.map((menuItemId) => ({
+                menuItem: { connect: { id: menuItemId } },
+              })),
+            },
+          }
+        : {}),
+      ...(scopeIds.categoryIds.length
+        ? {
+            scopeCategories: {
+              create: scopeIds.categoryIds.map((menuCategoryId) => ({
+                menuCategory: { connect: { id: menuCategoryId } },
+              })),
+            },
+          }
+        : {}),
       isActive: dto.isActive ?? true,
     });
 
@@ -357,14 +428,17 @@ export class AdminPromotionsService {
       dto.dailyStartTime ?? existing.dailyStartTime ?? '',
       dto.dailyEndTime ?? existing.dailyEndTime ?? '',
     );
+    const scopeIds = this.normalizeScopeIds(dto, existing);
     await this.validateScopeReferences(
       scope.restaurantId,
-      dto.scopeMenuItemId ?? existing.scopeMenuItemId ?? undefined,
-      dto.scopeCategoryId ?? existing.scopeCategoryId ?? undefined,
+      scopeIds.menuItemIds,
+      scopeIds.categoryIds,
     );
 
     const data = await this.adminPromotionsRepository.update(id, {
-      ...(dto.code ? { code: dto.code.trim().toUpperCase() } : {}),
+      ...(dto.code !== undefined
+        ? { code: this.resolvePromotionCode(dto.code, 'HAPPY') }
+        : {}),
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.description !== undefined
         ? { description: dto.description }
@@ -379,6 +453,8 @@ export class AdminPromotionsService {
       ...(dto.discountType
         ? { discountType: dto.discountType as CouponDiscountType }
         : {}),
+      ...(dto.applyMode ? { applyMode: dto.applyMode as CouponApplyMode } : {}),
+      ...(dto.autoApply !== undefined ? { autoApply: dto.autoApply } : {}),
       ...(dto.discountValue !== undefined
         ? { discountValue: new Prisma.Decimal(dto.discountValue) }
         : {}),
@@ -401,18 +477,36 @@ export class AdminPromotionsService {
       ...(dto.dailyEndTime !== undefined
         ? { dailyEndTime: dto.dailyEndTime }
         : {}),
-      ...(dto.scopeMenuItemId !== undefined
+      ...(this.hasScopeInput(dto)
         ? {
-            scopeMenuItem: dto.scopeMenuItemId
-              ? { connect: { id: dto.scopeMenuItemId } }
-              : { disconnect: true },
-          }
-        : {}),
-      ...(dto.scopeCategoryId !== undefined
-        ? {
-            scopeCategory: dto.scopeCategoryId
-              ? { connect: { id: dto.scopeCategoryId } }
-              : { disconnect: true },
+            scopeMenuItem:
+              scopeIds.menuItemIds.length === 1
+                ? { connect: { id: scopeIds.menuItemIds[0] } }
+                : { disconnect: true },
+            scopeCategory:
+              scopeIds.categoryIds.length === 1
+                ? { connect: { id: scopeIds.categoryIds[0] } }
+                : { disconnect: true },
+            scopeMenuItems: {
+              deleteMany: {},
+              ...(scopeIds.menuItemIds.length
+                ? {
+                    create: scopeIds.menuItemIds.map((menuItemId) => ({
+                      menuItem: { connect: { id: menuItemId } },
+                    })),
+                  }
+                : {}),
+            },
+            scopeCategories: {
+              deleteMany: {},
+              ...(scopeIds.categoryIds.length
+                ? {
+                    create: scopeIds.categoryIds.map((menuCategoryId) => ({
+                      menuCategory: { connect: { id: menuCategoryId } },
+                    })),
+                  }
+                : {}),
+            },
           }
         : {}),
       ...(dto.isActive !== undefined
@@ -589,43 +683,43 @@ export class AdminPromotionsService {
 
   private async validateScopeReferences(
     restaurantId: string | undefined,
-    menuItemId?: string,
-    categoryId?: string,
+    menuItemIds: string[],
+    categoryIds: string[],
   ) {
     const scopedRestaurantId = this.requireRestaurantIdFromScope({
       restaurantId,
     });
 
-    if (menuItemId) {
-      const item = await this.prisma.menuItem.findFirst({
+    if (menuItemIds.length) {
+      const items = await this.prisma.menuItem.findMany({
         where: {
-          id: menuItemId,
+          id: { in: menuItemIds },
           restaurantId: scopedRestaurantId,
           deletedAt: null,
           isActive: true,
         },
         select: { id: true },
       });
-      if (!item) {
+      if (items.length !== new Set(menuItemIds).size) {
         throw new BadRequestException(
-          'scopeMenuItemId not found in restaurant',
+          'One or more scopeMenuItemIds were not found in restaurant',
         );
       }
     }
 
-    if (categoryId) {
-      const category = await this.prisma.menuCategory.findFirst({
+    if (categoryIds.length) {
+      const categories = await this.prisma.menuCategory.findMany({
         where: {
-          id: categoryId,
+          id: { in: categoryIds },
           restaurantId: scopedRestaurantId,
           deletedAt: null,
           isActive: true,
         },
         select: { id: true },
       });
-      if (!category) {
+      if (categories.length !== new Set(categoryIds).size) {
         throw new BadRequestException(
-          'scopeCategoryId not found in restaurant',
+          'One or more scopeCategoryIds were not found in restaurant',
         );
       }
     }
@@ -677,6 +771,8 @@ export class AdminPromotionsService {
     description: string | null;
     kind: CouponCampaignKind;
     status: CouponStatus;
+    applyMode: CouponApplyMode;
+    autoApply: boolean;
     discountType: CouponDiscountType;
     discountValue: Prisma.Decimal;
     maxDiscountAmount: Prisma.Decimal | null;
@@ -694,16 +790,20 @@ export class AdminPromotionsService {
     restaurant?: { id: string; name: string } | null;
     scopeMenuItem?: { id: string; name: string } | null;
     scopeCategory?: { id: string; name: string } | null;
+    scopeMenuItems?: Array<{ menuItem: { id: string; name: string } }>;
+    scopeCategories?: Array<{ menuCategory: { id: string; name: string } }>;
     createdAt: Date;
     updatedAt: Date;
   }) {
     return {
       id: coupon.id,
-      code: coupon.code,
+      code: coupon.autoApply ? null : coupon.code,
       title: coupon.title,
       description: coupon.description,
       kind: coupon.kind,
       status: coupon.status,
+      applyMode: coupon.applyMode,
+      autoApply: coupon.autoApply,
       discountType: coupon.discountType,
       discountValue: Number(coupon.discountValue),
       maxDiscountAmount: coupon.maxDiscountAmount
@@ -725,9 +825,102 @@ export class AdminPromotionsService {
       restaurant: coupon.restaurant ?? null,
       scopeMenuItem: coupon.scopeMenuItem ?? null,
       scopeCategory: coupon.scopeCategory ?? null,
+      scopeMenuItems: this.mergeScopedEntities(
+        coupon.scopeMenuItem,
+        coupon.scopeMenuItems?.map((entry) => entry.menuItem) ?? [],
+      ),
+      scopeCategories: this.mergeScopedEntities(
+        coupon.scopeCategory,
+        coupon.scopeCategories?.map((entry) => entry.menuCategory) ?? [],
+      ),
       createdAt: coupon.createdAt,
       updatedAt: coupon.updatedAt,
     };
+  }
+
+  private mergeScopedEntities<T extends { id: string }>(
+    single: T | null | undefined,
+    list: T[],
+  ) {
+    const items = [...(single ? [single] : []), ...list];
+    return items.filter(
+      (item, index, all) =>
+        all.findIndex((entry) => entry.id === item.id) === index,
+    );
+  }
+
+  private normalizeScopeIds(
+    dto: {
+      scopeMenuItemId?: string;
+      scopeCategoryId?: string;
+      scopeMenuItemIds?: string[];
+      scopeCategoryIds?: string[];
+    },
+    existing?: {
+      scopeMenuItemId?: string | null;
+      scopeCategoryId?: string | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+  ) {
+    const hasMenuItemArray = dto.scopeMenuItemIds !== undefined;
+    const hasCategoryArray = dto.scopeCategoryIds !== undefined;
+    const hasLegacyMenuItem = dto.scopeMenuItemId !== undefined;
+    const hasLegacyCategory = dto.scopeCategoryId !== undefined;
+
+    const menuItemIds =
+      hasMenuItemArray || hasLegacyMenuItem
+        ? [
+            ...(dto.scopeMenuItemId ? [dto.scopeMenuItemId] : []),
+            ...(dto.scopeMenuItemIds ?? []).filter(Boolean),
+          ]
+        : [
+            ...(existing?.scopeMenuItemId ? [existing.scopeMenuItemId] : []),
+            ...(existing?.scopeMenuItems ?? []).map(
+              (entry) => entry.menuItem.id,
+            ),
+          ];
+
+    const categoryIds =
+      hasCategoryArray || hasLegacyCategory
+        ? [
+            ...(dto.scopeCategoryId ? [dto.scopeCategoryId] : []),
+            ...(dto.scopeCategoryIds ?? []).filter(Boolean),
+          ]
+        : [
+            ...(existing?.scopeCategoryId ? [existing.scopeCategoryId] : []),
+            ...(existing?.scopeCategories ?? []).map(
+              (entry) => entry.menuCategory.id,
+            ),
+          ];
+
+    return {
+      menuItemIds: [...new Set(menuItemIds)],
+      categoryIds: [...new Set(categoryIds)],
+    };
+  }
+
+  private hasScopeInput(dto: {
+    scopeMenuItemId?: string;
+    scopeCategoryId?: string;
+    scopeMenuItemIds?: string[];
+    scopeCategoryIds?: string[];
+  }) {
+    return (
+      dto.scopeMenuItemId !== undefined ||
+      dto.scopeCategoryId !== undefined ||
+      dto.scopeMenuItemIds !== undefined ||
+      dto.scopeCategoryIds !== undefined
+    );
+  }
+
+  private resolvePromotionCode(code: string | undefined, prefix = 'PROMO') {
+    const trimmed = code?.trim();
+    if (trimmed) {
+      return trimmed.toUpperCase();
+    }
+
+    return `${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 
   private kindLabel(kind?: CouponCampaignKind) {

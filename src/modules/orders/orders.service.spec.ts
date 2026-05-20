@@ -2221,6 +2221,106 @@ describe('OrdersService - wallet payment', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('auto-applies scoped promotion without coupon code in quotes', async () => {
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue({
+        coupon: {
+          id: 'promo-1',
+          code: 'PROMO-1',
+          title: 'Burger deal',
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+        },
+        discountAmount: new Prisma.Decimal(100),
+        eligibleSubtotal: new Prisma.Decimal(500),
+      }),
+    };
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              ordering: {
+                allowedOrderTypes: ['DELIVERY'],
+                allowedPaymentMethods: ['COD'],
+              },
+              deliveryConfig: {
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 0,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(500),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValue({
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(400),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(couponsService.findBestAutoApplyPromotion).toHaveBeenCalled();
+    expect(result.data.discountAmount).toBe(100);
+    expect(result.data.appliedPromotion).toEqual({
+      id: 'promo-1',
+      title: 'Burger deal',
+      applyMode: 'SCOPED_ITEMS',
+      autoApply: true,
+    });
+  });
+
   it('allows quoted coupon validation without delivery coordinates on the main quote path', async () => {
     const prisma = {
       branch: {

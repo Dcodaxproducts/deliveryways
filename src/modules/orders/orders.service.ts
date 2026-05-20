@@ -1104,21 +1104,60 @@ export class OrdersService {
     let discountAmount = new Prisma.Decimal(0);
     let couponId: string | undefined;
     let appliedCouponCode: string | undefined;
+    let appliedPromotion:
+      | {
+          id: string;
+          title: string;
+          applyMode: string;
+          autoApply: boolean;
+        }
+      | undefined;
+
+    const promotionInput = {
+      restaurantId: branch.restaurantId,
+      branchId: branch.id,
+      customerId: customer.customerId,
+      subtotal: Number(subtotal),
+      menuItemIds: lines.map((line) => line.menuItemId),
+      categoryIds: lines.map((line) => line.categoryId),
+      lineItems: lines.map((line) => ({
+        menuItemId: line.menuItemId,
+        categoryId: line.categoryId,
+        lineTotal: Number(line.lineTotal),
+      })),
+    };
 
     if (dto.couponCode) {
       const couponValidation = await this.couponsService.validateForCheckout({
-        restaurantId: branch.restaurantId,
-        branchId: branch.id,
-        customerId: customer.customerId,
+        ...promotionInput,
         code: dto.couponCode,
-        subtotal: Number(subtotal),
-        menuItemIds: lines.map((line) => line.menuItemId),
-        categoryIds: lines.map((line) => line.categoryId),
       });
 
       discountAmount = couponValidation.discountAmount;
       couponId = couponValidation.coupon.id;
       appliedCouponCode = couponValidation.coupon.code;
+      appliedPromotion = {
+        id: couponValidation.coupon.id,
+        title: couponValidation.coupon.title,
+        applyMode: couponValidation.coupon.applyMode,
+        autoApply: couponValidation.coupon.autoApply,
+      };
+    } else {
+      const autoPromotion =
+        typeof this.couponsService.findBestAutoApplyPromotion === 'function'
+          ? await this.couponsService.findBestAutoApplyPromotion(promotionInput)
+          : null;
+
+      if (autoPromotion) {
+        discountAmount = autoPromotion.discountAmount;
+        couponId = autoPromotion.coupon.id;
+        appliedPromotion = {
+          id: autoPromotion.coupon.id,
+          title: autoPromotion.coupon.title,
+          applyMode: autoPromotion.coupon.applyMode,
+          autoApply: autoPromotion.coupon.autoApply,
+        };
+      }
     }
 
     let totalBeforeBenefits = subtotal
@@ -1158,6 +1197,7 @@ export class OrdersService {
       totalAmount: benefits.totalAmount,
       couponId,
       appliedCouponCode,
+      appliedPromotion,
     };
   }
 
@@ -1319,6 +1359,7 @@ export class OrdersService {
       totalAmount: amountSummary.totalAmount,
       payableAmount: amountSummary.payableAmount,
       couponCode: quote.appliedCouponCode,
+      appliedPromotion: quote.appliedPromotion ?? null,
       restaurantMenuId: dto.restaurantMenuId ?? null,
       items: quote.lines.map((line) => ({
         menuItemId: line.menuItemId,

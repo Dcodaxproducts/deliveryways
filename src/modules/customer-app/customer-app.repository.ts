@@ -768,15 +768,28 @@ export class CustomerAppRepository {
 
   async listPromotionalItems(
     query: HomeScreenQueryDto | ListPromotionalItemsQueryDto,
+    scope?: { menuItemIds?: string[]; categoryIds?: string[] },
   ) {
     const branchId = query.branchId;
     const take = 'promotionLimit' in query ? query.promotionLimit : query.limit;
+    const menuItemIds = scope?.menuItemIds ?? [];
+    const categoryIds = scope?.categoryIds ?? [];
 
     return this.prisma.menuItem.findMany({
       where: {
         restaurantId: query.restaurantId,
         deletedAt: null,
         isActive: true,
+        ...(menuItemIds.length || categoryIds.length
+          ? {
+              OR: [
+                ...(menuItemIds.length ? [{ id: { in: menuItemIds } }] : []),
+                ...(categoryIds.length
+                  ? [{ categoryId: { in: categoryIds } }]
+                  : []),
+              ],
+            }
+          : {}),
         category: {
           deletedAt: null,
           isActive: true,

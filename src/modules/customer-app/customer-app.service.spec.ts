@@ -154,13 +154,24 @@ describe('CustomerAppService', () => {
       findPublicMenuItemBySlug: jest.fn(),
     };
 
+    const couponsService = {
+      getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
+    };
+
     const service = new CustomerAppService(
       repository as never,
       storageService as never,
       loyaltyWalletService as never,
       paymentsService as never,
+      couponsService as never,
     );
-    return { service, repository, loyaltyWalletService, paymentsService };
+    return {
+      service,
+      repository,
+      loyaltyWalletService,
+      paymentsService,
+      couponsService,
+    };
   };
 
   it('adds favorite item to customer metadata', async () => {
@@ -349,7 +360,7 @@ describe('CustomerAppService', () => {
   });
 
   it('populates restaurant on promotional items', async () => {
-    const { service, repository } = makeService();
+    const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -362,6 +373,21 @@ describe('CustomerAppService', () => {
       settings: {},
     });
     repository.listPromotionalItems.mockResolvedValue([itemFixture]);
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: 'Auto discount',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
 
     const result = await service.listPromotionalItems({
       restaurantId: 'restaurant-1',
@@ -375,6 +401,14 @@ describe('CustomerAppService', () => {
       tagline: 'Fresh food fast',
     });
     expect(result.data[0].depositAmount).toBe(100);
+    expect(result.data[0].discountedBasePrice).toBe(719.1);
+    expect(result.data[0].promotion).toEqual(
+      expect.objectContaining({
+        promotionId: 'promo-1',
+        discountAmount: 79.9,
+        discountedAmount: 719.1,
+      }),
+    );
     expect(result.data[0].dietaryFlags).toEqual(['NON_ALCOHOLIC', 'VEGAN']);
     expect(result.data[0].productLabels).toEqual([
       { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
@@ -589,7 +623,7 @@ describe('CustomerAppService', () => {
   });
 
   it('uses customer token restaurant scope for promotional items when query restaurantId is omitted', async () => {
-    const { service, repository } = makeService();
+    const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -602,6 +636,21 @@ describe('CustomerAppService', () => {
       settings: {},
     });
     repository.listPromotionalItems.mockResolvedValue([itemFixture]);
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: 'Auto discount',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
 
     const result = await service.listPromotionalItems(
       { limit: 10 },
@@ -615,6 +664,7 @@ describe('CustomerAppService', () => {
 
     expect(repository.listPromotionalItems).toHaveBeenCalledWith(
       expect.objectContaining({ restaurantId: 'restaurant-1', limit: 10 }),
+      expect.objectContaining({ menuItemIds: ['item-1'] }),
     );
     expect(result.data).toHaveLength(1);
   });

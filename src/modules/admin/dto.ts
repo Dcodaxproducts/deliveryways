@@ -444,9 +444,13 @@ export class AdminListPromotionsQueryDto extends AdminListQueryDto {
 export class AdminPromotionStatsQueryDto extends AdminReportsScopedQueryDto {}
 
 export class AdminPromotionBaseDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Optional internal code. Leave empty for automatic promotions/deals.',
+  })
+  @IsOptional()
   @IsString()
-  code!: string;
+  code?: string;
 
   @ApiProperty()
   @IsString()
@@ -517,6 +521,37 @@ export class AdminPromotionBaseDto {
   @IsOptional()
   @IsString()
   scopeCategoryId?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopeMenuItemIds?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopeCategoryIds?: string[];
+
+  @ApiPropertyOptional({
+    enum: ['ORDER_TOTAL', 'SCOPED_ITEMS'],
+    default: 'SCOPED_ITEMS',
+  })
+  @IsOptional()
+  @IsIn(['ORDER_TOTAL', 'SCOPED_ITEMS'])
+  applyMode?: 'ORDER_TOTAL' | 'SCOPED_ITEMS';
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Auto-apply this promotion without coupon code.',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  autoApply?: boolean;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
@@ -609,6 +644,31 @@ export class UpdateAdminPromotionDto {
   @IsOptional()
   @IsString()
   scopeCategoryId?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopeMenuItemIds?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopeCategoryIds?: string[];
+
+  @ApiPropertyOptional({ enum: ['ORDER_TOTAL', 'SCOPED_ITEMS'] })
+  @IsOptional()
+  @IsIn(['ORDER_TOTAL', 'SCOPED_ITEMS'])
+  applyMode?: 'ORDER_TOTAL' | 'SCOPED_ITEMS';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  autoApply?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

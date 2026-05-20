@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   Coupon,
+  CouponApplyMode,
   CouponDiscountType,
   CouponStatus,
   Prisma,
@@ -23,6 +24,12 @@ import {
 } from './dto';
 import { CouponsRepository } from './coupons.repository';
 
+export interface CouponValidationLineInput {
+  menuItemId: string;
+  categoryId: string;
+  lineTotal: number;
+}
+
 export interface CouponValidationInput {
   restaurantId: string;
   branchId: string;
@@ -31,12 +38,25 @@ export interface CouponValidationInput {
   subtotal: number;
   menuItemIds: string[];
   categoryIds: string[];
+  lineItems?: CouponValidationLineInput[];
 }
 
 export interface CouponValidationResult {
   coupon: Coupon;
   discountAmount: Prisma.Decimal;
   eligibleSubtotal: Prisma.Decimal;
+}
+
+export interface PromotionPreview {
+  promotionId: string;
+  title: string;
+  description: string | null;
+  applyMode: CouponApplyMode;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  maxDiscountAmount: number | null;
+  discountAmount: number;
+  discountedAmount: number;
 }
 
 @Injectable()
@@ -224,6 +244,98 @@ export class CouponsService {
       throw new BadRequestException('Coupon not found');
     }
 
+    return this.validateResolvedCoupon(coupon, input);
+  }
+
+  async getActiveAutoApplyPromotions(restaurantId: string, branchId?: string) {
+    return this.couponsRepository.findAutoApplyPromotions(
+      restaurantId,
+      branchId,
+    );
+  }
+
+  async findBestAutoApplyPromotion(
+    input: Omit<CouponValidationInput, 'code'>,
+  ): Promise<CouponValidationResult | null> {
+    const promotions = await this.getActiveAutoApplyPromotions(
+      input.restaurantId,
+      input.branchId,
+    );
+
+    let best: CouponValidationResult | null = null;
+
+    for (const promotion of promotions) {
+      try {
+        const result = await this.validateResolvedCoupon(promotion, {
+          ...input,
+          code: promotion.code,
+        });
+
+        if (
+          !best ||
+          result.discountAmount.greaterThan(best.discountAmount) ||
+          (result.discountAmount.equals(best.discountAmount) &&
+            result.eligibleSubtotal.greaterThan(best.eligibleSubtotal))
+        ) {
+          best = result;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return best;
+  }
+
+  buildPromotionPreview(
+    validation: CouponValidationResult,
+    baseAmount: Prisma.Decimal | number,
+  ): PromotionPreview {
+    const base =
+      baseAmount instanceof Prisma.Decimal
+        ? baseAmount
+        : new Prisma.Decimal(baseAmount);
+    const discountedAmount = Prisma.Decimal.max(
+      base.minus(validation.discountAmount),
+      new Prisma.Decimal(0),
+    );
+
+    return {
+      promotionId: validation.coupon.id,
+      title: validation.coupon.title,
+      description: validation.coupon.description,
+      applyMode: validation.coupon.applyMode,
+      discountType: validation.coupon.discountType,
+      discountValue: Number(validation.coupon.discountValue),
+      maxDiscountAmount: validation.coupon.maxDiscountAmount
+        ? Number(validation.coupon.maxDiscountAmount)
+        : null,
+      discountAmount: Number(validation.discountAmount),
+      discountedAmount: Number(discountedAmount.toDecimalPlaces(2)),
+    };
+  }
+
+  async registerUsage(
+    couponId: string,
+    customerId: string,
+    orderId: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    await this.couponsRepository.incrementUsage(
+      couponId,
+      customerId,
+      orderId,
+      tx,
+    );
+  }
+
+  private async validateResolvedCoupon(
+    coupon: Coupon & {
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+    input: CouponValidationInput,
+  ): Promise<CouponValidationResult> {
     const now = new Date();
     if (
       !coupon.isActive ||
@@ -269,23 +381,7 @@ export class CouponsService {
       );
     }
 
-    const eligibleSubtotal = subtotalDecimal;
-
-    if (coupon.scopeMenuItemId) {
-      if (!input.menuItemIds.includes(coupon.scopeMenuItemId)) {
-        throw new BadRequestException(
-          'Coupon is not applicable to selected items',
-        );
-      }
-    }
-
-    if (coupon.scopeCategoryId) {
-      if (!input.categoryIds.includes(coupon.scopeCategoryId)) {
-        throw new BadRequestException(
-          'Coupon is not applicable to selected categories',
-        );
-      }
-    }
+    const eligibleSubtotal = this.resolveEligibleSubtotal(coupon, input);
 
     if (eligibleSubtotal.lessThanOrEqualTo(new Prisma.Decimal(0))) {
       throw new BadRequestException(
@@ -322,18 +418,64 @@ export class CouponsService {
     };
   }
 
-  async registerUsage(
-    couponId: string,
-    customerId: string,
-    orderId: string,
-    tx: Prisma.TransactionClient,
+  private resolveEligibleSubtotal(
+    coupon: Coupon & {
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+    input: CouponValidationInput,
   ) {
-    await this.couponsRepository.incrementUsage(
-      couponId,
-      customerId,
-      orderId,
-      tx,
+    const subtotalDecimal = new Prisma.Decimal(input.subtotal);
+    if (coupon.applyMode === CouponApplyMode.ORDER_TOTAL) {
+      return subtotalDecimal;
+    }
+
+    const scopedMenuItemIds = this.resolveScopedIds(
+      coupon.scopeMenuItemId,
+      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
     );
+    const scopedCategoryIds = this.resolveScopedIds(
+      coupon.scopeCategoryId,
+      coupon.scopeCategories?.map((entry) => entry.menuCategory.id) ?? [],
+    );
+
+    if (!scopedMenuItemIds.length && !scopedCategoryIds.length) {
+      return subtotalDecimal;
+    }
+
+    if (input.lineItems?.length) {
+      return input.lineItems.reduce((sum, line) => {
+        const matches =
+          scopedMenuItemIds.includes(line.menuItemId) ||
+          scopedCategoryIds.includes(line.categoryId);
+        return matches ? sum.plus(new Prisma.Decimal(line.lineTotal)) : sum;
+      }, new Prisma.Decimal(0));
+    }
+
+    const hasScopedMenuItemMatch = scopedMenuItemIds.some((id) =>
+      input.menuItemIds.includes(id),
+    );
+    const hasScopedCategoryMatch = scopedCategoryIds.some((id) =>
+      input.categoryIds.includes(id),
+    );
+
+    if (hasScopedMenuItemMatch || hasScopedCategoryMatch) {
+      return subtotalDecimal;
+    }
+
+    if (scopedMenuItemIds.length) {
+      throw new BadRequestException(
+        'Coupon is not applicable to selected items',
+      );
+    }
+
+    throw new BadRequestException(
+      'Coupon is not applicable to selected categories',
+    );
+  }
+
+  private resolveScopedIds(primary: string | null, extras: string[]) {
+    return [...new Set([...(primary ? [primary] : []), ...extras])];
   }
 
   private async resolveRestaurantId(

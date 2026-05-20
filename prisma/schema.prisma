@@ -57,6 +57,11 @@ enum CouponDiscountType {
   PERCENTAGE
 }
 
+enum CouponApplyMode {
+  ORDER_TOTAL
+  SCOPED_ITEMS
+}
+
 enum CouponCampaignKind {
   PROMOTION
   HAPPY_HOUR
@@ -495,6 +500,7 @@ model MenuCategory {
   modifierLinks  MenuCategoryModifierGroup[]
   overrides      BranchCategoryOverride[]
   couponScopes   Coupon[]
+  couponScopeLinks CouponScopeCategory[]
 
   @@unique([restaurantId, slug])
   @@map("menu_categories")
@@ -541,6 +547,7 @@ model MenuItem {
   branchOverrides                 BranchMenuItemOverride[]
   recipes                         MenuItemRecipe[]
   couponScopes                    Coupon[]
+  couponScopeLinks                CouponScopeMenuItem[]
   orderItems                      OrderItem[]
 
   @@unique([restaurantId, slug])
@@ -897,6 +904,8 @@ model Coupon {
   description        String?
   kind               CouponCampaignKind @default(PROMOTION)
   status             CouponStatus       @default(ACTIVE)
+  applyMode          CouponApplyMode    @default(ORDER_TOTAL) @map("apply_mode")
+  autoApply          Boolean            @default(false) @map("auto_apply")
   discountType       CouponDiscountType @map("discount_type")
   discountValue      Decimal            @map("discount_value") @db.Decimal(10, 2)
   maxDiscountAmount  Decimal?           @map("max_discount_amount") @db.Decimal(10, 2)
@@ -921,6 +930,8 @@ model Coupon {
   branch        Branch?       @relation(fields: [branchId], references: [id])
   scopeMenuItem MenuItem?     @relation(fields: [scopeMenuItemId], references: [id])
   scopeCategory MenuCategory? @relation(fields: [scopeCategoryId], references: [id])
+  scopeMenuItems CouponScopeMenuItem[]
+  scopeCategories CouponScopeCategory[]
   orders        Order[]
   usages        CouponUsage[]
 
@@ -928,6 +939,36 @@ model Coupon {
   @@index([restaurantId, status, isActive])
   @@index([branchId])
   @@map("coupons")
+}
+
+model CouponScopeMenuItem {
+  id         String   @id @default(cuid())
+  couponId   String   @map("coupon_id")
+  menuItemId String   @map("menu_item_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  coupon   Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, menuItemId])
+  @@index([menuItemId])
+  @@map("coupon_scope_menu_items")
+}
+
+model CouponScopeCategory {
+  id             String   @id @default(cuid())
+  couponId       String   @map("coupon_id")
+  menuCategoryId String   @map("menu_category_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  coupon       Coupon       @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  menuCategory MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, menuCategoryId])
+  @@index([menuCategoryId])
+  @@map("coupon_scope_categories")
 }
 
 model CouponUsage {

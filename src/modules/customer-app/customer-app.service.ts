@@ -35,6 +35,7 @@ import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
 import { DEFAULT_MENU_ITEM_LABELS } from '../menu/item/dto';
+import { CouponsService, PromotionPreview } from '../coupons/coupons.service';
 
 type PublicMenuItemVariation = {
   id: string;
@@ -141,6 +142,7 @@ export class CustomerAppService {
     private readonly storageService: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly paymentsService?: PaymentsService,
+    private readonly couponsService?: CouponsService,
   ) {}
 
   async listFavorites(
@@ -168,9 +170,17 @@ export class CustomerAppService {
         favoriteMenuItemIds,
         query,
       );
+    const promotionContext = await this.loadPromotionContext(
+      customer.restaurantId,
+      customer.branchId ?? undefined,
+    );
 
     return {
-      data: await Promise.all(items.map((item) => this.mapMenuItem(item))),
+      data: await Promise.all(
+        items.map((item) =>
+          this.mapMenuItem(item, promotionContext.promotions),
+        ),
+      ),
       message: 'Favorite items fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
@@ -377,11 +387,19 @@ export class CustomerAppService {
         cuisineId,
         resolvedQuery,
       );
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
 
     return {
       data: {
         cuisine: await this.resolveCuisineMedia(cuisine),
-        items: await Promise.all(items.map((item) => this.mapMenuItem(item))),
+        items: await Promise.all(
+          items.map((item) =>
+            this.mapMenuItem(item, promotionContext.promotions),
+          ),
+        ),
       },
       message: 'Cuisine items fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -394,11 +412,34 @@ export class CustomerAppService {
   ) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     await this.getPublicContent(resolvedQuery, user);
-    const items =
-      await this.customerAppRepository.listPromotionalItems(resolvedQuery);
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+    if (
+      !promotionContext.menuItemIds.length &&
+      !promotionContext.categoryIds.length
+    ) {
+      return {
+        data: [],
+        message: 'Promotional items fetched successfully',
+      };
+    }
+
+    const items = await this.customerAppRepository.listPromotionalItems(
+      resolvedQuery,
+      {
+        menuItemIds: promotionContext.menuItemIds,
+        categoryIds: promotionContext.categoryIds,
+      },
+    );
 
     return {
-      data: await Promise.all(items.map((item) => this.mapMenuItem(item))),
+      data: await Promise.all(
+        items.map((item) =>
+          this.mapMenuItem(item, promotionContext.promotions),
+        ),
+      ),
       message: 'Promotional items fetched successfully',
     };
   }
@@ -418,8 +459,13 @@ export class CustomerAppService {
       throw new NotFoundException('Menu item not found');
     }
 
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+
     return {
-      data: await this.mapMenuItem(item),
+      data: await this.mapMenuItem(item, promotionContext.promotions),
       message: 'Menu item fetched successfully',
     };
   }
@@ -430,6 +476,10 @@ export class CustomerAppService {
       resolvedQuery,
       user,
     );
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
     const [cuisines, promotionalItems, faqs] = await Promise.all([
       this.customerAppRepository.listCuisineCategories({
         ...resolvedQuery,
@@ -438,7 +488,12 @@ export class CustomerAppService {
         sortBy: 'sortOrder',
         sortOrder: 'ASC',
       }),
-      this.customerAppRepository.listPromotionalItems(resolvedQuery),
+      promotionContext.menuItemIds.length || promotionContext.categoryIds.length
+        ? this.customerAppRepository.listPromotionalItems(resolvedQuery, {
+            menuItemIds: promotionContext.menuItemIds,
+            categoryIds: promotionContext.categoryIds,
+          })
+        : Promise.resolve([]),
       this.getFaqs(resolvedQuery, user),
     ]);
 
@@ -477,7 +532,9 @@ export class CustomerAppService {
           })),
         ),
         promotionalItems: await Promise.all(
-          promotionalItems.map((item) => this.mapMenuItem(item)),
+          promotionalItems.map((item) =>
+            this.mapMenuItem(item, promotionContext.promotions),
+          ),
         ),
         faqs: faqs.data.items,
       },
@@ -1140,74 +1197,77 @@ export class CustomerAppService {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  private async mapMenuItem(item: {
-    id: string;
-    name: string;
-    slug: string;
-    description: string | null;
-    ingredients: string | null;
-    nutritionalInformation: string | null;
-    dietaryFlags?: Prisma.JsonValue | null;
-    allergenFlags?: Prisma.JsonValue | null;
-    imageUrl: string | null;
-    basePrice: Prisma.Decimal;
-    depositAmount?: Prisma.Decimal | null;
-    prepTimeMinutes: number | null;
-    restaurant?: {
+  private async mapMenuItem(
+    item: {
       id: string;
       name: string;
-      logoUrl?: string | null;
-      tagline?: string | null;
-      settings?: unknown;
-      tenant?: { settings?: unknown } | null;
-    };
-    category?: {
-      id: string;
-      name: string;
-      imageUrl?: string | null;
-      variations?: PublicMenuItemVariation[];
-      variationLinks?: Array<{
-        sortOrder: number;
-        isDefault: boolean;
-        isActive: boolean;
-        variation: PublicMenuItemVariation;
-      }>;
-    };
-    variations?: PublicMenuItemVariation[];
-    variationPriceOverrides?: PublicMenuItemVariationOverride[];
-    modifierPriceOverrides?: Array<{
-      menuItemId?: string | null;
-      modifierId?: string;
-      priceDelta: Prisma.Decimal;
-      modifier: PublicMenuItemModifier;
-    }>;
-    modifierLinks?: Array<{
-      sortOrder: number;
-      modifierGroup: {
+      slug: string;
+      description: string | null;
+      ingredients: string | null;
+      nutritionalInformation: string | null;
+      dietaryFlags?: Prisma.JsonValue | null;
+      allergenFlags?: Prisma.JsonValue | null;
+      imageUrl: string | null;
+      basePrice: Prisma.Decimal;
+      depositAmount?: Prisma.Decimal | null;
+      prepTimeMinutes: number | null;
+      restaurant?: {
         id: string;
         name: string;
-        minSelect: number;
-        maxSelect: number;
-        isRequired: boolean;
-        modifierLinks: Array<{
+        logoUrl?: string | null;
+        tagline?: string | null;
+        settings?: unknown;
+        tenant?: { settings?: unknown } | null;
+      };
+      category?: {
+        id: string;
+        name: string;
+        imageUrl?: string | null;
+        variations?: PublicMenuItemVariation[];
+        variationLinks?: Array<{
           sortOrder: number;
-          modifier: {
-            id: string;
-            name: string;
-            priceDelta: Prisma.Decimal;
-            itemPriceOverrides?: Array<{
-              menuItemId: string;
-              priceDelta: Prisma.Decimal;
-            }>;
-          };
+          isDefault: boolean;
+          isActive: boolean;
+          variation: PublicMenuItemVariation;
         }>;
       };
-    }>;
-    branchOverrides?: Array<{
-      priceOverride: Prisma.Decimal | null;
-      isAvailable: boolean;
-    }>;
-  }) {
+      variations?: PublicMenuItemVariation[];
+      variationPriceOverrides?: PublicMenuItemVariationOverride[];
+      modifierPriceOverrides?: Array<{
+        menuItemId?: string | null;
+        modifierId?: string;
+        priceDelta: Prisma.Decimal;
+        modifier: PublicMenuItemModifier;
+      }>;
+      modifierLinks?: Array<{
+        sortOrder: number;
+        modifierGroup: {
+          id: string;
+          name: string;
+          minSelect: number;
+          maxSelect: number;
+          isRequired: boolean;
+          modifierLinks: Array<{
+            sortOrder: number;
+            modifier: {
+              id: string;
+              name: string;
+              priceDelta: Prisma.Decimal;
+              itemPriceOverrides?: Array<{
+                menuItemId: string;
+                priceDelta: Prisma.Decimal;
+              }>;
+            };
+          }>;
+        };
+      }>;
+      branchOverrides?: Array<{
+        priceOverride: Prisma.Decimal | null;
+        isAvailable: boolean;
+      }>;
+    },
+    promotions: Array<Record<string, unknown>> = [],
+  ) {
     const branchOverride = item.branchOverrides?.[0];
     const variations = this.resolvePublicItemVariations(item);
     const settings =
@@ -1220,6 +1280,30 @@ export class CustomerAppService {
       item.allergenFlags,
       settings,
     );
+    const effectiveBasePrice = branchOverride?.priceOverride ?? item.basePrice;
+    const itemPromotion = this.resolveBestScopedItemPromotion(
+      item.id,
+      item.category?.id ?? null,
+      effectiveBasePrice,
+      promotions,
+    );
+    const normalizedVariations = this.normalizeVariations(
+      variations,
+      item.id,
+    ).map((variation) => {
+      const variationPromotion = this.resolveBestScopedItemPromotion(
+        item.id,
+        item.category?.id ?? null,
+        variation.price,
+        promotions,
+      );
+
+      return {
+        ...variation,
+        discountedPrice: variationPromotion?.discountedAmount ?? null,
+        promotion: variationPromotion ?? null,
+      };
+    });
 
     return {
       id: item.id,
@@ -1244,7 +1328,9 @@ export class CustomerAppService {
           (item as { allergenPdfUrl?: string | null }).allergenPdfUrl,
       ),
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
-      basePrice: branchOverride?.priceOverride ?? item.basePrice,
+      basePrice: effectiveBasePrice,
+      discountedBasePrice: itemPromotion?.discountedAmount ?? null,
+      promotion: itemPromotion ?? null,
       depositAmount: item.depositAmount ? Number(item.depositAmount) : null,
       prepTimeMinutes: item.prepTimeMinutes,
       restaurant: item.restaurant
@@ -1261,7 +1347,7 @@ export class CustomerAppService {
             imageUrl: await this.resolveMediaUrl(item.category.imageUrl),
           }
         : null,
-      variations: this.normalizeVariations(variations, item.id),
+      variations: normalizedVariations,
       modifierLinks: item.modifierLinks ?? [],
       modifierPriceOverrides: item.modifierPriceOverrides ?? [],
       modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
@@ -1272,6 +1358,157 @@ export class CustomerAppService {
       })),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
+  }
+
+  private async loadPromotionContext(restaurantId: string, branchId?: string) {
+    const promotions =
+      (await this.couponsService?.getActiveAutoApplyPromotions(
+        restaurantId,
+        branchId,
+      )) ?? [];
+    const menuItemIds = new Set<string>();
+    const categoryIds = new Set<string>();
+
+    for (const promotion of promotions) {
+      if (promotion.applyMode !== 'SCOPED_ITEMS') {
+        continue;
+      }
+
+      const scopedMenuItemIds = this.collectPromotionScopeIds(
+        promotion.scopeMenuItem?.id ?? null,
+        (promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem.id),
+      );
+      const scopedCategoryIds = this.collectPromotionScopeIds(
+        promotion.scopeCategory?.id ?? null,
+        (promotion.scopeCategories ?? []).map((entry) => entry.menuCategory.id),
+      );
+
+      scopedMenuItemIds.forEach((id) => menuItemIds.add(id));
+      scopedCategoryIds.forEach((id) => categoryIds.add(id));
+    }
+
+    return {
+      promotions,
+      menuItemIds: [...menuItemIds],
+      categoryIds: [...categoryIds],
+    };
+  }
+
+  private resolveBestScopedItemPromotion(
+    menuItemId: string,
+    categoryId: string | null,
+    baseAmount: Prisma.Decimal,
+    promotions: Array<Record<string, unknown>>,
+  ): PromotionPreview | null {
+    let best: PromotionPreview | null = null;
+
+    for (const promotion of promotions) {
+      if ((promotion.applyMode as string) !== 'SCOPED_ITEMS') {
+        continue;
+      }
+
+      const scopedMenuItemIds = this.collectPromotionScopeIds(
+        (promotion.scopeMenuItem as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (promotion.scopeMenuItems as Array<{ menuItem: { id: string } }>) ??
+          []
+        ).map((entry) => entry.menuItem.id),
+      );
+      const scopedCategoryIds = this.collectPromotionScopeIds(
+        (promotion.scopeCategory as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (promotion.scopeCategories as Array<{
+            menuCategory: { id: string };
+          }>) ?? []
+        ).map((entry) => entry.menuCategory.id),
+      );
+
+      const matches =
+        (!scopedMenuItemIds.length && !scopedCategoryIds.length) ||
+        scopedMenuItemIds.includes(menuItemId) ||
+        (!!categoryId && scopedCategoryIds.includes(categoryId));
+
+      if (!matches) {
+        continue;
+      }
+
+      const preview = this.buildScopedPromotionPreview(
+        promotion as {
+          id: string;
+          title: string;
+          description: string | null;
+          applyMode: string;
+          discountType: string;
+          discountValue: Prisma.Decimal;
+          maxDiscountAmount: Prisma.Decimal | null;
+        },
+        baseAmount,
+      );
+
+      if (!best || preview.discountAmount > best.discountAmount) {
+        best = preview;
+      }
+    }
+
+    return best;
+  }
+
+  private buildScopedPromotionPreview(
+    promotion: {
+      id: string;
+      title: string;
+      description: string | null;
+      applyMode: string;
+      discountType: string;
+      discountValue: Prisma.Decimal;
+      maxDiscountAmount: Prisma.Decimal | null;
+    },
+    baseAmount: Prisma.Decimal | number,
+  ): PromotionPreview {
+    const amount =
+      baseAmount instanceof Prisma.Decimal
+        ? baseAmount
+        : new Prisma.Decimal(baseAmount);
+    let discountAmount = new Prisma.Decimal(0);
+
+    if (promotion.discountType === 'FLAT') {
+      discountAmount = Prisma.Decimal.min(amount, promotion.discountValue);
+    } else {
+      discountAmount = amount.mul(promotion.discountValue).div(100);
+      if (promotion.maxDiscountAmount) {
+        discountAmount = Prisma.Decimal.min(
+          discountAmount,
+          promotion.maxDiscountAmount,
+        );
+      }
+      discountAmount = Prisma.Decimal.min(discountAmount, amount);
+    }
+
+    discountAmount = discountAmount.toDecimalPlaces(2);
+    const discountedAmount = Prisma.Decimal.max(
+      amount.minus(discountAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+
+    return {
+      promotionId: promotion.id,
+      title: promotion.title,
+      description: promotion.description,
+      applyMode: promotion.applyMode as PromotionPreview['applyMode'],
+      discountType: promotion.discountType as PromotionPreview['discountType'],
+      discountValue: Number(promotion.discountValue),
+      maxDiscountAmount: promotion.maxDiscountAmount
+        ? Number(promotion.maxDiscountAmount)
+        : null,
+      discountAmount: Number(discountAmount),
+      discountedAmount: Number(discountedAmount),
+    };
+  }
+
+  private collectPromotionScopeIds(primary: string | null, extras: string[]) {
+    return [...new Set([...(primary ? [primary] : []), ...extras])];
   }
 
   private resolvePublicItemVariations(item: {

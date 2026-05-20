@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Coupon, Prisma, PrismaClient } from '@prisma/client';
+import {
+  Coupon,
+  CouponCampaignKind,
+  CouponStatus,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 import { ListCouponsDto } from './dto';
@@ -27,6 +33,26 @@ export class CouponsRepository {
         code,
         deletedAt: null,
       },
+    });
+  }
+
+  async findAutoApplyPromotions(restaurantId: string, branchId?: string) {
+    const now = new Date();
+
+    return this.prisma.coupon.findMany({
+      where: {
+        restaurantId,
+        kind: CouponCampaignKind.PROMOTION,
+        autoApply: true,
+        deletedAt: null,
+        isActive: true,
+        status: CouponStatus.ACTIVE,
+        startsAt: { lte: now },
+        expiresAt: { gte: now },
+        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
+      },
+      include: this.includeConfig,
+      orderBy: [{ createdAt: 'desc' }],
     });
   }
 
@@ -97,6 +123,16 @@ export class CouponsRepository {
     },
     scopeMenuItem: { select: { id: true, name: true, imageUrl: true } },
     scopeCategory: { select: { id: true, name: true, imageUrl: true } },
+    scopeMenuItems: {
+      select: {
+        menuItem: { select: { id: true, name: true, imageUrl: true } },
+      },
+    },
+    scopeCategories: {
+      select: {
+        menuCategory: { select: { id: true, name: true, imageUrl: true } },
+      },
+    },
   } satisfies Prisma.CouponInclude;
 
   async incrementUsage(
