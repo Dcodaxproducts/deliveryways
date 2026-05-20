@@ -2594,6 +2594,137 @@ describe('OrdersService - wallet payment', () => {
     );
   });
 
+  it('falls back to split section base price when selected variation is missing on one flavor', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: {
+              taxPercentage: 0,
+            },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-parent',
+          name: 'Half And Half Pizza',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(900),
+          depositAmount: new Prisma.Decimal(0),
+          dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+          category: { id: 'cat-pizza', variations: [] },
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'flavor-1',
+            name: 'Pizza',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(1000),
+            dietaryFlags: [],
+            category: { id: 'cat-pizza', variations: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          },
+          {
+            id: 'flavor-2',
+            name: 'Pepperoni Pizza',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(1100),
+            dietaryFlags: [],
+            category: {
+              id: 'cat-pizza',
+              variations: [
+                {
+                  id: 'var-large',
+                  name: 'Large',
+                  price: new Prisma.Decimal(1500),
+                  itemPriceOverrides: [],
+                },
+              ],
+            },
+            modifierLinks: [],
+            branchOverrides: [],
+          },
+        ]),
+      },
+      address: {
+        findFirst: jest.fn().mockResolvedValue({
+          lat: new Prisma.Decimal('31.5204'),
+          lng: new Prisma.Decimal('74.3587'),
+        }),
+      },
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      { validateForCheckout: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(1500),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          {
+            menuItemId: 'menu-parent',
+            variationId: 'var-large',
+            quantity: 1,
+            sections: [
+              { slot: 'LEFT', menuItemId: 'flavor-1' },
+              { slot: 'RIGHT', menuItemId: 'flavor-2' },
+            ],
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items[0]).toEqual(
+      expect.objectContaining({
+        variationId: 'var-large',
+        variationName: 'Large',
+        unitPrice: 1500,
+      }),
+    );
+  });
+
   it('enforces selected menu membership and timed availability only when restaurantMenuId is provided', async () => {
     const prisma = {
       branch: {

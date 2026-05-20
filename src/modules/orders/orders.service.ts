@@ -1005,12 +1005,6 @@ export class OrdersService {
               )
             : undefined;
 
-          if (requestedItem.variationId && !sectionVariation) {
-            throw new BadRequestException(
-              `Variation not found for split section: ${sectionItem.name}`,
-            );
-          }
-
           variationName ??= sectionVariation?.name;
 
           const sectionPrice = this.resolveOrderItemBasePrice(
@@ -1019,7 +1013,7 @@ export class OrdersService {
               variations: sectionVariations,
             },
             sectionBranchOverride?.priceOverride,
-            requestedItem.variationId,
+            sectionVariation ? requestedItem.variationId : undefined,
           ).plus(
             this.resolveOrderTypePriceAdjustment(sectionItem, dto.orderType),
           );
