@@ -1220,7 +1220,7 @@ export class AuthService {
       );
 
       if (!isValidPassword) {
-        throw new UnauthorizedException('Current password is invalid');
+        throw new BadRequestException('Current password is invalid');
       }
 
       await this.staffManagementRepository.update(staff.id, {
@@ -1247,7 +1247,7 @@ export class AuthService {
       );
 
       if (!isValidPassword) {
-        throw new UnauthorizedException('Current password is invalid');
+        throw new BadRequestException('Current password is invalid');
       }
 
       await this.prisma.deliveryman.update({
@@ -1272,7 +1272,7 @@ export class AuthService {
     );
 
     if (!isValidPassword) {
-      throw new UnauthorizedException('Current password is invalid');
+      throw new BadRequestException('Current password is invalid');
     }
 
     await this.usersService.updatePassword(dbUser.id, dto.newPassword);

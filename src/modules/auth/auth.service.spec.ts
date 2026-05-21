@@ -600,3 +600,48 @@ describe('AuthService logout', () => {
     expect(result.message).toBe('Logout successful');
   });
 });
+
+describe('AuthService changePassword', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+
+  beforeEach(() => {
+    usersService = {
+      findById: jest.fn(),
+      updatePassword: jest.fn(),
+    };
+
+    service = new AuthService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('returns bad request instead of unauthorized when current password is wrong', async () => {
+    usersService.findById!.mockResolvedValue({
+      id: 'user-1',
+      password: await bcrypt.hash('Correct@123', 10),
+    });
+
+    await expect(
+      service.changePassword(
+        {
+          uid: 'user-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          currentPassword: 'Wrong@123',
+          newPassword: 'New@12345',
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(usersService.updatePassword).not.toHaveBeenCalled();
+  });
+});
