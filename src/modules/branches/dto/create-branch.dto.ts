@@ -1,11 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEmail,
   IsEnum,
   IsInt,
+  IsIn,
   IsLatitude,
   IsLongitude,
   IsNotEmpty,
@@ -19,7 +21,57 @@ import {
 } from 'class-validator';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../../common/enums';
 
+export const BRANCH_DELIVERY_PRICING_MODES = [
+  'RADIUS',
+  'ZONE',
+  'POSTAL_CODE',
+] as const;
+
+class DeliveryZoneCoordinateDto {
+  @ApiProperty()
+  @IsNumber()
+  lat!: number;
+
+  @ApiProperty()
+  @IsNumber()
+  lng!: number;
+}
+
+class DeliveryZoneDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ApiProperty()
+  @IsNumber()
+  deliveryFee!: number;
+
+  @ApiProperty({ type: [DeliveryZoneCoordinateDto] })
+  @IsArray()
+  @ArrayMinSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => DeliveryZoneCoordinateDto)
+  polygon!: DeliveryZoneCoordinateDto[];
+}
+
+class PostalCodeDeliveryRuleDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  postalCode!: string;
+
+  @ApiProperty()
+  @IsNumber()
+  deliveryFee!: number;
+}
+
 class DeliveryConfigDto {
+  @ApiPropertyOptional({ enum: BRANCH_DELIVERY_PRICING_MODES })
+  @IsOptional()
+  @IsIn(BRANCH_DELIVERY_PRICING_MODES)
+  mode?: (typeof BRANCH_DELIVERY_PRICING_MODES)[number];
+
   @ApiProperty()
   @IsNumber()
   radiusKm!: number;
@@ -40,6 +92,20 @@ class DeliveryConfigDto {
   @IsOptional()
   @IsNumber()
   freeDeliveryThreshold?: number;
+
+  @ApiPropertyOptional({ type: [DeliveryZoneDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DeliveryZoneDto)
+  zones?: DeliveryZoneDto[];
+
+  @ApiPropertyOptional({ type: [PostalCodeDeliveryRuleDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PostalCodeDeliveryRuleDto)
+  postalCodeRules?: PostalCodeDeliveryRuleDto[];
 }
 
 class AutomationConfigDto {
@@ -188,6 +254,11 @@ export class CreateBranchDto {
   @IsOptional()
   @IsString()
   area?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
 
   @ApiProperty()
   @IsString()

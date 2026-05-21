@@ -20,6 +20,7 @@ export class BranchesRepository {
       isMain?: boolean;
       street: string;
       area?: string;
+      postalCode?: string;
       city: string;
       state: string;
       country: string;
@@ -67,6 +68,7 @@ export class BranchesRepository {
         refType: AddressRefType.BRANCH,
         street: payload.street,
         area: payload.area,
+        postalCode: payload.postalCode,
         city: payload.city,
         state: payload.state,
         country: payload.country,
@@ -260,6 +262,7 @@ export class BranchesRepository {
         lng: true,
         street: true,
         area: true,
+        postalCode: true,
         city: true,
         state: true,
         country: true,
@@ -343,6 +346,7 @@ export class BranchesRepository {
         tenantId: true,
         street: true,
         area: true,
+        postalCode: true,
         city: true,
         state: true,
         country: true,
@@ -375,6 +379,7 @@ export class BranchesRepository {
       branchId: string;
       street: string;
       area?: string;
+      postalCode?: string;
       city: string;
       state: string;
       country: string;
@@ -390,6 +395,7 @@ export class BranchesRepository {
         refType: AddressRefType.BRANCH,
         street: payload.street,
         area: payload.area,
+        postalCode: payload.postalCode,
         city: payload.city,
         state: payload.state,
         country: payload.country,

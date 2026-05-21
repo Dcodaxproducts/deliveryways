@@ -20,6 +20,11 @@ export class CreateAddressDto {
   @IsString()
   area?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

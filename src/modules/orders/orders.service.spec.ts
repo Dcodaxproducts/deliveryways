@@ -51,6 +51,225 @@ describe('OrdersService - delivery radius', () => {
     expect(distance).toBeGreaterThan(2);
     expect(distance).toBeLessThan(5);
   });
+
+  it('detects whether a point is inside a delivery zone polygon', () => {
+    const zoneFn = (
+      service as unknown as {
+        isPointInPolygon: (
+          lat: number,
+          lng: number,
+          polygon: Array<{ lat: number; lng: number }>,
+        ) => boolean;
+      }
+    ).isPointInPolygon;
+
+    expect(
+      zoneFn.call(service, 31.52, 74.35, [
+        { lat: 31.5, lng: 74.3 },
+        { lat: 31.6, lng: 74.3 },
+        { lat: 31.6, lng: 74.4 },
+        { lat: 31.5, lng: 74.4 },
+      ]),
+    ).toBe(true);
+
+    expect(
+      zoneFn.call(service, 31.7, 74.5, [
+        { lat: 31.5, lng: 74.3 },
+        { lat: 31.6, lng: 74.3 },
+        { lat: 31.6, lng: 74.4 },
+        { lat: 31.5, lng: 74.4 },
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe('OrdersService - delivery pricing modes', () => {
+  it('uses zone-based delivery fee when address falls inside a configured zone', async () => {
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'ZONE',
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [
+                  {
+                    name: 'Central',
+                    deliveryFee: 250,
+                    polygon: [
+                      { lat: 31.5, lng: 74.3 },
+                      { lat: 31.6, lng: 74.3 },
+                      { lat: 31.6, lng: 74.4 },
+                      { lat: 31.5, lng: 74.4 },
+                    ],
+                  },
+                ],
+                postalCodeRules: [],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(500),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'address-1',
+              lat: new Prisma.Decimal('31.5204'),
+              lng: new Prisma.Decimal('74.3587'),
+              postalCode: null,
+            })
+            .mockResolvedValueOnce({
+              lat: new Prisma.Decimal('31.5000'),
+              lng: new Prisma.Decimal('74.3500'),
+            }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(750),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.deliveryFee).toBe(250);
+  });
+
+  it('uses postal-code delivery fee when branch pricing mode is postal code', async () => {
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'POSTAL_CODE',
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [],
+                postalCodeRules: [{ postalCode: '54000', deliveryFee: 300 }],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(500),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValueOnce({
+            id: 'address-1',
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+            postalCode: '54000',
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(800),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.deliveryFee).toBe(300);
+  });
 });
 
 describe('OrdersService - status transitions', () => {
@@ -1203,18 +1422,36 @@ describe('OrdersService - branch address lookup', () => {
 
     const fn = (
       service as unknown as {
-        assertAddressWithinRadius: (
+        resolveDeliveryFeeForAddress: (
           customerId: string,
           deliveryAddressId: string,
           branchId: string,
-          radiusKm: number,
-        ) => Promise<void>;
+          deliveryConfig: {
+            mode: 'RADIUS';
+            radiusKm: number;
+            deliveryFee: number;
+            minOrderAmount: number;
+            isFreeDelivery: boolean;
+            freeDeliveryThreshold: number;
+            zones: [];
+            postalCodeRules: [];
+          },
+        ) => Promise<Prisma.Decimal>;
       }
-    ).assertAddressWithinRadius;
+    ).resolveDeliveryFeeForAddress;
 
     await expect(
-      fn.call(service, 'customer-1', 'address-1', 'branch-1', 10),
-    ).resolves.toBeUndefined();
+      fn.call(service, 'customer-1', 'address-1', 'branch-1', {
+        mode: 'RADIUS',
+        radiusKm: 10,
+        deliveryFee: 120,
+        minOrderAmount: 0,
+        isFreeDelivery: false,
+        freeDeliveryThreshold: 0,
+        zones: [],
+        postalCodeRules: [],
+      }),
+    ).resolves.toEqual(new Prisma.Decimal(120));
 
     const secondCall = addressFindFirstCalls[1] as {
       where: {

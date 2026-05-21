@@ -388,6 +388,7 @@ model Address {
   refType        AddressRefType      @map("ref_type")
   street         String
   area           String?
+  postalCode     String?             @map("postal_code") @db.VarChar(40)
   city           String
   state          String
   country        String

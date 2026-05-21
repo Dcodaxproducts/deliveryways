@@ -143,6 +143,18 @@ type QuoteBranchContext = {
   settings: unknown;
 };
 
+type DeliveryAddressContext = {
+  id: string;
+  lat: Prisma.Decimal | null;
+  lng: Prisma.Decimal | null;
+  postalCode: string | null;
+};
+
+type BranchLocationContext = {
+  lat: Prisma.Decimal | null;
+  lng: Prisma.Decimal | null;
+};
+
 type BuildQuoteOptions = {
   skipDeliveryAddressValidation?: boolean;
 };
@@ -1076,15 +1088,18 @@ export class OrdersService {
       }
 
       if (!options.skipDeliveryAddressValidation && dto.deliveryAddressId) {
-        await this.assertAddressWithinRadius(
+        deliveryFee = await this.resolveDeliveryFeeForAddress(
           customer.customerId,
           dto.deliveryAddressId,
           branch.id,
-          settings.deliveryConfig.radiusKm,
+          settings.deliveryConfig,
         );
       }
 
-      deliveryFee = new Prisma.Decimal(settings.deliveryConfig.deliveryFee);
+      if (options.skipDeliveryAddressValidation) {
+        deliveryFee = new Prisma.Decimal(settings.deliveryConfig.deliveryFee);
+      }
+
       if (
         settings.deliveryConfig.isFreeDelivery &&
         settings.deliveryConfig.freeDeliveryThreshold > 0 &&
@@ -1767,6 +1782,7 @@ export class OrdersService {
         id: string;
         street: string;
         area: string | null;
+        postalCode: string | null;
         city: string;
         state: string;
         country: string;
@@ -2247,6 +2263,7 @@ export class OrdersService {
       id: string;
       street: string;
       area: string | null;
+      postalCode: string | null;
       city: string;
       state: string;
       country: string;
@@ -2277,6 +2294,7 @@ export class OrdersService {
         id: true,
         street: true,
         area: true,
+        postalCode: true,
         city: true,
         state: true,
         country: true,
@@ -3131,11 +3149,14 @@ export class OrdersService {
       allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
       allowedPaymentMethods: ['COD', 'WALLET'],
       deliveryConfig: {
+        mode: 'RADIUS',
         radiusKm: 5,
         minOrderAmount: 0,
         deliveryFee: 0,
         isFreeDelivery: false,
         freeDeliveryThreshold: 0,
+        zones: [],
+        postalCodeRules: [],
       },
       taxation: {
         taxPercentage: 0,
@@ -3155,6 +3176,7 @@ export class OrdersService {
       allowedPaymentMethods:
         raw.allowedPaymentMethods ?? fallback.allowedPaymentMethods,
       deliveryConfig: {
+        mode: raw.deliveryConfig?.mode ?? fallback.deliveryConfig.mode,
         radiusKm:
           raw.deliveryConfig?.radiusKm ?? fallback.deliveryConfig.radiusKm,
         minOrderAmount:
@@ -3169,6 +3191,10 @@ export class OrdersService {
         freeDeliveryThreshold:
           raw.deliveryConfig?.freeDeliveryThreshold ??
           fallback.deliveryConfig.freeDeliveryThreshold,
+        zones: raw.deliveryConfig?.zones ?? fallback.deliveryConfig.zones,
+        postalCodeRules:
+          raw.deliveryConfig?.postalCodeRules ??
+          fallback.deliveryConfig.postalCodeRules,
       },
       taxation: {
         taxPercentage:
@@ -3241,11 +3267,11 @@ export class OrdersService {
     );
   }
 
-  private async assertAddressWithinRadius(
+  private async resolveDeliveryFeeForAddress(
     customerId: string,
     deliveryAddressId: string,
     branchId: string,
-    radiusKm: number,
+    deliveryConfig: BranchSettings['deliveryConfig'],
   ) {
     const address = await this.prisma.address.findFirst({
       where: {
@@ -3256,13 +3282,15 @@ export class OrdersService {
         isActive: true,
       },
       select: {
+        id: true,
         lat: true,
         lng: true,
+        postalCode: true,
       },
     });
 
-    if (!address?.lat || !address?.lng) {
-      throw new BadRequestException('Delivery address must include lat/lng');
+    if (!address) {
+      throw new BadRequestException('Delivery address not found');
     }
 
     const branchAddress = await this.prisma.address.findFirst({
@@ -3283,6 +3311,35 @@ export class OrdersService {
       },
     });
 
+    switch (deliveryConfig.mode) {
+      case 'ZONE':
+        return this.resolveZoneDeliveryFee(address, deliveryConfig.zones ?? []);
+      case 'POSTAL_CODE':
+        return this.resolvePostalCodeDeliveryFee(
+          address,
+          deliveryConfig.postalCodeRules ?? [],
+        );
+      case 'RADIUS':
+      default:
+        return this.resolveRadiusDeliveryFee(
+          address,
+          branchAddress,
+          deliveryConfig.radiusKm,
+          deliveryConfig.deliveryFee,
+        );
+    }
+  }
+
+  private resolveRadiusDeliveryFee(
+    address: DeliveryAddressContext,
+    branchAddress: BranchLocationContext | null,
+    radiusKm: number,
+    deliveryFee: number,
+  ) {
+    if (!address.lat || !address.lng) {
+      throw new BadRequestException('Delivery address must include lat/lng');
+    }
+
     if (!branchAddress?.lat || !branchAddress?.lng) {
       throw new BadRequestException('Branch location is missing lat/lng');
     }
@@ -3299,6 +3356,92 @@ export class OrdersService {
         'Delivery address is outside branch delivery radius',
       );
     }
+
+    return new Prisma.Decimal(deliveryFee);
+  }
+
+  private resolveZoneDeliveryFee(
+    address: DeliveryAddressContext,
+    zones: DeliveryZoneConfig[],
+  ) {
+    if (!address.lat || !address.lng) {
+      throw new BadRequestException('Delivery address must include lat/lng');
+    }
+
+    if (!zones.length) {
+      throw new BadRequestException('Branch delivery zones are not configured');
+    }
+
+    const match = zones.find((zone) =>
+      this.isPointInPolygon(
+        Number(address.lat),
+        Number(address.lng),
+        zone.polygon,
+      ),
+    );
+
+    if (!match) {
+      throw new BadRequestException(
+        'Delivery address is outside branch delivery zones',
+      );
+    }
+
+    return new Prisma.Decimal(match.deliveryFee);
+  }
+
+  private resolvePostalCodeDeliveryFee(
+    address: DeliveryAddressContext,
+    postalCodeRules: DeliveryPostalCodeRule[],
+  ) {
+    const postalCode = this.normalizePostalCode(address.postalCode);
+
+    if (!postalCode) {
+      throw new BadRequestException(
+        'Delivery address must include postalCode for postal-code delivery pricing',
+      );
+    }
+
+    const matchedRule = postalCodeRules.find(
+      (rule) => this.normalizePostalCode(rule.postalCode) === postalCode,
+    );
+
+    if (!matchedRule) {
+      throw new BadRequestException(
+        'Delivery address postal code is not serviceable for this branch',
+      );
+    }
+
+    return new Prisma.Decimal(matchedRule.deliveryFee);
+  }
+
+  private normalizePostalCode(value: string | null | undefined) {
+    const normalized = value?.trim().toUpperCase() ?? '';
+    return normalized.length ? normalized : null;
+  }
+
+  private isPointInPolygon(
+    lat: number,
+    lng: number,
+    polygon: DeliveryZoneCoordinate[],
+  ) {
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].lng;
+      const yi = polygon[i].lat;
+      const xj = polygon[j].lng;
+      const yj = polygon[j].lat;
+
+      const intersects =
+        yi > lat !== yj > lat &&
+        lng < ((xj - xi) * (lat - yi)) / (yj - yi || Number.EPSILON) + xi;
+
+      if (intersects) {
+        inside = !inside;
+      }
+    }
+
+    return inside;
   }
 
   private generateDeliveryOtp(): string {
@@ -3347,13 +3490,32 @@ type BranchSettings = {
   temporaryClosure: BranchTemporaryClosure | null;
   holidayOpeningHours: BranchHolidayOpeningHour[];
   deliveryConfig: {
+    mode: 'RADIUS' | 'ZONE' | 'POSTAL_CODE';
     radiusKm: number;
     minOrderAmount: number;
     deliveryFee: number;
     isFreeDelivery: boolean;
     freeDeliveryThreshold: number;
+    zones: DeliveryZoneConfig[];
+    postalCodeRules: DeliveryPostalCodeRule[];
   };
   taxation: {
     taxPercentage: number;
   };
+};
+
+type DeliveryZoneCoordinate = {
+  lat: number;
+  lng: number;
+};
+
+type DeliveryZoneConfig = {
+  name: string;
+  deliveryFee: number;
+  polygon: DeliveryZoneCoordinate[];
+};
+
+type DeliveryPostalCodeRule = {
+  postalCode: string;
+  deliveryFee: number;
 };

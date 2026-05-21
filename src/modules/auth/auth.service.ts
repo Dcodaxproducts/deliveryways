@@ -153,11 +153,14 @@ export class AuthService {
         allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
         allowedPaymentMethods: [PaymentMethodEnum.COD],
         deliveryConfig: {
+          mode: 'RADIUS' as const,
           radiusKm: 5,
           minOrderAmount: 0,
           deliveryFee: 150,
           isFreeDelivery: false,
           freeDeliveryThreshold: 0,
+          zones: [],
+          postalCodeRules: [],
         },
         automation: {
           autoAcceptOrders: false,

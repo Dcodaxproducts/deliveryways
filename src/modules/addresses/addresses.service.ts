@@ -35,6 +35,7 @@ export class AddressesService {
         refType: 'USER',
         street: dto.street,
         area: dto.area,
+        postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,
         country: dto.country,
@@ -91,6 +92,7 @@ export class AddressesService {
       {
         street: dto.street,
         area: dto.area,
+        postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,
         country: dto.country,

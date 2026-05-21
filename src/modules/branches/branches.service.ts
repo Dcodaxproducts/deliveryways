@@ -37,6 +37,7 @@ interface BranchDistanceAddress {
   lng: Prisma.Decimal | null;
   street: string;
   area: string | null;
+  postalCode: string | null;
   city: string;
   state: string;
   country: string;
@@ -100,6 +101,7 @@ export class BranchesService {
         isMain: dto.isMain,
         street: dto.street,
         area: dto.area,
+        postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,
         country: dto.country,
@@ -439,6 +441,7 @@ export class BranchesService {
           ? {
               street: address.street,
               area: address.area,
+              postalCode: address.postalCode,
               city: address.city,
               state: address.state,
               country: address.country,
@@ -659,6 +662,7 @@ export class BranchesService {
               branchId: id,
               street: dto.street,
               area: dto.area,
+              postalCode: dto.postalCode,
               city: dto.city,
               state: dto.state,
               country: dto.country,
@@ -931,6 +935,7 @@ export class BranchesService {
     return [
       dto.street,
       dto.area,
+      dto.postalCode,
       dto.city,
       dto.state,
       dto.country,
@@ -945,6 +950,7 @@ export class BranchesService {
     return {
       street: dto.street,
       area: dto.area,
+      postalCode: dto.postalCode,
       city: dto.city,
       state: dto.state,
       country: dto.country,
@@ -1191,6 +1197,7 @@ export class BranchesService {
           ? {
               street: address.street,
               area: address.area,
+              postalCode: address.postalCode,
               city: address.city,
               state: address.state,
               country: address.country,
