@@ -1446,6 +1446,87 @@ describe('CartService', () => {
     expect(result.message).toBe('Item added to cart successfully');
   });
 
+  it('retargets cart when only stale hidden items remain from the previous branch', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-stale',
+          menuItemId: 'menu-missing',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(existingCart)
+      .mockResolvedValueOnce({
+        ...existingCart,
+        branchId: 'branch-2',
+        items: [{ id: 'item-2', menuItemId: 'menu-2', quantity: 1 }],
+      });
+    cartRepository.findMenuItemsForResponse.mockResolvedValueOnce([]);
+    cartRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    cartRepository.update.mockResolvedValue({
+      ...existingCart,
+      branchId: 'branch-2',
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-2',
+      name: 'Fries',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.createItem.mockResolvedValue({ id: 'item-2' });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', branchId: 'branch-2' } as never);
+
+    const result = await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-2',
+        menuItemId: 'menu-2',
+        quantity: 1,
+      },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
+      tenant: { connect: { id: 'tenant-1' } },
+      restaurant: { connect: { id: 'restaurant-1' } },
+      branch: { connect: { id: 'branch-2' } },
+      items: { deleteMany: {} },
+    });
+    expect(result.message).toBe('Item added to cart successfully');
+  });
+
   it('updates cart order type without cart id in route', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const cart = {

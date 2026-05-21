@@ -693,7 +693,9 @@ export class CartService {
 
     if (existingCart) {
       if (requestedBranchId && requestedBranchId !== existingCart.branchId) {
-        if (!existingCart.items.length) {
+        const hasBlockingItems = await this.cartHasBlockingItems(existingCart);
+
+        if (!hasBlockingItems) {
           const branch = await this.resolveScopedBranch(
             customer,
             requestedBranchId,
@@ -711,6 +713,9 @@ export class CartService {
             tenant: { connect: { id: branch.tenantId } },
             restaurant: { connect: { id: branch.restaurantId } },
             branch: { connect: { id: branch.id } },
+            ...(existingCart.items.length
+              ? { items: { deleteMany: {} } }
+              : {}),
             restaurantMenu: restaurantMenu
               ? { connect: { id: restaurantMenu.id } }
               : undefined,
@@ -771,8 +776,22 @@ export class CartService {
       customer: { connect: { id: customer.id } },
       restaurantMenu: restaurantMenu
         ? { connect: { id: restaurantMenu.id } }
-        : undefined,
+      : undefined,
     });
+  }
+
+  private async cartHasBlockingItems(cart: CartSnapshot) {
+    if (!cart.items.length) {
+      return false;
+    }
+
+    const menuItems = await this.cartRepository.findMenuItemsForResponse(
+      [...new Set(cart.items.map((item) => item.menuItemId))],
+      cart.restaurantId,
+      cart.branchId,
+    );
+
+    return menuItems.length > 0;
   }
 
   private async resolveScopedBranch(
