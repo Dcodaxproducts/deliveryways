@@ -84,6 +84,114 @@ describe('OrdersService - delivery radius', () => {
 });
 
 describe('OrdersService - delivery pricing modes', () => {
+  const createZonePricingService = (input: {
+    basePrice: number;
+    branchMinOrderAmount?: number;
+    zone?: {
+      deliveryFee: number;
+      minOrderAmount?: number;
+      freeDeliveryThreshold?: number;
+    };
+  }) =>
+    new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'ZONE',
+                radiusKm: 5,
+                minOrderAmount: input.branchMinOrderAmount ?? 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [
+                  {
+                    name: 'Central',
+                    deliveryFee: input.zone?.deliveryFee ?? 250,
+                    minOrderAmount: input.zone?.minOrderAmount,
+                    freeDeliveryThreshold: input.zone?.freeDeliveryThreshold,
+                    polygon: [
+                      { lat: 31.5, lng: 74.3 },
+                      { lat: 31.6, lng: 74.3 },
+                      { lat: 31.6, lng: 74.4 },
+                      { lat: 31.5, lng: 74.4 },
+                    ],
+                  },
+                ],
+                postalCodeRules: [],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(input.basePrice),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'address-1',
+              lat: new Prisma.Decimal('31.5204'),
+              lng: new Prisma.Decimal('74.3587'),
+              postalCode: null,
+            })
+            .mockResolvedValueOnce({
+              lat: new Prisma.Decimal('31.5000'),
+              lng: new Prisma.Decimal('74.3500'),
+            }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(input.basePrice),
+        }),
+      } as never,
+    );
+
+  const zoneQuoteInput = {
+    branchId: 'branch-1',
+    orderType: OrderTypeEnum.DELIVERY,
+    deliveryAddressId: 'address-1',
+    items: [{ menuItemId: 'menu-1', quantity: 1 }],
+    orderTime: '2026-03-24T19:30:00.000Z',
+  };
+
+  const customerUser = {
+    uid: 'customer-1',
+    tid: 'tenant-1',
+    rid: 'restaurant-1',
+    role: UserRoleEnum.CUSTOMER,
+  };
+
   it('uses zone-based delivery fee when address falls inside a configured zone', async () => {
     const service = new OrdersService(
       {
@@ -184,6 +292,29 @@ describe('OrdersService - delivery pricing modes', () => {
     );
 
     expect(result.data.deliveryFee).toBe(250);
+  });
+
+  it('uses zone-level free delivery threshold when subtotal qualifies', async () => {
+    const service = createZonePricingService({
+      basePrice: 2000,
+      zone: { deliveryFee: 250, freeDeliveryThreshold: 1500 },
+    });
+
+    const result = await service.quote(customerUser, zoneQuoteInput);
+
+    expect(result.data.deliveryFee).toBe(0);
+  });
+
+  it('uses zone-level minimum order amount over branch minimum for zone orders', async () => {
+    const service = createZonePricingService({
+      basePrice: 600,
+      branchMinOrderAmount: 0,
+      zone: { deliveryFee: 250, minOrderAmount: 1000 },
+    });
+
+    await expect(service.quote(customerUser, zoneQuoteInput)).rejects.toThrow(
+      'Subtotal is below zone minimum order amount',
+    );
   });
 
   it('uses postal-code delivery fee when branch pricing mode is postal code', async () => {
@@ -1436,21 +1567,29 @@ describe('OrdersService - branch address lookup', () => {
             zones: [];
             postalCodeRules: [];
           },
+          subtotal: Prisma.Decimal,
         ) => Promise<Prisma.Decimal>;
       }
     ).resolveDeliveryFeeForAddress;
 
     await expect(
-      fn.call(service, 'customer-1', 'address-1', 'branch-1', {
-        mode: 'RADIUS',
-        radiusKm: 10,
-        deliveryFee: 120,
-        minOrderAmount: 0,
-        isFreeDelivery: false,
-        freeDeliveryThreshold: 0,
-        zones: [],
-        postalCodeRules: [],
-      }),
+      fn.call(
+        service,
+        'customer-1',
+        'address-1',
+        'branch-1',
+        {
+          mode: 'RADIUS',
+          radiusKm: 10,
+          deliveryFee: 120,
+          minOrderAmount: 0,
+          isFreeDelivery: false,
+          freeDeliveryThreshold: 0,
+          zones: [],
+          postalCodeRules: [],
+        },
+        new Prisma.Decimal(500),
+      ),
     ).resolves.toEqual(new Prisma.Decimal(120));
 
     const secondCall = addressFindFirstCalls[1] as {

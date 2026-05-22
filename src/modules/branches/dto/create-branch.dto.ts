@@ -47,6 +47,18 @@ class DeliveryZoneDto {
   @IsNumber()
   deliveryFee!: number;
 
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minOrderAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  freeDeliveryThreshold?: number;
+
   @ApiProperty({ type: [DeliveryZoneCoordinateDto] })
   @IsArray()
   @ArrayMinSize(3)

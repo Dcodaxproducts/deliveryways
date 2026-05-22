@@ -1073,13 +1073,10 @@ export class OrdersService {
       new Prisma.Decimal(0),
     );
 
-    if (subtotal.lessThan(settings.deliveryConfig.minOrderAmount)) {
-      throw new BadRequestException(
-        'Subtotal is below branch minimum order amount',
-      );
-    }
-
     let deliveryFee = new Prisma.Decimal(0);
+    const branchMinOrderAmount = new Prisma.Decimal(
+      settings.deliveryConfig.minOrderAmount,
+    );
     if (dto.orderType === OrderTypeEnum.DELIVERY) {
       if (!options.skipDeliveryAddressValidation && !dto.deliveryAddressId) {
         throw new BadRequestException(
@@ -1093,10 +1090,12 @@ export class OrdersService {
           dto.deliveryAddressId,
           branch.id,
           settings.deliveryConfig,
+          subtotal,
         );
       }
 
       if (options.skipDeliveryAddressValidation) {
+        this.assertMinimumOrderAmount(subtotal, branchMinOrderAmount, 'branch');
         deliveryFee = new Prisma.Decimal(settings.deliveryConfig.deliveryFee);
       }
 
@@ -1109,6 +1108,8 @@ export class OrdersService {
       ) {
         deliveryFee = new Prisma.Decimal(0);
       }
+    } else {
+      this.assertMinimumOrderAmount(subtotal, branchMinOrderAmount, 'branch');
     }
 
     const taxAmount = subtotal
@@ -3272,6 +3273,7 @@ export class OrdersService {
     deliveryAddressId: string,
     branchId: string,
     deliveryConfig: BranchSettings['deliveryConfig'],
+    subtotal: Prisma.Decimal,
   ) {
     const address = await this.prisma.address.findFirst({
       where: {
@@ -3313,14 +3315,29 @@ export class OrdersService {
 
     switch (deliveryConfig.mode) {
       case 'ZONE':
-        return this.resolveZoneDeliveryFee(address, deliveryConfig.zones ?? []);
+        return this.resolveZoneDeliveryFee(
+          address,
+          deliveryConfig.zones ?? [],
+          subtotal,
+          deliveryConfig.minOrderAmount,
+        );
       case 'POSTAL_CODE':
+        this.assertMinimumOrderAmount(
+          subtotal,
+          new Prisma.Decimal(deliveryConfig.minOrderAmount),
+          'branch',
+        );
         return this.resolvePostalCodeDeliveryFee(
           address,
           deliveryConfig.postalCodeRules ?? [],
         );
       case 'RADIUS':
       default:
+        this.assertMinimumOrderAmount(
+          subtotal,
+          new Prisma.Decimal(deliveryConfig.minOrderAmount),
+          'branch',
+        );
         return this.resolveRadiusDeliveryFee(
           address,
           branchAddress,
@@ -3363,6 +3380,8 @@ export class OrdersService {
   private resolveZoneDeliveryFee(
     address: DeliveryAddressContext,
     zones: DeliveryZoneConfig[],
+    subtotal: Prisma.Decimal,
+    branchMinOrderAmount: number,
   ) {
     if (!address.lat || !address.lng) {
       throw new BadRequestException('Delivery address must include lat/lng');
@@ -3386,7 +3405,33 @@ export class OrdersService {
       );
     }
 
+    this.assertMinimumOrderAmount(
+      subtotal,
+      new Prisma.Decimal(match.minOrderAmount ?? branchMinOrderAmount),
+      'zone',
+    );
+
+    if (
+      match.freeDeliveryThreshold !== undefined &&
+      match.freeDeliveryThreshold > 0 &&
+      subtotal.greaterThanOrEqualTo(match.freeDeliveryThreshold)
+    ) {
+      return new Prisma.Decimal(0);
+    }
+
     return new Prisma.Decimal(match.deliveryFee);
+  }
+
+  private assertMinimumOrderAmount(
+    subtotal: Prisma.Decimal,
+    minOrderAmount: Prisma.Decimal,
+    scope: 'branch' | 'zone',
+  ) {
+    if (subtotal.lessThan(minOrderAmount)) {
+      throw new BadRequestException(
+        `Subtotal is below ${scope} minimum order amount`,
+      );
+    }
   }
 
   private resolvePostalCodeDeliveryFee(
@@ -3512,6 +3557,8 @@ type DeliveryZoneCoordinate = {
 type DeliveryZoneConfig = {
   name: string;
   deliveryFee: number;
+  minOrderAmount?: number;
+  freeDeliveryThreshold?: number;
   polygon: DeliveryZoneCoordinate[];
 };
 
