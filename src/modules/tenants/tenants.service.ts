@@ -67,7 +67,7 @@ export class TenantsService {
 
     return {
       data: await this.storageService.resolveMediaUrlsDeep(
-        this.withDeletionState(tenant),
+        this.withDeletionState(this.withVerificationState(tenant)),
       ),
       message: 'Tenant fetched successfully',
     };
@@ -86,7 +86,9 @@ export class TenantsService {
 
     return {
       data: await this.storageService.resolveMediaUrlsDeep(
-        items.map((item) => this.withDeletionState(item)),
+        items.map((item) =>
+          this.withDeletionState(this.withVerificationState(item)),
+        ),
       ),
       message: 'Tenants fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -178,6 +180,19 @@ export class TenantsService {
         deleteAfter: null,
         isActive: entity.isActive ?? true,
       },
+    };
+  }
+
+  private withVerificationState<
+    T extends {
+      owner?: { isVerified?: boolean } | null;
+    },
+  >(entity: T) {
+    const { owner, ...tenant } = entity;
+
+    return {
+      ...tenant,
+      isVerified: owner?.isVerified ?? false,
     };
   }
 }

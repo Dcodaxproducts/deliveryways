@@ -46,6 +46,7 @@ describe('TenantsService', () => {
       isActive: true,
       deletedAt: null,
       logoUrl: 'https://example.com/logo.png',
+      owner: { isVerified: true },
     });
 
     const result = await service.tenantDetails(
@@ -64,11 +65,50 @@ describe('TenantsService', () => {
     expect(result.data).toMatchObject({
       id: 'tenant-1',
       slug: 'tenant-one',
+      isVerified: true,
       deletionState: {
         isDeleted: false,
         isActive: true,
       },
     });
+  });
+
+  it('returns owner verification status in tenant list', async () => {
+    const { service, tenantsRepository } = makeService();
+    tenantsRepository.list.mockResolvedValue({
+      items: [
+        {
+          id: 'tenant-1',
+          name: 'Tenant One',
+          slug: 'tenant-one',
+          isActive: true,
+          deletedAt: null,
+          owner: { isVerified: false },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listTenants(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      {
+        page: 1,
+        limit: 10,
+        search: undefined,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'tenant-1',
+        isVerified: false,
+      }),
+    ]);
   });
 
   it('blocks non-super-admin users from tenant details', async () => {

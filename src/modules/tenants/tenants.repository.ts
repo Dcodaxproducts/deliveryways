@@ -37,6 +37,11 @@ export class TenantsRepository {
   async findDetailsById(id: string) {
     return this.prisma.tenant.findUnique({
       where: { id },
+      include: {
+        owner: {
+          select: { isVerified: true },
+        },
+      },
     });
   }
 
@@ -57,6 +62,11 @@ export class TenantsRepository {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.tenant.findMany({
         where,
+        include: {
+          owner: {
+            select: { isVerified: true },
+          },
+        },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: {
