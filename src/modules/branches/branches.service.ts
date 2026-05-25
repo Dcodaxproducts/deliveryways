@@ -93,6 +93,8 @@ export class BranchesService {
       throw new BadRequestException('restaurantId is required');
     }
 
+    this.assertValidDeliveryConfiguration(dto.settings);
+
     return this.branchesRepository.create(
       {
         tenantId,
@@ -624,6 +626,7 @@ export class BranchesService {
     }
 
     this.assertBranchWriteAccess(user, branch);
+    this.assertValidDeliveryConfiguration(dto.settings);
 
     const operation = async (trx: PrismaTx) => {
       const data = await this.branchesRepository.update(
@@ -929,6 +932,64 @@ export class BranchesService {
 
   private generateBranchAdminPassword(): string {
     return `Br@${randomBytes(4).toString('hex')}2026`;
+  }
+
+  private assertValidDeliveryConfiguration(settings?: unknown) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return;
+    }
+
+    const deliveryConfig = (settings as { deliveryConfig?: unknown })
+      .deliveryConfig;
+
+    if (
+      !deliveryConfig ||
+      typeof deliveryConfig !== 'object' ||
+      Array.isArray(deliveryConfig)
+    ) {
+      return;
+    }
+
+    const config = deliveryConfig as {
+      mode?: string;
+      zoneBands?: Array<{ fromKm?: number; toKm?: number }>;
+    };
+
+    if (config.mode !== 'ZONE_BANDS') {
+      return;
+    }
+
+    if (!Array.isArray(config.zoneBands) || config.zoneBands.length === 0) {
+      throw new BadRequestException(
+        'zoneBands are required when delivery mode is ZONE_BANDS',
+      );
+    }
+
+    const sortedBands = [...config.zoneBands].sort(
+      (a, b) => (a.fromKm ?? 0) - (b.fromKm ?? 0),
+    );
+
+    sortedBands.forEach((band, index) => {
+      if (
+        typeof band.fromKm !== 'number' ||
+        typeof band.toKm !== 'number' ||
+        band.fromKm < 0 ||
+        band.toKm <= band.fromKm
+      ) {
+        throw new BadRequestException(
+          `zoneBands[${index}] must have valid fromKm/toKm bounds`,
+        );
+      }
+
+      if (index === 0) {
+        return;
+      }
+
+      const previousBand = sortedBands[index - 1];
+      if ((band.fromKm ?? 0) < (previousBand.toKm ?? 0)) {
+        throw new BadRequestException('zoneBands cannot overlap');
+      }
+    });
   }
 
   private hasBranchAddressPayload(dto: UpdateBranchDto) {

@@ -165,6 +165,7 @@ export class AuthService {
           isFreeDelivery: false,
           freeDeliveryThreshold: 0,
           zones: [],
+          zoneBands: [],
           postalCodeRules: [],
         },
         automation: {

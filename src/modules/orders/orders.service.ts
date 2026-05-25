@@ -3157,6 +3157,7 @@ export class OrdersService {
         isFreeDelivery: false,
         freeDeliveryThreshold: 0,
         zones: [],
+        zoneBands: [],
         postalCodeRules: [],
       },
       taxation: {
@@ -3193,6 +3194,8 @@ export class OrdersService {
           raw.deliveryConfig?.freeDeliveryThreshold ??
           fallback.deliveryConfig.freeDeliveryThreshold,
         zones: raw.deliveryConfig?.zones ?? fallback.deliveryConfig.zones,
+        zoneBands:
+          raw.deliveryConfig?.zoneBands ?? fallback.deliveryConfig.zoneBands,
         postalCodeRules:
           raw.deliveryConfig?.postalCodeRules ??
           fallback.deliveryConfig.postalCodeRules,
@@ -3321,6 +3324,14 @@ export class OrdersService {
           subtotal,
           deliveryConfig.minOrderAmount,
         );
+      case 'ZONE_BANDS':
+        return this.resolveZoneBandDeliveryFee(
+          address,
+          branchAddress,
+          deliveryConfig.zoneBands ?? [],
+          subtotal,
+          deliveryConfig.minOrderAmount,
+        );
       case 'POSTAL_CODE':
         this.assertMinimumOrderAmount(
           subtotal,
@@ -3420,6 +3431,66 @@ export class OrdersService {
     }
 
     return new Prisma.Decimal(match.deliveryFee);
+  }
+
+  private resolveZoneBandDeliveryFee(
+    address: DeliveryAddressContext,
+    branchAddress: BranchLocationContext | null,
+    zoneBands: DeliveryZoneBandConfig[],
+    subtotal: Prisma.Decimal,
+    branchMinOrderAmount: number,
+  ) {
+    if (!address.lat || !address.lng) {
+      throw new BadRequestException('Delivery address must include lat/lng');
+    }
+
+    if (!branchAddress?.lat || !branchAddress?.lng) {
+      throw new BadRequestException('Branch location is missing lat/lng');
+    }
+
+    if (!zoneBands.length) {
+      throw new BadRequestException(
+        'Branch delivery zone bands are not configured',
+      );
+    }
+
+    const distanceKm = this.calculateDistanceKm(
+      Number(address.lat),
+      Number(address.lng),
+      Number(branchAddress.lat),
+      Number(branchAddress.lng),
+    );
+
+    const sortedBands = [...zoneBands].sort((a, b) => a.fromKm - b.fromKm);
+    const matchedBand = sortedBands.find((band, index) => {
+      const isLastBand = index === sortedBands.length - 1;
+      return (
+        distanceKm >= band.fromKm &&
+        (isLastBand ? distanceKm <= band.toKm : distanceKm < band.toKm)
+      );
+    });
+
+    if (!matchedBand) {
+      throw new BadRequestException(
+        'Delivery address is outside branch delivery zone bands',
+      );
+    }
+
+    this.assertMinimumOrderAmount(
+      subtotal,
+      new Prisma.Decimal(matchedBand.minOrderAmount ?? branchMinOrderAmount),
+      'zone',
+    );
+
+    if (
+      matchedBand.freeDeliveryThreshold !== undefined &&
+      matchedBand.freeDeliveryThreshold > 0 &&
+      subtotal.greaterThanOrEqualTo(matchedBand.freeDeliveryThreshold)
+    ) {
+      return new Prisma.Decimal(0);
+    }
+
+    return new Prisma.Decimal(matchedBand.deliveryFee);
   }
 
   private assertMinimumOrderAmount(
@@ -3535,13 +3606,14 @@ type BranchSettings = {
   temporaryClosure: BranchTemporaryClosure | null;
   holidayOpeningHours: BranchHolidayOpeningHour[];
   deliveryConfig: {
-    mode: 'RADIUS' | 'ZONE' | 'POSTAL_CODE';
+    mode: 'RADIUS' | 'ZONE' | 'ZONE_BANDS' | 'POSTAL_CODE';
     radiusKm: number;
     minOrderAmount: number;
     deliveryFee: number;
     isFreeDelivery: boolean;
     freeDeliveryThreshold: number;
     zones: DeliveryZoneConfig[];
+    zoneBands: DeliveryZoneBandConfig[];
     postalCodeRules: DeliveryPostalCodeRule[];
   };
   taxation: {
@@ -3560,6 +3632,14 @@ type DeliveryZoneConfig = {
   minOrderAmount?: number;
   freeDeliveryThreshold?: number;
   polygon: DeliveryZoneCoordinate[];
+};
+
+type DeliveryZoneBandConfig = {
+  fromKm: number;
+  toKm: number;
+  deliveryFee: number;
+  minOrderAmount?: number;
+  freeDeliveryThreshold?: number;
 };
 
 type DeliveryPostalCodeRule = {

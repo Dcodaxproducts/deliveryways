@@ -24,6 +24,7 @@ import { OrderTypeEnum, PaymentMethodEnum } from '../../../common/enums';
 export const BRANCH_DELIVERY_PRICING_MODES = [
   'RADIUS',
   'ZONE',
+  'ZONE_BANDS',
   'POSTAL_CODE',
 ] as const;
 
@@ -78,6 +79,35 @@ class PostalCodeDeliveryRuleDto {
   deliveryFee!: number;
 }
 
+class DeliveryZoneBandDto {
+  @ApiProperty({ minimum: 0 })
+  @IsNumber()
+  @Min(0)
+  fromKm!: number;
+
+  @ApiProperty({ minimum: 0 })
+  @IsNumber()
+  @Min(0)
+  toKm!: number;
+
+  @ApiProperty({ minimum: 0 })
+  @IsNumber()
+  @Min(0)
+  deliveryFee!: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minOrderAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  freeDeliveryThreshold?: number;
+}
+
 class DeliveryConfigDto {
   @ApiPropertyOptional({ enum: BRANCH_DELIVERY_PRICING_MODES })
   @IsOptional()
@@ -111,6 +141,13 @@ class DeliveryConfigDto {
   @ValidateNested({ each: true })
   @Type(() => DeliveryZoneDto)
   zones?: DeliveryZoneDto[];
+
+  @ApiPropertyOptional({ type: [DeliveryZoneBandDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DeliveryZoneBandDto)
+  zoneBands?: DeliveryZoneBandDto[];
 
   @ApiPropertyOptional({ type: [PostalCodeDeliveryRuleDto] })
   @IsOptional()

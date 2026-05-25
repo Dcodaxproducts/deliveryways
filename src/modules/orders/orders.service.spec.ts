@@ -317,6 +317,250 @@ describe('OrdersService - delivery pricing modes', () => {
     );
   });
 
+  it('uses zone-band delivery fee when address falls inside a configured distance band', async () => {
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'ZONE_BANDS',
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [],
+                zoneBands: [
+                  { fromKm: 0, toKm: 2, deliveryFee: 120 },
+                  { fromKm: 2, toKm: 5, deliveryFee: 220 },
+                ],
+                postalCodeRules: [],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(500),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'address-1',
+              lat: new Prisma.Decimal('31.5204'),
+              lng: new Prisma.Decimal('74.3587'),
+              postalCode: null,
+            })
+            .mockResolvedValueOnce({
+              lat: new Prisma.Decimal('31.5000'),
+              lng: new Prisma.Decimal('74.3500'),
+            }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(720),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(customerUser, zoneQuoteInput);
+
+    expect(result.data.deliveryFee).toBe(220);
+  });
+
+  it('uses zone-band free delivery threshold when subtotal qualifies', async () => {
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'ZONE_BANDS',
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [],
+                zoneBands: [
+                  {
+                    fromKm: 0,
+                    toKm: 5,
+                    deliveryFee: 220,
+                    freeDeliveryThreshold: 1500,
+                  },
+                ],
+                postalCodeRules: [],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(2000),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'address-1',
+              lat: new Prisma.Decimal('31.5204'),
+              lng: new Prisma.Decimal('74.3587'),
+              postalCode: null,
+            })
+            .mockResolvedValueOnce({
+              lat: new Prisma.Decimal('31.5000'),
+              lng: new Prisma.Decimal('74.3500'),
+            }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(2000),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(customerUser, zoneQuoteInput);
+
+    expect(result.data.deliveryFee).toBe(0);
+  });
+
+  it('rejects delivery address outside configured zone bands', async () => {
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'ZONE_BANDS',
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [],
+                zoneBands: [{ fromKm: 0, toKm: 1, deliveryFee: 120 }],
+                postalCodeRules: [],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(500),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'address-1',
+              lat: new Prisma.Decimal('31.5204'),
+              lng: new Prisma.Decimal('74.3587'),
+              postalCode: null,
+            })
+            .mockResolvedValueOnce({
+              lat: new Prisma.Decimal('31.5000'),
+              lng: new Prisma.Decimal('74.3500'),
+            }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(620),
+        }),
+      } as never,
+    );
+
+    await expect(service.quote(customerUser, zoneQuoteInput)).rejects.toThrow(
+      'Delivery address is outside branch delivery zone bands',
+    );
+  });
+
   it('uses postal-code delivery fee when branch pricing mode is postal code', async () => {
     const service = new OrdersService(
       {
