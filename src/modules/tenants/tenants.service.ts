@@ -185,13 +185,14 @@ export class TenantsService {
 
   private withVerificationState<
     T extends {
-      owner?: { isVerified?: boolean } | null;
+      owner?: { isApproved?: boolean; isVerified?: boolean } | null;
     },
   >(entity: T) {
     const { owner, ...tenant } = entity;
 
     return {
       ...tenant,
+      isApproved: owner?.isApproved ?? false,
       isVerified: owner?.isVerified ?? false,
     };
   }

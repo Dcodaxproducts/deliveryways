@@ -39,7 +39,7 @@ export class TenantsRepository {
       where: { id },
       include: {
         owner: {
-          select: { isVerified: true },
+          select: { isApproved: true, isVerified: true },
         },
       },
     });
@@ -64,7 +64,7 @@ export class TenantsRepository {
         where,
         include: {
           owner: {
-            select: { isVerified: true },
+            select: { isApproved: true, isVerified: true },
           },
         },
         skip: (query.page - 1) * query.limit,

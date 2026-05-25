@@ -46,7 +46,7 @@ describe('TenantsService', () => {
       isActive: true,
       deletedAt: null,
       logoUrl: 'https://example.com/logo.png',
-      owner: { isVerified: true },
+      owner: { isApproved: true, isVerified: true },
     });
 
     const result = await service.tenantDetails(
@@ -65,6 +65,7 @@ describe('TenantsService', () => {
     expect(result.data).toMatchObject({
       id: 'tenant-1',
       slug: 'tenant-one',
+      isApproved: true,
       isVerified: true,
       deletionState: {
         isDeleted: false,
@@ -73,7 +74,7 @@ describe('TenantsService', () => {
     });
   });
 
-  it('returns owner verification status in tenant list', async () => {
+  it('returns owner approval and verification status in tenant list', async () => {
     const { service, tenantsRepository } = makeService();
     tenantsRepository.list.mockResolvedValue({
       items: [
@@ -83,7 +84,7 @@ describe('TenantsService', () => {
           slug: 'tenant-one',
           isActive: true,
           deletedAt: null,
-          owner: { isVerified: false },
+          owner: { isApproved: false, isVerified: false },
         },
       ],
       total: 1,
@@ -106,6 +107,7 @@ describe('TenantsService', () => {
     expect(result.data).toEqual([
       expect.objectContaining({
         id: 'tenant-1',
+        isApproved: false,
         isVerified: false,
       }),
     ]);
