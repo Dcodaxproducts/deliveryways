@@ -557,6 +557,67 @@ describe('AuthService updateMyProfile', () => {
     expect(result.data.id).toBe('user-2');
   });
 
+  it('allows branch admin to update own profile without touching email', async () => {
+    usersService
+      .findById!.mockResolvedValueOnce({
+        id: 'branch-admin-1',
+        email: 'branch.admin@example.com',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        profile: {
+          id: 'profile-3',
+          firstName: 'Branch',
+          lastName: 'Admin',
+          phone: '+923001111111',
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 'branch-admin-1',
+        email: 'branch.admin@example.com',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        profile: {
+          id: 'profile-3',
+          firstName: 'Updated',
+          lastName: 'Manager',
+          phone: '+923009999999',
+          bio: 'Branch lead',
+        },
+      });
+
+    const result = await service.updateMyProfile(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      {
+        firstName: 'Updated',
+        lastName: 'Manager',
+        phone: '+923009999999',
+        bio: 'Branch lead',
+      },
+    );
+
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'profile-3' },
+      data: {
+        firstName: 'Updated',
+        lastName: 'Manager',
+        avatarUrl: undefined,
+        phone: '+923009999999',
+        bio: 'Branch lead',
+      },
+    });
+    expect(result.data.profile).toEqual({
+      id: 'profile-3',
+      firstName: 'Updated',
+      lastName: 'Manager',
+      phone: '+923009999999',
+      bio: 'Branch lead',
+    });
+  });
+
   it('throws when authenticated user is missing', async () => {
     usersService.findById!.mockResolvedValue(null);
 
