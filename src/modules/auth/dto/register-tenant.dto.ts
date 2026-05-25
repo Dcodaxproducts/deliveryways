@@ -11,7 +11,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { BranchSettingsDto } from '../../branches/dto/create-branch.dto';
+import {
+  BranchSettingsDto,
+  CreateBranchAdminDto,
+} from '../../branches/dto/create-branch.dto';
 
 export class RegisterOwnerDto {
   @ApiProperty()
@@ -206,6 +209,16 @@ export class RegisterTenantDto {
   @ValidateNested()
   @Type(() => RegisterOwnerDto)
   user!: RegisterOwnerDto;
+
+  @ApiPropertyOptional({
+    type: CreateBranchAdminDto,
+    description:
+      'Optional branch admin account for the main branch. If password is omitted, backend generates one.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateBranchAdminDto)
+  branchAdmin?: CreateBranchAdminDto;
 
   @ApiProperty({ type: RegisterTenantInfoDto })
   @ValidateNested()

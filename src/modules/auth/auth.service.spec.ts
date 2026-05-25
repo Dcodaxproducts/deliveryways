@@ -157,6 +157,140 @@ describe('AuthService registerTenant duplicate email checks', () => {
   });
 });
 
+describe('AuthService registerTenant branch admin onboarding', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+  const prisma = {
+    $transaction: jest.fn(),
+  };
+  const tx = {
+    branch: {
+      update: jest.fn(),
+    },
+  };
+  const jwtService = {
+    signAsync: jest.fn(),
+  };
+  const tenantsService = {
+    findBySlug: jest.fn(),
+    create: jest.fn(),
+    assignOwner: jest.fn(),
+  };
+  const restaurantsService = {
+    create: jest.fn(),
+  };
+  const branchesService = {
+    create: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    usersService = {
+      existsByEmailAndRole: jest.fn().mockResolvedValue(false),
+      create: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'owner-1', email: 'owner@example.com' })
+        .mockResolvedValueOnce({
+          id: 'branch-admin-1',
+          email: 'branch.admin@example.com',
+        }),
+      setRefreshTokenHash: jest.fn().mockResolvedValue(undefined),
+    };
+    tenantsService.findBySlug.mockResolvedValue(null);
+    tenantsService.create.mockResolvedValue({ id: 'tenant-1' });
+    tenantsService.assignOwner.mockResolvedValue(undefined);
+    restaurantsService.create.mockResolvedValue({ id: 'restaurant-1' });
+    branchesService.create.mockResolvedValue({ id: 'branch-1' });
+    prisma.$transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    tx.branch.update.mockResolvedValue({ id: 'branch-1' });
+    jwtService.signAsync
+      .mockResolvedValueOnce('access-token')
+      .mockResolvedValueOnce('refresh-token');
+
+    service = new AuthService(
+      prisma as never,
+      jwtService as never,
+      tenantsService as never,
+      restaurantsService as never,
+      branchesService as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it('creates branch admin credentials while registering a tenant', async () => {
+    const result = await service.registerTenant({
+      user: {
+        email: ' Owner@Example.COM ',
+        password: 'Owner@12345',
+        firstName: 'Owner',
+        lastName: 'User',
+      },
+      branchAdmin: {
+        email: ' Branch.Admin@Example.COM ',
+        password: 'Branch@12345',
+        firstName: 'Branch',
+        lastName: 'Admin',
+        phone: '+923001234567',
+      },
+      tenant: {
+        name: 'Tenant',
+        slug: 'tenant',
+      },
+      restaurant: {
+        name: 'Restaurant',
+        slug: 'restaurant',
+      },
+      branch: {
+        name: 'Main',
+        street: 'Street',
+        city: 'City',
+        state: 'State',
+        country: 'PK',
+        lat: '33.6844',
+        lng: '73.0479',
+      },
+    });
+
+    expect(usersService.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        email: 'branch.admin@example.com',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isVerified: true,
+        isApproved: true,
+        profile: {
+          firstName: 'Branch',
+          lastName: 'Admin',
+          phone: '+923001234567',
+        },
+      }),
+      tx,
+    );
+    expect(tx.branch.update).toHaveBeenCalledWith({
+      where: { id: 'branch-1' },
+      data: {
+        manager: {
+          connect: {
+            id: 'branch-admin-1',
+          },
+        },
+      },
+    });
+    expect(result.data.branchAdminId).toBe('branch-admin-1');
+    expect(result.data.branchAdminCredentials).toEqual({
+      email: 'branch.admin@example.com',
+      password: 'Branch@12345',
+    });
+  });
+});
+
 describe('AuthService listCustomers and customerDetails', () => {
   let service: AuthService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;

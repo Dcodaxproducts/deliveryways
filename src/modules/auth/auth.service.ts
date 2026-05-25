@@ -91,6 +91,11 @@ export class AuthService {
 
   async registerTenant(dto: RegisterTenantDto) {
     const ownerEmail = dto.user.email.trim().toLowerCase();
+    const branchAdminInput = dto.branchAdmin;
+    const branchAdminEmail = branchAdminInput?.email.trim().toLowerCase();
+    const branchAdminPassword = branchAdminInput
+      ? (branchAdminInput.password ?? this.generateBranchAdminPassword())
+      : undefined;
     const existingBusinessAdmin = await this.usersService.existsByEmailAndRole({
       email: ownerEmail,
       role: UserRoleEnum.BUSINESS_ADMIN,
@@ -223,14 +228,60 @@ export class AuthService {
         tx,
       );
 
+      let branchAdmin:
+        | {
+            id: string;
+            email: string;
+          }
+        | undefined;
+
+      if (branchAdminInput && branchAdminEmail && branchAdminPassword) {
+        branchAdmin = await this.usersService.create(
+          {
+            email: branchAdminEmail,
+            password: await bcrypt.hash(branchAdminPassword, 10),
+            role: UserRoleEnum.BRANCH_ADMIN,
+            tenantId: tenant.id,
+            restaurantId: restaurant.id,
+            branchId: branch.id,
+            isVerified: true,
+            isApproved: true,
+            profile: {
+              firstName: branchAdminInput.firstName,
+              lastName: branchAdminInput.lastName,
+              phone: branchAdminInput.phone,
+            },
+          },
+          tx,
+        );
+
+        await tx.branch.update({
+          where: { id: branch.id },
+          data: {
+            manager: {
+              connect: {
+                id: branchAdmin.id,
+              },
+            },
+          },
+        });
+      }
+
       await this.tenantsService.assignOwner(tenant.id, user.id, tx);
 
       return {
         ownerId: user.id,
+        branchAdminId: branchAdmin?.id,
         tenantId: tenant.id,
         restaurantId: restaurant.id,
         branchId: branch.id,
         email: user.email,
+        branchAdminCredentials: branchAdmin
+          ? {
+              email: branchAdmin.email,
+              password: branchAdminPassword,
+            }
+          : undefined,
       };
     });
 
@@ -1941,6 +1992,10 @@ export class AuthService {
 
   private generateOtp(): string {
     return randomInt(100000, 1000000).toString();
+  }
+
+  private generateBranchAdminPassword(): string {
+    return `Branch@${randomBytes(6).toString('hex')}`;
   }
 
   private generateOtpExpiry(): Date {
