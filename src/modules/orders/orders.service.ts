@@ -110,6 +110,7 @@ interface OrderModifierSource {
 type QuoteLine = {
   menuItemId: string;
   categoryId: string;
+  categoryIds: string[];
   menuItemName: string;
   variationId?: string;
   variationName?: string;
@@ -759,6 +760,7 @@ export class OrdersService {
               },
             },
           },
+          categoryLinks: { select: { menuCategoryId: true } },
           branchOverrides: {
             where: {
               branchId: branch.id,
@@ -783,7 +785,7 @@ export class OrdersService {
       if (
         selectedMenu &&
         !selectedMenu.directItemIds.has(menuItem.id) &&
-        !selectedMenu.categoryIds.has(menuItem.category.id)
+        !this.itemMatchesMenuCategories(menuItem, selectedMenu.categoryIds)
       ) {
         throw new BadRequestException(
           `Menu item is not available in selected menu: ${menuItem.name}`,
@@ -937,6 +939,7 @@ export class OrdersService {
                 branchId: branch.id,
               },
             },
+            categoryLinks: { select: { menuCategoryId: true } },
             category: {
               select: {
                 id: true,
@@ -1003,7 +1006,10 @@ export class OrdersService {
           if (
             selectedMenu &&
             !selectedMenu.directItemIds.has(sectionItem.id) &&
-            !selectedMenu.categoryIds.has(sectionItem.category.id)
+            !this.itemMatchesMenuCategories(
+              sectionItem,
+              selectedMenu.categoryIds,
+            )
           ) {
             throw new BadRequestException(
               `Split section flavor is not available in selected menu: ${sectionItem.name}`,
@@ -1055,6 +1061,7 @@ export class OrdersService {
       lines.push({
         menuItemId: menuItem.id,
         categoryId: menuItem.category.id,
+        categoryIds: this.itemCategoryIds(menuItem),
         menuItemName: menuItem.name,
         variationId: requestedItem.variationId,
         variationName,
@@ -1135,10 +1142,11 @@ export class OrdersService {
       customerId: customer.customerId,
       subtotal: Number(subtotal),
       menuItemIds: lines.map((line) => line.menuItemId),
-      categoryIds: lines.map((line) => line.categoryId),
+      categoryIds: [...new Set(lines.flatMap((line) => line.categoryIds))],
       lineItems: lines.map((line) => ({
         menuItemId: line.menuItemId,
         categoryId: line.categoryId,
+        categoryIds: line.categoryIds,
         lineTotal: Number(line.lineTotal),
       })),
     };
@@ -1513,6 +1521,28 @@ export class OrdersService {
         menu.categories.map((category) => category.menuCategoryId),
       ),
     };
+  }
+
+  private itemMatchesMenuCategories(
+    item: {
+      category: { id: string };
+      categoryLinks?: Array<{ menuCategoryId: string }>;
+    },
+    categoryIds: Set<string>,
+  ) {
+    return this.itemCategoryIds(item).some((categoryId) =>
+      categoryIds.has(categoryId),
+    );
+  }
+
+  private itemCategoryIds(item: {
+    category: { id: string };
+    categoryLinks?: Array<{ menuCategoryId: string }>;
+  }) {
+    return [
+      item.category.id,
+      ...(item.categoryLinks ?? []).map((link) => link.menuCategoryId),
+    ];
   }
 
   private toOrderMutationResponse<

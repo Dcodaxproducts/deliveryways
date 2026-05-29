@@ -495,6 +495,7 @@ model MenuCategory {
   parent         MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
   children       MenuCategory[]              @relation("MenuCategoryTree")
   items          MenuItem[]
+  itemLinks      MenuItemCategory[]
   variations     MenuItemVariation[]
   variationLinks MenuCategoryVariation[]
   menuLinks      RestaurantMenuCategory[]
@@ -540,6 +541,7 @@ model MenuItem {
 
   restaurant                      Restaurant                           @relation(fields: [restaurantId], references: [id])
   category                        MenuCategory                         @relation(fields: [categoryId], references: [id])
+  categoryLinks                   MenuItemCategory[]
   menuLinks                       RestaurantMenuItem[]
   modifierLinks                   MenuItemModifierGroup[]
   modifierPriceOverrides          MenuItemModifierPriceOverride[]
@@ -554,6 +556,22 @@ model MenuItem {
   @@unique([restaurantId, slug])
   @@unique([restaurantId, sku])
   @@map("menu_items")
+}
+
+model MenuItemCategory {
+  id             String   @id @default(cuid())
+  menuItemId     String   @map("menu_item_id")
+  menuCategoryId String   @map("menu_category_id")
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  menuItem     MenuItem     @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  menuCategory MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, menuCategoryId])
+  @@index([menuCategoryId])
+  @@map("menu_item_categories")
 }
 
 model RestaurantMenu {

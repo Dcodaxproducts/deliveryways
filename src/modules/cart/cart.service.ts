@@ -1466,7 +1466,7 @@ export class CartService {
 
       if (
         !restaurantMenu.directItemIds.has(menuItem.id) &&
-        !restaurantMenu.categoryIds.has(menuItem.category.id)
+        !this.itemMatchesMenuCategories(menuItem, restaurantMenu.categoryIds)
       ) {
         throw new BadRequestException(
           `Menu item is not available in selected menu: ${menuItem.name}`,
@@ -1964,6 +1964,19 @@ export class CartService {
         restaurantMenu.categories.map((category) => category.menuCategoryId),
       ),
     };
+  }
+
+  private itemMatchesMenuCategories(
+    item: {
+      category: { id: string };
+      categoryLinks?: Array<{ menuCategoryId: string }>;
+    },
+    categoryIds: Set<string>,
+  ) {
+    return [
+      item.category.id,
+      ...(item.categoryLinks ?? []).map((link) => link.menuCategoryId),
+    ].some((categoryId) => categoryIds.has(categoryId));
   }
 
   private async resolveCartCustomerId(

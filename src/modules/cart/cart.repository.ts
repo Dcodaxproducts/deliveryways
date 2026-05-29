@@ -289,6 +289,7 @@ export class CartRepository {
             },
           },
         },
+        categoryLinks: { select: { menuCategoryId: true } },
         branchOverrides: {
           where: {
             branchId,
@@ -549,6 +550,7 @@ export class CartRepository {
             },
           },
         },
+        categoryLinks: { select: { menuCategoryId: true } },
         branchOverrides: {
           where: { branchId },
           select: { priceOverride: true, isAvailable: true },

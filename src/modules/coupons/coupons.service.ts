@@ -27,6 +27,7 @@ import { CouponsRepository } from './coupons.repository';
 export interface CouponValidationLineInput {
   menuItemId: string;
   categoryId: string;
+  categoryIds?: string[];
   lineTotal: number;
 }
 
@@ -447,7 +448,9 @@ export class CouponsService {
       return input.lineItems.reduce((sum, line) => {
         const matches =
           scopedMenuItemIds.includes(line.menuItemId) ||
-          scopedCategoryIds.includes(line.categoryId);
+          (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
+            scopedCategoryIds.includes(categoryId),
+          );
         return matches ? sum.plus(new Prisma.Decimal(line.lineTotal)) : sum;
       }, new Prisma.Decimal(0));
     }

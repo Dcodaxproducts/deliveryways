@@ -49,6 +49,10 @@ describe('MenuItemService', () => {
         deleteMany: jest.fn(),
         createMany: jest.fn(),
       },
+      menuItemCategory: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
     };
 
     const prisma = {
@@ -66,6 +70,7 @@ describe('MenuItemService', () => {
       },
       menuCategory: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([{ id: 'category-1' }]),
       },
       modifier: {
         count: jest.fn(),

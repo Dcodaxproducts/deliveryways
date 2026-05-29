@@ -1294,6 +1294,7 @@ export class CustomerAppService {
           variation: PublicMenuItemVariation;
         }>;
       };
+      categoryLinks?: Array<{ menuCategoryId: string }>;
       variations?: PublicMenuItemVariation[];
       variationPriceOverrides?: PublicMenuItemVariationOverride[];
       modifierPriceOverrides?: Array<{
@@ -1346,7 +1347,7 @@ export class CustomerAppService {
     const effectiveBasePrice = branchOverride?.priceOverride ?? item.basePrice;
     const itemPromotion = this.resolveBestScopedItemPromotion(
       item.id,
-      item.category?.id ?? null,
+      this.itemCategoryIds(item),
       effectiveBasePrice,
       promotions,
     );
@@ -1356,7 +1357,7 @@ export class CustomerAppService {
     ).map((variation) => {
       const variationPromotion = this.resolveBestScopedItemPromotion(
         item.id,
-        item.category?.id ?? null,
+        this.itemCategoryIds(item),
         variation.price,
         promotions,
       );
@@ -1722,9 +1723,19 @@ export class CustomerAppService {
     );
   }
 
+  private itemCategoryIds(item: {
+    category?: { id: string } | null;
+    categoryLinks?: Array<{ menuCategoryId: string }>;
+  }) {
+    return [
+      ...(item.category?.id ? [item.category.id] : []),
+      ...(item.categoryLinks ?? []).map((link) => link.menuCategoryId),
+    ];
+  }
+
   private resolveBestScopedItemPromotion(
     menuItemId: string,
-    categoryId: string | null,
+    categoryIds: string[],
     baseAmount: Prisma.Decimal,
     promotions: Array<Record<string, unknown>>,
   ): PromotionPreview | null {
@@ -1756,7 +1767,9 @@ export class CustomerAppService {
       const matches =
         (!scopedMenuItemIds.length && !scopedCategoryIds.length) ||
         scopedMenuItemIds.includes(menuItemId) ||
-        (!!categoryId && scopedCategoryIds.includes(categoryId));
+        categoryIds.some((categoryId) =>
+          scopedCategoryIds.includes(categoryId),
+        );
 
       if (!matches) {
         continue;

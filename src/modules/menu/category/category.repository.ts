@@ -256,7 +256,12 @@ export class MenuCategoryRepository {
 
   countItems(categoryId: string, tx?: PrismaTx) {
     return this.client(tx).menuItem.count({
-      where: { categoryId },
+      where: {
+        OR: [
+          { categoryId },
+          { categoryLinks: { some: { menuCategoryId: categoryId } } },
+        ],
+      },
     });
   }
 

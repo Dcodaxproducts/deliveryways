@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayUnique,
   IsBoolean,
   IsIn,
   IsInt,
@@ -200,6 +201,13 @@ export class CreateMenuItemDto {
   @ApiProperty()
   @IsString()
   categoryId!: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  categoryIds?: string[];
 
   @ApiProperty()
   @IsString()
@@ -447,6 +455,13 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  categoryIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

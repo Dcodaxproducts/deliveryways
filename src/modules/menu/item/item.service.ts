@@ -42,7 +42,11 @@ export class MenuItemService {
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
     const modifiers = this.resolveDirectModifiers(dto);
-    await this.validateCategory(restaurantId, dto.categoryId);
+    const categoryIds = this.resolveCategoryIds(
+      dto.categoryId,
+      dto.categoryIds,
+    );
+    await this.validateCategories(restaurantId, categoryIds);
     await this.assertModifierOverridesBelongToRestaurant(
       restaurantId,
       modifiers,
@@ -69,6 +73,7 @@ export class MenuItemService {
       sku,
       pricing,
       modifiers,
+      categoryIds,
     );
 
     return {
@@ -88,6 +93,7 @@ export class MenuItemService {
       takeawayPriceAdjustment: Prisma.Decimal;
     },
     modifiers: Array<{ modifierId: string; priceDelta: number }> | undefined,
+    categoryIds: string[],
   ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -137,6 +143,7 @@ export class MenuItemService {
           dto.variationPriceOverrides,
           tx,
         );
+        await this.syncCategoryLinks(created.id, categoryIds, tx);
 
         return created;
       });
@@ -154,11 +161,15 @@ export class MenuItemService {
     }
 
     for (const item of dto.items) {
-      await this.validateCategory(restaurantId, item.categoryId);
+      await this.validateCategories(
+        restaurantId,
+        this.resolveCategoryIds(item.categoryId, item.categoryIds),
+      );
     }
 
     const usedSlugs = new Set<string>();
     const payload: Prisma.MenuItemCreateManyInput[] = [];
+    const categoryLinks: Array<{ slug: string; categoryIds: string[] }> = [];
 
     for (const item of dto.items) {
       const pricing = this.resolvePricingInput(item);
@@ -174,6 +185,10 @@ export class MenuItemService {
         usedSlugs,
       );
       usedSlugs.add(slug);
+      categoryLinks.push({
+        slug,
+        categoryIds: this.resolveCategoryIds(item.categoryId, item.categoryIds),
+      });
 
       payload.push({
         restaurantId,
@@ -212,7 +227,30 @@ export class MenuItemService {
       });
     }
 
-    const result = await this.itemRepository.createMany(payload);
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.menuItem.createMany({ data: payload });
+      const items = await tx.menuItem.findMany({
+        where: {
+          restaurantId,
+          slug: { in: categoryLinks.map((link) => link.slug) },
+        },
+        select: { id: true, slug: true },
+      });
+      const itemIdsBySlug = new Map(items.map((item) => [item.slug, item.id]));
+      await tx.menuItemCategory.createMany({
+        data: categoryLinks.flatMap((link) => {
+          const menuItemId = itemIdsBySlug.get(link.slug);
+          if (!menuItemId) return [];
+          return link.categoryIds.map((menuCategoryId, sortOrder) => ({
+            menuItemId,
+            menuCategoryId,
+            sortOrder,
+          }));
+        }),
+        skipDuplicates: true,
+      });
+      return created;
+    });
 
     return {
       data: { count: result.count },
@@ -263,8 +301,15 @@ export class MenuItemService {
     await this.ensureCanAccessRestaurant(user, item.restaurantId);
     const modifiers = this.resolveDirectModifiers(dto);
 
-    if (dto.categoryId) {
-      await this.validateCategory(item.restaurantId, dto.categoryId);
+    const categoryIds =
+      dto.categoryId !== undefined || dto.categoryIds !== undefined
+        ? this.resolveCategoryIds(
+            dto.categoryId ?? dto.categoryIds?.[0] ?? item.categoryId,
+            dto.categoryIds,
+          )
+        : undefined;
+    if (categoryIds) {
+      await this.validateCategories(item.restaurantId, categoryIds);
     }
     await this.assertModifierOverridesBelongToRestaurant(
       item.restaurantId,
@@ -293,8 +338,8 @@ export class MenuItemService {
       const updated = await this.itemRepository.update(
         id,
         {
-          category: dto.categoryId
-            ? { connect: { id: dto.categoryId } }
+          category: categoryIds
+            ? { connect: { id: categoryIds[0] } }
             : undefined,
           name: dto.name,
           slug,
@@ -354,6 +399,10 @@ export class MenuItemService {
         );
       }
 
+      if (categoryIds) {
+        await this.syncCategoryLinks(id, categoryIds, tx);
+      }
+
       return updated;
     });
 
@@ -368,6 +417,7 @@ export class MenuItemService {
       id: string;
       basePrice?: Prisma.Decimal | number | null;
       category?: { id?: string | null } | null;
+      categoryIds?: string[];
       variations?: Array<{
         price?: Prisma.Decimal | number | null;
         [key: string]: unknown;
@@ -376,7 +426,7 @@ export class MenuItemService {
   >(item: T, promotions: Array<Record<string, unknown>>) {
     const itemPromotion = this.resolveBestScopedPromotion(
       item.id,
-      item.category?.id ?? null,
+      this.promotionCategoryIds(item),
       item.basePrice ?? null,
       promotions,
     );
@@ -384,7 +434,7 @@ export class MenuItemService {
     const variations = (item.variations ?? []).map((variation) => {
       const promotion = this.resolveBestScopedPromotion(
         item.id,
-        item.category?.id ?? null,
+        this.promotionCategoryIds(item),
         variation.price ?? null,
         promotions,
       );
@@ -406,7 +456,7 @@ export class MenuItemService {
 
   private resolveBestScopedPromotion(
     menuItemId: string,
-    categoryId: string | null,
+    categoryIds: string[],
     amount: Prisma.Decimal | number | null,
     promotions: Array<Record<string, unknown>>,
   ): PromotionPreview | null {
@@ -442,7 +492,9 @@ export class MenuItemService {
       const matches =
         (!scopedMenuItemIds.length && !scopedCategoryIds.length) ||
         scopedMenuItemIds.includes(menuItemId) ||
-        (!!categoryId && scopedCategoryIds.includes(categoryId));
+        categoryIds.some((categoryId) =>
+          scopedCategoryIds.includes(categoryId),
+        );
 
       if (!matches) {
         continue;
@@ -467,6 +519,16 @@ export class MenuItemService {
     }
 
     return best;
+  }
+
+  private promotionCategoryIds(item: {
+    category?: { id?: string | null } | null;
+    categoryIds?: string[];
+  }) {
+    return [
+      ...(item.category?.id ? [item.category.id] : []),
+      ...(item.categoryIds ?? []),
+    ];
   }
 
   private buildPromotionPreview(
@@ -1253,19 +1315,25 @@ export class MenuItemService {
     return normalized.length ? normalized : undefined;
   }
 
-  private async validateCategory(restaurantId: string, categoryId: string) {
-    const category = await this.prisma.menuCategory.findFirst({
-      where: {
-        id: categoryId,
-        restaurantId,
-        deletedAt: null,
-      },
+  private async validateCategories(
+    restaurantId: string,
+    categoryIds: string[],
+  ) {
+    const categories = await this.prisma.menuCategory.findMany({
+      where: { id: { in: categoryIds }, restaurantId, deletedAt: null },
       select: { id: true },
     });
 
-    if (!category) {
+    if (categories.length !== categoryIds.length) {
       throw new BadRequestException('Category not found in restaurant');
     }
+  }
+
+  private resolveCategoryIds(
+    primaryCategoryId: string,
+    categoryIds?: string[],
+  ) {
+    return [...new Set([primaryCategoryId, ...(categoryIds ?? [])])];
   }
 
   private async assertModifierOverridesBelongToRestaurant(
@@ -1334,6 +1402,22 @@ export class MenuItemService {
         modifierId: item.modifierId,
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),
+    });
+  }
+
+  private async syncCategoryLinks(
+    menuItemId: string,
+    categoryIds: string[],
+    tx: Prisma.TransactionClient,
+  ) {
+    await tx.menuItemCategory.deleteMany({ where: { menuItemId } });
+    await tx.menuItemCategory.createMany({
+      data: categoryIds.map((menuCategoryId, sortOrder) => ({
+        menuItemId,
+        menuCategoryId,
+        sortOrder,
+      })),
+      skipDuplicates: true,
     });
   }
 

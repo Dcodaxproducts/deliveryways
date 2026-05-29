@@ -265,6 +265,7 @@ export class CustomerAppRepository {
             },
             orderBy: [{ variation: { sortOrder: 'asc' } }],
           },
+          categoryLinks: { select: { menuCategoryId: true } },
           branchOverrides: branchId
             ? {
                 where: { branchId },
@@ -455,9 +456,16 @@ export class CustomerAppRepository {
     const branchId = query.branchId;
     const where: Prisma.MenuItemWhereInput = {
       restaurantId: query.restaurantId,
-      categoryId: cuisineId,
       deletedAt: null,
       isActive: true,
+      AND: [
+        {
+          OR: [
+            { categoryId: cuisineId },
+            { categoryLinks: { some: { menuCategoryId: cuisineId } } },
+          ],
+        },
+      ],
       category: {
         deletedAt: null,
         isActive: true,
@@ -760,6 +768,7 @@ export class CustomerAppRepository {
           },
           orderBy: [{ variation: { sortOrder: 'asc' } }],
         },
+        categoryLinks: { select: { menuCategoryId: true } },
         branchOverrides: branchId
           ? {
               where: { branchId },
@@ -790,7 +799,14 @@ export class CustomerAppRepository {
               OR: [
                 ...(menuItemIds.length ? [{ id: { in: menuItemIds } }] : []),
                 ...(categoryIds.length
-                  ? [{ categoryId: { in: categoryIds } }]
+                  ? [
+                      { categoryId: { in: categoryIds } },
+                      {
+                        categoryLinks: {
+                          some: { menuCategoryId: { in: categoryIds } },
+                        },
+                      },
+                    ]
                   : []),
               ],
             }
@@ -931,6 +947,7 @@ export class CustomerAppRepository {
           },
           orderBy: [{ variation: { sortOrder: 'asc' } }],
         },
+        categoryLinks: { select: { menuCategoryId: true } },
         branchOverrides: branchId
           ? {
               where: { branchId },

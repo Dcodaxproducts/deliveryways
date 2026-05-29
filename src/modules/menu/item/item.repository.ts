@@ -55,46 +55,65 @@ export class MenuItemRepository {
   }
 
   async list(restaurantId: string | undefined, query: ListMenuItemsDto) {
+    const menuId = query.menuId ?? query.menu_id;
+    const andFilters: Prisma.MenuItemWhereInput[] = [];
+
+    if (query.categoryId) {
+      andFilters.push({
+        OR: [
+          { categoryId: query.categoryId },
+          { categoryLinks: { some: { menuCategoryId: query.categoryId } } },
+        ],
+      });
+    }
+
+    if (menuId) {
+      andFilters.push({
+        OR: [
+          {
+            menuLinks: {
+              some: {
+                restaurantMenuId: menuId,
+                ...(query.includeInactive ? {} : { isActive: true }),
+              },
+            },
+          },
+          {
+            category: {
+              menuLinks: { some: { restaurantMenuId: menuId } },
+            },
+          },
+          {
+            categoryLinks: {
+              some: {
+                menuCategory: {
+                  menuLinks: { some: { restaurantMenuId: menuId } },
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    if (query.search) {
+      andFilters.push({
+        OR: [
+          { name: { contains: query.search, mode: 'insensitive' } },
+          { slug: { contains: query.search, mode: 'insensitive' } },
+          { sku: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
     const where: Prisma.MenuItemWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
-      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-      ...(query.menuId || query.menu_id
-        ? {
-            OR: [
-              {
-                menuLinks: {
-                  some: {
-                    restaurantMenuId: query.menuId ?? query.menu_id,
-                    ...(query.includeInactive ? {} : { isActive: true }),
-                  },
-                },
-              },
-              {
-                category: {
-                  menuLinks: {
-                    some: {
-                      restaurantMenuId: query.menuId ?? query.menu_id,
-                    },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
       ...this.resolveActiveFilter(query),
       ...(query.supportsSplitPizza
         ? { dietaryFlags: { array_contains: ['__SPLIT_PIZZA_ENABLED__'] } }
         : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search, mode: 'insensitive' } },
-              { slug: { contains: query.search, mode: 'insensitive' } },
-              { sku: { contains: query.search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
+      ...(andFilters.length ? { AND: andFilters } : {}),
     };
 
     const [items, total] = await this.prisma.$transaction([
@@ -195,6 +214,14 @@ export class MenuItemRepository {
               },
             },
           },
+          categoryLinks: {
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              menuCategory: {
+                select: { id: true, name: true, slug: true, imageUrl: true },
+              },
+            },
+          },
           menuLinks: {
             where: { ...(query.includeInactive ? {} : { isActive: true }) },
             orderBy: [{ sortOrder: 'asc' }],
@@ -287,6 +314,8 @@ export class MenuItemRepository {
 
         return {
           ...item,
+          categories: item.categoryLinks.map((link) => link.menuCategory),
+          categoryIds: item.categoryLinks.map((link) => link.menuCategoryId),
           category: {
             ...item.category,
             variations,
