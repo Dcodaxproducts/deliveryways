@@ -687,6 +687,11 @@ describe('CustomerAppService', () => {
       tagline: 'Fresh food fast',
       bio: 'Test bio',
       supportContact: null,
+      branding: {
+        primaryColor: '#FF0000',
+        secondaryColor: '#000000',
+        fontFamily: 'Inter',
+      },
       settings: {},
     });
     repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
@@ -711,7 +716,14 @@ describe('CustomerAppService', () => {
     expect(result.data.restaurant.coverImage).toBe(
       'https://cdn.example.com/restaurant-cover.png',
     );
-    expect(result.data.config).toEqual({ currency: null });
+    expect(result.data.config).toEqual({
+      currency: null,
+      branding: {
+        primaryColor: '#FF0000',
+        secondaryColor: '#000000',
+        fontFamily: 'Inter',
+      },
+    });
     expect(result.data.branch).toEqual({
       id: 'branch-1',
       name: 'Main Branch',
@@ -842,6 +854,7 @@ describe('CustomerAppService', () => {
       tagline: null,
       bio: null,
       supportContact: null,
+      branding: null,
       settings: {
         customerApp: {
           currency: 'SAR',
@@ -858,7 +871,7 @@ describe('CustomerAppService', () => {
       cuisineLimit: 12,
     });
 
-    expect(result.data.config).toEqual({ currency: 'SAR' });
+    expect(result.data.config).toEqual({ currency: 'SAR', branding: {} });
   });
 
   it('uses customer token restaurant scope for privacy policy when query restaurantId is omitted', async () => {

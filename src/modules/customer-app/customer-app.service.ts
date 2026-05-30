@@ -573,6 +573,7 @@ export class CustomerAppService {
         },
         config: {
           currency: this.readRestaurantCurrency(restaurant.settings),
+          branding: this.asObject(restaurant.branding),
         },
         branch: branch
           ? {

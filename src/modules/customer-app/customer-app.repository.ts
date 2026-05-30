@@ -308,6 +308,7 @@ export class CustomerAppRepository {
         tagline: true,
         bio: true,
         supportContact: true,
+        branding: true,
         settings: true,
       },
     });

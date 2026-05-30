@@ -84,6 +84,11 @@ describe('RestaurantsService notification settings', () => {
       supportContact: {
         email: 'support@example.com',
       },
+      branding: {
+        primaryColor: '#FF0000',
+        secondaryColor: '#000000',
+        fontFamily: 'Inter',
+      },
     });
 
     const result = await service.customerAppContentFromContext({
@@ -125,7 +130,14 @@ describe('RestaurantsService notification settings', () => {
       },
     ]);
     expect(result.data.restaurantId).toBe('restaurant-1');
-    expect(result.data.config).toEqual({ currency: null });
+    expect(result.data.config).toEqual({
+      currency: null,
+      branding: {
+        primaryColor: '#FF0000',
+        secondaryColor: '#000000',
+        fontFamily: 'Inter',
+      },
+    });
   });
 
   it('returns customer app currency config when present in settings', async () => {
@@ -152,7 +164,7 @@ describe('RestaurantsService notification settings', () => {
       rid: 'restaurant-1',
     } as never);
 
-    expect(result.data.config).toEqual({ currency: 'AED' });
+    expect(result.data.config).toEqual({ currency: 'AED', branding: {} });
   });
 
   it('reads legacy top-level customer app content keys too', async () => {

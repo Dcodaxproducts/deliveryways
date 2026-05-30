@@ -565,6 +565,7 @@ export class RestaurantsService {
     bio?: string | null;
     settings: Prisma.JsonValue | null;
     supportContact: Prisma.JsonValue | null;
+    branding?: Prisma.JsonValue | null;
   }) {
     return {
       restaurantId: restaurant.id,
@@ -599,6 +600,7 @@ export class RestaurantsService {
       supportContact: this.asObject(restaurant.supportContact),
       config: {
         currency: this.readRestaurantCurrency(restaurant.settings),
+        branding: this.asObject(restaurant.branding),
       },
     };
   }
