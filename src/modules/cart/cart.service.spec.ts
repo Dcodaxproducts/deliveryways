@@ -34,6 +34,7 @@ describe('CartService', () => {
     const ordersService = {
       quote: jest.fn(),
       quoteForCouponValidation: jest.fn(),
+      assertDeliveryAddressCoverage: jest.fn(),
       create: jest.fn(),
     };
 
@@ -188,6 +189,70 @@ describe('CartService', () => {
       (result.data as { quote?: { deliveryFee: number; totalAmount: number } })
         .quote,
     ).toEqual({ deliveryFee: 250, totalAmount: 800 });
+  });
+
+  it('returns cart without quote when saved address is outside delivery coverage', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(500),
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Burgers', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockRejectedValue(
+      new BadRequestException(
+        'Delivery address is outside branch delivery radius',
+      ),
+    );
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data).not.toHaveProperty('quote');
   });
 
   it('uses exact item variation price in cart totals', async () => {
@@ -852,6 +917,65 @@ describe('CartService', () => {
       customer: { connect: { id: 'user-1' } },
     });
     expect(result.message).toBe('Item added to cart successfully');
+  });
+
+  it('checks delivery coverage before adding an item', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.assertDeliveryAddressCoverage.mockRejectedValue(
+      new BadRequestException(
+        'Delivery address is outside branch delivery radius',
+      ),
+    );
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          quantity: 1,
+        },
+      ),
+    ).rejects.toThrow('Delivery address is outside branch delivery radius');
+    expect(ordersService.assertDeliveryAddressCoverage).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'user-1' }),
+      {
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        deliveryAddressId: 'address-1',
+      },
+    );
+    expect(cartRepository.createItem).not.toHaveBeenCalled();
   });
 
   it('blocks add-item while branch is temporarily closed', async () => {

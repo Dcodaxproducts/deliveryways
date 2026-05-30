@@ -195,6 +195,44 @@ export class OrdersService {
     };
   }
 
+  async assertDeliveryAddressCoverage(
+    user: AuthUserContext,
+    dto: {
+      branchId: string;
+      customerId?: string;
+      deliveryAddressId: string;
+    },
+  ) {
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: dto.branchId, deletedAt: null, isActive: true },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        settings: true,
+      },
+    });
+
+    if (!branch) {
+      throw new BadRequestException('Branch not found or inactive');
+    }
+
+    await this.ensureBranchAccess(user, branch.restaurantId, branch.id);
+    const customer = await this.resolveQuoteCustomer(
+      user,
+      branch,
+      dto.customerId,
+    );
+    const settings = this.readBranchSettings(branch.settings);
+
+    await this.assertDeliveryAddressInCoverage(
+      customer.customerId,
+      dto.deliveryAddressId,
+      branch.id,
+      settings.deliveryConfig,
+    );
+  }
+
   async create(user: AuthUserContext, dto: CreateOrderDto) {
     const quote = await this.buildQuote(user, dto);
     const currency = await this.resolveRestaurantCurrency(
@@ -3308,43 +3346,11 @@ export class OrdersService {
     deliveryConfig: BranchSettings['deliveryConfig'],
     subtotal: Prisma.Decimal,
   ) {
-    const address = await this.prisma.address.findFirst({
-      where: {
-        id: deliveryAddressId,
-        refType: 'USER',
-        referenceId: customerId,
-        deletedAt: null,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        lat: true,
-        lng: true,
-        postalCode: true,
-      },
-    });
-
-    if (!address) {
-      throw new BadRequestException('Delivery address not found');
-    }
-
-    const branchAddress = await this.prisma.address.findFirst({
-      where: {
-        refType: AddressRefType.BRANCH,
-        referenceId: branchId,
-        deletedAt: null,
-        isActive: true,
-        lat: { not: null },
-        lng: { not: null },
-      },
-      select: {
-        lat: true,
-        lng: true,
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-    });
+    const { address, branchAddress } = await this.resolveDeliveryLocations(
+      customerId,
+      deliveryAddressId,
+      branchId,
+    );
 
     switch (deliveryConfig.mode) {
       case 'ZONE':
@@ -3388,11 +3394,106 @@ export class OrdersService {
     }
   }
 
+  private async assertDeliveryAddressInCoverage(
+    customerId: string,
+    deliveryAddressId: string,
+    branchId: string,
+    deliveryConfig: BranchSettings['deliveryConfig'],
+  ) {
+    const { address, branchAddress } = await this.resolveDeliveryLocations(
+      customerId,
+      deliveryAddressId,
+      branchId,
+    );
+
+    switch (deliveryConfig.mode) {
+      case 'ZONE':
+        this.assertAddressInDeliveryZone(address, deliveryConfig.zones ?? []);
+        return;
+      case 'ZONE_BANDS':
+        this.assertAddressInDeliveryZoneBand(
+          address,
+          branchAddress,
+          deliveryConfig.zoneBands ?? [],
+        );
+        return;
+      case 'POSTAL_CODE':
+        this.assertAddressPostalCodeServiceable(
+          address,
+          deliveryConfig.postalCodeRules ?? [],
+        );
+        return;
+      case 'RADIUS':
+      default:
+        this.assertAddressInDeliveryRadius(
+          address,
+          branchAddress,
+          deliveryConfig.radiusKm,
+        );
+    }
+  }
+
+  private async resolveDeliveryLocations(
+    customerId: string,
+    deliveryAddressId: string,
+    branchId: string,
+  ) {
+    const address = await this.prisma.address.findFirst({
+      where: {
+        id: deliveryAddressId,
+        refType: 'USER',
+        referenceId: customerId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        lat: true,
+        lng: true,
+        postalCode: true,
+      },
+    });
+
+    if (!address) {
+      throw new BadRequestException('Delivery address not found');
+    }
+
+    const branchAddress = await this.prisma.address.findFirst({
+      where: {
+        refType: AddressRefType.BRANCH,
+        referenceId: branchId,
+        deletedAt: null,
+        isActive: true,
+        lat: { not: null },
+        lng: { not: null },
+      },
+      select: {
+        lat: true,
+        lng: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    return { address, branchAddress };
+  }
+
   private resolveRadiusDeliveryFee(
     address: DeliveryAddressContext,
     branchAddress: BranchLocationContext | null,
     radiusKm: number,
     deliveryFee: number,
+  ) {
+    this.assertAddressInDeliveryRadius(address, branchAddress, radiusKm);
+
+    return new Prisma.Decimal(deliveryFee);
+  }
+
+  private assertAddressInDeliveryRadius(
+    address: DeliveryAddressContext,
+    branchAddress: BranchLocationContext | null,
+    radiusKm: number,
   ) {
     if (!address.lat || !address.lng) {
       throw new BadRequestException('Delivery address must include lat/lng');
@@ -3414,8 +3515,6 @@ export class OrdersService {
         'Delivery address is outside branch delivery radius',
       );
     }
-
-    return new Prisma.Decimal(deliveryFee);
   }
 
   private resolveZoneDeliveryFee(
@@ -3424,27 +3523,7 @@ export class OrdersService {
     subtotal: Prisma.Decimal,
     branchMinOrderAmount: number,
   ) {
-    if (!address.lat || !address.lng) {
-      throw new BadRequestException('Delivery address must include lat/lng');
-    }
-
-    if (!zones.length) {
-      throw new BadRequestException('Branch delivery zones are not configured');
-    }
-
-    const match = zones.find((zone) =>
-      this.isPointInPolygon(
-        Number(address.lat),
-        Number(address.lng),
-        zone.polygon,
-      ),
-    );
-
-    if (!match) {
-      throw new BadRequestException(
-        'Delivery address is outside branch delivery zones',
-      );
-    }
+    const match = this.assertAddressInDeliveryZone(address, zones);
 
     this.assertMinimumOrderAmount(
       subtotal,
@@ -3469,6 +3548,63 @@ export class OrdersService {
     zoneBands: DeliveryZoneBandConfig[],
     subtotal: Prisma.Decimal,
     branchMinOrderAmount: number,
+  ) {
+    const matchedBand = this.assertAddressInDeliveryZoneBand(
+      address,
+      branchAddress,
+      zoneBands,
+    );
+
+    this.assertMinimumOrderAmount(
+      subtotal,
+      new Prisma.Decimal(matchedBand.minOrderAmount ?? branchMinOrderAmount),
+      'zone',
+    );
+
+    if (
+      matchedBand.freeDeliveryThreshold !== undefined &&
+      matchedBand.freeDeliveryThreshold > 0 &&
+      subtotal.greaterThanOrEqualTo(matchedBand.freeDeliveryThreshold)
+    ) {
+      return new Prisma.Decimal(0);
+    }
+
+    return new Prisma.Decimal(matchedBand.deliveryFee);
+  }
+
+  private assertAddressInDeliveryZone(
+    address: DeliveryAddressContext,
+    zones: DeliveryZoneConfig[],
+  ) {
+    if (!address.lat || !address.lng) {
+      throw new BadRequestException('Delivery address must include lat/lng');
+    }
+
+    if (!zones.length) {
+      throw new BadRequestException('Branch delivery zones are not configured');
+    }
+
+    const match = zones.find((zone) =>
+      this.isPointInPolygon(
+        Number(address.lat),
+        Number(address.lng),
+        zone.polygon,
+      ),
+    );
+
+    if (!match) {
+      throw new BadRequestException(
+        'Delivery address is outside branch delivery zones',
+      );
+    }
+
+    return match;
+  }
+
+  private assertAddressInDeliveryZoneBand(
+    address: DeliveryAddressContext,
+    branchAddress: BranchLocationContext | null,
+    zoneBands: DeliveryZoneBandConfig[],
   ) {
     if (!address.lat || !address.lng) {
       throw new BadRequestException('Delivery address must include lat/lng');
@@ -3506,21 +3642,7 @@ export class OrdersService {
       );
     }
 
-    this.assertMinimumOrderAmount(
-      subtotal,
-      new Prisma.Decimal(matchedBand.minOrderAmount ?? branchMinOrderAmount),
-      'zone',
-    );
-
-    if (
-      matchedBand.freeDeliveryThreshold !== undefined &&
-      matchedBand.freeDeliveryThreshold > 0 &&
-      subtotal.greaterThanOrEqualTo(matchedBand.freeDeliveryThreshold)
-    ) {
-      return new Prisma.Decimal(0);
-    }
-
-    return new Prisma.Decimal(matchedBand.deliveryFee);
+    return matchedBand;
   }
 
   private assertMinimumOrderAmount(
@@ -3536,6 +3658,18 @@ export class OrdersService {
   }
 
   private resolvePostalCodeDeliveryFee(
+    address: DeliveryAddressContext,
+    postalCodeRules: DeliveryPostalCodeRule[],
+  ) {
+    const matchedRule = this.assertAddressPostalCodeServiceable(
+      address,
+      postalCodeRules,
+    );
+
+    return new Prisma.Decimal(matchedRule.deliveryFee);
+  }
+
+  private assertAddressPostalCodeServiceable(
     address: DeliveryAddressContext,
     postalCodeRules: DeliveryPostalCodeRule[],
   ) {
@@ -3557,7 +3691,7 @@ export class OrdersService {
       );
     }
 
-    return new Prisma.Decimal(matchedRule.deliveryFee);
+    return matchedRule;
   }
 
   private normalizePostalCode(value: string | null | undefined) {

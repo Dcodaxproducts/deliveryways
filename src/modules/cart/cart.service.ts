@@ -413,6 +413,7 @@ export class CartService {
       ...dto,
       restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
     });
+    await this.assertAddItemDeliveryAddressCoverage(user, cart);
 
     const packedSelections = this.packCartSelections(
       dto.modifiers,
@@ -713,9 +714,7 @@ export class CartService {
             tenant: { connect: { id: branch.tenantId } },
             restaurant: { connect: { id: branch.restaurantId } },
             branch: { connect: { id: branch.id } },
-            ...(existingCart.items.length
-              ? { items: { deleteMany: {} } }
-              : {}),
+            ...(existingCart.items.length ? { items: { deleteMany: {} } } : {}),
             restaurantMenu: restaurantMenu
               ? { connect: { id: restaurantMenu.id } }
               : undefined,
@@ -776,7 +775,7 @@ export class CartService {
       customer: { connect: { id: customer.id } },
       restaurantMenu: restaurantMenu
         ? { connect: { id: restaurantMenu.id } }
-      : undefined,
+        : undefined,
     });
   }
 
@@ -1191,7 +1190,7 @@ export class CartService {
     );
 
     const quote = user?.uid
-      ? await this.ordersService.quote(user, await this.toQuotePayload(cart))
+      ? await this.getCartQuoteForResponse(user, cart)
       : null;
 
     return this.resolveMediaResponse({
@@ -1211,6 +1210,73 @@ export class CartService {
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
+  }
+
+  private async getCartQuoteForResponse(
+    user: AuthUserContext,
+    cart: CartSnapshot,
+  ) {
+    try {
+      return await this.ordersService.quote(
+        user,
+        await this.toQuotePayload(cart),
+      );
+    } catch (error) {
+      if (this.isDeliveryCoverageError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  private async assertAddItemDeliveryAddressCoverage(
+    user: AuthUserContext,
+    cart: CartSnapshot,
+  ) {
+    if (cart.orderType !== OrderType.DELIVERY) {
+      return;
+    }
+
+    const deliveryAddressId =
+      await this.resolveEffectiveDeliveryAddressId(cart);
+    if (!deliveryAddressId) {
+      return;
+    }
+
+    await this.ordersService.assertDeliveryAddressCoverage(user, {
+      branchId: cart.branchId,
+      customerId: cart.customerId,
+      deliveryAddressId,
+    });
+  }
+
+  private isDeliveryCoverageError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const response = error.getResponse();
+    const message =
+      typeof response === 'string'
+        ? response
+        : typeof response === 'object' &&
+            response !== null &&
+            'message' in response
+          ? (response as { message?: unknown }).message
+          : error.message;
+
+    const normalizedMessage = Array.isArray(message)
+      ? message.join(' ')
+      : message;
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      (normalizedMessage.includes('outside branch delivery radius') ||
+        normalizedMessage.includes('outside branch delivery zones') ||
+        normalizedMessage.includes('outside branch delivery zone bands') ||
+        normalizedMessage.includes('postal code is not serviceable'))
+    );
   }
 
   private async resolveMediaResponse<T>(data: T) {
