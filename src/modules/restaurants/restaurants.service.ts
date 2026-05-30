@@ -1059,7 +1059,10 @@ export class RestaurantsService {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN) {
+    if (
+      user.role !== UserRoleEnum.BUSINESS_ADMIN &&
+      user.role !== UserRoleEnum.BRANCH_ADMIN
+    ) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
@@ -1067,6 +1070,12 @@ export class RestaurantsService {
 
     if (user.rid === restaurantId) {
       return;
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your restaurant',
+      );
     }
 
     const restaurant = await this.restaurantsRepository.findById(restaurantId);

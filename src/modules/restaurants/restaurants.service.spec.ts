@@ -218,6 +218,71 @@ describe('RestaurantsService notification settings', () => {
     });
   });
 
+  it('allows branch admins to fetch restaurant customer app content for their restaurant', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      name: 'Demo Restaurant',
+      slug: 'demo-restaurant',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      settings: {},
+      supportContact: null,
+      branding: {
+        primaryColor: '#FF0000',
+        secondaryColor: '#000000',
+        fontFamily: 'Inter',
+      },
+    });
+
+    const result = await service.customerAppContent(
+      {
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data.config.branding).toEqual({
+      primaryColor: '#FF0000',
+      secondaryColor: '#000000',
+      fontFamily: 'Inter',
+    });
+  });
+
+  it('blocks branch admins from fetching another restaurant customer app content', async () => {
+    repository.findById
+      .mockResolvedValueOnce({
+        id: 'restaurant-2',
+        tenantId: 'tenant-1',
+        deletedAt: null,
+        settings: {},
+        supportContact: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'restaurant-2',
+        tenantId: 'tenant-1',
+        deletedAt: null,
+      });
+
+    await expect(
+      service.customerAppContent(
+        {
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        'restaurant-2',
+      ),
+    ).rejects.toThrow('You cannot access resources outside your restaurant');
+  });
+
   it('lists categorized customer app faqs for admins', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
