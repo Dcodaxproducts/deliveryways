@@ -919,6 +919,83 @@ describe('CartService', () => {
     expect(result.message).toBe('Item added to cart successfully');
   });
 
+  it('uses requested takeaway order type before delivery coverage on first add-item', async () => {
+    const { service, cartRepository, ordersService } = makeService();
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'cart-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        orderType: 'TAKEAWAY',
+        deliveryAddressId: null,
+        couponCode: null,
+        paymentMethod: null,
+        orderTime: null,
+        customerNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        items: [],
+      });
+    cartRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    cartRepository.create.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    const result = await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        quantity: 1,
+        orderType: OrderTypeEnum.TAKEAWAY,
+      },
+    );
+
+    expect(cartRepository.create).toHaveBeenCalledWith({
+      tenant: { connect: { id: 'tenant-1' } },
+      restaurant: { connect: { id: 'restaurant-1' } },
+      branch: { connect: { id: 'branch-1' } },
+      customer: { connect: { id: 'user-1' } },
+      orderType: 'TAKEAWAY',
+    });
+    expect(ordersService.assertDeliveryAddressCoverage).not.toHaveBeenCalled();
+    expect(result.message).toBe('Item added to cart successfully');
+  });
+
   it('checks delivery coverage before adding an item', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();

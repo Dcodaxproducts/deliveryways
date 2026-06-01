@@ -46,6 +46,11 @@ export class AddCartItemDto {
   @IsString()
   branchId?: string;
 
+  @ApiPropertyOptional({ enum: OrderTypeEnum })
+  @IsOptional()
+  @IsEnum(OrderTypeEnum)
+  orderType?: OrderTypeEnum;
+
   @ApiProperty()
   @IsString()
   menuItemId!: string;

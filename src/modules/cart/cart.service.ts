@@ -691,6 +691,9 @@ export class CartService {
     const requestedRestaurantMenuId = this.resolveOptionalString(
       dto.restaurantMenuId,
     );
+    const requestedOrderType = dto.orderType
+      ? this.toOrderTypeModel(dto.orderType)
+      : undefined;
 
     if (existingCart) {
       if (requestedBranchId && requestedBranchId !== existingCart.branchId) {
@@ -715,6 +718,11 @@ export class CartService {
             restaurant: { connect: { id: branch.restaurantId } },
             branch: { connect: { id: branch.id } },
             ...(existingCart.items.length ? { items: { deleteMany: {} } } : {}),
+            ...(requestedOrderType ? { orderType: requestedOrderType } : {}),
+            deliveryAddress:
+              requestedOrderType && requestedOrderType !== OrderType.DELIVERY
+                ? { disconnect: true }
+                : undefined,
             restaurantMenu: restaurantMenu
               ? { connect: { id: restaurantMenu.id } }
               : undefined,
@@ -745,9 +753,24 @@ export class CartService {
           : null;
 
         return this.cartRepository.update(existingCart.id, {
+          ...(requestedOrderType ? { orderType: requestedOrderType } : {}),
+          deliveryAddress:
+            requestedOrderType && requestedOrderType !== OrderType.DELIVERY
+              ? { disconnect: true }
+              : undefined,
           restaurantMenu: restaurantMenu
             ? { connect: { id: restaurantMenu.id } }
             : { disconnect: true },
+        });
+      }
+
+      if (requestedOrderType && requestedOrderType !== existingCart.orderType) {
+        return this.cartRepository.update(existingCart.id, {
+          orderType: requestedOrderType,
+          deliveryAddress:
+            requestedOrderType !== OrderType.DELIVERY
+              ? { disconnect: true }
+              : undefined,
         });
       }
 
@@ -773,6 +796,7 @@ export class CartService {
       restaurant: { connect: { id: branch.restaurantId } },
       branch: { connect: { id: branch.id } },
       customer: { connect: { id: customer.id } },
+      ...(requestedOrderType ? { orderType: requestedOrderType } : {}),
       restaurantMenu: restaurantMenu
         ? { connect: { id: restaurantMenu.id } }
         : undefined,
