@@ -1248,7 +1248,8 @@ export class CartService {
     } catch (error) {
       if (
         this.isDeliveryCoverageError(error) ||
-        this.isModifierSelectionLimitError(error)
+        this.isModifierSelectionLimitError(error) ||
+        this.isMinimumOrderAmountError(error)
       ) {
         return null;
       }
@@ -1306,6 +1307,20 @@ export class CartService {
       (normalizedMessage.includes('requires at least') ||
         normalizedMessage.includes('allows at most')) &&
       normalizedMessage.includes('modifier selection(s)')
+    );
+  }
+
+  private isMinimumOrderAmountError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const normalizedMessage = this.getBadRequestMessage(error);
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      normalizedMessage.includes('Subtotal is below') &&
+      normalizedMessage.includes('minimum order amount')
     );
   }
 
