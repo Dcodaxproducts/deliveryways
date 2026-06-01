@@ -1246,7 +1246,10 @@ export class CartService {
         await this.toQuotePayload(cart),
       );
     } catch (error) {
-      if (this.isDeliveryCoverageError(error)) {
+      if (
+        this.isDeliveryCoverageError(error) ||
+        this.isModifierSelectionLimitError(error)
+      ) {
         return null;
       }
 
@@ -1280,6 +1283,33 @@ export class CartService {
       return false;
     }
 
+    const normalizedMessage = this.getBadRequestMessage(error);
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      (normalizedMessage.includes('outside branch delivery radius') ||
+        normalizedMessage.includes('outside branch delivery zones') ||
+        normalizedMessage.includes('outside branch delivery zone bands') ||
+        normalizedMessage.includes('postal code is not serviceable'))
+    );
+  }
+
+  private isModifierSelectionLimitError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const normalizedMessage = this.getBadRequestMessage(error);
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      (normalizedMessage.includes('requires at least') ||
+        normalizedMessage.includes('allows at most')) &&
+      normalizedMessage.includes('modifier selection(s)')
+    );
+  }
+
+  private getBadRequestMessage(error: BadRequestException) {
     const response = error.getResponse();
     const message =
       typeof response === 'string'
@@ -1290,17 +1320,7 @@ export class CartService {
           ? (response as { message?: unknown }).message
           : error.message;
 
-    const normalizedMessage = Array.isArray(message)
-      ? message.join(' ')
-      : message;
-
-    return (
-      typeof normalizedMessage === 'string' &&
-      (normalizedMessage.includes('outside branch delivery radius') ||
-        normalizedMessage.includes('outside branch delivery zones') ||
-        normalizedMessage.includes('outside branch delivery zone bands') ||
-        normalizedMessage.includes('postal code is not serviceable'))
-    );
+    return Array.isArray(message) ? message.join(' ') : message;
   }
 
   private async resolveMediaResponse<T>(data: T) {
