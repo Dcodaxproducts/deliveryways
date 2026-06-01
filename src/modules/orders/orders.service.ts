@@ -3651,9 +3651,20 @@ export class OrdersService {
     scope: 'branch' | 'zone',
   ) {
     if (subtotal.lessThan(minOrderAmount)) {
-      throw new BadRequestException(
-        `Subtotal is below ${scope} minimum order amount`,
-      );
+      const shortfall = minOrderAmount.minus(subtotal).toDecimalPlaces(2);
+      const normalizedSubtotal = subtotal.toDecimalPlaces(2);
+      const normalizedMinimum = minOrderAmount.toDecimalPlaces(2);
+
+      throw new BadRequestException({
+        message: `Subtotal is below ${scope} minimum order amount. Add ${shortfall.toFixed(2)} more to checkout.`,
+        error: 'MINIMUM_ORDER_AMOUNT_NOT_MET',
+        details: {
+          scope,
+          subtotal: Number(normalizedSubtotal),
+          minOrderAmount: Number(normalizedMinimum),
+          shortfall: Number(shortfall),
+        },
+      });
     }
   }
 
