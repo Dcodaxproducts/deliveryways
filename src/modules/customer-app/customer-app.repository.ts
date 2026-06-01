@@ -14,6 +14,133 @@ import {
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  private buildPublicMenuItemInclude(
+    branchId?: string,
+  ): Prisma.MenuItemInclude {
+    return {
+      restaurant: {
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          tagline: true,
+          settings: true,
+          tenant: { select: { settings: true } },
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          imageUrl: true,
+          variations: {
+            where: { deletedAt: null, isActive: true },
+            include: {
+              modifierPriceOverrides: {
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+              },
+              itemPriceOverrides: true,
+            },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          },
+          variationLinks: {
+            where: { isActive: true },
+            include: {
+              variation: {
+                include: {
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
+                  itemPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ sortOrder: 'asc' }],
+          },
+        },
+      },
+      modifierLinks: {
+        orderBy: [{ sortOrder: 'asc' }],
+        include: {
+          modifierGroup: {
+            include: {
+              modifierLinks: {
+                where: {
+                  modifier: { deletedAt: null, isActive: true },
+                },
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [
+                  { sortOrder: 'asc' },
+                  { modifier: { createdAt: 'asc' } },
+                ],
+              },
+            },
+          },
+        },
+      },
+      modifierPriceOverrides: {
+        include: {
+          modifier: {
+            include: {
+              itemPriceOverrides: true,
+              variationPriceOverrides: true,
+            },
+          },
+        },
+        orderBy: [{ modifier: { sortOrder: 'asc' } }],
+      },
+      variationPriceOverrides: {
+        include: {
+          variation: {
+            include: {
+              modifierPriceOverrides: {
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+              },
+              itemPriceOverrides: true,
+            },
+          },
+        },
+        orderBy: [{ variation: { sortOrder: 'asc' } }],
+      },
+      categoryLinks: { select: { menuCategoryId: true } },
+      branchOverrides: branchId
+        ? {
+            where: { branchId },
+            select: { priceOverride: true, isAvailable: true },
+            take: 1,
+          }
+        : false,
+    };
+  }
+
   async findCustomerProfile(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
@@ -411,6 +538,26 @@ export class CustomerAppRepository {
                 },
               },
             },
+          },
+          items: {
+            where: {
+              deletedAt: null,
+              isActive: true,
+              ...(branchId
+                ? {
+                    OR: [
+                      { branchOverrides: { none: { branchId } } },
+                      {
+                        branchOverrides: {
+                          some: { branchId, isAvailable: true },
+                        },
+                      },
+                    ],
+                  }
+                : {}),
+            },
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+            include: this.buildPublicMenuItemInclude(branchId),
           },
         },
       }),

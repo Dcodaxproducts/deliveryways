@@ -1434,6 +1434,7 @@ export class CustomerAppService {
       imageUrl?: string | null;
       sortOrder?: number;
       _count: { items: number };
+      items?: unknown[];
     },
     promotions: Array<Record<string, unknown>> = [],
   ) {
@@ -1445,6 +1446,14 @@ export class CustomerAppService {
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       sortOrder: item.sortOrder,
       itemCount: item._count.items,
+      items: await Promise.all(
+        (item.items ?? []).map((menuItem) =>
+          this.mapMenuItem(
+            menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
+            promotions,
+          ),
+        ),
+      ),
       promotion: this.resolveBestCategoryPromotion(item.id, promotions),
     };
   }

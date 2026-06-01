@@ -652,6 +652,66 @@ describe('CustomerAppService', () => {
     expect('modifierGroups' in result.data.items[0]).toBe(false);
   });
 
+  it('includes menu items on cuisine list with the public item response shape', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listCuisineCategories.mockResolvedValue({
+      items: [
+        {
+          id: 'category-1',
+          name: 'Burgers',
+          slug: 'burgers',
+          description: null,
+          imageUrl: 'https://cdn.example.com/category.png',
+          sortOrder: 1,
+          _count: { items: 1 },
+          items: [itemFixture],
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listCuisines({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        id: 'category-1',
+        itemCount: 1,
+      }),
+    );
+    expect(result.data[0].items[0]).toEqual(
+      expect.objectContaining({
+        id: 'item-1',
+        name: 'Zinger Burger',
+        slug: 'zinger-burger',
+        dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
+        productLabels: [
+          { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
+          { value: 'VEGAN', label: 'Vegan' },
+        ],
+        modifierLinks: itemFixture.modifierLinks,
+        modifierPriceOverrides: itemFixture.modifierPriceOverrides,
+      }),
+    );
+    expect('modifierGroups' in result.data[0].items[0]).toBe(false);
+  });
+
   it('fetches public item by slug without legacy modifier groups', async () => {
     const { service, repository } = makeService();
     repository.findPublicMenuItemBySlug.mockResolvedValue(itemFixture);
