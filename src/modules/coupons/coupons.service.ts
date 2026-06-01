@@ -392,7 +392,13 @@ export class CouponsService {
 
     let discountAmount = new Prisma.Decimal(0);
 
-    if (coupon.discountType === CouponDiscountType.FLAT) {
+    if (coupon.discountType === CouponDiscountType.FIXED_PRICE) {
+      this.assertFixedPricePromotionEligible(coupon, input);
+      discountAmount = Prisma.Decimal.max(
+        eligibleSubtotal.minus(coupon.discountValue),
+        new Prisma.Decimal(0),
+      );
+    } else if (coupon.discountType === CouponDiscountType.FLAT) {
       discountAmount = Prisma.Decimal.min(
         coupon.discountValue,
         eligibleSubtotal,
@@ -417,6 +423,46 @@ export class CouponsService {
       discountAmount,
       eligibleSubtotal,
     };
+  }
+
+  private assertFixedPricePromotionEligible(
+    coupon: Coupon & {
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+    input: CouponValidationInput,
+  ) {
+    if (coupon.applyMode !== CouponApplyMode.SCOPED_ITEMS) {
+      throw new BadRequestException(
+        'Fixed price promotions must be scoped to menu items',
+      );
+    }
+
+    const scopedMenuItemIds = this.resolveScopedIds(
+      coupon.scopeMenuItemId,
+      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
+    );
+    const scopedCategoryIds = this.resolveScopedIds(
+      coupon.scopeCategoryId,
+      coupon.scopeCategories?.map((entry) => entry.menuCategory.id) ?? [],
+    );
+
+    if (scopedCategoryIds.length || scopedMenuItemIds.length < 2) {
+      throw new BadRequestException(
+        'Fixed price promotions require at least two scoped menu items',
+      );
+    }
+
+    const selectedMenuItemIds = new Set(input.menuItemIds);
+    const missingMenuItem = scopedMenuItemIds.find(
+      (menuItemId) => !selectedMenuItemIds.has(menuItemId),
+    );
+
+    if (missingMenuItem) {
+      throw new BadRequestException(
+        'Fixed price promotion requires all scoped menu items',
+      );
+    }
   }
 
   private resolveEligibleSubtotal(

@@ -120,6 +120,11 @@ export class AdminPromotionsService {
       scopeIds.menuItemIds,
       scopeIds.categoryIds,
     );
+    this.assertValidPromotionPricing(
+      dto.discountType as CouponDiscountType,
+      (dto.applyMode ?? 'SCOPED_ITEMS') as CouponApplyMode,
+      scopeIds,
+    );
 
     const data = await this.adminPromotionsRepository.create({
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
@@ -210,6 +215,11 @@ export class AdminPromotionsService {
       scope.restaurantId,
       scopeIds.menuItemIds,
       scopeIds.categoryIds,
+    );
+    this.assertValidPromotionPricing(
+      dto.discountType ?? existing.discountType,
+      dto.applyMode ?? existing.applyMode,
+      scopeIds,
     );
 
     const data = await this.adminPromotionsRepository.update(id, {
@@ -332,6 +342,11 @@ export class AdminPromotionsService {
       scopeIds.menuItemIds,
       scopeIds.categoryIds,
     );
+    this.assertValidPromotionPricing(
+      dto.discountType as CouponDiscountType,
+      (dto.applyMode ?? 'SCOPED_ITEMS') as CouponApplyMode,
+      scopeIds,
+    );
 
     const data = await this.adminPromotionsRepository.create({
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
@@ -433,6 +448,11 @@ export class AdminPromotionsService {
       scope.restaurantId,
       scopeIds.menuItemIds,
       scopeIds.categoryIds,
+    );
+    this.assertValidPromotionPricing(
+      dto.discountType ?? existing.discountType,
+      dto.applyMode ?? existing.applyMode,
+      scopeIds,
     );
 
     const data = await this.adminPromotionsRepository.update(id, {
@@ -742,6 +762,34 @@ export class AdminPromotionsService {
     if (scope.branchId && coupon.branchId !== scope.branchId) {
       throw new ForbiddenException(
         'You cannot access resources outside your branch',
+      );
+    }
+  }
+
+  private assertValidPromotionPricing(
+    discountType: CouponDiscountType,
+    applyMode: CouponApplyMode,
+    scopeIds: { menuItemIds: string[]; categoryIds: string[] },
+  ) {
+    if (discountType !== CouponDiscountType.FIXED_PRICE) {
+      return;
+    }
+
+    if (applyMode !== CouponApplyMode.SCOPED_ITEMS) {
+      throw new BadRequestException(
+        'Fixed price promotions must use SCOPED_ITEMS applyMode',
+      );
+    }
+
+    if (scopeIds.categoryIds.length) {
+      throw new BadRequestException(
+        'Fixed price promotions cannot use category scope',
+      );
+    }
+
+    if (scopeIds.menuItemIds.length < 2) {
+      throw new BadRequestException(
+        'Fixed price promotions require at least two menu items',
       );
     }
   }

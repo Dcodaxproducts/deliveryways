@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  CouponApplyMode,
   CouponCampaignKind,
   CouponDiscountType,
   CouponStatus,
@@ -18,6 +19,8 @@ describe('AdminPromotionsService', () => {
     description: null,
     kind: CouponCampaignKind.HAPPY_HOUR,
     status: CouponStatus.ACTIVE,
+    applyMode: CouponApplyMode.SCOPED_ITEMS,
+    autoApply: true,
     discountType: CouponDiscountType.PERCENTAGE,
     discountValue: new Prisma.Decimal(50),
     maxDiscountAmount: null,
@@ -38,6 +41,8 @@ describe('AdminPromotionsService', () => {
     restaurant: { id: 'restaurant-1', name: 'Demo' },
     scopeMenuItem: null,
     scopeCategory: null,
+    scopeMenuItems: [],
+    scopeCategories: [],
     createdAt: new Date('2026-04-22T00:00:00.000Z'),
     updatedAt: new Date('2026-04-22T00:00:00.000Z'),
     ...overrides,
@@ -112,6 +117,92 @@ describe('AdminPromotionsService', () => {
         },
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('creates fixed price promotion for multiple scoped menu items', async () => {
+    const repository = {
+      create: jest.fn().mockResolvedValue(
+        makeCoupon({
+          kind: CouponCampaignKind.PROMOTION,
+          discountType: CouponDiscountType.FIXED_PRICE,
+          discountValue: new Prisma.Decimal(999),
+          scopeMenuItems: [
+            { menuItem: { id: 'item-1', name: 'Pizza' } },
+            { menuItem: { id: 'item-2', name: 'Drink' } },
+          ],
+        }),
+      ),
+    };
+    const prisma = {
+      menuItem: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'item-1' }, { id: 'item-2' }]),
+      },
+      menuCategory: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new AdminPromotionsService(
+      repository as never,
+      prisma as never,
+    );
+
+    await service.createPromotion(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Combo Deal',
+        discountType: 'FIXED_PRICE',
+        discountValue: 999,
+        startsAt: '2026-04-22T00:00:00.000Z',
+        expiresAt: '2026-05-22T00:00:00.000Z',
+        scopeMenuItemIds: ['item-1', 'item-2'],
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(999),
+        scopeMenuItems: {
+          create: [
+            { menuItem: { connect: { id: 'item-1' } } },
+            { menuItem: { connect: { id: 'item-2' } } },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('rejects fixed price promotion with fewer than two scoped menu items', async () => {
+    const prisma = {
+      menuItem: { findMany: jest.fn().mockResolvedValue([{ id: 'item-1' }]) },
+      menuCategory: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new AdminPromotionsService({} as never, prisma as never);
+
+    await expect(
+      service.createPromotion(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {
+          title: 'Combo Deal',
+          discountType: 'FIXED_PRICE',
+          discountValue: 999,
+          startsAt: '2026-04-22T00:00:00.000Z',
+          expiresAt: '2026-05-22T00:00:00.000Z',
+          scopeMenuItemIds: ['item-1'],
+        },
+      ),
+    ).rejects.toThrow('Fixed price promotions require at least two menu items');
   });
 
   it('lists branch admin promotions locked to token branch', async () => {

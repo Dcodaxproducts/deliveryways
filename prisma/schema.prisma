@@ -55,6 +55,7 @@ enum CouponStatus {
 enum CouponDiscountType {
   FLAT
   PERCENTAGE
+  FIXED_PRICE
 }
 
 enum CouponApplyMode {

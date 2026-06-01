@@ -471,16 +471,22 @@ export class AdminPromotionBaseDto {
   @IsString()
   branchId?: string;
 
-  @ApiProperty({ enum: ['FLAT', 'PERCENTAGE'] })
-  @IsIn(['FLAT', 'PERCENTAGE'])
-  discountType!: 'FLAT' | 'PERCENTAGE';
+  @ApiProperty({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
+  @IsIn(['FLAT', 'PERCENTAGE', 'FIXED_PRICE'])
+  discountType!: 'FLAT' | 'PERCENTAGE' | 'FIXED_PRICE';
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Flat discount amount, percentage value, or final bundle price when discountType is FIXED_PRICE.',
+  })
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   discountValue!: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Flat discount amount, percentage value, or final bundle price when discountType is FIXED_PRICE.',
+  })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
@@ -590,10 +596,10 @@ export class UpdateAdminPromotionDto {
   @IsString()
   branchId?: string;
 
-  @ApiPropertyOptional({ enum: ['FLAT', 'PERCENTAGE'] })
+  @ApiPropertyOptional({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
   @IsOptional()
-  @IsIn(['FLAT', 'PERCENTAGE'])
-  discountType?: 'FLAT' | 'PERCENTAGE';
+  @IsIn(['FLAT', 'PERCENTAGE', 'FIXED_PRICE'])
+  discountType?: 'FLAT' | 'PERCENTAGE' | 'FIXED_PRICE';
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -36,7 +36,10 @@ export class CouponInputDto {
   @IsEnum(CouponDiscountType)
   discountType!: CouponDiscountType;
 
-  @ApiProperty({ description: 'Flat amount or percentage value' })
+  @ApiProperty({
+    description:
+      'Flat discount amount, percentage value, or final scoped-item bundle price when discountType is FIXED_PRICE.',
+  })
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   discountValue!: number;

@@ -489,6 +489,13 @@ export class MenuItemService {
         ).map((entry) => entry.menuCategory.id),
       );
 
+      if (
+        (promotion.discountType as string) === 'FIXED_PRICE' &&
+        scopedMenuItemIds.length > 1
+      ) {
+        continue;
+      }
+
       const matches =
         (!scopedMenuItemIds.length && !scopedCategoryIds.length) ||
         scopedMenuItemIds.includes(menuItemId) ||
@@ -547,7 +554,12 @@ export class MenuItemService {
       amount instanceof Prisma.Decimal ? amount : new Prisma.Decimal(amount);
     let discountAmount = new Prisma.Decimal(0);
 
-    if (promotion.discountType === 'FLAT') {
+    if (promotion.discountType === 'FIXED_PRICE') {
+      discountAmount = Prisma.Decimal.max(
+        base.minus(promotion.discountValue),
+        new Prisma.Decimal(0),
+      );
+    } else if (promotion.discountType === 'FLAT') {
       discountAmount = Prisma.Decimal.min(base, promotion.discountValue);
     } else {
       discountAmount = base.mul(promotion.discountValue).div(100);

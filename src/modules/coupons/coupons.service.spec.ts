@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { CouponDiscountType, CouponStatus, Prisma } from '@prisma/client';
+import {
+  CouponApplyMode,
+  CouponDiscountType,
+  CouponStatus,
+  Prisma,
+} from '@prisma/client';
 import { CouponsService, CouponValidationInput } from './coupons.service';
 import { CouponsRepository } from './coupons.repository';
 
@@ -22,6 +27,8 @@ describe('CouponsService', () => {
     title: '20% Off',
     description: null,
     status: CouponStatus.ACTIVE,
+    applyMode: CouponApplyMode.SCOPED_ITEMS,
+    autoApply: false,
     discountType: CouponDiscountType.PERCENTAGE,
     discountValue: new Prisma.Decimal(20),
     maxDiscountAmount: new Prisma.Decimal(100),
@@ -174,6 +181,61 @@ describe('CouponsService', () => {
     });
 
     expect(Number(result.discountAmount)).toBe(500);
+  });
+
+  it('prices all scoped menu items at a fixed promotion price', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(799),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [
+          { menuItem: { id: 'mi-1' } },
+          { menuItem: { id: 'mi-2' } },
+        ],
+      }),
+    );
+
+    const result = await service.validateForCheckout({
+      ...baseInput,
+      lineItems: [
+        {
+          menuItemId: 'mi-1',
+          categoryId: 'cat-1',
+          lineTotal: 600,
+        },
+        {
+          menuItemId: 'mi-2',
+          categoryId: 'cat-2',
+          lineTotal: 500,
+        },
+      ],
+    });
+
+    expect(Number(result.eligibleSubtotal)).toBe(1100);
+    expect(Number(result.discountAmount)).toBe(301);
+  });
+
+  it('requires every scoped menu item for fixed price promotions', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(799),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [
+          { menuItem: { id: 'mi-1' } },
+          { menuItem: { id: 'mi-999' } },
+        ],
+      }),
+    );
+
+    await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
+      'Fixed price promotion requires all scoped menu items',
+    );
   });
 
   it('throws when coupon not found', async () => {
