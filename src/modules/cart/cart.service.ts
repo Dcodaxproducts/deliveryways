@@ -413,7 +413,6 @@ export class CartService {
       ...dto,
       restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
     });
-    await this.assertAddItemDeliveryAddressCoverage(user, cart);
 
     const packedSelections = this.packCartSelections(
       dto.modifiers,
@@ -1256,27 +1255,6 @@ export class CartService {
 
       throw error;
     }
-  }
-
-  private async assertAddItemDeliveryAddressCoverage(
-    user: AuthUserContext,
-    cart: CartSnapshot,
-  ) {
-    if (cart.orderType !== OrderType.DELIVERY) {
-      return;
-    }
-
-    const deliveryAddressId =
-      await this.resolveEffectiveDeliveryAddressId(cart);
-    if (!deliveryAddressId) {
-      return;
-    }
-
-    await this.ordersService.assertDeliveryAddressCoverage(user, {
-      branchId: cart.branchId,
-      customerId: cart.customerId,
-      deliveryAddressId,
-    });
   }
 
   private isDeliveryCoverageError(error: unknown) {

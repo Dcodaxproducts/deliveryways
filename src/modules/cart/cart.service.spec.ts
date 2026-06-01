@@ -1122,25 +1122,42 @@ describe('CartService', () => {
     expect(result.message).toBe('Item added to cart successfully');
   });
 
-  it('checks delivery coverage before adding an item', async () => {
+  it('adds an item even when the saved delivery address is outside coverage', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();
-    cartRepository.findByCustomerId.mockResolvedValue({
-      id: 'cart-1',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-      customerId: 'user-1',
-      orderType: 'DELIVERY',
-      deliveryAddressId: 'address-1',
-      couponCode: null,
-      paymentMethod: null,
-      orderTime: null,
-      customerNote: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      items: [],
-    });
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce({
+        id: 'cart-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        orderType: 'DELIVERY',
+        deliveryAddressId: 'address-1',
+        couponCode: null,
+        paymentMethod: null,
+        orderTime: null,
+        customerNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        id: 'cart-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        orderType: 'DELIVERY',
+        deliveryAddressId: 'address-1',
+        couponCode: null,
+        paymentMethod: null,
+        orderTime: null,
+        customerNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        items: [],
+      });
     cartRepository.findMenuItemForCart.mockResolvedValue({
       id: 'menu-1',
       name: 'Burger',
@@ -1154,6 +1171,10 @@ describe('CartService', () => {
         'Delivery address is outside branch delivery radius',
       ),
     );
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
     await expect(
       service.addItem(
@@ -1169,16 +1190,21 @@ describe('CartService', () => {
           quantity: 1,
         },
       ),
-    ).rejects.toThrow('Delivery address is outside branch delivery radius');
-    expect(ordersService.assertDeliveryAddressCoverage).toHaveBeenCalledWith(
-      expect.objectContaining({ uid: 'user-1' }),
-      {
-        branchId: 'branch-1',
-        customerId: 'user-1',
-        deliveryAddressId: 'address-1',
-      },
-    );
-    expect(cartRepository.createItem).not.toHaveBeenCalled();
+    ).resolves.toEqual({
+      data: { id: 'cart-1', items: [] },
+      message: 'Item added to cart successfully',
+    });
+    expect(ordersService.assertDeliveryAddressCoverage).not.toHaveBeenCalled();
+    expect(cartRepository.createItem).toHaveBeenCalledWith({
+      cart: { connect: { id: 'cart-1' } },
+      menuItemId: 'menu-1',
+      variationId: undefined,
+      quantity: 1,
+      note: undefined,
+      modifiers: undefined,
+    });
+    expect(cartRepository.findByCustomerId).toHaveBeenLastCalledWith('user-1');
+    expect(profilesRepository.findByUserId).not.toHaveBeenCalled();
   });
 
   it('blocks add-item while branch is temporarily closed', async () => {
