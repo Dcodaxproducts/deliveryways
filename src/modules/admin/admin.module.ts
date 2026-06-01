@@ -17,6 +17,8 @@ import { AdminDashboardRepository } from './admin-dashboard.repository';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
+import { AdminImportSamplesController } from './admin-import-samples.controller';
+import { AdminImportSamplesService } from './admin-import-samples.service';
 
 @Module({
   imports: [UsersModule, DatabaseModule, SystemHealthModule, MailerModule],
@@ -26,6 +28,7 @@ import { AdminUsersService } from './admin-users.service';
     AdminReportsController,
     AdminPromotionsController,
     AdminPrintingController,
+    AdminImportSamplesController,
   ],
   providers: [
     AdminUsersService,
@@ -37,6 +40,7 @@ import { AdminUsersService } from './admin-users.service';
     AdminPromotionsRepository,
     AdminPrintingService,
     AdminPrintingRepository,
+    AdminImportSamplesService,
   ],
 })
 export class AdminModule {}
