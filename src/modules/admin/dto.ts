@@ -467,6 +467,20 @@ export class AdminPromotionBaseDto {
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({
+    description: 'Promotion/deal image URL used as thumbnail in customer apps.',
+  })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Alias for imageUrl when frontend sends thumbnail wording.',
+  })
+  @IsOptional()
+  @IsString()
+  thumbnailUrl?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -612,6 +626,20 @@ export class UpdateAdminPromotionDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({
+    description: 'Promotion/deal image URL used as thumbnail in customer apps.',
+  })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Alias for imageUrl when frontend sends thumbnail wording.',
+  })
+  @IsOptional()
+  @IsString()
+  thumbnailUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

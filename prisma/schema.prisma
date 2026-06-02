@@ -926,6 +926,7 @@ model Coupon {
   code               String
   title              String
   description        String?
+  imageUrl           String?            @map("image_url")
   kind               CouponCampaignKind @default(PROMOTION)
   status             CouponStatus       @default(ACTIVE)
   applyMode          CouponApplyMode    @default(ORDER_TOTAL) @map("apply_mode")

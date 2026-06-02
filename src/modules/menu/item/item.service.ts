@@ -543,6 +543,7 @@ export class MenuItemService {
       id: string;
       title: string;
       description: string | null;
+      imageUrl?: string | null;
       applyMode: string;
       discountType: string;
       discountValue: Prisma.Decimal;
@@ -582,6 +583,8 @@ export class MenuItemService {
       promotionId: promotion.id,
       title: promotion.title,
       description: promotion.description,
+      imageUrl: promotion.imageUrl ?? null,
+      thumbnailUrl: promotion.imageUrl ?? null,
       applyMode: promotion.applyMode as PromotionPreview['applyMode'],
       discountType: promotion.discountType as PromotionPreview['discountType'],
       discountValue: Number(promotion.discountValue),

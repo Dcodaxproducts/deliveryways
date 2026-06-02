@@ -17,6 +17,7 @@ describe('AdminPromotionsService', () => {
     code: 'HAPPY50',
     title: 'Happy Hour',
     description: null,
+    imageUrl: null,
     kind: CouponCampaignKind.HAPPY_HOUR,
     status: CouponStatus.ACTIVE,
     applyMode: CouponApplyMode.SCOPED_ITEMS,
@@ -175,6 +176,8 @@ describe('AdminPromotionsService', () => {
           return Promise.resolve(
             makeCoupon({
               code: input.code,
+              imageUrl:
+                typeof input.imageUrl === 'string' ? input.imageUrl : null,
               kind: CouponCampaignKind.PROMOTION,
               discountType: CouponDiscountType.FIXED_PRICE,
               discountValue: new Prisma.Decimal(1299),
@@ -197,6 +200,7 @@ describe('AdminPromotionsService', () => {
       } as never,
       {
         title: 'Family Deal',
+        thumbnailUrl: 'https://cdn.example.com/family-deal.jpg',
         discountValue: 1299,
         startsAt: '2026-04-22T00:00:00.000Z',
         expiresAt: '2026-05-22T00:00:00.000Z',
@@ -210,6 +214,7 @@ describe('AdminPromotionsService', () => {
         kind: CouponCampaignKind.PROMOTION,
         applyMode: CouponApplyMode.SCOPED_ITEMS,
         autoApply: true,
+        imageUrl: 'https://cdn.example.com/family-deal.jpg',
         discountType: CouponDiscountType.FIXED_PRICE,
         discountValue: new Prisma.Decimal(1299),
         scopeMenuItems: {
@@ -221,6 +226,12 @@ describe('AdminPromotionsService', () => {
       }),
     );
     expect(createdDealCode).toMatch(/^DEAL-/);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        imageUrl: 'https://cdn.example.com/family-deal.jpg',
+        thumbnailUrl: 'https://cdn.example.com/family-deal.jpg',
+      }),
+    );
     expect(result.message).toBe('Deal created successfully');
   });
 

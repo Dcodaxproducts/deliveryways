@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Patch,
   Post,
   Query,
   Param,
@@ -39,6 +40,7 @@ import {
   ListWalletHistoryQueryDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
+  UpdateTableReservationStatusDto,
 } from './dto';
 import { CustomerAppService } from './customer-app.service';
 
@@ -346,6 +348,29 @@ export class CustomerAppController {
     @Query() query: ListAdminTableReservationsQueryDto,
   ) {
     return this.customerAppService.listAdminTableReservations(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Patch('admin/table-reservations/:reservationId/status')
+  @ApiOperation({
+    summary: 'Update table reservation status for admin/branch-admin panels',
+  })
+  updateAdminTableReservationStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Param('reservationId') reservationId: string,
+    @Body() dto: UpdateTableReservationStatusDto,
+  ) {
+    return this.customerAppService.updateAdminTableReservationStatus(
+      user,
+      reservationId,
+      dto,
+    );
   }
 
   @ApiBearerAuth()

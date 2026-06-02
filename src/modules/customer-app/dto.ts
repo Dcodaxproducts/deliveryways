@@ -192,8 +192,14 @@ export class CreateTableReservationDto {
 
 export const TABLE_RESERVATION_STATUS_VALUES = [
   'REQUESTED',
+  'CONFIRMED',
+  'SEATED',
+  'COMPLETED',
   'CANCELLED',
 ] as const;
+
+export type TableReservationStatus =
+  (typeof TABLE_RESERVATION_STATUS_VALUES)[number];
 
 export class ListTableReservationsQueryDto extends QueryDto {
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
@@ -228,6 +234,32 @@ export class ListAdminTableReservationsQueryDto extends ListTableReservationsQue
   @IsOptional()
   @IsIn(TABLE_RESERVATION_STATUS_VALUES)
   status?: (typeof TABLE_RESERVATION_STATUS_VALUES)[number];
+}
+
+export class UpdateTableReservationStatusDto {
+  @ApiProperty({ enum: TABLE_RESERVATION_STATUS_VALUES })
+  @IsIn(TABLE_RESERVATION_STATUS_VALUES)
+  status!: TableReservationStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'Required for super admin/business admin tokens without restaurant scope',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional customer scope to avoid scanning all customers',
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
 }
 
 export class WalletLoyaltyQuoteDto {

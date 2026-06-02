@@ -52,6 +52,8 @@ export interface PromotionPreview {
   promotionId: string;
   title: string;
   description: string | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
   applyMode: CouponApplyMode;
   discountType: CouponDiscountType;
   discountValue: number;
@@ -305,6 +307,8 @@ export class CouponsService {
       promotionId: validation.coupon.id,
       title: validation.coupon.title,
       description: validation.coupon.description,
+      imageUrl: validation.coupon.imageUrl,
+      thumbnailUrl: validation.coupon.imageUrl,
       applyMode: validation.coupon.applyMode,
       discountType: validation.coupon.discountType,
       discountValue: Number(validation.coupon.discountValue),

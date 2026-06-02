@@ -27,10 +27,13 @@ import {
   ListTableReservationsQueryDto,
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
+  TABLE_RESERVATION_STATUS_VALUES,
+  TableReservationStatus,
   CreateWalletTopUpDto,
   ListWalletHistoryQueryDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
+  UpdateTableReservationStatusDto,
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
@@ -139,7 +142,7 @@ export interface TableReservationRecord {
   reservationDate: string;
   guestCount: number;
   note: string | null;
-  status: 'REQUESTED' | 'CANCELLED';
+  status: TableReservationStatus;
   createdAt: string;
   cancelledAt: string | null;
 }
@@ -872,6 +875,99 @@ export class CustomerAppService {
     };
   }
 
+  async updateAdminTableReservationStatus(
+    user: AuthUserContext,
+    reservationId: string,
+    dto: UpdateTableReservationStatusDto,
+  ) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      throw new ForbiddenException(
+        'Customers cannot update reservation status',
+      );
+    }
+
+    const restaurantId = await this.resolveAdminReservationRestaurantId(
+      user,
+      dto.restaurantId,
+    );
+    const branchId = this.resolveAdminReservationBranchId(user, dto.branchId);
+    const customers =
+      await this.customerAppRepository.findCustomersForTableReservations({
+        restaurantId,
+        customerId: dto.customerId,
+      });
+
+    for (const customer of customers) {
+      const existingReservations = this.readTableReservations(
+        customer.profile?.metadata,
+      );
+      const reservation = existingReservations.find(
+        (item) => item.id === reservationId,
+      );
+
+      if (!reservation) {
+        continue;
+      }
+
+      if (branchId && reservation.branchId !== branchId) {
+        throw new NotFoundException('Table reservation not found');
+      }
+
+      const cancelledAt =
+        dto.status === 'CANCELLED'
+          ? (reservation.cancelledAt ?? new Date().toISOString())
+          : null;
+      const reservations = existingReservations.map((item) =>
+        item.id === reservationId
+          ? { ...item, status: dto.status, cancelledAt }
+          : item,
+      );
+      const updatedReservation =
+        reservations.find((item) => item.id === reservationId) ?? null;
+      const nextMetadata = this.writeCustomerAppMetadata(
+        customer.profile?.metadata,
+        {
+          tableReservations: reservations,
+        },
+      );
+
+      await this.customerAppRepository.upsertCustomerProfile(
+        customer.id,
+        nextMetadata,
+      );
+
+      const branches = updatedReservation
+        ? await this.customerAppRepository.findBranchesPublicContent(
+            [updatedReservation.branchId],
+            restaurantId,
+          )
+        : [];
+      const branch = updatedReservation
+        ? branches.find((item) => item.id === updatedReservation.branchId)
+        : null;
+
+      return {
+        data: updatedReservation
+          ? {
+              ...updatedReservation,
+              customer: {
+                id: customer.id,
+                email: customer.email,
+                firstName: customer.profile?.firstName ?? null,
+                lastName: customer.profile?.lastName ?? null,
+                phone: customer.profile?.phone ?? null,
+                avatarUrl: customer.profile?.avatarUrl ?? null,
+              },
+              branch: await this.resolveBranchMedia(branch ?? null),
+            }
+          : null,
+        message: 'Table reservation status updated successfully',
+      };
+    }
+
+    throw new NotFoundException('Table reservation not found');
+  }
+
   async createTableReservation(
     user: AuthUserContext,
     dto: CreateTableReservationDto,
@@ -1264,16 +1360,21 @@ export class CustomerAppService {
           return null;
         }
 
+        const status =
+          typeof reservation.status === 'string' &&
+          TABLE_RESERVATION_STATUS_VALUES.includes(
+            reservation.status as TableReservationStatus,
+          )
+            ? (reservation.status as TableReservationStatus)
+            : 'REQUESTED';
+
         return {
           id: reservation.id,
           branchId: reservation.branchId,
           reservationDate: reservation.reservationDate,
           guestCount: reservation.guestCount,
           note: typeof reservation.note === 'string' ? reservation.note : null,
-          status:
-            reservation.status === 'CANCELLED'
-              ? 'CANCELLED'
-              : ('REQUESTED' as const),
+          status,
           createdAt: reservation.createdAt,
           cancelledAt:
             typeof reservation.cancelledAt === 'string'
@@ -1872,6 +1973,8 @@ export class CustomerAppService {
       id: promotion.id,
       title: promotion.title,
       description: promotion.description,
+      imageUrl: await this.resolveMediaUrl(promotion.imageUrl),
+      thumbnailUrl: await this.resolveMediaUrl(promotion.imageUrl),
       applyMode: promotion.applyMode,
       discountType: promotion.discountType,
       discountValue: Number(promotion.discountValue),
@@ -2045,6 +2148,7 @@ export class CustomerAppService {
           id: string;
           title: string;
           description: string | null;
+          imageUrl?: string | null;
           applyMode: string;
           discountType: string;
           discountValue: Prisma.Decimal;
@@ -2066,6 +2170,7 @@ export class CustomerAppService {
       id: string;
       title: string;
       description: string | null;
+      imageUrl?: string | null;
       applyMode: string;
       discountType: string;
       discountValue: Prisma.Decimal;
@@ -2107,6 +2212,8 @@ export class CustomerAppService {
       promotionId: promotion.id,
       title: promotion.title,
       description: promotion.description,
+      imageUrl: promotion.imageUrl ?? null,
+      thumbnailUrl: promotion.imageUrl ?? null,
       applyMode: promotion.applyMode as PromotionPreview['applyMode'],
       discountType: promotion.discountType as PromotionPreview['discountType'],
       discountValue: Number(promotion.discountValue),

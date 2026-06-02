@@ -137,6 +137,7 @@ export class AdminPromotionsService {
       code: this.resolvePromotionCode(dto.code, codePrefix),
       title: dto.title,
       description: dto.description,
+      imageUrl: this.resolveImageUrl(dto),
       kind: CouponCampaignKind.PROMOTION,
       status:
         dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
@@ -339,6 +340,9 @@ export class AdminPromotionsService {
       ...(dto.description !== undefined
         ? { description: dto.description }
         : {}),
+      ...(this.hasImageUrlInput(dto)
+        ? { imageUrl: this.resolveImageUrl(dto) }
+        : {}),
       ...(scope.branchId !== existing.branchId
         ? {
             branch: scope.branchId
@@ -464,6 +468,7 @@ export class AdminPromotionsService {
       code: this.resolvePromotionCode(dto.code, 'HAPPY'),
       title: dto.title,
       description: dto.description,
+      imageUrl: this.resolveImageUrl(dto),
       kind: CouponCampaignKind.HAPPY_HOUR,
       status:
         dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
@@ -571,6 +576,9 @@ export class AdminPromotionsService {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.description !== undefined
         ? { description: dto.description }
+        : {}),
+      ...(this.hasImageUrlInput(dto)
+        ? { imageUrl: this.resolveImageUrl(dto) }
         : {}),
       ...(scope.branchId !== existing.branchId
         ? {
@@ -918,6 +926,7 @@ export class AdminPromotionsService {
     code: string;
     title: string;
     description: string | null;
+    imageUrl: string | null;
     kind: CouponCampaignKind;
     status: CouponStatus;
     applyMode: CouponApplyMode;
@@ -949,6 +958,8 @@ export class AdminPromotionsService {
       code: coupon.autoApply ? null : coupon.code,
       title: coupon.title,
       description: coupon.description,
+      imageUrl: coupon.imageUrl,
+      thumbnailUrl: coupon.imageUrl,
       kind: coupon.kind,
       status: coupon.status,
       applyMode: coupon.applyMode,
@@ -996,6 +1007,14 @@ export class AdminPromotionsService {
       (item, index, all) =>
         all.findIndex((entry) => entry.id === item.id) === index,
     );
+  }
+
+  private hasImageUrlInput(dto: { imageUrl?: string; thumbnailUrl?: string }) {
+    return dto.imageUrl !== undefined || dto.thumbnailUrl !== undefined;
+  }
+
+  private resolveImageUrl(dto: { imageUrl?: string; thumbnailUrl?: string }) {
+    return dto.imageUrl ?? dto.thumbnailUrl ?? null;
   }
 
   private normalizeScopeIds(

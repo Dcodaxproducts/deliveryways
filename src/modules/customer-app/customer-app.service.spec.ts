@@ -381,6 +381,7 @@ describe('CustomerAppService', () => {
         id: 'promo-1',
         title: 'Burger Deal',
         description: 'Auto discount',
+        imageUrl: 'promo-thumb.jpg',
         applyMode: 'SCOPED_ITEMS',
         discountType: 'PERCENTAGE',
         discountValue: new Prisma.Decimal(10),
@@ -471,6 +472,7 @@ describe('CustomerAppService', () => {
         id: 'promo-1',
         title: 'Burger Deal',
         description: 'Auto discount',
+        imageUrl: 'promo-thumb.jpg',
         applyMode: 'SCOPED_ITEMS',
         discountType: 'PERCENTAGE',
         discountValue: new Prisma.Decimal(10),
@@ -507,6 +509,7 @@ describe('CustomerAppService', () => {
         id: 'deal-1',
         title: 'Burger Combo',
         description: 'Fixed bundle',
+        imageUrl: 'deal-thumb.jpg',
         applyMode: 'SCOPED_ITEMS',
         discountType: 'FIXED_PRICE',
         discountValue: new Prisma.Decimal(999),
@@ -536,6 +539,8 @@ describe('CustomerAppService', () => {
       expect.objectContaining({
         id: 'promo-1',
         title: 'Burger Deal',
+        imageUrl: 'promo-thumb.jpg',
+        thumbnailUrl: 'promo-thumb.jpg',
         discountType: 'PERCENTAGE',
         discountValue: 10,
         maxDiscountAmount: 100,
@@ -566,6 +571,7 @@ describe('CustomerAppService', () => {
     });
     const basePromotion = {
       description: 'Auto discount',
+      imageUrl: null,
       applyMode: 'SCOPED_ITEMS',
       maxDiscountAmount: null,
       minOrderAmount: null,
@@ -590,6 +596,7 @@ describe('CustomerAppService', () => {
         ...basePromotion,
         id: 'deal-1',
         title: 'Burger Combo',
+        imageUrl: 'deal-thumb.jpg',
         discountType: 'FIXED_PRICE',
         discountValue: new Prisma.Decimal(999),
         scopeMenuItems: [
@@ -634,6 +641,8 @@ describe('CustomerAppService', () => {
       expect.objectContaining({
         id: 'deal-1',
         title: 'Burger Combo',
+        imageUrl: 'deal-thumb.jpg',
+        thumbnailUrl: 'deal-thumb.jpg',
         discountType: 'FIXED_PRICE',
         discountValue: 999,
         scopeMenuItems: [
@@ -1519,6 +1528,77 @@ describe('CustomerAppService', () => {
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.branchId).toBe('branch-1');
+  });
+
+  it('updates table reservation status for business admins', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomersForTableReservations.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        profile: {
+          firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '03001234567',
+          avatarUrl: null,
+          metadata: {
+            customerApp: {
+              tableReservations: [
+                {
+                  id: 'reservation-1',
+                  branchId: 'branch-1',
+                  reservationDate: '2099-03-30T19:30:00.000Z',
+                  guestCount: 4,
+                  note: null,
+                  status: 'REQUESTED',
+                  createdAt: '2099-03-29T10:00:00.000Z',
+                  cancelledAt: null,
+                },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    repository.findBranchesPublicContent.mockResolvedValue([
+      {
+        id: 'branch-1',
+        name: 'Main Branch',
+        coverImage: 'cover.jpg',
+        description: 'Downtown branch',
+      },
+    ]);
+
+    const result = await service.updateAdminTableReservationStatus(
+      {
+        uid: 'business-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'reservation-1',
+      { status: 'CONFIRMED', customerId: 'customer-1' },
+    );
+
+    expect(repository.findCustomersForTableReservations).toHaveBeenCalledWith({
+      restaurantId: 'restaurant-1',
+      customerId: 'customer-1',
+    });
+    expect(repository.upsertCustomerProfile).toHaveBeenCalledWith(
+      'customer-1',
+      expect.any(Object),
+    );
+    expect(result.data?.status).toBe('CONFIRMED');
+    expect(result.data?.branch).toEqual({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: 'cover.jpg',
+      description: 'Downtown branch',
+    });
+    expect(result.message).toBe(
+      'Table reservation status updated successfully',
+    );
   });
 
   it('populates branch details in table reservations list', async () => {
