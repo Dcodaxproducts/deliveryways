@@ -2100,6 +2100,9 @@ describe('CartService', () => {
           title: 'Burger Combo',
           applyMode: 'SCOPED_ITEMS',
           autoApply: true,
+          discountType: 'FIXED_PRICE',
+          discountValue: 799,
+          discountAmount: 301,
         },
       },
       message: 'Order quote generated successfully',
@@ -2131,6 +2134,9 @@ describe('CartService', () => {
       title: 'Burger Combo',
       applyMode: 'SCOPED_ITEMS',
       autoApply: true,
+      discountType: 'FIXED_PRICE',
+      discountValue: 799,
+      discountAmount: 301,
     });
     expect(result.data.discountAmount).toBe(301);
   });

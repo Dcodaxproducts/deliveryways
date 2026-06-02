@@ -1216,6 +1216,9 @@ export class OrdersService {
           title: string;
           applyMode: string;
           autoApply: boolean;
+          discountType: string;
+          discountValue: number;
+          discountAmount: number;
         }
       | undefined;
 
@@ -1248,6 +1251,9 @@ export class OrdersService {
         title: couponValidation.coupon.title,
         applyMode: couponValidation.coupon.applyMode,
         autoApply: couponValidation.coupon.autoApply,
+        discountType: couponValidation.coupon.discountType,
+        discountValue: Number(couponValidation.coupon.discountValue),
+        discountAmount: Number(discountAmount.toDecimalPlaces(2)),
       };
     } else {
       const autoPromotion =
@@ -1263,6 +1269,9 @@ export class OrdersService {
           title: autoPromotion.coupon.title,
           applyMode: autoPromotion.coupon.applyMode,
           autoApply: autoPromotion.coupon.autoApply,
+          discountType: autoPromotion.coupon.discountType,
+          discountValue: Number(autoPromotion.coupon.discountValue),
+          discountAmount: Number(discountAmount.toDecimalPlaces(2)),
         };
       }
     }

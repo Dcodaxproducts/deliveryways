@@ -2975,6 +2975,8 @@ describe('OrdersService - wallet payment', () => {
           title: 'Burger deal',
           applyMode: 'SCOPED_ITEMS',
           autoApply: true,
+          discountType: 'FIXED_PRICE',
+          discountValue: new Prisma.Decimal(400),
         },
         discountAmount: new Prisma.Decimal(100),
         eligibleSubtotal: new Prisma.Decimal(500),
@@ -3062,6 +3064,9 @@ describe('OrdersService - wallet payment', () => {
       title: 'Burger deal',
       applyMode: 'SCOPED_ITEMS',
       autoApply: true,
+      discountType: 'FIXED_PRICE',
+      discountValue: 400,
+      discountAmount: 100,
     });
   });
 
@@ -3075,6 +3080,8 @@ describe('OrdersService - wallet payment', () => {
           title: 'Burger Combo',
           applyMode: 'SCOPED_ITEMS',
           autoApply: true,
+          discountType: 'FIXED_PRICE',
+          discountValue: new Prisma.Decimal(799),
         },
         discountAmount: new Prisma.Decimal(301),
         eligibleSubtotal: new Prisma.Decimal(1100),
@@ -3200,6 +3207,9 @@ describe('OrdersService - wallet payment', () => {
       title: 'Burger Combo',
       applyMode: 'SCOPED_ITEMS',
       autoApply: true,
+      discountType: 'FIXED_PRICE',
+      discountValue: 799,
+      discountAmount: 301,
     });
   });
 
