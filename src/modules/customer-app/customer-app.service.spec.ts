@@ -659,43 +659,17 @@ describe('CustomerAppService', () => {
       }),
     ]);
     const [firstDealItem, secondDealItem] = result.data[0]
-      .scopeMenuItems as unknown as Array<{
-      isRequired: boolean;
-      minSelect: number;
-      maxSelect: number | null;
-      modifiers: Array<{
-        id: string;
-        isRequired: boolean;
-      }>;
-    }>;
+      .scopeMenuItems as unknown as Array<Record<string, unknown>>;
 
-    expect(firstDealItem).toEqual(
-      expect.objectContaining({
-        isRequired: false,
-        minSelect: 0,
-        maxSelect: 1,
-      }),
-    );
-    expect(firstDealItem.modifiers[0]).toEqual(
-      expect.objectContaining({
-        id: 'modifier-1',
-        isRequired: false,
-      }),
-    );
+    expect('isRequired' in firstDealItem).toBe(false);
+    expect('minSelect' in firstDealItem).toBe(false);
+    expect('maxSelect' in firstDealItem).toBe(false);
+    expect('modifiers' in firstDealItem).toBe(false);
     expect('modifierLinks' in firstDealItem).toBe(false);
-    expect(secondDealItem).toEqual(
-      expect.objectContaining({
-        isRequired: false,
-        minSelect: 0,
-        maxSelect: 1,
-      }),
-    );
-    expect(secondDealItem.modifiers[0]).toEqual(
-      expect.objectContaining({
-        id: 'modifier-1',
-        isRequired: false,
-      }),
-    );
+    expect('isRequired' in secondDealItem).toBe(false);
+    expect('minSelect' in secondDealItem).toBe(false);
+    expect('maxSelect' in secondDealItem).toBe(false);
+    expect('modifiers' in secondDealItem).toBe(false);
     expect('modifierLinks' in secondDealItem).toBe(false);
     expect(result.message).toBe('Deals fetched successfully');
   });

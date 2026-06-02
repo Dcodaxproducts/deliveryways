@@ -46,6 +46,14 @@ export class OrderItemDto {
   @IsString()
   menuItemId!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Fixed-price deal id when quoting a ready-made deal item without customizations.',
+  })
+  @IsOptional()
+  @IsString()
+  dealId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

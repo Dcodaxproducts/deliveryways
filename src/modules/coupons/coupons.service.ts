@@ -257,6 +257,37 @@ export class CouponsService {
     );
   }
 
+  async isActiveFixedPriceDealItem(
+    restaurantId: string,
+    branchId: string | undefined,
+    dealId: string,
+    menuItemId: string,
+  ) {
+    const promotions = await this.getActiveAutoApplyPromotions(
+      restaurantId,
+      branchId,
+    );
+    const deal = promotions.find(
+      (promotion) =>
+        promotion.id === dealId &&
+        promotion.discountType === CouponDiscountType.FIXED_PRICE &&
+        promotion.applyMode === CouponApplyMode.SCOPED_ITEMS,
+    );
+
+    if (!deal) {
+      return false;
+    }
+
+    const scopeMenuItemIds = [
+      ...new Set([
+        ...(deal.scopeMenuItem?.id ? [deal.scopeMenuItem.id] : []),
+        ...(deal.scopeMenuItems ?? []).map((entry) => entry.menuItem.id),
+      ]),
+    ];
+
+    return scopeMenuItemIds.includes(menuItemId);
+  }
+
   async findBestAutoApplyPromotion(
     input: Omit<CouponValidationInput, 'code'>,
   ): Promise<CouponValidationResult | null> {

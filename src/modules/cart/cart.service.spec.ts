@@ -46,11 +46,16 @@ describe('CartService', () => {
       resolveMediaUrlsDeep: jest.fn((data: unknown) => Promise.resolve(data)),
     };
 
+    const couponsService = {
+      isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(false),
+    };
+
     const service = new CartService(
       cartRepository as never,
       ordersService as never,
       profilesRepository as never,
       storageService as never,
+      couponsService as never,
     );
 
     return {
@@ -59,6 +64,7 @@ describe('CartService', () => {
       ordersService,
       profilesRepository,
       storageService,
+      couponsService,
     };
   };
 
@@ -1043,6 +1049,72 @@ describe('CartService', () => {
       customer: { connect: { id: 'user-1' } },
     });
     expect(result.message).toBe('Item added to cart successfully');
+  });
+
+  it('adds ready-made deal items without requiring modifiers', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      isRequired: true,
+      minSelect: 1,
+      maxSelect: 2,
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        quantity: 1,
+      },
+    );
+
+    expect(couponsService.isActiveFixedPriceDealItem).toHaveBeenCalledWith(
+      'restaurant-1',
+      'branch-1',
+      'deal-1',
+      'menu-1',
+    );
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        modifiers: {
+          dealId: 'deal-1',
+          modifiers: [],
+        },
+      }),
+    );
   });
 
   it('uses requested takeaway order type before delivery coverage on first add-item', async () => {

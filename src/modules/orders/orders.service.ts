@@ -113,6 +113,7 @@ type QuoteLine = {
   categoryId: string;
   categoryIds: string[];
   menuItemName: string;
+  dealId?: string;
   variationId?: string;
   variationName?: string;
   quantity: number;
@@ -889,6 +890,24 @@ export class OrdersService {
         hasSplitSections ? undefined : requestedItem.variationId,
       ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
+      const isReadyMadeDealItem = requestedItem.dealId
+        ? await this.isReadyMadeDealItem(
+            branch.restaurantId,
+            branch.id,
+            requestedItem.dealId,
+            menuItem.id,
+          )
+        : false;
+
+      if (requestedItem.dealId && !isReadyMadeDealItem) {
+        throw new BadRequestException(
+          `Deal not found for item: ${menuItem.name}`,
+        );
+      }
+
+      if (isReadyMadeDealItem) {
+        this.assertNoDealCustomizations(requestedItem, menuItem.name);
+      }
 
       let variationName: string | undefined;
 
@@ -954,10 +973,12 @@ export class OrdersService {
         }
       }
 
-      this.assertModifierSelectionLimits(
-        menuItem,
-        requestedItem.modifiers ?? [],
-      );
+      if (!isReadyMadeDealItem) {
+        this.assertModifierSelectionLimits(
+          menuItem,
+          requestedItem.modifiers ?? [],
+        );
+      }
       this.assertItemQuantityLimits(menuItem, requestedItem.quantity);
 
       if (requestedItem.sections?.length) {
@@ -1146,6 +1167,7 @@ export class OrdersService {
         categoryId: menuItem.category.id,
         categoryIds: this.itemCategoryIds(menuItem),
         menuItemName: menuItem.name,
+        dealId: requestedItem.dealId,
         variationId: requestedItem.variationId,
         variationName,
         quantity: requestedItem.quantity,
@@ -1480,6 +1502,7 @@ export class OrdersService {
       items: quote.lines.map((line) => ({
         menuItemId: line.menuItemId,
         menuItemName: line.menuItemName,
+        dealId: line.dealId,
         variationId: line.variationId,
         variationName: line.variationName,
         quantity: line.quantity,
@@ -3212,6 +3235,35 @@ export class OrdersService {
     if (maxSelect !== null && totalSelected > maxSelect) {
       throw new BadRequestException(
         `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} modifier selection(s)`,
+      );
+    }
+  }
+
+  private async isReadyMadeDealItem(
+    restaurantId: string,
+    branchId: string,
+    dealId: string,
+    menuItemId: string,
+  ) {
+    return this.couponsService.isActiveFixedPriceDealItem(
+      restaurantId,
+      branchId,
+      dealId,
+      menuItemId,
+    );
+  }
+
+  private assertNoDealCustomizations(
+    item: {
+      variationId?: string;
+      modifiers?: OrderItemModifierDto[];
+      sections?: unknown[];
+    },
+    itemName?: string,
+  ) {
+    if (item.variationId || item.modifiers?.length || item.sections?.length) {
+      throw new BadRequestException(
+        `${itemName ?? 'Deal item'} does not support customization selections`,
       );
     }
   }

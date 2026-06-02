@@ -57,6 +57,14 @@ export class AddCartItemDto {
 
   @ApiPropertyOptional({
     description:
+      'Fixed-price deal id when adding a ready-made deal item without customizations.',
+  })
+  @IsOptional()
+  @IsString()
+  dealId?: string;
+
+  @ApiPropertyOptional({
+    description:
       'Optional selected restaurant menu context, mainly used when creating a new cart from a timed menu.',
   })
   @IsOptional()

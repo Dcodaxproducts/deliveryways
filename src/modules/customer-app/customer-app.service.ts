@@ -2053,13 +2053,37 @@ export class CustomerAppService {
     );
     const mappedItems = await Promise.all(
       this.filterAvailableMenuItems(items).map((item) =>
-        this.mapMenuItem(item, []),
+        this.mapReadyMadeDealScopeMenuItem(item),
       ),
     );
 
     return new Map<string, PublicDealScopeMenuItem>(
       mappedItems.map((item) => [item.id, item]),
     );
+  }
+
+  private async mapReadyMadeDealScopeMenuItem(
+    item: Parameters<CustomerAppService['mapMenuItem']>[0],
+  ) {
+    const mappedItem = await this.mapMenuItem(item, []);
+
+    return {
+      id: mappedItem.id,
+      name: mappedItem.name,
+      slug: mappedItem.slug,
+      description: mappedItem.description,
+      imageUrl: mappedItem.imageUrl,
+      basePrice: Number(mappedItem.basePrice),
+      depositAmount: mappedItem.depositAmount,
+      prepTimeMinutes: mappedItem.prepTimeMinutes,
+      category: mappedItem.category
+        ? {
+            id: mappedItem.category.id,
+            name: mappedItem.category.name,
+            imageUrl: mappedItem.category.imageUrl,
+          }
+        : null,
+    };
   }
 
   private async mapPromotionScopeEntity(entity: PublicPromotionScopeEntity) {

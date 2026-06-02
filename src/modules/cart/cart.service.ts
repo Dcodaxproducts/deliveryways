@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { OrderType, PaymentMethod, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
@@ -16,6 +17,7 @@ import { ProfilesRepository } from '../profiles/profiles.repository';
 import { StorageService } from '../storage/storage.service';
 import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
+import { CouponsService } from '../coupons/coupons.service';
 import {
   AddCartItemDto,
   CartItemModifierDto,
@@ -157,6 +159,7 @@ export class CartService {
     private readonly ordersService: OrdersService,
     private readonly profilesRepository: ProfilesRepository,
     private readonly storageService?: StorageService,
+    @Optional() private readonly couponsService?: CouponsService,
   ) {}
 
   async getCart(
@@ -417,6 +420,7 @@ export class CartService {
     const packedSelections = this.packCartSelections(
       dto.modifiers,
       dto.sections,
+      dto.dealId,
     );
     const matchingItem = cart.items.find((item) =>
       this.isSameCartSelection(item, {
@@ -501,6 +505,7 @@ export class CartService {
         dto.sections !== undefined
           ? (dto.sections ?? undefined)
           : this.readSections(item.modifiers),
+      dealId: this.readDealId(item.modifiers),
     };
 
     await this.assertValidCartItem(
@@ -528,6 +533,7 @@ export class CartService {
               dto.sections !== undefined
                 ? (dto.sections ?? undefined)
                 : this.readSections(item.modifiers),
+              this.readDealId(item.modifiers),
             ) as Prisma.InputJsonValue | undefined)
           : undefined,
     });
@@ -1115,6 +1121,7 @@ export class CartService {
         return {
           id: cartItem.id,
           menuItemId: cartItem.menuItemId,
+          dealId: this.readDealId(cartItem.modifiers) ?? null,
           variationId: cartItem.variationId,
           quantity: cartItem.quantity,
           note: cartItem.note,
@@ -1403,6 +1410,7 @@ export class CartService {
       orderTime: cart.orderTime?.toISOString() ?? new Date().toISOString(),
       items: cart.items.map((item) => ({
         menuItemId: item.menuItemId,
+        dealId: this.readDealId(item.modifiers),
         variationId: item.variationId ?? undefined,
         quantity: item.quantity,
         modifiers: this.readModifiers(item.modifiers),
@@ -1557,6 +1565,25 @@ export class CartService {
       );
     }
 
+    const isReadyMadeDealItem = dto.dealId
+      ? await this.isReadyMadeDealItem(
+          restaurantId,
+          branchId,
+          dto.dealId,
+          menuItem.id,
+        )
+      : false;
+
+    if (dto.dealId && !isReadyMadeDealItem) {
+      throw new BadRequestException(
+        `Deal not found for item: ${menuItem.name}`,
+      );
+    }
+
+    if (isReadyMadeDealItem) {
+      this.assertNoDealCustomizations(dto, menuItem.name);
+    }
+
     const selectedRestaurantMenuId = this.resolveOptionalString(
       dto.restaurantMenuId,
     );
@@ -1599,9 +1626,35 @@ export class CartService {
     }
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
-    this.assertModifierSelectionLimits(menuItem, dto.modifiers ?? []);
+    if (!isReadyMadeDealItem) {
+      this.assertModifierSelectionLimits(menuItem, dto.modifiers ?? []);
+    }
 
     await this.assertValidSplitSections(menuItem, branchId, dto);
+  }
+
+  private async isReadyMadeDealItem(
+    restaurantId: string,
+    branchId: string,
+    dealId: string,
+    menuItemId: string,
+  ) {
+    return (
+      (await this.couponsService?.isActiveFixedPriceDealItem(
+        restaurantId,
+        branchId,
+        dealId,
+        menuItemId,
+      )) ?? false
+    );
+  }
+
+  private assertNoDealCustomizations(dto: AddCartItemDto, itemName?: string) {
+    if (dto.variationId || dto.modifiers?.length || dto.sections?.length) {
+      throw new BadRequestException(
+        `${itemName ?? 'Deal item'} does not support customization selections`,
+      );
+    }
   }
 
   private assertModifierSelectionLimits(
@@ -1897,20 +1950,35 @@ export class CartService {
     return sections.length ? sections : undefined;
   }
 
+  private readDealId(input: Prisma.JsonValue | null): string | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const dealId = (input as { dealId?: unknown }).dealId;
+    return typeof dealId === 'string' ? dealId : undefined;
+  }
+
   private packCartSelections(
     modifiers?: CartItemModifierDto[],
     sections?: CartItemSectionDto[],
+    dealId?: string,
   ) {
-    if (!sections?.length) {
+    if (!sections?.length && !dealId) {
       return modifiers?.length ? modifiers : undefined;
     }
 
     return {
+      ...(dealId ? { dealId } : {}),
       modifiers: modifiers?.length ? modifiers : [],
-      sections: sections.map((section) => ({
-        slot: section.slot,
-        menuItemId: section.menuItemId,
-      })),
+      ...(sections?.length
+        ? {
+            sections: sections.map((section) => ({
+              slot: section.slot,
+              menuItemId: section.menuItemId,
+            })),
+          }
+        : {}),
     };
   }
 

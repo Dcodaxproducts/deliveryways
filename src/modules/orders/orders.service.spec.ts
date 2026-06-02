@@ -1813,6 +1813,109 @@ describe('OrdersService - coupon quote validation', () => {
     ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
   });
 
+  it('quotes ready-made deal items without requiring modifiers', async () => {
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: { taxPercentage: 0 },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          isRequired: true,
+          minSelect: 1,
+          maxSelect: 2,
+          pricingMode: 'SINGLE',
+          basePrice: new Prisma.Decimal(100),
+          deliveryPriceAdjustment: new Prisma.Decimal(0),
+          takeawayPriceAdjustment: new Prisma.Decimal(0),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-1', variations: [], modifierLinks: [] },
+          variations: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          branchOverrides: [],
+        }),
+      },
+      address: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+    };
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(true),
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(100),
+        }),
+      } as never,
+    );
+
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            dealId: 'deal-1',
+            quantity: 1,
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(couponsService.isActiveFixedPriceDealItem).toHaveBeenCalledWith(
+      'restaurant-1',
+      'branch-1',
+      'deal-1',
+      'menu-1',
+    );
+    expect(result.data.items[0]).toEqual(
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        snapshotModifiers: [],
+      }),
+    );
+  });
+
   it('rejects order item quantity above item maxQuantity', async () => {
     const prisma = {
       branch: {
