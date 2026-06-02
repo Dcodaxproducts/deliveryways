@@ -732,6 +732,61 @@ describe('CustomerAppService', () => {
     expect('modifierGroups' in result.data.items[0]).toBe(false);
   });
 
+  it('hides cuisine items when their timed menu is not currently active', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.findPublicCuisine.mockResolvedValue({
+      id: 'category-1',
+      name: 'Burgers',
+      slug: 'burgers',
+      description: null,
+      imageUrl: 'https://cdn.example.com/category.png',
+    });
+    repository.listCuisineMenuItems.mockResolvedValue({
+      items: [
+        itemFixture,
+        {
+          ...itemFixture,
+          id: 'item-closed',
+          slug: 'closed-item',
+          menuLinks: [
+            {
+              isActive: true,
+              restaurantMenu: {
+                isActive: true,
+                deletedAt: null,
+                isTimed: true,
+                timingConfig: { timezone: 'UTC', windows: [] },
+              },
+            },
+          ],
+        },
+      ],
+      total: 2,
+    });
+
+    const result = await service.listCuisineItems('category-1', {
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data.items[0].id).toBe('item-1');
+  });
+
   it('includes menu items on cuisine list with the public item response shape', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

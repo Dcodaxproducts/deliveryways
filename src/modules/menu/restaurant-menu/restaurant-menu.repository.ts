@@ -16,6 +16,23 @@ export class RestaurantMenuRepository {
     return this.client(tx).restaurantMenu.create({ data });
   }
 
+  async findRestaurantInTenant(tenantId: string, restaurantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+  }
+
+  async findSlugOwner(restaurantId: string, slug: string) {
+    return this.prisma.restaurantMenu.findFirst({
+      where: {
+        restaurantId,
+        slug,
+      },
+      select: { id: true },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.restaurantMenu.findUnique({
       where: { id },
@@ -354,6 +371,43 @@ export class RestaurantMenuRepository {
     return (latest?.sortOrder ?? -1) + 1;
   }
 
+  async createMenuItemLinks(
+    restaurantMenuId: string,
+    items: Array<{ id: string }>,
+    startSortOrder: number,
+  ) {
+    return this.prisma.$transaction(
+      items.map((item, index) =>
+        this.prisma.restaurantMenuItem.create({
+          data: {
+            restaurantMenuId,
+            menuItemId: item.id,
+            sortOrder: startSortOrder + index,
+            isActive: true,
+          },
+        }),
+      ),
+    );
+  }
+
+  async createMenuCategoryLinks(
+    restaurantMenuId: string,
+    categories: Array<{ id: string }>,
+    startSortOrder: number,
+  ) {
+    return this.prisma.$transaction(
+      categories.map((category, index) =>
+        this.prisma.restaurantMenuCategory.create({
+          data: {
+            restaurantMenuId,
+            menuCategoryId: category.id,
+            sortOrder: startSortOrder + index,
+          },
+        }),
+      ),
+    );
+  }
+
   async findMenuItemLinkById(id: string) {
     return this.prisma.restaurantMenuItem.findUnique({
       where: { id },
@@ -382,6 +436,94 @@ export class RestaurantMenuRepository {
           restaurantMenuId,
           menuCategoryId,
         },
+      },
+    });
+  }
+
+  async listMenuItemLinks(restaurantMenuId: string) {
+    return this.prisma.restaurantMenuItem.findMany({
+      where: { restaurantMenuId },
+      select: { id: true, menuItemId: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async syncMenuItemLinks(params: {
+    restaurantMenuId: string;
+    linksToRemove: Array<{ id: string }>;
+    itemsToAdd: Array<{ id: string }>;
+    startSortOrder: number;
+  }) {
+    await this.prisma.$transaction([
+      ...params.linksToRemove.map((link) =>
+        this.prisma.restaurantMenuItem.delete({ where: { id: link.id } }),
+      ),
+      ...params.itemsToAdd.map((item, index) =>
+        this.prisma.restaurantMenuItem.create({
+          data: {
+            restaurantMenuId: params.restaurantMenuId,
+            menuItemId: item.id,
+            sortOrder: params.startSortOrder + index,
+            isActive: true,
+          },
+        }),
+      ),
+    ]);
+  }
+
+  async listMenuCategoryLinks(restaurantMenuId: string) {
+    return this.prisma.restaurantMenuCategory.findMany({
+      where: { restaurantMenuId },
+      select: { id: true, menuCategoryId: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async syncMenuCategoryLinks(params: {
+    restaurantMenuId: string;
+    linksToRemove: Array<{ id: string }>;
+    categoriesToAdd: Array<{ id: string }>;
+    startSortOrder: number;
+  }) {
+    await this.prisma.$transaction([
+      ...params.linksToRemove.map((link) =>
+        this.prisma.restaurantMenuCategory.delete({ where: { id: link.id } }),
+      ),
+      ...params.categoriesToAdd.map((category, index) =>
+        this.prisma.restaurantMenuCategory.create({
+          data: {
+            restaurantMenuId: params.restaurantMenuId,
+            menuCategoryId: category.id,
+            sortOrder: params.startSortOrder + index,
+          },
+        }),
+      ),
+    ]);
+  }
+
+  async findMenuItemsByIds(itemIds: string[]) {
+    return this.prisma.menuItem.findMany({
+      where: {
+        id: { in: itemIds },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        restaurantId: true,
+      },
+    });
+  }
+
+  async findMenuCategoriesByIds(restaurantId: string, categoryIds: string[]) {
+    return this.prisma.menuCategory.findMany({
+      where: {
+        id: { in: categoryIds },
+        restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        restaurantId: true,
       },
     });
   }

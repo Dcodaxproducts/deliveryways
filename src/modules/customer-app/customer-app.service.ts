@@ -12,6 +12,7 @@ import {
   buildPaginationMeta,
   CustomerAppFaqItem,
   extractCustomerAppFaqCategories,
+  isRestaurantMenuAvailableAt,
   normalizeCustomerAppFaqItem,
 } from '../../common/utils';
 import {
@@ -91,6 +92,28 @@ type PublicMenuItemVariationOverride = {
   pickupPrice: Prisma.Decimal | null;
   displayText: string | null;
   variation: PublicMenuItemVariation;
+};
+
+type PublicRestaurantMenuScheduleLink = {
+  isActive?: boolean;
+  restaurantMenu?: {
+    isTimed: boolean;
+    timingConfig: unknown;
+    isActive: boolean;
+    deletedAt: Date | string | null;
+  } | null;
+};
+
+type PublicMenuItemScheduleCarrier = {
+  menuLinks?: PublicRestaurantMenuScheduleLink[];
+  category?: {
+    menuLinks?: PublicRestaurantMenuScheduleLink[];
+  } | null;
+  categoryLinks?: Array<{
+    menuCategory?: {
+      menuLinks?: PublicRestaurantMenuScheduleLink[];
+    } | null;
+  }>;
 };
 
 interface FavoriteMetadataShape {
@@ -188,7 +211,7 @@ export class CustomerAppService {
 
     return {
       data: await Promise.all(
-        items.map((item) =>
+        this.filterAvailableMenuItems(items).map((item) =>
           this.mapMenuItem(item, promotionContext.promotions),
         ),
       ),
@@ -396,6 +419,7 @@ export class CustomerAppService {
         cuisineId,
         resolvedQuery,
       );
+    const visibleItems = this.filterAvailableMenuItems(items);
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
@@ -405,13 +429,13 @@ export class CustomerAppService {
       data: {
         cuisine: await this.resolveCuisineMedia(cuisine),
         items: await Promise.all(
-          items.map((item) =>
+          visibleItems.map((item) =>
             this.mapMenuItem(item, promotionContext.promotions),
           ),
         ),
       },
       message: 'Cuisine items fetched successfully',
-      meta: buildPaginationMeta(query, total),
+      meta: buildPaginationMeta(query, Math.min(total, visibleItems.length)),
     };
   }
 
@@ -480,7 +504,7 @@ export class CustomerAppService {
 
     return {
       data: await Promise.all(
-        items.map((item) =>
+        this.filterAvailableMenuItems(items).map((item) =>
           this.mapMenuItem(item, promotionContext.promotions),
         ),
       ),
@@ -542,6 +566,10 @@ export class CustomerAppService {
     );
 
     if (!item) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    if (!this.isMenuItemAvailableForCurrentSchedule(item)) {
       throw new NotFoundException('Menu item not found');
     }
 
@@ -618,7 +646,7 @@ export class CustomerAppService {
           ),
         ),
         promotionalItems: await Promise.all(
-          promotionalItems.map((item) =>
+          this.filterAvailableMenuItems(promotionalItems).map((item) =>
             this.mapMenuItem(item, promotionContext.promotions),
           ),
         ),
@@ -1283,6 +1311,47 @@ export class CustomerAppService {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  private filterAvailableMenuItems<T extends PublicMenuItemScheduleCarrier>(
+    items: T[],
+  ): T[] {
+    return items.filter((item) =>
+      this.isMenuItemAvailableForCurrentSchedule(item),
+    );
+  }
+
+  private isMenuItemAvailableForCurrentSchedule(
+    item: PublicMenuItemScheduleCarrier,
+  ): boolean {
+    const links = [
+      ...(item.menuLinks ?? []),
+      ...(item.category?.menuLinks ?? []),
+      ...(item.categoryLinks ?? []).flatMap(
+        (link) => link.menuCategory?.menuLinks ?? [],
+      ),
+    ];
+
+    if (!links.length) {
+      return true;
+    }
+
+    const now = new Date();
+    return links.some((link) => {
+      if (link.isActive === false || !link.restaurantMenu) {
+        return false;
+      }
+
+      if (!link.restaurantMenu.isActive || link.restaurantMenu.deletedAt) {
+        return false;
+      }
+
+      if (!link.restaurantMenu.isTimed) {
+        return true;
+      }
+
+      return isRestaurantMenuAvailableAt(link.restaurantMenu.timingConfig, now);
+    });
+  }
+
   private async mapMenuItem(
     item: {
       id: string;
@@ -1316,8 +1385,15 @@ export class CustomerAppService {
           isActive: boolean;
           variation: PublicMenuItemVariation;
         }>;
+        menuLinks?: PublicRestaurantMenuScheduleLink[];
       };
-      categoryLinks?: Array<{ menuCategoryId: string }>;
+      categoryLinks?: Array<{
+        menuCategoryId: string;
+        menuCategory?: {
+          menuLinks?: PublicRestaurantMenuScheduleLink[];
+        } | null;
+      }>;
+      menuLinks?: PublicRestaurantMenuScheduleLink[];
       variations?: PublicMenuItemVariation[];
       variationPriceOverrides?: PublicMenuItemVariationOverride[];
       modifierPriceOverrides?: Array<{
@@ -1460,6 +1536,10 @@ export class CustomerAppService {
     },
     promotions: Array<Record<string, unknown>> = [],
   ) {
+    const visibleItems = this.filterAvailableMenuItems(
+      (item.items ?? []) as PublicMenuItemScheduleCarrier[],
+    );
+
     return {
       id: item.id,
       name: item.name,
@@ -1467,9 +1547,9 @@ export class CustomerAppService {
       description: item.description ?? null,
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       sortOrder: item.sortOrder,
-      itemCount: item._count.items,
+      itemCount: item.items ? visibleItems.length : item._count.items,
       items: await Promise.all(
-        (item.items ?? []).map((menuItem) =>
+        visibleItems.map((menuItem) =>
           this.mapMenuItem(
             menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
             promotions,

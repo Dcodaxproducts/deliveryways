@@ -17,32 +17,16 @@ describe('RestaurantMenuService', () => {
       findMenuCategoryLink: jest.fn(),
       getNextSortOrder: jest.fn(),
       getNextCategorySortOrder: jest.fn(),
-    };
-
-    const prisma = {
-      restaurant: {
-        findFirst: jest.fn(),
-      },
-      restaurantMenu: {
-        findFirst: jest.fn(),
-      },
-      menuItem: {
-        findMany: jest.fn(),
-      },
-      menuCategory: {
-        findMany: jest.fn(),
-      },
-      restaurantMenuItem: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        delete: jest.fn(),
-      },
-      restaurantMenuCategory: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        delete: jest.fn(),
-      },
-      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+      createMenuItemLinks: jest.fn(),
+      createMenuCategoryLinks: jest.fn(),
+      listMenuItemLinks: jest.fn(),
+      syncMenuItemLinks: jest.fn(),
+      listMenuCategoryLinks: jest.fn(),
+      syncMenuCategoryLinks: jest.fn(),
+      findMenuItemsByIds: jest.fn(),
+      findMenuCategoriesByIds: jest.fn(),
+      findRestaurantInTenant: jest.fn(),
+      findSlugOwner: jest.fn(),
     };
 
     const storageService = {
@@ -51,18 +35,19 @@ describe('RestaurantMenuService', () => {
 
     const service = new RestaurantMenuService(
       restaurantMenuRepository as never,
-      prisma as never,
       storageService as never,
     );
 
-    return { service, restaurantMenuRepository, prisma, storageService };
+    return { service, restaurantMenuRepository, storageService };
   };
 
   it('creates a timed menu with category links', async () => {
-    const { service, restaurantMenuRepository, prisma } = makeService();
+    const { service, restaurantMenuRepository } = makeService();
 
-    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    prisma.restaurantMenu.findFirst.mockResolvedValue(null);
+    restaurantMenuRepository.findRestaurantInTenant.mockResolvedValue({
+      id: 'restaurant-1',
+    });
+    restaurantMenuRepository.findSlugOwner.mockResolvedValue(null);
     restaurantMenuRepository.create.mockResolvedValue({ id: 'menu-1' });
     restaurantMenuRepository.findById.mockResolvedValue({
       id: 'menu-1',
@@ -70,12 +55,14 @@ describe('RestaurantMenuService', () => {
       categories: [],
       items: [],
     });
-    prisma.menuCategory.findMany.mockResolvedValue([
+    restaurantMenuRepository.findMenuCategoriesByIds.mockResolvedValue([
       { id: 'category-1', restaurantId: 'restaurant-1' },
     ]);
     restaurantMenuRepository.findMenuCategoryLink.mockResolvedValue(null);
     restaurantMenuRepository.getNextCategorySortOrder.mockResolvedValue(0);
-    prisma.restaurantMenuCategory.create.mockResolvedValue({ id: 'link-1' });
+    restaurantMenuRepository.createMenuCategoryLinks.mockResolvedValue([
+      { id: 'link-1' },
+    ]);
 
     await service.create(
       {
@@ -109,34 +96,34 @@ describe('RestaurantMenuService', () => {
       sortOrder: 0,
       isActive: true,
     });
-    expect(prisma.restaurantMenuCategory.create).toHaveBeenCalledWith({
-      data: {
-        restaurantMenuId: 'menu-1',
-        menuCategoryId: 'category-1',
-        sortOrder: 0,
-      },
-    });
+    expect(
+      restaurantMenuRepository.createMenuCategoryLinks,
+    ).toHaveBeenCalledWith(
+      'menu-1',
+      [{ id: 'category-1', restaurantId: 'restaurant-1' }],
+      0,
+    );
   });
 
   it('syncs menu category links during update', async () => {
-    const { service, restaurantMenuRepository, prisma } = makeService();
+    const { service, restaurantMenuRepository } = makeService();
 
     restaurantMenuRepository.findById.mockResolvedValue({
       id: 'menu-1',
       restaurantId: 'restaurant-1',
       deletedAt: null,
     });
-    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    prisma.restaurantMenu.findFirst.mockResolvedValue(null);
+    restaurantMenuRepository.findRestaurantInTenant.mockResolvedValue({
+      id: 'restaurant-1',
+    });
+    restaurantMenuRepository.findSlugOwner.mockResolvedValue(null);
     restaurantMenuRepository.update.mockResolvedValue({ id: 'menu-1' });
-    prisma.menuCategory.findMany.mockResolvedValue([
+    restaurantMenuRepository.findMenuCategoriesByIds.mockResolvedValue([
       { id: 'category-2', restaurantId: 'restaurant-1' },
     ]);
-    prisma.restaurantMenuCategory.findMany.mockResolvedValue([
+    restaurantMenuRepository.listMenuCategoryLinks.mockResolvedValue([
       { id: 'link-1', menuCategoryId: 'category-1' },
     ]);
-    prisma.restaurantMenuCategory.delete.mockResolvedValue({ id: 'link-1' });
-    prisma.restaurantMenuCategory.create.mockResolvedValue({ id: 'link-2' });
 
     await service.update(
       {
@@ -150,16 +137,14 @@ describe('RestaurantMenuService', () => {
       },
     );
 
-    expect(prisma.restaurantMenuCategory.delete).toHaveBeenCalledWith({
-      where: { id: 'link-1' },
-    });
-    expect(prisma.restaurantMenuCategory.create).toHaveBeenCalledWith({
-      data: {
+    expect(restaurantMenuRepository.syncMenuCategoryLinks).toHaveBeenCalledWith(
+      {
         restaurantMenuId: 'menu-1',
-        menuCategoryId: 'category-2',
-        sortOrder: 1,
+        linksToRemove: [{ id: 'link-1', menuCategoryId: 'category-1' }],
+        categoriesToAdd: [{ id: 'category-2', restaurantId: 'restaurant-1' }],
+        startSortOrder: 1,
       },
-    });
+    );
   });
 
   it('lists effective menu items resolved from direct and category links', async () => {
@@ -208,6 +193,38 @@ describe('RestaurantMenuService', () => {
     expect(result.data[0].menuResolution.source).toBe('DIRECT_AND_CATEGORY');
   });
 
+  it('returns no customer menu items when selected timed menu is inactive', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      isActive: true,
+      isTimed: true,
+      timingConfig: { timezone: 'UTC', windows: [] },
+    });
+
+    const result = await service.listItems(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'menu-1',
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(restaurantMenuRepository.listMenuItems).not.toHaveBeenCalled();
+    expect(result.data).toEqual([]);
+    expect(result.meta.total).toBe(0);
+  });
+
   it('locks business admin menu listing to restaurant id from token when query restaurantId is omitted', async () => {
     const { service, restaurantMenuRepository } = makeService();
 
@@ -235,6 +252,53 @@ describe('RestaurantMenuService', () => {
       'restaurant-1',
       expect.objectContaining({ page: 1, limit: 20 }),
     );
+  });
+
+  it('hides inactive timed menus from customer listing', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.list.mockResolvedValue({
+      items: [
+        {
+          id: 'menu-open',
+          restaurantId: 'restaurant-1',
+          isActive: true,
+          deletedAt: null,
+          isTimed: false,
+          timingConfig: null,
+          items: [],
+          categories: [],
+        },
+        {
+          id: 'menu-closed',
+          restaurantId: 'restaurant-1',
+          isActive: true,
+          deletedAt: null,
+          isTimed: true,
+          timingConfig: { timezone: 'UTC', windows: [] },
+          items: [],
+          categories: [],
+        },
+      ],
+      total: 2,
+    });
+
+    const result = await service.list(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(result.data).toEqual([expect.objectContaining({ id: 'menu-open' })]);
   });
 
   it('rejects business admin menu listing without restaurant scope', async () => {

@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
-import { buildPaginationMeta } from '../../../common/utils';
-import { PrismaService } from '../../../database';
+import {
+  buildPaginationMeta,
+  isRestaurantMenuAvailableAt,
+} from '../../../common/utils';
 import { StorageService } from '../../storage/storage.service';
 import {
   AttachRestaurantMenuItemDto,
@@ -19,11 +21,17 @@ import {
 } from './dto';
 import { RestaurantMenuRepository } from './restaurant-menu.repository';
 
+type RestaurantMenuScheduleCarrier = {
+  isTimed?: boolean;
+  timingConfig: unknown;
+  isActive?: boolean;
+  deletedAt?: Date | string | null;
+};
+
 @Injectable()
 export class RestaurantMenuService {
   constructor(
     private readonly restaurantMenuRepository: RestaurantMenuRepository,
-    private readonly prisma: PrismaService,
     private readonly storageService?: StorageService,
   ) {}
 
@@ -77,13 +85,14 @@ export class RestaurantMenuService {
       restaurantId,
       query,
     );
+    const visibleItems = this.filterCustomerVisibleMenus(user, items);
 
     return {
       data: await this.resolveMediaResponse(
-        items.map((item) => this.attachCategoryVariations(item)),
+        visibleItems.map((item) => this.attachCategoryVariations(item)),
       ),
       message: 'Restaurant menus fetched successfully',
-      meta: buildPaginationMeta(query, total),
+      meta: buildPaginationMeta(query, Math.min(total, visibleItems.length)),
     };
   }
 
@@ -94,6 +103,10 @@ export class RestaurantMenuService {
     }
 
     await this.ensureCanReadRestaurant(user, menu.restaurantId);
+
+    if (this.isCustomer(user) && !this.isMenuCurrentlyVisible(menu)) {
+      throw new NotFoundException('Restaurant menu not found');
+    }
 
     return {
       data: await this.resolveMediaResponse(
@@ -197,6 +210,14 @@ export class RestaurantMenuService {
 
     await this.ensureCanReadRestaurant(user, menu.restaurantId);
 
+    if (this.isCustomer(user) && !this.isMenuCurrentlyVisible(menu)) {
+      return {
+        data: [],
+        message: 'Restaurant menu items fetched successfully',
+        meta: buildPaginationMeta(query, 0),
+      };
+    }
+
     const { items, total } = await this.restaurantMenuRepository.listMenuItems(
       menu.id,
       query,
@@ -211,6 +232,33 @@ export class RestaurantMenuService {
 
   private async resolveMediaResponse<T>(data: T) {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
+  }
+
+  private filterCustomerVisibleMenus<T extends RestaurantMenuScheduleCarrier>(
+    user: AuthUserContext,
+    menus: T[],
+  ): T[] {
+    if (!this.isCustomer(user)) {
+      return menus;
+    }
+
+    return menus.filter((menu) => this.isMenuCurrentlyVisible(menu));
+  }
+
+  private isMenuCurrentlyVisible(menu: RestaurantMenuScheduleCarrier): boolean {
+    if (menu.isActive === false || menu.deletedAt) {
+      return false;
+    }
+
+    if (menu.isTimed !== true) {
+      return true;
+    }
+
+    return isRestaurantMenuAvailableAt(menu.timingConfig, new Date());
+  }
+
+  private isCustomer(user: AuthUserContext): boolean {
+    return user.role === UserRoleEnum.CUSTOMER;
   }
 
   async updateItem(
@@ -283,17 +331,10 @@ export class RestaurantMenuService {
     const nextSortOrder =
       await this.restaurantMenuRepository.getNextSortOrder(menuId);
 
-    return this.prisma.$transaction(
-      items.map((item, index) =>
-        this.prisma.restaurantMenuItem.create({
-          data: {
-            restaurantMenuId: menuId,
-            menuItemId: item.id,
-            sortOrder: nextSortOrder + index,
-            isActive: true,
-          },
-        }),
-      ),
+    return this.restaurantMenuRepository.createMenuItemLinks(
+      menuId,
+      items,
+      nextSortOrder,
     );
   }
 
@@ -322,16 +363,10 @@ export class RestaurantMenuService {
     const nextSortOrder =
       await this.restaurantMenuRepository.getNextCategorySortOrder(menuId);
 
-    return this.prisma.$transaction(
-      categories.map((category, index) =>
-        this.prisma.restaurantMenuCategory.create({
-          data: {
-            restaurantMenuId: menuId,
-            menuCategoryId: category.id,
-            sortOrder: nextSortOrder + index,
-          },
-        }),
-      ),
+    return this.restaurantMenuRepository.createMenuCategoryLinks(
+      menuId,
+      categories,
+      nextSortOrder,
     );
   }
 
@@ -345,11 +380,8 @@ export class RestaurantMenuService {
       ? await this.resolveMenuItemsForMenu(restaurantId, uniqueItemIds)
       : [];
 
-    const existingLinks = await this.prisma.restaurantMenuItem.findMany({
-      where: { restaurantMenuId: menuId },
-      select: { id: true, menuItemId: true },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    });
+    const existingLinks =
+      await this.restaurantMenuRepository.listMenuItemLinks(menuId);
 
     const existingItemIds = new Set(
       existingLinks.map((link) => link.menuItemId),
@@ -362,21 +394,12 @@ export class RestaurantMenuService {
 
     const itemsToAdd = items.filter((item) => !existingItemIds.has(item.id));
 
-    await this.prisma.$transaction([
-      ...linksToRemove.map((link) =>
-        this.prisma.restaurantMenuItem.delete({ where: { id: link.id } }),
-      ),
-      ...itemsToAdd.map((item, index) =>
-        this.prisma.restaurantMenuItem.create({
-          data: {
-            restaurantMenuId: menuId,
-            menuItemId: item.id,
-            sortOrder: existingLinks.length + index,
-            isActive: true,
-          },
-        }),
-      ),
-    ]);
+    await this.restaurantMenuRepository.syncMenuItemLinks({
+      restaurantMenuId: menuId,
+      linksToRemove,
+      itemsToAdd,
+      startSortOrder: existingLinks.length,
+    });
   }
 
   private async syncMenuCategories(
@@ -389,11 +412,8 @@ export class RestaurantMenuService {
       ? await this.resolveMenuCategoriesForMenu(restaurantId, uniqueCategoryIds)
       : [];
 
-    const existingLinks = await this.prisma.restaurantMenuCategory.findMany({
-      where: { restaurantMenuId: menuId },
-      select: { id: true, menuCategoryId: true },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    });
+    const existingLinks =
+      await this.restaurantMenuRepository.listMenuCategoryLinks(menuId);
 
     const existingCategoryIds = new Set(
       existingLinks.map((link) => link.menuCategoryId),
@@ -408,20 +428,12 @@ export class RestaurantMenuService {
       (category) => !existingCategoryIds.has(category.id),
     );
 
-    await this.prisma.$transaction([
-      ...linksToRemove.map((link) =>
-        this.prisma.restaurantMenuCategory.delete({ where: { id: link.id } }),
-      ),
-      ...categoriesToAdd.map((category, index) =>
-        this.prisma.restaurantMenuCategory.create({
-          data: {
-            restaurantMenuId: menuId,
-            menuCategoryId: category.id,
-            sortOrder: existingLinks.length + index,
-          },
-        }),
-      ),
-    ]);
+    await this.restaurantMenuRepository.syncMenuCategoryLinks({
+      restaurantMenuId: menuId,
+      linksToRemove,
+      categoriesToAdd,
+      startSortOrder: existingLinks.length,
+    });
   }
 
   private async resolveMenuItemsForMenu(
@@ -429,16 +441,8 @@ export class RestaurantMenuService {
     itemIds: string[],
   ) {
     const uniqueItemIds = [...new Set(itemIds)];
-    const items = await this.prisma.menuItem.findMany({
-      where: {
-        id: { in: uniqueItemIds },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        restaurantId: true,
-      },
-    });
+    const items =
+      await this.restaurantMenuRepository.findMenuItemsByIds(uniqueItemIds);
 
     if (items.length !== uniqueItemIds.length) {
       throw new NotFoundException('One or more menu items were not found');
@@ -466,17 +470,11 @@ export class RestaurantMenuService {
     categoryIds: string[],
   ) {
     const uniqueCategoryIds = [...new Set(categoryIds)];
-    const categories = await this.prisma.menuCategory.findMany({
-      where: {
-        id: { in: uniqueCategoryIds },
+    const categories =
+      await this.restaurantMenuRepository.findMenuCategoriesByIds(
         restaurantId,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        restaurantId: true,
-      },
-    });
+        uniqueCategoryIds,
+      );
 
     if (categories.length !== uniqueCategoryIds.length) {
       throw new NotFoundException('One or more menu categories were not found');
@@ -594,10 +592,11 @@ export class RestaurantMenuService {
     tenantId: string,
     restaurantId: string,
   ) {
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: { id: restaurantId, tenantId, deletedAt: null },
-      select: { id: true },
-    });
+    const restaurant =
+      await this.restaurantMenuRepository.findRestaurantInTenant(
+        tenantId,
+        restaurantId,
+      );
 
     if (!restaurant) {
       throw new ForbiddenException(
@@ -622,13 +621,10 @@ export class RestaurantMenuService {
     let counter = 1;
 
     while (true) {
-      const existing = await this.prisma.restaurantMenu.findFirst({
-        where: {
-          restaurantId,
-          slug: candidate,
-        },
-        select: { id: true },
-      });
+      const existing = await this.restaurantMenuRepository.findSlugOwner(
+        restaurantId,
+        candidate,
+      );
 
       if (!existing || existing.id === ignoreId) {
         return candidate;

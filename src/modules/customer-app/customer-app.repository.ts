@@ -10,6 +10,14 @@ import {
   PublicRestaurantQueryDto,
 } from './dto';
 
+const restaurantMenuScheduleSelect = {
+  id: true,
+  isTimed: true,
+  timingConfig: true,
+  isActive: true,
+  deletedAt: true,
+} satisfies Prisma.RestaurantMenuSelect;
+
 @Injectable()
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -71,6 +79,13 @@ export class CustomerAppRepository {
             },
             orderBy: [{ sortOrder: 'asc' }],
           },
+          menuLinks: {
+            include: {
+              restaurantMenu: {
+                select: restaurantMenuScheduleSelect,
+              },
+            },
+          },
         },
       },
       modifierLinks: {
@@ -130,7 +145,29 @@ export class CustomerAppRepository {
         },
         orderBy: [{ variation: { sortOrder: 'asc' } }],
       },
-      categoryLinks: { select: { menuCategoryId: true } },
+      categoryLinks: {
+        include: {
+          menuCategory: {
+            select: {
+              id: true,
+              menuLinks: {
+                include: {
+                  restaurantMenu: {
+                    select: restaurantMenuScheduleSelect,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      menuLinks: {
+        include: {
+          restaurantMenu: {
+            select: restaurantMenuScheduleSelect,
+          },
+        },
+      },
       branchOverrides: branchId
         ? {
             where: { branchId },
@@ -333,6 +370,13 @@ export class CustomerAppRepository {
                 },
                 orderBy: [{ sortOrder: 'asc' }],
               },
+              menuLinks: {
+                include: {
+                  restaurantMenu: {
+                    select: restaurantMenuScheduleSelect,
+                  },
+                },
+              },
             },
           },
           modifierLinks: {
@@ -392,7 +436,29 @@ export class CustomerAppRepository {
             },
             orderBy: [{ variation: { sortOrder: 'asc' } }],
           },
-          categoryLinks: { select: { menuCategoryId: true } },
+          categoryLinks: {
+            include: {
+              menuCategory: {
+                select: {
+                  id: true,
+                  menuLinks: {
+                    include: {
+                      restaurantMenu: {
+                        select: restaurantMenuScheduleSelect,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          menuLinks: {
+            include: {
+              restaurantMenu: {
+                select: restaurantMenuScheduleSelect,
+              },
+            },
+          },
           branchOverrides: branchId
             ? {
                 where: { branchId },
@@ -696,6 +762,13 @@ export class CustomerAppRepository {
                 },
                 orderBy: [{ sortOrder: 'asc' }],
               },
+              menuLinks: {
+                include: {
+                  restaurantMenu: {
+                    select: restaurantMenuScheduleSelect,
+                  },
+                },
+              },
             },
           },
           modifierLinks: {
@@ -754,6 +827,13 @@ export class CustomerAppRepository {
               },
             },
             orderBy: [{ variation: { sortOrder: 'asc' } }],
+          },
+          menuLinks: {
+            include: {
+              restaurantMenu: {
+                select: restaurantMenuScheduleSelect,
+              },
+            },
           },
           branchOverrides: branchId
             ? {
@@ -857,6 +937,13 @@ export class CustomerAppRepository {
               },
               orderBy: [{ sortOrder: 'asc' }],
             },
+            menuLinks: {
+              include: {
+                restaurantMenu: {
+                  select: restaurantMenuScheduleSelect,
+                },
+              },
+            },
           },
         },
         modifierLinks: {
@@ -916,7 +1003,29 @@ export class CustomerAppRepository {
           },
           orderBy: [{ variation: { sortOrder: 'asc' } }],
         },
-        categoryLinks: { select: { menuCategoryId: true } },
+        categoryLinks: {
+          include: {
+            menuCategory: {
+              select: {
+                id: true,
+                menuLinks: {
+                  include: {
+                    restaurantMenu: {
+                      select: restaurantMenuScheduleSelect,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        menuLinks: {
+          include: {
+            restaurantMenu: {
+              select: restaurantMenuScheduleSelect,
+            },
+          },
+        },
         branchOverrides: branchId
           ? {
               where: { branchId },
@@ -1036,6 +1145,13 @@ export class CustomerAppRepository {
               },
               orderBy: [{ sortOrder: 'asc' }],
             },
+            menuLinks: {
+              include: {
+                restaurantMenu: {
+                  select: restaurantMenuScheduleSelect,
+                },
+              },
+            },
           },
         },
         modifierLinks: {
@@ -1095,7 +1211,29 @@ export class CustomerAppRepository {
           },
           orderBy: [{ variation: { sortOrder: 'asc' } }],
         },
-        categoryLinks: { select: { menuCategoryId: true } },
+        categoryLinks: {
+          include: {
+            menuCategory: {
+              select: {
+                id: true,
+                menuLinks: {
+                  include: {
+                    restaurantMenu: {
+                      select: restaurantMenuScheduleSelect,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        menuLinks: {
+          include: {
+            restaurantMenu: {
+              select: restaurantMenuScheduleSelect,
+            },
+          },
+        },
         branchOverrides: branchId
           ? {
               where: { branchId },
