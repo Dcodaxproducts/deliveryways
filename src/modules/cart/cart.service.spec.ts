@@ -2051,6 +2051,90 @@ describe('CartService', () => {
     expect(result.message).toBe('Cart address updated successfully');
   });
 
+  it('returns auto-applied deal details from cart quote', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'burger-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+        {
+          id: 'item-2',
+          menuItemId: 'drink-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({
+      metadata: { defaultAddressId: 'address-1' },
+    });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 1100,
+        discountAmount: 301,
+        totalAmount: 799,
+        appliedPromotion: {
+          id: 'deal-1',
+          title: 'Burger Combo',
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+        },
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {},
+    );
+
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        deliveryAddressId: 'address-1',
+        items: [
+          expect.objectContaining({ menuItemId: 'burger-1' }),
+          expect.objectContaining({ menuItemId: 'drink-1' }),
+        ],
+      }),
+    );
+    expect(result.data.appliedPromotion).toEqual({
+      id: 'deal-1',
+      title: 'Burger Combo',
+      applyMode: 'SCOPED_ITEMS',
+      autoApply: true,
+    });
+    expect(result.data.discountAmount).toBe(301);
+  });
+
   it('throws when updating order type before cart exists', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue(null);

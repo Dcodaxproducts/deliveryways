@@ -2941,6 +2941,144 @@ describe('OrdersService - wallet payment', () => {
     });
   });
 
+  it('passes selected deal items into auto-apply order quote flow', async () => {
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue({
+        coupon: {
+          id: 'deal-1',
+          code: 'DEAL-1',
+          title: 'Burger Combo',
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+        },
+        discountAmount: new Prisma.Decimal(301),
+        eligibleSubtotal: new Prisma.Decimal(1100),
+      }),
+    };
+    const menuItems = new Map([
+      [
+        'burger-1',
+        {
+          id: 'burger-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(600),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-burger', variations: [], modifierLinks: [] },
+          modifierLinks: [],
+          branchOverrides: [],
+        },
+      ],
+      [
+        'drink-1',
+        {
+          id: 'drink-1',
+          name: 'Drink',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(500),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-drink', variations: [], modifierLinks: [] },
+          modifierLinks: [],
+          branchOverrides: [],
+        },
+      ],
+    ]);
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              ordering: {
+                allowedOrderTypes: ['DELIVERY'],
+                allowedPaymentMethods: ['COD'],
+              },
+              deliveryConfig: {
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 0,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn(({ where }: { where: { id: string } }) =>
+            Promise.resolve(menuItems.get(where.id) ?? null),
+          ),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValue({
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(799),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          { menuItemId: 'burger-1', quantity: 1 },
+          { menuItemId: 'drink-1', quantity: 1 },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(couponsService.findBestAutoApplyPromotion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lineItems: [
+          expect.objectContaining({
+            menuItemId: 'burger-1',
+            categoryId: 'cat-burger',
+          }),
+          expect.objectContaining({
+            menuItemId: 'drink-1',
+            categoryId: 'cat-drink',
+          }),
+        ],
+        subtotal: 1100,
+      }),
+    );
+    expect(result.data.discountAmount).toBe(301);
+    expect(result.data.appliedPromotion).toEqual({
+      id: 'deal-1',
+      title: 'Burger Combo',
+      applyMode: 'SCOPED_ITEMS',
+      autoApply: true,
+    });
+  });
+
   it('allows quoted coupon validation without delivery coordinates on the main quote path', async () => {
     const prisma = {
       branch: {
