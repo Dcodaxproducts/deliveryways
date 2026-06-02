@@ -1,5 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
-import { PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  OrderType,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 import {
   OrderTypeEnum,
   PaymentMethodEnum,
@@ -1063,6 +1069,124 @@ describe('OrdersService - deliveryman order access', () => {
       ),
     ).rejects.toThrow('Order is already assigned to a deliveryman');
     expect(ordersRepository.assignDeliveryman).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrdersService - order reviews', () => {
+  const makeService = () => {
+    const ordersRepository = {
+      findReviewContextById: jest.fn(),
+      createReview: jest.fn(),
+    };
+    const service = new OrdersService(
+      {} as never,
+      ordersRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    return { service, ordersRepository };
+  };
+
+  it('allows customer to review a delivered order once', async () => {
+    const { service, ordersRepository } = makeService();
+    ordersRepository.findReviewContextById.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: OrderType.DELIVERY,
+      status: OrderStatus.DELIVERED,
+      review: null,
+    });
+    ordersRepository.createReview.mockResolvedValue({
+      id: 'review-1',
+      orderId: 'order-1',
+      rating: 5,
+      comment: 'Great food',
+      createdAt: new Date('2026-06-02T05:50:00.000Z'),
+      updatedAt: new Date('2026-06-02T05:50:00.000Z'),
+    });
+
+    const result = await service.submitReview(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'order-1',
+      { rating: 5, comment: '  Great food  ' },
+    );
+
+    expect(ordersRepository.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        order: { connect: { id: 'order-1' } },
+        customer: { connect: { id: 'customer-1' } },
+        rating: 5,
+        comment: 'Great food',
+      }),
+    );
+    expect(result.message).toBe('Order review submitted successfully');
+  });
+
+  it('rejects reviews before order completion', async () => {
+    const { service, ordersRepository } = makeService();
+    ordersRepository.findReviewContextById.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: OrderType.DELIVERY,
+      status: OrderStatus.OUT_FOR_DELIVERY,
+      review: null,
+    });
+
+    await expect(
+      service.submitReview(
+        {
+          uid: 'customer-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        'order-1',
+        { rating: 4 },
+      ),
+    ).rejects.toThrow('Only completed orders can be reviewed');
+    expect(ordersRepository.createReview).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate order reviews', async () => {
+    const { service, ordersRepository } = makeService();
+    ordersRepository.findReviewContextById.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: OrderType.TAKEAWAY,
+      status: OrderStatus.PICKED_UP,
+      review: { id: 'review-1' },
+    });
+
+    await expect(
+      service.submitReview(
+        {
+          uid: 'customer-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        'order-1',
+        { rating: 4 },
+      ),
+    ).rejects.toThrow('Order has already been reviewed');
+    expect(ordersRepository.createReview).not.toHaveBeenCalled();
   });
 });
 

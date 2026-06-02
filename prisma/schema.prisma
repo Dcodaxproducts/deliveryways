@@ -287,6 +287,7 @@ model Tenant {
   posOrderDrafts      PosOrderDraft[]
   packagePlans        PackagePlan[]
   tenantSubscriptions TenantSubscription[]
+  orderReviews        OrderReview[]
 
   @@map("tenants")
 }
@@ -338,6 +339,7 @@ model Restaurant {
   groupOrders         GroupOrderSession[]
   posOrderDrafts      PosOrderDraft[]
   tenantSubscriptions TenantSubscription[]
+  orderReviews        OrderReview[]
 
   @@map("restaurants")
 }
@@ -378,6 +380,7 @@ model Branch {
   chatThreads         ChatThread[]
   groupOrders         GroupOrderSession[]
   posOrderDrafts      PosOrderDraft[]
+  orderReviews        OrderReview[]
 
   @@map("branches")
 }
@@ -443,6 +446,7 @@ model User {
   cart                   Cart?                   @relation("CustomerCart")
   createdMovements       InventoryMovement[]     @relation("MovementCreatedBy")
   customerOrders         Order[]                 @relation("OrderCustomer")
+  orderReviews           OrderReview[]           @relation("OrderReviewCustomer")
   posOrderDrafts         PosOrderDraft[]         @relation("PosDraftCustomer")
   couponUsages           CouponUsage[]
   walletAccounts         WalletAccount[]
@@ -1201,11 +1205,36 @@ model Order {
   notifications       Notification[]
   chatThreads         ChatThread[]
   sourceGroupOrder    GroupOrderSession?   @relation("GroupOrderFinalOrder")
+  review              OrderReview?
 
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([deliverymanId, status, createdAt])
   @@map("orders")
+}
+
+model OrderReview {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  restaurantId String   @map("restaurant_id")
+  branchId     String   @map("branch_id")
+  orderId      String   @unique @map("order_id")
+  customerId   String   @map("customer_id")
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer   User       @relation("OrderReviewCustomer", fields: [customerId], references: [id])
+
+  @@index([restaurantId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([customerId, createdAt])
+  @@map("order_reviews")
 }
 
 model OrderItem {

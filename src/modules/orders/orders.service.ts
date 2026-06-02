@@ -34,6 +34,7 @@ import {
   ListOrdersDto,
   OrderItemModifierDto,
   QuoteOrderDto,
+  SubmitOrderReviewDto,
   UpdateOrderStatusDto,
 } from './dto';
 import { OrdersRepository } from './orders.repository';
@@ -420,6 +421,50 @@ export class OrdersService {
         await this.toOrderDetailsResponse(order, user.role !== 'DELIVERYMAN'),
       ),
       message: 'Order fetched successfully',
+    };
+  }
+
+  async submitReview(
+    user: AuthUserContext,
+    id: string,
+    dto: SubmitOrderReviewDto,
+  ) {
+    if (user.role !== UserRoleEnum.CUSTOMER) {
+      throw new ForbiddenException('Only customers can review orders');
+    }
+
+    const order = await this.ordersRepository.findReviewContextById(id);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.customerId !== user.uid) {
+      throw new ForbiddenException('You cannot review this order');
+    }
+
+    if (!this.isCompletedOrder(order.orderType, order.status)) {
+      throw new BadRequestException('Only completed orders can be reviewed');
+    }
+
+    if (order.review) {
+      throw new BadRequestException('Order has already been reviewed');
+    }
+
+    const comment = dto.comment?.trim();
+    const data = await this.ordersRepository.createReview({
+      tenant: { connect: { id: order.tenantId } },
+      restaurant: { connect: { id: order.restaurantId } },
+      branch: { connect: { id: order.branchId } },
+      order: { connect: { id: order.id } },
+      customer: { connect: { id: order.customerId } },
+      rating: dto.rating,
+      comment: comment ? comment : undefined,
+    });
+
+    return {
+      data,
+      message: 'Order review submitted successfully',
     };
   }
 
@@ -2792,6 +2837,18 @@ export class OrdersService {
         'You cannot access resources outside your tenant restaurants',
       );
     }
+  }
+
+  private isCompletedOrder(orderType: OrderType, status: OrderStatus) {
+    if (orderType === OrderType.DELIVERY) {
+      return status === OrderStatus.DELIVERED;
+    }
+
+    if (orderType === OrderType.TAKEAWAY) {
+      return status === OrderStatus.PICKED_UP;
+    }
+
+    return status === OrderStatus.SERVED;
   }
 
   private isValidStatusTransition(

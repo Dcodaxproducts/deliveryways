@@ -162,6 +162,38 @@ export class OrdersRepository {
     });
   }
 
+  async findReviewContextById(id: string) {
+    return this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        customerId: true,
+        orderType: true,
+        status: true,
+        review: {
+          select: { id: true },
+        },
+      },
+    });
+  }
+
+  async createReview(data: Prisma.OrderReviewCreateInput) {
+    return this.prisma.orderReview.create({
+      data,
+      select: {
+        id: true,
+        orderId: true,
+        rating: true,
+        comment: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
   async findTrackingById(id: string) {
     return this.prisma.order.findUnique({
       where: { id },

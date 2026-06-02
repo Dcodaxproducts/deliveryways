@@ -14,13 +14,14 @@ import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
   RolesGuard,
-  TenantAccessGuard,
+  TenantAccessGuard as TenantGuard,
 } from '../../common/guards';
 import {
   CancelOrderDto,
   CreateOrderDto,
   ListOrdersDto,
   QuoteOrderDto,
+  SubmitOrderReviewDto,
   UpdateOrderStatusDto,
 } from './dto';
 import { OrdersService } from './orders.service';
@@ -31,7 +32,7 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -44,7 +45,7 @@ export class OrdersController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -57,7 +58,7 @@ export class OrdersController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -71,7 +72,7 @@ export class OrdersController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -85,7 +86,20 @@ export class OrdersController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
+  @Roles(RolesEnum.CUSTOMER)
+  @Post(':id/review')
+  @ApiOperation({ summary: 'Submit a review for a completed order' })
+  submitReview(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: SubmitOrderReviewDto,
+  ) {
+    return this.ordersService.submitReview(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -100,7 +114,7 @@ export class OrdersController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -117,7 +131,7 @@ export class OrdersController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
