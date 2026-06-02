@@ -48,6 +48,7 @@ describe('CartService', () => {
 
     const couponsService = {
       isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(false),
+      findActiveFixedPriceDealIdForItem: jest.fn().mockResolvedValue(null),
     };
 
     const service = new CartService(
@@ -1106,6 +1107,70 @@ describe('CartService', () => {
       'deal-1',
       'menu-1',
     );
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        modifiers: {
+          dealId: 'deal-1',
+          modifiers: [],
+        },
+      }),
+    );
+  });
+
+  it('infers ready-made deal items without requiring dealId in add-to-cart', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Basic Pizza Copy',
+      isRequired: true,
+      minSelect: 1,
+      maxSelect: 2,
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    couponsService.findActiveFixedPriceDealIdForItem.mockResolvedValue(
+      'deal-1',
+    );
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        quantity: 1,
+      },
+    );
+
+    expect(
+      couponsService.findActiveFixedPriceDealIdForItem,
+    ).toHaveBeenCalledWith('restaurant-1', 'branch-1', 'menu-1');
     expect(cartRepository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
         menuItemId: 'menu-1',

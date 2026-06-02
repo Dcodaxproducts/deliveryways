@@ -288,6 +288,36 @@ export class CouponsService {
     return scopeMenuItemIds.includes(menuItemId);
   }
 
+  async findActiveFixedPriceDealIdForItem(
+    restaurantId: string,
+    branchId: string | undefined,
+    menuItemId: string,
+  ) {
+    const promotions = await this.getActiveAutoApplyPromotions(
+      restaurantId,
+      branchId,
+    );
+    const deal = promotions.find((promotion) => {
+      if (
+        promotion.discountType !== CouponDiscountType.FIXED_PRICE ||
+        promotion.applyMode !== CouponApplyMode.SCOPED_ITEMS
+      ) {
+        return false;
+      }
+
+      const scopeMenuItemIds = [
+        ...new Set([
+          ...(promotion.scopeMenuItem?.id ? [promotion.scopeMenuItem.id] : []),
+          ...(promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem.id),
+        ]),
+      ];
+
+      return scopeMenuItemIds.includes(menuItemId);
+    });
+
+    return deal?.id ?? null;
+  }
+
   async findBestAutoApplyPromotion(
     input: Omit<CouponValidationInput, 'code'>,
   ): Promise<CouponValidationResult | null> {

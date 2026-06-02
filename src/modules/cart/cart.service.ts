@@ -412,28 +412,32 @@ export class CartService {
     requestedRestaurantId?: string,
   ) {
     const cart = await this.getCartForAddItem(user, dto, requestedCustomerId);
-    await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
-      ...dto,
-      restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
-    });
+    const validatedDto = await this.assertValidCartItem(
+      cart.restaurantId,
+      cart.branchId,
+      {
+        ...dto,
+        restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
+      },
+    );
 
     const packedSelections = this.packCartSelections(
-      dto.modifiers,
-      dto.sections,
-      dto.dealId,
+      validatedDto.modifiers,
+      validatedDto.sections,
+      validatedDto.dealId,
     );
     const matchingItem = cart.items.find((item) =>
       this.isSameCartSelection(item, {
-        menuItemId: dto.menuItemId,
-        variationId: dto.variationId ?? null,
-        note: this.resolveOptionalString(dto.note) ?? null,
+        menuItemId: validatedDto.menuItemId,
+        variationId: validatedDto.variationId ?? null,
+        note: this.resolveOptionalString(validatedDto.note) ?? null,
         modifiers: packedSelections as Prisma.JsonValue | null | undefined,
       }),
     );
 
     if (matchingItem) {
       await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
-        ...dto,
+        ...validatedDto,
         quantity: matchingItem.quantity + dto.quantity,
         restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
       });
@@ -444,10 +448,10 @@ export class CartService {
     } else {
       await this.cartRepository.createItem({
         cart: { connect: { id: cart.id } },
-        menuItemId: dto.menuItemId,
-        variationId: dto.variationId,
-        quantity: dto.quantity,
-        note: this.resolveOptionalString(dto.note),
+        menuItemId: validatedDto.menuItemId,
+        variationId: validatedDto.variationId,
+        quantity: validatedDto.quantity,
+        note: this.resolveOptionalString(validatedDto.note),
         modifiers: packedSelections as unknown as Prisma.InputJsonValue,
       });
     }
@@ -1547,7 +1551,7 @@ export class CartService {
     restaurantId: string,
     branchId: string,
     dto: AddCartItemDto,
-  ) {
+  ): Promise<AddCartItemDto> {
     const menuItem = await this.cartRepository.findMenuItemForCart(
       dto.menuItemId,
       restaurantId,
@@ -1565,24 +1569,35 @@ export class CartService {
       );
     }
 
-    const isReadyMadeDealItem = dto.dealId
-      ? await this.isReadyMadeDealItem(
+    const explicitDealId = this.resolveOptionalString(dto.dealId);
+    const inferredDealId = explicitDealId
+      ? (await this.isReadyMadeDealItem(
           restaurantId,
           branchId,
-          dto.dealId,
+          explicitDealId,
           menuItem.id,
-        )
-      : false;
+        ))
+        ? explicitDealId
+        : null
+      : await this.findReadyMadeDealIdForItem(
+          restaurantId,
+          branchId,
+          menuItem.id,
+        );
 
-    if (dto.dealId && !isReadyMadeDealItem) {
+    if (explicitDealId && !inferredDealId) {
       throw new BadRequestException(
         `Deal not found for item: ${menuItem.name}`,
       );
     }
 
-    if (isReadyMadeDealItem) {
+    if (inferredDealId) {
       this.assertNoDealCustomizations(dto, menuItem.name);
     }
+
+    const validatedDto = inferredDealId
+      ? { ...dto, dealId: inferredDealId }
+      : dto;
 
     const selectedRestaurantMenuId = this.resolveOptionalString(
       dto.restaurantMenuId,
@@ -1626,11 +1641,13 @@ export class CartService {
     }
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
-    if (!isReadyMadeDealItem) {
+    if (!inferredDealId) {
       this.assertModifierSelectionLimits(menuItem, dto.modifiers ?? []);
     }
 
     await this.assertValidSplitSections(menuItem, branchId, dto);
+
+    return validatedDto;
   }
 
   private async isReadyMadeDealItem(
@@ -1646,6 +1663,20 @@ export class CartService {
         dealId,
         menuItemId,
       )) ?? false
+    );
+  }
+
+  private async findReadyMadeDealIdForItem(
+    restaurantId: string,
+    branchId: string,
+    menuItemId: string,
+  ) {
+    return (
+      (await this.couponsService?.findActiveFixedPriceDealIdForItem?.(
+        restaurantId,
+        branchId,
+        menuItemId,
+      )) ?? null
     );
   }
 

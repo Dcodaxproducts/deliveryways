@@ -890,22 +890,29 @@ export class OrdersService {
         hasSplitSections ? undefined : requestedItem.variationId,
       ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
-      const isReadyMadeDealItem = requestedItem.dealId
-        ? await this.isReadyMadeDealItem(
+      const explicitDealId = this.resolveOptionalString(requestedItem.dealId);
+      const readyMadeDealId = explicitDealId
+        ? (await this.isReadyMadeDealItem(
             branch.restaurantId,
             branch.id,
-            requestedItem.dealId,
+            explicitDealId,
             menuItem.id,
-          )
-        : false;
+          ))
+          ? explicitDealId
+          : null
+        : await this.findReadyMadeDealIdForItem(
+            branch.restaurantId,
+            branch.id,
+            menuItem.id,
+          );
 
-      if (requestedItem.dealId && !isReadyMadeDealItem) {
+      if (explicitDealId && !readyMadeDealId) {
         throw new BadRequestException(
           `Deal not found for item: ${menuItem.name}`,
         );
       }
 
-      if (isReadyMadeDealItem) {
+      if (readyMadeDealId) {
         this.assertNoDealCustomizations(requestedItem, menuItem.name);
       }
 
@@ -973,7 +980,7 @@ export class OrdersService {
         }
       }
 
-      if (!isReadyMadeDealItem) {
+      if (!readyMadeDealId) {
         this.assertModifierSelectionLimits(
           menuItem,
           requestedItem.modifiers ?? [],
@@ -1167,7 +1174,7 @@ export class OrdersService {
         categoryId: menuItem.category.id,
         categoryIds: this.itemCategoryIds(menuItem),
         menuItemName: menuItem.name,
-        dealId: requestedItem.dealId,
+        dealId: readyMadeDealId ?? requestedItem.dealId,
         variationId: requestedItem.variationId,
         variationName,
         quantity: requestedItem.quantity,
@@ -3251,6 +3258,25 @@ export class OrdersService {
       dealId,
       menuItemId,
     );
+  }
+
+  private async findReadyMadeDealIdForItem(
+    restaurantId: string,
+    branchId: string,
+    menuItemId: string,
+  ) {
+    return (
+      (await this.couponsService.findActiveFixedPriceDealIdForItem?.(
+        restaurantId,
+        branchId,
+        menuItemId,
+      )) ?? null
+    );
+  }
+
+  private resolveOptionalString(value?: string | null) {
+    const normalized = value?.trim();
+    return normalized ? normalized : undefined;
   }
 
   private assertNoDealCustomizations(
