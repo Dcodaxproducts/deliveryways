@@ -49,14 +49,14 @@ describe('ModifierService', () => {
     return { service, modifierRepository, prisma };
   };
 
-  it('normalizes free modifier groups to optional single selection', async () => {
+  it('preserves modifier group selection settings on create', async () => {
     const { service, modifierRepository } = makeService();
     modifierRepository.createGroup.mockResolvedValue({
       id: 'group-1',
       name: 'Sauces',
       description: null,
-      minSelect: 0,
-      maxSelect: 1,
+      minSelect: 2,
+      maxSelect: 5,
       isRequired: false,
       sortOrder: 0,
       isActive: true,
@@ -75,60 +75,36 @@ describe('ModifierService', () => {
 
     expect(modifierRepository.createGroup).toHaveBeenCalledWith(
       expect.objectContaining({
-        minSelect: 0,
-        maxSelect: 1,
+        minSelect: 2,
+        maxSelect: 5,
         isRequired: false,
       }),
     );
     expect(result.data).toEqual(
       expect.objectContaining({
-        minSelect: 0,
-        maxSelect: 1,
+        minSelect: 2,
+        maxSelect: 5,
         isRequired: false,
-        selectionType: 'FREE',
       }),
     );
   });
 
-  it('uses min and max only when modifier group is required', async () => {
+  it('rejects modifier group maxSelect below minSelect', async () => {
     const { service, modifierRepository } = makeService();
-    modifierRepository.createGroup.mockResolvedValue({
-      id: 'group-1',
-      name: 'Required Sides',
-      description: null,
-      minSelect: 1,
-      maxSelect: 2,
-      isRequired: true,
-      sortOrder: 0,
-      isActive: true,
-    });
 
-    const result = await service.createGroup(
-      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
-      {
-        restaurantId: 'restaurant-1',
-        name: 'Required Sides',
-        minSelect: 1,
-        maxSelect: 2,
-        isRequired: true,
-      },
-    );
-
-    expect(modifierRepository.createGroup).toHaveBeenCalledWith(
-      expect.objectContaining({
-        minSelect: 1,
-        maxSelect: 2,
-        isRequired: true,
-      }),
-    );
-    expect(result.data).toEqual(
-      expect.objectContaining({
-        minSelect: 1,
-        maxSelect: 2,
-        isRequired: true,
-        selectionType: 'REQUIRED',
-      }),
-    );
+    await expect(
+      service.createGroup(
+        { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+        {
+          restaurantId: 'restaurant-1',
+          name: 'Required Sides',
+          minSelect: 2,
+          maxSelect: 1,
+          isRequired: true,
+        },
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(modifierRepository.createGroup).not.toHaveBeenCalled();
   });
 
   it('includes assigned category ids when listing modifier groups', async () => {

@@ -32,15 +32,22 @@ export class ModifierService {
 
   async createGroup(user: AuthUserContext, dto: CreateModifierGroupDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
-    const selectionLimits = this.resolveGroupSelectionLimits(dto);
+
+    if (
+      dto.minSelect !== undefined &&
+      dto.maxSelect !== undefined &&
+      dto.maxSelect < dto.minSelect
+    ) {
+      throw new BadRequestException('maxSelect cannot be less than minSelect');
+    }
 
     const data = await this.modifierRepository.createGroup({
       restaurant: { connect: { id: restaurantId } },
       name: dto.name,
       description: dto.description,
-      minSelect: selectionLimits.minSelect,
-      maxSelect: selectionLimits.maxSelect,
-      isRequired: selectionLimits.isRequired,
+      minSelect: dto.minSelect ?? 0,
+      maxSelect: dto.maxSelect ?? 1,
+      isRequired: dto.isRequired ?? false,
       sortOrder: dto.sortOrder ?? 0,
       isActive: true,
     });
@@ -96,14 +103,20 @@ export class ModifierService {
     }
 
     await this.ensureWriteAccess(user, group.restaurantId);
-    const selectionLimits = this.resolveGroupSelectionLimits(dto, group);
+
+    const minSelect = dto.minSelect ?? group.minSelect;
+    const maxSelect = dto.maxSelect ?? group.maxSelect;
+
+    if (maxSelect < minSelect) {
+      throw new BadRequestException('maxSelect cannot be less than minSelect');
+    }
 
     const data = await this.modifierRepository.updateGroup(id, {
       name: dto.name,
       description: dto.description,
-      minSelect: selectionLimits.minSelect,
-      maxSelect: selectionLimits.maxSelect,
-      isRequired: selectionLimits.isRequired,
+      minSelect: dto.minSelect,
+      maxSelect: dto.maxSelect,
+      isRequired: dto.isRequired,
       sortOrder: dto.sortOrder,
       isActive: dto.isActive,
     });
@@ -498,12 +511,8 @@ export class ModifierService {
       };
     }>;
   }) {
-    const selectionLimits = this.resolveGroupSelectionLimits({}, group, false);
-
     return {
       ...group,
-      ...selectionLimits,
-      selectionType: selectionLimits.isRequired ? 'REQUIRED' : 'FREE',
       modifiers: (group.modifierLinks ?? []).map((link) => ({
         ...link.modifier,
         sortOrder: link.sortOrder,
@@ -514,41 +523,6 @@ export class ModifierService {
         sortOrder: link.sortOrder,
       })),
     };
-  }
-
-  private resolveGroupSelectionLimits(
-    dto: {
-      isRequired?: boolean;
-      minSelect?: number;
-      maxSelect?: number;
-    },
-    existing?: {
-      isRequired?: boolean;
-      minSelect?: number;
-      maxSelect?: number;
-    },
-    validate = true,
-  ) {
-    const isRequired = dto.isRequired ?? existing?.isRequired ?? false;
-
-    if (!isRequired) {
-      return { isRequired, minSelect: 0, maxSelect: 1 };
-    }
-
-    const minSelect = dto.minSelect ?? existing?.minSelect ?? 1;
-    const maxSelect = dto.maxSelect ?? existing?.maxSelect ?? minSelect;
-
-    if (validate && minSelect < 1) {
-      throw new BadRequestException(
-        'minSelect must be at least 1 when modifier group is required',
-      );
-    }
-
-    if (validate && maxSelect < minSelect) {
-      throw new BadRequestException('maxSelect cannot be less than minSelect');
-    }
-
-    return { isRequired, minSelect, maxSelect };
   }
 
   private mapModifier(modifier: {

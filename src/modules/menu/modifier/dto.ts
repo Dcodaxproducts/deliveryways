@@ -27,31 +27,21 @@ export class CreateModifierGroupDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({
-    default: 0,
-    description: 'Only used when isRequired is true. Free groups are 0..1.',
-  })
+  @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(0)
   minSelect?: number;
 
-  @ApiPropertyOptional({
-    default: 1,
-    description: 'Only used when isRequired is true. Free groups are 0..1.',
-  })
+  @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(1)
   maxSelect?: number;
 
-  @ApiPropertyOptional({
-    default: false,
-    description:
-      'When false, this is a free optional modifier group with one selection allowed.',
-  })
+  @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
   isRequired?: boolean;
@@ -75,28 +65,21 @@ export class UpdateModifierGroupDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({
-    description: 'Only used when isRequired is true. Free groups are 0..1.',
-  })
+  @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(0)
   minSelect?: number;
 
-  @ApiPropertyOptional({
-    description: 'Only used when isRequired is true. Free groups are 0..1.',
-  })
+  @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(1)
   maxSelect?: number;
 
-  @ApiPropertyOptional({
-    description:
-      'When false, this is a free optional modifier group with one selection allowed.',
-  })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   isRequired?: boolean;

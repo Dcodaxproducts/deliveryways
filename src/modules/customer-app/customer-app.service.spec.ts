@@ -15,6 +15,9 @@ describe('CustomerAppService', () => {
     basePrice: 799,
     depositAmount: 100,
     prepTimeMinutes: 15,
+    isRequired: false,
+    minSelect: 0,
+    maxSelect: null,
     dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
     allergenFlags: ['A', '1'],
     restaurant: {
@@ -419,13 +422,19 @@ describe('CustomerAppService', () => {
     expect(result.data[0].additives).toEqual([
       { code: '1', label: 'Coloring' },
     ]);
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        isRequired: false,
+        minSelect: 0,
+        maxSelect: 1,
+      }),
+    );
     expect(result.data[0].modifierLinks[0].modifierGroup).toEqual(
       expect.objectContaining({
         id: 'group-1',
         isRequired: false,
-        selectionType: 'FREE',
         minSelect: 0,
-        maxSelect: 1,
+        maxSelect: 3,
       }),
     );
     expect(result.data[0].modifierPriceOverrides).toBe(
@@ -641,13 +650,29 @@ describe('CustomerAppService', () => {
     ]);
     const [firstDealItem, secondDealItem] = result.data[0]
       .scopeMenuItems as unknown as Array<{
+      isRequired: boolean;
+      minSelect: number;
+      maxSelect: number | null;
       modifierLinks: Array<{ modifierGroup: unknown }>;
     }>;
 
+    expect(firstDealItem).toEqual(
+      expect.objectContaining({
+        isRequired: false,
+        minSelect: 0,
+        maxSelect: 1,
+      }),
+    );
     expect(firstDealItem.modifierLinks[0]?.modifierGroup).toEqual(
       expect.objectContaining({
         isRequired: false,
-        selectionType: 'FREE',
+        minSelect: 0,
+        maxSelect: 3,
+      }),
+    );
+    expect(secondDealItem).toEqual(
+      expect.objectContaining({
+        isRequired: false,
         minSelect: 0,
         maxSelect: 1,
       }),
@@ -655,9 +680,8 @@ describe('CustomerAppService', () => {
     expect(secondDealItem.modifierLinks[0]?.modifierGroup).toEqual(
       expect.objectContaining({
         isRequired: false,
-        selectionType: 'FREE',
         minSelect: 0,
-        maxSelect: 1,
+        maxSelect: 3,
       }),
     );
     expect(result.message).toBe('Deals fetched successfully');
@@ -801,9 +825,8 @@ describe('CustomerAppService', () => {
       expect.objectContaining({
         id: 'group-1',
         isRequired: false,
-        selectionType: 'FREE',
         minSelect: 0,
-        maxSelect: 1,
+        maxSelect: 3,
       }),
     );
     expect('modifierGroups' in result.data.items[0]).toBe(false);
@@ -924,9 +947,8 @@ describe('CustomerAppService', () => {
       expect.objectContaining({
         id: 'group-1',
         isRequired: false,
-        selectionType: 'FREE',
         minSelect: 0,
-        maxSelect: 1,
+        maxSelect: 3,
       }),
     );
     expect('modifierGroups' in result.data[0].items[0]).toBe(false);

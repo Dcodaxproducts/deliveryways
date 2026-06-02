@@ -1377,6 +1377,9 @@ export class CustomerAppService {
       basePrice: Prisma.Decimal;
       depositAmount?: Prisma.Decimal | null;
       prepTimeMinutes: number | null;
+      isRequired?: boolean | null;
+      minSelect?: number | null;
+      maxSelect?: number | null;
       restaurant?: {
         id: string;
         name: string;
@@ -1507,6 +1510,9 @@ export class CustomerAppService {
       promotion: itemPromotion ?? null,
       depositAmount: item.depositAmount ? Number(item.depositAmount) : null,
       prepTimeMinutes: item.prepTimeMinutes,
+      isRequired: item.isRequired ?? false,
+      minSelect: item.isRequired ? (item.minSelect ?? 1) : 0,
+      maxSelect: item.isRequired ? (item.maxSelect ?? null) : 1,
       restaurant: item.restaurant
         ? {
             id: item.restaurant.id,
@@ -1522,20 +1528,7 @@ export class CustomerAppService {
           }
         : null,
       variations: normalizedVariations,
-      modifierLinks: (item.modifierLinks ?? []).map((link) => ({
-        ...link,
-        modifierGroup: {
-          ...link.modifierGroup,
-          isRequired: link.modifierGroup.isRequired,
-          selectionType: link.modifierGroup.isRequired ? 'REQUIRED' : 'FREE',
-          minSelect: link.modifierGroup.isRequired
-            ? link.modifierGroup.minSelect
-            : 0,
-          maxSelect: link.modifierGroup.isRequired
-            ? link.modifierGroup.maxSelect
-            : 1,
-        },
-      })),
+      modifierLinks: item.modifierLinks ?? [],
       modifierPriceOverrides: item.modifierPriceOverrides ?? [],
       modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
         id: override.modifier.id,
