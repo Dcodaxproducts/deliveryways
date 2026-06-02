@@ -1512,7 +1512,20 @@ export class CustomerAppService {
           }
         : null,
       variations: normalizedVariations,
-      modifierLinks: item.modifierLinks ?? [],
+      modifierLinks: (item.modifierLinks ?? []).map((link) => ({
+        ...link,
+        modifierGroup: {
+          ...link.modifierGroup,
+          isRequired: link.modifierGroup.isRequired,
+          selectionType: link.modifierGroup.isRequired ? 'REQUIRED' : 'FREE',
+          minSelect: link.modifierGroup.isRequired
+            ? link.modifierGroup.minSelect
+            : 0,
+          maxSelect: link.modifierGroup.isRequired
+            ? link.modifierGroup.maxSelect
+            : 1,
+        },
+      })),
       modifierPriceOverrides: item.modifierPriceOverrides ?? [],
       modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
         id: override.modifier.id,

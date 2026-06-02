@@ -1383,7 +1383,7 @@ describe('CartService', () => {
     );
   });
 
-  it('rejects cart modifier selections above item maxSelect', async () => {
+  it('rejects free cart modifier group selections above one', async () => {
     const { service, cartRepository } = makeService();
     const existingCart = {
       id: 'cart-1',
@@ -1407,7 +1407,7 @@ describe('CartService', () => {
       name: 'Burger',
       isRequired: false,
       minSelect: 0,
-      maxSelect: 1,
+      maxSelect: null,
       category: { id: 'category-1', items: [], modifierLinks: [] },
       variations: [],
       modifierLinks: [
@@ -1446,7 +1446,7 @@ describe('CartService', () => {
           ],
         },
       ),
-    ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
+    ).rejects.toThrow('Sauces allows at most 1 modifier selection(s)');
   });
 
   it('rejects cart item quantity above item maxQuantity', async () => {

@@ -419,7 +419,15 @@ describe('CustomerAppService', () => {
     expect(result.data[0].additives).toEqual([
       { code: '1', label: 'Coloring' },
     ]);
-    expect(result.data[0].modifierLinks).toBe(itemFixture.modifierLinks);
+    expect(result.data[0].modifierLinks[0].modifierGroup).toEqual(
+      expect.objectContaining({
+        id: 'group-1',
+        isRequired: false,
+        selectionType: 'FREE',
+        minSelect: 0,
+        maxSelect: 1,
+      }),
+    );
     expect(result.data[0].modifierPriceOverrides).toBe(
       itemFixture.modifierPriceOverrides,
     );
@@ -737,8 +745,16 @@ describe('CustomerAppService', () => {
         allergenFlags: ['A', '1'],
         allergens: [{ code: 'A', label: 'Gluten' }],
         additives: [{ code: '1', label: 'Coloring' }],
-        modifierLinks: itemFixture.modifierLinks,
         modifierPriceOverrides: itemFixture.modifierPriceOverrides,
+      }),
+    );
+    expect(result.data.items[0].modifierLinks[0].modifierGroup).toEqual(
+      expect.objectContaining({
+        id: 'group-1',
+        isRequired: false,
+        selectionType: 'FREE',
+        minSelect: 0,
+        maxSelect: 1,
       }),
     );
     expect('modifierGroups' in result.data.items[0]).toBe(false);
@@ -852,8 +868,16 @@ describe('CustomerAppService', () => {
           { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
           { value: 'VEGAN', label: 'Vegan' },
         ],
-        modifierLinks: itemFixture.modifierLinks,
         modifierPriceOverrides: itemFixture.modifierPriceOverrides,
+      }),
+    );
+    expect(result.data[0].items[0].modifierLinks[0].modifierGroup).toEqual(
+      expect.objectContaining({
+        id: 'group-1',
+        isRequired: false,
+        selectionType: 'FREE',
+        minSelect: 0,
+        maxSelect: 1,
       }),
     );
     expect('modifierGroups' in result.data[0].items[0]).toBe(false);

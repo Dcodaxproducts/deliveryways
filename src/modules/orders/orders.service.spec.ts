@@ -1701,7 +1701,7 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.subtotal).toBe(125);
   });
 
-  it('rejects order modifiers above item maxSelect', async () => {
+  it('rejects free order modifier group selections above one', async () => {
     const prisma = {
       branch: {
         findFirst: jest.fn().mockResolvedValue({
@@ -1729,7 +1729,7 @@ describe('OrdersService - coupon quote validation', () => {
           restaurantId: 'restaurant-1',
           isRequired: false,
           minSelect: 0,
-          maxSelect: 1,
+          maxSelect: null,
           pricingMode: 'SINGLE',
           basePrice: new Prisma.Decimal(100),
           deliveryPriceAdjustment: new Prisma.Decimal(0),
@@ -1810,7 +1810,7 @@ describe('OrdersService - coupon quote validation', () => {
           orderTime: '2026-03-24T19:30:00.000Z',
         },
       ),
-    ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
+    ).rejects.toThrow('Sauces allows at most 1 modifier selection(s)');
   });
 
   it('rejects order item quantity above item maxQuantity', async () => {

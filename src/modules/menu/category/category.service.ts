@@ -482,9 +482,14 @@ export class MenuCategoryService {
         id: link.modifierGroup.id,
         name: link.modifierGroup.name,
         description: link.modifierGroup.description ?? null,
-        minSelect: link.modifierGroup.minSelect,
-        maxSelect: link.modifierGroup.maxSelect,
         isRequired: link.modifierGroup.isRequired,
+        selectionType: link.modifierGroup.isRequired ? 'REQUIRED' : 'FREE',
+        minSelect: link.modifierGroup.isRequired
+          ? link.modifierGroup.minSelect
+          : 0,
+        maxSelect: link.modifierGroup.isRequired
+          ? link.modifierGroup.maxSelect
+          : 1,
         sortOrder: link.sortOrder,
         modifiers: link.modifierGroup.modifierLinks.map(
           ({ modifier, sortOrder }) => ({

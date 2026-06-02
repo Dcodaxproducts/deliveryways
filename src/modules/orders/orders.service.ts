@@ -958,6 +958,10 @@ export class OrdersService {
         menuItem,
         requestedItem.modifiers ?? [],
       );
+      this.assertModifierGroupSelectionLimits(
+        menuItem,
+        requestedItem.modifiers ?? [],
+      );
       this.assertItemQuantityLimits(menuItem, requestedItem.quantity);
 
       if (requestedItem.sections?.length) {
@@ -3212,6 +3216,60 @@ export class OrdersService {
       throw new BadRequestException(
         `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} modifier selection(s)`,
       );
+    }
+  }
+
+  private assertModifierGroupSelectionLimits(
+    menuItem: OrderModifierSource,
+    modifiers: OrderItemModifierDto[],
+  ) {
+    const groups = this.getAvailableModifierLinks(menuItem);
+    const selectedByGroupId = new Map<string, number>();
+    const seenGroupIds = new Set<string>();
+
+    for (const selectedModifier of modifiers) {
+      const quantity = selectedModifier.quantity ?? 1;
+      const groupLink = groups.find((link) =>
+        link.modifierGroup.modifierLinks.some(
+          (modifierLink) =>
+            modifierLink.modifier.id === selectedModifier.modifierId,
+        ),
+      );
+
+      if (!groupLink) {
+        continue;
+      }
+
+      selectedByGroupId.set(
+        groupLink.modifierGroup.id,
+        (selectedByGroupId.get(groupLink.modifierGroup.id) ?? 0) + quantity,
+      );
+    }
+
+    for (const link of groups) {
+      const group = link.modifierGroup;
+
+      if (seenGroupIds.has(group.id)) {
+        continue;
+      }
+
+      seenGroupIds.add(group.id);
+
+      const totalSelected = selectedByGroupId.get(group.id) ?? 0;
+      const minSelect = group.isRequired ? group.minSelect : 0;
+      const maxSelect = group.isRequired ? group.maxSelect : 1;
+
+      if (group.isRequired && totalSelected < minSelect) {
+        throw new BadRequestException(
+          `${group.name} requires at least ${minSelect} modifier selection(s)`,
+        );
+      }
+
+      if (totalSelected > maxSelect) {
+        throw new BadRequestException(
+          `${group.name} allows at most ${maxSelect} modifier selection(s)`,
+        );
+      }
     }
   }
 
