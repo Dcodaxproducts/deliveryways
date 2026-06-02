@@ -2594,6 +2594,73 @@ describe('CartService', () => {
     expect(payload.orderTime).toBe('2026-03-24T19:30:00.000Z');
   });
 
+  it('omits saved customization fields from ready-made deal quote payloads', async () => {
+    const { service, profilesRepository } = makeService();
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const payload = await (
+      service as unknown as {
+        toQuotePayload: (cart: {
+          branchId: string;
+          customerId: string;
+          restaurantMenuId: string | null;
+          orderType: 'DELIVERY';
+          deliveryAddressId: string | null;
+          couponCode: string | null;
+          orderTime: Date | null;
+          items: Array<{
+            id: string;
+            menuItemId: string;
+            variationId: string | null;
+            quantity: number;
+            note: string | null;
+            modifiers: {
+              dealId: string;
+              modifiers: Array<{ modifierId: string; quantity: number }>;
+              sections: Array<{ slot: 'LEFT' | 'RIGHT'; menuItemId: string }>;
+            };
+          }>;
+        }) => Promise<{
+          items: Array<{
+            dealId?: string;
+            variationId?: string;
+            modifiers?: Array<unknown>;
+            sections?: Array<unknown>;
+          }>;
+        }>;
+      }
+    ).toQuotePayload({
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      restaurantMenuId: null,
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: 'variation-1',
+          quantity: 1,
+          note: null,
+          modifiers: {
+            dealId: 'deal-1',
+            modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+            sections: [{ slot: 'LEFT', menuItemId: 'menu-2' }],
+          },
+        },
+      ],
+    });
+
+    expect(payload.items[0]).toEqual(
+      expect.objectContaining({ dealId: 'deal-1' }),
+    );
+    expect(payload.items[0].variationId).toBeUndefined();
+    expect(payload.items[0].modifiers).toBeUndefined();
+    expect(payload.items[0].sections).toBeUndefined();
+  });
+
   it('falls back to saved cart checkout fields when omitted at checkout', async () => {
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();

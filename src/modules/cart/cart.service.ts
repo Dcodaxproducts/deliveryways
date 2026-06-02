@@ -1414,15 +1414,19 @@ export class CartService {
           : undefined,
       couponCode: cart.couponCode ?? undefined,
       orderTime: cart.orderTime?.toISOString() ?? new Date().toISOString(),
-      items: cart.items.map((item) => ({
-        menuItemId: item.menuItemId,
-        dealId: this.readDealId(item.modifiers),
-        variationId: item.variationId ?? undefined,
-        quantity: item.quantity,
-        modifiers: this.readModifiers(item.modifiers),
-        sections: this.readSections(item.modifiers),
-        note: item.note ?? undefined,
-      })),
+      items: cart.items.map((item) => {
+        const dealId = this.readDealId(item.modifiers);
+
+        return {
+          menuItemId: item.menuItemId,
+          dealId,
+          variationId: dealId ? undefined : (item.variationId ?? undefined),
+          quantity: item.quantity,
+          modifiers: dealId ? undefined : this.readModifiers(item.modifiers),
+          sections: dealId ? undefined : this.readSections(item.modifiers),
+          note: item.note ?? undefined,
+        };
+      }),
     };
   }
 
