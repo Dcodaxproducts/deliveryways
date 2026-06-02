@@ -50,6 +50,8 @@ type PublicPromotionScopeEntity = {
   basePrice?: Prisma.Decimal | null;
 };
 
+type PublicDealScopeMenuItem = { id: string } & Record<string, unknown>;
+
 type PublicMenuItemVariation = {
   id: string;
   name: string;
@@ -523,7 +525,9 @@ export class CustomerAppService {
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
     );
-    const promotions = promotionContext.promotions.slice(0, query.limit);
+    const promotions = promotionContext.promotions
+      .filter((promotion) => promotion.discountType !== 'FIXED_PRICE')
+      .slice(0, query.limit);
 
     return {
       data: await Promise.all(
@@ -546,10 +550,16 @@ export class CustomerAppService {
     const deals = promotionContext.promotions
       .filter((promotion) => promotion.discountType === 'FIXED_PRICE')
       .slice(0, query.limit);
+    const scopedMenuItemsById = await this.loadDealScopeMenuItems(
+      resolvedQuery,
+      deals,
+    );
 
     return {
       data: await Promise.all(
-        deals.map((promotion) => this.mapPublicPromotion(promotion)),
+        deals.map((promotion) =>
+          this.mapPublicPromotion(promotion, scopedMenuItemsById),
+        ),
       ),
       message: 'Deals fetched successfully',
     };
@@ -1780,7 +1790,10 @@ export class CustomerAppService {
     };
   }
 
-  private async mapPublicPromotion(promotion: AutoApplyPromotion) {
+  private async mapPublicPromotion(
+    promotion: AutoApplyPromotion,
+    scopedMenuItemsById?: Map<string, PublicDealScopeMenuItem>,
+  ) {
     return {
       id: promotion.id,
       title: promotion.title,
@@ -1819,7 +1832,11 @@ export class CustomerAppService {
         this.mergePromotionScopeEntities(
           promotion.scopeMenuItem,
           (promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem),
-        ).map((item) => this.mapPromotionScopeEntity(item)),
+        ).map(
+          async (item) =>
+            scopedMenuItemsById?.get(item.id) ??
+            (await this.mapPromotionScopeEntity(item)),
+        ),
       ),
       scopeCategories: await Promise.all(
         this.mergePromotionScopeEntities(
@@ -1828,6 +1845,44 @@ export class CustomerAppService {
         ).map((category) => this.mapPromotionScopeEntity(category)),
       ),
     };
+  }
+
+  private async loadDealScopeMenuItems(
+    query: PublicRestaurantQueryDto,
+    deals: AutoApplyPromotion[],
+  ) {
+    const menuItemIds = [
+      ...new Set(
+        deals.flatMap((deal) =>
+          this.collectPromotionScopeIds(
+            deal.scopeMenuItem?.id ?? null,
+            (deal.scopeMenuItems ?? []).map((entry) => entry.menuItem.id),
+          ),
+        ),
+      ),
+    ];
+
+    if (!menuItemIds.length) {
+      return new Map<string, PublicDealScopeMenuItem>();
+    }
+
+    const items = await this.customerAppRepository.listPromotionalItems(
+      {
+        restaurantId: query.restaurantId,
+        branchId: query.branchId,
+        limit: menuItemIds.length,
+      },
+      { menuItemIds },
+    );
+    const mappedItems = await Promise.all(
+      this.filterAvailableMenuItems(items).map((item) =>
+        this.mapMenuItem(item, []),
+      ),
+    );
+
+    return new Map<string, PublicDealScopeMenuItem>(
+      mappedItems.map((item) => [item.id, item]),
+    );
   }
 
   private async mapPromotionScopeEntity(entity: PublicPromotionScopeEntity) {

@@ -493,6 +493,24 @@ describe('CustomerAppService', () => {
           },
         ],
       },
+      {
+        id: 'deal-1',
+        title: 'Burger Combo',
+        description: 'Fixed bundle',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'FIXED_PRICE',
+        discountValue: new Prisma.Decimal(999),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        startsAt: new Date('2026-05-20T00:00:00.000Z'),
+        expiresAt: new Date('2026-05-25T00:00:00.000Z'),
+        restaurant: null,
+        branch: null,
+        scopeMenuItem: null,
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
     ]);
 
     const result = await service.listPromotions({
@@ -520,6 +538,7 @@ describe('CustomerAppService', () => {
         ],
       }),
     ]);
+    expect(result.data).toHaveLength(1);
   });
 
   it('lists only fixed price promotions as public deals', async () => {
@@ -583,12 +602,24 @@ describe('CustomerAppService', () => {
         ],
       },
     ]);
+    repository.listPromotionalItems.mockResolvedValue([
+      itemFixture,
+      { ...itemFixture, id: 'item-2', name: 'Cold Drink', slug: 'cold-drink' },
+    ]);
 
     const result = await service.listDeals({
       restaurantId: 'restaurant-1',
       limit: 10,
     });
 
+    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+      {
+        restaurantId: 'restaurant-1',
+        branchId: undefined,
+        limit: 2,
+      },
+      { menuItemIds: ['item-1', 'item-2'] },
+    );
     expect(result.data).toEqual([
       expect.objectContaining({
         id: 'deal-1',
@@ -596,21 +627,39 @@ describe('CustomerAppService', () => {
         discountType: 'FIXED_PRICE',
         discountValue: 999,
         scopeMenuItems: [
-          {
+          expect.objectContaining({
             id: 'item-1',
             name: 'Zinger Burger',
-            imageUrl: 'zinger.png',
             basePrice: 799,
-          },
-          {
+          }),
+          expect.objectContaining({
             id: 'item-2',
             name: 'Cold Drink',
-            imageUrl: 'drink.png',
-            basePrice: 199,
-          },
+          }),
         ],
       }),
     ]);
+    const [firstDealItem, secondDealItem] = result.data[0]
+      .scopeMenuItems as unknown as Array<{
+      modifierLinks: Array<{ modifierGroup: unknown }>;
+    }>;
+
+    expect(firstDealItem.modifierLinks[0]?.modifierGroup).toEqual(
+      expect.objectContaining({
+        isRequired: false,
+        selectionType: 'FREE',
+        minSelect: 0,
+        maxSelect: 1,
+      }),
+    );
+    expect(secondDealItem.modifierLinks[0]?.modifierGroup).toEqual(
+      expect.objectContaining({
+        isRequired: false,
+        selectionType: 'FREE',
+        minSelect: 0,
+        maxSelect: 1,
+      }),
+    );
     expect(result.message).toBe('Deals fetched successfully');
   });
 
