@@ -144,6 +144,15 @@ export class MenuItemModifierPriceOverrideDto {
   @Transform(({ value }) => Number(value))
   @IsNumber()
   priceDelta!: number;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Whether this modifier is required for this specific menu item attachment.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isRequired?: boolean;
 }
 
 export class MenuItemVariationModifierPriceOverrideDto {

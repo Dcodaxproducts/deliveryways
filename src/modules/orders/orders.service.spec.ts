@@ -42,6 +42,70 @@ describe('OrdersService - delivery radius', () => {
     expect(distance).toBe(0);
   });
 
+  it('requires only item-attached modifiers marked as required', () => {
+    const assertModifierSelectionLimits = (
+      service as unknown as {
+        assertModifierSelectionLimits: (
+          item: {
+            id: string;
+            name?: string;
+            isRequired?: boolean;
+            minSelect?: number;
+            maxSelect?: number | null;
+            modifierLinks: Array<never>;
+            modifierPriceOverrides?: Array<{
+              modifierId?: string;
+              priceDelta: Prisma.Decimal;
+              isRequired?: boolean;
+              modifier: {
+                id: string;
+                name: string;
+                priceDelta: Prisma.Decimal;
+              };
+            }>;
+          },
+          modifiers: Array<{ modifierId: string; quantity?: number }>,
+        ) => void;
+      }
+    ).assertModifierSelectionLimits;
+    const menuItem = {
+      id: 'menu-1',
+      name: 'Basic Pizza Copy',
+      modifierLinks: [],
+      modifierPriceOverrides: [
+        {
+          modifierId: 'modifier-required',
+          priceDelta: new Prisma.Decimal(100),
+          isRequired: true,
+          modifier: {
+            id: 'modifier-required',
+            name: 'Extra Cheese',
+            priceDelta: new Prisma.Decimal(0),
+          },
+        },
+        {
+          modifierId: 'modifier-optional',
+          priceDelta: new Prisma.Decimal(150),
+          isRequired: false,
+          modifier: {
+            id: 'modifier-optional',
+            name: 'Olives',
+            priceDelta: new Prisma.Decimal(0),
+          },
+        },
+      ],
+    };
+
+    expect(() => assertModifierSelectionLimits(menuItem, [])).toThrow(
+      'Basic Pizza Copy requires modifier selection(s): Extra Cheese',
+    );
+    expect(() =>
+      assertModifierSelectionLimits(menuItem, [
+        { modifierId: 'modifier-required', quantity: 1 },
+      ]),
+    ).not.toThrow();
+  });
+
   it('calculates correct distance between two Lahore points', () => {
     const distFn = (
       service as unknown as {

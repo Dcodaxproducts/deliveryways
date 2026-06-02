@@ -348,6 +348,7 @@ export class MenuItemRepository {
   private resolveItemModifiers(
     modifierPriceOverrides: Array<{
       priceDelta: Prisma.Decimal;
+      isRequired: boolean;
       modifier: {
         id: string;
         name: string;
@@ -360,6 +361,7 @@ export class MenuItemRepository {
       id: override.modifier.id,
       name: override.modifier.name,
       priceDelta: override.priceDelta,
+      isRequired: override.isRequired,
       sortOrder: override.modifier.sortOrder,
     }));
   }

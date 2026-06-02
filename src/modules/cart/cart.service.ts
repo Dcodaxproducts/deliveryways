@@ -103,7 +103,9 @@ interface CartModifierPricingSource {
 }
 
 interface CartDirectModifierOverride {
+  modifierId?: string;
   priceDelta: Prisma.Decimal;
+  isRequired?: boolean;
   modifier: CartModifierPricingSource;
 }
 
@@ -1692,6 +1694,29 @@ export class CartService {
     menuItem: CartModifierSource,
     modifiers: CartItemModifierDto[],
   ) {
+    if (menuItem.modifierPriceOverrides?.length) {
+      const selectedModifierIds = new Set(
+        modifiers
+          .filter((modifier) => (modifier.quantity ?? 1) > 0)
+          .map((modifier) => modifier.modifierId),
+      );
+      const missingRequiredModifiers = menuItem.modifierPriceOverrides.filter(
+        (override) =>
+          (override.isRequired ?? false) &&
+          !selectedModifierIds.has(override.modifierId ?? override.modifier.id),
+      );
+
+      if (missingRequiredModifiers.length) {
+        throw new BadRequestException(
+          `${menuItem.name ?? 'Menu item'} requires modifier selection(s): ${missingRequiredModifiers
+            .map((override) => override.modifier.name)
+            .join(', ')}`,
+        );
+      }
+
+      return;
+    }
+
     const totalSelected = modifiers.reduce(
       (sum, modifier) => sum + (modifier.quantity ?? 1),
       0,
@@ -1843,6 +1868,7 @@ export class CartService {
         priceDelta: Number(
           this.resolveModifierPriceDelta(modifier, item.id, variationId),
         ),
+        isRequired: override.isRequired ?? false,
       };
     });
   }

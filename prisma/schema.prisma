@@ -787,6 +787,7 @@ model MenuItemModifierPriceOverride {
   menuItemId String  @map("menu_item_id")
   modifierId String  @map("modifier_id")
   priceDelta Decimal @default(0) @map("price_delta") @db.Decimal(10, 2)
+  isRequired Boolean @default(false) @map("is_required")
 
   menuItem MenuItem @relation(fields: [menuItemId], references: [id])
   modifier Modifier @relation(fields: [modifierId], references: [id])

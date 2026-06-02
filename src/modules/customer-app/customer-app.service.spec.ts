@@ -97,6 +97,7 @@ describe('CustomerAppService', () => {
         menuItemId: 'item-1',
         modifierId: 'modifier-1',
         priceDelta: 150,
+        isRequired: true,
         modifier: {
           id: 'modifier-1',
           name: 'Extra Cheese',
@@ -435,7 +436,7 @@ describe('CustomerAppService', () => {
         id: 'modifier-1',
         name: 'Extra Cheese',
         priceDelta: 150,
-        isRequired: false,
+        isRequired: true,
       }),
     ]);
     expect('modifierLinks' in result.data[0]).toBe(false);
@@ -795,7 +796,7 @@ describe('CustomerAppService', () => {
           expect.objectContaining({
             id: 'modifier-1',
             priceDelta: 150,
-            isRequired: false,
+            isRequired: true,
           }),
         ],
         dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
@@ -925,7 +926,7 @@ describe('CustomerAppService', () => {
         modifiers: [
           expect.objectContaining({
             id: 'modifier-1',
-            isRequired: false,
+            isRequired: true,
           }),
         ],
       }),

@@ -1515,6 +1515,7 @@ export class CustomerAppService {
         menuItemId?: string | null;
         modifierId?: string;
         priceDelta: Prisma.Decimal;
+        isRequired?: boolean;
         modifier: PublicMenuItemModifier;
       }>;
       modifierLinks?: Array<{
@@ -1660,10 +1661,10 @@ export class CustomerAppService {
       menuItemId?: string | null;
       modifierId?: string;
       priceDelta: Prisma.Decimal;
+      isRequired?: boolean;
       modifier: PublicMenuItemModifier;
     }>;
   }) {
-    const isRequired = item.isRequired ?? false;
     const modifierById = new Map<
       string,
       {
@@ -1698,7 +1699,7 @@ export class CustomerAppService {
               itemPriceOverride?.priceDelta ??
               modifier.priceDelta,
           ),
-          isRequired,
+          isRequired: priceOverride?.isRequired ?? false,
         });
       }
     }
@@ -1713,7 +1714,7 @@ export class CustomerAppService {
         name: override.modifier.name,
         sortOrder: override.modifier.sortOrder,
         priceDelta: Number(override.priceDelta),
-        isRequired,
+        isRequired: override.isRequired ?? false,
       });
     }
 

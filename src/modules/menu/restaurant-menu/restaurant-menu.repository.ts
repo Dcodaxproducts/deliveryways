@@ -840,6 +840,7 @@ export class RestaurantMenuRepository {
   private buildDirectModifiers(item: {
     modifierPriceOverrides?: Array<{
       priceDelta: Prisma.Decimal;
+      isRequired: boolean;
       modifier: {
         id: string;
         name: string;
@@ -854,6 +855,7 @@ export class RestaurantMenuRepository {
       description: override.modifier.description ?? null,
       sortOrder: override.modifier.sortOrder,
       priceDelta: Number(override.priceDelta),
+      isRequired: override.isRequired,
     }));
   }
 }

@@ -69,6 +69,73 @@ describe('CartService', () => {
     };
   };
 
+  const assertModifierSelectionLimits = (
+    service: CartService,
+    menuItem: {
+      id: string;
+      name?: string;
+      isRequired?: boolean;
+      minSelect?: number;
+      maxSelect?: number | null;
+      modifierLinks: Array<never>;
+      modifierPriceOverrides?: Array<{
+        modifierId?: string;
+        priceDelta: Prisma.Decimal;
+        isRequired?: boolean;
+        modifier: { id: string; name: string; priceDelta: Prisma.Decimal };
+      }>;
+    },
+    selectedModifiers: Array<{ modifierId: string; quantity?: number }>,
+  ) =>
+    (
+      service as unknown as {
+        assertModifierSelectionLimits: (
+          item: typeof menuItem,
+          modifiers: typeof selectedModifiers,
+        ) => void;
+      }
+    ).assertModifierSelectionLimits(menuItem, selectedModifiers);
+
+  it('requires only item-attached modifiers marked as required', () => {
+    const { service } = makeService();
+    const menuItem = {
+      id: 'menu-1',
+      name: 'Basic Pizza Copy',
+      modifierLinks: [],
+      modifierPriceOverrides: [
+        {
+          modifierId: 'modifier-required',
+          priceDelta: new Prisma.Decimal(100),
+          isRequired: true,
+          modifier: {
+            id: 'modifier-required',
+            name: 'Extra Cheese',
+            priceDelta: new Prisma.Decimal(0),
+          },
+        },
+        {
+          modifierId: 'modifier-optional',
+          priceDelta: new Prisma.Decimal(150),
+          isRequired: false,
+          modifier: {
+            id: 'modifier-optional',
+            name: 'Olives',
+            priceDelta: new Prisma.Decimal(0),
+          },
+        },
+      ],
+    };
+
+    expect(() => assertModifierSelectionLimits(service, menuItem, [])).toThrow(
+      'Basic Pizza Copy requires modifier selection(s): Extra Cheese',
+    );
+    expect(() =>
+      assertModifierSelectionLimits(service, menuItem, [
+        { modifierId: 'modifier-required', quantity: 1 },
+      ]),
+    ).not.toThrow();
+  });
+
   it('returns an empty cart when customer cart does not exist', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue(null);

@@ -695,6 +695,57 @@ describe('MenuItemService', () => {
     ).rejects.toThrow('Modifier assignments must contain unique modifierIds');
   });
 
+  it('stores required flags on direct item modifier assignments', async () => {
+    const { service, itemRepository, prisma, tx } = makeService();
+
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    prisma.modifier.count.mockResolvedValue(2);
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Pizza',
+        slug: 'pizza',
+        basePrice: 500,
+        modifiers: [
+          { modifierId: 'modifier-required', priceDelta: 50, isRequired: true },
+          {
+            modifierId: 'modifier-optional',
+            priceDelta: 75,
+            isRequired: false,
+          },
+        ],
+      },
+    );
+
+    expect(tx.menuItemModifierPriceOverride.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          menuItemId: 'item-1',
+          modifierId: 'modifier-required',
+          priceDelta: new Prisma.Decimal(50),
+          isRequired: true,
+        },
+        {
+          menuItemId: 'item-1',
+          modifierId: 'modifier-optional',
+          priceDelta: new Prisma.Decimal(75),
+          isRequired: false,
+        },
+      ],
+    });
+  });
+
   it('stores variation modifier prices scoped to the menu item', async () => {
     const { service, itemRepository, prisma, tx } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

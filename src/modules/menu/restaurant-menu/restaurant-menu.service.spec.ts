@@ -539,6 +539,7 @@ describe('RestaurantMenuService', () => {
         description: 'More cheese',
         sortOrder: 1,
         priceDelta: 1.75,
+        isRequired: false,
       },
     ]);
   });

@@ -943,6 +943,7 @@ export class MenuItemService {
         item.modifierPriceOverrides.map((override) => ({
           modifierId: override.modifierId,
           priceDelta: Number(override.priceDelta),
+          isRequired: override.isRequired,
         })),
         tx,
       );
@@ -1398,7 +1399,9 @@ export class MenuItemService {
 
   private async syncModifierPriceOverrides(
     menuItemId: string,
-    overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
+    overrides:
+      | Array<{ modifierId: string; priceDelta: number; isRequired?: boolean }>
+      | undefined,
     tx: Prisma.TransactionClient,
   ) {
     this.assertUniqueModifierOverrides(overrides);
@@ -1416,6 +1419,7 @@ export class MenuItemService {
         menuItemId,
         modifierId: item.modifierId,
         priceDelta: new Prisma.Decimal(item.priceDelta),
+        isRequired: item.isRequired ?? false,
       })),
     });
   }

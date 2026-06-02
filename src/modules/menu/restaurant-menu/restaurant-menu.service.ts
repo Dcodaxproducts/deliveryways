@@ -758,6 +758,7 @@ export class RestaurantMenuService {
     const modifierPriceOverrides = item.modifierPriceOverrides as
       | Array<{
           priceDelta: { toString(): string } | number;
+          isRequired?: boolean;
           modifier: {
             id: string;
             name: string;
@@ -773,6 +774,7 @@ export class RestaurantMenuService {
       description: override.modifier.description ?? null,
       sortOrder: override.modifier.sortOrder,
       priceDelta: Number(override.priceDelta),
+      isRequired: override.isRequired ?? false,
     }));
   }
 
