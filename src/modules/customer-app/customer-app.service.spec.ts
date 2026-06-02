@@ -514,6 +514,86 @@ describe('CustomerAppService', () => {
     ]);
   });
 
+  it('lists only fixed price promotions as public deals', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'restaurant-logo.png',
+      coverImage: 'restaurant-cover.png',
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    const basePromotion = {
+      description: 'Auto discount',
+      applyMode: 'SCOPED_ITEMS',
+      maxDiscountAmount: null,
+      minOrderAmount: null,
+      startsAt: new Date('2026-05-20T00:00:00.000Z'),
+      expiresAt: new Date('2026-05-25T00:00:00.000Z'),
+      restaurant: null,
+      branch: null,
+      scopeMenuItem: null,
+      scopeCategory: null,
+      scopeCategories: [],
+    };
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        ...basePromotion,
+        id: 'promo-1',
+        title: 'Ten Percent Off',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        scopeMenuItems: [],
+      },
+      {
+        ...basePromotion,
+        id: 'deal-1',
+        title: 'Burger Combo',
+        discountType: 'FIXED_PRICE',
+        discountValue: new Prisma.Decimal(999),
+        scopeMenuItems: [
+          {
+            menuItem: {
+              id: 'item-1',
+              name: 'Zinger Burger',
+              imageUrl: 'zinger.png',
+            },
+          },
+          {
+            menuItem: {
+              id: 'item-2',
+              name: 'Cold Drink',
+              imageUrl: 'drink.png',
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await service.listDeals({
+      restaurantId: 'restaurant-1',
+      limit: 10,
+    });
+
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'deal-1',
+        title: 'Burger Combo',
+        discountType: 'FIXED_PRICE',
+        discountValue: 999,
+        scopeMenuItems: [
+          { id: 'item-1', name: 'Zinger Burger', imageUrl: 'zinger.png' },
+          { id: 'item-2', name: 'Cold Drink', imageUrl: 'drink.png' },
+        ],
+      }),
+    ]);
+    expect(result.message).toBe('Deals fetched successfully');
+  });
+
   it('includes promotion metadata on cuisine categories and promotional cuisine list', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

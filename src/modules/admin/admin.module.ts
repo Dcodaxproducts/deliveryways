@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { UsersModule } from '../users/users.module';
 import { SystemHealthModule } from '../system-health/system-health.module';
 import { MailerModule } from '../mailer/mailer.module';
+import { AdminDealsController } from './admin-deals.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
 import { AdminPromotionsService } from './admin-promotions.service';
@@ -26,6 +27,7 @@ import { AdminImportSamplesService } from './admin-import-samples.service';
     AdminUsersController,
     AdminDashboardController,
     AdminReportsController,
+    AdminDealsController,
     AdminPromotionsController,
     AdminPrintingController,
     AdminImportSamplesController,

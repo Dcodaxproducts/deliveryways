@@ -36,6 +36,28 @@ export class AdminPromotionsRepository {
     });
   }
 
+  countActiveMenuItems(restaurantId: string, menuItemIds: string[]) {
+    return this.prisma.menuItem.count({
+      where: {
+        id: { in: menuItemIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+  }
+
+  countActiveMenuCategories(restaurantId: string, categoryIds: string[]) {
+    return this.prisma.menuCategory.count({
+      where: {
+        id: { in: categoryIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+  }
+
   create(data: Prisma.CouponCreateInput) {
     return this.prisma.coupon.create({
       data,
@@ -238,6 +260,7 @@ export class AdminPromotionsRepository {
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.discountType ? { discountType: query.discountType } : {}),
       ...(query.search
         ? {
             OR: [

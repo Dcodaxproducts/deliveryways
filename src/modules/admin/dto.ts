@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsDateString,
@@ -11,6 +11,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ArrayMinSize,
   MaxLength,
   Max,
   Min,
@@ -435,6 +436,11 @@ export class AdminListPromotionsQueryDto extends AdminListQueryDto {
   @IsEnum(CouponCampaignKind)
   kind?: CouponCampaignKind;
 
+  @ApiPropertyOptional({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
+  @IsOptional()
+  @IsIn(['FLAT', 'PERCENTAGE', 'FIXED_PRICE'])
+  discountType?: 'FLAT' | 'PERCENTAGE' | 'FIXED_PRICE';
+
   @ApiPropertyOptional({ enum: ['active', 'scheduled', 'expired', 'inactive'] })
   @IsOptional()
   @IsIn(['active', 'scheduled', 'expired', 'inactive'])
@@ -570,6 +576,24 @@ export class AdminPromotionBaseDto {
 
 export class CreateAdminPromotionDto extends AdminPromotionBaseDto {}
 
+export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
+  'discountType',
+  'scopeMenuItemId',
+  'scopeCategoryId',
+  'scopeCategoryIds',
+  'applyMode',
+] as const) {
+  @ApiProperty({
+    type: [String],
+    minItems: 2,
+    description: 'Selected menu item IDs included in this fixed-price deal.',
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @IsString({ each: true })
+  scopeMenuItemIds!: string[];
+}
+
 export class UpdateAdminPromotionDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -683,6 +707,25 @@ export class UpdateAdminPromotionDto {
   )
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class UpdateAdminDealDto extends OmitType(UpdateAdminPromotionDto, [
+  'discountType',
+  'scopeMenuItemId',
+  'scopeCategoryId',
+  'scopeCategoryIds',
+  'applyMode',
+] as const) {
+  @ApiPropertyOptional({
+    type: [String],
+    minItems: 2,
+    description: 'Selected menu item IDs included in this fixed-price deal.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2)
+  @IsString({ each: true })
+  scopeMenuItemIds?: string[];
 }
 
 export class CreateAdminHappyHourDto extends AdminPromotionBaseDto {

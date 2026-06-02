@@ -52,14 +52,7 @@ describe('AdminPromotionsService', () => {
     const repository = {
       create: jest.fn().mockResolvedValue(makeCoupon()),
     };
-    const prisma = {
-      menuItem: { findFirst: jest.fn().mockResolvedValue(null) },
-      menuCategory: { findFirst: jest.fn().mockResolvedValue(null) },
-    };
-    const service = new AdminPromotionsService(
-      repository as never,
-      prisma as never,
-    );
+    const service = new AdminPromotionsService(repository as never);
 
     const result = await service.createHappyHour(
       {
@@ -94,7 +87,7 @@ describe('AdminPromotionsService', () => {
   });
 
   it('rejects invalid happy hour time format', async () => {
-    const service = new AdminPromotionsService({} as never, {} as never);
+    const service = new AdminPromotionsService({} as never);
 
     await expect(
       service.createHappyHour(
@@ -121,6 +114,8 @@ describe('AdminPromotionsService', () => {
 
   it('creates fixed price promotion for multiple scoped menu items', async () => {
     const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(2),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue(
         makeCoupon({
           kind: CouponCampaignKind.PROMOTION,
@@ -133,18 +128,7 @@ describe('AdminPromotionsService', () => {
         }),
       ),
     };
-    const prisma = {
-      menuItem: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([{ id: 'item-1' }, { id: 'item-2' }]),
-      },
-      menuCategory: { findMany: jest.fn().mockResolvedValue([]) },
-    };
-    const service = new AdminPromotionsService(
-      repository as never,
-      prisma as never,
-    );
+    const service = new AdminPromotionsService(repository as never);
 
     await service.createPromotion(
       {
@@ -178,12 +162,73 @@ describe('AdminPromotionsService', () => {
     );
   });
 
-  it('rejects fixed price promotion with fewer than two scoped menu items', async () => {
-    const prisma = {
-      menuItem: { findMany: jest.fn().mockResolvedValue([{ id: 'item-1' }]) },
-      menuCategory: { findMany: jest.fn().mockResolvedValue([]) },
+  it('creates a deal as a fixed price scoped item promotion', async () => {
+    let createdDealCode = '';
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(2),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+      create: jest
+        .fn()
+        .mockImplementation((input: Prisma.CouponCreateInput) => {
+          createdDealCode = input.code;
+
+          return Promise.resolve(
+            makeCoupon({
+              code: input.code,
+              kind: CouponCampaignKind.PROMOTION,
+              discountType: CouponDiscountType.FIXED_PRICE,
+              discountValue: new Prisma.Decimal(1299),
+              scopeMenuItems: [
+                { menuItem: { id: 'item-1', name: 'Pizza' } },
+                { menuItem: { id: 'item-2', name: 'Drink' } },
+              ],
+            }),
+          );
+        }),
     };
-    const service = new AdminPromotionsService({} as never, prisma as never);
+    const service = new AdminPromotionsService(repository as never);
+
+    const result = await service.createDeal(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Family Deal',
+        discountValue: 1299,
+        startsAt: '2026-04-22T00:00:00.000Z',
+        expiresAt: '2026-05-22T00:00:00.000Z',
+        scopeMenuItemIds: ['item-1', 'item-2'],
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: CouponCampaignKind.PROMOTION,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        autoApply: true,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(1299),
+        scopeMenuItems: {
+          create: [
+            { menuItem: { connect: { id: 'item-1' } } },
+            { menuItem: { connect: { id: 'item-2' } } },
+          ],
+        },
+      }),
+    );
+    expect(createdDealCode).toMatch(/^DEAL-/);
+    expect(result.message).toBe('Deal created successfully');
+  });
+
+  it('rejects fixed price promotion with fewer than two scoped menu items', async () => {
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(1),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+    };
+    const service = new AdminPromotionsService(repository as never);
 
     await expect(
       service.createPromotion(
@@ -205,14 +250,45 @@ describe('AdminPromotionsService', () => {
     ).rejects.toThrow('Fixed price promotions require at least two menu items');
   });
 
+  it('lists only fixed price promotions as deals', async () => {
+    const repository = {
+      list: jest.fn().mockResolvedValue({
+        items: [
+          makeCoupon({
+            kind: CouponCampaignKind.PROMOTION,
+            discountType: CouponDiscountType.FIXED_PRICE,
+          }),
+        ],
+        total: 1,
+      }),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    const result = await service.listDeals(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      { page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' },
+    );
+
+    expect(repository.list).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining({
+        kind: CouponCampaignKind.PROMOTION,
+        discountType: CouponDiscountType.FIXED_PRICE,
+      }),
+    );
+    expect(result.message).toBe('Deals fetched successfully');
+  });
+
   it('lists branch admin promotions locked to token branch', async () => {
     const repository = {
       list: jest.fn().mockResolvedValue({ items: [makeCoupon()], total: 1 }),
     };
-    const service = new AdminPromotionsService(
-      repository as never,
-      {} as never,
-    );
+    const service = new AdminPromotionsService(repository as never);
 
     const result = await service.list(
       {

@@ -187,6 +187,17 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @Get('deals')
+  @ApiOperation({ summary: 'List active public fixed-price deals' })
+  listDeals(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListCustomerPromotionsQueryDto,
+  ) {
+    return this.customerAppService.listDeals(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('promotions')
   @ApiOperation({ summary: 'List active public promotion campaigns' })
   listPromotions(

@@ -508,6 +508,28 @@ export class CustomerAppService {
     };
   }
 
+  async listDeals(
+    query: ListCustomerPromotionsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+    const deals = promotionContext.promotions
+      .filter((promotion) => promotion.discountType === 'FIXED_PRICE')
+      .slice(0, query.limit);
+
+    return {
+      data: await Promise.all(
+        deals.map((promotion) => this.mapPublicPromotion(promotion)),
+      ),
+      message: 'Deals fetched successfully',
+    };
+  }
+
   async getItemBySlug(
     slug: string,
     query: PublicMenuItemBySlugQueryDto,

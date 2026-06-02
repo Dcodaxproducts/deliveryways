@@ -15,13 +15,14 @@ import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
-import { PrismaService } from '../../database';
 import {
   AdminListPromotionsQueryDto,
   AdminPromotionStatsQueryDto,
   AdminPromotionsOverviewQueryDto,
+  CreateAdminDealDto,
   CreateAdminHappyHourDto,
   CreateAdminPromotionDto,
+  UpdateAdminDealDto,
   UpdateAdminHappyHourDto,
   UpdateAdminPromotionDto,
 } from './dto';
@@ -34,7 +35,6 @@ import {
 export class AdminPromotionsService {
   constructor(
     private readonly adminPromotionsRepository: AdminPromotionsRepository,
-    private readonly prisma: PrismaService,
   ) {}
 
   async getOverview(
@@ -110,7 +110,11 @@ export class AdminPromotionsService {
     };
   }
 
-  async createPromotion(user: AuthUserContext, dto: CreateAdminPromotionDto) {
+  async createPromotion(
+    user: AuthUserContext,
+    dto: CreateAdminPromotionDto,
+    codePrefix = 'PROMO',
+  ) {
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
     const scopeIds = this.normalizeScopeIds(dto);
@@ -130,7 +134,7 @@ export class AdminPromotionsService {
       tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
       restaurant: { connect: { id: this.requireRestaurantIdFromScope(scope) } },
       branch: scope.branchId ? { connect: { id: scope.branchId } } : undefined,
-      code: this.resolvePromotionCode(dto.code),
+      code: this.resolvePromotionCode(dto.code, codePrefix),
       title: dto.title,
       description: dto.description,
       kind: CouponCampaignKind.PROMOTION,
@@ -184,6 +188,110 @@ export class AdminPromotionsService {
     return {
       data: this.mapPromotion(data),
       message: 'Promotion created successfully',
+    };
+  }
+
+  async listDeals(user: AuthUserContext, query: AdminListPromotionsQueryDto) {
+    const result = await this.list(
+      user,
+      {
+        ...query,
+        discountType: CouponDiscountType.FIXED_PRICE,
+      },
+      CouponCampaignKind.PROMOTION,
+    );
+
+    return {
+      ...result,
+      message: 'Deals fetched successfully',
+    };
+  }
+
+  async getDeal(
+    user: AuthUserContext,
+    id: string,
+    query: AdminPromotionStatsQueryDto,
+  ) {
+    const result = await this.getById(
+      user,
+      id,
+      query,
+      CouponCampaignKind.PROMOTION,
+    );
+
+    if (result.data.discountType !== CouponDiscountType.FIXED_PRICE) {
+      throw new NotFoundException('Deal not found');
+    }
+
+    return {
+      ...result,
+      message: 'Deal fetched successfully',
+    };
+  }
+
+  async createDeal(user: AuthUserContext, dto: CreateAdminDealDto) {
+    const result = await this.createPromotion(
+      user,
+      {
+        ...dto,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        autoApply: dto.autoApply ?? true,
+      },
+      'DEAL',
+    );
+
+    return {
+      ...result,
+      message: 'Deal created successfully',
+    };
+  }
+
+  async updateDeal(user: AuthUserContext, id: string, dto: UpdateAdminDealDto) {
+    await this.getDeal(user, id, {
+      restaurantId: dto.restaurantId,
+      branchId: dto.branchId,
+    });
+    const result = await this.updatePromotion(user, id, {
+      ...dto,
+      discountType: CouponDiscountType.FIXED_PRICE,
+      applyMode: CouponApplyMode.SCOPED_ITEMS,
+    });
+
+    return {
+      ...result,
+      message: 'Deal updated successfully',
+    };
+  }
+
+  async removeDeal(
+    user: AuthUserContext,
+    id: string,
+    query: AdminPromotionStatsQueryDto,
+  ) {
+    await this.getDeal(user, id, query);
+    const result = await this.removePromotion(user, id, query);
+
+    return {
+      ...result,
+      message: 'Deal deleted successfully',
+    };
+  }
+
+  async getDealStats(
+    user: AuthUserContext,
+    id: string,
+    query: AdminPromotionStatsQueryDto,
+  ) {
+    const result = await this.getStats(user, id, query);
+
+    if (result.data.promotion.discountType !== CouponDiscountType.FIXED_PRICE) {
+      throw new NotFoundException('Deal not found');
+    }
+
+    return {
+      ...result,
+      message: 'Deal stats fetched successfully',
     };
   }
 
@@ -711,16 +819,12 @@ export class AdminPromotionsService {
     });
 
     if (menuItemIds.length) {
-      const items = await this.prisma.menuItem.findMany({
-        where: {
-          id: { in: menuItemIds },
-          restaurantId: scopedRestaurantId,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-      });
-      if (items.length !== new Set(menuItemIds).size) {
+      const itemCount =
+        await this.adminPromotionsRepository.countActiveMenuItems(
+          scopedRestaurantId,
+          menuItemIds,
+        );
+      if (itemCount !== new Set(menuItemIds).size) {
         throw new BadRequestException(
           'One or more scopeMenuItemIds were not found in restaurant',
         );
@@ -728,16 +832,12 @@ export class AdminPromotionsService {
     }
 
     if (categoryIds.length) {
-      const categories = await this.prisma.menuCategory.findMany({
-        where: {
-          id: { in: categoryIds },
-          restaurantId: scopedRestaurantId,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-      });
-      if (categories.length !== new Set(categoryIds).size) {
+      const categoryCount =
+        await this.adminPromotionsRepository.countActiveMenuCategories(
+          scopedRestaurantId,
+          categoryIds,
+        );
+      if (categoryCount !== new Set(categoryIds).size) {
         throw new BadRequestException(
           'One or more scopeCategoryIds were not found in restaurant',
         );
