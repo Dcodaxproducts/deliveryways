@@ -429,14 +429,15 @@ describe('CustomerAppService', () => {
         maxSelect: 1,
       }),
     );
-    expect(result.data[0].modifierLinks[0].modifierGroup).toEqual(
+    expect(result.data[0].modifiers).toEqual([
       expect.objectContaining({
-        id: 'group-1',
+        id: 'modifier-1',
+        name: 'Extra Cheese',
+        priceDelta: 150,
         isRequired: false,
-        minSelect: 0,
-        maxSelect: 3,
       }),
-    );
+    ]);
+    expect('modifierLinks' in result.data[0]).toBe(false);
     expect(result.data[0].modifierPriceOverrides).toBe(
       itemFixture.modifierPriceOverrides,
     );
@@ -653,7 +654,10 @@ describe('CustomerAppService', () => {
       isRequired: boolean;
       minSelect: number;
       maxSelect: number | null;
-      modifierLinks: Array<{ modifierGroup: unknown }>;
+      modifiers: Array<{
+        id: string;
+        isRequired: boolean;
+      }>;
     }>;
 
     expect(firstDealItem).toEqual(
@@ -663,13 +667,13 @@ describe('CustomerAppService', () => {
         maxSelect: 1,
       }),
     );
-    expect(firstDealItem.modifierLinks[0]?.modifierGroup).toEqual(
+    expect(firstDealItem.modifiers[0]).toEqual(
       expect.objectContaining({
+        id: 'modifier-1',
         isRequired: false,
-        minSelect: 0,
-        maxSelect: 3,
       }),
     );
+    expect('modifierLinks' in firstDealItem).toBe(false);
     expect(secondDealItem).toEqual(
       expect.objectContaining({
         isRequired: false,
@@ -677,13 +681,13 @@ describe('CustomerAppService', () => {
         maxSelect: 1,
       }),
     );
-    expect(secondDealItem.modifierLinks[0]?.modifierGroup).toEqual(
+    expect(secondDealItem.modifiers[0]).toEqual(
       expect.objectContaining({
+        id: 'modifier-1',
         isRequired: false,
-        minSelect: 0,
-        maxSelect: 3,
       }),
     );
+    expect('modifierLinks' in secondDealItem).toBe(false);
     expect(result.message).toBe('Deals fetched successfully');
   });
 
@@ -808,6 +812,7 @@ describe('CustomerAppService', () => {
           expect.objectContaining({
             id: 'modifier-1',
             priceDelta: 150,
+            isRequired: false,
           }),
         ],
         dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
@@ -821,14 +826,7 @@ describe('CustomerAppService', () => {
         modifierPriceOverrides: itemFixture.modifierPriceOverrides,
       }),
     );
-    expect(result.data.items[0].modifierLinks[0].modifierGroup).toEqual(
-      expect.objectContaining({
-        id: 'group-1',
-        isRequired: false,
-        minSelect: 0,
-        maxSelect: 3,
-      }),
-    );
+    expect('modifierLinks' in result.data.items[0]).toBe(false);
     expect('modifierGroups' in result.data.items[0]).toBe(false);
   });
 
@@ -941,16 +939,15 @@ describe('CustomerAppService', () => {
           { value: 'VEGAN', label: 'Vegan' },
         ],
         modifierPriceOverrides: itemFixture.modifierPriceOverrides,
+        modifiers: [
+          expect.objectContaining({
+            id: 'modifier-1',
+            isRequired: false,
+          }),
+        ],
       }),
     );
-    expect(result.data[0].items[0].modifierLinks[0].modifierGroup).toEqual(
-      expect.objectContaining({
-        id: 'group-1',
-        isRequired: false,
-        minSelect: 0,
-        maxSelect: 3,
-      }),
-    );
+    expect('modifierLinks' in result.data[0].items[0]).toBe(false);
     expect('modifierGroups' in result.data[0].items[0]).toBe(false);
   });
 

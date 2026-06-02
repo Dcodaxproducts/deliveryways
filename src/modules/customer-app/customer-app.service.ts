@@ -1430,6 +1430,7 @@ export class CustomerAppService {
               id: string;
               name: string;
               priceDelta: Prisma.Decimal;
+              sortOrder?: number;
               itemPriceOverrides?: Array<{
                 menuItemId: string;
                 priceDelta: Prisma.Decimal;
@@ -1528,16 +1529,96 @@ export class CustomerAppService {
           }
         : null,
       variations: normalizedVariations,
-      modifierLinks: item.modifierLinks ?? [],
       modifierPriceOverrides: item.modifierPriceOverrides ?? [],
-      modifiers: (item.modifierPriceOverrides ?? []).map((override) => ({
+      modifiers: this.mapItemModifiers(item),
+      isAvailable: branchOverride?.isAvailable ?? true,
+    };
+  }
+
+  private mapItemModifiers(item: {
+    id: string;
+    isRequired?: boolean | null;
+    modifierLinks?: Array<{
+      modifierGroup: {
+        modifierLinks: Array<{
+          sortOrder: number;
+          modifier: {
+            id: string;
+            name: string;
+            priceDelta: Prisma.Decimal;
+            sortOrder?: number;
+            itemPriceOverrides?: Array<{
+              menuItemId: string;
+              priceDelta: Prisma.Decimal;
+            }>;
+          };
+        }>;
+      };
+    }>;
+    modifierPriceOverrides?: Array<{
+      menuItemId?: string | null;
+      modifierId?: string;
+      priceDelta: Prisma.Decimal;
+      modifier: PublicMenuItemModifier;
+    }>;
+  }) {
+    const isRequired = item.isRequired ?? false;
+    const modifierById = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        sortOrder: number;
+        priceDelta: number;
+        isRequired: boolean;
+      }
+    >();
+
+    const priceOverrides = item.modifierPriceOverrides ?? [];
+
+    for (const groupLink of item.modifierLinks ?? []) {
+      for (const modifierLink of groupLink.modifierGroup.modifierLinks) {
+        const modifier = modifierLink.modifier;
+        const priceOverride = priceOverrides.find(
+          (override) =>
+            override.modifierId === modifier.id ||
+            override.modifier.id === modifier.id,
+        );
+        const itemPriceOverride = modifier.itemPriceOverrides?.find(
+          (override) => override.menuItemId === item.id,
+        );
+
+        modifierById.set(modifier.id, {
+          id: modifier.id,
+          name: modifier.name,
+          sortOrder: modifier.sortOrder ?? modifierLink.sortOrder,
+          priceDelta: Number(
+            priceOverride?.priceDelta ??
+              itemPriceOverride?.priceDelta ??
+              modifier.priceDelta,
+          ),
+          isRequired,
+        });
+      }
+    }
+
+    for (const override of priceOverrides) {
+      if (modifierById.has(override.modifier.id)) {
+        continue;
+      }
+
+      modifierById.set(override.modifier.id, {
         id: override.modifier.id,
         name: override.modifier.name,
         sortOrder: override.modifier.sortOrder,
-        priceDelta: override.priceDelta,
-      })),
-      isAvailable: branchOverride?.isAvailable ?? true,
-    };
+        priceDelta: Number(override.priceDelta),
+        isRequired,
+      });
+    }
+
+    return Array.from(modifierById.values()).sort(
+      (left, right) => left.sortOrder - right.sortOrder,
+    );
   }
 
   private async mapCuisineCategory(
