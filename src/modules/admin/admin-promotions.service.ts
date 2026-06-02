@@ -236,7 +236,7 @@ export class AdminPromotionsService {
         ...dto,
         discountType: CouponDiscountType.FIXED_PRICE,
         applyMode: CouponApplyMode.SCOPED_ITEMS,
-        autoApply: dto.autoApply ?? true,
+        autoApply: true,
       },
       'DEAL',
     );
@@ -256,6 +256,7 @@ export class AdminPromotionsService {
       ...dto,
       discountType: CouponDiscountType.FIXED_PRICE,
       applyMode: CouponApplyMode.SCOPED_ITEMS,
+      autoApply: true,
     });
 
     return {

@@ -578,10 +578,13 @@ export class CreateAdminPromotionDto extends AdminPromotionBaseDto {}
 
 export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
   'discountType',
+  'maxDiscountAmount',
+  'minOrderAmount',
   'scopeMenuItemId',
   'scopeCategoryId',
   'scopeCategoryIds',
   'applyMode',
+  'autoApply',
 ] as const) {
   @ApiProperty({
     type: [String],
@@ -711,10 +714,13 @@ export class UpdateAdminPromotionDto {
 
 export class UpdateAdminDealDto extends OmitType(UpdateAdminPromotionDto, [
   'discountType',
+  'maxDiscountAmount',
+  'minOrderAmount',
   'scopeMenuItemId',
   'scopeCategoryId',
   'scopeCategoryIds',
   'applyMode',
+  'autoApply',
 ] as const) {
   @ApiPropertyOptional({
     type: [String],

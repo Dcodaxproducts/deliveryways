@@ -201,7 +201,8 @@ describe('AdminPromotionsService', () => {
         startsAt: '2026-04-22T00:00:00.000Z',
         expiresAt: '2026-05-22T00:00:00.000Z',
         scopeMenuItemIds: ['item-1', 'item-2'],
-      },
+        autoApply: false,
+      } as never,
     );
 
     expect(repository.create).toHaveBeenCalledWith(

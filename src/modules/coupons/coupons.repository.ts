@@ -121,11 +121,15 @@ export class CouponsRepository {
         coverImage: true,
       },
     },
-    scopeMenuItem: { select: { id: true, name: true, imageUrl: true } },
+    scopeMenuItem: {
+      select: { id: true, name: true, imageUrl: true, basePrice: true },
+    },
     scopeCategory: { select: { id: true, name: true, imageUrl: true } },
     scopeMenuItems: {
       select: {
-        menuItem: { select: { id: true, name: true, imageUrl: true } },
+        menuItem: {
+          select: { id: true, name: true, imageUrl: true, basePrice: true },
+        },
       },
     },
     scopeCategories: {

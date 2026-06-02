@@ -561,6 +561,7 @@ describe('CustomerAppService', () => {
               id: 'item-1',
               name: 'Zinger Burger',
               imageUrl: 'zinger.png',
+              basePrice: new Prisma.Decimal(799),
             },
           },
           {
@@ -568,6 +569,7 @@ describe('CustomerAppService', () => {
               id: 'item-2',
               name: 'Cold Drink',
               imageUrl: 'drink.png',
+              basePrice: new Prisma.Decimal(199),
             },
           },
         ],
@@ -586,8 +588,18 @@ describe('CustomerAppService', () => {
         discountType: 'FIXED_PRICE',
         discountValue: 999,
         scopeMenuItems: [
-          { id: 'item-1', name: 'Zinger Burger', imageUrl: 'zinger.png' },
-          { id: 'item-2', name: 'Cold Drink', imageUrl: 'drink.png' },
+          {
+            id: 'item-1',
+            name: 'Zinger Burger',
+            imageUrl: 'zinger.png',
+            basePrice: 799,
+          },
+          {
+            id: 'item-2',
+            name: 'Cold Drink',
+            imageUrl: 'drink.png',
+            basePrice: 199,
+          },
         ],
       }),
     ]);

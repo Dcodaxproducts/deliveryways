@@ -47,6 +47,7 @@ type PublicPromotionScopeEntity = {
   id: string;
   name: string;
   imageUrl?: string | null;
+  basePrice?: Prisma.Decimal | null;
 };
 
 type PublicMenuItemVariation = {
@@ -1821,6 +1822,9 @@ export class CustomerAppService {
       id: entity.id,
       name: entity.name,
       imageUrl: await this.resolveMediaUrl(entity.imageUrl),
+      ...(entity.basePrice !== undefined
+        ? { basePrice: Number(entity.basePrice) }
+        : {}),
     };
   }
 
