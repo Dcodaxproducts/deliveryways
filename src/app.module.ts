@@ -41,6 +41,7 @@ import { GlobalSettingsModule } from './modules/global-settings/global-settings.
 import { LoyaltyWalletModule } from './modules/loyalty-wallet/loyalty-wallet.module';
 import { SystemHealthModule } from './modules/system-health/system-health.module';
 import { PackagePlansModule } from './modules/package-plans/package-plans.module';
+import { LocalizationsModule } from './modules/localizations';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -108,6 +109,7 @@ import { AppController } from './app.controller';
     LoyaltyWalletModule,
     SystemHealthModule,
     PackagePlansModule,
+    LocalizationsModule,
   ],
   providers: [
     {

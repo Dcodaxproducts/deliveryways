@@ -250,6 +250,18 @@ enum GroupOrderParticipantStatus {
   REMOVED
 }
 
+enum LocalizationEntityType {
+  RESTAURANT
+  BRANCH
+  RESTAURANT_MENU
+  MENU_CATEGORY
+  MENU_ITEM
+  MENU_ITEM_VARIATION
+  MODIFIER_GROUP
+  MODIFIER
+  COUPON
+}
+
 model Tenant {
   id             String    @id @default(cuid())
   name           String
@@ -288,6 +300,7 @@ model Tenant {
   packagePlans        PackagePlan[]
   tenantSubscriptions TenantSubscription[]
   orderReviews        OrderReview[]
+  entityTranslations  EntityTranslation[]
 
   @@map("tenants")
 }
@@ -340,6 +353,7 @@ model Restaurant {
   posOrderDrafts      PosOrderDraft[]
   tenantSubscriptions TenantSubscription[]
   orderReviews        OrderReview[]
+  entityTranslations  EntityTranslation[]
 
   @@map("restaurants")
 }
@@ -1011,6 +1025,29 @@ model CouponUsage {
   @@unique([couponId, orderId])
   @@index([couponId, customerId])
   @@map("coupon_usages")
+}
+
+model EntityTranslation {
+  id           String                 @id @default(cuid())
+  tenantId     String                 @map("tenant_id")
+  restaurantId String                 @map("restaurant_id")
+  entityType   LocalizationEntityType @map("entity_type")
+  entityId     String                 @map("entity_id")
+  locale       String                 @db.VarChar(16)
+  fields       Json
+  isActive     Boolean                @default(true) @map("is_active")
+  createdBy    String?                @map("created_by") @db.VarChar(191)
+  updatedBy    String?                @map("updated_by") @db.VarChar(191)
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@unique([restaurantId, entityType, entityId, locale])
+  @@index([tenantId, restaurantId, locale])
+  @@index([entityType, entityId, locale])
+  @@map("entity_translations")
 }
 
 model StaffRole {
