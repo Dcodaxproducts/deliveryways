@@ -38,6 +38,7 @@ import {
   PublicRestaurantQueryDto,
   CreateWalletTopUpDto,
   ListWalletHistoryQueryDto,
+  RedeemGiftCardDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
   UpdateTableReservationStatusDto,
@@ -330,6 +331,24 @@ export class CustomerAppController {
       dto,
       scope.customerId,
     );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Post('gift-cards/redeem')
+  @ApiOperation({ summary: 'Redeem a gift card code into customer wallet' })
+  redeemGiftCard(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: RedeemGiftCardDto,
+    @Query() scope: CustomerAppCustomerScopeDto,
+  ) {
+    return this.customerAppService.redeemGiftCard(user, dto, scope.customerId);
   }
 
   @ApiBearerAuth()

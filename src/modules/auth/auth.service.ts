@@ -177,6 +177,11 @@ export class AuthService {
         taxation: {
           taxPercentage: 0,
         },
+        serviceCharge: {
+          isEnabled: false,
+          type: 'PERCENTAGE' as const,
+          value: 0,
+        },
         contact: {
           whatsapp: dto.restaurant.supportContact?.whatsapp as
             | string

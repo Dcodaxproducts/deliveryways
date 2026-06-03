@@ -126,6 +126,7 @@ describe('CustomerAppService', () => {
     const loyaltyWalletService = {
       getLoyaltySummary: jest.fn(),
       redeemPointsToWallet: jest.fn(),
+      redeemGiftCardToWallet: jest.fn(),
       getWalletSummary: jest.fn(),
       listWalletHistory: jest.fn(),
     };
@@ -211,6 +212,48 @@ describe('CustomerAppService', () => {
       },
     );
     expect(result.message).toBe('Item added to favorites successfully');
+  });
+
+  it('redeems gift card through wallet service', async () => {
+    const { service, repository, loyaltyWalletService } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      email: 'customer@test.com',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      deletedAt: null,
+      profile: { metadata: {} },
+    });
+    loyaltyWalletService.redeemGiftCardToWallet.mockResolvedValue({
+      customerId: 'customer-1',
+      creditedAmount: 1000,
+      walletBalance: 1500,
+      currency: 'PKR',
+    });
+
+    const result = await service.redeemGiftCard(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      { code: 'gift-123', branchId: 'branch-1' },
+    );
+
+    expect(loyaltyWalletService.redeemGiftCardToWallet).toHaveBeenCalledWith(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      'gift-123',
+      'customer-1',
+    );
+    expect(result.message).toBe('Gift card redeemed successfully');
+    expect(result.data.creditedAmount).toBe(1000);
   });
 
   it('requires customerId for admin-managed favorites', async () => {

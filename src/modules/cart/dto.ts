@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Min,
@@ -188,6 +189,17 @@ export class UpdateCartDto {
   @IsDateString()
   scheduledDeliveryAt?: string;
 
+  @ApiPropertyOptional({
+    description: 'Optional customer tip saved on cart and applied at checkout',
+    minimum: 0,
+    example: 150,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  tipAmount?: number;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
@@ -273,6 +285,18 @@ export class CheckoutCartDto {
   @IsInt()
   @Min(1)
   loyaltyPoints?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional customer tip override for checkout. Falls back to saved cart tipAmount.',
+    minimum: 0,
+    example: 150,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  tipAmount?: number;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

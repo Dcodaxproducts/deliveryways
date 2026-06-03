@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CouponCampaignKind,
+  CouponStatus,
   LoyaltyRedemptionTarget,
   LoyaltyTransactionType,
   PaymentStatus,
@@ -344,6 +346,127 @@ export class LoyaltyWalletService {
         walletBalance: Number(nextBalance),
         creditedAmount: Number(creditedAmount),
         currency: payment?.currency ?? walletAccount.currency,
+      };
+    });
+  }
+
+  async redeemGiftCardToWallet(
+    context: CustomerWalletLoyaltyContext,
+    code: string,
+    actorId?: string,
+  ) {
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedCode) {
+      throw new BadRequestException('Gift card code is required');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const giftCard = await tx.coupon.findFirst({
+        where: {
+          restaurantId: context.restaurantId,
+          code: normalizedCode,
+          kind: CouponCampaignKind.GIFT_CARD,
+          deletedAt: null,
+        },
+      });
+
+      if (!giftCard) {
+        throw new BadRequestException('Gift card not found');
+      }
+
+      const now = new Date();
+      if (
+        !giftCard.isActive ||
+        giftCard.status !== CouponStatus.ACTIVE ||
+        giftCard.startsAt > now ||
+        giftCard.expiresAt < now
+      ) {
+        throw new BadRequestException('Gift card is not active');
+      }
+
+      if (giftCard.branchId && giftCard.branchId !== context.branchId) {
+        throw new BadRequestException('Gift card is not valid for this branch');
+      }
+
+      if (giftCard.maxUses !== null && giftCard.usedCount >= giftCard.maxUses) {
+        throw new BadRequestException('Gift card usage limit reached');
+      }
+
+      if (giftCard.maxUsesPerCustomer !== null) {
+        const customerUsage = await tx.couponUsage.count({
+          where: {
+            couponId: giftCard.id,
+            customerId: context.customerId,
+          },
+        });
+
+        if (customerUsage >= giftCard.maxUsesPerCustomer) {
+          throw new BadRequestException('Gift card per-customer limit reached');
+        }
+      }
+
+      const creditedAmount = giftCard.discountValue.toDecimalPlaces(2);
+      if (creditedAmount.lessThanOrEqualTo(0)) {
+        throw new BadRequestException(
+          'Gift card amount must be greater than 0',
+        );
+      }
+
+      const walletAccount = await this.ensureWalletAccount(context, tx);
+      const nextBalance = walletAccount.balance.plus(creditedAmount);
+
+      const usage = await tx.couponUsage.create({
+        data: {
+          couponId: giftCard.id,
+          customerId: context.customerId,
+        },
+      });
+
+      await tx.coupon.update({
+        where: { id: giftCard.id },
+        data: { usedCount: { increment: 1 } },
+      });
+
+      await this.repository.updateWalletAccount(
+        walletAccount.id,
+        { balance: nextBalance },
+        tx,
+      );
+
+      const transaction = await this.repository.createWalletTransaction(
+        {
+          walletAccount: { connect: { id: walletAccount.id } },
+          tenant: { connect: { id: context.tenantId } },
+          restaurant: { connect: { id: context.restaurantId } },
+          branch: context.branchId
+            ? { connect: { id: context.branchId } }
+            : undefined,
+          customer: { connect: { id: context.customerId } },
+          type: WalletTransactionType.CREDIT,
+          amount: creditedAmount,
+          balanceAfter: nextBalance,
+          currency: walletAccount.currency,
+          note: `Gift card ${giftCard.code} redeemed`,
+          metadata: {
+            source: 'GIFT_CARD',
+            couponId: giftCard.id,
+            couponUsageId: usage.id,
+            code: giftCard.code,
+          },
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        tx,
+      );
+
+      return {
+        customerId: context.customerId,
+        giftCardId: giftCard.id,
+        code: giftCard.code,
+        walletTransactionId: transaction.id,
+        creditedAmount: Number(creditedAmount),
+        walletBalance: Number(nextBalance),
+        currency: walletAccount.currency,
       };
     });
   }

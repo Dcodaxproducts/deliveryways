@@ -54,6 +54,7 @@ interface CartSnapshot {
   couponCode: string | null;
   paymentMethod: PaymentMethod | null;
   orderTime: Date | null;
+  tipAmount: Prisma.Decimal;
   customerNote: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -226,6 +227,10 @@ export class CartService {
       orderTime:
         dto.orderTime || dto.scheduledDeliveryAt
           ? new Date(dto.orderTime ?? dto.scheduledDeliveryAt!)
+          : undefined,
+      tipAmount:
+        dto.tipAmount !== undefined
+          ? new Prisma.Decimal(dto.tipAmount).toDecimalPlaces(2)
           : undefined,
       customerNote:
         dto.customerNote !== undefined
@@ -1259,6 +1264,7 @@ export class CartService {
       couponCode: cart.couponCode,
       paymentMethod: cart.paymentMethod,
       orderTime: cart.orderTime,
+      tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
       items,
       ...(quote ? { quote: quote.data } : {}),
@@ -1432,6 +1438,7 @@ export class CartService {
           ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
           : undefined,
       couponCode: cart.couponCode ?? undefined,
+      tipAmount: Number(cart.tipAmount),
       orderTime: cart.orderTime?.toISOString() ?? new Date().toISOString(),
       items: cart.items.map((item) => {
         const dealId = this.readDealId(item.modifiers);
@@ -1463,6 +1470,7 @@ export class CartService {
       paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
       walletAmount: dto.walletAmount,
       loyaltyPoints: dto.loyaltyPoints,
+      tipAmount: dto.tipAmount ?? Number(cart.tipAmount),
       customerNote:
         dto.customerNote !== undefined
           ? (this.resolveOptionalString(dto.customerNote) ?? undefined)
@@ -2507,6 +2515,7 @@ export class CartService {
       couponCode: null,
       paymentMethod: null,
       orderTime: null,
+      tipAmount: 0,
       customerNote: null,
       items: [],
       createdAt: null,

@@ -66,6 +66,12 @@ enum CouponApplyMode {
 enum CouponCampaignKind {
   PROMOTION
   HAPPY_HOUR
+  GIFT_CARD
+}
+
+enum ServiceChargeType {
+  PERCENTAGE
+  AMOUNT
 }
 
 enum OrderType {
@@ -1197,6 +1203,7 @@ model Cart {
   couponCode        String?        @map("coupon_code")
   paymentMethod     PaymentMethod? @map("payment_method")
   orderTime         DateTime?      @map("order_time") @db.Timestamptz
+  tipAmount         Decimal        @default(0) @map("tip_amount") @db.Decimal(10, 2)
   customerNote      String?        @map("customer_note")
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz
@@ -1249,6 +1256,10 @@ model Order {
   subtotal              Decimal       @db.Decimal(10, 2)
   taxAmount             Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
   deliveryFee           Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  serviceChargeType     ServiceChargeType? @map("service_charge_type")
+  serviceChargeValue    Decimal?      @map("service_charge_value") @db.Decimal(10, 2)
+  serviceChargeAmount   Decimal       @default(0) @map("service_charge_amount") @db.Decimal(10, 2)
+  tipAmount             Decimal       @default(0) @map("tip_amount") @db.Decimal(10, 2)
   discountAmount        Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
   walletAppliedAmount   Decimal       @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
   loyaltyDiscountAmount Decimal       @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)

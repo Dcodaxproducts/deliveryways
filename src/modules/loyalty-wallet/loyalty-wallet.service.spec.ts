@@ -17,6 +17,10 @@ describe('LoyaltyWalletService', () => {
       updateLoyaltyProgram: jest.fn(),
       findProfileMetadata: jest.fn(),
       findRestaurantSettings: jest.fn(),
+      findWalletAccount: jest.fn(),
+      createWalletAccount: jest.fn(),
+      updateWalletAccount: jest.fn(),
+      createWalletTransaction: jest.fn(),
     };
 
     const prisma = {
@@ -171,5 +175,88 @@ describe('LoyaltyWalletService', () => {
         role: UserRoleEnum.SUPER_ADMIN,
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('redeems active gift card into wallet balance', async () => {
+    const { service, repository, prisma } = makeService();
+    const tx = {
+      coupon: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'gift-1',
+          restaurantId: 'restaurant-1',
+          branchId: null,
+          code: 'GIFT-123',
+          kind: 'GIFT_CARD',
+          status: 'ACTIVE',
+          isActive: true,
+          usedCount: 0,
+          maxUses: 10,
+          maxUsesPerCustomer: 1,
+          startsAt: new Date('2026-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+          discountValue: new Prisma.Decimal(1000),
+        }),
+        update: jest.fn(),
+      },
+      couponUsage: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue({ id: 'usage-1' }),
+      },
+    };
+    prisma.$transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+    repository.findWalletAccount.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(500),
+      currency: 'PKR',
+    });
+    repository.createWalletTransaction.mockResolvedValue({ id: 'wallet-tx-1' });
+
+    const result = await service.redeemGiftCardToWallet(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      'gift-123',
+      'customer-1',
+    );
+
+    expect(tx.coupon.findFirst).toHaveBeenCalledWith({
+      where: {
+        restaurantId: 'restaurant-1',
+        code: 'GIFT-123',
+        kind: 'GIFT_CARD',
+        deletedAt: null,
+      },
+    });
+    expect(tx.couponUsage.create).toHaveBeenCalledWith({
+      data: {
+        couponId: 'gift-1',
+        customerId: 'customer-1',
+      },
+    });
+    expect(repository.updateWalletAccount).toHaveBeenCalledWith(
+      'wallet-1',
+      { balance: new Prisma.Decimal(1500) },
+      tx,
+    );
+    expect(repository.createWalletTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: new Prisma.Decimal(1000),
+        balanceAfter: new Prisma.Decimal(1500),
+        metadata: {
+          source: 'GIFT_CARD',
+          couponId: 'gift-1',
+          couponUsageId: 'usage-1',
+          code: 'GIFT-123',
+        },
+      }),
+      tx,
+    );
+    expect(result.creditedAmount).toBe(1000);
+    expect(result.walletBalance).toBe(1500);
   });
 });

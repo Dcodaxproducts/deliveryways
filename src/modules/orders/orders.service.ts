@@ -12,6 +12,7 @@ import {
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
+  ServiceChargeType,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -281,6 +282,10 @@ export class OrdersService {
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
           deliveryFee: quote.deliveryFee,
+          serviceChargeType: quote.serviceChargeType,
+          serviceChargeValue: quote.serviceChargeValue,
+          serviceChargeAmount: quote.serviceChargeAmount,
+          tipAmount: quote.tipAmount,
           discountAmount: quote.discountAmount,
           walletAppliedAmount: quote.walletAppliedAmount,
           loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
@@ -1237,6 +1242,11 @@ export class OrdersService {
       .mul(settings.taxation.taxPercentage)
       .div(100)
       .toDecimalPlaces(2);
+    const serviceCharge = this.resolveServiceCharge(
+      settings.serviceCharge,
+      subtotal,
+    );
+    const tipAmount = this.resolveTipAmount(dto.tipAmount);
 
     let discountAmount = new Prisma.Decimal(0);
     let couponId: string | undefined;
@@ -1310,6 +1320,8 @@ export class OrdersService {
     let totalBeforeBenefits = subtotal
       .plus(taxAmount)
       .plus(deliveryFee)
+      .plus(serviceCharge.amount)
+      .plus(tipAmount)
       .minus(discountAmount);
 
     if (totalBeforeBenefits.lessThan(new Prisma.Decimal(0))) {
@@ -1337,6 +1349,10 @@ export class OrdersService {
       subtotal: subtotal.toDecimalPlaces(2),
       taxAmount,
       deliveryFee: deliveryFee.toDecimalPlaces(2),
+      serviceChargeType: serviceCharge.type,
+      serviceChargeValue: serviceCharge.value,
+      serviceChargeAmount: serviceCharge.amount,
+      tipAmount,
       discountAmount: discountAmount.toDecimalPlaces(2),
       walletAppliedAmount: benefits.walletAppliedAmount,
       loyaltyDiscountAmount: benefits.loyaltyDiscountAmount,
@@ -1412,6 +1428,8 @@ export class OrdersService {
     subtotal: Prisma.Decimal;
     taxAmount: Prisma.Decimal;
     deliveryFee: Prisma.Decimal;
+    serviceChargeAmount?: Prisma.Decimal;
+    tipAmount?: Prisma.Decimal;
     discountAmount: Prisma.Decimal;
     loyaltyDiscountAmount?: Prisma.Decimal;
     walletAppliedAmount?: Prisma.Decimal;
@@ -1421,11 +1439,16 @@ export class OrdersService {
       amounts.loyaltyDiscountAmount ?? new Prisma.Decimal(0);
     const walletAppliedAmount =
       amounts.walletAppliedAmount ?? new Prisma.Decimal(0);
+    const serviceChargeAmount =
+      amounts.serviceChargeAmount ?? new Prisma.Decimal(0);
+    const tipAmount = amounts.tipAmount ?? new Prisma.Decimal(0);
 
     return {
       subtotal: Number(amounts.subtotal),
       taxAmount: Number(amounts.taxAmount),
       deliveryFee: Number(amounts.deliveryFee),
+      serviceChargeAmount: Number(serviceChargeAmount),
+      tipAmount: Number(tipAmount),
       discountAmount: Number(amounts.discountAmount),
       loyaltyDiscountAmount: Number(loyaltyDiscountAmount),
       walletAppliedAmount: Number(walletAppliedAmount),
@@ -1483,6 +1506,8 @@ export class OrdersService {
       subtotal: quote.subtotal,
       taxAmount: quote.taxAmount,
       deliveryFee: quote.deliveryFee,
+      serviceChargeAmount: quote.serviceChargeAmount,
+      tipAmount: quote.tipAmount,
       discountAmount: quote.discountAmount,
       loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
       walletAppliedAmount: quote.walletAppliedAmount,
@@ -1499,6 +1524,12 @@ export class OrdersService {
       subtotal: amountSummary.subtotal,
       taxAmount: amountSummary.taxAmount,
       deliveryFee: amountSummary.deliveryFee,
+      serviceChargeType: quote.serviceChargeType,
+      serviceChargeValue: quote.serviceChargeValue
+        ? Number(quote.serviceChargeValue)
+        : null,
+      serviceChargeAmount: amountSummary.serviceChargeAmount,
+      tipAmount: amountSummary.tipAmount,
       discountAmount: amountSummary.discountAmount,
       walletAppliedAmount: amountSummary.walletAppliedAmount,
       loyaltyDiscountAmount: amountSummary.loyaltyDiscountAmount,
@@ -1731,6 +1762,10 @@ export class OrdersService {
     subtotal: Prisma.Decimal;
     taxAmount: Prisma.Decimal;
     deliveryFee: Prisma.Decimal;
+    serviceChargeType?: ServiceChargeType | null;
+    serviceChargeValue?: Prisma.Decimal | null;
+    serviceChargeAmount: Prisma.Decimal;
+    tipAmount: Prisma.Decimal;
     discountAmount: Prisma.Decimal;
     walletAppliedAmount: Prisma.Decimal;
     loyaltyDiscountAmount: Prisma.Decimal;
@@ -1841,11 +1876,17 @@ export class OrdersService {
         subtotal: order.subtotal,
         taxAmount: order.taxAmount,
         deliveryFee: order.deliveryFee,
+        serviceChargeAmount: order.serviceChargeAmount,
+        tipAmount: order.tipAmount,
         discountAmount: order.discountAmount,
         loyaltyDiscountAmount: order.loyaltyDiscountAmount,
         walletAppliedAmount: order.walletAppliedAmount,
         payableAmount: order.totalAmount,
       }),
+      serviceChargeType: order.serviceChargeType ?? null,
+      serviceChargeValue: order.serviceChargeValue
+        ? Number(order.serviceChargeValue)
+        : null,
       customerNote: order.customerNote,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -1898,6 +1939,10 @@ export class OrdersService {
       subtotal: Prisma.Decimal;
       taxAmount: Prisma.Decimal;
       deliveryFee: Prisma.Decimal;
+      serviceChargeType?: ServiceChargeType | null;
+      serviceChargeValue?: Prisma.Decimal | null;
+      serviceChargeAmount: Prisma.Decimal;
+      tipAmount: Prisma.Decimal;
       discountAmount: Prisma.Decimal;
       walletAppliedAmount: Prisma.Decimal;
       loyaltyDiscountAmount: Prisma.Decimal;
@@ -2049,11 +2094,17 @@ export class OrdersService {
         subtotal: order.subtotal,
         taxAmount: order.taxAmount,
         deliveryFee: order.deliveryFee,
+        serviceChargeAmount: order.serviceChargeAmount,
+        tipAmount: order.tipAmount,
         discountAmount: order.discountAmount,
         loyaltyDiscountAmount: order.loyaltyDiscountAmount,
         walletAppliedAmount: order.walletAppliedAmount,
         payableAmount: order.totalAmount,
       }),
+      serviceChargeType: order.serviceChargeType ?? null,
+      serviceChargeValue: order.serviceChargeValue
+        ? Number(order.serviceChargeValue)
+        : null,
       customerNote: order.customerNote,
       assignedAt: order.assignedAt,
       deliveredAt: order.deliveredAt,
@@ -3401,6 +3452,11 @@ export class OrdersService {
       taxation: {
         taxPercentage: 0,
       },
+      serviceCharge: {
+        isEnabled: false,
+        type: ServiceChargeType.PERCENTAGE,
+        value: 0,
+      },
       temporaryClosure: null,
       holidayOpeningHours: [],
     };
@@ -3442,10 +3498,47 @@ export class OrdersService {
         taxPercentage:
           raw.taxation?.taxPercentage ?? fallback.taxation.taxPercentage,
       },
+      serviceCharge: {
+        isEnabled:
+          raw.serviceCharge?.isEnabled ?? fallback.serviceCharge.isEnabled,
+        type: raw.serviceCharge?.type ?? fallback.serviceCharge.type,
+        value: raw.serviceCharge?.value ?? fallback.serviceCharge.value,
+      },
       temporaryClosure: raw.temporaryClosure ?? fallback.temporaryClosure,
       holidayOpeningHours:
         raw.holidayOpeningHours ?? fallback.holidayOpeningHours,
     };
+  }
+
+  private resolveServiceCharge(
+    config: BranchSettings['serviceCharge'],
+    subtotal: Prisma.Decimal,
+  ) {
+    const type = config.type ?? ServiceChargeType.PERCENTAGE;
+    const value = new Prisma.Decimal(config.value ?? 0).toDecimalPlaces(2);
+
+    if (!config.isEnabled || value.lessThanOrEqualTo(0)) {
+      return {
+        type: null,
+        value: null,
+        amount: new Prisma.Decimal(0),
+      };
+    }
+
+    const amount =
+      type === ServiceChargeType.PERCENTAGE
+        ? subtotal.mul(value).div(100)
+        : value;
+
+    return {
+      type,
+      value,
+      amount: amount.toDecimalPlaces(2),
+    };
+  }
+
+  private resolveTipAmount(tipAmount?: number) {
+    return new Prisma.Decimal(tipAmount ?? 0).toDecimalPlaces(2);
   }
 
   private assertBranchAcceptingOrders(settings: BranchSettings) {
@@ -3976,6 +4069,11 @@ type BranchSettings = {
   };
   taxation: {
     taxPercentage: number;
+  };
+  serviceCharge: {
+    isEnabled: boolean;
+    type: ServiceChargeType;
+    value: number;
   };
 };
 

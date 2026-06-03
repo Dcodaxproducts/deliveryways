@@ -22,8 +22,10 @@ import {
   AdminListPromotionsQueryDto,
   AdminPromotionStatsQueryDto,
   AdminPromotionsOverviewQueryDto,
+  CreateAdminGiftCardDto,
   CreateAdminHappyHourDto,
   CreateAdminPromotionDto,
+  UpdateAdminGiftCardDto,
   UpdateAdminHappyHourDto,
   UpdateAdminPromotionDto,
 } from './dto';
@@ -214,6 +216,88 @@ export class AdminPromotionsController {
     @Query() query: AdminPromotionStatsQueryDto,
   ) {
     return this.adminPromotionsService.removePromotion(user, id, query);
+  }
+
+  @Get('gift-cards')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'List gift cards' })
+  listGiftCards(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminListPromotionsQueryDto,
+  ) {
+    return this.adminPromotionsService.list(
+      user,
+      query,
+      CouponCampaignKind.GIFT_CARD,
+    );
+  }
+
+  @Post('gift-cards')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Create gift card' })
+  createGiftCard(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateAdminGiftCardDto,
+  ) {
+    return this.adminPromotionsService.createGiftCard(user, dto);
+  }
+
+  @Get('gift-cards/:id')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Get gift card detail' })
+  getGiftCard(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Query() query: AdminPromotionStatsQueryDto,
+  ) {
+    return this.adminPromotionsService.getById(
+      user,
+      id,
+      query,
+      CouponCampaignKind.GIFT_CARD,
+    );
+  }
+
+  @Patch('gift-cards/:id')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Update gift card' })
+  updateGiftCard(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminGiftCardDto,
+  ) {
+    return this.adminPromotionsService.updateGiftCard(user, id, dto);
+  }
+
+  @Delete('gift-cards/:id')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Delete gift card' })
+  removeGiftCard(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Query() query: AdminPromotionStatsQueryDto,
+  ) {
+    return this.adminPromotionsService.removeGiftCard(user, id, query);
   }
 
   @Get(':id/stats')

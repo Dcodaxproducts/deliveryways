@@ -165,6 +165,22 @@ export class RedeemLoyaltyPointsDto {
   note?: string;
 }
 
+export class RedeemGiftCardDto {
+  @ApiProperty({
+    description: 'Gift card code scanned or entered by the customer',
+    example: 'GIFT-ABCD1234',
+  })
+  @IsString()
+  code!: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional branch context for branch-scoped gift cards',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+}
+
 export class CreateTableReservationDto {
   @ApiProperty()
   @IsString()

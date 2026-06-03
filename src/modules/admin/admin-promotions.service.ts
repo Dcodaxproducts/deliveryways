@@ -20,9 +20,11 @@ import {
   AdminPromotionStatsQueryDto,
   AdminPromotionsOverviewQueryDto,
   CreateAdminDealDto,
+  CreateAdminGiftCardDto,
   CreateAdminHappyHourDto,
   CreateAdminPromotionDto,
   UpdateAdminDealDto,
+  UpdateAdminGiftCardDto,
   UpdateAdminHappyHourDto,
   UpdateAdminPromotionDto,
 } from './dto';
@@ -205,6 +207,38 @@ export class AdminPromotionsService {
     return {
       ...result,
       message: 'Deals fetched successfully',
+    };
+  }
+
+  async createGiftCard(user: AuthUserContext, dto: CreateAdminGiftCardDto) {
+    const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
+    this.assertValidDateRange(dto.startsAt, dto.expiresAt);
+
+    const data = await this.adminPromotionsRepository.create({
+      tenant: { connect: { id: this.requireTenantIdFromScope(scope) } },
+      restaurant: { connect: { id: this.requireRestaurantIdFromScope(scope) } },
+      branch: scope.branchId ? { connect: { id: scope.branchId } } : undefined,
+      code: this.resolvePromotionCode(dto.code, 'GIFT'),
+      title: dto.title,
+      description: dto.description,
+      imageUrl: this.resolveImageUrl(dto),
+      kind: CouponCampaignKind.GIFT_CARD,
+      status:
+        dto.isActive === false ? CouponStatus.SUSPENDED : CouponStatus.ACTIVE,
+      applyMode: CouponApplyMode.ORDER_TOTAL,
+      autoApply: false,
+      discountType: CouponDiscountType.FLAT,
+      discountValue: new Prisma.Decimal(dto.amount),
+      maxUses: dto.maxUses,
+      maxUsesPerCustomer: dto.maxUsesPerCustomer,
+      startsAt: new Date(dto.startsAt),
+      expiresAt: new Date(dto.expiresAt),
+      isActive: dto.isActive ?? true,
+    });
+
+    return {
+      data: this.mapPromotion(data),
+      message: 'Gift card created successfully',
     };
   }
 
@@ -416,6 +450,75 @@ export class AdminPromotionsService {
     };
   }
 
+  async updateGiftCard(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateAdminGiftCardDto,
+  ) {
+    const existing = await this.adminPromotionsRepository.findById(id);
+    if (
+      !existing ||
+      existing.deletedAt ||
+      existing.kind !== CouponCampaignKind.GIFT_CARD
+    ) {
+      throw new NotFoundException('Gift card not found');
+    }
+
+    const requestedRestaurantId = dto.restaurantId ?? existing.restaurantId;
+    const requestedBranchId = dto.branchId ?? existing.branchId ?? undefined;
+    const scope = await this.resolveScope(
+      user,
+      requestedRestaurantId,
+      requestedBranchId,
+    );
+    this.ensureCouponInScope(scope, existing);
+
+    this.assertValidDateRange(
+      dto.startsAt ?? existing.startsAt.toISOString(),
+      dto.expiresAt ?? existing.expiresAt.toISOString(),
+    );
+
+    const data = await this.adminPromotionsRepository.update(id, {
+      ...(dto.code !== undefined
+        ? { code: this.resolvePromotionCode(dto.code, 'GIFT') }
+        : {}),
+      ...(dto.title !== undefined ? { title: dto.title } : {}),
+      ...(dto.description !== undefined
+        ? { description: dto.description }
+        : {}),
+      ...(this.hasImageUrlInput(dto)
+        ? { imageUrl: this.resolveImageUrl(dto) }
+        : {}),
+      ...(scope.branchId !== existing.branchId
+        ? {
+            branch: scope.branchId
+              ? { connect: { id: scope.branchId } }
+              : { disconnect: true },
+          }
+        : {}),
+      ...(dto.amount !== undefined
+        ? { discountValue: new Prisma.Decimal(dto.amount) }
+        : {}),
+      ...(dto.maxUses !== undefined ? { maxUses: dto.maxUses } : {}),
+      ...(dto.maxUsesPerCustomer !== undefined
+        ? { maxUsesPerCustomer: dto.maxUsesPerCustomer }
+        : {}),
+      ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
+      ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
+      ...(dto.isActive !== undefined
+        ? {
+            isActive: dto.isActive,
+            status: dto.isActive ? CouponStatus.ACTIVE : CouponStatus.SUSPENDED,
+          }
+        : {}),
+    });
+
+    return {
+      data: this.mapPromotion(data),
+      message: 'Gift card updated successfully',
+    };
+  }
+
   async removePromotion(
     user: AuthUserContext,
     id: string,
@@ -442,6 +545,38 @@ export class AdminPromotionsService {
     return {
       data: { id },
       message: 'Promotion deleted successfully',
+    };
+  }
+
+  async removeGiftCard(
+    user: AuthUserContext,
+    id: string,
+    query: AdminPromotionStatsQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const existing = await this.adminPromotionsRepository.findById(id);
+    if (
+      !existing ||
+      existing.deletedAt ||
+      existing.kind !== CouponCampaignKind.GIFT_CARD
+    ) {
+      throw new NotFoundException('Gift card not found');
+    }
+    this.ensureCouponInScope(scope, existing);
+
+    await this.adminPromotionsRepository.update(id, {
+      deletedAt: new Date(),
+      isActive: false,
+      status: CouponStatus.SUSPENDED,
+    });
+
+    return {
+      data: { id },
+      message: 'Gift card deleted successfully',
     };
   }
 
@@ -966,6 +1101,10 @@ export class AdminPromotionsService {
       autoApply: coupon.autoApply,
       discountType: coupon.discountType,
       discountValue: Number(coupon.discountValue),
+      amount:
+        coupon.kind === CouponCampaignKind.GIFT_CARD
+          ? Number(coupon.discountValue)
+          : null,
       maxDiscountAmount: coupon.maxDiscountAmount
         ? Number(coupon.maxDiscountAmount)
         : null,
@@ -1097,6 +1236,9 @@ export class AdminPromotionsService {
     }
     if (kind === CouponCampaignKind.PROMOTION) {
       return 'Promotions';
+    }
+    if (kind === CouponCampaignKind.GIFT_CARD) {
+      return 'Gift cards';
     }
     return 'Promotions';
   }

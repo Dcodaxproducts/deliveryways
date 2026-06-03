@@ -122,6 +122,63 @@ describe('OrdersService - delivery radius', () => {
     expect(distance).toBeLessThan(5);
   });
 
+  it('calculates percentage service charge and tip in amount summary', () => {
+    const resolveServiceCharge = (
+      service as unknown as {
+        resolveServiceCharge: (
+          config: { isEnabled: boolean; type: 'PERCENTAGE'; value: number },
+          subtotal: Prisma.Decimal,
+        ) => {
+          type: string | null;
+          value: Prisma.Decimal | null;
+          amount: Prisma.Decimal;
+        };
+      }
+    ).resolveServiceCharge;
+    const buildAmountSummary = (
+      service as unknown as {
+        buildAmountSummary: (amounts: {
+          subtotal: Prisma.Decimal;
+          taxAmount: Prisma.Decimal;
+          deliveryFee: Prisma.Decimal;
+          serviceChargeAmount?: Prisma.Decimal;
+          tipAmount?: Prisma.Decimal;
+          discountAmount: Prisma.Decimal;
+          walletAppliedAmount?: Prisma.Decimal;
+          loyaltyDiscountAmount?: Prisma.Decimal;
+          payableAmount: Prisma.Decimal;
+        }) => {
+          serviceChargeAmount: number;
+          tipAmount: number;
+          totalAmount: number;
+          payableAmount: number;
+        };
+      }
+    ).buildAmountSummary;
+
+    const serviceCharge = resolveServiceCharge.call(
+      service,
+      { isEnabled: true, type: 'PERCENTAGE', value: 10 },
+      new Prisma.Decimal(1000),
+    );
+    const summary = buildAmountSummary.call(service, {
+      subtotal: new Prisma.Decimal(1000),
+      taxAmount: new Prisma.Decimal(50),
+      deliveryFee: new Prisma.Decimal(100),
+      serviceChargeAmount: serviceCharge.amount,
+      tipAmount: new Prisma.Decimal(150),
+      discountAmount: new Prisma.Decimal(100),
+      walletAppliedAmount: new Prisma.Decimal(200),
+      payableAmount: new Prisma.Decimal(1100),
+    });
+
+    expect(Number(serviceCharge.amount)).toBe(100);
+    expect(summary.serviceChargeAmount).toBe(100);
+    expect(summary.tipAmount).toBe(150);
+    expect(summary.totalAmount).toBe(1300);
+    expect(summary.payableAmount).toBe(1100);
+  });
+
   it('detects whether a point is inside a delivery zone polygon', () => {
     const zoneFn = (
       service as unknown as {

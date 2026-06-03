@@ -7,6 +7,7 @@ import {
 import {
   Coupon,
   CouponApplyMode,
+  CouponCampaignKind,
   CouponDiscountType,
   CouponStatus,
   Prisma,
@@ -421,6 +422,12 @@ export class CouponsService {
 
     if (coupon.branchId && coupon.branchId !== input.branchId) {
       throw new BadRequestException('Coupon is not valid for this branch');
+    }
+
+    if (coupon.kind === CouponCampaignKind.GIFT_CARD) {
+      throw new BadRequestException(
+        'Gift card codes must be redeemed to wallet',
+      );
     }
 
     if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {

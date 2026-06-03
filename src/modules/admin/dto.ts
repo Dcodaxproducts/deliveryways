@@ -590,6 +590,28 @@ export class AdminPromotionBaseDto {
 
 export class CreateAdminPromotionDto extends AdminPromotionBaseDto {}
 
+export class CreateAdminGiftCardDto extends OmitType(AdminPromotionBaseDto, [
+  'discountType',
+  'discountValue',
+  'maxDiscountAmount',
+  'minOrderAmount',
+  'scopeMenuItemId',
+  'scopeCategoryId',
+  'scopeMenuItemIds',
+  'scopeCategoryIds',
+  'applyMode',
+  'autoApply',
+] as const) {
+  @ApiProperty({
+    description: 'Wallet amount credited when the gift card code is redeemed.',
+    minimum: 0,
+    example: 1000,
+  })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  amount!: number;
+}
+
 export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
   'discountType',
   'maxDiscountAmount',
@@ -738,6 +760,28 @@ export class UpdateAdminPromotionDto {
   )
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class UpdateAdminGiftCardDto extends OmitType(UpdateAdminPromotionDto, [
+  'discountType',
+  'maxDiscountAmount',
+  'minOrderAmount',
+  'scopeMenuItemId',
+  'scopeCategoryId',
+  'scopeMenuItemIds',
+  'scopeCategoryIds',
+  'applyMode',
+  'autoApply',
+] as const) {
+  @ApiPropertyOptional({
+    description: 'Wallet amount credited when the gift card code is redeemed.',
+    minimum: 0,
+    example: 1000,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  amount?: number;
 }
 
 export class UpdateAdminDealDto extends OmitType(UpdateAdminPromotionDto, [

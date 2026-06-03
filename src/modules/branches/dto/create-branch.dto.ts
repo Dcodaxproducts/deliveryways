@@ -28,6 +28,8 @@ export const BRANCH_DELIVERY_PRICING_MODES = [
   'POSTAL_CODE',
 ] as const;
 
+export const BRANCH_SERVICE_CHARGE_TYPES = ['PERCENTAGE', 'AMOUNT'] as const;
+
 class DeliveryZoneCoordinateDto {
   @ApiProperty()
   @IsNumber()
@@ -186,6 +188,24 @@ class TaxationConfigDto {
   taxPercentage!: number;
 }
 
+class ServiceChargeConfigDto {
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
+
+  @ApiPropertyOptional({ enum: BRANCH_SERVICE_CHARGE_TYPES })
+  @IsOptional()
+  @IsIn(BRANCH_SERVICE_CHARGE_TYPES)
+  type?: (typeof BRANCH_SERVICE_CHARGE_TYPES)[number];
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  value?: number;
+}
+
 class BranchContactDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -262,6 +282,12 @@ export class BranchSettingsDto {
   @ValidateNested()
   @Type(() => TaxationConfigDto)
   taxation!: TaxationConfigDto;
+
+  @ApiPropertyOptional({ type: ServiceChargeConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ServiceChargeConfigDto)
+  serviceCharge?: ServiceChargeConfigDto;
 
   @ApiPropertyOptional({ type: BranchContactDto })
   @IsOptional()

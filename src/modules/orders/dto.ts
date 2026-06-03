@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -136,6 +137,17 @@ export class QuoteOrderDto {
   @IsInt()
   @Min(1)
   loyaltyPoints?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional customer tip applied to the order total',
+    minimum: 0,
+    example: 150,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  tipAmount?: number;
 
   @ApiProperty({
     description: 'Requested order time in ISO 8601 format',

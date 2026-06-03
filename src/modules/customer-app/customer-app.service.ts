@@ -31,6 +31,7 @@ import {
   TableReservationStatus,
   CreateWalletTopUpDto,
   ListWalletHistoryQueryDto,
+  RedeemGiftCardDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
   UpdateTableReservationStatusDto,
@@ -769,6 +770,29 @@ export class CustomerAppService {
     return {
       data,
       message: 'Wallet top-up payment intent created successfully',
+    };
+  }
+
+  async redeemGiftCard(
+    user: AuthUserContext,
+    dto: RedeemGiftCardDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const data = await this.loyaltyWalletService!.redeemGiftCardToWallet(
+      {
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: dto.branchId ?? customer.branchId ?? undefined,
+      },
+      dto.code,
+      user.uid,
+    );
+
+    return {
+      data,
+      message: 'Gift card redeemed successfully',
     };
   }
 
