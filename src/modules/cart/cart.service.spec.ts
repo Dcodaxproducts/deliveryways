@@ -1185,6 +1185,77 @@ describe('CartService', () => {
     );
   });
 
+  it('adds ready-made deal items while ignoring customization payloads', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Deal Pizza',
+      variations: [{ id: 'variation-1' }],
+      modifierLinks: [],
+      branchOverrides: [],
+      dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+      category: {
+        items: [
+          { id: 'section-left', name: 'Left Pizza', slug: 'left-pizza' },
+          { id: 'section-right', name: 'Right Pizza', slug: 'right-pizza' },
+        ],
+      },
+    });
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        variationId: 'variation-1',
+        modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+        sections: [
+          { slot: 'LEFT', menuItemId: 'section-left' },
+          { slot: 'RIGHT', menuItemId: 'section-right' },
+        ],
+        quantity: 1,
+      },
+    );
+
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        variationId: undefined,
+        modifiers: {
+          dealId: 'deal-1',
+          modifiers: [],
+        },
+      }),
+    );
+  });
+
   it('infers ready-made deal items without requiring dealId in add-to-cart', async () => {
     const { service, cartRepository, couponsService } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({

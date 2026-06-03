@@ -1597,12 +1597,14 @@ export class CartService {
       );
     }
 
-    if (inferredDealId) {
-      this.assertNoDealCustomizations(dto, menuItem.name);
-    }
-
     const validatedDto = inferredDealId
-      ? { ...dto, dealId: inferredDealId }
+      ? {
+          ...dto,
+          dealId: inferredDealId,
+          variationId: undefined,
+          modifiers: undefined,
+          sections: undefined,
+        }
       : dto;
 
     const selectedRestaurantMenuId = this.resolveOptionalString(
@@ -1625,9 +1627,9 @@ export class CartService {
       }
     }
 
-    if (dto.variationId) {
+    if (validatedDto.variationId) {
       const variation = menuItem.variations.find(
-        (item) => item.id === dto.variationId,
+        (item) => item.id === validatedDto.variationId,
       );
       if (!variation) {
         throw new BadRequestException(
@@ -1636,7 +1638,7 @@ export class CartService {
       }
     }
 
-    for (const modifier of dto.modifiers ?? []) {
+    for (const modifier of validatedDto.modifiers ?? []) {
       const found = this.findAvailableModifier(menuItem, modifier.modifierId);
 
       if (!found) {
@@ -1648,10 +1650,13 @@ export class CartService {
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
     if (!inferredDealId) {
-      this.assertModifierSelectionLimits(menuItem, dto.modifiers ?? []);
+      this.assertModifierSelectionLimits(
+        menuItem,
+        validatedDto.modifiers ?? [],
+      );
     }
 
-    await this.assertValidSplitSections(menuItem, branchId, dto);
+    await this.assertValidSplitSections(menuItem, branchId, validatedDto);
 
     return validatedDto;
   }
@@ -1684,14 +1689,6 @@ export class CartService {
         menuItemId,
       )) ?? null
     );
-  }
-
-  private assertNoDealCustomizations(dto: AddCartItemDto, itemName?: string) {
-    if (dto.variationId || dto.modifiers?.length || dto.sections?.length) {
-      throw new BadRequestException(
-        `${itemName ?? 'Deal item'} does not support customization selections`,
-      );
-    }
   }
 
   private assertModifierSelectionLimits(
