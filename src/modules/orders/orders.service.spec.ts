@@ -715,6 +715,98 @@ describe('OrdersService - delivery pricing modes', () => {
 
     expect(result.data.deliveryFee).toBe(300);
   });
+
+  it('applies postal-code minimum order and free delivery thresholds', async () => {
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              allowedOrderTypes: ['DELIVERY'],
+              allowedPaymentMethods: ['COD'],
+              deliveryConfig: {
+                mode: 'POSTAL_CODE',
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 100,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+                zones: [],
+                postalCodeRules: [
+                  {
+                    postalCode: '54000',
+                    deliveryFee: 300,
+                    minOrderAmount: 400,
+                    freeDeliveryThreshold: 500,
+                  },
+                ],
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'menu-1',
+            name: 'Burger',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(500),
+            depositAmount: new Prisma.Decimal(0),
+            category: { id: 'cat-1', variations: [], modifierLinks: [] },
+            modifierLinks: [],
+            branchOverrides: [],
+          }),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValueOnce({
+            id: 'address-1',
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+            postalCode: '54000',
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn(),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(500),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.deliveryFee).toBe(0);
+  });
 });
 
 describe('OrdersService - status transitions', () => {

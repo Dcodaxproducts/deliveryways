@@ -953,43 +953,71 @@ export class BranchesService {
     const config = deliveryConfig as {
       mode?: string;
       zoneBands?: Array<{ fromKm?: number; toKm?: number }>;
+      postalCodeRules?: Array<{ postalCode?: string; deliveryFee?: number }>;
     };
 
-    if (config.mode !== 'ZONE_BANDS') {
-      return;
-    }
-
-    if (!Array.isArray(config.zoneBands) || config.zoneBands.length === 0) {
-      throw new BadRequestException(
-        'zoneBands are required when delivery mode is ZONE_BANDS',
-      );
-    }
-
-    const sortedBands = [...config.zoneBands].sort(
-      (a, b) => (a.fromKm ?? 0) - (b.fromKm ?? 0),
-    );
-
-    sortedBands.forEach((band, index) => {
+    if (config.mode === 'POSTAL_CODE') {
       if (
-        typeof band.fromKm !== 'number' ||
-        typeof band.toKm !== 'number' ||
-        band.fromKm < 0 ||
-        band.toKm <= band.fromKm
+        !Array.isArray(config.postalCodeRules) ||
+        config.postalCodeRules.length === 0
       ) {
         throw new BadRequestException(
-          `zoneBands[${index}] must have valid fromKm/toKm bounds`,
+          'postalCodeRules are required when delivery mode is POSTAL_CODE',
         );
       }
 
-      if (index === 0) {
-        return;
+      const seenPostalCodes = new Set<string>();
+      config.postalCodeRules.forEach((rule, index) => {
+        const postalCode = rule.postalCode?.trim().toUpperCase();
+        if (!postalCode || typeof rule.deliveryFee !== 'number') {
+          throw new BadRequestException(
+            `postalCodeRules[${index}] must have postalCode and deliveryFee`,
+          );
+        }
+
+        if (seenPostalCodes.has(postalCode)) {
+          throw new BadRequestException(
+            'postalCodeRules cannot have duplicates',
+          );
+        }
+
+        seenPostalCodes.add(postalCode);
+      });
+    }
+
+    if (config.mode === 'ZONE_BANDS') {
+      if (!Array.isArray(config.zoneBands) || config.zoneBands.length === 0) {
+        throw new BadRequestException(
+          'zoneBands are required when delivery mode is ZONE_BANDS',
+        );
       }
 
-      const previousBand = sortedBands[index - 1];
-      if ((band.fromKm ?? 0) < (previousBand.toKm ?? 0)) {
-        throw new BadRequestException('zoneBands cannot overlap');
-      }
-    });
+      const sortedBands = [...config.zoneBands].sort(
+        (a, b) => (a.fromKm ?? 0) - (b.fromKm ?? 0),
+      );
+
+      sortedBands.forEach((band, index) => {
+        if (
+          typeof band.fromKm !== 'number' ||
+          typeof band.toKm !== 'number' ||
+          band.fromKm < 0 ||
+          band.toKm <= band.fromKm
+        ) {
+          throw new BadRequestException(
+            `zoneBands[${index}] must have valid fromKm/toKm bounds`,
+          );
+        }
+
+        if (index === 0) {
+          return;
+        }
+
+        const previousBand = sortedBands[index - 1];
+        if ((band.fromKm ?? 0) < (previousBand.toKm ?? 0)) {
+          throw new BadRequestException('zoneBands cannot overlap');
+        }
+      });
+    }
   }
 
   private hasBranchAddressPayload(dto: UpdateBranchDto) {

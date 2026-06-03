@@ -7,9 +7,16 @@ import { CustomerAppRepository } from './customer-app.repository';
 import { CustomerAppService } from './customer-app.service';
 import { PublicContentController } from './public-content.controller';
 import { CouponsModule } from '../coupons/coupons.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [LoyaltyWalletModule, PaymentsModule, StorageModule, CouponsModule],
+  imports: [
+    LoyaltyWalletModule,
+    PaymentsModule,
+    StorageModule,
+    CouponsModule,
+    NotificationsModule,
+  ],
   controllers: [CustomerAppController, PublicContentController],
   providers: [CustomerAppRepository, CustomerAppService],
 })

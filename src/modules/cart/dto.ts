@@ -179,6 +179,15 @@ export class UpdateCartDto {
   @IsDateString()
   orderTime?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Alias for scheduled delivery/takeaway time. If provided, it is saved as orderTime.',
+    example: '2026-03-24T19:30:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  scheduledDeliveryAt?: string;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
@@ -237,6 +246,15 @@ export class CheckoutCartDto {
   @IsOptional()
   @IsDateString()
   orderTime?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Alias for scheduled delivery/takeaway time. If provided, it overrides saved cart orderTime at checkout.',
+    example: '2026-03-24T19:30:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  scheduledDeliveryAt?: string;
 
   @ApiPropertyOptional({ enum: PaymentMethodEnum })
   @IsOptional()

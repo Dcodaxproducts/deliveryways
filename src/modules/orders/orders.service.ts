@@ -3539,14 +3539,11 @@ export class OrdersService {
           deliveryConfig.minOrderAmount,
         );
       case 'POSTAL_CODE':
-        this.assertMinimumOrderAmount(
-          subtotal,
-          new Prisma.Decimal(deliveryConfig.minOrderAmount),
-          'branch',
-        );
         return this.resolvePostalCodeDeliveryFee(
           address,
           deliveryConfig.postalCodeRules ?? [],
+          subtotal,
+          deliveryConfig.minOrderAmount,
         );
       case 'RADIUS':
       default:
@@ -3841,11 +3838,27 @@ export class OrdersService {
   private resolvePostalCodeDeliveryFee(
     address: DeliveryAddressContext,
     postalCodeRules: DeliveryPostalCodeRule[],
+    subtotal: Prisma.Decimal,
+    branchMinOrderAmount: number,
   ) {
     const matchedRule = this.assertAddressPostalCodeServiceable(
       address,
       postalCodeRules,
     );
+
+    this.assertMinimumOrderAmount(
+      subtotal,
+      new Prisma.Decimal(matchedRule.minOrderAmount ?? branchMinOrderAmount),
+      'zone',
+    );
+
+    if (
+      matchedRule.freeDeliveryThreshold !== undefined &&
+      matchedRule.freeDeliveryThreshold > 0 &&
+      subtotal.greaterThanOrEqualTo(matchedRule.freeDeliveryThreshold)
+    ) {
+      return new Prisma.Decimal(0);
+    }
 
     return new Prisma.Decimal(matchedRule.deliveryFee);
   }
@@ -3990,4 +4003,6 @@ type DeliveryZoneBandConfig = {
 type DeliveryPostalCodeRule = {
   postalCode: string;
   deliveryFee: number;
+  minOrderAmount?: number;
+  freeDeliveryThreshold?: number;
 };

@@ -161,6 +161,50 @@ describe('BranchesService', () => {
     ).rejects.toThrow('zoneBands cannot overlap');
   });
 
+  it('rejects duplicate postal-code delivery rules during branch update', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'branch-1',
+        {
+          settings: {
+            allowedOrderTypes: [],
+            allowedPaymentMethods: [],
+            deliveryConfig: {
+              mode: 'POSTAL_CODE',
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 100,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+              zones: [],
+              zoneBands: [],
+              postalCodeRules: [
+                { postalCode: '54000', deliveryFee: 100 },
+                { postalCode: ' 54000 ', deliveryFee: 150 },
+              ],
+            },
+            automation: { autoAcceptOrders: false, estimatedPrepTime: 20 },
+            taxation: { taxPercentage: 0 },
+          },
+        },
+      ),
+    ).rejects.toThrow('postalCodeRules cannot have duplicates');
+  });
+
   it('creates branch for business admin without requiring restaurantId in body', async () => {
     const { service, repository, usersService } = makeService();
     repository.create.mockResolvedValue({

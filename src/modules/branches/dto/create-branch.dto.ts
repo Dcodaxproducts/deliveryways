@@ -74,9 +74,22 @@ class PostalCodeDeliveryRuleDto {
   @IsNotEmpty()
   postalCode!: string;
 
-  @ApiProperty()
+  @ApiProperty({ minimum: 0 })
   @IsNumber()
+  @Min(0)
   deliveryFee!: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minOrderAmount?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  freeDeliveryThreshold?: number;
 }
 
 class DeliveryZoneBandDto {
@@ -204,6 +217,26 @@ export class BranchSettingsDto {
   @IsOptional()
   @IsBoolean()
   tableReservationsEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'When enabled, new table reservations are auto-accepted if table capacity is available',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  tableReservationAutoAccept?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Number of tables available for auto-accepted reservations in the same time slot',
+    example: 12,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  tableCount?: number;
 
   @ApiProperty({ enum: OrderTypeEnum, isArray: true })
   @IsArray()

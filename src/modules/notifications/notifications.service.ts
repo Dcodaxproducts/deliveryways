@@ -31,6 +31,8 @@ const CUSTOMER_NOTIFICATION_TYPES: NotificationType[] = [
 const ADMIN_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.ORDER_PLACED,
   NotificationType.ORDER_CANCELLED,
+  NotificationType.TABLE_RESERVATION_CREATED,
+  NotificationType.TABLE_RESERVATION_ACCEPTED,
   NotificationType.PAYMENT_PAID,
   NotificationType.PAYMENT_FAILED,
   NotificationType.PAYMENT_CANCELLED,
@@ -440,6 +442,44 @@ export class NotificationsService {
         },
       });
     }
+  }
+
+  async notifyTableReservationAdmin(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    reservationId: string;
+    branchName: string;
+    customerId: string;
+    customerName?: string | null;
+    customerEmail?: string | null;
+    reservationDate: string;
+    guestCount: number;
+    status: 'REQUESTED' | 'CONFIRMED';
+  }): Promise<void> {
+    const accepted = input.status === 'CONFIRMED';
+    await this.createAdminInAppNotification({
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      branchId: input.branchId,
+      type: accepted
+        ? NotificationType.TABLE_RESERVATION_ACCEPTED
+        : NotificationType.TABLE_RESERVATION_CREATED,
+      subject: accepted
+        ? `Reservation auto-accepted at ${input.branchName}`
+        : `New reservation request at ${input.branchName}`,
+      body: `${input.customerName ?? input.customerEmail ?? 'Customer'} requested a table for ${input.guestCount} guest(s) at ${input.reservationDate}.`,
+      payload: {
+        reservationId: input.reservationId,
+        branchId: input.branchId,
+        branchName: input.branchName,
+        customerId: input.customerId,
+        customerEmail: input.customerEmail,
+        reservationDate: input.reservationDate,
+        guestCount: input.guestCount,
+        status: input.status,
+      },
+    });
   }
 
   private async createAndDispatchCustomerEmail(input: {

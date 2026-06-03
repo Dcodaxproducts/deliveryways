@@ -517,6 +517,8 @@ export class CustomerAppRepository {
       },
       select: {
         id: true,
+        tenantId: true,
+        restaurantId: true,
         name: true,
         logoUrl: true,
         coverImage: true,
@@ -540,6 +542,8 @@ export class CustomerAppRepository {
       },
       select: {
         id: true,
+        tenantId: true,
+        restaurantId: true,
         name: true,
         logoUrl: true,
         coverImage: true,

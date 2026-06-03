@@ -41,6 +41,7 @@ import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
 import { DEFAULT_MENU_ITEM_LABELS } from '../menu/item/dto';
 import { CouponsService, PromotionPreview } from '../coupons/coupons.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
@@ -183,6 +184,7 @@ export class CustomerAppService {
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly paymentsService?: PaymentsService,
     private readonly couponsService?: CouponsService,
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   async listFavorites(
@@ -829,7 +831,9 @@ export class CustomerAppService {
         .map(async (reservation) => ({
           ...reservation,
           branch: await this.resolveBranchMedia(
-            branchMap.get(reservation.branchId) ?? null,
+            this.toReservationBranchPublic(
+              branchMap.get(reservation.branchId) ?? null,
+            ),
           ),
         })),
     );
@@ -863,7 +867,9 @@ export class CustomerAppService {
         .map(async (reservation) => ({
           ...reservation,
           branch: await this.resolveBranchMedia(
-            branchMap.get(reservation.branchId) ?? null,
+            this.toReservationBranchPublic(
+              branchMap.get(reservation.branchId) ?? null,
+            ),
           ),
         })),
     );
@@ -913,6 +919,24 @@ export class CustomerAppService {
         throw new NotFoundException('Table reservation not found');
       }
 
+      if (dto.status === 'CONFIRMED') {
+        const branches =
+          await this.customerAppRepository.findBranchesPublicContent(
+            [reservation.branchId],
+            restaurantId,
+          );
+        const reservationBranch = branches.find(
+          (item) => item.id === reservation.branchId,
+        );
+        await this.assertTableReservationCapacityAvailable({
+          restaurantId,
+          branchId: reservation.branchId,
+          branchSettings: reservationBranch?.settings,
+          reservationDate: reservation.reservationDate,
+          excludeReservationId: reservation.id,
+        });
+      }
+
       const cancelledAt =
         dto.status === 'CANCELLED'
           ? (reservation.cancelledAt ?? new Date().toISOString())
@@ -946,6 +970,19 @@ export class CustomerAppService {
         ? branches.find((item) => item.id === updatedReservation.branchId)
         : null;
 
+      if (dto.status === 'CONFIRMED' && updatedReservation && branch) {
+        await this.notifyTableReservationAdmin({
+          branch,
+          customer: {
+            id: customer.id,
+            email: customer.email,
+            firstName: customer.profile?.firstName ?? null,
+            lastName: customer.profile?.lastName ?? null,
+          },
+          reservation: updatedReservation,
+        });
+      }
+
       return {
         data: updatedReservation
           ? {
@@ -958,7 +995,9 @@ export class CustomerAppService {
                 phone: customer.profile?.phone ?? null,
                 avatarUrl: customer.profile?.avatarUrl ?? null,
               },
-              branch: await this.resolveBranchMedia(branch ?? null),
+              branch: await this.resolveBranchMedia(
+                this.toReservationBranchPublic(branch ?? null),
+              ),
             }
           : null,
         message: 'Table reservation status updated successfully',
@@ -1007,6 +1046,19 @@ export class CustomerAppService {
       throw new BadRequestException('Reservation date must be in the future');
     }
 
+    const autoAccept = this.readBooleanValue(branch.settings, [
+      ['tableReservationAutoAccept'],
+      ['tableReservations', 'autoAccept'],
+    ]);
+    const canAutoAccept =
+      autoAccept &&
+      (await this.hasTableReservationCapacityAvailable({
+        restaurantId: customer.restaurantId,
+        branchId: branch.id,
+        branchSettings: branch.settings,
+        reservationDate: reservationDate.toISOString(),
+      }));
+
     const existingReservations = this.readTableReservations(
       customer.profile?.metadata,
     );
@@ -1016,7 +1068,7 @@ export class CustomerAppService {
       reservationDate: reservationDate.toISOString(),
       guestCount: dto.guestCount,
       note: dto.note?.trim() || null,
-      status: 'REQUESTED',
+      status: canAutoAccept ? 'CONFIRMED' : 'REQUESTED',
       createdAt: new Date().toISOString(),
       cancelledAt: null,
     };
@@ -1033,6 +1085,17 @@ export class CustomerAppService {
       customer.id,
       nextMetadata,
     );
+
+    await this.notifyTableReservationAdmin({
+      branch,
+      customer: {
+        id: customer.id,
+        email: customer.email,
+        firstName: customer.profile?.firstName ?? null,
+        lastName: customer.profile?.lastName ?? null,
+      },
+      reservation,
+    });
 
     return {
       data: reservation,
@@ -1308,6 +1371,115 @@ export class CustomerAppService {
         ...patch,
       },
     } as unknown as Prisma.JsonObject;
+  }
+
+  private async assertTableReservationCapacityAvailable(input: {
+    restaurantId: string;
+    branchId: string;
+    branchSettings: Prisma.JsonValue | null | undefined;
+    reservationDate: string;
+    excludeReservationId?: string;
+  }) {
+    if (!(await this.hasTableReservationCapacityAvailable(input))) {
+      throw new BadRequestException(
+        'No tables are available for this reservation time',
+      );
+    }
+  }
+
+  private async hasTableReservationCapacityAvailable(input: {
+    restaurantId: string;
+    branchId: string;
+    branchSettings: Prisma.JsonValue | null | undefined;
+    reservationDate: string;
+    excludeReservationId?: string;
+  }) {
+    const tableCount = this.readNumberValue(input.branchSettings, [
+      ['tableCount'],
+      ['tableReservations', 'tableCount'],
+    ]);
+
+    if (tableCount <= 0) {
+      return false;
+    }
+
+    const customers =
+      await this.customerAppRepository.findCustomersForTableReservations({
+        restaurantId: input.restaurantId,
+      });
+    const acceptedReservations = customers.flatMap((customer) =>
+      this.readTableReservations(customer.profile?.metadata).filter(
+        (reservation) =>
+          reservation.id !== input.excludeReservationId &&
+          reservation.branchId === input.branchId &&
+          reservation.reservationDate === input.reservationDate &&
+          ['CONFIRMED', 'SEATED'].includes(reservation.status),
+      ),
+    );
+
+    return acceptedReservations.length < tableCount;
+  }
+
+  private async notifyTableReservationAdmin(input: {
+    branch: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      name: string;
+    };
+    customer: {
+      id: string;
+      email: string;
+      firstName?: string | null;
+      lastName?: string | null;
+    };
+    reservation: TableReservationRecord;
+  }) {
+    if (!this.notificationsService) {
+      return;
+    }
+
+    const customerName = [input.customer.firstName, input.customer.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    await this.notificationsService.notifyTableReservationAdmin({
+      tenantId: input.branch.tenantId,
+      restaurantId: input.branch.restaurantId,
+      branchId: input.branch.id,
+      branchName: input.branch.name,
+      reservationId: input.reservation.id,
+      customerId: input.customer.id,
+      customerEmail: input.customer.email,
+      customerName: customerName || null,
+      reservationDate: input.reservation.reservationDate,
+      guestCount: input.reservation.guestCount,
+      status:
+        input.reservation.status === 'CONFIRMED' ? 'CONFIRMED' : 'REQUESTED',
+    });
+  }
+
+  private toReservationBranchPublic(
+    branch: {
+      id: string;
+      name: string;
+      logoUrl?: string | null;
+      coverImage?: string | null;
+      description?: string | null;
+    } | null,
+  ) {
+    if (!branch) {
+      return null;
+    }
+
+    return {
+      id: branch.id,
+      name: branch.name,
+      logoUrl: branch.logoUrl ?? null,
+      coverImage: branch.coverImage ?? null,
+      description: branch.description ?? null,
+    };
   }
 
   private sortAdminTableReservations(

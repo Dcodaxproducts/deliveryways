@@ -2360,6 +2360,53 @@ describe('CartService', () => {
     expect(result.message).toBe('Cart updated successfully');
   });
 
+  it('saves scheduledDeliveryAt as cart order time', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({
+        ...cart,
+        orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    await service.updateCart(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        scheduledDeliveryAt: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith(
+      'cart-1',
+      expect.objectContaining({
+        orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      }),
+    );
+  });
+
   it('updates cart address and returns refreshed quote', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();

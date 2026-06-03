@@ -223,7 +223,10 @@ export class CartService {
     await this.cartRepository.update(cart.id, {
       orderType: dto.orderType,
       paymentMethod: dto.paymentMethod,
-      orderTime: dto.orderTime ? new Date(dto.orderTime) : undefined,
+      orderTime:
+        dto.orderTime || dto.scheduledDeliveryAt
+          ? new Date(dto.orderTime ?? dto.scheduledDeliveryAt!)
+          : undefined,
       customerNote:
         dto.customerNote !== undefined
           ? this.resolveOptionalString(dto.customerNote)
@@ -1454,6 +1457,7 @@ export class CartService {
       ...(await this.toQuotePayload(cart)),
       orderTime:
         dto.orderTime ??
+        dto.scheduledDeliveryAt ??
         cart.orderTime?.toISOString() ??
         new Date().toISOString(),
       paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
