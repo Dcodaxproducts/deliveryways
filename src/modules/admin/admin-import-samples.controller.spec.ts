@@ -36,14 +36,48 @@ describe('AdminImportSamplesController', () => {
     await app.close();
   });
 
-  it('downloads menu sample as CSV instead of response envelope JSON', async () => {
-    const server = app.getHttpServer() as Server;
-    const response = await request(server)
-      .get('/admin/import-samples/menu/download')
-      .expect(200)
-      .expect('Content-Type', /text\/csv/);
+  it.each([
+    ['menu', 'menu-import-sample.csv', 'restaurantId,name,slug,description'],
+    [
+      'menu-items',
+      'menu-items-import-sample.csv',
+      'restaurantId,categoryId,categoryIds,name',
+    ],
+    [
+      'deliverymen',
+      'deliverymen-import-sample.csv',
+      'restaurantId,branchId,firstName,lastName',
+    ],
+    [
+      'coupons',
+      'coupons-import-sample.csv',
+      'restaurantId,branchId,code,title',
+    ],
+    [
+      'promotions',
+      'promotions-import-sample.csv',
+      'restaurantId,branchId,code,title',
+    ],
+    [
+      'happy-hours',
+      'happy-hours-import-sample.csv',
+      'restaurantId,branchId,code,title',
+    ],
+  ])(
+    'downloads %s sample as CSV instead of response envelope JSON',
+    async (type, fileName, headerPrefix) => {
+      const server = app.getHttpServer() as Server;
+      const response = await request(server)
+        .get(`/admin/import-samples/${type}/download`)
+        .expect(200)
+        .expect('Content-Type', /text\/csv/);
 
-    expect(response.text).toContain('restaurantId,name,slug,description');
-    expect(response.text).not.toContain('"success":true');
-  });
+      expect(response.headers['content-disposition']).toContain(
+        `attachment; filename="${fileName}"`,
+      );
+      expect(response.text).toContain(headerPrefix);
+      expect(response.text).not.toContain('"success":true');
+      expect(response.text).not.toContain('_readableState');
+    },
+  );
 });
