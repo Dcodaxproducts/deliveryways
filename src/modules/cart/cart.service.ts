@@ -21,6 +21,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import {
   AddCartItemDto,
   CartItemModifierDto,
+  CartItemModifierSelectionDto,
   CartItemSectionDto,
   CheckoutCartDto,
   QuoteCartDto,
@@ -61,6 +62,9 @@ interface CartSnapshot {
 
 interface CartModifierLink {
   sortOrder: number;
+  selectionType?: 'SINGLE' | 'MULTIPLE';
+  minSelect?: number;
+  maxSelect?: number;
   modifierGroup: {
     id: string;
     name: string;
@@ -424,9 +428,10 @@ export class CartService {
     );
 
     const packedSelections = this.packCartSelections(
-      validatedDto.modifiers,
+      this.resolveSelectedModifiers(validatedDto),
       validatedDto.sections,
       validatedDto.dealId,
+      validatedDto.modifierSelections,
     );
     const matchingItem = cart.items.find((item) =>
       this.isSameCartSelection(item, {
@@ -507,6 +512,10 @@ export class CartService {
         dto.modifiers !== undefined
           ? (dto.modifiers ?? undefined)
           : this.readModifiers(item.modifiers),
+      modifierSelections:
+        dto.modifierSelections !== undefined
+          ? (dto.modifierSelections ?? undefined)
+          : this.readModifierSelections(item.modifiers),
       sections:
         dto.sections !== undefined
           ? (dto.sections ?? undefined)
@@ -531,15 +540,22 @@ export class CartService {
           ? this.resolveOptionalString(dto.note)
           : undefined,
       modifiers:
-        dto.modifiers !== undefined || dto.sections !== undefined
+        dto.modifiers !== undefined ||
+        dto.sections !== undefined ||
+        dto.modifierSelections !== undefined
           ? (this.packCartSelections(
-              dto.modifiers !== undefined
-                ? (dto.modifiers ?? undefined)
-                : this.readModifiers(item.modifiers),
+              dto.modifierSelections !== undefined
+                ? this.flattenModifierSelections(dto.modifierSelections ?? [])
+                : dto.modifiers !== undefined
+                  ? (dto.modifiers ?? undefined)
+                  : this.readModifiers(item.modifiers),
               dto.sections !== undefined
                 ? (dto.sections ?? undefined)
                 : this.readSections(item.modifiers),
               this.readDealId(item.modifiers),
+              dto.modifierSelections !== undefined
+                ? (dto.modifierSelections ?? undefined)
+                : this.readModifierSelections(item.modifiers),
             ) as Prisma.InputJsonValue | undefined)
           : undefined,
     });
@@ -1603,6 +1619,7 @@ export class CartService {
           dealId: inferredDealId,
           variationId: undefined,
           modifiers: undefined,
+          modifierSelections: undefined,
           sections: undefined,
         }
       : dto;
@@ -1638,7 +1655,7 @@ export class CartService {
       }
     }
 
-    for (const modifier of validatedDto.modifiers ?? []) {
+    for (const modifier of this.resolveSelectedModifiers(validatedDto) ?? []) {
       const found = this.findAvailableModifier(menuItem, modifier.modifierId);
 
       if (!found) {
@@ -1653,6 +1670,7 @@ export class CartService {
       this.assertModifierSelectionLimits(
         menuItem,
         validatedDto.modifiers ?? [],
+        validatedDto.modifierSelections ?? [],
       );
     }
 
@@ -1694,7 +1712,18 @@ export class CartService {
   private assertModifierSelectionLimits(
     menuItem: CartModifierSource,
     modifiers: CartItemModifierDto[],
+    modifierSelections: CartItemModifierSelectionDto[] = [],
   ) {
+    if (this.getAvailableModifierLinks(menuItem).length) {
+      this.assertGroupedModifierSelectionLimits(
+        menuItem,
+        modifierSelections.length
+          ? modifierSelections
+          : this.groupFlatModifierSelections(menuItem, modifiers),
+      );
+      return;
+    }
+
     if (menuItem.modifierPriceOverrides?.length) {
       const selectedModifierIds = new Set(
         modifiers
@@ -1735,6 +1764,120 @@ export class CartService {
     if (maxSelect !== null && totalSelected > maxSelect) {
       throw new BadRequestException(
         `${menuItem.name ?? 'Menu item'} allows at most ${maxSelect} modifier selection(s)`,
+      );
+    }
+  }
+
+  private groupFlatModifierSelections(
+    menuItem: CartModifierSource,
+    modifiers: CartItemModifierDto[],
+  ): CartItemModifierSelectionDto[] {
+    const selectionsByGroupId = new Map<string, CartItemModifierSelectionDto>();
+
+    for (const modifier of modifiers) {
+      for (const link of this.getAvailableModifierLinks(menuItem)) {
+        const hasModifier = link.modifierGroup.modifierLinks.some(
+          (modifierLink) => modifierLink.modifier.id === modifier.modifierId,
+        );
+
+        if (!hasModifier) {
+          continue;
+        }
+
+        const selection = selectionsByGroupId.get(link.modifierGroup.id) ?? {
+          modifierGroupId: link.modifierGroup.id,
+          modifiers: [],
+        };
+        selection.modifiers.push(modifier);
+        selectionsByGroupId.set(link.modifierGroup.id, selection);
+        break;
+      }
+    }
+
+    return [...selectionsByGroupId.values()];
+  }
+
+  private assertGroupedModifierSelectionLimits(
+    menuItem: CartModifierSource,
+    modifierSelections: CartItemModifierSelectionDto[],
+  ) {
+    const availableLinks = this.getAvailableModifierLinks(menuItem);
+    const linksByGroupId = new Map(
+      availableLinks.map((link) => [link.modifierGroup.id, link]),
+    );
+    const selectionsByGroupId = new Map<string, CartItemModifierSelectionDto>();
+
+    for (const selection of modifierSelections) {
+      if (selectionsByGroupId.has(selection.modifierGroupId)) {
+        throw new BadRequestException(
+          'Modifier selections must contain unique modifierGroupIds',
+        );
+      }
+
+      const link = linksByGroupId.get(selection.modifierGroupId);
+      if (!link) {
+        throw new BadRequestException(
+          `Modifier group not found for item: ${menuItem.name ?? 'Menu item'}`,
+        );
+      }
+
+      selectionsByGroupId.set(selection.modifierGroupId, selection);
+      const modifierIds = new Set(
+        link.modifierGroup.modifierLinks.map(
+          (modifierLink) => modifierLink.modifier.id,
+        ),
+      );
+      const selectedIds = selection.modifiers.map(
+        (modifier) => modifier.modifierId,
+      );
+
+      if (new Set(selectedIds).size !== selectedIds.length) {
+        throw new BadRequestException(
+          'Modifier group selections must contain unique modifierIds',
+        );
+      }
+
+      if (selectedIds.some((modifierId) => !modifierIds.has(modifierId))) {
+        throw new BadRequestException(
+          `Modifier selection contains invalid option for group: ${link.modifierGroup.name}`,
+        );
+      }
+
+      const totalSelected = selection.modifiers.reduce(
+        (sum, modifier) => sum + (modifier.quantity ?? 1),
+        0,
+      );
+      const selectionType = link.selectionType ?? 'SINGLE';
+      const minSelect = link.minSelect ?? link.modifierGroup.minSelect;
+      const maxSelect = link.maxSelect ?? link.modifierGroup.maxSelect;
+
+      if (selectionType === 'SINGLE' && totalSelected > 1) {
+        throw new BadRequestException(
+          `${link.modifierGroup.name} allows only one modifier selection`,
+        );
+      }
+
+      if (totalSelected < minSelect) {
+        throw new BadRequestException(
+          `${link.modifierGroup.name} requires at least ${minSelect} modifier selection(s)`,
+        );
+      }
+
+      if (totalSelected > maxSelect) {
+        throw new BadRequestException(
+          `${link.modifierGroup.name} allows at most ${maxSelect} modifier selection(s)`,
+        );
+      }
+    }
+
+    for (const link of availableLinks) {
+      const minSelect = link.minSelect ?? link.modifierGroup.minSelect;
+      if (minSelect < 1 || selectionsByGroupId.has(link.modifierGroup.id)) {
+        continue;
+      }
+
+      throw new BadRequestException(
+        `${link.modifierGroup.name} requires at least ${minSelect} modifier selection(s)`,
       );
     }
   }
@@ -1892,9 +2035,10 @@ export class CartService {
       .map((link) => ({
         id: link.modifierGroup.id,
         name: link.modifierGroup.name,
-        isRequired: link.modifierGroup.isRequired,
-        minSelect: link.modifierGroup.minSelect,
-        maxSelect: link.modifierGroup.maxSelect,
+        selectionType: link.selectionType ?? 'SINGLE',
+        minSelect: link.minSelect ?? link.modifierGroup.minSelect,
+        maxSelect: link.maxSelect ?? link.modifierGroup.maxSelect,
+        isRequired: (link.minSelect ?? link.modifierGroup.minSelect) > 0,
         sortOrder: link.sortOrder,
         modifiers: link.modifierGroup.modifierLinks.map(
           ({ modifier, sortOrder }) => ({
@@ -1967,6 +2111,47 @@ export class CartService {
     return modifiers.length ? modifiers : undefined;
   }
 
+  private readModifierSelections(
+    input: Prisma.JsonValue | null,
+  ): CartItemModifierSelectionDto[] | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const rawSelections = (input as { modifierSelections?: unknown })
+      .modifierSelections;
+    if (!Array.isArray(rawSelections)) {
+      return undefined;
+    }
+
+    const selections: CartItemModifierSelectionDto[] = [];
+
+    for (const item of rawSelections) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        continue;
+      }
+
+      const raw = item as {
+        modifierGroupId?: unknown;
+        modifiers?: unknown;
+      };
+      if (
+        typeof raw.modifierGroupId !== 'string' ||
+        !Array.isArray(raw.modifiers)
+      ) {
+        continue;
+      }
+
+      const modifiers = this.readModifiers(raw.modifiers as Prisma.JsonValue);
+      selections.push({
+        modifierGroupId: raw.modifierGroupId,
+        modifiers: modifiers ?? [],
+      });
+    }
+
+    return selections.length ? selections : undefined;
+  }
+
   private readSections(
     input: Prisma.JsonValue | null,
   ): CartItemSectionDto[] | undefined {
@@ -2021,14 +2206,16 @@ export class CartService {
     modifiers?: CartItemModifierDto[],
     sections?: CartItemSectionDto[],
     dealId?: string,
+    modifierSelections?: CartItemModifierSelectionDto[],
   ) {
-    if (!sections?.length && !dealId) {
+    if (!sections?.length && !dealId && !modifierSelections?.length) {
       return modifiers?.length ? modifiers : undefined;
     }
 
     return {
       ...(dealId ? { dealId } : {}),
       modifiers: modifiers?.length ? modifiers : [],
+      ...(modifierSelections?.length ? { modifierSelections } : {}),
       ...(sections?.length
         ? {
             sections: sections.map((section) => ({
@@ -2038,6 +2225,28 @@ export class CartService {
           }
         : {}),
     };
+  }
+
+  private resolveSelectedModifiers(dto: {
+    modifiers?: CartItemModifierDto[];
+    modifierSelections?: CartItemModifierSelectionDto[];
+  }) {
+    return dto.modifierSelections?.length
+      ? this.flattenModifierSelections(dto.modifierSelections)
+      : dto.modifiers;
+  }
+
+  private flattenModifierSelections(
+    modifierSelections: CartItemModifierSelectionDto[],
+  ): CartItemModifierDto[] | undefined {
+    const modifiers = modifierSelections.flatMap((selection) =>
+      selection.modifiers.map((modifier) => ({
+        modifierId: modifier.modifierId,
+        quantity: modifier.quantity,
+      })),
+    );
+
+    return modifiers.length ? modifiers : undefined;
   }
 
   private isSameCartSelection(

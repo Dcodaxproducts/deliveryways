@@ -12,6 +12,11 @@ import {
 import { CartService } from './cart.service';
 
 describe('CartService', () => {
+  type TestModifierSelection = {
+    modifierGroupId: string;
+    modifiers: Array<{ modifierId: string; quantity?: number }>;
+  };
+
   const makeService = () => {
     const cartRepository = {
       findByCustomerId: jest.fn(),
@@ -86,15 +91,21 @@ describe('CartService', () => {
       }>;
     },
     selectedModifiers: Array<{ modifierId: string; quantity?: number }>,
+    modifierSelections: TestModifierSelection[] = [],
   ) =>
     (
       service as unknown as {
         assertModifierSelectionLimits: (
           item: typeof menuItem,
           modifiers: typeof selectedModifiers,
+          modifierSelections: TestModifierSelection[],
         ) => void;
       }
-    ).assertModifierSelectionLimits(menuItem, selectedModifiers);
+    ).assertModifierSelectionLimits(
+      menuItem,
+      selectedModifiers,
+      modifierSelections,
+    );
 
   it('requires only item-attached modifiers marked as required', () => {
     const { service } = makeService();
@@ -134,6 +145,85 @@ describe('CartService', () => {
         { modifierId: 'modifier-required', quantity: 1 },
       ]),
     ).not.toThrow();
+  });
+
+  it('validates grouped modifier set min and max rules', () => {
+    const { service } = makeService();
+    const menuItem = {
+      id: 'menu-1',
+      name: 'Sandwich',
+      modifierLinks: [
+        {
+          sortOrder: 0,
+          selectionType: 'MULTIPLE' as const,
+          minSelect: 1,
+          maxSelect: 2,
+          modifierGroup: {
+            id: 'group-sauces',
+            name: 'Choose Sauces',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              {
+                sortOrder: 0,
+                modifier: {
+                  id: 'modifier-garlic',
+                  name: 'Garlic Sauce',
+                  priceDelta: new Prisma.Decimal(0),
+                },
+              },
+              {
+                sortOrder: 1,
+                modifier: {
+                  id: 'modifier-bbq',
+                  name: 'BBQ Sauce',
+                  priceDelta: new Prisma.Decimal(0),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    expect(() =>
+      assertModifierSelectionLimits(service, menuItem as never, [], []),
+    ).toThrow('Choose Sauces requires at least 1 modifier selection(s)');
+
+    expect(() =>
+      assertModifierSelectionLimits(
+        service,
+        menuItem as never,
+        [],
+        [
+          {
+            modifierGroupId: 'group-sauces',
+            modifiers: [
+              { modifierId: 'modifier-garlic', quantity: 1 },
+              { modifierId: 'modifier-bbq', quantity: 1 },
+            ],
+          },
+        ],
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModifierSelectionLimits(
+        service,
+        menuItem as never,
+        [],
+        [
+          {
+            modifierGroupId: 'group-sauces',
+            modifiers: [
+              { modifierId: 'modifier-garlic', quantity: 1 },
+              { modifierId: 'modifier-bbq', quantity: 2 },
+            ],
+          },
+        ],
+      ),
+    ).toThrow('Choose Sauces allows at most 2 modifier selection(s)');
   });
 
   it('returns an empty cart when customer cart does not exist', async () => {
@@ -1721,7 +1811,7 @@ describe('CartService', () => {
           ],
         },
       ),
-    ).rejects.toThrow('Burger allows at most 1 modifier selection(s)');
+    ).rejects.toThrow('Sauces allows only one modifier selection');
   });
 
   it('rejects cart item quantity above item maxQuantity', async () => {

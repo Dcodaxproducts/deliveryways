@@ -27,6 +27,18 @@ export class CartItemModifierDto {
   quantity?: number;
 }
 
+export class CartItemModifierSelectionDto {
+  @ApiProperty()
+  @IsString()
+  modifierGroupId!: string;
+
+  @ApiProperty({ type: [CartItemModifierDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CartItemModifierDto)
+  modifiers!: CartItemModifierDto[];
+}
+
 export class CartItemSectionDto {
   @ApiProperty({ enum: CART_ITEM_SECTION_SLOT_VALUES })
   @IsIn(CART_ITEM_SECTION_SLOT_VALUES)
@@ -88,6 +100,13 @@ export class AddCartItemDto {
   @Type(() => CartItemModifierDto)
   modifiers?: CartItemModifierDto[];
 
+  @ApiPropertyOptional({ type: [CartItemModifierSelectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CartItemModifierSelectionDto)
+  modifierSelections?: CartItemModifierSelectionDto[];
+
   @ApiPropertyOptional({ type: [CartItemSectionDto] })
   @IsOptional()
   @IsArray()
@@ -119,6 +138,13 @@ export class UpdateCartItemDto {
   @ValidateNested({ each: true })
   @Type(() => CartItemModifierDto)
   modifiers?: CartItemModifierDto[] | null;
+
+  @ApiPropertyOptional({ type: [CartItemModifierSelectionDto], nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CartItemModifierSelectionDto)
+  modifierSelections?: CartItemModifierSelectionDto[] | null;
 
   @ApiPropertyOptional({ type: [CartItemSectionDto], nullable: true })
   @IsOptional()

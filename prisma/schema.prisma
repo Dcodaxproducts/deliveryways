@@ -79,6 +79,11 @@ enum MenuItemPricingMode {
   MULTIPLE
 }
 
+enum ModifierSelectionType {
+  SINGLE
+  MULTIPLE
+}
+
 enum PackageBillingModel {
   COMMISSION
   PLAN
@@ -332,6 +337,7 @@ model Restaurant {
   restaurantMenus     RestaurantMenu[]
   menuCategories      MenuCategory[]
   menuItems           MenuItem[]
+  modifierCategories  ModifierCategory[]
   modifierGroups      ModifierGroup[]
   modifiers           Modifier[]
   menuItemVariations  MenuItemVariation[]
@@ -715,12 +721,35 @@ model MenuCategoryModifierGroup {
   categoryId      String @map("category_id")
   modifierGroupId String @map("modifier_group_id")
   sortOrder       Int    @default(0) @map("sort_order")
+  selectionType   ModifierSelectionType @default(SINGLE) @map("selection_type")
+  minSelect       Int    @default(0) @map("min_select")
+  maxSelect       Int    @default(1) @map("max_select")
 
   category      MenuCategory  @relation(fields: [categoryId], references: [id])
   modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
 
   @@unique([categoryId, modifierGroupId])
   @@map("menu_category_modifier_groups")
+}
+
+model ModifierCategory {
+  id           String    @id @default(cuid())
+  restaurantId String    @map("restaurant_id")
+  name         String
+  slug         String
+  description  String?
+  sortOrder    Int       @default(0) @map("sort_order")
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  modifiers  Modifier[]
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId, sortOrder])
+  @@map("modifier_categories")
 }
 
 model ModifierGroup {
@@ -749,6 +778,7 @@ model ModifierGroup {
 model Modifier {
   id           String    @id @default(cuid())
   restaurantId String    @map("restaurant_id")
+  categoryId   String    @map("category_id")
   name         String
   priceDelta   Decimal   @default(0) @map("price_delta") @db.Decimal(10, 2)
   sortOrder    Int       @default(0) @map("sort_order")
@@ -758,11 +788,13 @@ model Modifier {
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   restaurant              Restaurant                           @relation(fields: [restaurantId], references: [id])
+  category                ModifierCategory                     @relation(fields: [categoryId], references: [id])
   groupLinks              ModifierGroupModifier[]
   itemPriceOverrides      MenuItemModifierPriceOverride[]
   variationPriceOverrides MenuVariationModifierPriceOverride[]
 
   @@unique([restaurantId, name])
+  @@index([categoryId])
   @@index([restaurantId, sortOrder])
   @@map("modifiers")
 }
@@ -788,6 +820,9 @@ model MenuItemModifierGroup {
   menuItemId      String @map("menu_item_id")
   modifierGroupId String @map("modifier_group_id")
   sortOrder       Int    @default(0) @map("sort_order")
+  selectionType   ModifierSelectionType @default(SINGLE) @map("selection_type")
+  minSelect       Int    @default(0) @map("min_select")
+  maxSelect       Int    @default(1) @map("max_select")
 
   menuItem      MenuItem      @relation(fields: [menuItemId], references: [id])
   modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])

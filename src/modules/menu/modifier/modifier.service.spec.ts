@@ -6,7 +6,14 @@ describe('ModifierService', () => {
   const makeService = () => {
     const modifierRepository = {
       listGroups: jest.fn(),
+      listCategories: jest.fn(),
       listModifiers: jest.fn(),
+      createCategory: jest.fn(),
+      findCategoryById: jest.fn(),
+      findCategoryByRestaurantAndSlug: jest.fn(),
+      updateCategory: jest.fn(),
+      hardDeleteCategory: jest.fn(),
+      countCategoryModifiers: jest.fn(),
       findGroupById: jest.fn(),
       findGroupsByIds: jest.fn(),
       createGroup: jest.fn(),
@@ -15,6 +22,7 @@ describe('ModifierService', () => {
       createModifier: jest.fn(),
       findModifierById: jest.fn(),
       updateModifier: jest.fn(),
+      attachGroupToItem: jest.fn(),
       attachGroupToCategory: jest.fn(),
       listCategoryGroups: jest.fn(),
       listGroupCategories: jest.fn(),
@@ -36,6 +44,9 @@ describe('ModifierService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
       },
+      menuItem: {
+        findUnique: jest.fn(),
+      },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback({})),
       ),
@@ -48,6 +59,33 @@ describe('ModifierService', () => {
 
     return { service, modifierRepository, prisma };
   };
+
+  it('creates modifier categories with normalized slugs', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findCategoryByRestaurantAndSlug.mockResolvedValue(null);
+    modifierRepository.createCategory.mockResolvedValue({
+      id: 'modifier-category-1',
+      name: 'Bread',
+      slug: 'bread',
+    });
+
+    const result = await service.createCategory(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        restaurantId: 'restaurant-1',
+        name: ' Bread ',
+      },
+    );
+
+    expect(modifierRepository.createCategory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurant: { connect: { id: 'restaurant-1' } },
+        name: 'Bread',
+        slug: 'bread',
+      }),
+    );
+    expect(result.message).toBe('Modifier category created successfully');
+  });
 
   it('preserves modifier group selection settings on create', async () => {
     const { service, modifierRepository } = makeService();
@@ -218,6 +256,11 @@ describe('ModifierService', () => {
 
   it('creates modifier without a modifier group id using explicit restaurantId', async () => {
     const { service, modifierRepository } = makeService();
+    modifierRepository.findCategoryById.mockResolvedValue({
+      id: 'modifier-category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
     modifierRepository.findModifierByRestaurantAndName.mockResolvedValue(null);
     modifierRepository.createModifier.mockResolvedValue({
       id: 'modifier-1',
@@ -232,6 +275,7 @@ describe('ModifierService', () => {
       {
         restaurantId: 'restaurant-1',
         name: ' Extra Cheese ',
+        categoryId: 'modifier-category-1',
         priceDelta: 50,
       },
     );
@@ -244,6 +288,7 @@ describe('ModifierService', () => {
       expect.objectContaining({
         name: 'Extra Cheese',
         restaurant: { connect: { id: 'restaurant-1' } },
+        category: { connect: { id: 'modifier-category-1' } },
       }),
       expect.anything(),
     );
@@ -253,6 +298,11 @@ describe('ModifierService', () => {
 
   it('rejects duplicate modifier names in the same group before hitting the database', async () => {
     const { service, modifierRepository } = makeService();
+    modifierRepository.findCategoryById.mockResolvedValue({
+      id: 'modifier-category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
     modifierRepository.findModifierByRestaurantAndName.mockResolvedValue({
       id: 'modifier-1',
     });
@@ -268,6 +318,7 @@ describe('ModifierService', () => {
         {
           restaurantId: 'restaurant-1',
           name: ' Extra Cheese ',
+          categoryId: 'modifier-category-1',
           priceDelta: 50,
         },
       ),
@@ -284,6 +335,8 @@ describe('ModifierService', () => {
     modifierRepository.findGroupById.mockResolvedValue({
       id: 'group-1',
       restaurantId: 'restaurant-1',
+      minSelect: 0,
+      maxSelect: 1,
       deletedAt: null,
     });
     modifierRepository.hardDeleteGroup.mockResolvedValue({ id: 'group-1' });
@@ -346,6 +399,11 @@ describe('ModifierService', () => {
   it('creates modifier without assigning it to modifier groups', async () => {
     const { service, modifierRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    modifierRepository.findCategoryById.mockResolvedValue({
+      id: 'modifier-category-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
     modifierRepository.findModifierByRestaurantAndName.mockResolvedValue(null);
     modifierRepository.createModifier.mockResolvedValue({
       id: 'modifier-1',
@@ -360,6 +418,7 @@ describe('ModifierService', () => {
       },
       {
         name: 'Extra Sauce',
+        categoryId: 'modifier-category-1',
         priceDelta: 50,
         sortOrder: 2,
       },
@@ -376,6 +435,7 @@ describe('ModifierService', () => {
       id: 'modifier-1',
       restaurantId: 'restaurant-1',
       name: 'Extra Sauce',
+      categoryId: 'modifier-category-1',
       priceDelta: 50,
       sortOrder: 2,
       groupLinks: [
@@ -447,6 +507,8 @@ describe('ModifierService', () => {
     modifierRepository.findGroupById.mockResolvedValue({
       id: 'group-1',
       restaurantId: 'restaurant-1',
+      minSelect: 0,
+      maxSelect: 1,
       deletedAt: null,
     });
     modifierRepository.attachGroupToCategory.mockResolvedValue({
@@ -467,10 +529,54 @@ describe('ModifierService', () => {
     expect(modifierRepository.attachGroupToCategory).toHaveBeenCalledWith(
       'category-1',
       'group-1',
+      'SINGLE',
+      0,
+      1,
       1,
     );
     expect(result.message).toBe(
       'Modifier group attached to category successfully',
+    );
+  });
+
+  it('stores item modifier group assignment rules', async () => {
+    const { service, modifierRepository, prisma } = makeService();
+    prisma.menuItem.findUnique.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      minSelect: 0,
+      maxSelect: 5,
+      deletedAt: null,
+    });
+    modifierRepository.attachGroupToItem.mockResolvedValue({ id: 'link-1' });
+
+    await service.attachGroupToItem(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'item-1',
+      'group-1',
+      {
+        selectionType: 'MULTIPLE',
+        minSelect: 1,
+        maxSelect: 3,
+        sortOrder: 2,
+      },
+    );
+
+    expect(modifierRepository.attachGroupToItem).toHaveBeenCalledWith(
+      'item-1',
+      'group-1',
+      'MULTIPLE',
+      1,
+      3,
+      2,
     );
   });
 

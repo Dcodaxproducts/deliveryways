@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { ModifierSelectionType, Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
-import { ListModifierGroupsDto, ListModifiersDto } from './dto';
+import {
+  ListModifierCategoriesDto,
+  ListModifierGroupsDto,
+  ListModifiersDto,
+} from './dto';
 
 @Injectable()
 export class ModifierRepository {
@@ -10,6 +14,79 @@ export class ModifierRepository {
 
   private client(tx?: PrismaTx): PrismaTx | PrismaClient {
     return tx ?? this.prisma;
+  }
+
+  async createCategory(
+    data: Prisma.ModifierCategoryCreateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).modifierCategory.create({ data });
+  }
+
+  async listCategories(
+    restaurantId: string | undefined,
+    query: ListModifierCategoriesDto,
+  ) {
+    const where: Prisma.ModifierCategoryWhereInput = {
+      ...(restaurantId ? { restaurantId } : {}),
+      deletedAt: null,
+      ...this.resolveCategoryActiveFilter(query),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              { slug: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.modifierCategory.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.modifierCategory.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  findCategoryById(id: string) {
+    return this.prisma.modifierCategory.findUnique({ where: { id } });
+  }
+
+  findCategoryByRestaurantAndSlug(
+    restaurantId: string,
+    slug: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.modifierCategory.findFirst({
+      where: {
+        restaurantId,
+        slug: { equals: slug, mode: 'insensitive' },
+        deletedAt: null,
+        ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      },
+    });
+  }
+
+  updateCategory(
+    id: string,
+    data: Prisma.ModifierCategoryUpdateInput,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).modifierCategory.update({ where: { id }, data });
+  }
+
+  hardDeleteCategory(id: string, tx?: PrismaTx) {
+    return this.client(tx).modifierCategory.delete({ where: { id } });
+  }
+
+  countCategoryModifiers(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).modifier.count({ where: { categoryId } });
   }
 
   async createGroup(data: Prisma.ModifierGroupCreateInput, tx?: PrismaTx) {
@@ -60,6 +137,7 @@ export class ModifierRepository {
             },
           }
         : {}),
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
         : {}),
@@ -72,6 +150,7 @@ export class ModifierRepository {
         take: query.limit,
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
         include: {
+          category: true,
           groupLinks: {
             include: {
               modifierGroup: {
@@ -104,6 +183,18 @@ export class ModifierRepository {
     }
 
     if (query.all || query.includeInactive) {
+      return {};
+    }
+
+    return { isActive: true };
+  }
+
+  private resolveCategoryActiveFilter(query: ListModifierCategoriesDto) {
+    if (query.inactive) {
+      return { isActive: false };
+    }
+
+    if (query.all) {
       return {};
     }
 
@@ -262,6 +353,9 @@ export class ModifierRepository {
   async attachGroupToItem(
     menuItemId: string,
     modifierGroupId: string,
+    selectionType: ModifierSelectionType,
+    minSelect: number,
+    maxSelect: number,
     sortOrder: number,
     tx?: PrismaTx,
   ) {
@@ -272,10 +366,13 @@ export class ModifierRepository {
           modifierGroupId,
         },
       },
-      update: { sortOrder },
+      update: { selectionType, minSelect, maxSelect, sortOrder },
       create: {
         menuItemId,
         modifierGroupId,
+        selectionType,
+        minSelect,
+        maxSelect,
         sortOrder,
       },
     });
@@ -284,6 +381,9 @@ export class ModifierRepository {
   async attachGroupToCategory(
     categoryId: string,
     modifierGroupId: string,
+    selectionType: ModifierSelectionType,
+    minSelect: number,
+    maxSelect: number,
     sortOrder: number,
     tx?: PrismaTx,
   ) {
@@ -294,10 +394,13 @@ export class ModifierRepository {
           modifierGroupId,
         },
       },
-      update: { sortOrder },
+      update: { selectionType, minSelect, maxSelect, sortOrder },
       create: {
         categoryId,
         modifierGroupId,
+        selectionType,
+        minSelect,
+        maxSelect,
         sortOrder,
       },
     });
@@ -386,6 +489,7 @@ export class ModifierRepository {
         include: {
           modifier: {
             include: {
+              category: true,
               itemPriceOverrides: true,
               variationPriceOverrides: true,
             },

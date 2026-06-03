@@ -205,7 +205,11 @@ export class MenuItemRepository {
                           { modifier: { createdAt: 'asc' } },
                         ],
                         include: {
-                          modifier: true,
+                          modifier: {
+                            include: {
+                              category: true,
+                            },
+                          },
                         },
                       },
                     },
@@ -248,6 +252,7 @@ export class MenuItemRepository {
                     include: {
                       modifier: {
                         include: {
+                          category: true,
                           itemPriceOverrides: true,
                           variationPriceOverrides: true,
                         },
@@ -311,6 +316,9 @@ export class MenuItemRepository {
         const modifiers = this.resolveItemModifiers(
           item.modifierPriceOverrides,
         );
+        const modifierGroups = this.resolveItemModifierGroups(
+          item.modifierLinks,
+        );
 
         return {
           ...item,
@@ -322,10 +330,12 @@ export class MenuItemRepository {
           },
           variations,
           modifiers,
+          modifierGroups,
           _count: {
             ...item._count,
             variations: variations.length,
             modifiers: modifiers.length,
+            modifierGroups: modifierGroups.length,
           },
         };
       }),
@@ -363,6 +373,55 @@ export class MenuItemRepository {
       priceDelta: override.priceDelta,
       isRequired: override.isRequired,
       sortOrder: override.modifier.sortOrder,
+    }));
+  }
+
+  private resolveItemModifierGroups(
+    modifierLinks: Array<{
+      sortOrder: number;
+      selectionType?: 'SINGLE' | 'MULTIPLE';
+      minSelect?: number;
+      maxSelect?: number;
+      modifierGroup: {
+        id: string;
+        name: string;
+        description: string | null;
+        minSelect: number;
+        maxSelect: number;
+        isRequired: boolean;
+        modifierLinks: Array<{
+          sortOrder: number;
+          modifier: {
+            id: string;
+            name: string;
+            priceDelta: Prisma.Decimal;
+            sortOrder: number;
+            category?: {
+              id: string;
+              name: string;
+              slug: string;
+            };
+          };
+        }>;
+      };
+    }>,
+  ) {
+    return modifierLinks.map((link) => ({
+      id: link.modifierGroup.id,
+      name: link.modifierGroup.name,
+      description: link.modifierGroup.description,
+      selectionType: link.selectionType ?? 'SINGLE',
+      minSelect: link.minSelect ?? link.modifierGroup.minSelect,
+      maxSelect: link.maxSelect ?? link.modifierGroup.maxSelect,
+      isRequired: (link.minSelect ?? link.modifierGroup.minSelect) > 0,
+      sortOrder: link.sortOrder,
+      modifiers: link.modifierGroup.modifierLinks.map((modifierLink) => ({
+        id: modifierLink.modifier.id,
+        name: modifierLink.modifier.name,
+        priceDelta: modifierLink.modifier.priceDelta,
+        sortOrder: modifierLink.sortOrder,
+        category: modifierLink.modifier.category,
+      })),
     }));
   }
 

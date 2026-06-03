@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ModifierSelectionType, Prisma } from '@prisma/client';
 import { AuthUserContext } from '../../../common/decorators';
 import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
@@ -12,12 +12,15 @@ import { PrismaService } from '../../../database';
 import {
   AttachModifierGroupDto,
   AttachModifierToGroupDto,
+  CreateModifierCategoryDto,
   CreateModifierDto,
   CreateModifierGroupDto,
   DuplicateModifierDto,
+  ListModifierCategoriesDto,
   ListModifierGroupsDto,
   ListModifiersDto,
   SyncModifierGroupCategoriesDto,
+  UpdateModifierCategoryDto,
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
@@ -29,6 +32,106 @@ export class ModifierService {
     private readonly modifierRepository: ModifierRepository,
     private readonly prisma: PrismaService,
   ) {}
+
+  async createCategory(user: AuthUserContext, dto: CreateModifierCategoryDto) {
+    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    await this.ensureWriteAccess(user, restaurantId);
+
+    const name = this.normalizeName(dto.name);
+    const slug = this.normalizeSlug(dto.slug ?? name);
+    await this.assertUniqueCategorySlug(restaurantId, slug);
+
+    const data = await this.modifierRepository.createCategory({
+      restaurant: { connect: { id: restaurantId } },
+      name,
+      slug,
+      description: dto.description,
+      sortOrder: dto.sortOrder ?? 0,
+      isActive: true,
+    });
+
+    return {
+      data,
+      message: 'Modifier category created successfully',
+    };
+  }
+
+  async listCategories(
+    user: AuthUserContext,
+    query: ListModifierCategoriesDto,
+  ) {
+    const restaurantId = await this.resolveRestaurantIdForList(
+      user,
+      query.restaurantId,
+    );
+    const { items, total } = await this.modifierRepository.listCategories(
+      restaurantId,
+      query,
+    );
+
+    return {
+      data: items,
+      message: 'Modifier categories fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async updateCategory(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateModifierCategoryDto,
+  ) {
+    const category = await this.modifierRepository.findCategoryById(id);
+    if (!category || category.deletedAt) {
+      throw new NotFoundException('Modifier category not found');
+    }
+
+    await this.ensureWriteAccess(user, category.restaurantId);
+
+    const name =
+      dto.name !== undefined ? this.normalizeName(dto.name) : undefined;
+    const slug =
+      dto.slug !== undefined || name !== undefined
+        ? this.normalizeSlug(dto.slug ?? name ?? category.name)
+        : undefined;
+
+    if (slug) {
+      await this.assertUniqueCategorySlug(category.restaurantId, slug, id);
+    }
+
+    const data = await this.modifierRepository.updateCategory(id, {
+      name,
+      slug,
+      description: dto.description,
+      sortOrder: dto.sortOrder,
+      isActive: dto.isActive,
+    });
+
+    return {
+      data,
+      message: 'Modifier category updated successfully',
+    };
+  }
+
+  async removeCategory(user: AuthUserContext, id: string) {
+    const category = await this.modifierRepository.findCategoryById(id);
+    if (!category || category.deletedAt) {
+      throw new NotFoundException('Modifier category not found');
+    }
+
+    await this.ensureWriteAccess(user, category.restaurantId);
+
+    const modifierCount =
+      await this.modifierRepository.countCategoryModifiers(id);
+    if (modifierCount > 0) {
+      throw new BadRequestException(
+        'Modifier category cannot be deleted while modifiers are assigned',
+      );
+    }
+
+    const data = await this.modifierRepository.hardDeleteCategory(id);
+    return { data, message: 'Modifier category deleted successfully' };
+  }
 
   async createGroup(user: AuthUserContext, dto: CreateModifierGroupDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
@@ -149,6 +252,7 @@ export class ModifierService {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
 
     await this.ensureWriteAccess(user, restaurantId);
+    await this.assertCategoryBelongsToRestaurant(dto.categoryId, restaurantId);
 
     const normalizedName = this.normalizeName(dto.name);
     const existingModifier =
@@ -167,6 +271,7 @@ export class ModifierService {
       const modifier = await this.modifierRepository.createModifier(
         {
           restaurant: { connect: { id: restaurantId } },
+          category: { connect: { id: dto.categoryId } },
           name: normalizedName,
           priceDelta: new Prisma.Decimal(dto.priceDelta ?? 0),
           sortOrder: dto.sortOrder ?? 0,
@@ -218,6 +323,7 @@ export class ModifierService {
       const duplicated = await this.modifierRepository.createModifier(
         {
           restaurant: { connect: { id: modifier.restaurantId } },
+          category: { connect: { id: modifier.categoryId } },
           name: normalizedName,
           priceDelta: new Prisma.Decimal(dto.priceDelta ?? modifier.priceDelta),
           sortOrder: dto.sortOrder ?? modifier.sortOrder,
@@ -243,6 +349,12 @@ export class ModifierService {
     }
 
     await this.ensureWriteAccess(user, modifier.restaurantId);
+    if (dto.categoryId !== undefined) {
+      await this.assertCategoryBelongsToRestaurant(
+        dto.categoryId,
+        modifier.restaurantId,
+      );
+    }
 
     const normalizedName =
       dto.name !== undefined ? this.normalizeName(dto.name) : undefined;
@@ -267,6 +379,10 @@ export class ModifierService {
         id,
         {
           name: normalizedName,
+          category:
+            dto.categoryId !== undefined
+              ? { connect: { id: dto.categoryId } }
+              : undefined,
           priceDelta:
             dto.priceDelta !== undefined
               ? new Prisma.Decimal(dto.priceDelta)
@@ -354,10 +470,14 @@ export class ModifierService {
     }
 
     await this.ensureWriteAccess(user, item.restaurantId);
+    const rules = this.resolveAssignmentRules(dto, group);
 
     const data = await this.modifierRepository.attachGroupToItem(
       itemId,
       groupId,
+      rules.selectionType,
+      rules.minSelect,
+      rules.maxSelect,
       dto.sortOrder ?? 0,
     );
 
@@ -389,10 +509,14 @@ export class ModifierService {
     }
 
     await this.ensureWriteAccess(user, category.restaurantId);
+    const rules = this.resolveAssignmentRules(dto, group);
 
     const data = await this.modifierRepository.attachGroupToCategory(
       categoryId,
       groupId,
+      rules.selectionType,
+      rules.minSelect,
+      rules.maxSelect,
       dto.sortOrder ?? 0,
     );
 
@@ -499,6 +623,11 @@ export class ModifierService {
         priceDelta: Prisma.Decimal;
         sortOrder: number;
         isActive: boolean;
+        category?: {
+          id: string;
+          name: string;
+          slug: string;
+        };
       };
     }>;
     categoryLinks?: Array<{
@@ -531,6 +660,11 @@ export class ModifierService {
     priceDelta: Prisma.Decimal;
     sortOrder: number;
     isActive: boolean;
+    category?: {
+      id: string;
+      name: string;
+      slug: string;
+    };
     groupLinks?: Array<{
       sortOrder: number;
       modifierGroup: {
@@ -584,6 +718,83 @@ export class ModifierService {
     }
 
     return normalized;
+  }
+
+  private normalizeSlug(value: string) {
+    const slug = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!slug.length) {
+      throw new BadRequestException('slug source is required');
+    }
+
+    return slug;
+  }
+
+  private async assertUniqueCategorySlug(
+    restaurantId: string,
+    slug: string,
+    excludeId?: string,
+  ) {
+    const existing =
+      await this.modifierRepository.findCategoryByRestaurantAndSlug(
+        restaurantId,
+        slug,
+        excludeId,
+      );
+
+    if (existing) {
+      throw new BadRequestException(
+        'A modifier category with this slug already exists in this restaurant',
+      );
+    }
+  }
+
+  private async assertCategoryBelongsToRestaurant(
+    categoryId: string,
+    restaurantId: string,
+  ) {
+    const category = await this.modifierRepository.findCategoryById(categoryId);
+    if (
+      !category ||
+      category.deletedAt ||
+      category.restaurantId !== restaurantId
+    ) {
+      throw new BadRequestException(
+        'Modifier category must exist in the modifier restaurant',
+      );
+    }
+  }
+
+  private resolveAssignmentRules(
+    dto: AttachModifierGroupDto,
+    group: {
+      minSelect: number;
+      maxSelect: number;
+    },
+  ) {
+    const selectionType =
+      (dto.selectionType as ModifierSelectionType | undefined) ??
+      (group.maxSelect > 1
+        ? ModifierSelectionType.MULTIPLE
+        : ModifierSelectionType.SINGLE);
+    const minSelect = dto.minSelect ?? group.minSelect;
+    const maxSelect = dto.maxSelect ?? group.maxSelect;
+
+    if (selectionType === ModifierSelectionType.SINGLE && maxSelect !== 1) {
+      throw new BadRequestException(
+        'SINGLE modifier groups must have maxSelect 1',
+      );
+    }
+
+    if (maxSelect < minSelect) {
+      throw new BadRequestException('maxSelect cannot be less than minSelect');
+    }
+
+    return { selectionType, minSelect, maxSelect };
   }
 
   private assertValidModifierGroups(

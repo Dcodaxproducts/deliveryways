@@ -22,12 +22,15 @@ import {
 import {
   AttachModifierGroupDto,
   AttachModifierToGroupDto,
+  CreateModifierCategoryDto,
   CreateModifierDto,
   CreateModifierGroupDto,
   DuplicateModifierDto,
+  ListModifierCategoriesDto,
   ListModifierGroupsDto,
   ListModifiersDto,
   SyncModifierGroupCategoriesDto,
+  UpdateModifierCategoryDto,
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
@@ -37,6 +40,56 @@ import { ModifierService } from './modifier.service';
 @Controller('menu')
 export class ModifierController {
   constructor(private readonly modifierService: ModifierService) {}
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('modifier-categories')
+  createCategory(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateModifierCategoryDto,
+  ) {
+    return this.modifierService.createCategory(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('modifier-categories')
+  listCategories(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListModifierCategoriesDto,
+  ) {
+    return this.modifierService.listCategories(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('modifier-categories/:id')
+  updateCategory(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateModifierCategoryDto,
+  ) {
+    return this.modifierService.updateCategory(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Delete('modifier-categories/:id')
+  removeCategory(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.modifierService.removeCategory(user, id);
+  }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
