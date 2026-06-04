@@ -8,47 +8,44 @@ import { NotificationsService } from './notifications.service';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
-  let prisma: {
-    order: { findUnique: jest.Mock };
-    paymentTransaction: { findUnique: jest.Mock };
-  };
   let notificationsRepository: {
     create: jest.Mock;
     updateDelivery: jest.Mock;
     list: jest.Mock;
     findById: jest.Mock;
+    findOrderForNotification: jest.Mock;
+    findPaymentForNotification: jest.Mock;
     buildWhere: jest.Mock;
     countSummary: jest.Mock;
     markSeen: jest.Mock;
     markAllSeen: jest.Mock;
+    listAdminEmailRecipients: jest.Mock;
   };
   let mailerService: {
     sendEmail: jest.Mock;
   };
 
   beforeEach(() => {
-    prisma = {
-      order: { findUnique: jest.fn() },
-      paymentTransaction: { findUnique: jest.fn() },
-    };
     notificationsRepository = {
       create: jest.fn(),
       updateDelivery: jest.fn(),
       list: jest.fn(),
       findById: jest.fn(),
+      findOrderForNotification: jest.fn(),
+      findPaymentForNotification: jest.fn(),
       buildWhere: jest
         .fn()
         .mockImplementation((input: Record<string, unknown>) => ({ ...input })),
       countSummary: jest.fn(),
       markSeen: jest.fn(),
       markAllSeen: jest.fn(),
+      listAdminEmailRecipients: jest.fn(),
     };
     mailerService = {
       sendEmail: jest.fn(),
     };
 
     service = new NotificationsService(
-      prisma as never,
       notificationsRepository as never,
       mailerService as never,
     );
@@ -250,7 +247,7 @@ describe('NotificationsService', () => {
   });
 
   it('creates both customer email and admin in-app notification on order placed', async () => {
-    prisma.order.findUnique.mockResolvedValue({
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
       id: 'order-1',
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
@@ -308,7 +305,7 @@ describe('NotificationsService', () => {
   });
 
   it('marks notification as failed when email sending throws', async () => {
-    prisma.paymentTransaction.findUnique.mockResolvedValue({
+    notificationsRepository.findPaymentForNotification.mockResolvedValue({
       id: 'payment-1',
       orderId: 'order-1',
       tenantId: 'tenant-1',
@@ -375,5 +372,92 @@ describe('NotificationsService', () => {
         errorMessage: 'SMTP unavailable',
       }),
     );
+  });
+
+  it('creates admin in-app and email notifications on table reservation request', async () => {
+    notificationsRepository.listAdminEmailRecipients.mockResolvedValue([
+      {
+        id: 'business-admin-1',
+        email: 'admin@example.com',
+      },
+      {
+        id: 'branch-admin-1',
+        email: 'branch@example.com',
+      },
+      {
+        id: 'duplicate-admin-1',
+        email: 'ADMIN@example.com',
+      },
+    ]);
+    notificationsRepository.create
+      .mockResolvedValueOnce({
+        id: 'admin-in-app-1',
+        recipientEmail: null,
+        subject: 'New reservation request at Main Branch',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'admin-email-1',
+        recipientEmail: 'admin@example.com',
+        subject: 'New reservation request at Main Branch',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'admin-email-2',
+        recipientEmail: 'branch@example.com',
+        subject: 'New reservation request at Main Branch',
+        body: 'body',
+      });
+    notificationsRepository.updateDelivery.mockResolvedValue({
+      status: NotificationStatus.SENT,
+    });
+
+    await service.notifyTableReservationAdmin({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationId: 'reservation-1',
+      branchName: 'Main Branch',
+      customerId: 'customer-1',
+      customerName: 'Bilal Shah',
+      customerEmail: 'customer@example.com',
+      reservationDate: '2099-03-30T19:30:00.000Z',
+      guestCount: 4,
+      status: 'REQUESTED',
+    });
+
+    expect(
+      notificationsRepository.listAdminEmailRecipients,
+    ).toHaveBeenCalledWith({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.IN_APP,
+        type: NotificationType.TABLE_RESERVATION_CREATED,
+      }),
+    );
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'admin@example.com',
+        type: NotificationType.TABLE_RESERVATION_CREATED,
+      }),
+    );
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'branch@example.com',
+        type: NotificationType.TABLE_RESERVATION_CREATED,
+      }),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
   });
 });

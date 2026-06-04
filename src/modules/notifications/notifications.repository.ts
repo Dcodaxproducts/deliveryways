@@ -6,6 +6,7 @@ import {
   NotificationType,
   Prisma,
   PrismaClient,
+  UserRole,
 } from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
@@ -65,6 +66,48 @@ export class NotificationsRepository {
             type: true,
             amount: true,
             currency: true,
+          },
+        },
+      },
+    });
+  }
+
+  async findOrderForNotification(id: string) {
+    return this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        customer: {
+          include: {
+            profile: true,
+          },
+        },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  async findPaymentForNotification(id: string) {
+    return this.prisma.paymentTransaction.findUnique({
+      where: { id },
+      include: {
+        order: {
+          include: {
+            customer: {
+              include: {
+                profile: true,
+              },
+            },
+            branch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -212,6 +255,32 @@ export class NotificationsRepository {
         sentAt: payload.sentAt,
         failedAt: payload.failedAt,
         errorMessage: payload.errorMessage,
+      },
+    });
+  }
+
+  async listAdminEmailRecipients(input: {
+    restaurantId: string;
+    branchId: string;
+  }) {
+    return this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        OR: [
+          {
+            role: UserRole.BUSINESS_ADMIN,
+            restaurantId: input.restaurantId,
+          },
+          {
+            role: UserRole.BRANCH_ADMIN,
+            branchId: input.branchId,
+          },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
       },
     });
   }

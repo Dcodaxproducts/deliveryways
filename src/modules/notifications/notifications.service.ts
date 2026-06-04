@@ -13,7 +13,6 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
-import { PrismaService } from '../../database';
 import { MailerService } from '../mailer/mailer.service';
 import { ListNotificationsDto } from './dto';
 import { NotificationsRepository } from './notifications.repository';
@@ -42,7 +41,6 @@ const ADMIN_NOTIFICATION_TYPES: NotificationType[] = [
 @Injectable()
 export class NotificationsService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly notificationsRepository: NotificationsRepository,
     private readonly mailerService: MailerService,
   ) {}
@@ -169,22 +167,8 @@ export class NotificationsService {
   }
 
   async notifyOrderPlaced(orderId: string): Promise<void> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        customer: {
-          include: {
-            profile: true,
-          },
-        },
-        branch: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    });
+    const order =
+      await this.notificationsRepository.findOrderForNotification(orderId);
 
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -230,22 +214,8 @@ export class NotificationsService {
   }
 
   async notifyOrderStatusChanged(orderId: string): Promise<void> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        customer: {
-          include: {
-            profile: true,
-          },
-        },
-        branch: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    });
+    const order =
+      await this.notificationsRepository.findOrderForNotification(orderId);
 
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -301,26 +271,10 @@ export class NotificationsService {
   async notifyPaymentAttemptCreated(
     paymentTransactionId: string,
   ): Promise<void> {
-    const payment = await this.prisma.paymentTransaction.findUnique({
-      where: { id: paymentTransactionId },
-      include: {
-        order: {
-          include: {
-            customer: {
-              include: {
-                profile: true,
-              },
-            },
-            branch: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const payment =
+      await this.notificationsRepository.findPaymentForNotification(
+        paymentTransactionId,
+      );
 
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
@@ -361,26 +315,10 @@ export class NotificationsService {
   async notifyPaymentStatusChanged(
     paymentTransactionId: string,
   ): Promise<void> {
-    const payment = await this.prisma.paymentTransaction.findUnique({
-      where: { id: paymentTransactionId },
-      include: {
-        order: {
-          include: {
-            customer: {
-              include: {
-                profile: true,
-              },
-            },
-            branch: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const payment =
+      await this.notificationsRepository.findPaymentForNotification(
+        paymentTransactionId,
+      );
 
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
@@ -458,28 +396,56 @@ export class NotificationsService {
     status: 'REQUESTED' | 'CONFIRMED';
   }): Promise<void> {
     const accepted = input.status === 'CONFIRMED';
+    const type = accepted
+      ? NotificationType.TABLE_RESERVATION_ACCEPTED
+      : NotificationType.TABLE_RESERVATION_CREATED;
+    const subject = accepted
+      ? `Reservation auto-accepted at ${input.branchName}`
+      : `New reservation request at ${input.branchName}`;
+    const body = `${input.customerName ?? input.customerEmail ?? 'Customer'} requested a table for ${input.guestCount} guest(s) at ${input.reservationDate}.`;
+    const payload = {
+      reservationId: input.reservationId,
+      branchId: input.branchId,
+      branchName: input.branchName,
+      customerId: input.customerId,
+      customerEmail: input.customerEmail,
+      reservationDate: input.reservationDate,
+      guestCount: input.guestCount,
+      status: input.status,
+    };
+
     await this.createAdminInAppNotification({
       tenantId: input.tenantId,
       restaurantId: input.restaurantId,
       branchId: input.branchId,
-      type: accepted
-        ? NotificationType.TABLE_RESERVATION_ACCEPTED
-        : NotificationType.TABLE_RESERVATION_CREATED,
-      subject: accepted
-        ? `Reservation auto-accepted at ${input.branchName}`
-        : `New reservation request at ${input.branchName}`,
-      body: `${input.customerName ?? input.customerEmail ?? 'Customer'} requested a table for ${input.guestCount} guest(s) at ${input.reservationDate}.`,
-      payload: {
-        reservationId: input.reservationId,
-        branchId: input.branchId,
-        branchName: input.branchName,
-        customerId: input.customerId,
-        customerEmail: input.customerEmail,
-        reservationDate: input.reservationDate,
-        guestCount: input.guestCount,
-        status: input.status,
-      },
+      type,
+      subject,
+      body,
+      payload,
     });
+
+    const recipients =
+      await this.notificationsRepository.listAdminEmailRecipients({
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+      });
+    const uniqueRecipients = this.uniqueEmailRecipients(recipients);
+
+    await Promise.all(
+      uniqueRecipients.map((recipient) =>
+        this.createAndDispatchAdminEmail({
+          tenantId: input.tenantId,
+          restaurantId: input.restaurantId,
+          branchId: input.branchId,
+          recipientUserId: recipient.id,
+          recipientEmail: recipient.email,
+          type,
+          subject,
+          body,
+          payload,
+        }),
+      ),
+    );
   }
 
   private async createAndDispatchCustomerEmail(input: {
@@ -546,6 +512,51 @@ export class NotificationsService {
       subject: input.subject,
       body: input.body,
       payload: input.payload as Prisma.InputJsonValue | undefined,
+    });
+  }
+
+  private async createAndDispatchAdminEmail(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    recipientUserId: string;
+    recipientEmail: string;
+    type: NotificationType;
+    subject: string;
+    body: string;
+    payload?: Record<string, unknown>;
+  }) {
+    const notification = await this.notificationsRepository.create({
+      tenant: { connect: { id: input.tenantId } },
+      restaurant: { connect: { id: input.restaurantId } },
+      branch: { connect: { id: input.branchId } },
+      recipientUser: { connect: { id: input.recipientUserId } },
+      recipientEmail: input.recipientEmail,
+      audience: NotificationAudience.ADMIN,
+      channel: NotificationChannel.EMAIL,
+      type: input.type,
+      subject: input.subject,
+      body: input.body,
+      payload: input.payload as Prisma.InputJsonValue | undefined,
+    });
+
+    return this.dispatchNotification(notification);
+  }
+
+  private uniqueEmailRecipients(
+    recipients: Array<{ id: string; email: string }>,
+  ) {
+    const seen = new Set<string>();
+
+    return recipients.filter((recipient) => {
+      const emailKey = recipient.email.trim().toLowerCase();
+
+      if (!emailKey || seen.has(emailKey)) {
+        return false;
+      }
+
+      seen.add(emailKey);
+      return true;
     });
   }
 
