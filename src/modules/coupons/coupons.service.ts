@@ -8,6 +8,7 @@ import {
   Coupon,
   CouponApplyMode,
   CouponCampaignKind,
+  CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
   Prisma,
@@ -15,7 +16,6 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
-import { PrismaService } from '../../database';
 import {
   CreateCouponDto,
   ListCouponsDto,
@@ -29,6 +29,8 @@ export interface CouponValidationLineInput {
   menuItemId: string;
   categoryId: string;
   categoryIds?: string[];
+  quantity?: number;
+  unitPrice?: number;
   lineTotal: number;
 }
 
@@ -65,10 +67,7 @@ export interface PromotionPreview {
 
 @Injectable()
 export class CouponsService {
-  constructor(
-    private readonly couponsRepository: CouponsRepository,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly couponsRepository: CouponsRepository) {}
 
   async create(user: AuthUserContext, dto: CreateCouponDto) {
     const restaurantId = await this.requireRestaurantId(user, dto.restaurantId);
@@ -518,6 +517,31 @@ export class CouponsService {
       coupon.scopeCategoryId,
       coupon.scopeCategories?.map((entry) => entry.menuCategory.id) ?? [],
     );
+    const dealSelectionMode =
+      coupon.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS;
+
+    if (dealSelectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      const requiredQuantity = coupon.dealRequiredQuantity ?? 0;
+      if (requiredQuantity < 1) {
+        throw new BadRequestException(
+          'Flexible deal requires a valid item quantity',
+        );
+      }
+
+      const eligibleQuantity = this.resolveEligibleDealQuantity(
+        scopedMenuItemIds,
+        scopedCategoryIds,
+        input,
+      );
+
+      if (eligibleQuantity < requiredQuantity) {
+        throw new BadRequestException(
+          `Flexible deal requires at least ${requiredQuantity} eligible item(s)`,
+        );
+      }
+
+      return;
+    }
 
     if (scopedCategoryIds.length || scopedMenuItemIds.length < 2) {
       throw new BadRequestException(
@@ -562,6 +586,19 @@ export class CouponsService {
       return subtotalDecimal;
     }
 
+    if (
+      coupon.discountType === CouponDiscountType.FIXED_PRICE &&
+      (coupon.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS) ===
+        CouponDealSelectionMode.FLEXIBLE_ITEMS
+    ) {
+      return this.resolveFlexibleDealEligibleSubtotal(
+        scopedMenuItemIds,
+        scopedCategoryIds,
+        coupon.dealRequiredQuantity ?? 0,
+        input,
+      );
+    }
+
     if (input.lineItems?.length) {
       return input.lineItems.reduce((sum, line) => {
         const matches =
@@ -593,6 +630,93 @@ export class CouponsService {
     throw new BadRequestException(
       'Coupon is not applicable to selected categories',
     );
+  }
+
+  private resolveFlexibleDealEligibleSubtotal(
+    scopedMenuItemIds: string[],
+    scopedCategoryIds: string[],
+    requiredQuantity: number,
+    input: CouponValidationInput,
+  ) {
+    if (requiredQuantity < 1) {
+      throw new BadRequestException(
+        'Flexible deal requires a valid item count',
+      );
+    }
+
+    if (!input.lineItems?.length) {
+      const eligibleCount = this.resolveEligibleDealQuantity(
+        scopedMenuItemIds,
+        scopedCategoryIds,
+        input,
+      );
+
+      if (eligibleCount >= requiredQuantity) {
+        return new Prisma.Decimal(input.subtotal);
+      }
+
+      throw new BadRequestException(
+        `Flexible deal requires at least ${requiredQuantity} eligible item(s)`,
+      );
+    }
+
+    const unitPrices = input.lineItems.flatMap((line) => {
+      const matches =
+        scopedMenuItemIds.includes(line.menuItemId) ||
+        (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
+          scopedCategoryIds.includes(categoryId),
+        );
+
+      if (!matches) {
+        return [];
+      }
+
+      const quantity = Math.max(1, Math.trunc(line.quantity ?? 1));
+      const unitPrice =
+        line.unitPrice !== undefined
+          ? new Prisma.Decimal(line.unitPrice)
+          : new Prisma.Decimal(line.lineTotal).div(quantity);
+
+      return Array.from({ length: quantity }, () => unitPrice);
+    });
+
+    if (unitPrices.length < requiredQuantity) {
+      throw new BadRequestException(
+        `Flexible deal requires at least ${requiredQuantity} eligible item(s)`,
+      );
+    }
+
+    return unitPrices
+      .sort((left, right) => right.comparedTo(left))
+      .slice(0, requiredQuantity)
+      .reduce((sum, price) => sum.plus(price), new Prisma.Decimal(0));
+  }
+
+  private resolveEligibleDealQuantity(
+    scopedMenuItemIds: string[],
+    scopedCategoryIds: string[],
+    input: CouponValidationInput,
+  ) {
+    if (input.lineItems?.length) {
+      return input.lineItems.reduce((sum, line) => {
+        const matches =
+          scopedMenuItemIds.includes(line.menuItemId) ||
+          (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
+            scopedCategoryIds.includes(categoryId),
+          );
+
+        return matches ? sum + (line.quantity ?? 1) : sum;
+      }, 0);
+    }
+
+    const menuItemMatches = input.menuItemIds.filter((menuItemId) =>
+      scopedMenuItemIds.includes(menuItemId),
+    ).length;
+    const categoryMatches = input.categoryIds.filter((categoryId) =>
+      scopedCategoryIds.includes(categoryId),
+    ).length;
+
+    return menuItemMatches + categoryMatches;
   }
 
   private resolveScopedIds(primary: string | null, extras: string[]) {
@@ -676,11 +800,8 @@ export class CouponsService {
   }
 
   private async resolveSingleTenantRestaurantId(tenantId: string) {
-    const restaurants = await this.prisma.restaurant.findMany({
-      where: { tenantId, deletedAt: null },
-      select: { id: true },
-      take: 2,
-    });
+    const restaurants =
+      await this.couponsRepository.findTenantRestaurants(tenantId);
 
     return restaurants.length === 1 ? restaurants[0].id : undefined;
   }
@@ -689,10 +810,10 @@ export class CouponsService {
     tenantId: string,
     restaurantId: string,
   ) {
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: { id: restaurantId, tenantId, deletedAt: null },
-      select: { id: true },
-    });
+    const restaurant = await this.couponsRepository.findRestaurantInTenant(
+      tenantId,
+      restaurantId,
+    );
 
     if (!restaurant) {
       throw new ForbiddenException(
@@ -715,15 +836,10 @@ export class CouponsService {
     categoryId?: string,
   ): Promise<void> {
     if (menuItemId) {
-      const item = await this.prisma.menuItem.findFirst({
-        where: {
-          id: menuItemId,
-          restaurantId,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-      });
+      const item = await this.couponsRepository.findActiveScopeMenuItem(
+        restaurantId,
+        menuItemId,
+      );
 
       if (!item) {
         throw new BadRequestException(
@@ -733,15 +849,10 @@ export class CouponsService {
     }
 
     if (categoryId) {
-      const category = await this.prisma.menuCategory.findFirst({
-        where: {
-          id: categoryId,
-          restaurantId,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-      });
+      const category = await this.couponsRepository.findActiveScopeCategory(
+        restaurantId,
+        categoryId,
+      );
 
       if (!category) {
         throw new BadRequestException(

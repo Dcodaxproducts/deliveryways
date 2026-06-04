@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   CouponApplyMode,
   CouponCampaignKind,
+  CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
   Prisma,
@@ -34,6 +35,8 @@ describe('AdminPromotionsService', () => {
     activeDays: [1, 2, 3, 4, 5],
     dailyStartTime: '14:00',
     dailyEndTime: '17:00',
+    dealSelectionMode: null,
+    dealRequiredQuantity: null,
     scopeMenuItemId: null,
     scopeCategoryId: null,
     isActive: true,
@@ -233,6 +236,91 @@ describe('AdminPromotionsService', () => {
       }),
     );
     expect(result.message).toBe('Deal created successfully');
+  });
+
+  it('creates a flexible any-N deal from scoped categories', async () => {
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(0),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(2),
+      create: jest.fn().mockResolvedValue(
+        makeCoupon({
+          kind: CouponCampaignKind.PROMOTION,
+          discountType: CouponDiscountType.FIXED_PRICE,
+          discountValue: new Prisma.Decimal(1499),
+          dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+          dealRequiredQuantity: 2,
+          scopeCategories: [
+            { menuCategory: { id: 'cat-1', name: 'Pizza' } },
+            { menuCategory: { id: 'cat-2', name: 'Burgers' } },
+          ],
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    const result = await service.createDeal(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Any 2 Deal',
+        discountValue: 1499,
+        startsAt: '2026-04-22T00:00:00.000Z',
+        expiresAt: '2026-05-22T00:00:00.000Z',
+        scopeCategoryIds: ['cat-1', 'cat-2'],
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 2,
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 2,
+        scopeCategories: {
+          create: [
+            { menuCategory: { connect: { id: 'cat-1' } } },
+            { menuCategory: { connect: { id: 'cat-2' } } },
+          ],
+        },
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 2,
+      }),
+    );
+  });
+
+  it('rejects flexible deals without required quantity', async () => {
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(2),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await expect(
+      service.createDeal(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {
+          title: 'Any 2 Deal',
+          discountValue: 999,
+          startsAt: '2026-04-22T00:00:00.000Z',
+          expiresAt: '2026-05-22T00:00:00.000Z',
+          scopeMenuItemIds: ['item-1', 'item-2'],
+          dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        },
+      ),
+    ).rejects.toThrow('Flexible deals require dealRequiredQuantity');
   });
 
   it('rejects fixed price promotion with fewer than two scoped menu items', async () => {

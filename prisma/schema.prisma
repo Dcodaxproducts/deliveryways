@@ -69,6 +69,11 @@ enum CouponCampaignKind {
   GIFT_CARD
 }
 
+enum CouponDealSelectionMode {
+  FIXED_ITEMS
+  FLEXIBLE_ITEMS
+}
+
 enum ServiceChargeType {
   PERCENTAGE
   AMOUNT
@@ -1003,6 +1008,8 @@ model Coupon {
   dailyEndTime       String?            @map("daily_end_time")
   scopeMenuItemId    String?            @map("scope_menu_item_id")
   scopeCategoryId    String?            @map("scope_category_id")
+  dealSelectionMode  CouponDealSelectionMode? @map("deal_selection_mode")
+  dealRequiredQuantity Int?             @map("deal_required_quantity")
   isActive           Boolean            @default(true) @map("is_active")
   deletedAt          DateTime?          @map("deleted_at") @db.Timestamptz
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz

@@ -108,6 +108,45 @@ export class CouponsRepository {
     });
   }
 
+  findTenantRestaurants(tenantId: string) {
+    return this.prisma.restaurant.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true },
+      take: 2,
+    });
+  }
+
+  findRestaurantInTenant(tenantId: string, restaurantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+  }
+
+  findActiveScopeMenuItem(restaurantId: string, menuItemId: string) {
+    return this.prisma.menuItem.findFirst({
+      where: {
+        id: menuItemId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+  }
+
+  findActiveScopeCategory(restaurantId: string, categoryId: string) {
+    return this.prisma.menuCategory.findFirst({
+      where: {
+        id: categoryId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+  }
+
   private readonly includeConfig = {
     branch: {
       select: { id: true, name: true, logoUrl: true, coverImage: true },

@@ -7,6 +7,7 @@ import {
 import {
   CouponApplyMode,
   CouponCampaignKind,
+  CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
   Prisma,
@@ -120,6 +121,15 @@ export class AdminPromotionsService {
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
     const scopeIds = this.normalizeScopeIds(dto);
+    const dealSelectionMode = this.resolveDealSelectionMode(
+      dto,
+      undefined,
+      dto.discountType as CouponDiscountType,
+    );
+    const dealRequiredQuantity = this.resolveDealRequiredQuantity(
+      dealSelectionMode,
+      dto,
+    );
 
     await this.validateScopeReferences(
       scope.restaurantId,
@@ -130,6 +140,8 @@ export class AdminPromotionsService {
       dto.discountType as CouponDiscountType,
       (dto.applyMode ?? 'SCOPED_ITEMS') as CouponApplyMode,
       scopeIds,
+      dealSelectionMode,
+      dealRequiredQuantity ?? undefined,
     );
 
     const data = await this.adminPromotionsRepository.create({
@@ -157,6 +169,8 @@ export class AdminPromotionsService {
           : undefined,
       maxUses: dto.maxUses,
       maxUsesPerCustomer: dto.maxUsesPerCustomer,
+      dealSelectionMode,
+      dealRequiredQuantity,
       startsAt: new Date(dto.startsAt),
       expiresAt: new Date(dto.expiresAt),
       scopeMenuItem:
@@ -349,6 +363,17 @@ export class AdminPromotionsService {
       requestedBranchId,
     );
     this.ensureCouponInScope(scope, existing);
+    const discountType = dto.discountType ?? existing.discountType;
+    const dealSelectionMode = this.resolveDealSelectionMode(
+      dto,
+      existing,
+      discountType,
+    );
+    const dealRequiredQuantity = this.resolveDealRequiredQuantity(
+      dealSelectionMode,
+      dto,
+      existing,
+    );
 
     this.assertValidDateRange(
       dto.startsAt ?? existing.startsAt.toISOString(),
@@ -361,9 +386,11 @@ export class AdminPromotionsService {
       scopeIds.categoryIds,
     );
     this.assertValidPromotionPricing(
-      dto.discountType ?? existing.discountType,
+      discountType,
       dto.applyMode ?? existing.applyMode,
       scopeIds,
+      dealSelectionMode,
+      dealRequiredQuantity ?? undefined,
     );
 
     const data = await this.adminPromotionsRepository.update(id, {
@@ -401,6 +428,14 @@ export class AdminPromotionsService {
       ...(dto.maxUses !== undefined ? { maxUses: dto.maxUses } : {}),
       ...(dto.maxUsesPerCustomer !== undefined
         ? { maxUsesPerCustomer: dto.maxUsesPerCustomer }
+        : {}),
+      ...(dto.dealSelectionMode !== undefined ||
+      dto.dealRequiredQuantity !== undefined ||
+      dto.discountType !== undefined
+        ? {
+            dealSelectionMode,
+            dealRequiredQuantity,
+          }
         : {}),
       ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
       ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
@@ -1010,10 +1045,49 @@ export class AdminPromotionsService {
     }
   }
 
+  private resolveDealSelectionMode(
+    dto: {
+      dealSelectionMode?: CouponDealSelectionMode;
+      dealRequiredQuantity?: number;
+    },
+    existing?: {
+      dealSelectionMode?: CouponDealSelectionMode | null;
+    },
+    discountType?: CouponDiscountType,
+  ) {
+    if (discountType !== CouponDiscountType.FIXED_PRICE) {
+      return undefined;
+    }
+
+    if (dto.dealSelectionMode) {
+      return dto.dealSelectionMode;
+    }
+
+    if (dto.dealRequiredQuantity !== undefined) {
+      return CouponDealSelectionMode.FLEXIBLE_ITEMS;
+    }
+
+    return existing?.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS;
+  }
+
+  private resolveDealRequiredQuantity(
+    dealSelectionMode: CouponDealSelectionMode | undefined,
+    dto: { dealRequiredQuantity?: number },
+    existing?: { dealRequiredQuantity?: number | null },
+  ) {
+    if (dealSelectionMode !== CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      return null;
+    }
+
+    return dto.dealRequiredQuantity ?? existing?.dealRequiredQuantity ?? null;
+  }
+
   private assertValidPromotionPricing(
     discountType: CouponDiscountType,
     applyMode: CouponApplyMode,
     scopeIds: { menuItemIds: string[]; categoryIds: string[] },
+    dealSelectionMode?: CouponDealSelectionMode | null,
+    dealRequiredQuantity?: number,
   ) {
     if (discountType !== CouponDiscountType.FIXED_PRICE) {
       return;
@@ -1025,9 +1099,37 @@ export class AdminPromotionsService {
       );
     }
 
+    const selectionMode =
+      dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS;
+
+    if (selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      if (!dealRequiredQuantity || dealRequiredQuantity < 1) {
+        throw new BadRequestException(
+          'Flexible deals require dealRequiredQuantity',
+        );
+      }
+
+      if (!scopeIds.menuItemIds.length && !scopeIds.categoryIds.length) {
+        throw new BadRequestException(
+          'Flexible deals require menu item or category scope',
+        );
+      }
+
+      if (
+        scopeIds.menuItemIds.length &&
+        dealRequiredQuantity > scopeIds.menuItemIds.length
+      ) {
+        throw new BadRequestException(
+          'dealRequiredQuantity cannot exceed scoped menu item count',
+        );
+      }
+
+      return;
+    }
+
     if (scopeIds.categoryIds.length) {
       throw new BadRequestException(
-        'Fixed price promotions cannot use category scope',
+        'Fixed item deals cannot use category scope',
       );
     }
 
@@ -1078,6 +1180,8 @@ export class AdminPromotionsService {
     activeDays: Prisma.JsonValue | null;
     dailyStartTime: string | null;
     dailyEndTime: string | null;
+    dealSelectionMode?: CouponDealSelectionMode | null;
+    dealRequiredQuantity?: number | null;
     isActive: boolean;
     branch?: { id: string; name: string } | null;
     restaurant?: { id: string; name: string } | null;
@@ -1119,6 +1223,8 @@ export class AdminPromotionsService {
       activeDays: coupon.activeDays,
       dailyStartTime: coupon.dailyStartTime,
       dailyEndTime: coupon.dailyEndTime,
+      dealSelectionMode: coupon.dealSelectionMode ?? null,
+      dealRequiredQuantity: coupon.dealRequiredQuantity ?? null,
       isActive: coupon.isActive,
       branch: coupon.branch ?? null,
       restaurant: coupon.restaurant ?? null,

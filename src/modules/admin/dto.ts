@@ -11,13 +11,17 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  ArrayMinSize,
   MaxLength,
   Max,
   Min,
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
-import { CouponCampaignKind, OrderStatus, PaymentStatus } from '@prisma/client';
+import {
+  CouponCampaignKind,
+  CouponDealSelectionMode,
+  OrderStatus,
+  PaymentStatus,
+} from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
 
 export class AdminListCustomersDto extends AdminListQueryDto {
@@ -561,6 +565,25 @@ export class AdminPromotionBaseDto {
   scopeCategoryIds?: string[];
 
   @ApiPropertyOptional({
+    enum: CouponDealSelectionMode,
+    description:
+      'FIXED_ITEMS requires every scoped item; FLEXIBLE_ITEMS applies to any required quantity from scoped items/categories.',
+  })
+  @IsOptional()
+  @IsEnum(CouponDealSelectionMode)
+  dealSelectionMode?: CouponDealSelectionMode;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    description:
+      'Required item count for FLEXIBLE_ITEMS deals, for example 2 for any-2.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  dealRequiredQuantity?: number;
+
+  @ApiPropertyOptional({
     enum: ['ORDER_TOTAL', 'SCOPED_ITEMS'],
     default: 'SCOPED_ITEMS',
   })
@@ -618,19 +641,19 @@ export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
   'minOrderAmount',
   'scopeMenuItemId',
   'scopeCategoryId',
-  'scopeCategoryIds',
   'applyMode',
   'autoApply',
 ] as const) {
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [String],
     minItems: 2,
-    description: 'Selected menu item IDs included in this fixed-price deal.',
+    description:
+      'Selected menu item IDs included in this deal. Required for fixed item deals unless category scope is used for a flexible deal.',
   })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(2)
   @IsString({ each: true })
-  scopeMenuItemIds!: string[];
+  scopeMenuItemIds?: string[];
 }
 
 export class UpdateAdminPromotionDto {
@@ -740,6 +763,25 @@ export class UpdateAdminPromotionDto {
   @IsString({ each: true })
   scopeCategoryIds?: string[];
 
+  @ApiPropertyOptional({
+    enum: CouponDealSelectionMode,
+    description:
+      'FIXED_ITEMS requires every scoped item; FLEXIBLE_ITEMS applies to any required quantity from scoped items/categories.',
+  })
+  @IsOptional()
+  @IsEnum(CouponDealSelectionMode)
+  dealSelectionMode?: CouponDealSelectionMode;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    description:
+      'Required item count for FLEXIBLE_ITEMS deals, for example 2 for any-2.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  dealRequiredQuantity?: number;
+
   @ApiPropertyOptional({ enum: ['ORDER_TOTAL', 'SCOPED_ITEMS'] })
   @IsOptional()
   @IsIn(['ORDER_TOTAL', 'SCOPED_ITEMS'])
@@ -790,18 +832,16 @@ export class UpdateAdminDealDto extends OmitType(UpdateAdminPromotionDto, [
   'minOrderAmount',
   'scopeMenuItemId',
   'scopeCategoryId',
-  'scopeCategoryIds',
   'applyMode',
   'autoApply',
 ] as const) {
   @ApiPropertyOptional({
     type: [String],
     minItems: 2,
-    description: 'Selected menu item IDs included in this fixed-price deal.',
+    description: 'Selected menu item IDs included in this deal.',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(2)
   @IsString({ each: true })
   scopeMenuItemIds?: string[];
 }

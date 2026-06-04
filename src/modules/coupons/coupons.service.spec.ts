@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   CouponApplyMode,
+  CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
   Prisma,
@@ -11,12 +12,6 @@ import { CouponsRepository } from './coupons.repository';
 describe('CouponsService', () => {
   let service: CouponsService;
   let repository: Partial<Record<keyof CouponsRepository, jest.Mock>>;
-  let prisma: {
-    restaurant: {
-      findFirst: jest.Mock;
-      findMany: jest.Mock;
-    };
-  };
 
   const makeCoupon = (overrides: Record<string, unknown> = {}) => ({
     id: 'cpn-1',
@@ -41,6 +36,8 @@ describe('CouponsService', () => {
     activeDays: null,
     dailyStartTime: null,
     dailyEndTime: null,
+    dealSelectionMode: null,
+    dealRequiredQuantity: null,
     scopeMenuItemId: null,
     scopeCategoryId: null,
     isActive: true,
@@ -65,22 +62,17 @@ describe('CouponsService', () => {
       create: jest.fn(),
       findByCode: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
-    };
-    prisma = {
-      restaurant: {
-        findFirst: jest.fn(),
-        findMany: jest.fn(),
-      },
+      findTenantRestaurants: jest.fn(),
+      findRestaurantInTenant: jest.fn(),
+      findActiveScopeMenuItem: jest.fn(),
+      findActiveScopeCategory: jest.fn(),
     };
 
-    service = new CouponsService(
-      repository as unknown as CouponsRepository,
-      prisma as never,
-    );
+    service = new CouponsService(repository as unknown as CouponsRepository);
   });
 
   it('creates coupon for the only tenant restaurant when business admin has no restaurant context', async () => {
-    prisma.restaurant.findMany.mockResolvedValue([{ id: 'rid-1' }]);
+    repository.findTenantRestaurants!.mockResolvedValue([{ id: 'rid-1' }]);
     repository.create!.mockResolvedValue({ id: 'coupon-1' });
 
     await service.create(
@@ -109,7 +101,7 @@ describe('CouponsService', () => {
   });
 
   it('still requires restaurantId when business admin tenant has multiple restaurants and no restaurant context', async () => {
-    prisma.restaurant.findMany.mockResolvedValue([
+    repository.findTenantRestaurants!.mockResolvedValue([
       { id: 'rid-1' },
       { id: 'rid-2' },
     ]);
@@ -236,6 +228,84 @@ describe('CouponsService', () => {
     await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
       'Fixed price promotion requires all scoped menu items',
     );
+  });
+
+  it('prices the highest eligible items for flexible any-N fixed deals', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(899),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 2,
+        scopeCategories: [{ menuCategory: { id: 'cat-1' } }],
+      }),
+    );
+
+    const result = await service.validateForCheckout({
+      ...baseInput,
+      lineItems: [
+        {
+          menuItemId: 'mi-1',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 1,
+          unitPrice: 700,
+          lineTotal: 700,
+        },
+        {
+          menuItemId: 'mi-2',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 1,
+          unitPrice: 500,
+          lineTotal: 500,
+        },
+        {
+          menuItemId: 'mi-3',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 1,
+          unitPrice: 300,
+          lineTotal: 300,
+        },
+      ],
+    });
+
+    expect(Number(result.eligibleSubtotal)).toBe(1200);
+    expect(Number(result.discountAmount)).toBe(301);
+  });
+
+  it('rejects flexible fixed deals without enough eligible items', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(899),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 3,
+        scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
+      }),
+    );
+
+    await expect(
+      service.validateForCheckout({
+        ...baseInput,
+        lineItems: [
+          {
+            menuItemId: 'mi-1',
+            categoryId: 'cat-1',
+            quantity: 2,
+            unitPrice: 500,
+            lineTotal: 1000,
+          },
+        ],
+      }),
+    ).rejects.toThrow('Flexible deal requires at least 3 eligible item(s)');
   });
 
   it('throws when coupon not found', async () => {
