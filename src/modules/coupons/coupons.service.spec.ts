@@ -62,6 +62,7 @@ describe('CouponsService', () => {
       create: jest.fn(),
       findByCode: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
+      findAutoApplyPromotions: jest.fn(),
       findTenantRestaurants: jest.fn(),
       findRestaurantInTenant: jest.fn(),
       findActiveScopeMenuItem: jest.fn(),
@@ -228,6 +229,53 @@ describe('CouponsService', () => {
     await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
       'Fixed price promotion requires all scoped menu items',
     );
+  });
+
+  it('does not infer multi-item fixed deals as ready-made cart items', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([
+      makeCoupon({
+        id: 'deal-1',
+        autoApply: true,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(799),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [
+          { menuItem: { id: 'mi-1' } },
+          { menuItem: { id: 'mi-2' } },
+        ],
+      }),
+    ]);
+
+    await expect(
+      service.isActiveFixedPriceDealItem('rid-1', 'bid-1', 'deal-1', 'mi-1'),
+    ).resolves.toBe(false);
+    await expect(
+      service.findActiveFixedPriceDealIdForItem('rid-1', 'bid-1', 'mi-1'),
+    ).resolves.toBeNull();
+  });
+
+  it('infers only single-item ready-made fixed deals', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([
+      makeCoupon({
+        id: 'deal-1',
+        autoApply: true,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(499),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
+      }),
+    ]);
+
+    await expect(
+      service.isActiveFixedPriceDealItem('rid-1', 'bid-1', 'deal-1', 'mi-1'),
+    ).resolves.toBe(true);
+    await expect(
+      service.findActiveFixedPriceDealIdForItem('rid-1', 'bid-1', 'mi-1'),
+    ).resolves.toBe('deal-1');
   });
 
   it('prices the highest eligible items for flexible any-N fixed deals', async () => {

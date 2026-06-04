@@ -269,23 +269,12 @@ export class CouponsService {
     );
     const deal = promotions.find(
       (promotion) =>
+        this.isReadyMadeFixedPriceDeal(promotion) &&
         promotion.id === dealId &&
-        promotion.discountType === CouponDiscountType.FIXED_PRICE &&
-        promotion.applyMode === CouponApplyMode.SCOPED_ITEMS,
+        this.resolveReadyMadeDealMenuItemId(promotion) === menuItemId,
     );
 
-    if (!deal) {
-      return false;
-    }
-
-    const scopeMenuItemIds = [
-      ...new Set([
-        ...(deal.scopeMenuItem?.id ? [deal.scopeMenuItem.id] : []),
-        ...(deal.scopeMenuItems ?? []).map((entry) => entry.menuItem.id),
-      ]),
-    ];
-
-    return scopeMenuItemIds.includes(menuItemId);
+    return !!deal;
   }
 
   async findActiveFixedPriceDealIdForItem(
@@ -298,24 +287,55 @@ export class CouponsService {
       branchId,
     );
     const deal = promotions.find((promotion) => {
-      if (
-        promotion.discountType !== CouponDiscountType.FIXED_PRICE ||
-        promotion.applyMode !== CouponApplyMode.SCOPED_ITEMS
-      ) {
+      if (!this.isReadyMadeFixedPriceDeal(promotion)) {
         return false;
       }
 
-      const scopeMenuItemIds = [
-        ...new Set([
-          ...(promotion.scopeMenuItem?.id ? [promotion.scopeMenuItem.id] : []),
-          ...(promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem.id),
-        ]),
-      ];
-
-      return scopeMenuItemIds.includes(menuItemId);
+      return this.resolveReadyMadeDealMenuItemId(promotion) === menuItemId;
     });
 
     return deal?.id ?? null;
+  }
+
+  private isReadyMadeFixedPriceDeal(
+    coupon: Coupon & {
+      scopeMenuItem?: { id: string } | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategory?: { id: string } | null;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+  ) {
+    if (
+      coupon.discountType !== CouponDiscountType.FIXED_PRICE ||
+      coupon.applyMode !== CouponApplyMode.SCOPED_ITEMS ||
+      (coupon.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS) !==
+        CouponDealSelectionMode.FIXED_ITEMS
+    ) {
+      return false;
+    }
+
+    const scopedMenuItemIds = this.resolveScopedIds(
+      coupon.scopeMenuItem?.id ?? coupon.scopeMenuItemId,
+      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
+    );
+    const scopedCategoryIds = this.resolveScopedIds(
+      coupon.scopeCategory?.id ?? coupon.scopeCategoryId,
+      coupon.scopeCategories?.map((entry) => entry.menuCategory.id) ?? [],
+    );
+
+    return scopedMenuItemIds.length === 1 && scopedCategoryIds.length === 0;
+  }
+
+  private resolveReadyMadeDealMenuItemId(
+    coupon: Coupon & {
+      scopeMenuItem?: { id: string } | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+    },
+  ) {
+    return this.resolveScopedIds(
+      coupon.scopeMenuItem?.id ?? coupon.scopeMenuItemId,
+      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
+    )[0];
   }
 
   async findBestAutoApplyPromotion(
