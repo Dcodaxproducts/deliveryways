@@ -52,6 +52,16 @@ describe('StorageService', () => {
     expect(getSignedUrl).toHaveBeenCalled();
   });
 
+  it('creates signed view URL from stored S3 object key', async () => {
+    const result = await service.resolveViewUrl(
+      'uploads/tenant-1/restaurant-1/user-1/2026-03-16/burger.png',
+      180,
+    );
+
+    expect(result).toBe('https://signed-url.example');
+    expect(getSignedUrl).toHaveBeenCalled();
+  });
+
   it('creates upload URL with only file name and content type', async () => {
     const result = await service.createPresignedUploadUrl(
       {
@@ -177,6 +187,10 @@ describe('StorageService', () => {
         logoUrl:
           'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/logo.png',
       },
+      deal: {
+        thumbnailUrl:
+          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/deals/combo.png',
+      },
       items: [
         {
           imageUrl:
@@ -191,8 +205,9 @@ describe('StorageService', () => {
 
     expect(result.profile.avatarUrl).toBe('https://signed-url.example');
     expect(result.restaurant.logoUrl).toBe('https://signed-url.example');
+    expect(result.deal.thumbnailUrl).toBe('https://signed-url.example');
     expect(result.items[0].imageUrl).toBe('https://signed-url.example');
     expect(result.items[1].imageUrl).toBe('https://signed-url.example');
-    expect(resolveViewUrlSpy).toHaveBeenCalledTimes(3);
+    expect(resolveViewUrlSpy).toHaveBeenCalledTimes(4);
   });
 });

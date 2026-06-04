@@ -2166,12 +2166,14 @@ export class CustomerAppService {
     promotion: AutoApplyPromotion,
     scopedMenuItemsById?: Map<string, PublicDealScopeMenuItem>,
   ) {
+    const imageUrl = await this.resolveMediaUrl(promotion.imageUrl);
+
     return {
       id: promotion.id,
       title: promotion.title,
       description: promotion.description,
-      imageUrl: await this.resolveMediaUrl(promotion.imageUrl),
-      thumbnailUrl: await this.resolveMediaUrl(promotion.imageUrl),
+      imageUrl,
+      thumbnailUrl: imageUrl,
       applyMode: promotion.applyMode,
       discountType: promotion.discountType,
       discountValue: Number(promotion.discountValue),

@@ -176,6 +176,7 @@ describe('CustomerAppService', () => {
       loyaltyWalletService,
       paymentsService,
       couponsService,
+      storageService,
     };
   };
 
@@ -601,7 +602,12 @@ describe('CustomerAppService', () => {
   });
 
   it('lists only fixed price promotions as public deals', async () => {
-    const { service, repository, couponsService } = makeService();
+    const { service, repository, couponsService, storageService } =
+      makeService();
+    storageService.resolveViewUrl.mockImplementation(
+      (value: string | null | undefined) =>
+        value ? `https://signed.example/${value}` : null,
+    );
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -686,8 +692,8 @@ describe('CustomerAppService', () => {
       expect.objectContaining({
         id: 'deal-1',
         title: 'Burger Combo',
-        imageUrl: 'deal-thumb.jpg',
-        thumbnailUrl: 'deal-thumb.jpg',
+        imageUrl: 'https://signed.example/deal-thumb.jpg',
+        thumbnailUrl: 'https://signed.example/deal-thumb.jpg',
         discountType: 'FIXED_PRICE',
         discountValue: 999,
         dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
@@ -695,11 +701,15 @@ describe('CustomerAppService', () => {
           expect.objectContaining({
             id: 'item-1',
             name: 'Zinger Burger',
+            imageUrl:
+              'https://signed.example/https://cdn.example.com/zinger.png',
             basePrice: 799,
           }),
           expect.objectContaining({
             id: 'item-2',
             name: 'Cold Drink',
+            imageUrl:
+              'https://signed.example/https://cdn.example.com/zinger.png',
           }),
         ],
       }),

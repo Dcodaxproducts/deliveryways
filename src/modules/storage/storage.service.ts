@@ -330,6 +330,7 @@ export class StorageService {
     return (
       key === 'avatarUrl' ||
       key === 'imageUrl' ||
+      key === 'thumbnailUrl' ||
       key === 'allergenPdfUrl' ||
       key === 'logoUrl' ||
       key === 'coverImage'
@@ -369,7 +370,7 @@ export class StorageService {
     try {
       parsedUrl = new URL(fileUrl);
     } catch {
-      throw new BadRequestException('fileUrl must be a valid URL');
+      return this.normalizeObjectKey(fileUrl);
     }
 
     const pathname = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ''));
