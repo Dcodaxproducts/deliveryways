@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CouponDealSelectionMode, Prisma } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { CustomerAppService } from './customer-app.service';
 
@@ -643,6 +643,7 @@ describe('CustomerAppService', () => {
         imageUrl: 'deal-thumb.jpg',
         discountType: 'FIXED_PRICE',
         discountValue: new Prisma.Decimal(999),
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
         scopeMenuItems: [
           {
             menuItem: {
@@ -689,6 +690,7 @@ describe('CustomerAppService', () => {
         thumbnailUrl: 'deal-thumb.jpg',
         discountType: 'FIXED_PRICE',
         discountValue: 999,
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
         scopeMenuItems: [
           expect.objectContaining({
             id: 'item-1',

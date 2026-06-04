@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CouponDealSelectionMode, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -2175,6 +2175,8 @@ export class CustomerAppService {
       applyMode: promotion.applyMode,
       discountType: promotion.discountType,
       discountValue: Number(promotion.discountValue),
+      dealSelectionMode:
+        promotion.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS,
       maxDiscountAmount: promotion.maxDiscountAmount
         ? Number(promotion.maxDiscountAmount)
         : null,
