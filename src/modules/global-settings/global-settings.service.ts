@@ -1,13 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   CurrencyDisplayFormat,
+  PaymentMethod,
   PlatformDateFormat,
   Prisma,
   VatHandlingRule,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { GlobalSettingsRepository } from './global-settings.repository';
-import { UpdateGlobalSettingsDto } from './dto';
+import {
+  PaymentMethodSettingDto,
+  UpdateGlobalPaymentMethodsDto,
+  UpdateGlobalSettingsDto,
+} from './dto';
 
 export interface NotificationChannelMatrix {
   email: boolean;
@@ -29,6 +34,12 @@ export interface NotificationSettingsShape {
   >;
 }
 
+export interface PaymentMethodSettingsShape {
+  code: PaymentMethod;
+  label: string;
+  isActive: boolean;
+}
+
 interface NormalizedGlobalSettingsInput {
   globalTaxPercentage?: Prisma.Decimal;
   vatHandlingRule?: VatHandlingRule;
@@ -43,6 +54,7 @@ interface NormalizedGlobalSettingsInput {
   secondaryColor?: string | null;
   fontFamily?: string | null;
   notificationSettings?: Prisma.InputJsonValue;
+  paymentMethods?: Prisma.InputJsonValue;
   isTaxEnforced?: boolean;
   isCommissionEnforced?: boolean;
   isCurrencyEnforced?: boolean;
@@ -73,6 +85,7 @@ export class GlobalSettingsService {
     const normalized = this.normalizeUpdateDto(
       dto,
       current.notificationSettings,
+      current.paymentMethods,
     );
 
     const data = await this.globalSettingsRepository.updateSingleton(
@@ -83,6 +96,48 @@ export class GlobalSettingsService {
     return {
       data: this.serializeSettings(data),
       message: 'Global settings updated successfully',
+    };
+  }
+
+  async getPaymentMethods() {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return {
+      data: this.extractPaymentMethods(data.paymentMethods),
+      message: 'Payment methods fetched successfully',
+    };
+  }
+
+  async updatePaymentMethods(
+    user: AuthUserContext,
+    dto: UpdateGlobalPaymentMethodsDto,
+  ) {
+    const current = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+    const paymentMethods = this.mergePaymentMethods(
+      current.paymentMethods,
+      dto.paymentMethods,
+    );
+
+    const data = await this.globalSettingsRepository.updateSingleton(
+      {
+        paymentMethods,
+        updatedBy: user.uid,
+      },
+      {
+        ...this.buildDefaultCreateInput(),
+        paymentMethods,
+        createdBy: user.uid,
+        updatedBy: user.uid,
+      },
+    );
+
+    return {
+      data: this.extractPaymentMethods(data.paymentMethods),
+      message: 'Payment methods updated successfully',
     };
   }
 
@@ -102,6 +157,7 @@ export class GlobalSettingsService {
       secondaryColor: null,
       fontFamily: null,
       notificationSettings: this.buildDefaultNotificationSettings(),
+      paymentMethods: this.buildDefaultPaymentMethods(),
       isTaxEnforced: false,
       isCommissionEnforced: false,
       isCurrencyEnforced: false,
@@ -114,6 +170,7 @@ export class GlobalSettingsService {
   private normalizeUpdateDto(
     dto: UpdateGlobalSettingsDto,
     currentNotificationSettings?: Prisma.JsonValue | null,
+    currentPaymentMethods?: Prisma.JsonValue | null,
   ): NormalizedGlobalSettingsInput {
     if (dto.timezone !== undefined) {
       this.assertValidTimeZone(dto.timezone);
@@ -165,6 +222,10 @@ export class GlobalSettingsService {
               dto.notificationSettings,
             )
           : undefined,
+      paymentMethods:
+        dto.paymentMethods !== undefined
+          ? this.mergePaymentMethods(currentPaymentMethods, dto.paymentMethods)
+          : undefined,
       isTaxEnforced: dto.isTaxEnforced,
       isCommissionEnforced: dto.isCommissionEnforced,
       isCurrencyEnforced: dto.isCurrencyEnforced,
@@ -195,13 +256,17 @@ export class GlobalSettingsService {
   }
 
   private serializeSettings<
-    T extends { notificationSettings?: Prisma.JsonValue | null },
+    T extends {
+      notificationSettings?: Prisma.JsonValue | null;
+      paymentMethods?: Prisma.JsonValue | null;
+    },
   >(settings: T) {
     return {
       ...settings,
       notificationSettings: this.extractNotificationSettings(
         settings.notificationSettings,
       ),
+      paymentMethods: this.extractPaymentMethods(settings.paymentMethods),
     };
   }
 
@@ -212,6 +277,120 @@ export class GlobalSettingsService {
       whatsappNumber: null,
       notificationTypes: this.defaultNotificationTypeMatrix(),
     } as unknown as Prisma.InputJsonValue;
+  }
+
+  private buildDefaultPaymentMethods(): Prisma.InputJsonValue {
+    return this.defaultPaymentMethods() as unknown as Prisma.InputJsonValue;
+  }
+
+  private defaultPaymentMethods(): PaymentMethodSettingsShape[] {
+    return Object.values(PaymentMethod).map((code) => ({
+      code,
+      label: this.paymentMethodLabel(code),
+      isActive: code === PaymentMethod.COD || code === PaymentMethod.WALLET,
+    }));
+  }
+
+  private mergePaymentMethods(
+    currentSource: Prisma.JsonValue | null | undefined,
+    updates: PaymentMethodSettingDto[],
+  ): Prisma.InputJsonValue {
+    const merged = new Map(
+      this.extractPaymentMethods(currentSource).map((method) => [
+        method.code,
+        method,
+      ]),
+    );
+    const seen = new Set<PaymentMethod>();
+
+    for (const update of updates) {
+      if (seen.has(update.code)) {
+        throw new BadRequestException('Duplicate payment method code');
+      }
+
+      seen.add(update.code);
+
+      const current = merged.get(update.code) ?? {
+        code: update.code,
+        label: this.paymentMethodLabel(update.code),
+        isActive: false,
+      };
+
+      merged.set(update.code, {
+        code: update.code,
+        label:
+          update.label !== undefined
+            ? (this.resolveOptionalString(update.label) ??
+              this.paymentMethodLabel(update.code))
+            : current.label,
+        isActive:
+          update.isActive !== undefined ? update.isActive : current.isActive,
+      });
+    }
+
+    return Array.from(merged.values()) as unknown as Prisma.InputJsonValue;
+  }
+
+  private extractPaymentMethods(
+    source: Prisma.JsonValue | null | undefined,
+  ): PaymentMethodSettingsShape[] {
+    const overrides = new Map<
+      PaymentMethod,
+      Partial<PaymentMethodSettingsShape>
+    >();
+
+    if (Array.isArray(source)) {
+      for (const row of source) {
+        const objectRow = this.asObject(row);
+        const code = objectRow.code;
+
+        if (!this.isPaymentMethod(code)) {
+          continue;
+        }
+
+        overrides.set(code, {
+          label:
+            typeof objectRow.label === 'string' &&
+            objectRow.label.trim().length > 0
+              ? objectRow.label.trim()
+              : undefined,
+          isActive:
+            typeof objectRow.isActive === 'boolean'
+              ? objectRow.isActive
+              : undefined,
+        });
+      }
+    }
+
+    return this.defaultPaymentMethods().map((method) => {
+      const override = overrides.get(method.code);
+
+      return {
+        ...method,
+        ...override,
+      };
+    });
+  }
+
+  private isPaymentMethod(value: unknown): value is PaymentMethod {
+    return Object.values(PaymentMethod).includes(value as PaymentMethod);
+  }
+
+  private paymentMethodLabel(code: PaymentMethod) {
+    switch (code) {
+      case PaymentMethod.COD:
+        return 'Cash on delivery';
+      case PaymentMethod.STRIPE:
+        return 'Stripe';
+      case PaymentMethod.EASYPAISA:
+        return 'Easypaisa';
+      case PaymentMethod.JAZZCASH:
+        return 'JazzCash';
+      case PaymentMethod.BANK_TRANSFER:
+        return 'Bank transfer';
+      case PaymentMethod.WALLET:
+        return 'Wallet';
+    }
   }
 
   private defaultNotificationTypeMatrix(): Record<

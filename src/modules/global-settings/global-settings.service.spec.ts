@@ -1,8 +1,11 @@
 import { Test } from '@nestjs/testing';
-import { Prisma } from '@prisma/client';
+import { PaymentMethod, Prisma } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { GlobalSettingsRepository } from './global-settings.repository';
-import { GlobalSettingsService } from './global-settings.service';
+import {
+  GlobalSettingsService,
+  PaymentMethodSettingsShape,
+} from './global-settings.service';
 
 describe('GlobalSettingsService', () => {
   let service: GlobalSettingsService;
@@ -65,6 +68,38 @@ describe('GlobalSettingsService', () => {
       data: {
         scopeKey: 'GLOBAL',
         defaultCurrency: 'PKR',
+        paymentMethods: [
+          {
+            code: PaymentMethod.COD,
+            label: 'Cash on delivery',
+            isActive: true,
+          },
+          {
+            code: PaymentMethod.STRIPE,
+            label: 'Stripe',
+            isActive: false,
+          },
+          {
+            code: PaymentMethod.EASYPAISA,
+            label: 'Easypaisa',
+            isActive: false,
+          },
+          {
+            code: PaymentMethod.JAZZCASH,
+            label: 'JazzCash',
+            isActive: false,
+          },
+          {
+            code: PaymentMethod.BANK_TRANSFER,
+            label: 'Bank transfer',
+            isActive: false,
+          },
+          {
+            code: PaymentMethod.WALLET,
+            label: 'Wallet',
+            isActive: true,
+          },
+        ],
         notificationSettings: {
           emailAddress: null,
           phoneNumber: null,
@@ -166,6 +201,105 @@ describe('GlobalSettingsService', () => {
       primaryColor: '#FF6B00',
       timezone: 'UTC',
     });
+  });
+
+  it('returns platform payment methods with defaults and stored overrides', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      paymentMethods: [
+        {
+          code: PaymentMethod.STRIPE,
+          label: 'Card payment',
+          isActive: true,
+        },
+      ],
+    });
+
+    const result = await service.getPaymentMethods();
+    const paymentMethods = result.data;
+
+    expect(paymentMethods).toContainEqual({
+      code: PaymentMethod.COD,
+      label: 'Cash on delivery',
+      isActive: true,
+    });
+    expect(paymentMethods).toContainEqual({
+      code: PaymentMethod.STRIPE,
+      label: 'Card payment',
+      isActive: true,
+    });
+    expect(result.message).toBe('Payment methods fetched successfully');
+  });
+
+  it('updates platform payment methods and rejects duplicate codes', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      paymentMethods: null,
+    });
+    updateSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      paymentMethods: [
+        {
+          code: PaymentMethod.COD,
+          label: 'Pay cash',
+          isActive: true,
+        },
+        {
+          code: PaymentMethod.STRIPE,
+          label: 'Stripe',
+          isActive: true,
+        },
+      ],
+    });
+
+    await service.updatePaymentMethods(
+      { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        paymentMethods: [
+          {
+            code: PaymentMethod.COD,
+            label: 'Pay cash',
+            isActive: true,
+          },
+          {
+            code: PaymentMethod.STRIPE,
+            isActive: true,
+          },
+        ],
+      },
+    );
+
+    const [updateData] = updateSingletonSpy.mock.calls[0];
+    const paymentMethods =
+      updateData.paymentMethods as unknown as PaymentMethodSettingsShape[];
+
+    expect(updateData.updatedBy).toBe('user-1');
+    expect(paymentMethods).toContainEqual({
+      code: PaymentMethod.COD,
+      label: 'Pay cash',
+      isActive: true,
+    });
+    expect(paymentMethods).toContainEqual({
+      code: PaymentMethod.STRIPE,
+      label: 'Stripe',
+      isActive: true,
+    });
+
+    await expect(
+      service.updatePaymentMethods(
+        { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+        {
+          paymentMethods: [
+            {
+              code: PaymentMethod.COD,
+            },
+            {
+              code: PaymentMethod.COD,
+            },
+          ],
+        },
+      ),
+    ).rejects.toThrow('Duplicate payment method code');
   });
 
   it('rejects notification channels without required contact values', async () => {

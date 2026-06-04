@@ -1,11 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CurrencyDisplayFormat,
+  PaymentMethod,
   PlatformDateFormat,
   VatHandlingRule,
 } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsEmail,
   IsEnum,
@@ -106,6 +109,32 @@ class NotificationSettingsDto {
   @ValidateNested()
   @Type(() => NotificationTypesDto)
   notificationTypes?: NotificationTypesDto;
+}
+
+export class PaymentMethodSettingDto {
+  @ApiPropertyOptional({ enum: PaymentMethod, example: PaymentMethod.COD })
+  @IsEnum(PaymentMethod)
+  code!: PaymentMethod;
+
+  @ApiPropertyOptional({ example: 'Cash on delivery' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  label?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateGlobalPaymentMethodsDto {
+  @ApiPropertyOptional({ type: [PaymentMethodSettingDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => PaymentMethodSettingDto)
+  paymentMethods!: PaymentMethodSettingDto[];
 }
 
 export class UpdateGlobalSettingsDto {
@@ -213,4 +242,12 @@ export class UpdateGlobalSettingsDto {
   @ValidateNested()
   @Type(() => NotificationSettingsDto)
   notificationSettings?: NotificationSettingsDto;
+
+  @ApiPropertyOptional({ type: [PaymentMethodSettingDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => PaymentMethodSettingDto)
+  paymentMethods?: PaymentMethodSettingDto[];
 }

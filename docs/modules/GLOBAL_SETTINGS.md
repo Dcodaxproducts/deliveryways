@@ -11,6 +11,7 @@ It currently supports:
 - localization defaults
 - basic branding defaults
 - super-admin notification settings
+- platform payment method definitions
 - optional enforcement flags for future downstream override rules
 
 ---
@@ -23,10 +24,25 @@ Base path: `/api/v1/admin/global-settings`
 
 Role:
 - `SUPER_ADMIN`
+- `BUSINESS_ADMIN`
+- `BRANCH_ADMIN`
 
 Behavior:
 - returns the singleton global settings record
 - auto-creates the record on first access with safe defaults
+- includes read-only `paymentMethods` for non-super-admin users
+
+### Get payment methods
+`GET /admin/global-settings/payment-methods`
+
+Role:
+- `SUPER_ADMIN`
+- `BUSINESS_ADMIN`
+- `BRANCH_ADMIN`
+
+Behavior:
+- returns platform-defined payment methods only
+- business and branch admins use this endpoint as read-only data for UI
 
 ### Update global settings
 `PATCH /admin/global-settings`
@@ -48,10 +64,40 @@ Accepted fields:
 - `secondaryColor`
 - `fontFamily`
 - `notificationSettings`
+- `paymentMethods`
 - `isTaxEnforced`
 - `isCommissionEnforced`
 - `isCurrencyEnforced`
 - `isLocalizationEnforced`
+
+### Update payment methods
+`PATCH /admin/global-settings/payment-methods`
+
+Role:
+- `SUPER_ADMIN`
+
+Body:
+```json
+{
+  "paymentMethods": [
+    {
+      "code": "COD",
+      "label": "Cash on delivery",
+      "isActive": true
+    },
+    {
+      "code": "STRIPE",
+      "label": "Stripe",
+      "isActive": false
+    }
+  ]
+}
+```
+
+Notes:
+- `code` must be one of `COD`, `STRIPE`, `EASYPAISA`, `JAZZCASH`, `BANK_TRANSFER`, `WALLET`
+- duplicate `code` values are rejected
+- omitted methods keep their previous/default label and active status
 
 ---
 
@@ -64,6 +110,7 @@ Key design notes:
 - audit fields: `createdBy`, `updatedBy`
 - percentages stored as decimals
 - notification settings stored in `notification_settings` JSONB
+- payment method definitions stored in `payment_methods` JSONB
 - timezone validated at service layer
 
 ---
@@ -78,6 +125,7 @@ First creation seeds:
 - language = `en`
 - date format = `DD_MM_YYYY`
 - timezone = `Asia/Karachi`
+- payment methods = `COD` and `WALLET` active by default, other supported methods inactive
 - all enforcement flags = `false`
 
 ---
