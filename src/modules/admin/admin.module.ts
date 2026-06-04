@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { UsersModule } from '../users/users.module';
 import { SystemHealthModule } from '../system-health/system-health.module';
 import { MailerModule } from '../mailer/mailer.module';
+import { StorageModule } from '../storage/storage.module';
 import { AdminDealsController } from './admin-deals.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
@@ -22,7 +23,13 @@ import { AdminImportSamplesController } from './admin-import-samples.controller'
 import { AdminImportSamplesService } from './admin-import-samples.service';
 
 @Module({
-  imports: [UsersModule, DatabaseModule, SystemHealthModule, MailerModule],
+  imports: [
+    UsersModule,
+    DatabaseModule,
+    SystemHealthModule,
+    MailerModule,
+    StorageModule,
+  ],
   controllers: [
     AdminUsersController,
     AdminDashboardController,

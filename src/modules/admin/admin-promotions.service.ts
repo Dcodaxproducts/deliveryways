@@ -33,11 +33,13 @@ import {
   AdminPromotionScope,
   AdminPromotionsRepository,
 } from './admin-promotions.repository';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class AdminPromotionsService {
   constructor(
     private readonly adminPromotionsRepository: AdminPromotionsRepository,
+    private readonly storageService?: StorageService,
   ) {}
 
   async getOverview(
@@ -80,7 +82,9 @@ export class AdminPromotionsService {
     );
 
     return {
-      data: items.map((item) => this.mapPromotion(item)),
+      data: await this.resolveMediaResponse(
+        items.map((item) => this.mapPromotion(item)),
+      ),
       message: `${this.kindLabel(kind)} fetched successfully`,
       meta: buildPaginationMeta(query, total),
     };
@@ -108,7 +112,7 @@ export class AdminPromotionsService {
     }
 
     return {
-      data: this.mapPromotion(promotion),
+      data: await this.resolveMediaResponse(this.mapPromotion(promotion)),
       message: 'Promotion fetched successfully',
     };
   }
@@ -203,7 +207,7 @@ export class AdminPromotionsService {
     });
 
     return {
-      data: this.mapPromotion(data),
+      data: await this.resolveMediaResponse(this.mapPromotion(data)),
       message: 'Promotion created successfully',
     };
   }
@@ -251,7 +255,7 @@ export class AdminPromotionsService {
     });
 
     return {
-      data: this.mapPromotion(data),
+      data: await this.resolveMediaResponse(this.mapPromotion(data)),
       message: 'Gift card created successfully',
     };
   }
@@ -480,7 +484,7 @@ export class AdminPromotionsService {
     });
 
     return {
-      data: this.mapPromotion(data),
+      data: await this.resolveMediaResponse(this.mapPromotion(data)),
       message: 'Promotion updated successfully',
     };
   }
@@ -549,7 +553,7 @@ export class AdminPromotionsService {
     });
 
     return {
-      data: this.mapPromotion(data),
+      data: await this.resolveMediaResponse(this.mapPromotion(data)),
       message: 'Gift card updated successfully',
     };
   }
@@ -691,7 +695,7 @@ export class AdminPromotionsService {
     });
 
     return {
-      data: this.mapPromotion(data),
+      data: await this.resolveMediaResponse(this.mapPromotion(data)),
       message: 'Happy hour created successfully',
     };
   }
@@ -825,7 +829,7 @@ export class AdminPromotionsService {
     });
 
     return {
-      data: this.mapPromotion(data),
+      data: await this.resolveMediaResponse(this.mapPromotion(data)),
       message: 'Happy hour updated successfully',
     };
   }
@@ -848,7 +852,7 @@ export class AdminPromotionsService {
       throw new NotFoundException('Promotion not found');
     }
 
-    return {
+    const data = {
       data: {
         promotion: this.mapPromotion(stats.coupon),
         usageCount: stats.usageCount,
@@ -860,6 +864,8 @@ export class AdminPromotionsService {
       },
       message: 'Promotion stats fetched successfully',
     };
+
+    return this.resolveMediaResponse(data);
   }
 
   private async resolveScope(
@@ -1156,6 +1162,14 @@ export class AdminPromotionsService {
 
   private isValidTime(value: string) {
     return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+  }
+
+  private async resolveMediaResponse<T>(data: T): Promise<T> {
+    if (!this.storageService) {
+      return data;
+    }
+
+    return this.storageService.resolveMediaUrlsDeep(data);
   }
 
   private mapPromotion(coupon: {

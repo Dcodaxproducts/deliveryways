@@ -238,6 +238,71 @@ describe('AdminPromotionsService', () => {
     expect(result.message).toBe('Deal created successfully');
   });
 
+  it('returns signed image urls when creating gift cards', async () => {
+    const repository = {
+      create: jest.fn().mockResolvedValue(
+        makeCoupon({
+          code: 'GIFT-1234',
+          imageUrl: 'uploads/gift-cards/gift-card.png',
+          kind: CouponCampaignKind.GIFT_CARD,
+          applyMode: CouponApplyMode.ORDER_TOTAL,
+          autoApply: false,
+          discountType: CouponDiscountType.FLAT,
+          discountValue: new Prisma.Decimal(1000),
+        }),
+      ),
+    };
+    const storageService = {
+      resolveMediaUrlsDeep: jest.fn().mockImplementation((data) =>
+        Promise.resolve({
+          ...(data as Record<string, unknown>),
+          imageUrl: 'https://signed.example.com/gift-card.png',
+          thumbnailUrl: 'https://signed.example.com/gift-card.png',
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(
+      repository as never,
+      storageService as never,
+    );
+
+    const result = await service.createGiftCard(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Gift Card',
+        imageUrl: 'uploads/gift-cards/gift-card.png',
+        amount: 1000,
+        startsAt: '2026-04-22T00:00:00.000Z',
+        expiresAt: '2026-05-22T00:00:00.000Z',
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageUrl: 'uploads/gift-cards/gift-card.png',
+        kind: CouponCampaignKind.GIFT_CARD,
+        discountValue: new Prisma.Decimal(1000),
+      }),
+    );
+    expect(storageService.resolveMediaUrlsDeep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageUrl: 'uploads/gift-cards/gift-card.png',
+        thumbnailUrl: 'uploads/gift-cards/gift-card.png',
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        imageUrl: 'https://signed.example.com/gift-card.png',
+        thumbnailUrl: 'https://signed.example.com/gift-card.png',
+      }),
+    );
+  });
+
   it('creates a flexible any-N deal from scoped categories', async () => {
     const repository = {
       countActiveMenuItems: jest.fn().mockResolvedValue(0),
