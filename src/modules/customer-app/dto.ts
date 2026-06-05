@@ -181,6 +181,44 @@ export class RedeemGiftCardDto {
   branchId?: string;
 }
 
+export class PurchaseGiftCardDto {
+  @ApiProperty({ minimum: 1, example: 1000 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  amount!: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional branch scope for branch-limited gift cards',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional display title for the generated gift card',
+    example: 'Birthday Gift Card',
+  })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional message shown on the shareable card',
+    example: 'Enjoy your meal!',
+  })
+  @IsOptional()
+  @IsString()
+  message?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional expiry date. Defaults to one year from purchase.',
+  })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+}
+
 export class CreateTableReservationDto {
   @ApiProperty()
   @IsString()

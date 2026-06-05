@@ -31,6 +31,7 @@ import {
   TableReservationStatus,
   CreateWalletTopUpDto,
   ListWalletHistoryQueryDto,
+  PurchaseGiftCardDto,
   RedeemGiftCardDto,
   RedeemLoyaltyPointsDto,
   ToggleFavoriteDto,
@@ -793,6 +794,29 @@ export class CustomerAppService {
     return {
       data,
       message: 'Gift card redeemed successfully',
+    };
+  }
+
+  async purchaseGiftCard(
+    user: AuthUserContext,
+    dto: PurchaseGiftCardDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const data = await this.loyaltyWalletService!.purchaseGiftCardFromWallet(
+      {
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: dto.branchId ?? customer.branchId ?? undefined,
+      },
+      dto,
+      user.uid,
+    );
+
+    return {
+      data,
+      message: 'Gift card purchased successfully',
     };
   }
 

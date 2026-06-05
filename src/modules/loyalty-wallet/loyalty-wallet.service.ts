@@ -4,8 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import {
+  CouponApplyMode,
   CouponCampaignKind,
+  CouponDiscountType,
   CouponStatus,
   LoyaltyRedemptionTarget,
   LoyaltyTransactionType,
@@ -41,6 +44,14 @@ export interface QuoteBenefitsResult {
   loyaltyDiscountAmount: Prisma.Decimal;
   loyaltyPointsRedeemed: number;
   totalAmount: Prisma.Decimal;
+}
+
+export interface PurchaseGiftCardInput {
+  amount: number;
+  branchId?: string;
+  title?: string;
+  message?: string;
+  expiresAt?: string;
 }
 
 @Injectable()
@@ -355,7 +366,7 @@ export class LoyaltyWalletService {
     code: string,
     actorId?: string,
   ) {
-    const normalizedCode = code.trim().toUpperCase();
+    const normalizedCode = this.normalizeGiftCardCode(code);
     if (!normalizedCode) {
       throw new BadRequestException('Gift card code is required');
     }
@@ -414,6 +425,24 @@ export class LoyaltyWalletService {
 
       const walletAccount = await this.ensureWalletAccount(context, tx);
       const nextBalance = walletAccount.balance.plus(creditedAmount);
+      const purchaseTransaction = await tx.walletTransaction.findFirst({
+        where: {
+          restaurantId: context.restaurantId,
+          type: WalletTransactionType.DEBIT,
+          metadata: {
+            path: ['giftCardCode'],
+            equals: giftCard.code,
+          },
+        },
+        select: {
+          id: true,
+          customerId: true,
+        },
+      });
+
+      if (purchaseTransaction?.customerId === context.customerId) {
+        throw new BadRequestException('Gift card cannot be redeemed by buyer');
+      }
 
       const usage = await tx.couponUsage.create({
         data: {
@@ -422,10 +451,24 @@ export class LoyaltyWalletService {
         },
       });
 
-      await tx.coupon.update({
-        where: { id: giftCard.id },
-        data: { usedCount: { increment: 1 } },
-      });
+      if (giftCard.maxUses !== null) {
+        const usageUpdate = await tx.coupon.updateMany({
+          where: {
+            id: giftCard.id,
+            usedCount: { lt: giftCard.maxUses },
+          },
+          data: { usedCount: { increment: 1 } },
+        });
+
+        if (usageUpdate.count !== 1) {
+          throw new BadRequestException('Gift card usage limit reached');
+        }
+      } else {
+        await tx.coupon.update({
+          where: { id: giftCard.id },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
 
       await this.repository.updateWalletAccount(
         walletAccount.id,
@@ -463,10 +506,111 @@ export class LoyaltyWalletService {
         customerId: context.customerId,
         giftCardId: giftCard.id,
         code: giftCard.code,
+        purchaseWalletTransactionId: purchaseTransaction?.id ?? null,
         walletTransactionId: transaction.id,
         creditedAmount: Number(creditedAmount),
         walletBalance: Number(nextBalance),
         currency: walletAccount.currency,
+      };
+    });
+  }
+
+  async purchaseGiftCardFromWallet(
+    context: CustomerWalletLoyaltyContext,
+    input: PurchaseGiftCardInput,
+    actorId?: string,
+  ) {
+    const amount = new Prisma.Decimal(input.amount).toDecimalPlaces(2);
+
+    if (amount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('Gift card amount must be greater than 0');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const walletAccount = await this.ensureWalletAccount(context, tx);
+      const nextBalance = walletAccount.balance.minus(amount);
+
+      if (nextBalance.lessThan(0)) {
+        throw new BadRequestException('Insufficient wallet balance');
+      }
+
+      const code = await this.generateUniqueGiftCardCode(
+        context.restaurantId,
+        tx,
+      );
+      const now = new Date();
+      const expiresAt = input.expiresAt
+        ? new Date(input.expiresAt)
+        : this.addDays(now, 365);
+
+      if (expiresAt <= now) {
+        throw new BadRequestException('Gift card expiry must be in the future');
+      }
+
+      const giftCard = await tx.coupon.create({
+        data: {
+          tenantId: context.tenantId,
+          restaurantId: context.restaurantId,
+          branchId: input.branchId ?? null,
+          code,
+          title: input.title?.trim() || 'Gift Card',
+          description: input.message?.trim() || null,
+          kind: CouponCampaignKind.GIFT_CARD,
+          status: CouponStatus.ACTIVE,
+          applyMode: CouponApplyMode.ORDER_TOTAL,
+          autoApply: false,
+          discountType: CouponDiscountType.FLAT,
+          discountValue: amount,
+          maxUses: 1,
+          maxUsesPerCustomer: 1,
+          startsAt: now,
+          expiresAt,
+          isActive: true,
+        },
+      });
+
+      await this.repository.updateWalletAccount(
+        walletAccount.id,
+        { balance: nextBalance },
+        tx,
+      );
+
+      const walletTransaction = await this.repository.createWalletTransaction(
+        {
+          walletAccount: { connect: { id: walletAccount.id } },
+          tenant: { connect: { id: context.tenantId } },
+          restaurant: { connect: { id: context.restaurantId } },
+          branch: context.branchId
+            ? { connect: { id: context.branchId } }
+            : undefined,
+          customer: { connect: { id: context.customerId } },
+          type: WalletTransactionType.DEBIT,
+          amount: amount.mul(-1),
+          balanceAfter: nextBalance,
+          currency: walletAccount.currency,
+          note: `Gift card ${code} purchased from wallet`,
+          metadata: {
+            source: 'CUSTOMER_GIFT_CARD_PURCHASE',
+            giftCardId: giftCard.id,
+            giftCardCode: code,
+            qrPayload: this.buildGiftCardQrPayload(code),
+          },
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        tx,
+      );
+
+      return {
+        customerId: context.customerId,
+        giftCardId: giftCard.id,
+        code,
+        qrPayload: this.buildGiftCardQrPayload(code),
+        amount: Number(amount),
+        walletTransactionId: walletTransaction.id,
+        walletBalance: Number(nextBalance),
+        currency: walletAccount.currency,
+        expiresAt,
       };
     });
   }
@@ -1257,6 +1401,42 @@ export class LoyaltyWalletService {
     }
 
     return { tenantId: user.tid, restaurantId: user.rid };
+  }
+
+  private async generateUniqueGiftCardCode(restaurantId: string, tx: PrismaTx) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = `GIFT-${randomBytes(5).toString('hex').toUpperCase()}`;
+      const existing = await tx.coupon.findUnique({
+        where: {
+          restaurantId_code: {
+            restaurantId,
+            code,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return code;
+      }
+    }
+
+    throw new BadRequestException('Could not generate gift card code');
+  }
+
+  private normalizeGiftCardCode(code: string) {
+    const normalized = code.trim().toUpperCase();
+    return normalized.startsWith('DWGC:') ? normalized.slice(5) : normalized;
+  }
+
+  private buildGiftCardQrPayload(code: string) {
+    return `DWGC:${code}`;
+  }
+
+  private addDays(date: Date, days: number) {
+    const next = new Date(date);
+    next.setUTCDate(next.getUTCDate() + days);
+    return next;
   }
 
   private async readLegacyMetadata(customerId: string) {

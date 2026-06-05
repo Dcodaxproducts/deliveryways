@@ -197,10 +197,14 @@ describe('LoyaltyWalletService', () => {
           discountValue: new Prisma.Decimal(1000),
         }),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       couponUsage: {
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockResolvedValue({ id: 'usage-1' }),
+      },
+      walletTransaction: {
+        findFirst: jest.fn().mockResolvedValue(null),
       },
     };
     prisma.$transaction.mockImplementation(
@@ -258,5 +262,185 @@ describe('LoyaltyWalletService', () => {
     );
     expect(result.creditedAmount).toBe(1000);
     expect(result.walletBalance).toBe(1500);
+  });
+
+  it('purchases a gift card by debiting customer wallet', async () => {
+    const { service, repository, prisma } = makeService();
+    type CouponCreateArg = {
+      data: {
+        tenantId: string;
+        restaurantId: string;
+        code: string;
+        title: string;
+        description: string | null;
+        kind: string;
+        maxUses: number;
+        maxUsesPerCustomer: number;
+        discountValue: Prisma.Decimal;
+      };
+    };
+    const couponCreate = jest
+      .fn<Promise<{ id: string; code: string }>, [CouponCreateArg]>()
+      .mockResolvedValue({
+        id: 'gift-1',
+        code: 'GIFT-ABCDE12345',
+      });
+    const tx = {
+      coupon: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: couponCreate,
+      },
+    };
+    prisma.$transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+    repository.findWalletAccount.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(2000),
+      currency: 'PKR',
+    });
+    repository.createWalletTransaction.mockResolvedValue({
+      id: 'wallet-tx-1',
+    });
+
+    const result = await service.purchaseGiftCardFromWallet(
+      {
+        customerId: 'buyer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      {
+        amount: 1000,
+        title: 'Birthday Gift',
+        message: 'Enjoy your meal',
+      },
+      'buyer-1',
+    );
+
+    const couponCreateCall = couponCreate.mock.calls[0][0];
+    expect(couponCreateCall.data).toMatchObject({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      title: 'Birthday Gift',
+      description: 'Enjoy your meal',
+      kind: 'GIFT_CARD',
+      maxUses: 1,
+      maxUsesPerCustomer: 1,
+      discountValue: new Prisma.Decimal(1000),
+    });
+    expect(couponCreateCall.data.code).toMatch(/^GIFT-/);
+    expect(repository.updateWalletAccount).toHaveBeenCalledWith(
+      'wallet-1',
+      { balance: new Prisma.Decimal(1000) },
+      tx,
+    );
+    const walletTransactionCalls = repository.createWalletTransaction.mock
+      .calls as [
+      [
+        {
+          type: string;
+          amount: Prisma.Decimal;
+          balanceAfter: Prisma.Decimal;
+          metadata: {
+            source: string;
+            giftCardId: string;
+            qrPayload: string;
+          };
+        },
+        unknown,
+      ],
+    ];
+    const walletTransactionCall = walletTransactionCalls[0][0];
+    expect(walletTransactionCall).toMatchObject({
+      type: 'DEBIT',
+      amount: new Prisma.Decimal(-1000),
+      balanceAfter: new Prisma.Decimal(1000),
+    });
+    expect(walletTransactionCall.metadata).toMatchObject({
+      source: 'CUSTOMER_GIFT_CARD_PURCHASE',
+      giftCardId: 'gift-1',
+    });
+    expect(walletTransactionCall.metadata.qrPayload).toMatch(/^DWGC:GIFT-/);
+    expect(result.amount).toBe(1000);
+    expect(result.walletBalance).toBe(1000);
+    expect(result.qrPayload).toMatch(/^DWGC:GIFT-/);
+  });
+
+  it('blocks gift card purchase when wallet balance is insufficient', async () => {
+    const { service, repository } = makeService();
+    repository.findWalletAccount.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(500),
+      currency: 'PKR',
+    });
+
+    await expect(
+      service.purchaseGiftCardFromWallet(
+        {
+          customerId: 'buyer-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+        },
+        {
+          amount: 1000,
+        },
+        'buyer-1',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('blocks buyer from redeeming their own purchased gift card', async () => {
+    const { service, repository, prisma } = makeService();
+    const tx = {
+      coupon: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'gift-1',
+          restaurantId: 'restaurant-1',
+          branchId: null,
+          code: 'GIFT-123',
+          kind: 'GIFT_CARD',
+          status: 'ACTIVE',
+          isActive: true,
+          usedCount: 0,
+          maxUses: 1,
+          maxUsesPerCustomer: 1,
+          startsAt: new Date('2026-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+          discountValue: new Prisma.Decimal(1000),
+        }),
+      },
+      couponUsage: {
+        count: jest.fn().mockResolvedValue(0),
+      },
+      walletTransaction: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'purchase-wallet-tx-1',
+          customerId: 'buyer-1',
+        }),
+      },
+    };
+    prisma.$transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+    repository.findWalletAccount.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(500),
+      currency: 'PKR',
+    });
+
+    await expect(
+      service.redeemGiftCardToWallet(
+        {
+          customerId: 'buyer-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+        },
+        'DWGC:GIFT-123',
+        'buyer-1',
+      ),
+    ).rejects.toThrow('Gift card cannot be redeemed by buyer');
   });
 });
