@@ -1151,13 +1151,17 @@ export class BranchesService {
     }
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      if (!user.bid) {
+        throw new ForbiddenException('Branch context is required');
+      }
+
       if (user.rid !== branch.restaurantId) {
         throw new ForbiddenException(
           'You cannot access resources outside your restaurant',
         );
       }
 
-      if (user.bid && user.bid !== branch.id) {
+      if (user.bid !== branch.id) {
         throw new ForbiddenException(
           'You cannot access resources outside your branch',
         );

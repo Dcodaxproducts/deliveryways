@@ -187,6 +187,34 @@ describe('BranchesService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('blocks branch admin branch updates when token has no branch context', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'branch-admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+        },
+        'branch-1',
+        {
+          name: 'Updated Branch',
+        },
+      ),
+    ).rejects.toThrow('Branch context is required');
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
   it('allows branch admin to update assigned branch images', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({
