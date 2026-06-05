@@ -117,6 +117,144 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
+  it('allows branch admin to update assigned branch details', async () => {
+    const { service, repository, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Updated Branch',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      'branch-1',
+      {
+        name: 'Updated Branch',
+        description: 'Updated branch description',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({
+        name: 'Updated Branch',
+        description: 'Updated branch description',
+      }),
+      expect.any(Object),
+    );
+    expect(result.message).toBe('Branch updated successfully');
+  });
+
+  it('blocks branch admin from updating another branch details', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'branch-admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+        },
+        'branch-2',
+        {
+          name: 'Other Branch',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows branch admin to update assigned branch images', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      logoUrl: 'branches/branch-1/logo.png',
+      coverImage: 'branches/branch-1/cover.png',
+    });
+
+    const result = await service.updateImages(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      'branch-1',
+      {
+        logoUrl: 'branches/branch-1/logo.png',
+        coverImage: 'branches/branch-1/cover.png',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({
+        logoUrl: 'branches/branch-1/logo.png',
+        coverImage: 'branches/branch-1/cover.png',
+      }),
+      undefined,
+    );
+    expect(result.message).toBe('Branch images updated successfully');
+  });
+
+  it('blocks branch admin from updating another branch images', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.updateImages(
+        {
+          uid: 'branch-admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+        },
+        'branch-2',
+        {
+          logoUrl: 'branches/branch-2/logo.png',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('rejects overlapping zone bands during branch update', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({

@@ -748,11 +748,19 @@ export class BranchesService {
   }
 
   async updateImages(
-    _user: AuthUserContext,
+    user: AuthUserContext,
     id: string,
     dto: UpdateBranchImagesDto,
     tx?: PrismaTx,
   ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
     const data = await this.branchesRepository.update(
       id,
       {
