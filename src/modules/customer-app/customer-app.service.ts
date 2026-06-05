@@ -1031,6 +1031,17 @@ export class CustomerAppService {
         });
       }
 
+      if (updatedReservation && branch) {
+        await this.notifyTableReservationCustomer({
+          branch,
+          customer: {
+            id: customer.id,
+          },
+          reservation: updatedReservation,
+          source: 'STATUS_UPDATED',
+        });
+      }
+
       return {
         data: updatedReservation
           ? {
@@ -1143,6 +1154,15 @@ export class CustomerAppService {
         lastName: customer.profile?.lastName ?? null,
       },
       reservation,
+    });
+
+    await this.notifyTableReservationCustomer({
+      branch,
+      customer: {
+        id: customer.id,
+      },
+      reservation,
+      source: 'CREATED',
     });
 
     return {
@@ -1505,6 +1525,37 @@ export class CustomerAppService {
       guestCount: input.reservation.guestCount,
       status:
         input.reservation.status === 'CONFIRMED' ? 'CONFIRMED' : 'REQUESTED',
+    });
+  }
+
+  private async notifyTableReservationCustomer(input: {
+    branch: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      name: string;
+    };
+    customer: {
+      id: string;
+    };
+    reservation: TableReservationRecord;
+    source: 'CREATED' | 'STATUS_UPDATED';
+  }) {
+    if (!this.notificationsService) {
+      return;
+    }
+
+    await this.notificationsService.notifyTableReservationCustomer({
+      tenantId: input.branch.tenantId,
+      restaurantId: input.branch.restaurantId,
+      branchId: input.branch.id,
+      branchName: input.branch.name,
+      reservationId: input.reservation.id,
+      customerId: input.customer.id,
+      reservationDate: input.reservation.reservationDate,
+      guestCount: input.reservation.guestCount,
+      status: input.reservation.status,
+      source: input.source,
     });
   }
 

@@ -110,7 +110,7 @@ describe('CustomerAppService', () => {
     branchOverrides: [],
   };
 
-  const makeService = () => {
+  const makeService = (options: { notifications?: boolean } = {}) => {
     const findBranchesPublicContent = jest.fn<
       Promise<
         Array<{
@@ -164,12 +164,18 @@ describe('CustomerAppService', () => {
       getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
     };
 
+    const notificationsService = {
+      notifyTableReservationAdmin: jest.fn(),
+      notifyTableReservationCustomer: jest.fn(),
+    };
+
     const service = new CustomerAppService(
       repository as never,
       storageService as never,
       loyaltyWalletService as never,
       paymentsService as never,
       couponsService as never,
+      options.notifications ? (notificationsService as never) : undefined,
     );
     return {
       service,
@@ -178,6 +184,7 @@ describe('CustomerAppService', () => {
       paymentsService,
       couponsService,
       storageService,
+      notificationsService,
     };
   };
 
@@ -1620,7 +1627,9 @@ describe('CustomerAppService', () => {
   });
 
   it('updates table reservation status for business admins', async () => {
-    const { service, repository } = makeService();
+    const { service, repository, notificationsService } = makeService({
+      notifications: true,
+    });
     repository.findCustomersForTableReservations.mockResolvedValue([
       {
         id: 'customer-1',
@@ -1652,6 +1661,8 @@ describe('CustomerAppService', () => {
     repository.findBranchesPublicContent.mockResolvedValue([
       {
         id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
         name: 'Main Branch',
         coverImage: 'cover.jpg',
         description: 'Downtown branch',
@@ -1681,6 +1692,20 @@ describe('CustomerAppService', () => {
       expect.any(Object),
     );
     expect(result.data?.status).toBe('CONFIRMED');
+    expect(
+      notificationsService.notifyTableReservationCustomer,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        branchName: 'Main Branch',
+        customerId: 'customer-1',
+        reservationId: 'reservation-1',
+        status: 'CONFIRMED',
+        source: 'STATUS_UPDATED',
+      }),
+    );
     expect(result.data?.branch).toEqual({
       id: 'branch-1',
       name: 'Main Branch',
@@ -1751,7 +1776,9 @@ describe('CustomerAppService', () => {
   });
 
   it('creates a table reservation request in customer metadata', async () => {
-    const { service, repository } = makeService();
+    const { service, repository, notificationsService } = makeService({
+      notifications: true,
+    });
     repository.findCustomerProfile.mockResolvedValue({
       id: 'customer-1',
       deletedAt: null,
@@ -1766,6 +1793,8 @@ describe('CustomerAppService', () => {
     });
     repository.findBranchPublicContent.mockResolvedValue({
       id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
       name: 'Main Branch',
       settings: {
         tableReservationsEnabled: true,
@@ -1788,6 +1817,21 @@ describe('CustomerAppService', () => {
     );
 
     expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(notificationsService.notifyTableReservationAdmin).toHaveBeenCalled();
+    expect(
+      notificationsService.notifyTableReservationCustomer,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        branchName: 'Main Branch',
+        customerId: 'customer-1',
+        reservationId: result.data.id,
+        status: 'REQUESTED',
+        source: 'CREATED',
+      }),
+    );
     expect(result.data.branchId).toBe('branch-1');
     expect(result.message).toBe('Table reservation created successfully');
   });

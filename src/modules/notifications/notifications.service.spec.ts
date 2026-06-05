@@ -460,4 +460,46 @@ describe('NotificationsService', () => {
     );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
   });
+
+  it('creates customer in-app notification when table reservation status changes', async () => {
+    notificationsRepository.create.mockResolvedValue({
+      id: 'customer-in-app-1',
+      recipientEmail: null,
+      subject: 'Reservation status updated at Main Branch',
+      body: 'body',
+    });
+
+    await service.notifyTableReservationCustomer({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationId: 'reservation-1',
+      branchName: 'Main Branch',
+      customerId: 'customer-1',
+      reservationDate: '2099-03-30T19:30:00.000Z',
+      guestCount: 4,
+      status: 'CONFIRMED',
+      source: 'STATUS_UPDATED',
+    });
+
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.IN_APP,
+        type: NotificationType.TABLE_RESERVATION_STATUS_CHANGED,
+        recipientUser: { connect: { id: 'customer-1' } },
+        status: NotificationStatus.SENT,
+        payload: {
+          reservationId: 'reservation-1',
+          branchId: 'branch-1',
+          branchName: 'Main Branch',
+          reservationDate: '2099-03-30T19:30:00.000Z',
+          guestCount: 4,
+          status: 'CONFIRMED',
+          source: 'STATUS_UPDATED',
+        },
+      }),
+    );
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+  });
 });

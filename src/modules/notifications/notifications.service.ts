@@ -21,6 +21,9 @@ const CUSTOMER_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.ORDER_PLACED,
   NotificationType.ORDER_STATUS_CHANGED,
   NotificationType.ORDER_CANCELLED,
+  NotificationType.TABLE_RESERVATION_CREATED,
+  NotificationType.TABLE_RESERVATION_ACCEPTED,
+  NotificationType.TABLE_RESERVATION_STATUS_CHANGED,
   NotificationType.PAYMENT_PAID,
   NotificationType.PAYMENT_FAILED,
   NotificationType.PAYMENT_CANCELLED,
@@ -32,6 +35,7 @@ const ADMIN_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.ORDER_CANCELLED,
   NotificationType.TABLE_RESERVATION_CREATED,
   NotificationType.TABLE_RESERVATION_ACCEPTED,
+  NotificationType.TABLE_RESERVATION_STATUS_CHANGED,
   NotificationType.PAYMENT_PAID,
   NotificationType.PAYMENT_FAILED,
   NotificationType.PAYMENT_CANCELLED,
@@ -448,6 +452,56 @@ export class NotificationsService {
     );
   }
 
+  async notifyTableReservationCustomer(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    reservationId: string;
+    branchName: string;
+    customerId: string;
+    reservationDate: string;
+    guestCount: number;
+    status: string;
+    source: 'CREATED' | 'STATUS_UPDATED';
+  }): Promise<void> {
+    const type =
+      input.source === 'CREATED'
+        ? input.status === 'CONFIRMED'
+          ? NotificationType.TABLE_RESERVATION_ACCEPTED
+          : NotificationType.TABLE_RESERVATION_CREATED
+        : NotificationType.TABLE_RESERVATION_STATUS_CHANGED;
+    const subject =
+      input.source === 'CREATED'
+        ? input.status === 'CONFIRMED'
+          ? `Reservation confirmed at ${input.branchName}`
+          : `Reservation requested at ${input.branchName}`
+        : `Reservation status updated at ${input.branchName}`;
+    const body =
+      input.source === 'CREATED'
+        ? `Your table reservation for ${input.guestCount} guest(s) at ${input.reservationDate} is ${input.status.toLowerCase()}.`
+        : `Your table reservation for ${input.guestCount} guest(s) at ${input.reservationDate} is now ${input.status.toLowerCase()}.`;
+    const payload = {
+      reservationId: input.reservationId,
+      branchId: input.branchId,
+      branchName: input.branchName,
+      reservationDate: input.reservationDate,
+      guestCount: input.guestCount,
+      status: input.status,
+      source: input.source,
+    };
+
+    await this.createCustomerInAppNotification({
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      branchId: input.branchId,
+      recipientUserId: input.customerId,
+      type,
+      subject,
+      body,
+      payload,
+    });
+  }
+
   private async createAndDispatchCustomerEmail(input: {
     tenantId: string;
     restaurantId: string;
@@ -505,6 +559,33 @@ export class NotificationsService {
         : undefined,
       recipientEmail: null,
       audience: NotificationAudience.ADMIN,
+      channel: NotificationChannel.IN_APP,
+      status: NotificationStatus.SENT,
+      sentAt: new Date(),
+      type: input.type,
+      subject: input.subject,
+      body: input.body,
+      payload: input.payload as Prisma.InputJsonValue | undefined,
+    });
+  }
+
+  private async createCustomerInAppNotification(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    recipientUserId: string;
+    type: NotificationType;
+    subject: string;
+    body: string;
+    payload?: Record<string, unknown>;
+  }) {
+    return this.notificationsRepository.create({
+      tenant: { connect: { id: input.tenantId } },
+      restaurant: { connect: { id: input.restaurantId } },
+      branch: { connect: { id: input.branchId } },
+      recipientUser: { connect: { id: input.recipientUserId } },
+      recipientEmail: null,
+      audience: NotificationAudience.CUSTOMER,
       channel: NotificationChannel.IN_APP,
       status: NotificationStatus.SENT,
       sentAt: new Date(),
