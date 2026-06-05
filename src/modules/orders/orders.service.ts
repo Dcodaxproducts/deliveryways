@@ -919,8 +919,13 @@ export class OrdersService {
         );
       }
 
+      const dealHasModifierOptions =
+        !!readyMadeDealId && this.hasItemModifierOptions(menuItem);
+
       if (readyMadeDealId) {
-        this.assertNoDealCustomizations(requestedItem, menuItem.name);
+        this.assertNoDealCustomizations(requestedItem, menuItem.name, {
+          allowModifiers: dealHasModifierOptions,
+        });
       }
 
       let variationName: string | undefined;
@@ -987,7 +992,7 @@ export class OrdersService {
         }
       }
 
-      if (!readyMadeDealId) {
+      if (!readyMadeDealId || dealHasModifierOptions) {
         this.assertModifierSelectionLimits(
           menuItem,
           requestedItem.modifiers ?? [],
@@ -3350,6 +3355,13 @@ export class OrdersService {
     );
   }
 
+  private hasItemModifierOptions(menuItem: OrderModifierSource) {
+    return (
+      this.getAvailableModifierLinks(menuItem).length > 0 ||
+      (menuItem.modifierPriceOverrides?.length ?? 0) > 0
+    );
+  }
+
   private resolveOptionalString(value?: string | null) {
     const normalized = value?.trim();
     return normalized ? normalized : undefined;
@@ -3362,8 +3374,12 @@ export class OrdersService {
       sections?: unknown[];
     },
     itemName?: string,
+    options: { allowModifiers?: boolean } = {},
   ) {
-    if (item.variationId || item.modifiers?.length || item.sections?.length) {
+    const hasBlockedModifiers =
+      !options.allowModifiers && !!item.modifiers?.length;
+
+    if (item.variationId || hasBlockedModifiers || item.sections?.length) {
       throw new BadRequestException(
         `${itemName ?? 'Deal item'} does not support customization selections`,
       );

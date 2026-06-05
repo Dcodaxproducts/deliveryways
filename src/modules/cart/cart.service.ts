@@ -1448,7 +1448,7 @@ export class CartService {
           dealId,
           variationId: dealId ? undefined : (item.variationId ?? undefined),
           quantity: item.quantity,
-          modifiers: dealId ? undefined : this.readModifiers(item.modifiers),
+          modifiers: this.readModifiers(item.modifiers),
           sections: dealId ? undefined : this.readSections(item.modifiers),
           note: item.note ?? undefined,
         };
@@ -1625,13 +1625,17 @@ export class CartService {
       );
     }
 
+    const dealHasModifierOptions =
+      !!inferredDealId && this.hasItemModifierOptions(menuItem);
     const validatedDto = inferredDealId
       ? {
           ...dto,
           dealId: inferredDealId,
           variationId: undefined,
-          modifiers: undefined,
-          modifierSelections: undefined,
+          modifiers: dealHasModifierOptions ? dto.modifiers : undefined,
+          modifierSelections: dealHasModifierOptions
+            ? dto.modifierSelections
+            : undefined,
           sections: undefined,
         }
       : dto;
@@ -1678,7 +1682,7 @@ export class CartService {
     }
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
-    if (!inferredDealId) {
+    if (!inferredDealId || dealHasModifierOptions) {
       this.assertModifierSelectionLimits(
         menuItem,
         validatedDto.modifiers ?? [],
@@ -1718,6 +1722,13 @@ export class CartService {
         branchId,
         menuItemId,
       )) ?? null
+    );
+  }
+
+  private hasItemModifierOptions(menuItem: CartModifierSource) {
+    return (
+      this.getAvailableModifierLinks(menuItem).length > 0 ||
+      (menuItem.modifierPriceOverrides?.length ?? 0) > 0
     );
   }
 

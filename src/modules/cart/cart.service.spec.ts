@@ -1346,6 +1346,116 @@ describe('CartService', () => {
     );
   });
 
+  it('validates and stores modifier selections for customizable deal items', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger Deal',
+      variations: [],
+      modifierLinks: [
+        {
+          sortOrder: 0,
+          selectionType: 'SINGLE',
+          minSelect: 1,
+          maxSelect: 1,
+          modifierGroup: {
+            id: 'group-drinks',
+            name: 'Choose Drink',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              {
+                sortOrder: 0,
+                modifier: {
+                  id: 'modifier-cola',
+                  name: 'Cola',
+                  priceDelta: new Prisma.Decimal(0),
+                },
+              },
+            ],
+          },
+        },
+      ],
+      branchOverrides: [],
+    });
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          dealId: 'deal-1',
+          quantity: 1,
+        },
+      ),
+    ).rejects.toThrow('Choose Drink requires at least 1 modifier selection(s)');
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        quantity: 1,
+        modifierSelections: [
+          {
+            modifierGroupId: 'group-drinks',
+            modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
+          },
+        ],
+      },
+    );
+
+    expect(cartRepository.createItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        modifiers: {
+          dealId: 'deal-1',
+          modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
+          modifierSelections: [
+            {
+              modifierGroupId: 'group-drinks',
+              modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
+            },
+          ],
+        },
+      }),
+    );
+  });
+
   it('infers ready-made deal items without requiring dealId in add-to-cart', async () => {
     const { service, cartRepository, couponsService } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -2802,7 +2912,7 @@ describe('CartService', () => {
     expect(payload.orderTime).toBe('2026-03-24T19:30:00.000Z');
   });
 
-  it('omits saved customization fields from ready-made deal quote payloads', async () => {
+  it('preserves saved deal modifier selections in quote payloads', async () => {
     const { service, profilesRepository } = makeService();
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
 
@@ -2865,7 +2975,9 @@ describe('CartService', () => {
       expect.objectContaining({ dealId: 'deal-1' }),
     );
     expect(payload.items[0].variationId).toBeUndefined();
-    expect(payload.items[0].modifiers).toBeUndefined();
+    expect(payload.items[0].modifiers).toEqual([
+      { modifierId: 'modifier-1', quantity: 1 },
+    ]);
     expect(payload.items[0].sections).toBeUndefined();
   });
 
