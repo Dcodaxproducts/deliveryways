@@ -63,6 +63,7 @@ describe('CouponsService', () => {
       findByCode: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
+      findActivePromotionById: jest.fn(),
       findTenantRestaurants: jest.fn(),
       findRestaurantInTenant: jest.fn(),
       findActiveScopeMenuItem: jest.fn(),
@@ -232,6 +233,21 @@ describe('CouponsService', () => {
   });
 
   it('does not infer multi-item fixed deals as ready-made cart items', async () => {
+    repository.findActivePromotionById!.mockResolvedValue(
+      makeCoupon({
+        id: 'deal-1',
+        autoApply: true,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(799),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [
+          { menuItem: { id: 'mi-1' } },
+          { menuItem: { id: 'mi-2' } },
+        ],
+      }),
+    );
     repository.findAutoApplyPromotions!.mockResolvedValue([
       makeCoupon({
         id: 'deal-1',
@@ -257,6 +273,18 @@ describe('CouponsService', () => {
   });
 
   it('infers only single-item ready-made fixed deals', async () => {
+    repository.findActivePromotionById!.mockResolvedValue(
+      makeCoupon({
+        id: 'deal-1',
+        autoApply: true,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(499),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
+      }),
+    );
     repository.findAutoApplyPromotions!.mockResolvedValue([
       makeCoupon({
         id: 'deal-1',
@@ -276,6 +304,25 @@ describe('CouponsService', () => {
     await expect(
       service.findActiveFixedPriceDealIdForItem('rid-1', 'bid-1', 'mi-1'),
     ).resolves.toBe('deal-1');
+  });
+
+  it('accepts explicit ready-made fixed deals even when they are not auto-applied', async () => {
+    repository.findActivePromotionById!.mockResolvedValue(
+      makeCoupon({
+        id: 'deal-1',
+        autoApply: false,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(499),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
+      }),
+    );
+
+    await expect(
+      service.isActiveFixedPriceDealItem('rid-1', 'bid-1', 'deal-1', 'mi-1'),
+    ).resolves.toBe(true);
   });
 
   it('prices the highest eligible items for flexible any-N fixed deals', async () => {

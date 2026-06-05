@@ -56,6 +56,29 @@ export class CouponsRepository {
     });
   }
 
+  async findActivePromotionById(
+    restaurantId: string,
+    branchId: string | undefined,
+    promotionId: string,
+  ) {
+    const now = new Date();
+
+    return this.prisma.coupon.findFirst({
+      where: {
+        id: promotionId,
+        restaurantId,
+        kind: CouponCampaignKind.PROMOTION,
+        deletedAt: null,
+        isActive: true,
+        status: CouponStatus.ACTIVE,
+        startsAt: { lte: now },
+        expiresAt: { gte: now },
+        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
+      },
+      include: this.includeConfig,
+    });
+  }
+
   async list(restaurantId: string | undefined, query: ListCouponsDto) {
     const where: Prisma.CouponWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),

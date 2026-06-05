@@ -263,18 +263,17 @@ export class CouponsService {
     dealId: string,
     menuItemId: string,
   ) {
-    const promotions = await this.getActiveAutoApplyPromotions(
+    const deal = await this.couponsRepository.findActivePromotionById(
       restaurantId,
       branchId,
-    );
-    const deal = promotions.find(
-      (promotion) =>
-        this.isReadyMadeFixedPriceDeal(promotion) &&
-        promotion.id === dealId &&
-        this.resolveReadyMadeDealMenuItemId(promotion) === menuItemId,
+      dealId,
     );
 
-    return !!deal;
+    return (
+      !!deal &&
+      this.isReadyMadeFixedPriceDeal(deal) &&
+      this.resolveReadyMadeDealMenuItemId(deal) === menuItemId
+    );
   }
 
   async findActiveFixedPriceDealIdForItem(
