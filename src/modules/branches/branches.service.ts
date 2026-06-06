@@ -69,6 +69,22 @@ interface BranchSettingsLike {
   [key: string]: unknown;
 }
 
+interface BranchAdminUpdateTarget {
+  id: string;
+  tenantId: string;
+  restaurantId: string;
+  managerId?: string | null;
+  manager?: {
+    id: string;
+    email: string;
+    profile?: {
+      firstName: string | null;
+      lastName: string | null;
+      phone: string | null;
+    } | null;
+  } | null;
+}
+
 const BRANCH_OPENING_DAY_ORDER: BranchScheduleDayEnum[] = [
   BranchScheduleDayEnum.MONDAY,
   BranchScheduleDayEnum.TUESDAY,
@@ -677,6 +693,8 @@ export class BranchesService {
         }
       }
 
+      await this.updateBranchAdminIfRequested(branch, dto, trx);
+
       return data;
     };
 
@@ -1172,6 +1190,89 @@ export class BranchesService {
 
     throw new ForbiddenException(
       'Insufficient permissions for branch opening hours write',
+    );
+  }
+
+  private async updateBranchAdminIfRequested(
+    branch: BranchAdminUpdateTarget,
+    dto: UpdateBranchDto,
+    tx: PrismaTx,
+  ) {
+    if (!this.hasBranchAdminUpdatePayload(dto)) {
+      return;
+    }
+
+    const branchAdmin = dto.branchAdmin;
+    if (!branchAdmin) {
+      return;
+    }
+
+    const managerId = branch.manager?.id ?? branch.managerId;
+    if (!managerId) {
+      throw new BadRequestException(
+        'Branch admin is not assigned to this branch',
+      );
+    }
+
+    const email = branchAdmin.email?.trim().toLowerCase();
+
+    if (email && email !== branch.manager?.email) {
+      const existingBranchAdmin = await this.usersService.findByEmail(
+        email,
+        branch.restaurantId,
+      );
+
+      if (existingBranchAdmin && existingBranchAdmin.id !== managerId) {
+        throw new BadRequestException(
+          'Branch admin already exists for this restaurant',
+        );
+      }
+    }
+
+    await this.usersService.update(
+      managerId,
+      {
+        email: email || undefined,
+        password: branchAdmin.password
+          ? await bcrypt.hash(branchAdmin.password, 10)
+          : undefined,
+        profile: this.hasBranchAdminProfileUpdatePayload(dto)
+          ? {
+              firstName:
+                branchAdmin.firstName ??
+                branch.manager?.profile?.firstName ??
+                '',
+              lastName:
+                branchAdmin.lastName ?? branch.manager?.profile?.lastName ?? '',
+              phone: branchAdmin.phone ?? branch.manager?.profile?.phone ?? '',
+            }
+          : undefined,
+      },
+      tx,
+    );
+  }
+
+  private hasBranchAdminUpdatePayload(dto: UpdateBranchDto) {
+    const branchAdmin = dto.branchAdmin;
+
+    return Boolean(
+      branchAdmin &&
+      (branchAdmin.email !== undefined ||
+        branchAdmin.password !== undefined ||
+        branchAdmin.firstName !== undefined ||
+        branchAdmin.lastName !== undefined ||
+        branchAdmin.phone !== undefined),
+    );
+  }
+
+  private hasBranchAdminProfileUpdatePayload(dto: UpdateBranchDto) {
+    const branchAdmin = dto.branchAdmin;
+
+    return Boolean(
+      branchAdmin &&
+      (branchAdmin.firstName !== undefined ||
+        branchAdmin.lastName !== undefined ||
+        branchAdmin.phone !== undefined),
     );
   }
 

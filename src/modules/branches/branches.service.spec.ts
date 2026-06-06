@@ -29,6 +29,7 @@ describe('BranchesService', () => {
     const usersService = {
       findByEmail: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     };
 
     const prisma = {
@@ -154,6 +155,71 @@ describe('BranchesService', () => {
       expect.objectContaining({
         name: 'Updated Branch',
         description: 'Updated branch description',
+      }),
+      expect.any(Object),
+    );
+    expect(result.message).toBe('Branch updated successfully');
+  });
+
+  it('updates assigned branch admin info through branch update endpoint', async () => {
+    const { service, repository, usersService, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      managerId: 'branch-admin-1',
+      manager: {
+        id: 'branch-admin-1',
+        email: 'old.branch.admin@example.com',
+        profile: {
+          firstName: 'Old',
+          lastName: 'Admin',
+          phone: '+920000000000',
+        },
+      },
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Updated Branch',
+    });
+    usersService.findByEmail.mockResolvedValue(null);
+    usersService.update.mockResolvedValue({
+      id: 'branch-admin-1',
+      email: 'new.branch.admin@example.com',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        name: 'Updated Branch',
+        branchAdmin: {
+          email: 'new.branch.admin@example.com',
+          firstName: 'New',
+          lastName: 'Manager',
+          phone: '+921111111111',
+        },
+      },
+    );
+
+    expect(usersService.update).toHaveBeenCalledWith(
+      'branch-admin-1',
+      expect.objectContaining({
+        email: 'new.branch.admin@example.com',
+        profile: {
+          firstName: 'New',
+          lastName: 'Manager',
+          phone: '+921111111111',
+        },
       }),
       expect.any(Object),
     );
