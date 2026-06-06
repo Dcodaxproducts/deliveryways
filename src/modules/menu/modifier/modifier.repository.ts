@@ -281,6 +281,19 @@ export class ModifierRepository {
     });
   }
 
+  detachModifierFromGroup(
+    modifierGroupId: string,
+    modifierId: string,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).modifierGroupModifier.deleteMany({
+      where: {
+        modifierGroupId,
+        modifierId,
+      },
+    });
+  }
+
   syncModifierGroups(
     modifierId: string,
     modifierGroupIds: string[],

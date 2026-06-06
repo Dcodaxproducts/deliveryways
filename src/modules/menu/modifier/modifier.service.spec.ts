@@ -33,6 +33,7 @@ describe('ModifierService', () => {
       hardDeleteGroup: jest.fn(),
       hardDeleteModifier: jest.fn(),
       attachModifierToGroup: jest.fn(),
+      detachModifierFromGroup: jest.fn(),
       syncModifierGroups: jest.fn(),
     };
 
@@ -394,6 +395,41 @@ describe('ModifierService', () => {
       'modifier-1',
     );
     expect(result.message).toBe('Modifier deleted successfully');
+  });
+
+  it('detaches a modifier from a modifier group without deleting the modifier', async () => {
+    const { service, modifierRepository } = makeService();
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.findModifierById.mockResolvedValue({
+      id: 'modifier-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.detachModifierFromGroup.mockResolvedValue({ count: 1 });
+
+    const result = await service.detachModifierFromGroup(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'group-1',
+      'modifier-1',
+    );
+
+    expect(modifierRepository.detachModifierFromGroup).toHaveBeenCalledWith(
+      'group-1',
+      'modifier-1',
+    );
+    expect(modifierRepository.hardDeleteModifier).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      data: { modifierGroupId: 'group-1', modifierId: 'modifier-1' },
+      message: 'Modifier detached from group successfully',
+    });
   });
 
   it('creates modifier without assigning it to modifier groups', async () => {

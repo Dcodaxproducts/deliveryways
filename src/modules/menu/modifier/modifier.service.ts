@@ -445,6 +445,40 @@ export class ModifierService {
     return { data, message: 'Modifier attached to group successfully' };
   }
 
+  async detachModifierFromGroup(
+    user: AuthUserContext,
+    groupId: string,
+    modifierId: string,
+  ) {
+    const [group, modifier] = await Promise.all([
+      this.modifierRepository.findGroupById(groupId),
+      this.modifierRepository.findModifierById(modifierId),
+    ]);
+
+    if (!group || group.deletedAt) {
+      throw new NotFoundException('Modifier group not found');
+    }
+
+    if (!modifier || modifier.deletedAt) {
+      throw new NotFoundException('Modifier not found');
+    }
+
+    if (group.restaurantId !== modifier.restaurantId) {
+      throw new BadRequestException(
+        'Modifier and modifier group must belong to the same restaurant',
+      );
+    }
+
+    await this.ensureWriteAccess(user, group.restaurantId);
+
+    await this.modifierRepository.detachModifierFromGroup(groupId, modifierId);
+
+    return {
+      data: { modifierGroupId: groupId, modifierId },
+      message: 'Modifier detached from group successfully',
+    };
+  }
+
   async attachGroupToItem(
     user: AuthUserContext,
     itemId: string,
