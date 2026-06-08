@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
   Coupon,
+  CouponApplyMode,
   CouponCampaignKind,
+  CouponDiscountType,
   CouponStatus,
   Prisma,
   PrismaClient,
@@ -76,6 +78,39 @@ export class CouponsRepository {
         OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
       },
       include: this.includeConfig,
+    });
+  }
+
+  async findActivePromotionsForMenuItem(
+    restaurantId: string,
+    branchId: string | undefined,
+    menuItemId: string,
+  ) {
+    const now = new Date();
+
+    return this.prisma.coupon.findMany({
+      where: {
+        restaurantId,
+        kind: CouponCampaignKind.PROMOTION,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        deletedAt: null,
+        isActive: true,
+        status: CouponStatus.ACTIVE,
+        startsAt: { lte: now },
+        expiresAt: { gte: now },
+        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
+        AND: [
+          {
+            OR: [
+              { scopeMenuItemId: menuItemId },
+              { scopeMenuItems: { some: { menuItemId } } },
+            ],
+          },
+        ],
+      },
+      include: this.includeConfig,
+      orderBy: [{ createdAt: 'desc' }],
     });
   }
 

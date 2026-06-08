@@ -64,6 +64,7 @@ describe('CouponsService', () => {
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
       findActivePromotionById: jest.fn(),
+      findActivePromotionsForMenuItem: jest.fn().mockResolvedValue([]),
       findTenantRestaurants: jest.fn(),
       findRestaurantInTenant: jest.fn(),
       findActiveScopeMenuItem: jest.fn(),
@@ -248,7 +249,7 @@ describe('CouponsService', () => {
         ],
       }),
     );
-    repository.findAutoApplyPromotions!.mockResolvedValue([
+    repository.findActivePromotionsForMenuItem!.mockResolvedValue([
       makeCoupon({
         id: 'deal-1',
         autoApply: true,
@@ -285,7 +286,7 @@ describe('CouponsService', () => {
         scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
       }),
     );
-    repository.findAutoApplyPromotions!.mockResolvedValue([
+    repository.findActivePromotionsForMenuItem!.mockResolvedValue([
       makeCoupon({
         id: 'deal-1',
         autoApply: true,
@@ -323,6 +324,30 @@ describe('CouponsService', () => {
     await expect(
       service.isActiveFixedPriceDealItem('rid-1', 'bid-1', 'deal-1', 'mi-1'),
     ).resolves.toBe(true);
+  });
+
+  it('infers non-auto-applied single-item ready-made fixed deals', async () => {
+    repository.findActivePromotionsForMenuItem!.mockResolvedValue([
+      makeCoupon({
+        id: 'deal-1',
+        autoApply: false,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(499),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
+      }),
+    ]);
+
+    await expect(
+      service.findActiveFixedPriceDealIdForItem('rid-1', 'bid-1', 'mi-1'),
+    ).resolves.toBe('deal-1');
+    expect(repository.findActivePromotionsForMenuItem).toHaveBeenCalledWith(
+      'rid-1',
+      'bid-1',
+      'mi-1',
+    );
   });
 
   it('prices the highest eligible items for flexible any-N fixed deals', async () => {

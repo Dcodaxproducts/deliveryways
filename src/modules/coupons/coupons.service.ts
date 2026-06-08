@@ -281,10 +281,12 @@ export class CouponsService {
     branchId: string | undefined,
     menuItemId: string,
   ) {
-    const promotions = await this.getActiveAutoApplyPromotions(
-      restaurantId,
-      branchId,
-    );
+    const promotions =
+      await this.couponsRepository.findActivePromotionsForMenuItem(
+        restaurantId,
+        branchId,
+        menuItemId,
+      );
     const deal = promotions.find((promotion) => {
       if (!this.isReadyMadeFixedPriceDeal(promotion)) {
         return false;
