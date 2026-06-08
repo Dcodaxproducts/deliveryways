@@ -3661,6 +3661,135 @@ describe('OrdersService - wallet payment', () => {
     });
   });
 
+  it('prices explicit fixed combo deal lines at the fixed deal price', async () => {
+    const calculateQuoteBenefits = jest.fn().mockResolvedValue({
+      walletAppliedAmount: new Prisma.Decimal(0),
+      loyaltyDiscountAmount: new Prisma.Decimal(0),
+      loyaltyPointsRedeemed: 0,
+      totalAmount: new Prisma.Decimal(100),
+    });
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(true),
+      getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue({
+        dealId: 'deal-1',
+        fixedPrice: new Prisma.Decimal(100),
+        menuItemIds: ['menu-1', 'menu-2'],
+      }),
+    };
+    const menuItems = new Map([
+      [
+        'menu-1',
+        {
+          id: 'menu-1',
+          name: 'No Add-Ons',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(20),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-1', variations: [], modifierLinks: [] },
+          modifierLinks: [],
+          branchOverrides: [],
+        },
+      ],
+      [
+        'menu-2',
+        {
+          id: 'menu-2',
+          name: 'Pizza Tse',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(5),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-2', variations: [], modifierLinks: [] },
+          modifierLinks: [],
+          branchOverrides: [],
+        },
+      ],
+    ]);
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              ordering: {
+                allowedOrderTypes: ['DELIVERY'],
+                allowedPaymentMethods: ['COD'],
+              },
+              deliveryConfig: {
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 0,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn(({ where }: { where: { id: string } }) =>
+            Promise.resolve(menuItems.get(where.id) ?? null),
+          ),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValue({
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { calculateQuoteBenefits } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          { menuItemId: 'menu-1', dealId: 'deal-1', quantity: 1 },
+          { menuItemId: 'menu-2', dealId: 'deal-1', quantity: 1 },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.subtotal).toBe(100);
+    expect(result.data.items).toEqual([
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        unitPrice: 80,
+        lineTotal: 80,
+      }),
+      expect.objectContaining({
+        menuItemId: 'menu-2',
+        dealId: 'deal-1',
+        unitPrice: 20,
+        lineTotal: 20,
+      }),
+    ]);
+    expect(calculateQuoteBenefits).toHaveBeenCalledWith(
+      expect.objectContaining({ subtotal: new Prisma.Decimal(100) }),
+    );
+  });
+
   it('allows quoted coupon validation without delivery coordinates on the main quote path', async () => {
     const prisma = {
       branch: {

@@ -1194,7 +1194,12 @@ export class OrdersService {
       });
     }
 
-    const subtotal = lines.reduce(
+    const pricedLines = await this.applyFixedDealPricingToQuoteLines(
+      lines,
+      branch.restaurantId,
+      branch.id,
+    );
+    const subtotal = pricedLines.reduce(
       (sum, line) => sum.plus(line.lineTotal),
       new Prisma.Decimal(0),
     );
@@ -1268,9 +1273,11 @@ export class OrdersService {
       branchId: branch.id,
       customerId: customer.customerId,
       subtotal: Number(subtotal),
-      menuItemIds: lines.map((line) => line.menuItemId),
-      categoryIds: [...new Set(lines.flatMap((line) => line.categoryIds))],
-      lineItems: lines.map((line) => ({
+      menuItemIds: pricedLines.map((line) => line.menuItemId),
+      categoryIds: [
+        ...new Set(pricedLines.flatMap((line) => line.categoryIds)),
+      ],
+      lineItems: pricedLines.map((line) => ({
         menuItemId: line.menuItemId,
         categoryId: line.categoryId,
         categoryIds: line.categoryIds,
@@ -1345,7 +1352,7 @@ export class OrdersService {
     return {
       branch,
       customer,
-      lines,
+      lines: pricedLines,
       subtotal: subtotal.toDecimalPlaces(2),
       taxAmount,
       deliveryFee: deliveryFee.toDecimalPlaces(2),
@@ -1362,6 +1369,134 @@ export class OrdersService {
       appliedCouponCode,
       appliedPromotion,
     };
+  }
+
+  private async applyFixedDealPricingToQuoteLines(
+    lines: QuoteLine[],
+    restaurantId: string,
+    branchId: string,
+  ): Promise<QuoteLine[]> {
+    const dealIds = [
+      ...new Set(
+        lines
+          .map((line) => line.dealId)
+          .filter((dealId): dealId is string => typeof dealId === 'string'),
+      ),
+    ];
+
+    let pricedLines = lines;
+
+    for (const dealId of dealIds) {
+      const pricing =
+        typeof this.couponsService.getActiveFixedPriceDealPricing === 'function'
+          ? await this.couponsService.getActiveFixedPriceDealPricing(
+              restaurantId,
+              branchId,
+              dealId,
+            )
+          : null;
+
+      if (!pricing) {
+        continue;
+      }
+
+      const requiredItemIds = new Set(pricing.menuItemIds);
+      const dealLineIndexes = pricedLines.flatMap((line, index) =>
+        line.dealId === dealId && requiredItemIds.has(line.menuItemId)
+          ? [index]
+          : [],
+      );
+      const presentItemIds = new Set(
+        dealLineIndexes.map((index) => pricedLines[index].menuItemId),
+      );
+
+      if (
+        pricing.menuItemIds.some(
+          (menuItemId) => !presentItemIds.has(menuItemId),
+        )
+      ) {
+        continue;
+      }
+
+      const firstQuantity = pricedLines[dealLineIndexes[0]]?.quantity;
+      if (
+        firstQuantity === undefined ||
+        dealLineIndexes.some(
+          (index) => pricedLines[index].quantity !== firstQuantity,
+        )
+      ) {
+        continue;
+      }
+
+      const fixedTotal = pricing.fixedPrice.mul(firstQuantity);
+      const merchandiseTotals = dealLineIndexes.map((index) => {
+        const line = pricedLines[index];
+        return line.lineTotal.minus(line.depositAmount.mul(line.quantity));
+      });
+      const allocations = this.allocateFixedDealTotal(
+        merchandiseTotals,
+        fixedTotal,
+      );
+      const allocationByIndex = new Map(
+        dealLineIndexes.map((lineIndex, allocationIndex) => [
+          lineIndex,
+          allocations[allocationIndex],
+        ]),
+      );
+
+      pricedLines = pricedLines.map((line, index) => {
+        const allocatedMerchandiseTotal = allocationByIndex.get(index);
+        if (!allocatedMerchandiseTotal) {
+          return line;
+        }
+
+        const unitPrice = allocatedMerchandiseTotal
+          .div(line.quantity)
+          .toDecimalPlaces(2);
+        const lineTotal = allocatedMerchandiseTotal
+          .plus(line.depositAmount.mul(line.quantity))
+          .toDecimalPlaces(2);
+
+        return {
+          ...line,
+          unitPrice,
+          lineTotal,
+        };
+      });
+    }
+
+    return pricedLines;
+  }
+
+  private allocateFixedDealTotal(
+    currentTotals: Prisma.Decimal[],
+    fixedTotal: Prisma.Decimal,
+  ) {
+    if (!currentTotals.length) {
+      return [];
+    }
+
+    const currentSubtotal = currentTotals.reduce(
+      (sum, total) => sum.plus(total),
+      new Prisma.Decimal(0),
+    );
+    const allocations: Prisma.Decimal[] = [];
+    let allocated = new Prisma.Decimal(0);
+
+    currentTotals.forEach((currentTotal, index) => {
+      if (index === currentTotals.length - 1) {
+        allocations.push(fixedTotal.minus(allocated).toDecimalPlaces(2));
+        return;
+      }
+
+      const allocation = currentSubtotal.greaterThan(0)
+        ? fixedTotal.mul(currentTotal).div(currentSubtotal).toDecimalPlaces(2)
+        : fixedTotal.div(currentTotals.length).toDecimalPlaces(2);
+      allocations.push(allocation);
+      allocated = allocated.plus(allocation);
+    });
+
+    return allocations;
   }
 
   private resolveRequestedWalletAmount(

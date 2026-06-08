@@ -65,6 +65,12 @@ export interface PromotionPreview {
   discountedAmount: number;
 }
 
+export interface FixedPriceDealPricing {
+  dealId: string;
+  fixedPrice: Prisma.Decimal;
+  menuItemIds: string[];
+}
+
 @Injectable()
 export class CouponsService {
   constructor(private readonly couponsRepository: CouponsRepository) {}
@@ -274,6 +280,28 @@ export class CouponsService {
       this.isFixedItemsFixedPriceDeal(deal) &&
       this.resolveFixedDealMenuItemIds(deal).includes(menuItemId)
     );
+  }
+
+  async getActiveFixedPriceDealPricing(
+    restaurantId: string,
+    branchId: string | undefined,
+    dealId: string,
+  ): Promise<FixedPriceDealPricing | null> {
+    const deal = await this.couponsRepository.findActivePromotionById(
+      restaurantId,
+      branchId,
+      dealId,
+    );
+
+    if (!deal || !this.isFixedItemsFixedPriceDeal(deal)) {
+      return null;
+    }
+
+    return {
+      dealId: deal.id,
+      fixedPrice: deal.discountValue,
+      menuItemIds: this.resolveFixedDealMenuItemIds(deal),
+    };
   }
 
   async findActiveFixedPriceDealIdForItem(

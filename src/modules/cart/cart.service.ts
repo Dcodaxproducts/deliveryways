@@ -135,6 +135,17 @@ interface ResolvedCartCustomerScope {
   restaurantId: string | null;
 }
 
+interface CartResponseDealLine {
+  id: string;
+  dealId: string | null;
+  menuItemId: string;
+  quantity: number;
+  unitPrice: number | null;
+  unitPriceWithModifiers: number | null;
+  depositTotal: number;
+  lineTotal: number | null;
+}
+
 interface ScopedBranch {
   id: string;
   tenantId: string;
@@ -1248,6 +1259,10 @@ export class CartService {
         };
       }),
     );
+    const pricedItems = await this.applyFixedDealPricingToCartItems(
+      items,
+      cart,
+    );
 
     const quote = user?.uid
       ? await this.getCartQuoteForResponse(user, cart)
@@ -1266,11 +1281,139 @@ export class CartService {
       orderTime: cart.orderTime,
       tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
-      items,
+      items: pricedItems,
       ...(quote ? { quote: quote.data } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
+  }
+
+  private async applyFixedDealPricingToCartItems<
+    T extends CartResponseDealLine,
+  >(items: T[], cart: CartSnapshot): Promise<T[]> {
+    const dealIds = [
+      ...new Set(
+        items
+          .map((item) => item.dealId)
+          .filter((dealId): dealId is string => typeof dealId === 'string'),
+      ),
+    ];
+
+    if (!dealIds.length || !this.couponsService) {
+      return items;
+    }
+
+    let pricedItems = items;
+
+    for (const dealId of dealIds) {
+      const pricing = await this.couponsService.getActiveFixedPriceDealPricing(
+        cart.restaurantId,
+        cart.branchId,
+        dealId,
+      );
+
+      if (!pricing) {
+        continue;
+      }
+
+      const requiredItemIds = new Set(pricing.menuItemIds);
+      const dealItemIndexes = pricedItems.flatMap((item, index) =>
+        item.dealId === dealId && requiredItemIds.has(item.menuItemId)
+          ? [index]
+          : [],
+      );
+      const presentItemIds = new Set(
+        dealItemIndexes.map((index) => pricedItems[index].menuItemId),
+      );
+
+      if (
+        pricing.menuItemIds.some(
+          (menuItemId) => !presentItemIds.has(menuItemId),
+        )
+      ) {
+        continue;
+      }
+
+      const firstQuantity = pricedItems[dealItemIndexes[0]]?.quantity;
+      if (
+        firstQuantity === undefined ||
+        dealItemIndexes.some(
+          (index) => pricedItems[index].quantity !== firstQuantity,
+        )
+      ) {
+        continue;
+      }
+
+      const fixedTotal = pricing.fixedPrice.mul(firstQuantity);
+      const merchandiseTotals = dealItemIndexes.map((index) => {
+        const item = pricedItems[index];
+        return new Prisma.Decimal(item.lineTotal ?? 0).minus(item.depositTotal);
+      });
+      const allocations = this.allocateFixedDealTotal(
+        merchandiseTotals,
+        fixedTotal,
+      );
+      const allocationByIndex = new Map(
+        dealItemIndexes.map((itemIndex, allocationIndex) => [
+          itemIndex,
+          allocations[allocationIndex],
+        ]),
+      );
+
+      pricedItems = pricedItems.map((item, index) => {
+        const allocatedMerchandiseTotal = allocationByIndex.get(index);
+        if (!allocatedMerchandiseTotal) {
+          return item;
+        }
+
+        const unitPrice = allocatedMerchandiseTotal
+          .div(item.quantity)
+          .toDecimalPlaces(2);
+        const lineTotal = allocatedMerchandiseTotal
+          .plus(item.depositTotal)
+          .toDecimalPlaces(2);
+
+        return {
+          ...item,
+          unitPrice: Number(unitPrice),
+          unitPriceWithModifiers: Number(unitPrice),
+          lineTotal: Number(lineTotal),
+        };
+      });
+    }
+
+    return pricedItems;
+  }
+
+  private allocateFixedDealTotal(
+    currentTotals: Prisma.Decimal[],
+    fixedTotal: Prisma.Decimal,
+  ) {
+    if (!currentTotals.length) {
+      return [];
+    }
+
+    const currentSubtotal = currentTotals.reduce(
+      (sum, total) => sum.plus(total),
+      new Prisma.Decimal(0),
+    );
+    const allocations: Prisma.Decimal[] = [];
+    let allocated = new Prisma.Decimal(0);
+
+    currentTotals.forEach((currentTotal, index) => {
+      if (index === currentTotals.length - 1) {
+        allocations.push(fixedTotal.minus(allocated).toDecimalPlaces(2));
+        return;
+      }
+
+      const allocation = currentSubtotal.greaterThan(0)
+        ? fixedTotal.mul(currentTotal).div(currentSubtotal).toDecimalPlaces(2)
+        : fixedTotal.div(currentTotals.length).toDecimalPlaces(2);
+      allocations.push(allocation);
+      allocated = allocated.plus(allocation);
+    });
+
+    return allocations;
   }
 
   private async getCartQuoteForResponse(

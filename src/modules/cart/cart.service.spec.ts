@@ -54,6 +54,7 @@ describe('CartService', () => {
     const couponsService = {
       isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(false),
       findActiveFixedPriceDealIdForItem: jest.fn().mockResolvedValue(null),
+      getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue(null),
     };
 
     const service = new CartService(
@@ -353,6 +354,119 @@ describe('CartService', () => {
       (result.data as { quote?: { deliveryFee: number; totalAmount: number } })
         .quote,
     ).toEqual({ deliveryFee: 250, totalAmount: 800 });
+  });
+
+  it('prices complete fixed combo deal rows at the deal fixed price in cart response', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+        {
+          id: 'item-2',
+          menuItemId: 'menu-2',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'No Add-Ons',
+        slug: 'no-add-ons',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 20,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Deals', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+      {
+        id: 'menu-2',
+        name: 'Pizza Tse',
+        slug: 'pizza-tse',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 5,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Deals', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: { subtotal: 100, totalAmount: 100 },
+    });
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-1',
+      fixedPrice: new Prisma.Decimal(100),
+      menuItemIds: ['menu-1', 'menu-2'],
+    });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const lineTotal = result.data.items.reduce(
+      (sum, item) => sum + (item.lineTotal ?? 0),
+      0,
+    );
+    expect(lineTotal).toBe(100);
+    expect(result.data.items).toEqual([
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        unitPrice: 80,
+        lineTotal: 80,
+      }),
+      expect.objectContaining({
+        menuItemId: 'menu-2',
+        dealId: 'deal-1',
+        unitPrice: 20,
+        lineTotal: 20,
+      }),
+    ]);
   });
 
   it('returns cart without quote when saved address is outside delivery coverage', async () => {
