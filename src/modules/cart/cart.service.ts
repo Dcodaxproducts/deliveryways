@@ -1307,6 +1307,9 @@ export class CartService {
       (normalizedMessage.includes('outside branch delivery radius') ||
         normalizedMessage.includes('outside branch delivery zones') ||
         normalizedMessage.includes('outside branch delivery zone bands') ||
+        normalizedMessage.includes(
+          'must include postalCode for postal-code delivery pricing',
+        ) ||
         normalizedMessage.includes('postal code is not serviceable'))
     );
   }
