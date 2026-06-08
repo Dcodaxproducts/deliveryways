@@ -46,6 +46,14 @@ export class PublicRestaurantQueryDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional locale for translated public content, e.g. de, ar, pt-br',
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
 }
 
 export class PublicMenuItemBySlugQueryDto extends PublicRestaurantQueryDto {}
@@ -74,6 +82,14 @@ export class ListCuisinesQueryDto extends QueryDto {
   @IsString()
   branchId?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Optional locale for translated public content, e.g. de, ar, pt-br',
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
+
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
@@ -96,6 +112,14 @@ export class ListCuisineItemsQueryDto extends QueryDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional locale for translated public content, e.g. de, ar, pt-br',
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
 
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
   @IsOptional()

@@ -3,8 +3,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { CouponDealSelectionMode, Prisma } from '@prisma/client';
+import {
+  CouponDealSelectionMode,
+  LocalizationEntityType,
+  Prisma,
+} from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -44,6 +49,12 @@ import { PaymentsService } from '../payments/payments.service';
 import { DEFAULT_MENU_ITEM_LABELS } from '../menu/item/dto';
 import { CouponsService, PromotionPreview } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DEFAULT_LOCALE } from '../localizations';
+import {
+  EntityTranslationRef,
+  LocalizationsService,
+} from '../localizations/localizations.service';
+import { normalizeLocale } from '../localizations/localization.util';
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
@@ -178,6 +189,11 @@ export interface LoyaltyRedemptionRecord {
   createdAt: string;
 }
 
+interface CustomerAppTranslationContext {
+  locale: string;
+  fieldsByKey: Map<string, Record<string, string | null>>;
+}
+
 @Injectable()
 export class CustomerAppService {
   constructor(
@@ -187,6 +203,7 @@ export class CustomerAppService {
     private readonly paymentsService?: PaymentsService,
     private readonly couponsService?: CouponsService,
     private readonly notificationsService?: NotificationsService,
+    @Optional() private readonly localizationsService?: LocalizationsService,
   ) {}
 
   async listFavorites(
@@ -395,11 +412,20 @@ export class CustomerAppService {
     );
     const { items, total } =
       await this.customerAppRepository.listCuisineCategories(resolvedQuery);
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectCuisineTranslationRefs(items),
+    );
 
     return {
       data: await Promise.all(
         items.map((item) =>
-          this.mapCuisineCategory(item, promotionContext.promotions),
+          this.mapCuisineCategory(
+            item,
+            promotionContext.promotions,
+            translationContext,
+          ),
         ),
       ),
       message: 'Cuisines fetched successfully',
@@ -434,13 +460,34 @@ export class CustomerAppService {
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
     );
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      [
+        { entityType: 'MENU_CATEGORY', entityId: cuisine.id },
+        ...visibleItems.flatMap((item) =>
+          this.collectMenuItemTranslationRefs(item),
+        ),
+      ],
+    );
 
     return {
       data: {
-        cuisine: await this.resolveCuisineMedia(cuisine),
+        cuisine: await this.resolveCuisineMedia(
+          this.applyEntityTranslation(
+            'MENU_CATEGORY',
+            cuisine.id,
+            cuisine,
+            translationContext,
+          ),
+        ),
         items: await Promise.all(
           visibleItems.map((item) =>
-            this.mapMenuItem(item, promotionContext.promotions),
+            this.mapMenuItem(
+              item,
+              promotionContext.promotions,
+              translationContext,
+            ),
           ),
         ),
       },
@@ -472,11 +519,20 @@ export class CustomerAppService {
       await this.customerAppRepository.listCuisineCategories(resolvedQuery, {
         categoryIds: promotionContext.categoryIds,
       });
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectCuisineTranslationRefs(items),
+    );
 
     return {
       data: await Promise.all(
         items.map((item) =>
-          this.mapCuisineCategory(item, promotionContext.promotions),
+          this.mapCuisineCategory(
+            item,
+            promotionContext.promotions,
+            translationContext,
+          ),
         ),
       ),
       message: 'Promotional cuisines fetched successfully',
@@ -511,11 +567,21 @@ export class CustomerAppService {
         categoryIds: promotionContext.categoryIds,
       },
     );
+    const visibleItems = this.filterAvailableMenuItems(items);
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      visibleItems.flatMap((item) => this.collectMenuItemTranslationRefs(item)),
+    );
 
     return {
       data: await Promise.all(
-        this.filterAvailableMenuItems(items).map((item) =>
-          this.mapMenuItem(item, promotionContext.promotions),
+        visibleItems.map((item) =>
+          this.mapMenuItem(
+            item,
+            promotionContext.promotions,
+            translationContext,
+          ),
         ),
       ),
       message: 'Promotional items fetched successfully',
@@ -595,9 +661,18 @@ export class CustomerAppService {
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
     );
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectMenuItemTranslationRefs(item),
+    );
 
     return {
-      data: await this.mapMenuItem(item, promotionContext.promotions),
+      data: await this.mapMenuItem(
+        item,
+        promotionContext.promotions,
+        translationContext,
+      ),
       message: 'Menu item fetched successfully',
     };
   }
@@ -628,31 +703,68 @@ export class CustomerAppService {
         : Promise.resolve([]),
       this.getFaqs(resolvedQuery, user),
     ]);
+    const visiblePromotionalItems =
+      this.filterAvailableMenuItems(promotionalItems);
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      [
+        { entityType: 'RESTAURANT', entityId: restaurant.id },
+        ...(branch
+          ? [{ entityType: 'BRANCH' as const, entityId: branch.id }]
+          : []),
+        ...this.collectCuisineTranslationRefs(cuisines.items),
+        ...visiblePromotionalItems.flatMap((item) =>
+          this.collectMenuItemTranslationRefs(item),
+        ),
+      ],
+    );
+    const translatedRestaurant = this.applyEntityTranslation(
+      'RESTAURANT',
+      restaurant.id,
+      restaurant,
+      translationContext,
+    );
+    const translatedBranch = branch
+      ? this.applyEntityTranslation(
+          'BRANCH',
+          branch.id,
+          branch,
+          translationContext,
+        )
+      : null;
 
     return {
       data: {
         restaurant: {
-          id: restaurant.id,
-          name: restaurant.name,
-          logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
-          coverImage: await this.resolveMediaUrl(restaurant.coverImage),
-          tagline: restaurant.tagline,
-          bio: restaurant.bio,
+          id: translatedRestaurant.id,
+          name: translatedRestaurant.name,
+          logoUrl: await this.resolveMediaUrl(translatedRestaurant.logoUrl),
+          coverImage: await this.resolveMediaUrl(
+            translatedRestaurant.coverImage,
+          ),
+          tagline: translatedRestaurant.tagline,
+          bio: translatedRestaurant.bio,
         },
         config: {
           currency: this.readRestaurantCurrency(restaurant.settings),
           branding: this.asObject(restaurant.branding),
         },
-        branch: branch
+        branch: translatedBranch
           ? {
-              id: branch.id,
-              name: branch.name,
-              logoUrl: await this.resolveMediaUrl(branch.logoUrl ?? null),
-              coverImage: await this.resolveMediaUrl(branch.coverImage),
-              description: branch.description,
-              tableReservationsEnabled: this.readBooleanValue(branch.settings, [
-                ['tableReservationsEnabled'],
-              ]),
+              id: translatedBranch.id,
+              name: translatedBranch.name,
+              logoUrl: await this.resolveMediaUrl(
+                translatedBranch.logoUrl ?? null,
+              ),
+              coverImage: await this.resolveMediaUrl(
+                translatedBranch.coverImage,
+              ),
+              description: translatedBranch.description,
+              tableReservationsEnabled: this.readBooleanValue(
+                translatedBranch.settings,
+                [['tableReservationsEnabled']],
+              ),
             }
           : null,
         landingPopup: branch
@@ -660,12 +772,20 @@ export class CustomerAppService {
           : null,
         cuisines: await Promise.all(
           cuisines.items.map((item) =>
-            this.mapCuisineCategory(item, promotionContext.promotions),
+            this.mapCuisineCategory(
+              item,
+              promotionContext.promotions,
+              translationContext,
+            ),
           ),
         ),
         promotionalItems: await Promise.all(
-          this.filterAvailableMenuItems(promotionalItems).map((item) =>
-            this.mapMenuItem(item, promotionContext.promotions),
+          visiblePromotionalItems.map((item) =>
+            this.mapMenuItem(
+              item,
+              promotionContext.promotions,
+              translationContext,
+            ),
           ),
         ),
         faqs: faqs.data.items,
@@ -1279,6 +1399,150 @@ export class CustomerAppService {
     };
   }
 
+  private async loadTranslationContext(
+    restaurantId: string,
+    localeParam: string | null | undefined,
+    refs: EntityTranslationRef[],
+  ): Promise<CustomerAppTranslationContext | undefined> {
+    const locale = normalizeLocale(localeParam);
+    if (
+      locale === DEFAULT_LOCALE ||
+      !this.localizationsService ||
+      !refs.length
+    ) {
+      return undefined;
+    }
+
+    const translations = await this.localizationsService.findActiveTranslations(
+      restaurantId,
+      locale,
+      refs,
+    );
+
+    return {
+      locale,
+      fieldsByKey: new Map(
+        translations.map((translation) => [
+          this.translationKey(translation.entityType, translation.entityId),
+          translation.fields,
+        ]),
+      ),
+    };
+  }
+
+  private applyEntityTranslation<T extends object>(
+    entityType: LocalizationEntityType,
+    entityId: string,
+    source: T,
+    context?: CustomerAppTranslationContext,
+  ): T {
+    const fields = context?.fieldsByKey.get(
+      this.translationKey(entityType, entityId),
+    );
+
+    if (!fields) {
+      return source;
+    }
+
+    return {
+      ...source,
+      ...Object.fromEntries(
+        Object.entries(fields).filter(([, value]) => value !== null),
+      ),
+    };
+  }
+
+  private translationKey(entityType: LocalizationEntityType, entityId: string) {
+    return `${entityType}:${entityId}`;
+  }
+
+  private collectCuisineTranslationRefs(
+    cuisines: Array<{
+      id: string;
+      items?: unknown[];
+    }>,
+  ): EntityTranslationRef[] {
+    return cuisines.flatMap((cuisine) => [
+      { entityType: 'MENU_CATEGORY', entityId: cuisine.id },
+      ...(
+        (cuisine.items ?? []) as Array<
+          Parameters<CustomerAppService['collectMenuItemTranslationRefs']>[0]
+        >
+      ).flatMap((item) => this.collectMenuItemTranslationRefs(item)),
+    ]);
+  }
+
+  private collectMenuItemTranslationRefs(item: {
+    id: string;
+    restaurant?: { id: string } | null;
+    category?: { id: string } | null;
+    variations?: Array<{ id: string }>;
+    variationPriceOverrides?: Array<{
+      variation?: { id: string } | null;
+    }>;
+    modifierLinks?: Array<{
+      modifierGroup: {
+        id: string;
+        modifierLinks: Array<{
+          modifier: { id: string };
+        }>;
+      };
+    }>;
+    modifierPriceOverrides?: Array<{
+      modifier?: { id: string } | null;
+    }>;
+  }): EntityTranslationRef[] {
+    const refs: EntityTranslationRef[] = [
+      { entityType: 'MENU_ITEM', entityId: item.id },
+    ];
+
+    if (item.restaurant?.id) {
+      refs.push({ entityType: 'RESTAURANT', entityId: item.restaurant.id });
+    }
+
+    if (item.category?.id) {
+      refs.push({ entityType: 'MENU_CATEGORY', entityId: item.category.id });
+    }
+
+    for (const variation of item.variations ?? []) {
+      refs.push({
+        entityType: 'MENU_ITEM_VARIATION',
+        entityId: variation.id,
+      });
+    }
+
+    for (const override of item.variationPriceOverrides ?? []) {
+      if (override.variation?.id) {
+        refs.push({
+          entityType: 'MENU_ITEM_VARIATION',
+          entityId: override.variation.id,
+        });
+      }
+    }
+
+    for (const groupLink of item.modifierLinks ?? []) {
+      refs.push({
+        entityType: 'MODIFIER_GROUP',
+        entityId: groupLink.modifierGroup.id,
+      });
+
+      for (const modifierLink of groupLink.modifierGroup.modifierLinks) {
+        refs.push({
+          entityType: 'MODIFIER',
+          entityId: modifierLink.modifier.id,
+        });
+      }
+    }
+
+    for (const override of item.modifierPriceOverrides ?? []) {
+      if (override.modifier?.id) {
+        refs.push({ entityType: 'MODIFIER', entityId: override.modifier.id });
+      }
+    }
+
+    return refs;
+  }
+
   private async resolveAdminReservationRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
@@ -1818,7 +2082,30 @@ export class CustomerAppService {
       }>;
     },
     promotions: Array<Record<string, unknown>> = [],
+    translationContext?: CustomerAppTranslationContext,
   ) {
+    const translatedItem = this.applyEntityTranslation(
+      'MENU_ITEM',
+      item.id,
+      item,
+      translationContext,
+    );
+    const translatedRestaurant = item.restaurant
+      ? this.applyEntityTranslation(
+          'RESTAURANT',
+          item.restaurant.id,
+          item.restaurant,
+          translationContext,
+        )
+      : null;
+    const translatedCategory = item.category
+      ? this.applyEntityTranslation(
+          'MENU_CATEGORY',
+          item.category.id,
+          item.category,
+          translationContext,
+        )
+      : null;
     const branchOverride = item.branchOverrides?.[0];
     const variations = this.resolvePublicItemVariations(item);
     const settings =
@@ -1842,15 +2129,21 @@ export class CustomerAppService {
       variations,
       item.id,
     ).map((variation) => {
+      const translatedVariation = this.applyEntityTranslation(
+        'MENU_ITEM_VARIATION',
+        variation.id,
+        variation,
+        translationContext,
+      );
       const variationPromotion = this.resolveBestScopedItemPromotion(
         item.id,
         this.itemCategoryIds(item),
-        variation.price,
+        translatedVariation.price,
         promotions,
       );
 
       return {
-        ...variation,
+        ...translatedVariation,
         discountedPrice: variationPromotion?.discountedAmount ?? null,
         promotion: variationPromotion ?? null,
       };
@@ -1858,11 +2151,11 @@ export class CustomerAppService {
 
     return {
       id: item.id,
-      name: item.name,
+      name: translatedItem.name,
       slug: item.slug,
-      description: item.description,
-      ingredients: item.ingredients,
-      nutritionalInformation: item.nutritionalInformation,
+      description: translatedItem.description,
+      ingredients: translatedItem.ingredients,
+      nutritionalInformation: translatedItem.nutritionalInformation,
       dietaryFlags,
       allergenFlags: this.readStringArray(item.allergenFlags),
       labels: dietaryFlags,
@@ -1887,55 +2180,58 @@ export class CustomerAppService {
       isRequired: item.isRequired ?? false,
       minSelect: item.isRequired ? (item.minSelect ?? 1) : 0,
       maxSelect: item.isRequired ? (item.maxSelect ?? null) : 1,
-      restaurant: item.restaurant
+      restaurant: translatedRestaurant
         ? {
-            id: item.restaurant.id,
-            name: item.restaurant.name,
-            logoUrl: await this.resolveMediaUrl(item.restaurant.logoUrl),
-            tagline: item.restaurant.tagline ?? null,
+            id: translatedRestaurant.id,
+            name: translatedRestaurant.name,
+            logoUrl: await this.resolveMediaUrl(translatedRestaurant.logoUrl),
+            tagline: translatedRestaurant.tagline ?? null,
           }
         : null,
-      category: item.category
+      category: translatedCategory
         ? {
-            ...item.category,
-            imageUrl: await this.resolveMediaUrl(item.category.imageUrl),
+            ...translatedCategory,
+            imageUrl: await this.resolveMediaUrl(translatedCategory.imageUrl),
           }
         : null,
       variations: normalizedVariations,
       modifierPriceOverrides: item.modifierPriceOverrides ?? [],
-      modifiers: this.mapItemModifiers(item),
+      modifiers: this.mapItemModifiers(item, translationContext),
       isAvailable: branchOverride?.isAvailable ?? true,
     };
   }
 
-  private mapItemModifiers(item: {
-    id: string;
-    isRequired?: boolean | null;
-    modifierLinks?: Array<{
-      modifierGroup: {
-        modifierLinks: Array<{
-          sortOrder: number;
-          modifier: {
-            id: string;
-            name: string;
-            priceDelta: Prisma.Decimal;
-            sortOrder?: number;
-            itemPriceOverrides?: Array<{
-              menuItemId: string;
+  private mapItemModifiers(
+    item: {
+      id: string;
+      isRequired?: boolean | null;
+      modifierLinks?: Array<{
+        modifierGroup: {
+          modifierLinks: Array<{
+            sortOrder: number;
+            modifier: {
+              id: string;
+              name: string;
               priceDelta: Prisma.Decimal;
-            }>;
-          };
-        }>;
-      };
-    }>;
-    modifierPriceOverrides?: Array<{
-      menuItemId?: string | null;
-      modifierId?: string;
-      priceDelta: Prisma.Decimal;
-      isRequired?: boolean;
-      modifier: PublicMenuItemModifier;
-    }>;
-  }) {
+              sortOrder?: number;
+              itemPriceOverrides?: Array<{
+                menuItemId: string;
+                priceDelta: Prisma.Decimal;
+              }>;
+            };
+          }>;
+        };
+      }>;
+      modifierPriceOverrides?: Array<{
+        menuItemId?: string | null;
+        modifierId?: string;
+        priceDelta: Prisma.Decimal;
+        isRequired?: boolean;
+        modifier: PublicMenuItemModifier;
+      }>;
+    },
+    translationContext?: CustomerAppTranslationContext,
+  ) {
     const modifierById = new Map<
       string,
       {
@@ -1961,9 +2257,16 @@ export class CustomerAppService {
           (override) => override.menuItemId === item.id,
         );
 
+        const translatedModifier = this.applyEntityTranslation(
+          'MODIFIER',
+          modifier.id,
+          modifier,
+          translationContext,
+        );
+
         modifierById.set(modifier.id, {
           id: modifier.id,
-          name: modifier.name,
+          name: translatedModifier.name,
           sortOrder: modifier.sortOrder ?? modifierLink.sortOrder,
           priceDelta: Number(
             priceOverride?.priceDelta ??
@@ -1980,9 +2283,16 @@ export class CustomerAppService {
         continue;
       }
 
+      const translatedModifier = this.applyEntityTranslation(
+        'MODIFIER',
+        override.modifier.id,
+        override.modifier,
+        translationContext,
+      );
+
       modifierById.set(override.modifier.id, {
         id: override.modifier.id,
-        name: override.modifier.name,
+        name: translatedModifier.name,
         sortOrder: override.modifier.sortOrder,
         priceDelta: Number(override.priceDelta),
         isRequired: override.isRequired ?? false,
@@ -2006,16 +2316,23 @@ export class CustomerAppService {
       items?: unknown[];
     },
     promotions: Array<Record<string, unknown>> = [],
+    translationContext?: CustomerAppTranslationContext,
   ) {
+    const translatedItem = this.applyEntityTranslation(
+      'MENU_CATEGORY',
+      item.id,
+      item,
+      translationContext,
+    );
     const visibleItems = this.filterAvailableMenuItems(
       (item.items ?? []) as PublicMenuItemScheduleCarrier[],
     );
 
     return {
       id: item.id,
-      name: item.name,
+      name: translatedItem.name,
       slug: item.slug,
-      description: item.description ?? null,
+      description: translatedItem.description ?? null,
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       sortOrder: item.sortOrder,
       itemCount: item.items ? visibleItems.length : item._count.items,
@@ -2024,6 +2341,7 @@ export class CustomerAppService {
           this.mapMenuItem(
             menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
             promotions,
+            translationContext,
           ),
         ),
       ),

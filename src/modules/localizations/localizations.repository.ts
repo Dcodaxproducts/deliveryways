@@ -158,4 +158,34 @@ export class LocalizationsRepository {
       },
     });
   }
+
+  findActiveByEntityRefs(params: {
+    restaurantId: string;
+    locale: string;
+    refs: Array<{
+      entityType: PrismaLocalizationEntityType;
+      entityId: string;
+    }>;
+  }) {
+    if (!params.refs.length) {
+      return Promise.resolve([]);
+    }
+
+    return this.prisma.entityTranslation.findMany({
+      where: {
+        restaurantId: params.restaurantId,
+        locale: params.locale,
+        isActive: true,
+        OR: params.refs.map((ref) => ({
+          entityType: ref.entityType,
+          entityId: ref.entityId,
+        })),
+      },
+      select: {
+        entityType: true,
+        entityId: true,
+        fields: true,
+      },
+    });
+  }
 }

@@ -110,7 +110,9 @@ describe('CustomerAppService', () => {
     branchOverrides: [],
   };
 
-  const makeService = (options: { notifications?: boolean } = {}) => {
+  const makeService = (
+    options: { notifications?: boolean; localizations?: boolean } = {},
+  ) => {
     const findBranchesPublicContent = jest.fn<
       Promise<
         Array<{
@@ -169,6 +171,10 @@ describe('CustomerAppService', () => {
       notifyTableReservationCustomer: jest.fn(),
     };
 
+    const localizationsService = {
+      findActiveTranslations: jest.fn().mockResolvedValue([]),
+    };
+
     const service = new CustomerAppService(
       repository as never,
       storageService as never,
@@ -176,6 +182,7 @@ describe('CustomerAppService', () => {
       paymentsService as never,
       couponsService as never,
       options.notifications ? (notificationsService as never) : undefined,
+      options.localizations ? (localizationsService as never) : undefined,
     );
     return {
       service,
@@ -185,6 +192,7 @@ describe('CustomerAppService', () => {
       couponsService,
       storageService,
       notificationsService,
+      localizationsService,
     };
   };
 
@@ -930,6 +938,115 @@ describe('CustomerAppService', () => {
     );
     expect('modifierLinks' in result.data.items[0]).toBe(false);
     expect('modifierGroups' in result.data.items[0]).toBe(false);
+  });
+
+  it('applies active translations to public cuisine item responses', async () => {
+    const { service, repository, localizationsService } = makeService({
+      localizations: true,
+    });
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.findPublicCuisine.mockResolvedValue({
+      id: 'category-1',
+      name: 'Burgers',
+      slug: 'burgers',
+      description: 'Default category',
+      imageUrl: 'https://cdn.example.com/category.png',
+    });
+    repository.listCuisineMenuItems.mockResolvedValue({
+      items: [itemFixture],
+      total: 1,
+    });
+    localizationsService.findActiveTranslations.mockResolvedValue([
+      {
+        entityType: 'MENU_CATEGORY',
+        entityId: 'category-1',
+        fields: { name: 'Burger DE', description: 'Kategorie DE' },
+      },
+      {
+        entityType: 'MENU_ITEM',
+        entityId: 'item-1',
+        fields: { name: 'Zinger DE', description: 'Beschreibung DE' },
+      },
+      {
+        entityType: 'RESTAURANT',
+        entityId: 'restaurant-1',
+        fields: { name: 'Kueche DE' },
+      },
+      {
+        entityType: 'MENU_ITEM_VARIATION',
+        entityId: 'variation-1',
+        fields: { name: 'Gross' },
+      },
+      {
+        entityType: 'MODIFIER',
+        entityId: 'modifier-1',
+        fields: { name: 'Extra Kaese' },
+      },
+    ]);
+
+    const result = await service.listCuisineItems('category-1', {
+      restaurantId: 'restaurant-1',
+      locale: 'de',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(localizationsService.findActiveTranslations).toHaveBeenCalledWith(
+      'restaurant-1',
+      'de',
+      expect.arrayContaining([
+        { entityType: 'MENU_CATEGORY', entityId: 'category-1' },
+        { entityType: 'MENU_ITEM', entityId: 'item-1' },
+        { entityType: 'RESTAURANT', entityId: 'restaurant-1' },
+        { entityType: 'MENU_ITEM_VARIATION', entityId: 'variation-1' },
+        { entityType: 'MODIFIER', entityId: 'modifier-1' },
+      ]),
+    );
+    expect(result.data.cuisine).toEqual(
+      expect.objectContaining({
+        name: 'Burger DE',
+        description: 'Kategorie DE',
+      }),
+    );
+    const translatedItem = result.data.items[0] as {
+      restaurant: { name: string } | null;
+      category: { name: string } | null;
+      variations: Array<{ id: string; name: string }>;
+      modifiers: Array<{ id: string; name: string }>;
+    };
+
+    expect(translatedItem).toEqual(
+      expect.objectContaining({
+        name: 'Zinger DE',
+        description: 'Beschreibung DE',
+        variations: [
+          expect.objectContaining({
+            id: 'variation-1',
+            name: 'Gross',
+          }),
+        ],
+        modifiers: [
+          expect.objectContaining({
+            id: 'modifier-1',
+            name: 'Extra Kaese',
+          }),
+        ],
+      }),
+    );
+    expect(translatedItem.restaurant?.name).toBe('Kueche DE');
+    expect(translatedItem.category?.name).toBe('Burger DE');
   });
 
   it('hides cuisine items when their timed menu is not currently active', async () => {

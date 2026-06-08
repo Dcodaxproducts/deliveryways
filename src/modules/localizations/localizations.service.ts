@@ -16,6 +16,17 @@ import {
 import { ListEntityTranslationsDto, UpsertEntityTranslationDto } from './dto';
 import { LocalizationsRepository } from './localizations.repository';
 
+export interface EntityTranslationRef {
+  entityType: PrismaLocalizationEntityType;
+  entityId: string;
+}
+
+export interface ActiveEntityTranslation {
+  entityType: PrismaLocalizationEntityType;
+  entityId: string;
+  fields: Record<string, string | null>;
+}
+
 @Injectable()
 export class LocalizationsService {
   constructor(
@@ -141,6 +152,29 @@ export class LocalizationsService {
     };
   }
 
+  async findActiveTranslations(
+    restaurantId: string,
+    localeParam: string | null | undefined,
+    refs: EntityTranslationRef[],
+  ): Promise<ActiveEntityTranslation[]> {
+    const locale = normalizeLocale(localeParam);
+    const uniqueRefs = this.uniqueEntityRefs(refs);
+    const translations =
+      await this.localizationsRepository.findActiveByEntityRefs({
+        restaurantId,
+        locale,
+        refs: uniqueRefs,
+      });
+
+    return translations
+      .map((translation) => ({
+        entityType: translation.entityType,
+        entityId: translation.entityId,
+        fields: this.readTranslationFields(translation.fields),
+      }))
+      .filter((translation) => Object.keys(translation.fields).length > 0);
+  }
+
   private parseEntityType(value: string): PrismaLocalizationEntityType {
     const normalized = value.trim().toUpperCase();
     if (!isLocalizationEntityType(normalized)) {
@@ -223,5 +257,39 @@ export class LocalizationsService {
     restaurant?: { tenantId: string };
   }): string {
     return entity.tenantId ?? entity.restaurant?.tenantId ?? '';
+  }
+
+  private uniqueEntityRefs(refs: EntityTranslationRef[]) {
+    const seen = new Set<string>();
+    const uniqueRefs: EntityTranslationRef[] = [];
+
+    for (const ref of refs) {
+      const key = `${ref.entityType}:${ref.entityId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      uniqueRefs.push(ref);
+    }
+
+    return uniqueRefs;
+  }
+
+  private readTranslationFields(value: unknown): Record<string, string | null> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    const fields: Record<string, string | null> = {};
+    for (const [field, fieldValue] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      if (fieldValue === null || typeof fieldValue === 'string') {
+        fields[field] = fieldValue;
+      }
+    }
+
+    return fields;
   }
 }

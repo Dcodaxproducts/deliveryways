@@ -11,6 +11,7 @@ describe('LocalizationsService', () => {
       upsert: jest.fn(),
       list: jest.fn(),
       deactivate: jest.fn(),
+      findActiveByEntityRefs: jest.fn(),
     };
 
     const service = new LocalizationsService(
@@ -128,5 +129,41 @@ describe('LocalizationsService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('loads active translations for public response mapping', async () => {
+    const { service, repository } = makeService();
+    repository.findActiveByEntityRefs.mockResolvedValue([
+      {
+        entityType: 'MENU_ITEM',
+        entityId: 'item-1',
+        fields: {
+          name: 'Burger DE',
+          description: null,
+          basePrice: 1000,
+        },
+      },
+    ]);
+
+    const result = await service.findActiveTranslations('restaurant-1', 'DE', [
+      { entityType: 'MENU_ITEM', entityId: 'item-1' },
+      { entityType: 'MENU_ITEM', entityId: 'item-1' },
+    ]);
+
+    expect(repository.findActiveByEntityRefs).toHaveBeenCalledWith({
+      restaurantId: 'restaurant-1',
+      locale: 'de',
+      refs: [{ entityType: 'MENU_ITEM', entityId: 'item-1' }],
+    });
+    expect(result).toEqual([
+      {
+        entityType: 'MENU_ITEM',
+        entityId: 'item-1',
+        fields: {
+          name: 'Burger DE',
+          description: null,
+        },
+      },
+    ]);
   });
 });

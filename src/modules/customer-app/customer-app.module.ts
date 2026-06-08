@@ -8,6 +8,7 @@ import { CustomerAppService } from './customer-app.service';
 import { PublicContentController } from './public-content.controller';
 import { CouponsModule } from '../coupons/coupons.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { LocalizationsModule } from '../localizations';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     StorageModule,
     CouponsModule,
     NotificationsModule,
+    LocalizationsModule,
   ],
   controllers: [CustomerAppController, PublicContentController],
   providers: [CustomerAppRepository, CustomerAppService],
