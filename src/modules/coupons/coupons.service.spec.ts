@@ -213,6 +213,47 @@ describe('CouponsService', () => {
     expect(Number(result.discountAmount)).toBe(301);
   });
 
+  it('does not apply scoped fixed promotions to explicit deal lines', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(20),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeMenuItems: [
+          { menuItem: { id: 'mi-1' } },
+          { menuItem: { id: 'mi-2' } },
+        ],
+      }),
+    );
+
+    await expect(
+      service.validateForCheckout({
+        ...baseInput,
+        lineItems: [
+          {
+            menuItemId: 'mi-1',
+            categoryId: 'cat-1',
+            dealId: 'deal-1',
+            lineTotal: 57.14,
+          },
+          {
+            menuItemId: 'mi-2',
+            categoryId: 'cat-2',
+            dealId: 'deal-1',
+            lineTotal: 14.29,
+          },
+          {
+            menuItemId: 'mi-3',
+            categoryId: 'cat-2',
+            lineTotal: 37,
+          },
+        ],
+      }),
+    ).rejects.toThrow('Coupon eligible subtotal must be greater than zero');
+  });
+
   it('requires every scoped menu item for fixed price promotions', async () => {
     repository.findByCode!.mockResolvedValue(
       makeCoupon({

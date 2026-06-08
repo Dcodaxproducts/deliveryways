@@ -1281,6 +1281,7 @@ export class OrdersService {
         menuItemId: line.menuItemId,
         categoryId: line.categoryId,
         categoryIds: line.categoryIds,
+        dealId: line.dealId,
         lineTotal: Number(line.lineTotal),
       })),
     };

@@ -3788,6 +3788,22 @@ describe('OrdersService - wallet payment', () => {
     expect(calculateQuoteBenefits).toHaveBeenCalledWith(
       expect.objectContaining({ subtotal: new Prisma.Decimal(100) }),
     );
+    expect(couponsService.findBestAutoApplyPromotion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lineItems: [
+          expect.objectContaining({
+            menuItemId: 'menu-1',
+            dealId: 'deal-1',
+            lineTotal: 80,
+          }),
+          expect.objectContaining({
+            menuItemId: 'menu-2',
+            dealId: 'deal-1',
+            lineTotal: 20,
+          }),
+        ],
+      }),
+    );
   });
 
   it('allows quoted coupon validation without delivery coordinates on the main quote path', async () => {

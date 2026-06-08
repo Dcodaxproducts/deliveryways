@@ -29,6 +29,7 @@ export interface CouponValidationLineInput {
   menuItemId: string;
   categoryId: string;
   categoryIds?: string[];
+  dealId?: string;
   quantity?: number;
   unitPrice?: number;
   lineTotal: number;
@@ -633,7 +634,13 @@ export class CouponsService {
       );
     }
 
-    const selectedMenuItemIds = new Set(input.menuItemIds);
+    const selectedMenuItemIds = new Set(
+      input.lineItems?.length
+        ? input.lineItems
+            .filter((line) => !line.dealId)
+            .map((line) => line.menuItemId)
+        : input.menuItemIds,
+    );
     const missingMenuItem = scopedMenuItemIds.find(
       (menuItemId) => !selectedMenuItemIds.has(menuItemId),
     );
@@ -685,6 +692,10 @@ export class CouponsService {
 
     if (input.lineItems?.length) {
       return input.lineItems.reduce((sum, line) => {
+        if (line.dealId) {
+          return sum;
+        }
+
         const matches =
           scopedMenuItemIds.includes(line.menuItemId) ||
           (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
@@ -745,6 +756,10 @@ export class CouponsService {
     }
 
     const unitPrices = input.lineItems.flatMap((line) => {
+      if (line.dealId) {
+        return [];
+      }
+
       const matches =
         scopedMenuItemIds.includes(line.menuItemId) ||
         (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
@@ -783,6 +798,10 @@ export class CouponsService {
   ) {
     if (input.lineItems?.length) {
       return input.lineItems.reduce((sum, line) => {
+        if (line.dealId) {
+          return sum;
+        }
+
         const matches =
           scopedMenuItemIds.includes(line.menuItemId) ||
           (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
