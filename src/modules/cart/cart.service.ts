@@ -1444,16 +1444,23 @@ export class CartService {
     }
 
     const normalizedMessage = this.getBadRequestMessage(error);
+    const deliveryMessage =
+      typeof normalizedMessage === 'string'
+        ? normalizedMessage.toLowerCase()
+        : null;
 
     return (
-      typeof normalizedMessage === 'string' &&
-      (normalizedMessage.includes('outside branch delivery radius') ||
-        normalizedMessage.includes('outside branch delivery zones') ||
-        normalizedMessage.includes('outside branch delivery zone bands') ||
-        normalizedMessage.includes(
-          'must include postalCode for postal-code delivery pricing',
+      deliveryMessage !== null &&
+      (deliveryMessage.includes('outside branch delivery radius') ||
+        deliveryMessage.includes('outside branch delivery zones') ||
+        deliveryMessage.includes('outside branch delivery zone bands') ||
+        deliveryMessage.includes(
+          'must include postalcode for postal-code delivery pricing',
         ) ||
-        normalizedMessage.includes('postal code is not serviceable'))
+        (deliveryMessage.includes('postal code') &&
+          (deliveryMessage.includes('not serviceable') ||
+            deliveryMessage.includes('not in deliveryzone') ||
+            deliveryMessage.includes('not in delivery zone'))))
     );
   }
 
