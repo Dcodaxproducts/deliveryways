@@ -518,6 +518,39 @@ export class ModifierService {
     return { data, message: 'Modifier group attached to item successfully' };
   }
 
+  async detachGroupFromItem(
+    user: AuthUserContext,
+    itemId: string,
+    groupId: string,
+  ) {
+    const [item, group] = await Promise.all([
+      this.prisma.menuItem.findUnique({ where: { id: itemId } }),
+      this.modifierRepository.findGroupById(groupId),
+    ]);
+
+    if (!item || item.deletedAt) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    if (!group || group.deletedAt) {
+      throw new NotFoundException('Modifier group not found');
+    }
+
+    if (item.restaurantId !== group.restaurantId) {
+      throw new BadRequestException(
+        'Menu item and modifier group must belong to the same restaurant',
+      );
+    }
+
+    await this.ensureWriteAccess(user, item.restaurantId);
+    await this.modifierRepository.detachGroupFromItem(itemId, groupId);
+
+    return {
+      data: { menuItemId: itemId, modifierGroupId: groupId },
+      message: 'Modifier group detached from item successfully',
+    };
+  }
+
   async attachGroupToCategory(
     user: AuthUserContext,
     categoryId: string,

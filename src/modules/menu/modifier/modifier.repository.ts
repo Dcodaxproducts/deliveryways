@@ -391,6 +391,19 @@ export class ModifierRepository {
     });
   }
 
+  detachGroupFromItem(
+    menuItemId: string,
+    modifierGroupId: string,
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).menuItemModifierGroup.deleteMany({
+      where: {
+        menuItemId,
+        modifierGroupId,
+      },
+    });
+  }
+
   async attachGroupToCategory(
     categoryId: string,
     modifierGroupId: string,

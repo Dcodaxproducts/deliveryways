@@ -23,6 +23,7 @@ describe('ModifierService', () => {
       findModifierById: jest.fn(),
       updateModifier: jest.fn(),
       attachGroupToItem: jest.fn(),
+      detachGroupFromItem: jest.fn(),
       attachGroupToCategory: jest.fn(),
       listCategoryGroups: jest.fn(),
       listGroupCategories: jest.fn(),
@@ -614,6 +615,40 @@ describe('ModifierService', () => {
       3,
       2,
     );
+  });
+
+  it('detaches modifier group from item without deleting the group', async () => {
+    const { service, modifierRepository, prisma } = makeService();
+    prisma.menuItem.findUnique.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.findGroupById.mockResolvedValue({
+      id: 'group-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    modifierRepository.detachGroupFromItem.mockResolvedValue({ count: 1 });
+
+    const result = await service.detachGroupFromItem(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'item-1',
+      'group-1',
+    );
+
+    expect(modifierRepository.detachGroupFromItem).toHaveBeenCalledWith(
+      'item-1',
+      'group-1',
+    );
+    expect(modifierRepository.hardDeleteGroup).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      data: { menuItemId: 'item-1', modifierGroupId: 'group-1' },
+      message: 'Modifier group detached from item successfully',
+    });
   });
 
   it('lists categories assigned to a modifier group', async () => {

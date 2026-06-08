@@ -279,6 +279,18 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Delete('items/:itemId/modifier-groups/:groupId')
+  detachModifierGroupFromItem(
+    @CurrentUser() user: AuthUserContext,
+    @Param('itemId') itemId: string,
+    @Param('groupId') groupId: string,
+  ) {
+    return this.modifierService.detachGroupFromItem(user, itemId, groupId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
