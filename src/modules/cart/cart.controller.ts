@@ -22,6 +22,7 @@ import {
   CartCustomerScopeDto,
   CheckoutCartDto,
   QuoteCartDto,
+  UpdateCartDealDto,
   UpdateCartAddressDto,
   UpdateCartCouponDto,
   UpdateCartDto,
@@ -158,6 +159,36 @@ export class CartController {
     return this.cartService.removeItem(
       user,
       itemId,
+      scope.customerId,
+      scope.restaurantId,
+    );
+  }
+
+  @Patch('deals/:dealId')
+  updateDeal(
+    @CurrentUser() user: AuthUserContext,
+    @Param('dealId') dealId: string,
+    @Body() dto: UpdateCartDealDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.updateDeal(
+      user,
+      dealId,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
+  }
+
+  @Delete('deals/:dealId')
+  removeDeal(
+    @CurrentUser() user: AuthUserContext,
+    @Param('dealId') dealId: string,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.removeDeal(
+      user,
+      dealId,
       scope.customerId,
       scope.restaurantId,
     );

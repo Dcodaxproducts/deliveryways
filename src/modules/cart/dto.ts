@@ -160,6 +160,13 @@ export class UpdateCartItemDto {
   note?: string | null;
 }
 
+export class UpdateCartDealDto {
+  @ApiProperty({ minimum: 1 })
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+}
+
 export class UpdateCartDto {
   @ApiPropertyOptional({ enum: OrderTypeEnum })
   @IsOptional()

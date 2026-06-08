@@ -63,8 +63,32 @@ export class CartRepository {
     return this.client(tx).cartItem.update({ where: { id }, data });
   }
 
+  async updateItems(
+    ids: string[],
+    data: Prisma.CartItemUpdateManyMutationInput,
+  ) {
+    if (!ids.length) {
+      return { count: 0 };
+    }
+
+    return this.prisma.cartItem.updateMany({
+      where: { id: { in: ids } },
+      data,
+    });
+  }
+
   async deleteItem(id: string, tx?: PrismaTx) {
     return this.client(tx).cartItem.delete({ where: { id } });
+  }
+
+  async deleteItems(ids: string[]) {
+    if (!ids.length) {
+      return { count: 0 };
+    }
+
+    return this.prisma.cartItem.deleteMany({
+      where: { id: { in: ids } },
+    });
   }
 
   async findItemByIdForCustomer(itemId: string, customerId: string) {

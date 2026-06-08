@@ -27,6 +27,7 @@ import {
   QuoteCartDto,
   UpdateCartAddressDto,
   UpdateCartCouponDto,
+  UpdateCartDealDto,
   UpdateCartDto,
   UpdateCartItemDto,
   UpdateCartOrderTypeDto,
@@ -145,6 +146,45 @@ interface CartResponseDealLine {
   depositTotal: number;
   lineTotal: number | null;
 }
+
+export interface CartResponseItem extends CartResponseDealLine {
+  type: 'ITEM';
+  variationId: string | null;
+  note: string | null;
+  modifiers: CartItemModifierDto[];
+  selectedModifiers: unknown[];
+  sections: CartItemSectionDto[] | undefined;
+  selectedSections: unknown[];
+  modifiersTotal: number;
+  depositAmount: number;
+  menuItem: unknown;
+}
+
+export interface CartResponseDealItem {
+  id: string;
+  type: 'DEAL';
+  dealId: string;
+  cartItemIds: string[];
+  menuItemIds: string[];
+  quantity: number;
+  unitPrice: number;
+  modifiersTotal: number;
+  unitPriceWithModifiers: number;
+  depositAmount: number;
+  depositTotal: number;
+  lineTotal: number;
+  deal: {
+    id: string;
+    code: string;
+    title: string;
+    description: string | null;
+    imageUrl: string | null;
+    fixedPrice: number;
+  };
+  includedItems: CartResponseItem[];
+}
+
+export type CartDisplayItem = CartResponseItem | CartResponseDealItem;
 
 interface ScopedBranch {
   id: string;
@@ -624,6 +664,72 @@ export class CartService {
     };
   }
 
+  async updateDeal(
+    user: AuthUserContext,
+    dealId: string,
+    dto: UpdateCartDealDto,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    const cart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
+    const dealItems = this.findCartItemsByDealId(cart, dealId);
+
+    if (!dealItems.length) {
+      throw new NotFoundException('Cart deal not found');
+    }
+
+    await this.cartRepository.updateItems(
+      dealItems.map((item) => item.id),
+      { quantity: dto.quantity },
+    );
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
+
+    return {
+      data: await this.buildCartResponse(updatedCart),
+      message: 'Cart deal updated successfully',
+    };
+  }
+
+  async removeDeal(
+    user: AuthUserContext,
+    dealId: string,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    const cart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
+    const dealItems = this.findCartItemsByDealId(cart, dealId);
+
+    if (!dealItems.length) {
+      throw new NotFoundException('Cart deal not found');
+    }
+
+    await this.cartRepository.deleteItems(dealItems.map((item) => item.id));
+
+    const updatedCart = await this.cartRepository.findByCustomerId(
+      cart.customerId,
+    );
+
+    return {
+      data: updatedCart
+        ? await this.buildCartResponse(updatedCart)
+        : await this.buildEmptyCart(cart.customerId),
+      message: 'Cart deal removed successfully',
+    };
+  }
+
   async clearCart(
     user: AuthUserContext,
     requestedCustomerId?: string,
@@ -716,6 +822,12 @@ export class CartService {
     }
 
     return cart;
+  }
+
+  private findCartItemsByDealId(cart: CartSnapshot, dealId: string) {
+    return cart.items.filter(
+      (item) => this.readDealId(item.modifiers) === dealId,
+    );
   }
 
   private async getCartForAddItem(
@@ -1161,6 +1273,7 @@ export class CartService {
 
         return {
           id: cartItem.id,
+          type: 'ITEM' as const,
           menuItemId: cartItem.menuItemId,
           dealId: this.readDealId(cartItem.modifiers) ?? null,
           variationId: cartItem.variationId,
@@ -1263,6 +1376,10 @@ export class CartService {
       items,
       cart,
     );
+    const displayItems = await this.groupDealItemsForCartResponse(
+      pricedItems,
+      cart,
+    );
 
     const quote = user?.uid
       ? await this.getCartQuoteForResponse(user, cart)
@@ -1281,7 +1398,7 @@ export class CartService {
       orderTime: cart.orderTime,
       tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
-      items: pricedItems,
+      items: displayItems,
       ...(quote ? { quote: quote.data } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
@@ -1383,6 +1500,111 @@ export class CartService {
     }
 
     return pricedItems;
+  }
+
+  private async groupDealItemsForCartResponse(
+    items: CartResponseItem[],
+    cart: CartSnapshot,
+  ): Promise<CartDisplayItem[]> {
+    const dealIds = [
+      ...new Set(
+        items
+          .map((item) => item.dealId)
+          .filter((dealId): dealId is string => typeof dealId === 'string'),
+      ),
+    ];
+
+    if (!dealIds.length || !this.couponsService) {
+      return items;
+    }
+
+    const groupedIndexes = new Set<number>();
+    const groupedByFirstIndex = new Map<number, CartResponseDealItem>();
+
+    for (const dealId of dealIds) {
+      const pricing = await this.couponsService.getActiveFixedPriceDealPricing(
+        cart.restaurantId,
+        cart.branchId,
+        dealId,
+      );
+
+      if (!pricing) {
+        continue;
+      }
+
+      const requiredItemIds = new Set(pricing.menuItemIds);
+      const dealItemIndexes = items.flatMap((item, index) =>
+        item.dealId === dealId && requiredItemIds.has(item.menuItemId)
+          ? [index]
+          : [],
+      );
+
+      if (!dealItemIndexes.length) {
+        continue;
+      }
+
+      const presentItemIds = new Set(
+        dealItemIndexes.map((index) => items[index].menuItemId),
+      );
+      const isComplete = pricing.menuItemIds.every((menuItemId) =>
+        presentItemIds.has(menuItemId),
+      );
+      const firstQuantity = items[dealItemIndexes[0]]?.quantity;
+      const hasSingleQuantity =
+        firstQuantity !== undefined &&
+        dealItemIndexes.every(
+          (index) => items[index].quantity === firstQuantity,
+        );
+
+      if (!isComplete || !hasSingleQuantity || firstQuantity === undefined) {
+        continue;
+      }
+
+      const includedItems = dealItemIndexes.map((index) => items[index]);
+      const depositTotal = includedItems.reduce(
+        (sum, item) => sum.plus(item.depositTotal),
+        new Prisma.Decimal(0),
+      );
+      const lineTotal = includedItems.reduce(
+        (sum, item) => sum.plus(item.lineTotal ?? 0),
+        new Prisma.Decimal(0),
+      );
+      const firstIndex = dealItemIndexes[0];
+
+      dealItemIndexes.forEach((index) => groupedIndexes.add(index));
+      groupedByFirstIndex.set(firstIndex, {
+        id: `deal:${dealId}`,
+        type: 'DEAL',
+        dealId,
+        cartItemIds: includedItems.map((item) => item.id),
+        menuItemIds: includedItems.map((item) => item.menuItemId),
+        quantity: firstQuantity,
+        unitPrice: Number(pricing.fixedPrice),
+        modifiersTotal: 0,
+        unitPriceWithModifiers: Number(pricing.fixedPrice),
+        depositAmount: Number(depositTotal.div(firstQuantity)),
+        depositTotal: Number(depositTotal),
+        lineTotal: Number(lineTotal),
+        deal: {
+          id: pricing.dealId,
+          code: pricing.code,
+          title: pricing.title,
+          description: pricing.description,
+          imageUrl: pricing.imageUrl,
+          fixedPrice: Number(pricing.fixedPrice),
+        },
+        includedItems,
+      });
+    }
+
+    return items.flatMap((item, index): CartDisplayItem[] => {
+      const groupedItem = groupedByFirstIndex.get(index);
+      if (groupedItem) {
+        return [groupedItem];
+      }
+
+      return groupedIndexes.has(index) ? [] : [item];
+    });
   }
 
   private allocateFixedDealTotal(

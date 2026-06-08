@@ -9,7 +9,7 @@ import {
   PaymentMethodEnum,
   UserRoleEnum,
 } from '../../common/enums';
-import { CartService } from './cart.service';
+import { CartResponseDealItem, CartService } from './cart.service';
 
 describe('CartService', () => {
   type TestModifierSelection = {
@@ -32,7 +32,9 @@ describe('CartService', () => {
       createItem: jest.fn(),
       findItemByIdForCustomer: jest.fn(),
       updateItem: jest.fn(),
+      updateItems: jest.fn(),
       deleteItem: jest.fn(),
+      deleteItems: jest.fn(),
       deleteByCustomerId: jest.fn(),
     };
 
@@ -437,6 +439,10 @@ describe('CartService', () => {
     });
     couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
       dealId: 'deal-1',
+      title: 'Family Combo',
+      description: 'Two item deal',
+      imageUrl: 'deal.png',
+      code: 'DEAL1',
       fixedPrice: new Prisma.Decimal(100),
       menuItemIds: ['menu-1', 'menu-2'],
     });
@@ -453,20 +459,215 @@ describe('CartService', () => {
       0,
     );
     expect(lineTotal).toBe(100);
-    expect(result.data.items).toEqual([
+    expect(result.data.items).toHaveLength(1);
+    const dealItem = result.data.items[0] as CartResponseDealItem;
+    expect(dealItem).toMatchObject({
+      id: 'deal:deal-1',
+      type: 'DEAL',
+      dealId: 'deal-1',
+      cartItemIds: ['item-1', 'item-2'],
+      menuItemIds: ['menu-1', 'menu-2'],
+      quantity: 1,
+      unitPrice: 100,
+      lineTotal: 100,
+      deal: {
+        id: 'deal-1',
+        title: 'Family Combo',
+        fixedPrice: 100,
+      },
+    });
+    expect(dealItem.includedItems).toEqual([
       expect.objectContaining({
         menuItemId: 'menu-1',
-        dealId: 'deal-1',
+        type: 'ITEM',
         unitPrice: 80,
         lineTotal: 80,
       }),
       expect.objectContaining({
         menuItemId: 'menu-2',
-        dealId: 'deal-1',
+        type: 'ITEM',
         unitPrice: 20,
         lineTotal: 20,
       }),
     ]);
+  });
+
+  it('updates a fixed combo deal quantity as one cart group', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+        {
+          id: 'item-2',
+          menuItemId: 'menu-2',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+      ],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({
+        ...cart,
+        items: cart.items.map((item) => ({ ...item, quantity: 2 })),
+      });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'No Add-Ons',
+        slug: 'no-add-ons',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 20,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Deals', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+      {
+        id: 'menu-2',
+        name: 'Pizza Tse',
+        slug: 'pizza-tse',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 5,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Deals', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: { subtotal: 200, totalAmount: 200 },
+    });
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-1',
+      title: 'Family Combo',
+      description: null,
+      imageUrl: null,
+      code: 'DEAL1',
+      fixedPrice: new Prisma.Decimal(100),
+      menuItemIds: ['menu-1', 'menu-2'],
+    });
+
+    const result = await service.updateDeal(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'deal-1',
+      { quantity: 2 },
+    );
+
+    expect(cartRepository.updateItems).toHaveBeenCalledWith(
+      ['item-1', 'item-2'],
+      { quantity: 2 },
+    );
+    expect(result.data.items).toEqual([
+      expect.objectContaining({
+        type: 'DEAL',
+        dealId: 'deal-1',
+        quantity: 2,
+        lineTotal: 200,
+      }),
+    ]);
+  });
+
+  it('removes every included row when removing a fixed combo deal', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+        {
+          id: 'item-2',
+          menuItemId: 'menu-2',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+      ],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({ ...cart, items: [] });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.removeDeal(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'deal-1',
+    );
+
+    expect(cartRepository.deleteItems).toHaveBeenCalledWith([
+      'item-1',
+      'item-2',
+    ]);
+    expect(result.data.items).toEqual([]);
   });
 
   it('returns cart without quote when saved address is outside delivery coverage', async () => {

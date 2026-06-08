@@ -67,6 +67,10 @@ export interface PromotionPreview {
 
 export interface FixedPriceDealPricing {
   dealId: string;
+  title: string;
+  description: string | null;
+  imageUrl: string | null;
+  code: string;
   fixedPrice: Prisma.Decimal;
   menuItemIds: string[];
 }
@@ -299,6 +303,10 @@ export class CouponsService {
 
     return {
       dealId: deal.id,
+      title: deal.title,
+      description: deal.description,
+      imageUrl: deal.imageUrl,
+      code: deal.code,
       fixedPrice: deal.discountValue,
       menuItemIds: this.resolveFixedDealMenuItemIds(deal),
     };
