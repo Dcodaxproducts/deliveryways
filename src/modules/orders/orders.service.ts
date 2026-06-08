@@ -922,6 +922,8 @@ export class OrdersService {
       if (readyMadeDealId) {
         this.assertNoDealCustomizations(requestedItem, menuItem.name);
       }
+      const requestedModifiers =
+        this.resolveRequestedOrderItemModifiers(requestedItem);
 
       let variationName: string | undefined;
 
@@ -955,8 +957,8 @@ export class OrdersService {
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
       const snapshotSections: QuoteLine['snapshotSections'] = [];
 
-      if (requestedItem.modifiers?.length) {
-        for (const requestedModifier of requestedItem.modifiers) {
+      if (requestedModifiers.length) {
+        for (const requestedModifier of requestedModifiers) {
           const found = this.findModifier(
             {
               ...menuItem,
@@ -988,10 +990,7 @@ export class OrdersService {
       }
 
       if (!readyMadeDealId) {
-        this.assertModifierSelectionLimits(
-          menuItem,
-          requestedItem.modifiers ?? [],
-        );
+        this.assertModifierSelectionLimits(menuItem, requestedModifiers);
       }
       this.assertItemQuantityLimits(menuItem, requestedItem.quantity);
 
@@ -3495,19 +3494,35 @@ export class OrdersService {
     item: {
       variationId?: string;
       modifiers?: OrderItemModifierDto[];
+      modifierSelections?: Array<{ modifiers?: OrderItemModifierDto[] }>;
       sections?: unknown[];
     },
     itemName?: string,
     options: { allowModifiers?: boolean } = {},
   ) {
     const hasBlockedModifiers =
-      !options.allowModifiers && !!item.modifiers?.length;
+      !options.allowModifiers &&
+      (!!item.modifiers?.length ||
+        !!item.modifierSelections?.some((selection) =>
+          selection.modifiers?.some((modifier) => (modifier.quantity ?? 1) > 0),
+        ));
 
     if (item.variationId || hasBlockedModifiers || item.sections?.length) {
       throw new BadRequestException(
         `${itemName ?? 'Deal item'} does not support customization selections`,
       );
     }
+  }
+
+  private resolveRequestedOrderItemModifiers(item: {
+    modifiers?: OrderItemModifierDto[];
+    modifierSelections?: Array<{ modifiers?: OrderItemModifierDto[] }>;
+  }): OrderItemModifierDto[] {
+    return item.modifierSelections?.length
+      ? item.modifierSelections.flatMap(
+          (selection) => selection.modifiers ?? [],
+        )
+      : (item.modifiers ?? []);
   }
 
   private assertItemQuantityLimits(

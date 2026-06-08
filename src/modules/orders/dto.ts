@@ -32,6 +32,18 @@ export class OrderItemModifierDto {
   quantity?: number;
 }
 
+export class OrderItemModifierSelectionDto {
+  @ApiProperty()
+  @IsString()
+  modifierGroupId!: string;
+
+  @ApiProperty({ type: [OrderItemModifierDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemModifierDto)
+  modifiers!: OrderItemModifierDto[];
+}
+
 export class OrderItemSectionDto {
   @ApiProperty({ enum: ORDER_ITEM_SECTION_SLOT_VALUES })
   @IsIn(ORDER_ITEM_SECTION_SLOT_VALUES)
@@ -71,6 +83,13 @@ export class OrderItemDto {
   @ValidateNested({ each: true })
   @Type(() => OrderItemModifierDto)
   modifiers?: OrderItemModifierDto[];
+
+  @ApiPropertyOptional({ type: [OrderItemModifierSelectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemModifierSelectionDto)
+  modifierSelections?: OrderItemModifierSelectionDto[];
 
   @ApiPropertyOptional({ type: [OrderItemSectionDto] })
   @IsOptional()
