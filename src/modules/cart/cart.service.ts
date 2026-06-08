@@ -1676,13 +1676,21 @@ export class CartService {
       (deliveryMessage.includes('outside branch delivery radius') ||
         deliveryMessage.includes('outside branch delivery zones') ||
         deliveryMessage.includes('outside branch delivery zone bands') ||
+        deliveryMessage.includes('delivery address must include lat/lng') ||
+        deliveryMessage.includes('branch delivery zones are not configured') ||
+        deliveryMessage.includes(
+          'branch delivery zone bands are not configured',
+        ) ||
         deliveryMessage.includes(
           'must include postalcode for postal-code delivery pricing',
         ) ||
         (deliveryMessage.includes('postal code') &&
           (deliveryMessage.includes('not serviceable') ||
             deliveryMessage.includes('not in deliveryzone') ||
-            deliveryMessage.includes('not in delivery zone'))))
+            deliveryMessage.includes('not in delivery zone') ||
+            deliveryMessage.includes('service area'))) ||
+        (deliveryMessage.includes('delivery address') &&
+          deliveryMessage.includes('service area')))
     );
   }
 
