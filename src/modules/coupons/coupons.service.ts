@@ -271,8 +271,8 @@ export class CouponsService {
 
     return (
       !!deal &&
-      this.isReadyMadeFixedPriceDeal(deal) &&
-      this.resolveReadyMadeDealMenuItemId(deal) === menuItemId
+      this.isFixedItemsFixedPriceDeal(deal) &&
+      this.resolveFixedDealMenuItemIds(deal).includes(menuItemId)
     );
   }
 
@@ -325,6 +325,33 @@ export class CouponsService {
     );
 
     return scopedMenuItemIds.length === 1 && scopedCategoryIds.length === 0;
+  }
+
+  private isFixedItemsFixedPriceDeal(
+    coupon: Coupon & {
+      scopeMenuItem?: { id: string } | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+    },
+  ) {
+    return (
+      coupon.discountType === CouponDiscountType.FIXED_PRICE &&
+      coupon.applyMode === CouponApplyMode.SCOPED_ITEMS &&
+      (coupon.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS) ===
+        CouponDealSelectionMode.FIXED_ITEMS &&
+      this.resolveFixedDealMenuItemIds(coupon).length > 0
+    );
+  }
+
+  private resolveFixedDealMenuItemIds(
+    coupon: Coupon & {
+      scopeMenuItem?: { id: string } | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+    },
+  ) {
+    return this.resolveScopedIds(
+      coupon.scopeMenuItem?.id ?? coupon.scopeMenuItemId,
+      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
+    );
   }
 
   private resolveReadyMadeDealMenuItemId(

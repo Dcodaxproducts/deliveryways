@@ -233,7 +233,7 @@ describe('CouponsService', () => {
     );
   });
 
-  it('does not infer multi-item fixed deals as ready-made cart items', async () => {
+  it('accepts explicit multi-item fixed deal members without inferring them', async () => {
     repository.findActivePromotionById!.mockResolvedValue(
       makeCoupon({
         id: 'deal-1',
@@ -267,7 +267,7 @@ describe('CouponsService', () => {
 
     await expect(
       service.isActiveFixedPriceDealItem('rid-1', 'bid-1', 'deal-1', 'mi-1'),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
     await expect(
       service.findActiveFixedPriceDealIdForItem('rid-1', 'bid-1', 'mi-1'),
     ).resolves.toBeNull();
