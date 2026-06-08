@@ -1628,17 +1628,13 @@ export class CartService {
       );
     }
 
-    const dealHasModifierOptions =
-      !!inferredDealId && this.hasItemModifierOptions(menuItem);
     const validatedDto = inferredDealId
       ? {
           ...dto,
           dealId: inferredDealId,
           variationId: undefined,
-          modifiers: dealHasModifierOptions ? dto.modifiers : undefined,
-          modifierSelections: dealHasModifierOptions
-            ? dto.modifierSelections
-            : undefined,
+          modifiers: undefined,
+          modifierSelections: undefined,
           sections: undefined,
         }
       : dto;
@@ -1685,7 +1681,7 @@ export class CartService {
     }
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
-    if (!inferredDealId || dealHasModifierOptions) {
+    if (!inferredDealId) {
       this.assertModifierSelectionLimits(
         menuItem,
         validatedDto.modifiers ?? [],
@@ -1725,13 +1721,6 @@ export class CartService {
         branchId,
         menuItemId,
       )) ?? null
-    );
-  }
-
-  private hasItemModifierOptions(menuItem: CartModifierSource) {
-    return (
-      this.getAvailableModifierLinks(menuItem).length > 0 ||
-      (menuItem.modifierPriceOverrides?.length ?? 0) > 0
     );
   }
 

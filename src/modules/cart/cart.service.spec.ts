@@ -1410,7 +1410,7 @@ describe('CartService', () => {
     );
   });
 
-  it('validates and stores modifier selections for customizable deal items', async () => {
+  it('adds ready-made deal items while ignoring attached required modifier groups', async () => {
     const { service, cartRepository, couponsService } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
@@ -1465,23 +1465,6 @@ describe('CartService', () => {
       .spyOn(service as never, 'buildCartResponse' as never)
       .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
-    await expect(
-      service.addItem(
-        {
-          uid: 'user-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.CUSTOMER,
-        },
-        {
-          branchId: 'branch-1',
-          menuItemId: 'menu-1',
-          dealId: 'deal-1',
-          quantity: 1,
-        },
-      ),
-    ).rejects.toThrow('Choose Drink requires at least 1 modifier selection(s)');
-
     await service.addItem(
       {
         uid: 'user-1',
@@ -1494,27 +1477,15 @@ describe('CartService', () => {
         menuItemId: 'menu-1',
         dealId: 'deal-1',
         quantity: 1,
-        modifierSelections: [
-          {
-            modifierGroupId: 'group-drinks',
-            modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
-          },
-        ],
       },
     );
 
-    expect(cartRepository.createItem).toHaveBeenLastCalledWith(
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
         menuItemId: 'menu-1',
         modifiers: {
           dealId: 'deal-1',
-          modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
-          modifierSelections: [
-            {
-              modifierGroupId: 'group-drinks',
-              modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
-            },
-          ],
+          modifiers: [],
         },
       }),
     );
