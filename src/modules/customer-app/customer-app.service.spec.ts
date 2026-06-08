@@ -175,6 +175,10 @@ describe('CustomerAppService', () => {
       findActiveTranslations: jest.fn().mockResolvedValue([]),
     };
 
+    const mailerService = {
+      sendEmail: jest.fn(),
+    };
+
     const service = new CustomerAppService(
       repository as never,
       storageService as never,
@@ -183,6 +187,7 @@ describe('CustomerAppService', () => {
       couponsService as never,
       options.notifications ? (notificationsService as never) : undefined,
       options.localizations ? (localizationsService as never) : undefined,
+      mailerService as never,
     );
     return {
       service,
@@ -193,6 +198,7 @@ describe('CustomerAppService', () => {
       storageService,
       notificationsService,
       localizationsService,
+      mailerService,
     };
   };
 
@@ -476,6 +482,77 @@ describe('CustomerAppService', () => {
       'Payments',
       'Policy',
     ]);
+  });
+
+  it('submits public contact form to restaurant support email', async () => {
+    const { service, repository, mailerService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      coverImage: null,
+      supportContact: { email: 'support@restaurant.test' },
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      settings: {},
+    });
+
+    const result = await service.submitContactForm(
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+      {
+        name: '  Jane Customer  ',
+        email: 'JANE@EXAMPLE.COM',
+        subject: '  Delivery question  ',
+        message: '  Please confirm delivery timing.  ',
+      },
+    );
+
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'support@restaurant.test',
+      'Contact form: Delivery question',
+      expect.stringContaining('Email: jane@example.com'),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'support@restaurant.test',
+      'Contact form: Delivery question',
+      expect.stringContaining('Branch: Main Branch (branch-1)'),
+    );
+    expect(result).toEqual({
+      data: {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        submitted: true,
+      },
+      message: 'Contact form submitted successfully',
+    });
+  });
+
+  it('rejects contact form when restaurant support email is missing', async () => {
+    const { service, repository, mailerService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      coverImage: null,
+      supportContact: null,
+      settings: {},
+    });
+
+    await expect(
+      service.submitContactForm(
+        { restaurantId: 'restaurant-1' },
+        {
+          name: 'Jane Customer',
+          email: 'jane@example.com',
+          subject: 'Delivery question',
+          message: 'Please confirm delivery timing.',
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
   });
 
   it('populates restaurant on promotional items', async () => {

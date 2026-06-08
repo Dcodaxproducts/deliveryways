@@ -2,12 +2,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsDateString,
+  IsEmail,
   IsIn,
   IsInt,
   IsNumber,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
@@ -57,6 +60,31 @@ export class PublicRestaurantQueryDto {
 }
 
 export class PublicMenuItemBySlugQueryDto extends PublicRestaurantQueryDto {}
+
+export class SubmitContactFormDto {
+  @ApiProperty({ example: 'John Doe' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  name!: string;
+
+  @ApiProperty({ example: 'john@example.com' })
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+
+  @ApiProperty({ example: 'Question about my order' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(160)
+  subject!: string;
+
+  @ApiProperty({ example: 'I need help with delivery timing.' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4000)
+  message!: string;
+}
 
 export class ListCustomerFavoritesQueryDto extends QueryDto {
   @ApiPropertyOptional()

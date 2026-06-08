@@ -1,8 +1,8 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Public } from '../../common/decorators';
 import { OptionalJwtAuthGuard } from '../../common/guards';
-import { PublicRestaurantQueryDto } from './dto';
+import { PublicRestaurantQueryDto, SubmitContactFormDto } from './dto';
 import { CustomerAppService } from './customer-app.service';
 
 @ApiTags('Public Content')
@@ -30,6 +30,18 @@ export class PublicContentController {
     @Query() query: PublicRestaurantQueryDto,
   ) {
     return this.customerAppService.getHelpSupport(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('contact-form')
+  @ApiOperation({ summary: 'Submit public contact form message' })
+  submitContactForm(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: PublicRestaurantQueryDto,
+    @Body() dto: SubmitContactFormDto,
+  ) {
+    return this.customerAppService.submitContactForm(query, dto, user);
   }
 
   @Public()

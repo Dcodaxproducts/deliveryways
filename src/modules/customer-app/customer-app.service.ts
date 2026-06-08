@@ -32,6 +32,7 @@ import {
   ListTableReservationsQueryDto,
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
+  SubmitContactFormDto,
   TABLE_RESERVATION_STATUS_VALUES,
   TableReservationStatus,
   CreateWalletTopUpDto,
@@ -55,6 +56,7 @@ import {
   LocalizationsService,
 } from '../localizations/localizations.service';
 import { normalizeLocale } from '../localizations/localization.util';
+import { MailerService } from '../mailer/mailer.service';
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
@@ -204,6 +206,7 @@ export class CustomerAppService {
     private readonly couponsService?: CouponsService,
     private readonly notificationsService?: NotificationsService,
     @Optional() private readonly localizationsService?: LocalizationsService,
+    private readonly mailerService?: MailerService,
   ) {}
 
   async listFavorites(
@@ -358,6 +361,54 @@ export class CustomerAppService {
         },
       },
       message: 'Help and support fetched successfully',
+    };
+  }
+
+  async submitContactForm(
+    query: PublicRestaurantQueryDto,
+    dto: SubmitContactFormDto,
+    user?: AuthUserContext,
+  ) {
+    const { restaurant, branch } = await this.getPublicContent(query, user);
+    const supportEmail = this.readStringValue(restaurant.supportContact, [
+      ['email'],
+    ]);
+
+    if (!supportEmail) {
+      throw new BadRequestException(
+        'Restaurant support email is not configured',
+      );
+    }
+
+    const name = dto.name.trim();
+    const email = dto.email.trim().toLowerCase();
+    const subject = dto.subject.trim();
+    const message = dto.message.trim();
+    const branchLine = branch
+      ? `Branch: ${branch.name} (${branch.id})`
+      : 'Branch: Not selected';
+
+    await this.mailerService!.sendEmail(
+      supportEmail,
+      `Contact form: ${subject}`,
+      [
+        `Restaurant: ${restaurant.name} (${restaurant.id})`,
+        branchLine,
+        `Name: ${name}`,
+        `Email: ${email}`,
+        `Subject: ${subject}`,
+        '',
+        message,
+      ].join('\n'),
+    );
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        branchId: branch?.id ?? null,
+        submitted: true,
+      },
+      message: 'Contact form submitted successfully',
     };
   }
 

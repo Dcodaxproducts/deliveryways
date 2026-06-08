@@ -9,6 +9,7 @@ import { PublicContentController } from './public-content.controller';
 import { CouponsModule } from '../coupons/coupons.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { LocalizationsModule } from '../localizations';
+import { MailerModule } from '../mailer/mailer.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { LocalizationsModule } from '../localizations';
     CouponsModule,
     NotificationsModule,
     LocalizationsModule,
+    MailerModule,
   ],
   controllers: [CustomerAppController, PublicContentController],
   providers: [CustomerAppRepository, CustomerAppService],
