@@ -2129,7 +2129,7 @@ describe('OrdersService - coupon quote validation', () => {
     );
   });
 
-  it('quotes customizable deal items with required modifiers', async () => {
+  it('quotes ready-made deal items without requiring attached modifiers', async () => {
     const prisma = {
       branch: {
         findFirst: jest.fn().mockResolvedValue({
@@ -2207,6 +2207,35 @@ describe('OrdersService - coupon quote validation', () => {
       } as never,
     );
 
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            dealId: 'deal-1',
+            quantity: 1,
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items[0]).toEqual(
+      expect.objectContaining({
+        dealId: 'deal-1',
+        unitPrice: 100,
+        snapshotModifiers: [],
+      }),
+    );
+
     await expect(
       service.quoteForCouponValidation(
         {
@@ -2223,49 +2252,13 @@ describe('OrdersService - coupon quote validation', () => {
               menuItemId: 'menu-1',
               dealId: 'deal-1',
               quantity: 1,
+              modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
             },
           ],
           orderTime: '2026-03-24T19:30:00.000Z',
         },
       ),
-    ).rejects.toThrow('Burger Deal requires modifier selection(s): Cola');
-
-    const result = await service.quoteForCouponValidation(
-      {
-        uid: 'customer-1',
-        tid: 'tenant-1',
-        rid: 'restaurant-1',
-        role: UserRoleEnum.CUSTOMER,
-      },
-      {
-        branchId: 'branch-1',
-        orderType: OrderTypeEnum.DELIVERY,
-        items: [
-          {
-            menuItemId: 'menu-1',
-            dealId: 'deal-1',
-            quantity: 1,
-            modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
-          },
-        ],
-        orderTime: '2026-03-24T19:30:00.000Z',
-      },
-    );
-
-    expect(result.data.items[0]).toEqual(
-      expect.objectContaining({
-        dealId: 'deal-1',
-        unitPrice: 125,
-        snapshotModifiers: [
-          {
-            modifierId: 'modifier-cola',
-            name: 'Cola',
-            quantity: 1,
-            unitPrice: 25,
-          },
-        ],
-      }),
-    );
+    ).rejects.toThrow('Burger Deal does not support customization selections');
   });
 
   it('rejects order item quantity above item maxQuantity', async () => {

@@ -919,13 +919,8 @@ export class OrdersService {
         );
       }
 
-      const dealHasModifierOptions =
-        !!readyMadeDealId && this.hasItemModifierOptions(menuItem);
-
       if (readyMadeDealId) {
-        this.assertNoDealCustomizations(requestedItem, menuItem.name, {
-          allowModifiers: dealHasModifierOptions,
-        });
+        this.assertNoDealCustomizations(requestedItem, menuItem.name);
       }
 
       let variationName: string | undefined;
@@ -992,7 +987,7 @@ export class OrdersService {
         }
       }
 
-      if (!readyMadeDealId || dealHasModifierOptions) {
+      if (!readyMadeDealId) {
         this.assertModifierSelectionLimits(
           menuItem,
           requestedItem.modifiers ?? [],
@@ -3352,13 +3347,6 @@ export class OrdersService {
         branchId,
         menuItemId,
       )) ?? null
-    );
-  }
-
-  private hasItemModifierOptions(menuItem: OrderModifierSource) {
-    return (
-      this.getAvailableModifierLinks(menuItem).length > 0 ||
-      (menuItem.modifierPriceOverrides?.length ?? 0) > 0
     );
   }
 
