@@ -1164,8 +1164,109 @@ describe('OrdersService - deliveryman order access', () => {
     expect(ordersRepository.updateStatus).toHaveBeenCalledWith(
       'order-1',
       'DELIVERED',
+      undefined,
     );
     expect(result.message).toBe('Order status updated successfully');
+  });
+
+  it('requires branch-set order time when accepting a placed order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'PLACED',
+    });
+
+    await expect(
+      service.updateStatus(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        'order-1',
+        { status: 'CONFIRMED' } as never,
+      ),
+    ).rejects.toThrow('orderTime is required when accepting an order');
+    expect(ordersRepository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('sets order time when branch admin accepts a placed order', async () => {
+    const orderTime = '2026-03-24T19:30:00.000Z';
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'PLACED',
+    });
+    ordersRepository.updateStatus.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'CONFIRMED',
+      orderTime: new Date(orderTime),
+    });
+
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    const result = await service.updateStatus(
+      {
+        uid: 'branch-admin-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      } as never,
+      'order-1',
+      { status: 'CONFIRMED', orderTime } as never,
+    );
+
+    expect(ordersRepository.updateStatus).toHaveBeenCalledWith(
+      'order-1',
+      'CONFIRMED',
+      new Date(orderTime),
+    );
+    expect(result.message).toBe('Order status updated successfully');
+  });
+
+  it('blocks branch admin accepting another branch order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-2',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'PLACED',
+    });
+
+    await expect(
+      service.updateStatus(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        'order-1',
+        {
+          status: 'CONFIRMED',
+          orderTime: '2026-03-24T19:30:00.000Z',
+        } as never,
+      ),
+    ).rejects.toThrow('You cannot access resources outside your branch');
+    expect(ordersRepository.updateStatus).not.toHaveBeenCalled();
   });
 
   it('requires delivery otp before completing a delivery order', async () => {

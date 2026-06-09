@@ -227,6 +227,15 @@ export class UpdateOrderStatusDto {
 
   @ApiPropertyOptional({
     description:
+      'Required when a branch accepts an order by moving it from PLACED to CONFIRMED.',
+    example: '2026-03-24T19:30:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  orderTime?: string;
+
+  @ApiPropertyOptional({
+    description:
       'Required when marking a delivery order as DELIVERED after out-for-delivery.',
   })
   @IsOptional()

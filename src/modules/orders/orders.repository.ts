@@ -404,11 +404,18 @@ export class OrdersRepository {
     return { items, total };
   }
 
-  async updateStatus(id: string, status: OrderStatus, tx?: PrismaTx) {
+  async updateStatus(
+    id: string,
+    status: OrderStatus,
+    orderTime?: Date,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).order.update({
       where: { id },
       data: {
         status,
+        orderTime,
+        isScheduled: orderTime ? orderTime.getTime() > Date.now() : undefined,
         deliveredAt:
           status === OrderStatus.DELIVERED ||
           status === OrderStatus.PICKED_UP ||

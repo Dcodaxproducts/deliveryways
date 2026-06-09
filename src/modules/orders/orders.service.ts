@@ -509,12 +509,7 @@ export class OrdersService {
         );
       }
     } else {
-      await this.assertOrderAccess(
-        user,
-        order.restaurantId,
-        order.customerId,
-        true,
-      );
+      await this.ensureBranchAccess(user, order.restaurantId, order.branchId);
     }
 
     if (
@@ -523,9 +518,14 @@ export class OrdersService {
       throw new BadRequestException('Invalid order status transition');
     }
 
+    const acceptedOrderTime = this.resolveAcceptedOrderTime(order, dto);
     this.assertDeliveryOtpForCompletion(order, dto);
 
-    const data = await this.ordersRepository.updateStatus(id, dto.status);
+    const data = await this.ordersRepository.updateStatus(
+      id,
+      dto.status,
+      acceptedOrderTime,
+    );
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
     await this.chatService.syncDeliveryThreadForOrderLifecycle(
@@ -3117,6 +3117,34 @@ export class OrdersService {
       order.status === OrderStatus.OUT_FOR_DELIVERY &&
       next === OrderStatus.DELIVERED
     );
+  }
+
+  private resolveAcceptedOrderTime(
+    order: { status: OrderStatus },
+    dto: UpdateOrderStatusDto,
+  ) {
+    const isAcceptance =
+      order.status === OrderStatus.PLACED &&
+      dto.status === OrderStatus.CONFIRMED;
+
+    if (!isAcceptance) {
+      if (dto.orderTime) {
+        throw new BadRequestException(
+          'orderTime can only be set when accepting an order',
+        );
+      }
+
+      return undefined;
+    }
+
+    if (!dto.orderTime) {
+      throw new BadRequestException(
+        'orderTime is required when accepting an order',
+      );
+    }
+
+    this.assertValidOrderTime(dto.orderTime);
+    return new Date(dto.orderTime);
   }
 
   private assertDeliveryOtpForCompletion(

@@ -15,7 +15,20 @@ type OrderCountArgs = {
   where?: OrderSearchWhere;
 };
 
+type OrderUpdateArgs = {
+  where: { id: string };
+  data: {
+    status?: string;
+    orderTime?: Date;
+    isScheduled?: boolean;
+  };
+};
+
 describe('OrdersRepository', () => {
+  beforeEach(() => {
+    jest.useRealTimers();
+  });
+
   it('filters order list search by order id', async () => {
     const prisma = {
       $transaction: jest.fn().mockResolvedValue([[], 0]),
@@ -62,5 +75,32 @@ describe('OrdersRepository', () => {
         ],
       }),
     );
+  });
+
+  it('persists branch-provided order time when updating status', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-24T18:00:00.000Z'));
+
+    const prisma = {
+      order: {
+        update: jest.fn().mockResolvedValue({ id: 'order-1' }),
+      },
+    };
+    const repository = new OrdersRepository(prisma as never);
+    const orderTime = new Date('2026-03-24T19:30:00.000Z');
+
+    await repository.updateStatus('order-1', 'CONFIRMED' as never, orderTime);
+
+    const updateCalls = prisma.order.update.mock.calls as Array<
+      [OrderUpdateArgs]
+    >;
+
+    expect(updateCalls[0][0]).toMatchObject({
+      where: { id: 'order-1' },
+      data: {
+        status: 'CONFIRMED',
+        orderTime,
+        isScheduled: true,
+      },
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { ArgumentMetadata, ValidationPipe } from '@nestjs/common';
+import { OrderStatus } from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
-import { QuoteOrderDto } from './dto';
+import { QuoteOrderDto, UpdateOrderStatusDto } from './dto';
 
 describe('Order DTO validation', () => {
   const validationPipe = new ValidationPipe({
@@ -50,6 +51,24 @@ describe('Order DTO validation', () => {
           ],
         },
       ],
+    });
+  });
+
+  it('allows branch acceptance status payload with order time', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          status: OrderStatus.CONFIRMED,
+          orderTime: '2026-03-24T19:30:00.000Z',
+        },
+        {
+          type: 'body',
+          metatype: UpdateOrderStatusDto,
+        },
+      ),
+    ).resolves.toMatchObject({
+      status: OrderStatus.CONFIRMED,
+      orderTime: '2026-03-24T19:30:00.000Z',
     });
   });
 });
