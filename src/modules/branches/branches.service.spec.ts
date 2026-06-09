@@ -966,6 +966,96 @@ describe('BranchesService', () => {
     ).toHaveLength(2);
   });
 
+  it('fetches branch delivery time from admin-managed settings', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: { deliveryTime: 35 },
+    });
+
+    const result = await service.getDeliveryTime(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+    );
+
+    expect(result).toEqual({
+      data: {
+        branchId: 'branch-1',
+        deliveryTime: 35,
+      },
+      message: 'Branch delivery time fetched successfully',
+    });
+  });
+
+  it('updates branch delivery time without changing other settings', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        contact: { phone: '123' },
+        openingHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.MONDAY,
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '22:00',
+          },
+        ],
+      },
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    const result = await service.updateDeliveryTime(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      'branch-1',
+      { deliveryTime: 45 },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      {
+        settings: {
+          contact: { phone: '123' },
+          deliveryTime: 45,
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.MONDAY,
+              isClosed: false,
+              openTime: '09:00',
+              closeTime: '22:00',
+            },
+          ],
+        },
+      },
+      undefined,
+    );
+    expect(result).toEqual({
+      data: {
+        branchId: 'branch-1',
+        deliveryTime: 45,
+      },
+      message: 'Branch delivery time updated successfully',
+    });
+  });
+
   it('updates branch opening hours with regular break times', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({

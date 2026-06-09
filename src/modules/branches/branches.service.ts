@@ -25,6 +25,7 @@ import {
   ListBranchesDto,
   ListPublicBranchesDto,
   UpdateBranchDto,
+  UpdateBranchDeliveryTimeDto,
   UpdateBranchImagesDto,
   UpdateBranchHolidayOpeningHoursDto,
   UpdateBranchOpeningHoursDto,
@@ -542,6 +543,59 @@ export class BranchesService {
         }),
       },
       message: 'Branch holiday opening hours updated successfully',
+    };
+  }
+
+  async getDeliveryTime(user: AuthUserContext, id: string) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+
+    return {
+      data: {
+        branchId: branch.id,
+        deliveryTime: this.readDeliveryTime(branch.settings),
+      },
+      message: 'Branch delivery time fetched successfully',
+    };
+  }
+
+  async updateDeliveryTime(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchDeliveryTimeDto,
+    tx?: PrismaTx,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
+    const settings = this.readSettings(branch.settings);
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        settings: {
+          ...settings,
+          deliveryTime: dto.deliveryTime,
+        } as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: {
+        branchId: data.id,
+        deliveryTime: dto.deliveryTime,
+      },
+      message: 'Branch delivery time updated successfully',
     };
   }
 
@@ -1478,6 +1532,13 @@ export class BranchesService {
     }
 
     return this.normalizeHolidayOpeningHours(holidayOpeningHours);
+  }
+
+  private readDeliveryTime(value: unknown): number | null {
+    const settings = this.readSettings(value);
+    return typeof settings.deliveryTime === 'number'
+      ? settings.deliveryTime
+      : null;
   }
 
   private normalizeTemporaryClosure(

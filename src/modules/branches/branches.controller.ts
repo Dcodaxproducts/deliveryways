@@ -26,6 +26,7 @@ import {
   CreateBranchDto,
   ListBranchesDto,
   UpdateBranchDto,
+  UpdateBranchDeliveryTimeDto,
   UpdateBranchHolidayOpeningHoursDto,
   UpdateBranchImagesDto,
   UpdateBranchOpeningHoursDto,
@@ -201,6 +202,35 @@ export class BranchesController {
     @Body() dto: UpdateBranchHolidayOpeningHoursDto,
   ) {
     return this.branchesService.updateHolidayOpeningHours(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get(':id/delivery-time')
+  deliveryTime(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.branchesService.getDeliveryTime(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @Put(':id/delivery-time')
+  updateDeliveryTime(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchDeliveryTimeDto,
+  ) {
+    return this.branchesService.updateDeliveryTime(user, id, dto);
   }
 
   @ApiBearerAuth()
