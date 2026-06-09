@@ -222,13 +222,25 @@ export class CouponsRepository {
       },
     },
     scopeMenuItem: {
-      select: { id: true, name: true, imageUrl: true, basePrice: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        imageUrl: true,
+        basePrice: true,
+      },
     },
     scopeCategory: { select: { id: true, name: true, imageUrl: true } },
     scopeMenuItems: {
       select: {
         menuItem: {
-          select: { id: true, name: true, imageUrl: true, basePrice: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            imageUrl: true,
+            basePrice: true,
+          },
         },
       },
     },

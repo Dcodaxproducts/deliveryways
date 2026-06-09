@@ -878,6 +878,94 @@ describe('CustomerAppService', () => {
     expect(result.message).toBe('Deals fetched successfully');
   });
 
+  it('keeps scoped item slugs for branch-filtered public deals', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      address: null,
+      phone: null,
+      email: null,
+      settings: {},
+    });
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'deal-1',
+        title: 'Branch Combo',
+        description: 'Fixed bundle',
+        imageUrl: null,
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'FIXED_PRICE',
+        discountValue: new Prisma.Decimal(999),
+        dealSelectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        startsAt: new Date('2026-05-20T00:00:00.000Z'),
+        expiresAt: new Date('2026-05-25T00:00:00.000Z'),
+        restaurant: null,
+        branch: null,
+        scopeMenuItem: null,
+        scopeCategory: null,
+        scopeCategories: [],
+        scopeMenuItems: [
+          {
+            menuItem: {
+              id: 'item-1',
+              name: 'Zinger Burger',
+              slug: 'zinger-burger',
+              imageUrl: 'zinger.png',
+              basePrice: new Prisma.Decimal(799),
+            },
+          },
+          {
+            menuItem: {
+              id: 'item-2',
+              name: 'Cold Drink',
+              slug: 'cold-drink',
+              imageUrl: 'drink.png',
+              basePrice: new Prisma.Decimal(199),
+            },
+          },
+        ],
+      },
+    ]);
+    repository.listPromotionalItems.mockResolvedValue([
+      { ...itemFixture, id: 'item-1', slug: 'zinger-burger' },
+    ]);
+
+    const result = await service.listDeals({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      limit: 10,
+    });
+
+    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+      {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        limit: 2,
+      },
+      { menuItemIds: ['item-1', 'item-2'] },
+    );
+    expect(result.data[0].scopeMenuItems).toEqual([
+      expect.objectContaining({ id: 'item-1', slug: 'zinger-burger' }),
+      expect.objectContaining({ id: 'item-2', slug: 'cold-drink' }),
+    ]);
+  });
+
   it('includes promotion metadata on cuisine categories and promotional cuisine list', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

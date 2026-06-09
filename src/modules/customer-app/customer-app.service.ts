@@ -65,6 +65,7 @@ type AutoApplyPromotion = Awaited<
 type PublicPromotionScopeEntity = {
   id: string;
   name: string;
+  slug?: string | null;
   imageUrl?: string | null;
   basePrice?: Prisma.Decimal | null;
 };
@@ -2752,6 +2753,7 @@ export class CustomerAppService {
     return {
       id: entity.id,
       name: entity.name,
+      ...(entity.slug !== undefined ? { slug: entity.slug } : {}),
       imageUrl: await this.resolveMediaUrl(entity.imageUrl),
       ...(entity.basePrice !== undefined
         ? { basePrice: Number(entity.basePrice) }
