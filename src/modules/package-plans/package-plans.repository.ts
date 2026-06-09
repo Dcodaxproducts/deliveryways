@@ -173,7 +173,15 @@ export class PackagePlansRepository {
 
   private readonly subscriptionInclude = {
     tenant: { select: { id: true, name: true, slug: true } },
-    restaurant: { select: { id: true, name: true, slug: true } },
+    restaurant: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        supportContact: true,
+        settings: true,
+      },
+    },
     packagePlan: true,
   } satisfies Prisma.TenantSubscriptionInclude;
 }

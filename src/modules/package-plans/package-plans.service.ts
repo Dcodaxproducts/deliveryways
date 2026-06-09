@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -16,15 +17,36 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
+import { MailerService } from '../mailer/mailer.service';
 import {
   AssignTenantSubscriptionDto,
   CreatePackagePlanDto,
   ListPackagePlansDto,
   ListTenantSubscriptionsDto,
+  SendTenantSubscriptionInvoiceDto,
   UpdatePackagePlanDto,
   UpdateTenantSubscriptionDto,
 } from './dto';
 import { PackagePlansRepository } from './package-plans.repository';
+
+type TenantSubscriptionDetails = NonNullable<
+  Awaited<ReturnType<PackagePlansRepository['findSubscriptionById']>>
+>;
+
+interface SubscriptionPlanSnapshot {
+  id?: string;
+  name?: string;
+  billingModel?: PackageBillingModel;
+  billingInterval?: BillingInterval;
+  planPrice?: number;
+  commissionType?: PackageCommissionType;
+  commissionPercentage?: number;
+  commissionFixedAmount?: number;
+  commissionCapAmount?: number | null;
+  vatPercentage?: number;
+  payoutCycle?: PackagePayoutCycle;
+  currency?: string;
+}
 
 interface NormalizedPlanInput {
   name?: string;
@@ -50,6 +72,7 @@ interface NormalizedPlanInput {
 export class PackagePlansService {
   constructor(
     private readonly packagePlansRepository: PackagePlansRepository,
+    private readonly mailerService?: MailerService,
   ) {}
 
   async createPlan(user: AuthUserContext, dto: CreatePackagePlanDto) {
@@ -340,6 +363,79 @@ export class PackagePlansService {
     };
   }
 
+  async getSubscriptionInvoice(user: AuthUserContext, id: string) {
+    this.ensureSuperAdmin(user);
+    const subscription = await this.getSubscriptionOrThrow(id);
+
+    return {
+      data: this.toSubscriptionInvoice(subscription),
+      message: 'Subscription invoice fetched successfully',
+    };
+  }
+
+  async downloadSubscriptionInvoicePdf(user: AuthUserContext, id: string) {
+    this.ensureSuperAdmin(user);
+    const subscription = await this.getSubscriptionOrThrow(id);
+    const invoice = this.toSubscriptionInvoice(subscription);
+
+    return {
+      fileName: `${invoice.invoiceNumber}.pdf`,
+      mimeType: 'application/pdf',
+      content: this.generateSubscriptionInvoicePdf(invoice),
+    };
+  }
+
+  async sendSubscriptionInvoiceEmail(
+    user: AuthUserContext,
+    id: string,
+    dto: SendTenantSubscriptionInvoiceDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const subscription = await this.getSubscriptionOrThrow(id);
+    const invoice = this.toSubscriptionInvoice(subscription);
+    const recipientEmail = dto.email ?? invoice.restaurant?.billingEmail;
+
+    if (!recipientEmail) {
+      throw new BadRequestException(
+        'Restaurant billing email is required to send invoice',
+      );
+    }
+
+    if (!this.mailerService) {
+      throw new InternalServerErrorException(
+        'Mailer service is not configured',
+      );
+    }
+
+    const fileName = `${invoice.invoiceNumber}.pdf`;
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `DeliveryWays invoice ${invoice.invoiceNumber}`,
+      this.buildSubscriptionInvoiceEmailBody(invoice),
+      {
+        attachments: [
+          {
+            filename: fileName,
+            content: this.generateSubscriptionInvoicePdf(invoice),
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    );
+
+    return {
+      data: {
+        invoiceNumber: invoice.invoiceNumber,
+        subscriptionId: subscription.id,
+        restaurantId: subscription.restaurantId,
+        sentTo: recipientEmail,
+        fileName,
+        mimeType: 'application/pdf',
+      },
+      message: 'Subscription invoice generated and sent successfully',
+    };
+  }
+
   private normalizePlanInput(
     dto: CreatePackagePlanDto | UpdatePackagePlanDto,
   ): NormalizedPlanInput {
@@ -388,6 +484,283 @@ export class PackagePlansService {
       isActive: dto.isActive,
       isDefault: dto.isDefault,
     };
+  }
+
+  private async getSubscriptionOrThrow(id: string) {
+    const subscription =
+      await this.packagePlansRepository.findSubscriptionById(id);
+    if (!subscription) {
+      throw new NotFoundException('Tenant subscription not found');
+    }
+
+    return subscription;
+  }
+
+  private toSubscriptionInvoice(subscription: TenantSubscriptionDetails) {
+    const plan = this.resolveSubscriptionInvoicePlan(subscription);
+    const subtotal = plan.planPrice;
+    const vatAmount = Number(
+      ((subtotal * plan.vatPercentage) / 100).toFixed(2),
+    );
+    const totalAmount = Number((subtotal + vatAmount).toFixed(2));
+    const issuedAt = new Date();
+    const servicePeriodTo =
+      subscription.nextBillingAt ??
+      subscription.endsAt ??
+      subscription.startsAt;
+
+    return {
+      invoiceNumber: this.buildSubscriptionInvoiceNumber(subscription.id),
+      subscriptionId: subscription.id,
+      tenant: subscription.tenant,
+      restaurant: subscription.restaurant
+        ? {
+            id: subscription.restaurant.id,
+            name: subscription.restaurant.name,
+            slug: subscription.restaurant.slug,
+            billingEmail: this.resolveRestaurantBillingEmail(subscription),
+          }
+        : null,
+      packagePlan: {
+        id: plan.id,
+        name: plan.name,
+        billingModel: plan.billingModel,
+        billingInterval: plan.billingInterval,
+        planPrice: plan.planPrice,
+        commissionType: plan.commissionType,
+        commissionPercentage: plan.commissionPercentage,
+        commissionFixedAmount: plan.commissionFixedAmount,
+        commissionCapAmount: plan.commissionCapAmount,
+        vatPercentage: plan.vatPercentage,
+        payoutCycle: plan.payoutCycle,
+        currency: plan.currency,
+      },
+      status: subscription.status,
+      paymentStatus: subscription.paymentStatus,
+      issuedAt,
+      dueAt: subscription.nextBillingAt,
+      servicePeriod: {
+        from: subscription.startsAt,
+        to: servicePeriodTo,
+      },
+      lineItems: [
+        {
+          description: `${plan.name} ${plan.billingInterval.toLowerCase()} subscription`,
+          quantity: 1,
+          unitPrice: plan.planPrice,
+          amount: plan.planPrice,
+        },
+      ],
+      totals: {
+        subtotal,
+        vatPercentage: plan.vatPercentage,
+        vatAmount,
+        totalAmount,
+        currency: plan.currency,
+      },
+      note: subscription.note,
+    };
+  }
+
+  private resolveSubscriptionInvoicePlan(
+    subscription: TenantSubscriptionDetails,
+  ) {
+    const snapshot = this.asSubscriptionPlanSnapshot(subscription.planSnapshot);
+    const packagePlan = subscription.packagePlan;
+
+    return {
+      id: snapshot.id ?? packagePlan.id,
+      name: snapshot.name ?? packagePlan.name,
+      billingModel: snapshot.billingModel ?? packagePlan.billingModel,
+      billingInterval: snapshot.billingInterval ?? packagePlan.billingInterval,
+      planPrice: snapshot.planPrice ?? packagePlan.planPrice.toNumber(),
+      commissionType:
+        snapshot.commissionType ??
+        packagePlan.commissionType ??
+        PackageCommissionType.PERCENTAGE,
+      commissionPercentage:
+        snapshot.commissionPercentage ??
+        packagePlan.commissionPercentage.toNumber(),
+      commissionFixedAmount:
+        snapshot.commissionFixedAmount ??
+        packagePlan.commissionFixedAmount.toNumber(),
+      commissionCapAmount:
+        snapshot.commissionCapAmount ??
+        packagePlan.commissionCapAmount?.toNumber() ??
+        null,
+      vatPercentage:
+        snapshot.vatPercentage ?? packagePlan.vatPercentage.toNumber(),
+      payoutCycle:
+        snapshot.payoutCycle ??
+        packagePlan.payoutCycle ??
+        PackagePayoutCycle.WEEKLY,
+      currency: snapshot.currency ?? packagePlan.currency,
+    };
+  }
+
+  private asSubscriptionPlanSnapshot(
+    value: Prisma.JsonValue | null,
+  ): SubscriptionPlanSnapshot {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as SubscriptionPlanSnapshot;
+  }
+
+  private resolveRestaurantBillingEmail(
+    subscription: TenantSubscriptionDetails,
+  ) {
+    if (!subscription.restaurant) {
+      return null;
+    }
+
+    const settings = this.asJsonObject(subscription.restaurant.settings);
+    const supportContact = this.asJsonObject(
+      subscription.restaurant.supportContact,
+    );
+
+    return (
+      this.readNestedString(settings, ['invoice', 'email']) ??
+      this.readNestedString(settings, ['billing', 'email']) ??
+      this.readNestedString(settings, ['email']) ??
+      this.readNestedString(supportContact, ['email'])
+    );
+  }
+
+  private buildSubscriptionInvoiceNumber(subscriptionId: string) {
+    return `SUB-INV-${subscriptionId.slice(-8).toUpperCase()}`;
+  }
+
+  private generateSubscriptionInvoicePdf(
+    invoice: ReturnType<PackagePlansService['toSubscriptionInvoice']>,
+  ) {
+    const lines = [
+      `Invoice ${invoice.invoiceNumber}`,
+      `Invoice Date: ${invoice.issuedAt.toISOString()}`,
+      `Due Date: ${invoice.dueAt?.toISOString() ?? 'N/A'}`,
+      `Service Period: ${invoice.servicePeriod.from.toISOString()} - ${invoice.servicePeriod.to.toISOString()}`,
+      '',
+      'Billed To',
+      `Restaurant: ${invoice.restaurant?.name ?? 'N/A'}`,
+      `Tenant: ${invoice.tenant.name}`,
+      `Email: ${invoice.restaurant?.billingEmail ?? 'N/A'}`,
+      '',
+      'Package',
+      `Plan: ${invoice.packagePlan.name}`,
+      `Billing Model: ${invoice.packagePlan.billingModel}`,
+      `Billing Interval: ${invoice.packagePlan.billingInterval}`,
+      `Commission: ${invoice.packagePlan.commissionType} ${invoice.packagePlan.commissionPercentage}% / ${invoice.packagePlan.commissionFixedAmount}`,
+      `Payout Cycle: ${invoice.packagePlan.payoutCycle}`,
+      '',
+      `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
+      `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
+      `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
+      `Payment Status: ${invoice.paymentStatus}`,
+      `Subscription Status: ${invoice.status}`,
+      '',
+      invoice.note ? `Note: ${invoice.note}` : '',
+    ];
+
+    return this.buildSimplePdf(lines);
+  }
+
+  private buildSubscriptionInvoiceEmailBody(
+    invoice: ReturnType<PackagePlansService['toSubscriptionInvoice']>,
+  ) {
+    return [
+      `Hi ${invoice.restaurant?.name ?? invoice.tenant.name},`,
+      '',
+      `Please find attached DeliveryWays invoice ${invoice.invoiceNumber}.`,
+      '',
+      `Package: ${invoice.packagePlan.name}`,
+      `Service Period: ${invoice.servicePeriod.from.toISOString()} - ${invoice.servicePeriod.to.toISOString()}`,
+      `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
+      `Payment Status: ${invoice.paymentStatus}`,
+      '',
+      'DeliveryWays',
+    ].join('\n');
+  }
+
+  private buildSimplePdf(lines: string[]) {
+    const escapedLines = lines
+      .filter((line) => line.length > 0)
+      .slice(0, 52)
+      .flatMap((line) => this.wrapPdfLine(line))
+      .map((line) => `0 -14 Td (${this.escapePdfText(line)}) Tj`)
+      .join('\n');
+    const stream = `BT\n/F1 10 Tf\n50 800 Td\n${escapedLines}\nET`;
+    const objects = [
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n',
+      `5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj\n`,
+    ];
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+
+    for (const object of objects) {
+      offsets.push(Buffer.byteLength(pdf, 'utf8'));
+      pdf += object;
+    }
+
+    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+    for (const offset of offsets.slice(1)) {
+      pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`;
+    }
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+    return Buffer.from(pdf, 'utf8');
+  }
+
+  private wrapPdfLine(line: string) {
+    const chunks: string[] = [];
+    for (let index = 0; index < line.length; index += 78) {
+      chunks.push(line.slice(index, index + 78));
+    }
+
+    return chunks.length > 0 ? chunks : [''];
+  }
+
+  private escapePdfText(text: string) {
+    return text
+      .replace(/[^\x20-\x7E]/g, '?')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)');
+  }
+
+  private asJsonObject(value: Prisma.JsonValue | null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as Record<string, Prisma.JsonValue>;
+  }
+
+  private readNestedString(
+    object: Record<string, Prisma.JsonValue>,
+    path: string[],
+  ) {
+    let current: Prisma.JsonValue | undefined = object;
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return null;
+      }
+
+      current = (current as Record<string, Prisma.JsonValue>)[key];
+    }
+
+    return typeof current === 'string' && current.trim()
+      ? current.trim()
+      : null;
+  }
+
+  private formatInvoiceMoney(value: number) {
+    return Number(value).toFixed(2);
   }
 
   private assertBillingModelAmounts(input: {

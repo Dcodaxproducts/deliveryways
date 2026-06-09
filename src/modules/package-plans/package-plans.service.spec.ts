@@ -39,6 +39,51 @@ describe('PackagePlansService', () => {
     ...overrides,
   });
 
+  const makeSubscription = (overrides: Record<string, unknown> = {}) => ({
+    id: 'subscription-12345678',
+    tenantId: 'tenant-1',
+    restaurantId: 'restaurant-1',
+    packagePlanId: 'plan-1',
+    status: SubscriptionStatus.ACTIVE,
+    paymentStatus: PaymentStatus.PENDING,
+    startsAt: new Date('2026-06-01T00:00:00.000Z'),
+    endsAt: null,
+    nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),
+    planSnapshot: {
+      id: 'plan-1',
+      name: 'Hybrid Growth',
+      billingModel: PackageBillingModel.HYBRID,
+      billingInterval: BillingInterval.MONTHLY,
+      planPrice: 5000,
+      commissionType: PackageCommissionType.PERCENTAGE,
+      commissionPercentage: 5,
+      commissionFixedAmount: 0,
+      commissionCapAmount: 250,
+      vatPercentage: 15,
+      payoutCycle: PackagePayoutCycle.WEEKLY,
+      currency: 'PKR',
+    },
+    note: 'June subscription',
+    createdBy: 'admin-1',
+    updatedBy: 'admin-1',
+    createdAt: new Date('2026-06-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+    tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+    restaurant: {
+      id: 'restaurant-1',
+      name: 'Pizza House',
+      slug: 'pizza-house',
+      supportContact: { email: 'support@pizza.test' },
+      settings: {
+        billing: {
+          email: 'billing@pizza.test',
+        },
+      },
+    },
+    packagePlan: makePlan(),
+    ...overrides,
+  });
+
   it('creates hybrid package plan with fixed fee and commission', async () => {
     const repository = {
       createPlan: jest.fn().mockResolvedValue(makePlan()),
@@ -202,5 +247,113 @@ describe('PackagePlansService', () => {
       payoutCycle: PackagePayoutCycle.WEEKLY,
     });
     expect(result.message).toBe('Tenant subscription assigned successfully');
+  });
+
+  it('returns restaurant subscription invoice details for super admin', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data).toMatchObject({
+      invoiceNumber: 'SUB-INV-12345678',
+      subscriptionId: 'subscription-12345678',
+      restaurant: {
+        id: 'restaurant-1',
+        billingEmail: 'billing@pizza.test',
+      },
+      totals: {
+        subtotal: 5000,
+        vatPercentage: 15,
+        vatAmount: 750,
+        totalAmount: 5750,
+        currency: 'PKR',
+      },
+    });
+  });
+
+  it('generates restaurant subscription invoice PDF', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.downloadSubscriptionInvoicePdf(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.fileName).toBe('SUB-INV-12345678.pdf');
+    expect(result.mimeType).toBe('application/pdf');
+    expect(result.content.subarray(0, 8).toString('utf8')).toBe('%PDF-1.4');
+  });
+
+  it('sends restaurant subscription invoice to billing email', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+    };
+    const mailerService = {
+      sendEmail: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+    );
+
+    const result = await service.sendSubscriptionInvoiceEmail(
+      superAdmin,
+      'subscription-12345678',
+      {},
+    );
+
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'billing@pizza.test',
+      'DeliveryWays invoice SUB-INV-12345678',
+      expect.stringContaining('Please find attached DeliveryWays invoice'),
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            filename: 'SUB-INV-12345678.pdf',
+            contentType: 'application/pdf',
+          }),
+        ],
+      }),
+    );
+    expect(result.data.sentTo).toBe('billing@pizza.test');
+  });
+
+  it('requires a restaurant billing email before sending invoice', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(
+        makeSubscription({
+          restaurant: {
+            id: 'restaurant-1',
+            name: 'Pizza House',
+            slug: 'pizza-house',
+            supportContact: {},
+            settings: {},
+          },
+        }),
+      ),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      {
+        sendEmail: jest.fn(),
+      } as never,
+    );
+
+    await expect(
+      service.sendSubscriptionInvoiceEmail(
+        superAdmin,
+        'subscription-12345678',
+        {},
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 });

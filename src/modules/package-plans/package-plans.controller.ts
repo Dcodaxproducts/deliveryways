@@ -7,9 +7,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -22,6 +25,7 @@ import {
   CreatePackagePlanDto,
   ListPackagePlansDto,
   ListTenantSubscriptionsDto,
+  SendTenantSubscriptionInvoiceDto,
   UpdatePackagePlanDto,
   UpdateTenantSubscriptionDto,
 } from './dto';
@@ -85,6 +89,45 @@ export class PackagePlansController {
     @Body() dto: UpdateTenantSubscriptionDto,
   ) {
     return this.packagePlansService.updateSubscription(user, id, dto);
+  }
+
+  @Get('subscriptions/:id/invoice')
+  @ApiOperation({ summary: 'Get restaurant subscription invoice details' })
+  getSubscriptionInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.packagePlansService.getSubscriptionInvoice(user, id);
+  }
+
+  @Get('subscriptions/:id/invoice/pdf')
+  @ApiOperation({ summary: 'Download restaurant subscription invoice PDF' })
+  async downloadSubscriptionInvoicePdf(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.packagePlansService.downloadSubscriptionInvoicePdf(
+      user,
+      id,
+    );
+
+    response.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `attachment; filename="${file.fileName}"`,
+    });
+
+    return new StreamableFile(file.content);
+  }
+
+  @Post('subscriptions/:id/invoice/send-email')
+  @ApiOperation({ summary: 'Send restaurant subscription invoice by email' })
+  sendSubscriptionInvoiceEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: SendTenantSubscriptionInvoiceDto,
+  ) {
+    return this.packagePlansService.sendSubscriptionInvoiceEmail(user, id, dto);
   }
 
   @Get(':id')

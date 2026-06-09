@@ -11,6 +11,7 @@ import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsInt,
   IsNumber,
@@ -357,4 +358,15 @@ export class UpdateTenantSubscriptionDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+export class SendTenantSubscriptionInvoiceDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional override recipient. Defaults to restaurant billing/support email.',
+    example: 'billing@restaurant.test',
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
