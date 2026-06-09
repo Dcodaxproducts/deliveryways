@@ -118,6 +118,9 @@ export class CouponsRepository {
     const where: Prisma.CouponWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
+      discountType: {
+        not: CouponDiscountType.FIXED_PRICE,
+      },
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search

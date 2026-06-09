@@ -60,6 +60,7 @@ describe('CouponsService', () => {
   beforeEach(() => {
     repository = {
       create: jest.fn(),
+      list: jest.fn(),
       findByCode: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
@@ -134,6 +135,32 @@ describe('CouponsService', () => {
     const result = await service.validateForCheckout(baseInput);
 
     expect(Number(result.discountAmount)).toBe(100);
+  });
+
+  it('excludes fixed-price deals from coupons list', async () => {
+    const mockItem = makeCoupon();
+    repository.list!.mockResolvedValue({
+      items: [mockItem],
+      total: 1,
+    });
+
+    const result = await service.list(
+      {
+        uid: 'admin-1',
+        role: 'SUPER_ADMIN',
+      } as never,
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+        restaurantId: 'rid-1',
+      },
+    );
+
+    expect(repository.list).toHaveBeenCalledWith('rid-1', expect.any(Object));
+    expect(result.data).toEqual([mockItem]);
+    expect(result.meta.total).toBe(1);
   });
 
   it('returns uncapped percentage discount when maxDiscountAmount absent', async () => {
