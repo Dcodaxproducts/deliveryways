@@ -13,6 +13,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
+import {
+  GuestOrderContactDto,
+  GuestOrderDeliveryAddressDto,
+} from '../orders/dto';
 
 export const CART_ITEM_SECTION_SLOT_VALUES = ['LEFT', 'RIGHT'] as const;
 
@@ -309,4 +313,24 @@ export class CheckoutCartDto {
   @IsOptional()
   @IsString()
   customerNote?: string | null;
+
+  @ApiPropertyOptional({
+    type: GuestOrderContactDto,
+    description:
+      'Required for guest customer checkout so the branch can contact the guest and record privacy-policy consent.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestOrderContactDto)
+  guestContact?: GuestOrderContactDto;
+
+  @ApiPropertyOptional({
+    type: GuestOrderDeliveryAddressDto,
+    description:
+      'Inline delivery address for guest customer cart checkout. Used instead of a saved deliveryAddressId.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestOrderDeliveryAddressDto)
+  guestDeliveryAddress?: GuestOrderDeliveryAddressDto;
 }

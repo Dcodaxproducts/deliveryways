@@ -3625,4 +3625,84 @@ describe('CartService', () => {
     );
     expect(result.message).toBe('Order created from cart successfully');
   });
+
+  it('passes guest contact consent and inline delivery address at cart checkout', async () => {
+    const { service, cartRepository, ordersService, profilesRepository } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'guest-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: PaymentMethodEnum.COD,
+      orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.create.mockResolvedValue({
+      data: { id: 'order-1' },
+      message: 'Order created successfully',
+    });
+
+    await service.checkout(
+      {
+        uid: 'guest-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+        isGuest: true,
+      },
+      {
+        paymentMethod: PaymentMethodEnum.COD,
+        guestContact: {
+          email: 'guest@example.com',
+          phone: '+923001234567',
+          privacyPolicyAccepted: true,
+        },
+        guestDeliveryAddress: {
+          street: 'Street 12',
+          city: 'Lahore',
+          state: 'Punjab',
+          country: 'Pakistan',
+          lat: '31.5204',
+          lng: '74.3587',
+        },
+      },
+    );
+
+    expect(ordersService.create).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        guestContact: {
+          email: 'guest@example.com',
+          phone: '+923001234567',
+          privacyPolicyAccepted: true,
+        },
+        guestDeliveryAddress: {
+          street: 'Street 12',
+          city: 'Lahore',
+          state: 'Punjab',
+          country: 'Pakistan',
+          lat: '31.5204',
+          lng: '74.3587',
+        },
+      }),
+    );
+  });
 });

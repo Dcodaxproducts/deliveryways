@@ -84,6 +84,7 @@ describe('Order DTO validation', () => {
             firstName: 'Guest',
             email: 'guest@example.com',
             phone: '+923001234567',
+            privacyPolicyAccepted: true,
           },
           guestDeliveryAddress: {
             street: 'Street 12',
@@ -104,6 +105,7 @@ describe('Order DTO validation', () => {
       guestContact: {
         email: 'guest@example.com',
         phone: '+923001234567',
+        privacyPolicyAccepted: true,
       },
       guestDeliveryAddress: {
         street: 'Street 12',

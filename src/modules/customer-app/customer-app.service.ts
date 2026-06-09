@@ -319,9 +319,16 @@ export class CustomerAppService {
         restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         title: 'Privacy Policy',
         content: privacyPolicy,
+        policyLink: this.buildPrivacyPolicyLink(restaurant.id),
       },
       message: 'Privacy policy fetched successfully',
     };
+  }
+
+  private buildPrivacyPolicyLink(restaurantId: string) {
+    return `/api/v1/public-content/privacy-policy?restaurantId=${encodeURIComponent(
+      restaurantId,
+    )}`;
   }
 
   async getHelpSupport(

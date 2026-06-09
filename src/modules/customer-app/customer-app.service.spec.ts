@@ -1525,6 +1525,9 @@ describe('CustomerAppService', () => {
       'restaurant-1',
     );
     expect(result.data.content).toBe('Privacy text');
+    expect(result.data.policyLink).toBe(
+      '/api/v1/public-content/privacy-policy?restaurantId=restaurant-1',
+    );
   });
 
   it('uses customer token restaurant scope for promotional items when query restaurantId is omitted', async () => {

@@ -1869,6 +1869,8 @@ export class CartService {
       paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
       walletAmount: dto.walletAmount,
       loyaltyPoints: dto.loyaltyPoints,
+      guestContact: dto.guestContact,
+      guestDeliveryAddress: dto.guestDeliveryAddress,
       tipAmount: dto.tipAmount ?? Number(cart.tipAmount),
       customerNote:
         dto.customerNote !== undefined

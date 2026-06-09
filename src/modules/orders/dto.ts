@@ -3,6 +3,7 @@ import { OrderStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -127,6 +128,14 @@ export class GuestOrderContactDto {
   @IsString()
   @IsNotEmpty()
   phone!: string;
+
+  @ApiProperty({
+    description:
+      'Must be true when a guest accepts the restaurant privacy/data policy before checkout.',
+    example: true,
+  })
+  @IsBoolean()
+  privacyPolicyAccepted!: boolean;
 }
 
 export class GuestOrderDeliveryAddressDto {

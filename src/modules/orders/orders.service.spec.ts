@@ -3346,6 +3346,83 @@ describe('OrdersService - admin customer resolution', () => {
     ).toThrow('guestContact is required for guest orders');
   });
 
+  it('requires privacy policy acceptance when guest places an order', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      (
+        service as unknown as {
+          assertGuestContactForOrder: (
+            customer: { customerId: string; isGuest: boolean },
+            guestContact?: unknown,
+          ) => void;
+        }
+      ).assertGuestContactForOrder(
+        {
+          customerId: 'guest-1',
+          isGuest: true,
+        },
+        {
+          email: 'guest@example.com',
+          phone: '+923001234567',
+          privacyPolicyAccepted: false,
+        },
+      ),
+    ).toThrow('privacyPolicyAccepted is required for guest orders');
+  });
+
+  it('stores guest contact consent metadata with privacy policy link', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const metadata = (
+      service as unknown as {
+        toGuestContactMetadata: (
+          existingMetadata: unknown,
+          dto: {
+            email: string;
+            phone: string;
+            privacyPolicyAccepted: boolean;
+          },
+          restaurantId: string,
+        ) => Record<string, unknown>;
+      }
+    ).toGuestContactMetadata(
+      {},
+      {
+        email: 'Guest@Example.com',
+        phone: '+923001234567',
+        privacyPolicyAccepted: true,
+      },
+      'restaurant-1',
+    );
+
+    expect(metadata.guestContact).toMatchObject({
+      email: 'guest@example.com',
+      phone: '+923001234567',
+      privacyPolicyAccepted: true,
+      privacyPolicyLink:
+        '/api/v1/public-content/privacy-policy?restaurantId=restaurant-1',
+    });
+    expect(
+      (metadata.guestContact as { privacyPolicyAcceptedAt?: unknown })
+        .privacyPolicyAcceptedAt,
+    ).toEqual(expect.any(String));
+  });
+
   it('rejects customer override for another customer', async () => {
     const service = new OrdersService(
       {

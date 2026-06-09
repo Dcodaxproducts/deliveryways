@@ -277,7 +277,12 @@ export class OrdersService {
         : null;
 
       if (quote.customer.isGuest && dto.guestContact) {
-        await this.updateGuestContact(tx, customerId, dto.guestContact);
+        await this.updateGuestContact(
+          tx,
+          customerId,
+          dto.guestContact,
+          quote.branch.restaurantId,
+        );
       }
       const deliveryAddressId =
         dto.deliveryAddressId ?? guestDeliveryAddress?.id;
@@ -3006,6 +3011,12 @@ export class OrdersService {
         'guestContact is required for guest orders',
       );
     }
+
+    if (guestContact.privacyPolicyAccepted !== true) {
+      throw new BadRequestException(
+        'privacyPolicyAccepted is required for guest orders',
+      );
+    }
   }
 
   private async createGuestDeliveryAddress(
@@ -3038,6 +3049,7 @@ export class OrdersService {
     tx: PrismaTx,
     customerId: string,
     dto: GuestOrderContactDto,
+    restaurantId: string,
   ) {
     const existingProfile = await tx.profile.findUnique({
       where: { userId: customerId },
@@ -3046,6 +3058,7 @@ export class OrdersService {
     const metadata = this.toGuestContactMetadata(
       existingProfile?.metadata,
       dto,
+      restaurantId,
     );
 
     await tx.profile.upsert({
@@ -3069,6 +3082,7 @@ export class OrdersService {
   private toGuestContactMetadata(
     existingMetadata: Prisma.JsonValue | null | undefined,
     dto: GuestOrderContactDto,
+    restaurantId: string,
   ): Prisma.InputJsonValue {
     const metadata =
       existingMetadata &&
@@ -3082,8 +3096,17 @@ export class OrdersService {
       guestContact: {
         email: dto.email.trim().toLowerCase(),
         phone: dto.phone,
+        privacyPolicyAccepted: true,
+        privacyPolicyAcceptedAt: new Date().toISOString(),
+        privacyPolicyLink: this.buildPrivacyPolicyLink(restaurantId),
       },
     };
+  }
+
+  private buildPrivacyPolicyLink(restaurantId: string) {
+    return `/api/v1/public-content/privacy-policy?restaurantId=${encodeURIComponent(
+      restaurantId,
+    )}`;
   }
 
   private async ensureBranchAccess(
