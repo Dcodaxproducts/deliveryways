@@ -736,6 +736,8 @@ export class OrdersService {
       );
     }
 
+    this.assertDeliveryOrderWithinHours(settings, dto.orderType, dto.orderTime);
+
     const selectedMenu = dto.restaurantMenuId
       ? await this.resolveSelectedRestaurantMenu(
           branch.restaurantId,
@@ -3837,6 +3839,7 @@ export class OrdersService {
         type: ServiceChargeType.PERCENTAGE,
         value: 0,
       },
+      deliveryHours: [],
       temporaryClosure: null,
       holidayOpeningHours: [],
     };
@@ -3888,6 +3891,9 @@ export class OrdersService {
       temporaryClosure: raw.temporaryClosure ?? fallback.temporaryClosure,
       holidayOpeningHours:
         raw.holidayOpeningHours ?? fallback.holidayOpeningHours,
+      deliveryHours: Array.isArray(raw.deliveryHours)
+        ? raw.deliveryHours
+        : fallback.deliveryHours,
     };
   }
 
@@ -3961,6 +3967,151 @@ export class OrdersService {
         },
       });
     }
+  }
+
+  private assertDeliveryOrderWithinHours(
+    settings: BranchSettings,
+    orderType: OrderTypeEnum,
+    orderTime: string,
+  ) {
+    if (
+      orderType !== OrderTypeEnum.DELIVERY ||
+      !settings.deliveryHours.length
+    ) {
+      return;
+    }
+
+    const local = this.getScheduleLocalParts(orderTime);
+    const daySchedule = local
+      ? settings.deliveryHours.find(
+          (item) => item.dayOfWeek === local.dayOfWeek,
+        )
+      : null;
+
+    if (
+      !local ||
+      !daySchedule ||
+      daySchedule.isClosed ||
+      !daySchedule.openTime ||
+      !daySchedule.closeTime
+    ) {
+      throw new BadRequestException(
+        'Delivery is not available at requested order time',
+      );
+    }
+
+    const openMinutes = this.parseScheduleTimeMinutes(daySchedule.openTime);
+    const closeMinutes = this.parseScheduleTimeMinutes(daySchedule.closeTime);
+
+    if (openMinutes === null || closeMinutes === null) {
+      throw new BadRequestException(
+        'Delivery is not available at requested order time',
+      );
+    }
+
+    const inDeliveryWindow =
+      openMinutes <= closeMinutes
+        ? local.minutes >= openMinutes && local.minutes < closeMinutes
+        : local.minutes >= openMinutes || local.minutes < closeMinutes;
+
+    if (!inDeliveryWindow) {
+      throw new BadRequestException(
+        'Delivery is not available at requested order time',
+      );
+    }
+
+    const isInBreak = (daySchedule.breakTimes ?? []).some((breakTime) => {
+      const startMinutes = this.parseScheduleTimeMinutes(breakTime.startTime);
+      const endMinutes = this.parseScheduleTimeMinutes(breakTime.endTime);
+
+      if (startMinutes === null || endMinutes === null) {
+        return false;
+      }
+
+      return local.minutes >= startMinutes && local.minutes < endMinutes;
+    });
+
+    if (isInBreak) {
+      throw new BadRequestException(
+        'Delivery is not available at requested order time',
+      );
+    }
+  }
+
+  private getScheduleLocalParts(orderTime: string) {
+    const date = new Date(orderTime);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Karachi',
+      weekday: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const dayOfWeek = parts
+      .find((part) => part.type === 'weekday')
+      ?.value.toUpperCase();
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+
+    if (
+      !this.isScheduleDay(dayOfWeek) ||
+      Number.isNaN(hour) ||
+      Number.isNaN(minute)
+    ) {
+      return null;
+    }
+
+    return {
+      dayOfWeek,
+      minutes: hour * 60 + minute,
+    };
+  }
+
+  private isScheduleDay(value: unknown): value is BranchScheduleDay {
+    return (
+      typeof value === 'string' &&
+      [
+        'MONDAY',
+        'TUESDAY',
+        'WEDNESDAY',
+        'THURSDAY',
+        'FRIDAY',
+        'SATURDAY',
+        'SUNDAY',
+      ].includes(value)
+    );
+  }
+
+  private parseScheduleTimeMinutes(value: unknown): number | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const match = value.match(/^(\d{2}):(\d{2})$/);
+    if (!match) {
+      return null;
+    }
+
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+
+    if (
+      Number.isNaN(hour) ||
+      Number.isNaN(minute) ||
+      hour < 0 ||
+      hour > 23 ||
+      minute < 0 ||
+      minute > 59
+    ) {
+      return null;
+    }
+
+    return hour * 60 + minute;
   }
 
   private resolveTodayHolidayOpeningHour(
@@ -4499,11 +4650,34 @@ type BranchHolidayOpeningHour = {
   note?: string | null;
 };
 
+type BranchScheduleDay =
+  | 'MONDAY'
+  | 'TUESDAY'
+  | 'WEDNESDAY'
+  | 'THURSDAY'
+  | 'FRIDAY'
+  | 'SATURDAY'
+  | 'SUNDAY';
+
+type BranchDeliveryHourBreak = {
+  startTime: string;
+  endTime: string;
+};
+
+type BranchDeliveryHour = {
+  dayOfWeek: BranchScheduleDay;
+  isClosed: boolean;
+  openTime?: string | null;
+  closeTime?: string | null;
+  breakTimes?: BranchDeliveryHourBreak[];
+};
+
 type BranchSettings = {
   allowedOrderTypes: string[];
   allowedPaymentMethods: string[];
   temporaryClosure: BranchTemporaryClosure | null;
   holidayOpeningHours: BranchHolidayOpeningHour[];
+  deliveryHours: BranchDeliveryHour[];
   deliveryConfig: {
     mode: 'RADIUS' | 'ZONE' | 'ZONE_BANDS' | 'POSTAL_CODE';
     radiusKm: number;

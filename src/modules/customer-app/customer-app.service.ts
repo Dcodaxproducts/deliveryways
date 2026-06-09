@@ -812,6 +812,16 @@ export class CustomerAppService {
                 translatedBranch.coverImage,
               ),
               description: translatedBranch.description,
+              scheduleTimings: {
+                openingHours: this.readBranchScheduleHours(
+                  translatedBranch.settings,
+                  'openingHours',
+                ),
+                deliveryHours: this.readBranchScheduleHours(
+                  translatedBranch.settings,
+                  'deliveryHours',
+                ),
+              },
               tableReservationsEnabled: this.readBooleanValue(
                 translatedBranch.settings,
                 [['tableReservationsEnabled']],
@@ -3177,6 +3187,14 @@ export class CustomerAppService {
     }
 
     return 0;
+  }
+
+  private readBranchScheduleHours(
+    source: unknown,
+    key: 'openingHours' | 'deliveryHours',
+  ): unknown[] {
+    const value = this.readPath(source, [key]);
+    return Array.isArray(value) ? Array.from(value as unknown[]) : [];
   }
 
   private readRestaurantCurrency(source: unknown): string | null {

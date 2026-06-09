@@ -1298,6 +1298,22 @@ describe('CustomerAppService', () => {
       description: 'Downtown branch',
       settings: {
         tableReservationsEnabled: true,
+        openingHours: [
+          {
+            dayOfWeek: 'MONDAY',
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '18:00',
+          },
+        ],
+        deliveryHours: [
+          {
+            dayOfWeek: 'MONDAY',
+            isClosed: false,
+            openTime: '12:00',
+            closeTime: '22:00',
+          },
+        ],
       },
     });
 
@@ -1325,6 +1341,24 @@ describe('CustomerAppService', () => {
       logoUrl: null,
       coverImage: 'branch-cover.jpg',
       description: 'Downtown branch',
+      scheduleTimings: {
+        openingHours: [
+          {
+            dayOfWeek: 'MONDAY',
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '18:00',
+          },
+        ],
+        deliveryHours: [
+          {
+            dayOfWeek: 'MONDAY',
+            isClosed: false,
+            openTime: '12:00',
+            closeTime: '22:00',
+          },
+        ],
+      },
       tableReservationsEnabled: true,
     });
   });

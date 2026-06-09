@@ -179,6 +179,83 @@ describe('OrdersService - delivery radius', () => {
     expect(summary.payableAmount).toBe(1100);
   });
 
+  it('allows delivery only inside configured delivery hours', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            deliveryHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+              breakTimes?: Array<{ startTime: string; endTime: string }>;
+            }>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      deliveryHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '12:00',
+          closeTime: '22:00',
+          breakTimes: [{ startTime: '15:00', endTime: '16:00' }],
+        },
+      ],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T07:30:00.000Z',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T04:30:00.000Z',
+      ),
+    ).toThrow('Delivery is not available at requested order time');
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T10:30:00.000Z',
+      ),
+    ).toThrow('Delivery is not available at requested order time');
+  });
+
+  it('does not apply delivery hours to pickup orders', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: { deliveryHours: Array<{ dayOfWeek: string }> },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        { deliveryHours: [{ dayOfWeek: 'TUESDAY' }] },
+        OrderTypeEnum.TAKEAWAY,
+        '2026-06-09T04:30:00.000Z',
+      ),
+    ).not.toThrow();
+  });
+
   it('detects whether a point is inside a delivery zone polygon', () => {
     const zoneFn = (
       service as unknown as {
