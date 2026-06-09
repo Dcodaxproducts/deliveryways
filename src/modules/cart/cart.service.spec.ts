@@ -2946,6 +2946,55 @@ describe('CartService', () => {
     expect(result.message).toBe('Cart updated successfully');
   });
 
+  it('returns guest delivery cart without quote when address is not selected yet', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'guest-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockRejectedValue(
+      new BadRequestException(
+        'deliveryAddressId or guestDeliveryAddress is required for delivery orders',
+      ),
+    );
+
+    const result = await service.getCart({
+      uid: 'guest-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+      isGuest: true,
+    });
+
+    expect(result.message).toBe('Cart fetched successfully');
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data).not.toHaveProperty('quote');
+  });
+
   it('saves scheduledDeliveryAt as cart order time', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const cart = {

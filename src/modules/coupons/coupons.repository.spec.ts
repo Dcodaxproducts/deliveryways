@@ -3,7 +3,10 @@ import { CouponsRepository } from './coupons.repository';
 
 describe('CouponsRepository', () => {
   it('excludes fixed-price deals from coupon list queries', async () => {
-    const findMany = jest.fn();
+    const findMany = jest.fn<
+      Promise<unknown[]>,
+      [{ where?: { discountType?: unknown } }]
+    >();
     const count = jest.fn();
     const transaction = jest.fn(async (ops: Promise<unknown>[]) =>
       Promise.all(ops),
@@ -28,14 +31,10 @@ describe('CouponsRepository', () => {
       restaurantId: 'restaurant-1',
     } as never);
 
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          discountType: {
-            not: CouponDiscountType.FIXED_PRICE,
-          },
-        }),
-      }),
-    );
+    const findManyArgs = findMany.mock.calls[0]?.[0];
+
+    expect(findManyArgs?.where?.discountType).toEqual({
+      not: CouponDiscountType.FIXED_PRICE,
+    });
   });
 });

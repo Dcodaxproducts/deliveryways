@@ -1650,6 +1650,7 @@ export class CartService {
     } catch (error) {
       if (
         this.isDeliveryCoverageError(error) ||
+        this.isMissingDeliveryAddressError(error) ||
         this.isModifierSelectionLimitError(error) ||
         this.isMinimumOrderAmountError(error)
       ) {
@@ -1691,6 +1692,21 @@ export class CartService {
             deliveryMessage.includes('service area'))) ||
         (deliveryMessage.includes('delivery address') &&
           deliveryMessage.includes('service area')))
+    );
+  }
+
+  private isMissingDeliveryAddressError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const normalizedMessage = this.getBadRequestMessage(error);
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      normalizedMessage
+        .toLowerCase()
+        .includes('deliveryaddressid or guestdeliveryaddress is required')
     );
   }
 
