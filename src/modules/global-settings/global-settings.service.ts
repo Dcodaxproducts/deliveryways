@@ -287,7 +287,10 @@ export class GlobalSettingsService {
     return Object.values(PaymentMethod).map((code) => ({
       code,
       label: this.paymentMethodLabel(code),
-      isActive: code === PaymentMethod.COD || code === PaymentMethod.WALLET,
+      isActive:
+        code === PaymentMethod.COD ||
+        code === PaymentMethod.PAYPAL ||
+        code === PaymentMethod.WALLET,
     }));
   }
 
@@ -382,6 +385,8 @@ export class GlobalSettingsService {
         return 'Cash on delivery';
       case PaymentMethod.STRIPE:
         return 'Stripe';
+      case PaymentMethod.PAYPAL:
+        return 'PayPal';
       case PaymentMethod.EASYPAISA:
         return 'Easypaisa';
       case PaymentMethod.JAZZCASH:

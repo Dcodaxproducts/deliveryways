@@ -643,7 +643,26 @@ export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
   'scopeCategoryId',
   'applyMode',
   'autoApply',
+  'startsAt',
+  'expiresAt',
 ] as const) {
+  @ApiPropertyOptional({
+    format: 'date-time',
+    description: 'Optional for deals. If omitted, the deal starts immediately.',
+  })
+  @IsOptional()
+  @IsDateString()
+  startsAt?: string;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    description:
+      'Optional for deals. If omitted, the deal remains active until deleted or dates are edited.',
+  })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+
   @ApiPropertyOptional({
     type: [String],
     minItems: 2,

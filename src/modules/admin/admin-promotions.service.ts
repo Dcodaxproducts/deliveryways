@@ -290,6 +290,8 @@ export class AdminPromotionsService {
         discountType: CouponDiscountType.FIXED_PRICE,
         applyMode: CouponApplyMode.SCOPED_ITEMS,
         autoApply: true,
+        startsAt: dto.startsAt ?? new Date().toISOString(),
+        expiresAt: dto.expiresAt ?? '9999-12-31T23:59:59.000Z',
       },
       'DEAL',
     );

@@ -158,7 +158,10 @@ export class AuthService {
         tableReservationAutoAccept: false,
         tableCount: 0,
         allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
-        allowedPaymentMethods: [PaymentMethodEnum.COD],
+        allowedPaymentMethods: [
+          PaymentMethodEnum.COD,
+          PaymentMethodEnum.PAYPAL,
+        ],
         deliveryConfig: {
           mode: 'RADIUS' as const,
           radiusKm: 5,

@@ -52,7 +52,13 @@ export class OrdersRepository {
           },
         },
         branch: {
-          select: { id: true, name: true, logoUrl: true, coverImage: true },
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            coverImage: true,
+            settings: true,
+          },
         },
         customer: {
           select: {

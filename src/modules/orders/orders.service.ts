@@ -2137,6 +2137,7 @@ export class OrdersService {
         name: string;
         logoUrl: string | null;
         coverImage: string | null;
+        settings?: Prisma.JsonValue | null;
       };
       coupon: { id: string; code: string; title: string } | null;
       customer: {
@@ -2245,6 +2246,15 @@ export class OrdersService {
       order.sourceGroupOrder,
       order.branchId,
     );
+    const availablePaymentMethods = this.readBranchSettings(
+      order.branch.settings,
+    ).allowedPaymentMethods;
+    const branch = {
+      id: order.branch.id,
+      name: order.branch.name,
+      logoUrl: order.branch.logoUrl,
+      coverImage: order.branch.coverImage,
+    };
 
     return {
       id: order.id,
@@ -2286,9 +2296,14 @@ export class OrdersService {
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       restaurant: order.restaurant,
-      branch: order.branch,
+      branch,
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),
+      availablePaymentMethods,
+      paymentOptions: {
+        selected: order.paymentMethod,
+        available: availablePaymentMethods,
+      },
       isGroupOrder: Boolean(order.sourceGroupOrder),
       groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
       groupOrderInviteCode: order.sourceGroupOrder?.inviteCode ?? null,
@@ -3380,7 +3395,7 @@ export class OrdersService {
     settings: BranchSettings,
     paymentMethod: string,
   ): boolean {
-    if (paymentMethod === 'WALLET') {
+    if (paymentMethod === 'WALLET' || paymentMethod === 'PAYPAL') {
       return true;
     }
 
@@ -3802,7 +3817,7 @@ export class OrdersService {
   private readBranchSettings(input: unknown): BranchSettings {
     const fallback: BranchSettings = {
       allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
-      allowedPaymentMethods: ['COD', 'WALLET'],
+      allowedPaymentMethods: ['COD', 'PAYPAL', 'WALLET'],
       deliveryConfig: {
         mode: 'RADIUS',
         radiusKm: 5,
@@ -3834,8 +3849,9 @@ export class OrdersService {
 
     return {
       allowedOrderTypes: raw.allowedOrderTypes ?? fallback.allowedOrderTypes,
-      allowedPaymentMethods:
+      allowedPaymentMethods: this.withPlatformPaymentMethods(
         raw.allowedPaymentMethods ?? fallback.allowedPaymentMethods,
+      ),
       deliveryConfig: {
         mode: raw.deliveryConfig?.mode ?? fallback.deliveryConfig.mode,
         radiusKm:
@@ -3873,6 +3889,10 @@ export class OrdersService {
       holidayOpeningHours:
         raw.holidayOpeningHours ?? fallback.holidayOpeningHours,
     };
+  }
+
+  private withPlatformPaymentMethods(methods: string[]) {
+    return [...new Set([...methods, 'PAYPAL'])];
   }
 
   private resolveServiceCharge(

@@ -238,6 +238,56 @@ describe('AdminPromotionsService', () => {
     expect(result.message).toBe('Deal created successfully');
   });
 
+  it('creates permanent deals when start and expiry dates are omitted', async () => {
+    const createInputs: Prisma.CouponCreateInput[] = [];
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(2),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+      create: jest
+        .fn()
+        .mockImplementation((input: Prisma.CouponCreateInput) => {
+          createInputs.push(input);
+
+          return Promise.resolve(
+            makeCoupon({
+              kind: CouponCampaignKind.PROMOTION,
+              discountType: CouponDiscountType.FIXED_PRICE,
+              startsAt: input.startsAt as Date,
+              expiresAt: input.expiresAt as Date,
+              scopeMenuItems: [
+                { menuItem: { id: 'item-1', name: 'Pizza' } },
+                { menuItem: { id: 'item-2', name: 'Drink' } },
+              ],
+            }),
+          );
+        }),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.createDeal(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Always On Deal',
+        discountValue: 1299,
+        scopeMenuItemIds: ['item-1', 'item-2'],
+      },
+    );
+
+    const createInput = createInputs[0];
+
+    if (!createInput) {
+      throw new Error('Expected create input');
+    }
+
+    expect(createInput.startsAt).toBeInstanceOf(Date);
+    expect(createInput.expiresAt).toEqual(new Date('9999-12-31T23:59:59.000Z'));
+  });
+
   it('returns signed image urls when creating gift cards', async () => {
     const repository = {
       create: jest.fn().mockResolvedValue(

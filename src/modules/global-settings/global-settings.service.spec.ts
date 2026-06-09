@@ -80,6 +80,11 @@ describe('GlobalSettingsService', () => {
             isActive: false,
           },
           {
+            code: PaymentMethod.PAYPAL,
+            label: 'PayPal',
+            isActive: true,
+          },
+          {
             code: PaymentMethod.EASYPAISA,
             label: 'Easypaisa',
             isActive: false,

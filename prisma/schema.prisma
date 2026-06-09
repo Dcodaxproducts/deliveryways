@@ -129,6 +129,7 @@ enum SubscriptionStatus {
 enum PaymentMethod {
   COD
   STRIPE
+  PAYPAL
   EASYPAISA
   JAZZCASH
   BANK_TRANSFER
