@@ -20,6 +20,7 @@ import {
   PaymentMethodEnum,
   UserRoleEnum,
 } from '../../common/enums';
+import { PrismaTx } from '../../common/types';
 import { buildPaginationMeta } from '../../common/utils';
 import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { ChatService } from '../chat/chat.service';
@@ -32,6 +33,8 @@ import { StorageService } from '../storage/storage.service';
 import {
   CancelOrderDto,
   CreateOrderDto,
+  GuestOrderContactDto,
+  GuestOrderDeliveryAddressDto,
   ListOrdersDto,
   OrderItemModifierDto,
   QuoteOrderDto,
@@ -140,6 +143,7 @@ type QuoteLine = {
 
 type QuoteCustomerContext = {
   customerId: string;
+  isGuest: boolean;
 };
 
 type QuoteBranchContext = {
@@ -243,6 +247,7 @@ export class OrdersService {
     const currency = await this.resolveRestaurantCurrency(
       quote.branch.restaurantId,
     );
+    this.assertGuestContactForOrder(quote.customer, dto.guestContact);
 
     const branchSettings = this.readBranchSettings(quote.branch.settings);
     if (!this.isPaymentAllowed(branchSettings, dto.paymentMethod)) {
@@ -262,6 +267,21 @@ export class OrdersService {
     const data = await this.prisma.$transaction(async (tx) => {
       const processedAt =
         initialPaymentStatus === PaymentStatus.PAID ? new Date() : undefined;
+      const guestDeliveryAddress = dto.guestDeliveryAddress
+        ? await this.createGuestDeliveryAddress(
+            tx,
+            quote.branch.tenantId,
+            customerId,
+            dto.guestDeliveryAddress,
+          )
+        : null;
+
+      if (quote.customer.isGuest && dto.guestContact) {
+        await this.updateGuestContact(tx, customerId, dto.guestContact);
+      }
+      const deliveryAddressId =
+        dto.deliveryAddressId ?? guestDeliveryAddress?.id;
+
       const order = await this.ordersRepository.create(
         {
           tenant: { connect: { id: quote.branch.tenantId } },
@@ -271,8 +291,8 @@ export class OrdersService {
           coupon: quote.couponId
             ? { connect: { id: quote.couponId } }
             : undefined,
-          deliveryAddress: dto.deliveryAddressId
-            ? { connect: { id: dto.deliveryAddressId } }
+          deliveryAddress: deliveryAddressId
+            ? { connect: { id: deliveryAddressId } }
             : undefined,
           orderType: dto.orderType,
           paymentMethod: dto.paymentMethod,
@@ -708,6 +728,7 @@ export class OrdersService {
       branch,
       dto.customerId,
     );
+    this.assertGuestCheckoutAddressRules(customer, dto);
 
     if (!settings.allowedOrderTypes.includes(dto.orderType)) {
       throw new BadRequestException(
@@ -1208,20 +1229,33 @@ export class OrdersService {
       settings.deliveryConfig.minOrderAmount,
     );
     if (dto.orderType === OrderTypeEnum.DELIVERY) {
-      if (!options.skipDeliveryAddressValidation && !dto.deliveryAddressId) {
+      if (
+        !options.skipDeliveryAddressValidation &&
+        !dto.deliveryAddressId &&
+        !dto.guestDeliveryAddress
+      ) {
         throw new BadRequestException(
-          'deliveryAddressId is required for delivery orders',
+          'deliveryAddressId or guestDeliveryAddress is required for delivery orders',
         );
       }
 
-      if (!options.skipDeliveryAddressValidation && dto.deliveryAddressId) {
-        deliveryFee = await this.resolveDeliveryFeeForAddress(
-          customer.customerId,
-          dto.deliveryAddressId,
-          branch.id,
-          settings.deliveryConfig,
-          subtotal,
-        );
+      if (!options.skipDeliveryAddressValidation) {
+        if (dto.deliveryAddressId) {
+          deliveryFee = await this.resolveDeliveryFeeForAddress(
+            customer.customerId,
+            dto.deliveryAddressId,
+            branch.id,
+            settings.deliveryConfig,
+            subtotal,
+          );
+        } else if (dto.guestDeliveryAddress) {
+          deliveryFee = await this.resolveDeliveryFeeForGuestAddress(
+            dto.guestDeliveryAddress,
+            branch.id,
+            settings.deliveryConfig,
+            subtotal,
+          );
+        }
       }
 
       if (options.skipDeliveryAddressValidation) {
@@ -1925,11 +1959,13 @@ export class OrdersService {
     customer: {
       id: string;
       email: string;
+      isGuest?: boolean;
       profile: {
         firstName: string;
         lastName: string;
         phone: string | null;
         avatarUrl: string | null;
+        metadata?: Prisma.JsonValue | null;
       } | null;
     };
     deliveryman: {
@@ -2106,11 +2142,13 @@ export class OrdersService {
       customer: {
         id: string;
         email: string;
+        isGuest?: boolean;
         profile: {
           firstName: string;
           lastName: string;
           phone: string | null;
           avatarUrl: string | null;
+          metadata?: Prisma.JsonValue | null;
         } | null;
       };
       deliveryAddress: {
@@ -2530,16 +2568,21 @@ export class OrdersService {
   private toCustomerSummary(customer: {
     id: string;
     email: string;
+    isGuest?: boolean;
     profile: {
       firstName: string;
       lastName: string;
       phone: string | null;
       avatarUrl: string | null;
+      metadata?: Prisma.JsonValue | null;
     } | null;
   }) {
+    const guestEmail = this.readGuestContactEmail(customer.profile?.metadata);
+
     return {
       id: customer.id,
-      email: customer.email,
+      email: customer.isGuest ? (guestEmail ?? customer.email) : customer.email,
+      isGuest: customer.isGuest ?? false,
       firstName: customer.profile?.firstName ?? null,
       lastName: customer.profile?.lastName ?? null,
       fullName:
@@ -2549,6 +2592,24 @@ export class OrdersService {
       phone: customer.profile?.phone ?? null,
       avatarUrl: customer.profile?.avatarUrl ?? null,
     };
+  }
+
+  private readGuestContactEmail(metadata: Prisma.JsonValue | null | undefined) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+
+    const guestContact = (metadata as { guestContact?: unknown }).guestContact;
+    if (
+      !guestContact ||
+      typeof guestContact !== 'object' ||
+      Array.isArray(guestContact)
+    ) {
+      return null;
+    }
+
+    const email = (guestContact as { email?: unknown }).email;
+    return typeof email === 'string' && email.trim() ? email : null;
   }
 
   private toUserSummary(user: {
@@ -2857,7 +2918,7 @@ export class OrdersService {
         );
       }
 
-      return { customerId: user.uid };
+      return { customerId: user.uid, isGuest: user.isGuest === true };
     }
 
     if (!requestedCustomerId) {
@@ -2877,6 +2938,7 @@ export class OrdersService {
       },
       select: {
         id: true,
+        isGuest: true,
       },
     });
 
@@ -2884,7 +2946,127 @@ export class OrdersService {
       throw new BadRequestException('Customer not found for this restaurant');
     }
 
-    return { customerId: customer.id };
+    return { customerId: customer.id, isGuest: customer.isGuest };
+  }
+
+  private assertGuestCheckoutAddressRules(
+    customer: QuoteCustomerContext,
+    dto: QuoteOrderDto,
+  ) {
+    if (!dto.guestDeliveryAddress) {
+      return;
+    }
+
+    if (!customer.isGuest) {
+      throw new BadRequestException(
+        'guestDeliveryAddress can only be used by guest customers',
+      );
+    }
+
+    if (dto.deliveryAddressId) {
+      throw new BadRequestException(
+        'Use either deliveryAddressId or guestDeliveryAddress, not both',
+      );
+    }
+  }
+
+  private assertGuestContactForOrder(
+    customer: QuoteCustomerContext,
+    guestContact?: GuestOrderContactDto,
+  ) {
+    if (!customer.isGuest) {
+      if (guestContact) {
+        throw new BadRequestException(
+          'guestContact can only be used by guest customers',
+        );
+      }
+
+      return;
+    }
+
+    if (!guestContact) {
+      throw new BadRequestException(
+        'guestContact is required for guest orders',
+      );
+    }
+  }
+
+  private async createGuestDeliveryAddress(
+    tx: PrismaTx,
+    tenantId: string,
+    customerId: string,
+    dto: GuestOrderDeliveryAddressDto,
+  ) {
+    return tx.address.create({
+      data: {
+        tenantId,
+        referenceId: customerId,
+        refType: AddressRefType.USER,
+        street: dto.street,
+        area: dto.area,
+        postalCode: dto.postalCode,
+        city: dto.city,
+        state: dto.state,
+        country: dto.country,
+        lat: dto.lat,
+        lng: dto.lng,
+      },
+      select: {
+        id: true,
+      },
+    });
+  }
+
+  private async updateGuestContact(
+    tx: PrismaTx,
+    customerId: string,
+    dto: GuestOrderContactDto,
+  ) {
+    const existingProfile = await tx.profile.findUnique({
+      where: { userId: customerId },
+      select: { metadata: true },
+    });
+    const metadata = this.toGuestContactMetadata(
+      existingProfile?.metadata,
+      dto,
+    );
+
+    await tx.profile.upsert({
+      where: { userId: customerId },
+      update: {
+        firstName: dto.firstName?.trim() || 'Guest',
+        lastName: dto.lastName?.trim() || 'Customer',
+        phone: dto.phone,
+        metadata,
+      },
+      create: {
+        userId: customerId,
+        firstName: dto.firstName?.trim() || 'Guest',
+        lastName: dto.lastName?.trim() || 'Customer',
+        phone: dto.phone,
+        metadata,
+      },
+    });
+  }
+
+  private toGuestContactMetadata(
+    existingMetadata: Prisma.JsonValue | null | undefined,
+    dto: GuestOrderContactDto,
+  ): Prisma.InputJsonValue {
+    const metadata =
+      existingMetadata &&
+      typeof existingMetadata === 'object' &&
+      !Array.isArray(existingMetadata)
+        ? ({ ...existingMetadata } as Prisma.JsonObject)
+        : {};
+
+    return {
+      ...metadata,
+      guestContact: {
+        email: dto.email.trim().toLowerCase(),
+        phone: dto.phone,
+      },
+    };
   }
 
   private async ensureBranchAccess(
@@ -3837,6 +4019,54 @@ export class OrdersService {
     }
   }
 
+  private async resolveDeliveryFeeForGuestAddress(
+    guestDeliveryAddress: GuestOrderDeliveryAddressDto,
+    branchId: string,
+    deliveryConfig: BranchSettings['deliveryConfig'],
+    subtotal: Prisma.Decimal,
+  ) {
+    const address = this.toGuestDeliveryAddressContext(guestDeliveryAddress);
+    const branchAddress = await this.resolveBranchAddress(branchId);
+
+    switch (deliveryConfig.mode) {
+      case 'ZONE':
+        return this.resolveZoneDeliveryFee(
+          address,
+          deliveryConfig.zones ?? [],
+          subtotal,
+          deliveryConfig.minOrderAmount,
+        );
+      case 'ZONE_BANDS':
+        return this.resolveZoneBandDeliveryFee(
+          address,
+          branchAddress,
+          deliveryConfig.zoneBands ?? [],
+          subtotal,
+          deliveryConfig.minOrderAmount,
+        );
+      case 'POSTAL_CODE':
+        return this.resolvePostalCodeDeliveryFee(
+          address,
+          deliveryConfig.postalCodeRules ?? [],
+          subtotal,
+          deliveryConfig.minOrderAmount,
+        );
+      case 'RADIUS':
+      default:
+        this.assertMinimumOrderAmount(
+          subtotal,
+          new Prisma.Decimal(deliveryConfig.minOrderAmount),
+          'branch',
+        );
+        return this.resolveRadiusDeliveryFee(
+          address,
+          branchAddress,
+          deliveryConfig.radiusKm,
+          deliveryConfig.deliveryFee,
+        );
+    }
+  }
+
   private async assertDeliveryAddressInCoverage(
     customerId: string,
     deliveryAddressId: string,
@@ -3901,7 +4131,13 @@ export class OrdersService {
       throw new BadRequestException('Delivery address not found');
     }
 
-    const branchAddress = await this.prisma.address.findFirst({
+    const branchAddress = await this.resolveBranchAddress(branchId);
+
+    return { address, branchAddress };
+  }
+
+  private async resolveBranchAddress(branchId: string) {
+    return this.prisma.address.findFirst({
       where: {
         refType: AddressRefType.BRANCH,
         referenceId: branchId,
@@ -3918,8 +4154,17 @@ export class OrdersService {
         updatedAt: 'desc',
       },
     });
+  }
 
-    return { address, branchAddress };
+  private toGuestDeliveryAddressContext(
+    address: GuestOrderDeliveryAddressDto,
+  ): DeliveryAddressContext {
+    return {
+      id: 'guest-delivery-address',
+      lat: new Prisma.Decimal(address.lat),
+      lng: new Prisma.Decimal(address.lng),
+      postalCode: address.postalCode ?? null,
+    };
   }
 
   private resolveRadiusDeliveryFee(

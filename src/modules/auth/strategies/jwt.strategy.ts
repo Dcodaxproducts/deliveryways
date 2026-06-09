@@ -14,6 +14,7 @@ interface JwtPayload {
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;
+  isGuest?: boolean;
 }
 
 @Injectable()

@@ -307,6 +307,7 @@ export class AuthService {
       tid: result.tenantId,
       rid: result.restaurantId,
       bid: result.branchId,
+      isGuest: false,
     });
 
     return {
@@ -407,6 +408,7 @@ export class AuthService {
       tid: createdUser.tenantId,
       rid: createdUser.restaurantId,
       bid: createdUser.branchId,
+      isGuest: createdUser.isGuest,
     });
 
     return {
@@ -481,6 +483,7 @@ export class AuthService {
       tid: createdUser.tenantId,
       rid: createdUser.restaurantId,
       bid: createdUser.branchId,
+      isGuest: createdUser.isGuest,
     });
 
     return {
@@ -638,6 +641,7 @@ export class AuthService {
       tid: user.tenantId,
       rid: user.restaurantId,
       bid: user.branchId,
+      isGuest: user.isGuest,
     });
 
     return {
@@ -704,6 +708,7 @@ export class AuthService {
       tid: user.tenantId,
       rid: user.restaurantId,
       bid: user.branchId,
+      isGuest: user.isGuest,
     });
 
     return {
@@ -1033,6 +1038,7 @@ export class AuthService {
       tid: dbUser.tenantId,
       rid: dbUser.restaurantId,
       bid: dbUser.branchId,
+      isGuest: dbUser.isGuest,
     });
 
     return {
@@ -1708,6 +1714,7 @@ export class AuthService {
     ownerUserId?: string;
     staffRoleId?: string;
     panelType?: string;
+    isGuest?: boolean;
   }) {
     const normalizedPayload = this.normalizeAuthPayload(payload);
     const accessToken = await this.jwtService.signAsync(normalizedPayload);
@@ -1754,6 +1761,7 @@ export class AuthService {
     ownerUserId?: string;
     staffRoleId?: string;
     panelType?: string;
+    isGuest?: boolean;
   }) {
     if (payload.actorType === 'STAFF') {
       return payload;

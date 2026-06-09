@@ -58,12 +58,14 @@ export class OrdersRepository {
           select: {
             id: true,
             email: true,
+            isGuest: true,
             profile: {
               select: {
                 firstName: true,
                 lastName: true,
                 phone: true,
                 avatarUrl: true,
+                metadata: true,
               },
             },
           },
@@ -308,12 +310,14 @@ export class OrdersRepository {
             select: {
               id: true,
               email: true,
+              isGuest: true,
               profile: {
                 select: {
                   firstName: true,
                   lastName: true,
                   phone: true,
                   avatarUrl: true,
+                  metadata: true,
                 },
               },
             },

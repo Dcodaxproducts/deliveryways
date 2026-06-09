@@ -13,6 +13,7 @@ export interface AuthUserContext {
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;
+  isGuest?: boolean;
 }
 
 export const CurrentUser = createParamDecorator(

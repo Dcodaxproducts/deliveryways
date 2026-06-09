@@ -3182,7 +3182,7 @@ describe('OrdersService - admin customer resolution', () => {
           },
           currentBranch: typeof branch,
           requestedCustomerId?: string,
-        ) => Promise<{ customerId: string }>;
+        ) => Promise<{ customerId: string; isGuest: boolean }>;
       }
     ).resolveQuoteCustomer(
       {
@@ -3194,8 +3194,74 @@ describe('OrdersService - admin customer resolution', () => {
       branch,
     );
 
-    expect(result).toEqual({ customerId: 'customer-1' });
+    expect(result).toEqual({ customerId: 'customer-1', isGuest: false });
     expect(prisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('preserves guest flag from authenticated guest customer context', async () => {
+    const service = new OrdersService(
+      {
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await (
+      service as unknown as {
+        resolveQuoteCustomer: (
+          user: {
+            uid: string;
+            role: UserRoleEnum;
+            rid?: string;
+            tid?: string;
+            bid?: string;
+            isGuest?: boolean;
+          },
+          currentBranch: typeof branch,
+          requestedCustomerId?: string,
+        ) => Promise<{ customerId: string; isGuest: boolean }>;
+      }
+    ).resolveQuoteCustomer(
+      {
+        uid: 'guest-1',
+        role: UserRoleEnum.CUSTOMER,
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        isGuest: true,
+      },
+      branch,
+    );
+
+    expect(result).toEqual({ customerId: 'guest-1', isGuest: true });
+  });
+
+  it('requires guest contact when guest places an order', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      (
+        service as unknown as {
+          assertGuestContactForOrder: (
+            customer: { customerId: string; isGuest: boolean },
+            guestContact?: unknown,
+          ) => void;
+        }
+      ).assertGuestContactForOrder({
+        customerId: 'guest-1',
+        isGuest: true,
+      }),
+    ).toThrow('guestContact is required for guest orders');
   });
 
   it('rejects customer override for another customer', async () => {
@@ -3223,7 +3289,7 @@ describe('OrdersService - admin customer resolution', () => {
             },
             currentBranch: typeof branch,
             requestedCustomerId?: string,
-          ) => Promise<{ customerId: string }>;
+          ) => Promise<{ customerId: string; isGuest: boolean }>;
         }
       ).resolveQuoteCustomer(
         {
@@ -3263,7 +3329,7 @@ describe('OrdersService - admin customer resolution', () => {
             },
             currentBranch: typeof branch,
             requestedCustomerId?: string,
-          ) => Promise<{ customerId: string }>;
+          ) => Promise<{ customerId: string; isGuest: boolean }>;
         }
       ).resolveQuoteCustomer(
         {
@@ -3281,7 +3347,10 @@ describe('OrdersService - admin customer resolution', () => {
   it('allows business admin when customer belongs to same restaurant', async () => {
     const prisma = {
       user: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'customer-1' }),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          isGuest: false,
+        }),
       },
     };
     const service = new OrdersService(
@@ -3305,7 +3374,7 @@ describe('OrdersService - admin customer resolution', () => {
           },
           currentBranch: typeof branch,
           requestedCustomerId?: string,
-        ) => Promise<{ customerId: string }>;
+        ) => Promise<{ customerId: string; isGuest: boolean }>;
       }
     ).resolveQuoteCustomer(
       {
@@ -3319,7 +3388,7 @@ describe('OrdersService - admin customer resolution', () => {
       'customer-1',
     );
 
-    expect(result).toEqual({ customerId: 'customer-1' });
+    expect(result).toEqual({ customerId: 'customer-1', isGuest: false });
     expect(prisma.user.findFirst).toHaveBeenCalledWith({
       where: {
         id: 'customer-1',
@@ -3331,6 +3400,7 @@ describe('OrdersService - admin customer resolution', () => {
       },
       select: {
         id: true,
+        isGuest: true,
       },
     });
   });
@@ -3360,7 +3430,7 @@ describe('OrdersService - admin customer resolution', () => {
             },
             currentBranch: typeof branch,
             requestedCustomerId?: string,
-          ) => Promise<{ customerId: string }>;
+          ) => Promise<{ customerId: string; isGuest: boolean }>;
         }
       ).resolveQuoteCustomer(
         {

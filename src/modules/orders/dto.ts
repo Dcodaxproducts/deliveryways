@@ -4,10 +4,14 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsIn,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsNumber,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -104,6 +108,71 @@ export class OrderItemDto {
   note?: string;
 }
 
+export class GuestOrderContactDto {
+  @ApiPropertyOptional({ example: 'Ali' })
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Khan' })
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @ApiProperty({ example: 'guest@example.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: '+923001234567' })
+  @IsString()
+  @IsNotEmpty()
+  phone!: string;
+}
+
+export class GuestOrderDeliveryAddressDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  street!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  area?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  city!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  state!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  country!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @IsLatitude()
+  lat!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @IsLongitude()
+  lng!: string;
+}
+
 export class QuoteOrderDto {
   @ApiProperty()
   @IsString()
@@ -130,6 +199,16 @@ export class QuoteOrderDto {
   @IsOptional()
   @IsString()
   deliveryAddressId?: string;
+
+  @ApiPropertyOptional({
+    type: GuestOrderDeliveryAddressDto,
+    description:
+      'Inline delivery address for guest customer checkout. Used instead of deliveryAddressId.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestOrderDeliveryAddressDto)
+  guestDeliveryAddress?: GuestOrderDeliveryAddressDto;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -185,6 +264,16 @@ export class CreateOrderDto extends QuoteOrderDto {
   @IsOptional()
   @IsString()
   customerNote?: string;
+
+  @ApiPropertyOptional({
+    type: GuestOrderContactDto,
+    description:
+      'Required for guest customer order placement so branch can contact the guest.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestOrderContactDto)
+  guestContact?: GuestOrderContactDto;
 }
 
 export const ORDER_LIST_KIND_VALUES = ['order', 'group-orders'] as const;
