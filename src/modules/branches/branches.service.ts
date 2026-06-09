@@ -25,6 +25,7 @@ import {
   ListBranchesDto,
   ListPublicBranchesDto,
   UpdateBranchDto,
+  UpdateBranchDeliveryHoursDto,
   UpdateBranchDeliveryTimeDto,
   UpdateBranchImagesDto,
   UpdateBranchHolidayOpeningHoursDto,
@@ -65,6 +66,7 @@ export interface NormalizedBranchHolidayOpeningHour extends BranchHolidayOpening
 
 interface BranchSettingsLike {
   openingHours?: BranchOpeningHourItemDto[];
+  deliveryHours?: BranchOpeningHourItemDto[];
   holidayOpeningHours?: NormalizedBranchHolidayOpeningHour[];
   temporaryClosure?: BranchTemporaryClosure;
   [key: string]: unknown;
@@ -596,6 +598,63 @@ export class BranchesService {
         deliveryTime: dto.deliveryTime,
       },
       message: 'Branch delivery time updated successfully',
+    };
+  }
+
+  async getDeliveryHours(user: AuthUserContext, id: string) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+
+    return {
+      data: {
+        branchId: branch.id,
+        deliveryHours: this.readDeliveryHours(branch.settings),
+      },
+      message: 'Branch delivery hours fetched successfully',
+    };
+  }
+
+  async updateDeliveryHours(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchDeliveryHoursDto,
+    tx?: PrismaTx,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchWriteAccess(user, branch);
+
+    const settings = this.readSettings(branch.settings);
+    const deliveryHours = this.normalizeOpeningHours(
+      dto.deliveryHours,
+      'delivery-hours',
+    );
+    const data = await this.branchesRepository.update(
+      id,
+      {
+        settings: {
+          ...settings,
+          deliveryHours,
+        } as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: {
+        branchId: data.id,
+        deliveryHours,
+      },
+      message: 'Branch delivery hours updated successfully',
     };
   }
 
@@ -1541,6 +1600,17 @@ export class BranchesService {
       : null;
   }
 
+  private readDeliveryHours(value: unknown): BranchOpeningHourItemDto[] {
+    const settings = this.readSettings(value);
+    const deliveryHours = settings.deliveryHours;
+
+    if (!Array.isArray(deliveryHours)) {
+      return [];
+    }
+
+    return this.normalizeOpeningHours(deliveryHours, 'delivery-hours');
+  }
+
   private normalizeTemporaryClosure(
     dto: UpdateBranchTemporaryClosureDto,
   ): BranchTemporaryClosure {
@@ -1584,12 +1654,13 @@ export class BranchesService {
 
   private normalizeOpeningHours(
     openingHours: BranchOpeningHourItemDto[],
+    label = 'opening-hours',
   ): BranchOpeningHourItemDto[] {
     const seenDays = new Set<BranchScheduleDayEnum>();
     const normalized = openingHours.map((item) => {
       if (seenDays.has(item.dayOfWeek)) {
         throw new BadRequestException(
-          `Duplicate opening-hours entry for ${item.dayOfWeek}`,
+          `Duplicate ${label} entry for ${item.dayOfWeek}`,
         );
       }
       seenDays.add(item.dayOfWeek);

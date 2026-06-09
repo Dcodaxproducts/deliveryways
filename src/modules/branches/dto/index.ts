@@ -12,6 +12,7 @@ export {
   BranchOpeningHourItemDto,
   UpdateBranchOpeningHoursDto,
 } from './branch-opening-hours.dto';
+export { UpdateBranchDeliveryHoursDto } from './delivery-hours.dto';
 export {
   BranchHolidayOpeningHourItemDto,
   UpdateBranchHolidayOpeningHoursDto,

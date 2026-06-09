@@ -1056,6 +1056,153 @@ describe('BranchesService', () => {
     });
   });
 
+  it('fetches branch delivery hours from admin-managed settings', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        deliveryHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.WEDNESDAY,
+            isClosed: false,
+            openTime: '11:00',
+            closeTime: '23:00',
+          },
+        ],
+      },
+    });
+
+    const result = await service.getDeliveryHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+    );
+
+    expect(result).toEqual({
+      data: {
+        branchId: 'branch-1',
+        deliveryHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.WEDNESDAY,
+            isClosed: false,
+            openTime: '11:00',
+            closeTime: '23:00',
+          },
+        ],
+      },
+      message: 'Branch delivery hours fetched successfully',
+    });
+  });
+
+  it('updates branch delivery hours without changing other settings', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        contact: { phone: '123' },
+        deliveryTime: 45,
+        openingHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.MONDAY,
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '22:00',
+          },
+        ],
+      },
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    const result = await service.updateDeliveryHours(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      'branch-1',
+      {
+        deliveryHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.FRIDAY,
+            isClosed: false,
+            openTime: '12:00',
+            closeTime: '20:00',
+          },
+          {
+            dayOfWeek: BranchScheduleDayEnum.THURSDAY,
+            isClosed: true,
+          },
+        ],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      {
+        settings: {
+          contact: { phone: '123' },
+          deliveryTime: 45,
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.MONDAY,
+              isClosed: false,
+              openTime: '09:00',
+              closeTime: '22:00',
+            },
+          ],
+          deliveryHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.THURSDAY,
+              isClosed: true,
+              openTime: null,
+              closeTime: null,
+            },
+            {
+              dayOfWeek: BranchScheduleDayEnum.FRIDAY,
+              isClosed: false,
+              openTime: '12:00',
+              closeTime: '20:00',
+            },
+          ],
+        },
+      },
+      undefined,
+    );
+    expect(result).toEqual({
+      data: {
+        branchId: 'branch-1',
+        deliveryHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.THURSDAY,
+            isClosed: true,
+            openTime: null,
+            closeTime: null,
+          },
+          {
+            dayOfWeek: BranchScheduleDayEnum.FRIDAY,
+            isClosed: false,
+            openTime: '12:00',
+            closeTime: '20:00',
+          },
+        ],
+      },
+      message: 'Branch delivery hours updated successfully',
+    });
+  });
+
   it('updates branch opening hours with regular break times', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({

@@ -20,6 +20,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../../common/enums';
+import { BranchOpeningHourItemDto } from './branch-opening-hours.dto';
 
 export const BRANCH_DELIVERY_PRICING_MODES = [
   'RADIUS',
@@ -228,6 +229,18 @@ export class BranchSettingsDto {
   @IsInt()
   @Min(0)
   deliveryTime?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Delivery-only availability hours. If omitted, delivery follows the branch opening-hour behavior used by the client.',
+    type: BranchOpeningHourItemDto,
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BranchOpeningHourItemDto)
+  deliveryHours?: BranchOpeningHourItemDto[];
 
   @ApiPropertyOptional({
     description:
