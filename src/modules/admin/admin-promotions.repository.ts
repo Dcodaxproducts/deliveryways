@@ -251,24 +251,39 @@ export class AdminPromotionsRepository {
     scope: AdminPromotionScope,
     query: AdminListPromotionsQueryDto,
     now: Date,
-  ) {
+  ): Prisma.CouponWhereInput {
+    const branchId = query.branchId ?? scope.branchId;
+    const scopedBranchFilter =
+      branchId && query.kind === CouponCampaignKind.GIFT_CARD
+        ? {
+            OR: [{ branchId }, { branchId: null }],
+          }
+        : undefined;
+    const searchFilter = query.search
+      ? {
+          OR: [
+            { code: { contains: query.search, mode: 'insensitive' as const } },
+            { title: { contains: query.search, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+    const andFilters: Prisma.CouponWhereInput[] = [];
+    if (scopedBranchFilter) {
+      andFilters.push(scopedBranchFilter);
+    }
+    if (searchFilter) {
+      andFilters.push(searchFilter);
+    }
+
     return {
       deletedAt: null,
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
-      ...(scope.branchId ? { branchId: scope.branchId } : {}),
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
-      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...(branchId && !scopedBranchFilter ? { branchId } : {}),
       ...(query.kind ? { kind: query.kind } : {}),
       ...(query.discountType ? { discountType: query.discountType } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { code: { contains: query.search, mode: 'insensitive' } },
-              { title: { contains: query.search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
+      ...(andFilters.length ? { AND: andFilters } : {}),
       ...(query.lifecycle === 'active'
         ? {
             status: CouponStatus.ACTIVE,
