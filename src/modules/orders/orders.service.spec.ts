@@ -3221,15 +3221,10 @@ describe('OrdersService - response mapping', () => {
     expect(result.isGroupOrder).toBe(false);
     expect(result.groupOrderSessionId).toBeNull();
     expect(result.groupOrderInviteCode).toBeNull();
-    expect(result.availablePaymentMethods).toEqual([
-      'COD',
-      'PAYPAL',
-      'CARD_ON_DELIVERY',
-      'WALLET',
-    ]);
+    expect(result.availablePaymentMethods).toEqual(['COD', 'PAYPAL', 'WALLET']);
     expect(result.paymentOptions).toEqual({
       selected: 'COD',
-      available: ['COD', 'PAYPAL', 'CARD_ON_DELIVERY', 'WALLET'],
+      available: ['COD', 'PAYPAL', 'WALLET'],
     });
   });
 });

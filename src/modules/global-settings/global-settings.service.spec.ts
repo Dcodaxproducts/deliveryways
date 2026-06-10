@@ -85,11 +85,6 @@ describe('GlobalSettingsService', () => {
             isActive: true,
           },
           {
-            code: PaymentMethod.CARD_ON_DELIVERY,
-            label: 'Card on delivery',
-            isActive: true,
-          },
-          {
             code: PaymentMethod.EASYPAISA,
             label: 'Easypaisa',
             isActive: false,
