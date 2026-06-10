@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database';
@@ -25,6 +26,9 @@ import {
   CustomerDetailsQueryDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
+  DevUserDeleteDto,
+  DevUserLookupDto,
+  DevUserUpdateDto,
   ForceDeleteUsersDto,
   ForgotPasswordDto,
   ListCustomersDto,
@@ -47,6 +51,24 @@ import { UsersService } from '../users/users.service';
 import { MailerService } from '../mailer/mailer.service';
 import { StaffManagementRepository } from '../staff-management/staff-management.repository';
 import { StorageService } from '../storage/storage.service';
+
+type DevUserRecord = {
+  id: string;
+  email: string;
+  role: string;
+  tenantId: string | null;
+  restaurantId: string | null;
+  branchId: string | null;
+  isVerified: boolean;
+  isApproved: boolean;
+  isGuest: boolean;
+  isActive: boolean;
+  deletedAt: Date | null;
+  deleteAfter: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  profile?: unknown;
+};
 
 @Injectable()
 export class AuthService {
@@ -1178,6 +1200,121 @@ export class AuthService {
     };
   }
 
+  async devUserDetails(query: DevUserLookupDto) {
+    this.assertDevUserToolsEnabled();
+    const users = await this.resolveDevUsers(query);
+
+    return {
+      data: users.map((user) => this.toDevUserResponse(user)),
+      message: 'Development user details fetched',
+    };
+  }
+
+  async updateDevUser(dto: DevUserUpdateDto) {
+    this.assertDevUserToolsEnabled();
+    const user = await this.resolveSingleDevUser(dto);
+    const updateData: Prisma.UserUpdateInput = {};
+    const normalizedNewEmail = dto.newEmail?.trim().toLowerCase();
+
+    if (normalizedNewEmail && normalizedNewEmail !== user.email) {
+      const existing = await this.usersService.findByEmail(
+        normalizedNewEmail,
+        user.restaurantId ?? undefined,
+      );
+
+      if (existing && existing.id !== user.id) {
+        throw new BadRequestException(
+          'A user with this email already exists in this scope',
+        );
+      }
+
+      updateData.email = normalizedNewEmail;
+    }
+
+    if (dto.newPassword) {
+      updateData.password = await bcrypt.hash(dto.newPassword, 10);
+      updateData.refreshTokenHash = null;
+    }
+
+    if (dto.isVerified !== undefined) {
+      updateData.isVerified = dto.isVerified;
+    }
+
+    if (dto.isApproved !== undefined) {
+      updateData.isApproved = dto.isApproved;
+    }
+
+    if (dto.isActive !== undefined) {
+      updateData.isActive = dto.isActive;
+      if (dto.isActive) {
+        updateData.deletedAt = null;
+        updateData.deleteAfter = null;
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: user.id },
+      data: updateData,
+      include: { profile: true },
+    });
+
+    if (
+      dto.firstName !== undefined ||
+      dto.lastName !== undefined ||
+      dto.phone !== undefined
+    ) {
+      const emailPrefix = updatedUser.email.split('@')[0] || 'user';
+      await this.prisma.profile.upsert({
+        where: { userId: updatedUser.id },
+        create: {
+          userId: updatedUser.id,
+          firstName: dto.firstName ?? emailPrefix,
+          lastName: dto.lastName ?? emailPrefix,
+          phone: dto.phone,
+        },
+        update: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+        },
+      });
+    }
+
+    const refreshed = await this.usersService.findById(user.id);
+    if (!refreshed) {
+      throw new NotFoundException('User not found after update');
+    }
+
+    return {
+      data: this.toDevUserResponse(refreshed),
+      message: 'Development user updated',
+    };
+  }
+
+  async deleteDevUser(dto: DevUserDeleteDto) {
+    this.assertDevUserToolsEnabled();
+    const user = await this.resolveSingleDevUser(dto);
+
+    if (dto.force) {
+      const result = await this.usersService.deleteManyByIds([user.id]);
+      return {
+        data: {
+          id: user.id,
+          deletedCount: result.count,
+          force: true,
+        },
+        message: 'Development user hard-deleted',
+      };
+    }
+
+    const deleted = await this.usersService.softDeleteUser(user.id);
+
+    return {
+      data: this.toDevUserResponse(deleted),
+      message: 'Development user scheduled for deletion',
+    };
+  }
+
   async approveBusinessAdmin(_user: AuthUserContext, targetUserId: string) {
     const dbUser = await this.usersService.findById(targetUserId);
 
@@ -1809,6 +1946,71 @@ export class AuthService {
       ...entity,
       deletionState,
     };
+  }
+
+  private assertDevUserToolsEnabled() {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException(
+        'dev-users endpoint is disabled in production',
+      );
+    }
+  }
+
+  private async resolveDevUsers(query: DevUserLookupDto) {
+    const userId = query.userId?.trim();
+    const email = query.email?.trim().toLowerCase();
+    const restaurantId = query.restaurantId?.trim();
+
+    if (!userId && !email) {
+      throw new BadRequestException('userId or email is required');
+    }
+
+    return this.usersService.findManyForDevResolution({
+      id: userId || undefined,
+      email: email || undefined,
+      restaurantId: restaurantId || undefined,
+      role: query.role,
+      includeDeleted: query.includeDeleted,
+    });
+  }
+
+  private async resolveSingleDevUser(query: DevUserLookupDto) {
+    const users = await this.resolveDevUsers({
+      ...query,
+      includeDeleted: query.includeDeleted ?? true,
+    });
+
+    if (users.length === 0) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (users.length > 1) {
+      throw new BadRequestException(
+        'Multiple users matched. Pass userId, restaurantId, or role to narrow the lookup.',
+      );
+    }
+
+    return users[0];
+  }
+
+  private toDevUserResponse(user: DevUserRecord) {
+    return this.withDeletionState({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+      restaurantId: user.restaurantId,
+      branchId: user.branchId,
+      isVerified: user.isVerified,
+      isApproved: user.isApproved,
+      isGuest: user.isGuest,
+      isActive: user.isActive,
+      deletedAt: user.deletedAt,
+      deleteAfter: user.deleteAfter,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      profile: user.profile ?? null,
+    });
   }
 
   private async resolveLoginUser(dto: {

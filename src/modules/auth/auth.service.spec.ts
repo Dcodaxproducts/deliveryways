@@ -754,6 +754,165 @@ describe('AuthService login', () => {
   });
 });
 
+describe('AuthService dev user account tools', () => {
+  let service: AuthService;
+  let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
+  const now = new Date('2026-06-10T00:00:00.000Z');
+  const user = {
+    id: 'user-1',
+    email: 'customer@example.com',
+    password: 'hashed-password',
+    role: UserRoleEnum.CUSTOMER,
+    tenantId: 'tenant-1',
+    restaurantId: 'restaurant-1',
+    branchId: null,
+    isVerified: true,
+    isApproved: true,
+    isGuest: false,
+    isActive: true,
+    deletedAt: null,
+    deleteAfter: null,
+    createdAt: now,
+    updatedAt: now,
+    profile: null,
+  };
+  const prisma = {
+    user: {
+      update: jest.fn(),
+    },
+    profile: {
+      upsert: jest.fn(),
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.NODE_ENV = 'test';
+    usersService = {
+      findManyForDevResolution: jest.fn(),
+      findByEmail: jest.fn(),
+      findById: jest.fn(),
+      deleteManyByIds: jest.fn(),
+      softDeleteUser: jest.fn(),
+    };
+    prisma.user.update.mockResolvedValue(user);
+    prisma.profile.upsert.mockResolvedValue({ id: 'profile-1' });
+
+    service = new AuthService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = 'test';
+    jest.restoreAllMocks();
+  });
+
+  it('fetches dev user details by email without exposing password', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([user]);
+
+    const result = await service.devUserDetails({
+      email: ' Customer@Example.COM ',
+      restaurantId: 'restaurant-1',
+    });
+
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith({
+      id: undefined,
+      email: 'customer@example.com',
+      restaurantId: 'restaurant-1',
+      role: undefined,
+      includeDeleted: undefined,
+    });
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'user-1',
+        email: 'customer@example.com',
+        role: UserRoleEnum.CUSTOMER,
+      }),
+    ]);
+    expect(result.data[0]).not.toHaveProperty('password');
+  });
+
+  it('updates email and password for a single matched dev user', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([user]);
+    usersService.findByEmail!.mockResolvedValue(null);
+    usersService.findById!.mockResolvedValue({
+      ...user,
+      email: 'new@example.com',
+    });
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('new-hash' as never);
+
+    const result = await service.updateDevUser({
+      userId: 'user-1',
+      newEmail: ' New@Example.COM ',
+      newPassword: 'Password@123',
+      firstName: 'New',
+      isVerified: true,
+    });
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: {
+        email: 'new@example.com',
+        password: 'new-hash',
+        refreshTokenHash: null,
+        isVerified: true,
+      },
+      include: { profile: true },
+    });
+    expect(prisma.profile.upsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      create: {
+        userId: 'user-1',
+        firstName: 'New',
+        lastName: 'customer',
+        phone: undefined,
+      },
+      update: {
+        firstName: 'New',
+        lastName: undefined,
+        phone: undefined,
+      },
+    });
+    expect(result.data.email).toBe('new@example.com');
+  });
+
+  it('blocks dev user tools in production', async () => {
+    process.env.NODE_ENV = 'production';
+
+    await expect(
+      service.devUserDetails({ email: 'customer@example.com' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('hard-deletes a single matched dev user when force is true', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([user]);
+    usersService.deleteManyByIds!.mockResolvedValue({ count: 1 });
+
+    const result = await service.deleteDevUser({
+      userId: 'user-1',
+      force: true,
+    });
+
+    expect(usersService.deleteManyByIds).toHaveBeenCalledWith(['user-1']);
+    expect(result).toEqual({
+      data: {
+        id: 'user-1',
+        deletedCount: 1,
+        force: true,
+      },
+      message: 'Development user hard-deleted',
+    });
+  });
+});
+
 describe('AuthService logout', () => {
   let service: AuthService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;

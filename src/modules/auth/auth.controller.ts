@@ -5,6 +5,7 @@ import {
   Get,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -16,6 +17,9 @@ import {
   CheckEmailRoleDto,
   DevBootstrapSuperAdminDto,
   DevTokenDto,
+  DevUserDeleteDto,
+  DevUserLookupDto,
+  DevUserUpdateDto,
   ForgotPasswordDto,
   LoginDto,
   RefreshDto,
@@ -139,6 +143,27 @@ export class AuthController {
   @Post('dev-bootstrap-super-admin')
   devBootstrapSuperAdmin(@Body() dto: DevBootstrapSuperAdminDto) {
     return this.authService.bootstrapDevSuperAdmin(dto);
+  }
+
+  @Public()
+  @Get('dev-users')
+  devUserDetails(@Query() query: DevUserLookupDto) {
+    return this.authService.devUserDetails(query);
+  }
+
+  @Public()
+  @Patch('dev-users')
+  updateDevUser(@Body() dto: DevUserUpdateDto) {
+    return this.authService.updateDevUser(dto);
+  }
+
+  @Public()
+  @Delete('dev-users')
+  deleteDevUser(
+    @Query() query: DevUserDeleteDto,
+    @Body() dto: DevUserDeleteDto = {},
+  ) {
+    return this.authService.deleteDevUser({ ...query, ...dto });
   }
 
   @ApiBearerAuth()

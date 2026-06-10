@@ -6,6 +6,11 @@ export { LoginDto } from './login.dto';
 export { CancelDeletionByLoginDto } from './cancel-deletion-by-login.dto';
 export { DevTokenDto } from './dev-token.dto';
 export { DevBootstrapSuperAdminDto } from './dev-bootstrap-super-admin.dto';
+export {
+  DevUserDeleteDto,
+  DevUserLookupDto,
+  DevUserUpdateDto,
+} from './dev-user-account.dto';
 export { ForceDeleteUsersDto } from './force-delete-users.dto';
 export { ListCustomersDto } from './list-customers.dto';
 export { CustomerDetailsQueryDto } from './customer-details-query.dto';
