@@ -27,6 +27,7 @@ import {
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
+  ListCustomerGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
@@ -983,6 +984,29 @@ export class CustomerAppService {
     return {
       data,
       message: 'Gift card redeemed successfully',
+    };
+  }
+
+  async listGiftCards(
+    user: AuthUserContext,
+    query: ListCustomerGiftCardsQueryDto,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const result = await this.loyaltyWalletService!.listPurchasedGiftCards(
+      {
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: customer.branchId ?? undefined,
+      },
+      query,
+    );
+
+    return {
+      data: result.items,
+      message: 'Gift cards fetched successfully',
+      meta: buildPaginationMeta(query, result.total),
     };
   }
 

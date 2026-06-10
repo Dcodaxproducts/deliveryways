@@ -96,6 +96,8 @@ export class ListCustomerFavoritesQueryDto extends QueryDto {
   limit = 20;
 }
 
+export class ListCustomerGiftCardsQueryDto extends QueryDto {}
+
 export class ListCuisinesQueryDto extends QueryDto {
   @ApiPropertyOptional({
     description:

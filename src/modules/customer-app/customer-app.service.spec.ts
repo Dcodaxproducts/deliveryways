@@ -130,6 +130,7 @@ describe('CustomerAppService', () => {
       redeemPointsToWallet: jest.fn(),
       redeemGiftCardToWallet: jest.fn(),
       purchaseGiftCardFromWallet: jest.fn(),
+      listPurchasedGiftCards: jest.fn(),
       getWalletSummary: jest.fn(),
       listWalletHistory: jest.fn(),
     };
@@ -332,6 +333,66 @@ describe('CustomerAppService', () => {
     );
     expect(result.message).toBe('Gift card purchased successfully');
     expect(result.data.qrPayload).toBe('DWGC:GIFT-123');
+  });
+
+  it('lists customer-purchased gift cards', async () => {
+    const { service, repository, loyaltyWalletService } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      email: 'customer@test.com',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      deletedAt: null,
+      profile: { metadata: {} },
+    });
+    loyaltyWalletService.listPurchasedGiftCards.mockResolvedValue({
+      items: [
+        {
+          id: 'gift-card-1',
+          code: 'GIFT-123',
+          qrPayload: 'DWGC:GIFT-123',
+          amount: 1000,
+        },
+      ],
+      total: 1,
+    });
+
+    const query = {
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC' as const,
+    };
+    const result = await service.listGiftCards(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      query,
+    );
+
+    expect(loyaltyWalletService.listPurchasedGiftCards).toHaveBeenCalledWith(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      query,
+    );
+    expect(result.data).toEqual([
+      {
+        id: 'gift-card-1',
+        code: 'GIFT-123',
+        qrPayload: 'DWGC:GIFT-123',
+        amount: 1000,
+      },
+    ]);
+    expect(result.message).toBe('Gift cards fetched successfully');
+    expect(result.meta.total).toBe(1);
   });
 
   it('requires customerId for admin-managed favorites', async () => {

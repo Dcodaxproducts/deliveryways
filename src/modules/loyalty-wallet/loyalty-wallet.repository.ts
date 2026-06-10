@@ -159,6 +159,70 @@ export class LoyaltyWalletRepository {
     return { items, total };
   }
 
+  async listPurchasedGiftCardTransactions(
+    context: {
+      restaurantId: string;
+      customerId: string;
+    },
+    query: QueryDto,
+  ) {
+    const where: Prisma.WalletTransactionWhereInput = {
+      restaurantId: context.restaurantId,
+      customerId: context.customerId,
+      type: 'DEBIT',
+      metadata: {
+        path: ['source'],
+        equals: 'CUSTOMER_GIFT_CARD_PURCHASE',
+      },
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.walletTransaction.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: {
+          [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+        },
+      }),
+      this.prisma.walletTransaction.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  findGiftCardsByIds(restaurantId: string, ids: string[]) {
+    if (!ids.length) {
+      return Promise.resolve([]);
+    }
+
+    return this.prisma.coupon.findMany({
+      where: {
+        restaurantId,
+        id: { in: ids },
+        kind: 'GIFT_CARD',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        branchId: true,
+        code: true,
+        title: true,
+        description: true,
+        discountValue: true,
+        maxUses: true,
+        maxUsesPerCustomer: true,
+        usedCount: true,
+        startsAt: true,
+        expiresAt: true,
+        isActive: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
   findWalletTransactionByPaymentTransactionId(
     paymentTransactionId: string,
     tx?: PrismaTx,

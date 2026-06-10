@@ -54,6 +54,12 @@ export interface PurchaseGiftCardInput {
   expiresAt?: string;
 }
 
+interface PurchasedGiftCardMetadata {
+  giftCardId?: string;
+  giftCardCode?: string;
+  qrPayload?: string;
+}
+
 @Injectable()
 export class LoyaltyWalletService {
   constructor(
@@ -613,6 +619,83 @@ export class LoyaltyWalletService {
         expiresAt,
       };
     });
+  }
+
+  async listPurchasedGiftCards(
+    context: CustomerWalletLoyaltyContext,
+    query: QueryDto,
+  ) {
+    const result = await this.repository.listPurchasedGiftCardTransactions(
+      {
+        restaurantId: context.restaurantId,
+        customerId: context.customerId,
+      },
+      query,
+    );
+    const giftCardIds = result.items
+      .map((transaction) => this.readPurchasedGiftCardMetadata(transaction))
+      .filter(
+        (
+          metadata,
+        ): metadata is PurchasedGiftCardMetadata & {
+          giftCardId: string;
+        } => {
+          if (!metadata.giftCardId) {
+            return false;
+          }
+
+          return true;
+        },
+      )
+      .map((metadata) => metadata.giftCardId);
+    const giftCards = await this.repository.findGiftCardsByIds(
+      context.restaurantId,
+      giftCardIds,
+    );
+    const giftCardsById = new Map(giftCards.map((card) => [card.id, card]));
+
+    return {
+      items: result.items
+        .map((transaction) => {
+          const metadata = this.readPurchasedGiftCardMetadata(transaction);
+          if (!metadata.giftCardId) {
+            return null;
+          }
+
+          const giftCard = giftCardsById.get(metadata.giftCardId);
+          if (!giftCard) {
+            return null;
+          }
+
+          const code = metadata.giftCardCode ?? giftCard.code;
+          const maxUses = giftCard.maxUses ?? null;
+
+          return {
+            id: giftCard.id,
+            code,
+            qrPayload: metadata.qrPayload ?? this.buildGiftCardQrPayload(code),
+            title: giftCard.title,
+            description: giftCard.description,
+            amount: Number(giftCard.discountValue),
+            currency: transaction.currency,
+            branchId: giftCard.branchId,
+            startsAt: giftCard.startsAt,
+            expiresAt: giftCard.expiresAt,
+            isActive: giftCard.isActive,
+            status: giftCard.status,
+            maxUses,
+            maxUsesPerCustomer: giftCard.maxUsesPerCustomer,
+            usedCount: giftCard.usedCount,
+            isRedeemed: maxUses !== null && giftCard.usedCount >= maxUses,
+            purchaseWalletTransactionId: transaction.id,
+            purchasedAt: transaction.createdAt,
+            createdAt: giftCard.createdAt,
+            updatedAt: giftCard.updatedAt,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null),
+      total: result.total,
+    };
   }
 
   async getLoyaltySummary(context: CustomerWalletLoyaltyContext) {
@@ -1431,6 +1514,31 @@ export class LoyaltyWalletService {
 
   private buildGiftCardQrPayload(code: string) {
     return `DWGC:${code}`;
+  }
+
+  private readPurchasedGiftCardMetadata(transaction: {
+    metadata: Prisma.JsonValue;
+  }): PurchasedGiftCardMetadata {
+    if (!transaction.metadata || typeof transaction.metadata !== 'object') {
+      return {};
+    }
+
+    if (Array.isArray(transaction.metadata)) {
+      return {};
+    }
+
+    const source = transaction.metadata as Record<string, unknown>;
+
+    return {
+      giftCardId:
+        typeof source.giftCardId === 'string' ? source.giftCardId : undefined,
+      giftCardCode:
+        typeof source.giftCardCode === 'string'
+          ? source.giftCardCode
+          : undefined,
+      qrPayload:
+        typeof source.qrPayload === 'string' ? source.qrPayload : undefined,
+    };
   }
 
   private addDays(date: Date, days: number) {

@@ -21,6 +21,8 @@ describe('LoyaltyWalletService', () => {
       createWalletAccount: jest.fn(),
       updateWalletAccount: jest.fn(),
       createWalletTransaction: jest.fn(),
+      listPurchasedGiftCardTransactions: jest.fn(),
+      findGiftCardsByIds: jest.fn(),
     };
 
     const prisma = {
@@ -112,6 +114,97 @@ describe('LoyaltyWalletService', () => {
         { points: 50, isCredit: true, note: 'Manual bonus' },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('lists customer-purchased gift cards from purchase transactions', async () => {
+    const { service, repository } = makeService();
+    const purchasedAt = new Date('2026-06-10T09:00:00.000Z');
+    const expiresAt = new Date('2027-06-10T09:00:00.000Z');
+    repository.listPurchasedGiftCardTransactions.mockResolvedValue({
+      items: [
+        {
+          id: 'wallet-transaction-1',
+          currency: 'PKR',
+          createdAt: purchasedAt,
+          metadata: {
+            source: 'CUSTOMER_GIFT_CARD_PURCHASE',
+            giftCardId: 'gift-card-1',
+            giftCardCode: 'GIFT-123',
+            qrPayload: 'DWGC:GIFT-123',
+          },
+        },
+      ],
+      total: 1,
+    });
+    repository.findGiftCardsByIds.mockResolvedValue([
+      {
+        id: 'gift-card-1',
+        branchId: 'branch-1',
+        code: 'GIFT-123',
+        title: 'Birthday Gift',
+        description: 'Enjoy your meal',
+        discountValue: new Prisma.Decimal(1000),
+        maxUses: 1,
+        maxUsesPerCustomer: 1,
+        usedCount: 0,
+        startsAt: purchasedAt,
+        expiresAt,
+        isActive: true,
+        status: 'ACTIVE',
+        createdAt: purchasedAt,
+        updatedAt: purchasedAt,
+      },
+    ]);
+
+    const result = await service.listPurchasedGiftCards(
+      {
+        customerId: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(repository.listPurchasedGiftCardTransactions).toHaveBeenCalledWith(
+      { restaurantId: 'restaurant-1', customerId: 'customer-1' },
+      { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'DESC' },
+    );
+    expect(repository.findGiftCardsByIds).toHaveBeenCalledWith('restaurant-1', [
+      'gift-card-1',
+    ]);
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'gift-card-1',
+          code: 'GIFT-123',
+          qrPayload: 'DWGC:GIFT-123',
+          title: 'Birthday Gift',
+          description: 'Enjoy your meal',
+          amount: 1000,
+          currency: 'PKR',
+          branchId: 'branch-1',
+          startsAt: purchasedAt,
+          expiresAt,
+          isActive: true,
+          status: 'ACTIVE',
+          maxUses: 1,
+          maxUsesPerCustomer: 1,
+          usedCount: 0,
+          isRedeemed: false,
+          purchaseWalletTransactionId: 'wallet-transaction-1',
+          purchasedAt,
+          createdAt: purchasedAt,
+          updatedAt: purchasedAt,
+        },
+      ],
+      total: 1,
+    });
   });
 
   it('updates loyalty program for tenant-scoped business admin', async () => {
