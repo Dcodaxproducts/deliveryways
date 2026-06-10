@@ -3842,7 +3842,7 @@ export class OrdersService {
   private readBranchSettings(input: unknown): BranchSettings {
     const fallback: BranchSettings = {
       allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
-      allowedPaymentMethods: ['COD', 'PAYPAL', 'WALLET'],
+      allowedPaymentMethods: ['COD', 'PAYPAL', 'CARD_ON_DELIVERY', 'WALLET'],
       deliveryConfig: {
         mode: 'RADIUS',
         radiusKm: 5,

@@ -167,6 +167,126 @@ describe('RestaurantsService notification settings', () => {
     expect(result.data.config).toEqual({ currency: 'AED', branding: {} });
   });
 
+  it('updates restaurant legal profile without replacing other settings', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        customerApp: {
+          privacyPolicy: 'Privacy text',
+        },
+        legalProfile: {
+          legalBusinessName: 'Old Legal Name',
+        },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      settings: {
+        customerApp: {
+          privacyPolicy: 'Privacy text',
+        },
+        legalProfile: {
+          legalBusinessName: 'DeliveryWays Kitchen LLC',
+          taxNumber: 'VAT-123',
+          businessAddress: {
+            city: 'Lahore',
+            country: 'Pakistan',
+          },
+          contractText: 'Contract terms',
+        },
+      },
+    });
+
+    const result = await service.updateLegalProfile(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      {
+        legalBusinessName: 'DeliveryWays Kitchen LLC',
+        taxNumber: 'VAT-123',
+        businessAddress: {
+          city: 'Lahore',
+          country: 'Pakistan',
+        },
+        contractText: 'Contract terms',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'restaurant-1',
+      {
+        settings: {
+          customerApp: {
+            privacyPolicy: 'Privacy text',
+          },
+          legalProfile: {
+            legalBusinessName: 'DeliveryWays Kitchen LLC',
+            taxNumber: 'VAT-123',
+            businessAddress: {
+              city: 'Lahore',
+              country: 'Pakistan',
+            },
+            contractText: 'Contract terms',
+          },
+        },
+      },
+      undefined,
+    );
+    expect(result.data.legalProfile).toEqual({
+      legalBusinessName: 'DeliveryWays Kitchen LLC',
+      taxNumber: 'VAT-123',
+      businessAddress: {
+        city: 'Lahore',
+        country: 'Pakistan',
+      },
+      contractText: 'Contract terms',
+    });
+  });
+
+  it('returns restaurant legal profile with legacy billing tax fallback', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        billing: {
+          legalBusinessName: 'Billing Legal Name',
+          taxNumber: 'VAT-456',
+          businessAddress: {
+            city: 'Karachi',
+          },
+        },
+        customerApp: {
+          contractText: 'Legacy contract',
+        },
+      },
+    });
+
+    const result = await service.legalProfile(
+      {
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data.legalProfile).toEqual({
+      legalBusinessName: 'Billing Legal Name',
+      taxNumber: 'VAT-456',
+      businessAddress: {
+        city: 'Karachi',
+      },
+      contractText: 'Legacy contract',
+    });
+  });
+
   it('reads legacy top-level customer app content keys too', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',

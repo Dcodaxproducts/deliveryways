@@ -1674,6 +1674,12 @@ describe('CustomerAppService', () => {
       'restaurant-1',
     );
     expect(result.data.content).toBe('Privacy text');
+    expect(result.data.legalProfile).toEqual({
+      legalBusinessName: null,
+      taxNumber: null,
+      businessAddress: null,
+      contractText: null,
+    });
     expect(result.data.policyLink).toBe(
       '/api/v1/public-content/privacy-policy?restaurantId=restaurant-1',
     );

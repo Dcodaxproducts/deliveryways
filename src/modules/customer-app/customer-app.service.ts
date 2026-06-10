@@ -321,6 +321,7 @@ export class CustomerAppService {
         restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         title: 'Privacy Policy',
         content: privacyPolicy,
+        legalProfile: this.extractLegalProfile(restaurant.settings),
         policyLink: this.buildPrivacyPolicyLink(restaurant.id),
       },
       message: 'Privacy policy fetched successfully',
@@ -3238,6 +3239,52 @@ export class CustomerAppService {
       ['currency'],
       ['defaultCurrency'],
     ]);
+  }
+
+  private extractLegalProfile(settings: unknown) {
+    const legalProfile = this.asObject(
+      this.readPath(settings, ['legalProfile']),
+    );
+    const billing = this.asObject(this.readPath(settings, ['billing']));
+    const invoice = this.asObject(this.readPath(settings, ['invoice']));
+    const legalAddress = this.asObject(legalProfile.businessAddress);
+    const billingAddress = this.asObject(billing.businessAddress);
+    const invoiceAddress = this.asObject(invoice.businessAddress);
+    const businessAddress = {
+      ...invoiceAddress,
+      ...billingAddress,
+      ...legalAddress,
+    };
+
+    return {
+      legalBusinessName:
+        this.readStringValue(settings, [
+          ['legalProfile', 'legalBusinessName'],
+          ['billing', 'legalBusinessName'],
+          ['invoice', 'legalBusinessName'],
+          ['legalBusinessName'],
+          ['legalName'],
+        ]) ?? null,
+      taxNumber:
+        this.readStringValue(settings, [
+          ['legalProfile', 'taxNumber'],
+          ['billing', 'taxNumber'],
+          ['billing', 'vatNumber'],
+          ['invoice', 'taxNumber'],
+          ['invoice', 'vatNumber'],
+          ['taxNumber'],
+          ['vatNumber'],
+        ]) ?? null,
+      businessAddress:
+        Object.keys(businessAddress).length > 0 ? businessAddress : null,
+      contractText:
+        this.readStringValue(settings, [
+          ['legalProfile', 'contractText'],
+          ['customerApp', 'contractText'],
+          ['publicContent', 'contractText'],
+          ['contractText'],
+        ]) ?? null,
+    };
   }
 
   private readFaqs(

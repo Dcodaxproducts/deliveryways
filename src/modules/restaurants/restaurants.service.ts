@@ -26,6 +26,7 @@ import {
   UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
+  UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
 } from './dto';
 import { randomUUID } from 'crypto';
@@ -267,6 +268,57 @@ export class RestaurantsService {
     return {
       data: await this.extractCustomerAppContent(data),
       message: 'Restaurant customer app content updated successfully',
+    };
+  }
+
+  async legalProfile(user: AuthUserContext, id: string) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    await this.ensureRestaurantReadAccess(user, restaurant.id);
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        legalProfile: this.extractLegalProfile(restaurant.settings),
+      },
+      message: 'Restaurant legal profile fetched successfully',
+    };
+  }
+
+  async updateLegalProfile(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantLegalProfileDto,
+    tx?: PrismaTx,
+  ) {
+    await this.ensureRestaurantWriteAccess(user, id);
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        settings: this.mergeLegalProfile(
+          restaurant.settings,
+          dto,
+        ) as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: {
+        restaurantId: data.id,
+        legalProfile: this.extractLegalProfile(data.settings),
+      },
+      message: 'Restaurant legal profile updated successfully',
     };
   }
 
@@ -598,6 +650,7 @@ export class RestaurantsService {
       ),
       faqs: this.extractCustomerAppFaqs(restaurant.settings),
       supportContact: this.asObject(restaurant.supportContact),
+      legalProfile: this.extractLegalProfile(restaurant.settings),
       config: {
         currency: this.readRestaurantCurrency(restaurant.settings),
         branding: this.asObject(restaurant.branding),
@@ -706,6 +759,76 @@ export class RestaurantsService {
       customerApp: {
         ...customerApp,
         faqs: items,
+      },
+    } as unknown as Prisma.JsonObject;
+  }
+
+  private extractLegalProfile(settings: Prisma.JsonValue | null) {
+    const legalProfile = this.asObject(
+      this.readPath(settings, ['legalProfile']),
+    );
+    const billing = this.asObject(this.readPath(settings, ['billing']));
+    const invoice = this.asObject(this.readPath(settings, ['invoice']));
+    const businessAddress = {
+      ...this.asObject(invoice.businessAddress),
+      ...this.asObject(billing.businessAddress),
+      ...this.asObject(legalProfile.businessAddress),
+    };
+
+    return {
+      legalBusinessName:
+        this.readStringValue(settings, [
+          ['legalProfile', 'legalBusinessName'],
+          ['billing', 'legalBusinessName'],
+          ['invoice', 'legalBusinessName'],
+          ['legalBusinessName'],
+          ['legalName'],
+        ]) ?? null,
+      taxNumber:
+        this.readStringValue(settings, [
+          ['legalProfile', 'taxNumber'],
+          ['billing', 'taxNumber'],
+          ['billing', 'vatNumber'],
+          ['invoice', 'taxNumber'],
+          ['invoice', 'vatNumber'],
+          ['taxNumber'],
+          ['vatNumber'],
+        ]) ?? null,
+      businessAddress:
+        Object.keys(businessAddress).length > 0 ? businessAddress : null,
+      contractText:
+        this.readStringValue(settings, [
+          ['legalProfile', 'contractText'],
+          ['customerApp', 'contractText'],
+          ['publicContent', 'contractText'],
+          ['contractText'],
+        ]) ?? null,
+    };
+  }
+
+  private mergeLegalProfile(
+    currentSettings: Prisma.JsonValue | null,
+    dto: UpdateRestaurantLegalProfileDto,
+  ): Prisma.JsonObject {
+    const root = this.asObject(currentSettings);
+    const legalProfile = this.asObject(root.legalProfile);
+
+    return {
+      ...root,
+      legalProfile: {
+        ...legalProfile,
+        ...(dto.legalBusinessName !== undefined
+          ? { legalBusinessName: dto.legalBusinessName.trim() || null }
+          : {}),
+        ...(dto.taxNumber !== undefined
+          ? { taxNumber: dto.taxNumber.trim() || null }
+          : {}),
+        ...(dto.businessAddress !== undefined
+          ? { businessAddress: dto.businessAddress }
+          : {}),
+        ...(dto.contractText !== undefined
+          ? { contractText: dto.contractText.trim() || null }
+          : {}),
       },
     } as unknown as Prisma.JsonObject;
   }

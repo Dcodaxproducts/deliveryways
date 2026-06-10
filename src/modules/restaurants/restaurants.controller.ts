@@ -27,6 +27,7 @@ import {
   UpdateRestaurantCustomerAppContentDto,
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
+  UpdateRestaurantLegalProfileDto,
 } from './dto';
 
 @ApiTags('Restaurants')
@@ -148,6 +149,30 @@ export class RestaurantsController {
     @Body() dto: UpdateRestaurantCustomerAppContentDto,
   ) {
     return this.restaurantsService.updateCustomerAppContent(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @Get(':id/legal-profile')
+  legalProfile(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.restaurantsService.legalProfile(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/legal-profile')
+  updateLegalProfile(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantLegalProfileDto,
+  ) {
+    return this.restaurantsService.updateLegalProfile(user, id, dto);
   }
 
   @ApiBearerAuth()

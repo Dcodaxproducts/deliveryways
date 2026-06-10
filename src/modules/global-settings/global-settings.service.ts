@@ -290,6 +290,7 @@ export class GlobalSettingsService {
       isActive:
         code === PaymentMethod.COD ||
         code === PaymentMethod.PAYPAL ||
+        code === PaymentMethod.CARD_ON_DELIVERY ||
         code === PaymentMethod.WALLET,
     }));
   }
@@ -387,6 +388,8 @@ export class GlobalSettingsService {
         return 'Stripe';
       case PaymentMethod.PAYPAL:
         return 'PayPal';
+      case PaymentMethod.CARD_ON_DELIVERY:
+        return 'Card on delivery';
       case PaymentMethod.EASYPAISA:
         return 'Easypaisa';
       case PaymentMethod.JAZZCASH:
