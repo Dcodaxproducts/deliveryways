@@ -535,6 +535,42 @@ describe('CouponsService', () => {
     );
   });
 
+  it('treats midnight expiry as valid until the end of that date', async () => {
+    const originalDate = global.Date;
+
+    class MockDate extends Date {
+      constructor(...args: ConstructorParameters<DateConstructor>) {
+        if (args.length) {
+          super(...args);
+          return;
+        }
+
+        super('2026-06-10T05:40:07.763Z');
+      }
+
+      static now() {
+        return new originalDate('2026-06-10T05:40:07.763Z').getTime();
+      }
+    }
+
+    global.Date = MockDate as DateConstructor;
+
+    try {
+      repository.findByCode!.mockResolvedValue(
+        makeCoupon({
+          startsAt: new Date('2026-06-01T00:00:00.000Z'),
+          expiresAt: new Date('2026-06-10T00:00:00.000Z'),
+        }),
+      );
+
+      const result = await service.validateForCheckout(baseInput);
+
+      expect(result.coupon.code).toBe('SAVE20');
+    } finally {
+      global.Date = originalDate;
+    }
+  });
+
   it('throws when branch scope mismatch', async () => {
     repository.findByCode!.mockResolvedValue(
       makeCoupon({ branchId: 'other-branch' }),

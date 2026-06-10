@@ -496,7 +496,9 @@ export class CouponsService {
       throw new BadRequestException('Coupon is not active');
     }
 
-    if (coupon.startsAt > now || coupon.expiresAt < now) {
+    if (
+      !this.isCouponWithinDateWindow(coupon.startsAt, coupon.expiresAt, now)
+    ) {
       throw new BadRequestException('Coupon is not valid at this time');
     }
 
@@ -991,6 +993,33 @@ export class CouponsService {
     }
 
     return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  }
+
+  private isCouponWithinDateWindow(startsAt: Date, expiresAt: Date, now: Date) {
+    if (startsAt > now) {
+      return false;
+    }
+
+    const effectiveExpiresAt = this.isMidnightUtc(expiresAt)
+      ? this.endOfUtcDay(expiresAt)
+      : expiresAt;
+
+    return effectiveExpiresAt >= now;
+  }
+
+  private isMidnightUtc(date: Date) {
+    return (
+      date.getUTCHours() === 0 &&
+      date.getUTCMinutes() === 0 &&
+      date.getUTCSeconds() === 0 &&
+      date.getUTCMilliseconds() === 0
+    );
+  }
+
+  private endOfUtcDay(date: Date) {
+    const end = new Date(date);
+    end.setUTCHours(23, 59, 59, 999);
+    return end;
   }
 
   private readActiveDays(value: Prisma.JsonValue | null): number[] | null {
