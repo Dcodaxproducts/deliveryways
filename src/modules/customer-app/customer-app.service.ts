@@ -2739,15 +2739,10 @@ export class CustomerAppService {
             ),
           }
         : null,
-      scopeMenuItems: await Promise.all(
-        this.mergePromotionScopeEntities(
-          promotion.scopeMenuItem,
-          (promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem),
-        ).map(
-          async (item) =>
-            scopedMenuItemsById?.get(item.id) ??
-            (await this.mapPromotionScopeEntity(item, translationContext)),
-        ),
+      scopeMenuItems: await this.mapPublicPromotionScopeMenuItems(
+        promotion,
+        scopedMenuItemsById,
+        translationContext,
       ),
       scopeCategories: await Promise.all(
         this.mergePromotionScopeEntities(
@@ -2802,6 +2797,29 @@ export class CustomerAppService {
 
     return new Map<string, PublicDealScopeMenuItem>(
       mappedItems.map((item) => [item.id, item]),
+    );
+  }
+
+  private async mapPublicPromotionScopeMenuItems(
+    promotion: AutoApplyPromotion,
+    scopedMenuItemsById?: Map<string, PublicDealScopeMenuItem>,
+    translationContext?: CustomerAppTranslationContext,
+  ) {
+    const scopeItems = this.mergePromotionScopeEntities(
+      promotion.scopeMenuItem,
+      (promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem),
+    );
+
+    if (scopedMenuItemsById) {
+      return scopeItems
+        .map((item) => scopedMenuItemsById.get(item.id))
+        .filter((item): item is PublicDealScopeMenuItem => Boolean(item));
+    }
+
+    return Promise.all(
+      scopeItems.map((item) =>
+        this.mapPromotionScopeEntity(item, translationContext),
+      ),
     );
   }
 

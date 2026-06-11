@@ -939,7 +939,7 @@ describe('CustomerAppService', () => {
     expect(result.message).toBe('Deals fetched successfully');
   });
 
-  it('keeps scoped item slugs for branch-filtered public deals', async () => {
+  it('only returns branch-fetchable scoped items for public deals', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -1023,7 +1023,6 @@ describe('CustomerAppService', () => {
     );
     expect(result.data[0].scopeMenuItems).toEqual([
       expect.objectContaining({ id: 'item-1', slug: 'zinger-burger' }),
-      expect.objectContaining({ id: 'item-2', slug: 'cold-drink' }),
     ]);
   });
 
