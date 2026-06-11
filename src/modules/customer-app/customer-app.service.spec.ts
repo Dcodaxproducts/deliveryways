@@ -160,6 +160,7 @@ describe('CustomerAppService', () => {
       findPublicCuisine: jest.fn(),
       listCuisineMenuItems: jest.fn(),
       listPromotionalItems: jest.fn(),
+      listPublicDealScopeMenuItems: jest.fn(),
       findPublicMenuItemBySlug: jest.fn(),
     };
 
@@ -879,7 +880,7 @@ describe('CustomerAppService', () => {
         ],
       },
     ]);
-    repository.listPromotionalItems.mockResolvedValue([
+    repository.listPublicDealScopeMenuItems.mockResolvedValue([
       itemFixture,
       { ...itemFixture, id: 'item-2', name: 'Cold Drink', slug: 'cold-drink' },
     ]);
@@ -889,13 +890,12 @@ describe('CustomerAppService', () => {
       limit: 10,
     });
 
-    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+    expect(repository.listPublicDealScopeMenuItems).toHaveBeenCalledWith(
       {
         restaurantId: 'restaurant-1',
         branchId: undefined,
-        limit: 2,
       },
-      { menuItemIds: ['item-1', 'item-2'] },
+      ['item-1', 'item-2'],
     );
     expect(result.data).toEqual([
       expect.objectContaining({
@@ -939,7 +939,7 @@ describe('CustomerAppService', () => {
     expect(result.message).toBe('Deals fetched successfully');
   });
 
-  it('only returns branch-fetchable scoped items for public deals', async () => {
+  it('uses active deal scope lookup for public deal items', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -1003,8 +1003,9 @@ describe('CustomerAppService', () => {
         ],
       },
     ]);
-    repository.listPromotionalItems.mockResolvedValue([
+    repository.listPublicDealScopeMenuItems.mockResolvedValue([
       { ...itemFixture, id: 'item-1', slug: 'zinger-burger' },
+      { ...itemFixture, id: 'item-2', name: 'Cold Drink', slug: 'cold-drink' },
     ]);
 
     const result = await service.listDeals({
@@ -1013,16 +1014,16 @@ describe('CustomerAppService', () => {
       limit: 10,
     });
 
-    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+    expect(repository.listPublicDealScopeMenuItems).toHaveBeenCalledWith(
       {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
-        limit: 2,
       },
-      { menuItemIds: ['item-1', 'item-2'] },
+      ['item-1', 'item-2'],
     );
     expect(result.data[0].scopeMenuItems).toEqual([
       expect.objectContaining({ id: 'item-1', slug: 'zinger-burger' }),
+      expect.objectContaining({ id: 'item-2', slug: 'cold-drink' }),
     ]);
   });
 

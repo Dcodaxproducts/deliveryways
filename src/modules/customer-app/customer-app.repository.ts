@@ -178,6 +178,72 @@ export class CustomerAppRepository {
     };
   }
 
+  private buildPublicMenuItemVisibilityWhere(
+    branchId?: string,
+  ): Prisma.MenuItemWhereInput {
+    return {
+      category: {
+        deletedAt: null,
+        isActive: true,
+        ...(branchId
+          ? {
+              OR: [
+                { overrides: { none: { branchId } } },
+                { overrides: { some: { branchId, isVisible: true } } },
+              ],
+            }
+          : {}),
+      },
+      ...this.buildBranchMenuItemAvailabilityWhere(branchId),
+    };
+  }
+
+  private buildDealScopedMenuItemVisibilityWhere(
+    restaurantId: string,
+    branchId: string | undefined,
+    now: Date,
+  ): Prisma.MenuItemWhereInput {
+    const activeDealWhere: Prisma.CouponWhereInput = {
+      restaurantId,
+      kind: 'PROMOTION',
+      discountType: 'FIXED_PRICE',
+      autoApply: true,
+      deletedAt: null,
+      isActive: true,
+      status: 'ACTIVE',
+      startsAt: { lte: now },
+      expiresAt: { gte: now },
+      OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
+    };
+
+    return {
+      category: {
+        deletedAt: null,
+        isActive: true,
+      },
+      ...this.buildBranchMenuItemAvailabilityWhere(branchId),
+      OR: [
+        { couponScopes: { some: activeDealWhere } },
+        { couponScopeLinks: { some: { coupon: activeDealWhere } } },
+      ],
+    };
+  }
+
+  private buildBranchMenuItemAvailabilityWhere(
+    branchId?: string,
+  ): Prisma.MenuItemWhereInput {
+    if (!branchId) {
+      return {};
+    }
+
+    return {
+      OR: [
+        { branchOverrides: { none: { branchId } } },
+        { branchOverrides: { some: { branchId, isAvailable: true } } },
+      ],
+    };
+  }
+
   async findCustomerProfile(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
@@ -856,36 +922,26 @@ export class CustomerAppRepository {
 
   async findPublicMenuItemBySlug(
     slug: string,
-    query: PublicRestaurantQueryDto,
+    query: PublicRestaurantQueryDto & { restaurantId: string },
   ) {
+    const restaurantId = query.restaurantId;
     const branchId = query.branchId;
+    const now = new Date();
 
     return this.prisma.menuItem.findFirst({
       where: {
         slug: { equals: slug.trim(), mode: 'insensitive' },
-        restaurantId: query.restaurantId,
+        restaurantId,
         deletedAt: null,
         isActive: true,
-        category: {
-          deletedAt: null,
-          isActive: true,
-          ...(branchId
-            ? {
-                OR: [
-                  { overrides: { none: { branchId } } },
-                  { overrides: { some: { branchId, isVisible: true } } },
-                ],
-              }
-            : {}),
-        },
-        ...(branchId
-          ? {
-              OR: [
-                { branchOverrides: { none: { branchId } } },
-                { branchOverrides: { some: { branchId, isAvailable: true } } },
-              ],
-            }
-          : {}),
+        OR: [
+          this.buildPublicMenuItemVisibilityWhere(branchId),
+          this.buildDealScopedMenuItemVisibilityWhere(
+            restaurantId,
+            branchId,
+            now,
+          ),
+        ],
       },
       include: {
         restaurant: {
@@ -1038,6 +1094,35 @@ export class CustomerAppRepository {
             }
           : false,
       },
+    });
+  }
+
+  async listPublicDealScopeMenuItems(
+    query: PublicRestaurantQueryDto & { restaurantId: string },
+    menuItemIds: string[],
+  ) {
+    const restaurantId = query.restaurantId;
+    const branchId = query.branchId;
+    const now = new Date();
+
+    return this.prisma.menuItem.findMany({
+      where: {
+        id: { in: menuItemIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          this.buildPublicMenuItemVisibilityWhere(branchId),
+          this.buildDealScopedMenuItemVisibilityWhere(
+            restaurantId,
+            branchId,
+            now,
+          ),
+        ],
+      },
+      take: menuItemIds.length,
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      include: this.buildPublicMenuItemInclude(branchId),
     });
   }
 

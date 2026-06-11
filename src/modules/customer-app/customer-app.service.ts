@@ -2781,16 +2781,22 @@ export class CustomerAppService {
       return new Map<string, PublicDealScopeMenuItem>();
     }
 
-    const items = await this.customerAppRepository.listPromotionalItems(
+    if (!query.restaurantId) {
+      return new Map<string, PublicDealScopeMenuItem>();
+    }
+
+    const items = await this.customerAppRepository.listPublicDealScopeMenuItems(
       {
         restaurantId: query.restaurantId,
         branchId: query.branchId,
-        limit: menuItemIds.length,
       },
-      { menuItemIds },
+      menuItemIds,
     );
+    const publicItems = items as unknown as Array<
+      Parameters<CustomerAppService['mapMenuItem']>[0]
+    >;
     const mappedItems = await Promise.all(
-      this.filterAvailableMenuItems(items).map((item) =>
+      this.filterAvailableMenuItems(publicItems).map((item) =>
         this.mapReadyMadeDealScopeMenuItem(item),
       ),
     );

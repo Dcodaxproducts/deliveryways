@@ -288,6 +288,62 @@ describe('AdminPromotionsService', () => {
     expect(createInput.expiresAt).toEqual(new Date('9999-12-31T23:59:59.000Z'));
   });
 
+  it('replaces fixed deal scoped items when an admin edits the deal', async () => {
+    const existingDeal = makeCoupon({
+      kind: CouponCampaignKind.PROMOTION,
+      discountType: CouponDiscountType.FIXED_PRICE,
+      discountValue: new Prisma.Decimal(1299),
+      dealSelectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+      scopeMenuItems: [
+        { menuItem: { id: 'item-1', name: 'Pizza' } },
+        { menuItem: { id: 'item-2', name: 'Drink' } },
+      ],
+    });
+    const repository = {
+      findById: jest.fn().mockResolvedValue(existingDeal),
+      countActiveMenuItems: jest.fn().mockResolvedValue(3),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+      update: jest.fn().mockResolvedValue(
+        makeCoupon({
+          ...existingDeal,
+          scopeMenuItems: [
+            { menuItem: { id: 'item-1', name: 'Pizza' } },
+            { menuItem: { id: 'item-2', name: 'Drink' } },
+            { menuItem: { id: 'item-3', name: 'Fries' } },
+          ],
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.updateDeal(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'promo-1',
+      {
+        scopeMenuItemIds: ['item-1', 'item-2', 'item-3'],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'promo-1',
+      expect.objectContaining({
+        scopeMenuItems: {
+          deleteMany: {},
+          create: [
+            { menuItem: { connect: { id: 'item-1' } } },
+            { menuItem: { connect: { id: 'item-2' } } },
+            { menuItem: { connect: { id: 'item-3' } } },
+          ],
+        },
+      }),
+    );
+  });
+
   it('returns signed image urls when creating gift cards', async () => {
     const repository = {
       create: jest.fn().mockResolvedValue(
