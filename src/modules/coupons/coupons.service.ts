@@ -485,6 +485,12 @@ export class CouponsService {
     },
   ) {
     return [
+      ...(coupon.scopeCategories ?? []).map((entry) => ({
+        menuCategoryId: entry.menuCategory.id,
+        itemLimit: entry.itemLimit ?? null,
+        forcedVariationId: entry.forcedVariationId ?? null,
+        menuItemIds: entry.menuCategory.items?.map((item) => item.id) ?? [],
+      })),
       ...((coupon.scopeCategory?.id ?? coupon.scopeCategoryId)
         ? [
             {
@@ -496,12 +502,6 @@ export class CouponsService {
             },
           ]
         : []),
-      ...(coupon.scopeCategories ?? []).map((entry) => ({
-        menuCategoryId: entry.menuCategory.id,
-        itemLimit: entry.itemLimit ?? null,
-        forcedVariationId: entry.forcedVariationId ?? null,
-        menuItemIds: entry.menuCategory.items?.map((item) => item.id) ?? [],
-      })),
     ].filter(
       (entry, index, all) =>
         all.findIndex(

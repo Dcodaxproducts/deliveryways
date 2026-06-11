@@ -394,6 +394,44 @@ describe('CouponsService', () => {
     ).resolves.toBe(true);
   });
 
+  it('uses category rule items when a flexible deal also has the legacy single category scope', async () => {
+    repository.findActivePromotionById!.mockResolvedValue(
+      makeCoupon({
+        id: 'deal-1',
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(999),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeCategoryId: 'cat-1',
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 1,
+        scopeCategories: [
+          {
+            itemLimit: 1,
+            forcedVariationId: 'var-large',
+            menuCategory: {
+              id: 'cat-1',
+              items: [{ id: 'mi-1' }],
+            },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      service.getActiveFixedPriceDealItemOptions(
+        'rid-1',
+        'bid-1',
+        'deal-1',
+        'mi-1',
+      ),
+    ).resolves.toEqual({
+      dealId: 'deal-1',
+      forcedVariationId: 'var-large',
+    });
+  });
+
   it('infers non-auto-applied single-item ready-made fixed deals', async () => {
     repository.findActivePromotionsForMenuItem!.mockResolvedValue([
       makeCoupon({
