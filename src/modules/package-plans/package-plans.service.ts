@@ -373,18 +373,17 @@ export class PackagePlansService {
 
   async getSubscriptionInvoice(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
-    const subscription = await this.getSubscriptionOrThrow(id);
+    const invoice = await this.buildSubscriptionInvoice(id);
 
     return {
-      data: this.toSubscriptionInvoice(subscription),
+      data: invoice,
       message: 'Subscription invoice fetched successfully',
     };
   }
 
   async downloadSubscriptionInvoicePdf(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
-    const subscription = await this.getSubscriptionOrThrow(id);
-    const invoice = this.toSubscriptionInvoice(subscription);
+    const invoice = await this.buildSubscriptionInvoice(id);
 
     return {
       fileName: `${invoice.invoiceNumber}.pdf`,
@@ -399,8 +398,7 @@ export class PackagePlansService {
     dto: SendTenantSubscriptionInvoiceDto,
   ) {
     this.ensureSuperAdmin(user);
-    const subscription = await this.getSubscriptionOrThrow(id);
-    const invoice = this.toSubscriptionInvoice(subscription);
+    const invoice = await this.buildSubscriptionInvoice(id);
     const recipientEmail = dto.email ?? invoice.restaurant?.billingEmail;
 
     if (!recipientEmail) {
@@ -434,8 +432,8 @@ export class PackagePlansService {
     return {
       data: {
         invoiceNumber: invoice.invoiceNumber,
-        subscriptionId: subscription.id,
-        restaurantId: subscription.restaurantId,
+        subscriptionId: invoice.subscriptionId,
+        restaurantId: invoice.restaurant?.id ?? null,
         sentTo: recipientEmail,
         fileName,
         mimeType: 'application/pdf',
@@ -762,18 +760,74 @@ export class PackagePlansService {
     return subscription;
   }
 
-  private toSubscriptionInvoice(subscription: TenantSubscriptionDetails) {
+  private async buildSubscriptionInvoice(id: string) {
+    const subscription = await this.getSubscriptionOrThrow(id);
     const plan = this.resolveSubscriptionInvoicePlan(subscription);
-    const subtotal = plan.planPrice;
+    const servicePeriod = this.resolveSubscriptionInvoicePeriod(subscription);
+    const paidOrders =
+      subscription.restaurantId && this.isTransactionFeePlan(plan)
+        ? await this.packagePlansRepository.listPaidRestaurantOrders(
+            subscription.restaurantId,
+            servicePeriod.from,
+            servicePeriod.to,
+          )
+        : [];
+
+    return this.toSubscriptionInvoice(
+      subscription,
+      plan,
+      servicePeriod,
+      paidOrders,
+    );
+  }
+
+  private toSubscriptionInvoice(
+    subscription: TenantSubscriptionDetails,
+    plan: ReturnType<PackagePlansService['resolveSubscriptionInvoicePlan']>,
+    servicePeriod: { from: Date; to: Date },
+    paidOrders: RestaurantPayoutOrder[],
+  ) {
+    const subscriptionFeeAmount = new Prisma.Decimal(plan.planPrice)
+      .toDecimalPlaces(2)
+      .toNumber();
+    const transactionFeeAmount = paidOrders
+      .reduce(
+        (sum, order) =>
+          sum.plus(
+            this.calculateOrderCommission(
+              new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2),
+              plan,
+            ),
+          ),
+        new Prisma.Decimal(0),
+      )
+      .toDecimalPlaces(2)
+      .toNumber();
+    const subtotal = Number(
+      (subscriptionFeeAmount + transactionFeeAmount).toFixed(2),
+    );
     const vatAmount = Number(
       ((subtotal * plan.vatPercentage) / 100).toFixed(2),
     );
     const totalAmount = Number((subtotal + vatAmount).toFixed(2));
     const issuedAt = new Date();
-    const servicePeriodTo =
-      subscription.nextBillingAt ??
-      subscription.endsAt ??
-      subscription.startsAt;
+    const lineItems = [
+      {
+        description: `${plan.name} ${plan.billingInterval.toLowerCase()} subscription`,
+        quantity: 1,
+        unitPrice: subscriptionFeeAmount,
+        amount: subscriptionFeeAmount,
+      },
+    ];
+
+    if (transactionFeeAmount > 0 || this.isTransactionFeePlan(plan)) {
+      lineItems.push({
+        description: `Transaction fee for ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
+        quantity: paidOrders.length,
+        unitPrice: transactionFeeAmount,
+        amount: transactionFeeAmount,
+      });
+    }
 
     return {
       invoiceNumber: this.buildSubscriptionInvoiceNumber(subscription.id),
@@ -805,19 +859,15 @@ export class PackagePlansService {
       paymentStatus: subscription.paymentStatus,
       issuedAt,
       dueAt: subscription.nextBillingAt,
-      servicePeriod: {
-        from: subscription.startsAt,
-        to: servicePeriodTo,
+      servicePeriod,
+      lineItems,
+      transactionFee: {
+        ordersCount: paidOrders.length,
+        amount: transactionFeeAmount,
       },
-      lineItems: [
-        {
-          description: `${plan.name} ${plan.billingInterval.toLowerCase()} subscription`,
-          quantity: 1,
-          unitPrice: plan.planPrice,
-          amount: plan.planPrice,
-        },
-      ],
       totals: {
+        subscriptionFeeAmount,
+        transactionFeeAmount,
         subtotal,
         vatPercentage: plan.vatPercentage,
         vatAmount,
@@ -826,6 +876,24 @@ export class PackagePlansService {
       },
       note: subscription.note,
     };
+  }
+
+  private resolveSubscriptionInvoicePeriod(
+    subscription: TenantSubscriptionDetails,
+  ) {
+    return {
+      from: subscription.startsAt,
+      to:
+        subscription.nextBillingAt ??
+        subscription.endsAt ??
+        subscription.startsAt,
+    };
+  }
+
+  private isTransactionFeePlan(
+    plan: ReturnType<PackagePlansService['resolveSubscriptionInvoicePlan']>,
+  ) {
+    return plan.billingModel !== PackageBillingModel.PLAN;
   }
 
   private resolveSubscriptionInvoicePlan(
@@ -899,7 +967,9 @@ export class PackagePlansService {
   }
 
   private generateSubscriptionInvoicePdf(
-    invoice: ReturnType<PackagePlansService['toSubscriptionInvoice']>,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
   ) {
     const lines = [
       `Invoice ${invoice.invoiceNumber}`,
@@ -919,6 +989,8 @@ export class PackagePlansService {
       `Commission: ${invoice.packagePlan.commissionType} ${invoice.packagePlan.commissionPercentage}% / ${invoice.packagePlan.commissionFixedAmount}`,
       `Payout Cycle: ${invoice.packagePlan.payoutCycle}`,
       '',
+      `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
+      `Transaction Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
       `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
       `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
       `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
@@ -932,7 +1004,9 @@ export class PackagePlansService {
   }
 
   private buildSubscriptionInvoiceEmailBody(
-    invoice: ReturnType<PackagePlansService['toSubscriptionInvoice']>,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
   ) {
     return [
       `Hi ${invoice.restaurant?.name ?? invoice.tenant.name},`,
@@ -941,6 +1015,8 @@ export class PackagePlansService {
       '',
       `Package: ${invoice.packagePlan.name}`,
       `Service Period: ${invoice.servicePeriod.from.toISOString()} - ${invoice.servicePeriod.to.toISOString()}`,
+      `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
+      `Transaction Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
       `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
       '',

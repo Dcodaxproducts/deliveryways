@@ -84,6 +84,36 @@ describe('PackagePlansService', () => {
     ...overrides,
   });
 
+  const makePaidOrder = (overrides: Record<string, unknown> = {}) => ({
+    id: 'order-1',
+    branchId: 'branch-1',
+    orderType: 'DELIVERY',
+    paymentMethod: 'CARD',
+    subtotal: new Prisma.Decimal(1000),
+    taxAmount: new Prisma.Decimal(0),
+    deliveryFee: new Prisma.Decimal(0),
+    serviceChargeAmount: new Prisma.Decimal(0),
+    tipAmount: new Prisma.Decimal(0),
+    discountAmount: new Prisma.Decimal(0),
+    walletAppliedAmount: new Prisma.Decimal(0),
+    loyaltyDiscountAmount: new Prisma.Decimal(0),
+    totalAmount: new Prisma.Decimal(1000),
+    paidAt: new Date('2026-06-09T10:00:00.000Z'),
+    createdAt: new Date('2026-06-09T09:55:00.000Z'),
+    branch: { id: 'branch-1', name: 'Main' },
+    transactions: [
+      {
+        id: 'txn-1',
+        amount: new Prisma.Decimal(1000),
+        currency: 'PKR',
+        paymentMethod: 'CARD',
+        providerRef: 'pi_123',
+        processedAt: new Date('2026-06-09T10:00:00.000Z'),
+      },
+    ],
+    ...overrides,
+  });
+
   it('creates hybrid package plan with fixed fee and commission', async () => {
     const repository = {
       createPlan: jest.fn().mockResolvedValue(makePlan()),
@@ -252,6 +282,7 @@ describe('PackagePlansService', () => {
   it('returns restaurant subscription invoice details for super admin', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
     };
     const service = new PackagePlansService(repository as never);
 
@@ -268,18 +299,26 @@ describe('PackagePlansService', () => {
         billingEmail: 'billing@pizza.test',
       },
       totals: {
-        subtotal: 5000,
+        subscriptionFeeAmount: 5000,
+        transactionFeeAmount: 50,
+        subtotal: 5050,
         vatPercentage: 15,
-        vatAmount: 750,
-        totalAmount: 5750,
+        vatAmount: 757.5,
+        totalAmount: 5807.5,
         currency: 'PKR',
       },
     });
+    expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      new Date('2026-06-01T00:00:00.000Z'),
+      new Date('2026-07-01T00:00:00.000Z'),
+    );
   });
 
   it('generates restaurant subscription invoice PDF', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
     };
     const service = new PackagePlansService(repository as never);
 
@@ -296,6 +335,7 @@ describe('PackagePlansService', () => {
   it('sends restaurant subscription invoice to billing email', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
     };
     const mailerService = {
       sendEmail: jest.fn().mockResolvedValue(undefined),
@@ -340,6 +380,7 @@ describe('PackagePlansService', () => {
           },
         }),
       ),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
     };
     const service = new PackagePlansService(
       repository as never,
@@ -371,36 +412,7 @@ describe('PackagePlansService', () => {
       findActiveRestaurantSubscription: jest
         .fn()
         .mockResolvedValue(makeSubscription()),
-      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
-        {
-          id: 'order-1',
-          branchId: 'branch-1',
-          orderType: 'DELIVERY',
-          paymentMethod: 'CARD',
-          subtotal: new Prisma.Decimal(1000),
-          taxAmount: new Prisma.Decimal(0),
-          deliveryFee: new Prisma.Decimal(0),
-          serviceChargeAmount: new Prisma.Decimal(0),
-          tipAmount: new Prisma.Decimal(0),
-          discountAmount: new Prisma.Decimal(0),
-          walletAppliedAmount: new Prisma.Decimal(0),
-          loyaltyDiscountAmount: new Prisma.Decimal(0),
-          totalAmount: new Prisma.Decimal(1000),
-          paidAt: new Date('2026-06-09T10:00:00.000Z'),
-          createdAt: new Date('2026-06-09T09:55:00.000Z'),
-          branch: { id: 'branch-1', name: 'Main' },
-          transactions: [
-            {
-              id: 'txn-1',
-              amount: new Prisma.Decimal(1000),
-              currency: 'PKR',
-              paymentMethod: 'CARD',
-              providerRef: 'pi_123',
-              processedAt: new Date('2026-06-09T10:00:00.000Z'),
-            },
-          ],
-        },
-      ]),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
     };
     const service = new PackagePlansService(repository as never);
 
