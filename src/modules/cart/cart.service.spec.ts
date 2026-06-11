@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CouponDealSelectionMode, Prisma } from '@prisma/client';
 import {
   OrderTypeEnum,
@@ -3020,6 +3016,35 @@ describe('CartService', () => {
     expect(result.message).toBe('Cart updated successfully');
   });
 
+  it('returns an empty cart with selected order type when cart does not exist yet', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue(null);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.updateCart(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        orderType: OrderTypeEnum.TAKEAWAY,
+      },
+    );
+
+    expect(cartRepository.update).not.toHaveBeenCalled();
+    expect(result.message).toBe('Cart updated successfully');
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: null,
+        customerId: 'customer-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        items: [],
+      }),
+    );
+  });
+
   it('updates cart checkout draft fields in patch route', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const cart = {
@@ -3320,23 +3345,6 @@ describe('CartService', () => {
       discountAmount: 301,
     });
     expect(result.data.discountAmount).toBe(301);
-  });
-
-  it('throws when updating order type before cart exists', async () => {
-    const { service, cartRepository } = makeService();
-    cartRepository.findByCustomerId.mockResolvedValue(null);
-
-    await expect(
-      service.updateCart(
-        {
-          uid: 'customer-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.CUSTOMER,
-        },
-        { orderType: OrderTypeEnum.DELIVERY },
-      ),
-    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('validates coupon before saving it to cart without requiring delivery coordinates', async () => {

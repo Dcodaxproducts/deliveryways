@@ -266,7 +266,12 @@ export class CartService {
     const cart = await this.cartRepository.findByCustomerId(customerId);
 
     if (!cart) {
-      throw new NotFoundException('Cart not found');
+      return {
+        data: await this.buildEmptyCart(customerId, {
+          orderType: dto.orderType,
+        }),
+        message: 'Cart updated successfully',
+      };
     }
 
     const nextOrderType = dto.orderType
@@ -3009,7 +3014,12 @@ export class CartService {
     return user.tid;
   }
 
-  private async buildEmptyCart(customerId: string) {
+  private async buildEmptyCart(
+    customerId: string,
+    overrides: Partial<{
+      orderType: OrderTypeEnum;
+    }> = {},
+  ) {
     const defaultAddressId = await this.getDefaultAddressId(customerId);
 
     return {
@@ -3018,7 +3028,7 @@ export class CartService {
       branchId: null,
       customerId,
       restaurantMenuId: null,
-      orderType: OrderType.DELIVERY,
+      orderType: overrides.orderType ?? OrderType.DELIVERY,
       deliveryAddressId: defaultAddressId,
       couponCode: null,
       paymentMethod: null,
