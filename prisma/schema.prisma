@@ -531,17 +531,17 @@ model MenuCategory {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  restaurant     Restaurant                  @relation(fields: [restaurantId], references: [id])
-  parent         MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
-  children       MenuCategory[]              @relation("MenuCategoryTree")
-  items          MenuItem[]
-  itemLinks      MenuItemCategory[]
-  variations     MenuItemVariation[]
-  variationLinks MenuCategoryVariation[]
-  menuLinks      RestaurantMenuCategory[]
-  modifierLinks  MenuCategoryModifierGroup[]
-  overrides      BranchCategoryOverride[]
-  couponScopes   Coupon[]
+  restaurant       Restaurant                  @relation(fields: [restaurantId], references: [id])
+  parent           MenuCategory?               @relation("MenuCategoryTree", fields: [parentCategoryId], references: [id])
+  children         MenuCategory[]              @relation("MenuCategoryTree")
+  items            MenuItem[]
+  itemLinks        MenuItemCategory[]
+  variations       MenuItemVariation[]
+  variationLinks   MenuCategoryVariation[]
+  menuLinks        RestaurantMenuCategory[]
+  modifierLinks    MenuCategoryModifierGroup[]
+  overrides        BranchCategoryOverride[]
+  couponScopes     Coupon[]
   couponScopeLinks CouponScopeCategory[]
 
   @@unique([restaurantId, slug])
@@ -687,6 +687,7 @@ model MenuItemVariation {
   restaurant             Restaurant                           @relation(fields: [restaurantId], references: [id])
   category               MenuCategory?                        @relation(fields: [categoryId], references: [id])
   categoryLinks          MenuCategoryVariation[]
+  couponCategoryScopes   CouponScopeCategory[]                @relation("CouponScopeCategoryForcedVariation")
   modifierPriceOverrides MenuVariationModifierPriceOverride[]
   itemPriceOverrides     MenuItemVariationPriceOverride[]
 
@@ -732,13 +733,13 @@ model MenuItemVariationPriceOverride {
 }
 
 model MenuCategoryModifierGroup {
-  id              String @id @default(cuid())
-  categoryId      String @map("category_id")
-  modifierGroupId String @map("modifier_group_id")
-  sortOrder       Int    @default(0) @map("sort_order")
+  id              String                @id @default(cuid())
+  categoryId      String                @map("category_id")
+  modifierGroupId String                @map("modifier_group_id")
+  sortOrder       Int                   @default(0) @map("sort_order")
   selectionType   ModifierSelectionType @default(SINGLE) @map("selection_type")
-  minSelect       Int    @default(0) @map("min_select")
-  maxSelect       Int    @default(1) @map("max_select")
+  minSelect       Int                   @default(0) @map("min_select")
+  maxSelect       Int                   @default(1) @map("max_select")
 
   category      MenuCategory  @relation(fields: [categoryId], references: [id])
   modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
@@ -831,13 +832,13 @@ model ModifierGroupModifier {
 }
 
 model MenuItemModifierGroup {
-  id              String @id @default(cuid())
-  menuItemId      String @map("menu_item_id")
-  modifierGroupId String @map("modifier_group_id")
-  sortOrder       Int    @default(0) @map("sort_order")
+  id              String                @id @default(cuid())
+  menuItemId      String                @map("menu_item_id")
+  modifierGroupId String                @map("modifier_group_id")
+  sortOrder       Int                   @default(0) @map("sort_order")
   selectionType   ModifierSelectionType @default(SINGLE) @map("selection_type")
-  minSelect       Int    @default(0) @map("min_select")
-  maxSelect       Int    @default(1) @map("max_select")
+  minSelect       Int                   @default(0) @map("min_select")
+  maxSelect       Int                   @default(1) @map("max_select")
 
   menuItem      MenuItem      @relation(fields: [menuItemId], references: [id])
   modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
@@ -984,48 +985,48 @@ model MenuItemRecipe {
 }
 
 model Coupon {
-  id                 String             @id @default(cuid())
-  tenantId           String             @map("tenant_id")
-  restaurantId       String             @map("restaurant_id")
-  branchId           String?            @map("branch_id")
-  code               String
-  title              String
-  description        String?
-  imageUrl           String?            @map("image_url")
-  kind               CouponCampaignKind @default(PROMOTION)
-  status             CouponStatus       @default(ACTIVE)
-  applyMode          CouponApplyMode    @default(ORDER_TOTAL) @map("apply_mode")
-  autoApply          Boolean            @default(false) @map("auto_apply")
-  discountType       CouponDiscountType @map("discount_type")
-  discountValue      Decimal            @map("discount_value") @db.Decimal(10, 2)
-  maxDiscountAmount  Decimal?           @map("max_discount_amount") @db.Decimal(10, 2)
-  minOrderAmount     Decimal?           @map("min_order_amount") @db.Decimal(10, 2)
-  maxUses            Int?               @map("max_uses")
-  maxUsesPerCustomer Int?               @map("max_uses_per_customer")
-  usedCount          Int                @default(0) @map("used_count")
-  startsAt           DateTime           @map("starts_at") @db.Timestamptz
-  expiresAt          DateTime           @map("expires_at") @db.Timestamptz
-  activeDays         Json?              @map("active_days")
-  dailyStartTime     String?            @map("daily_start_time")
-  dailyEndTime       String?            @map("daily_end_time")
-  scopeMenuItemId    String?            @map("scope_menu_item_id")
-  scopeCategoryId    String?            @map("scope_category_id")
-  dealSelectionMode  CouponDealSelectionMode? @map("deal_selection_mode")
-  dealRequiredQuantity Int?             @map("deal_required_quantity")
-  isActive           Boolean            @default(true) @map("is_active")
-  deletedAt          DateTime?          @map("deleted_at") @db.Timestamptz
-  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  id                   String                   @id @default(cuid())
+  tenantId             String                   @map("tenant_id")
+  restaurantId         String                   @map("restaurant_id")
+  branchId             String?                  @map("branch_id")
+  code                 String
+  title                String
+  description          String?
+  imageUrl             String?                  @map("image_url")
+  kind                 CouponCampaignKind       @default(PROMOTION)
+  status               CouponStatus             @default(ACTIVE)
+  applyMode            CouponApplyMode          @default(ORDER_TOTAL) @map("apply_mode")
+  autoApply            Boolean                  @default(false) @map("auto_apply")
+  discountType         CouponDiscountType       @map("discount_type")
+  discountValue        Decimal                  @map("discount_value") @db.Decimal(10, 2)
+  maxDiscountAmount    Decimal?                 @map("max_discount_amount") @db.Decimal(10, 2)
+  minOrderAmount       Decimal?                 @map("min_order_amount") @db.Decimal(10, 2)
+  maxUses              Int?                     @map("max_uses")
+  maxUsesPerCustomer   Int?                     @map("max_uses_per_customer")
+  usedCount            Int                      @default(0) @map("used_count")
+  startsAt             DateTime                 @map("starts_at") @db.Timestamptz
+  expiresAt            DateTime                 @map("expires_at") @db.Timestamptz
+  activeDays           Json?                    @map("active_days")
+  dailyStartTime       String?                  @map("daily_start_time")
+  dailyEndTime         String?                  @map("daily_end_time")
+  scopeMenuItemId      String?                  @map("scope_menu_item_id")
+  scopeCategoryId      String?                  @map("scope_category_id")
+  dealSelectionMode    CouponDealSelectionMode? @map("deal_selection_mode")
+  dealRequiredQuantity Int?                     @map("deal_required_quantity")
+  isActive             Boolean                  @default(true) @map("is_active")
+  deletedAt            DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
-  branch        Branch?       @relation(fields: [branchId], references: [id])
-  scopeMenuItem MenuItem?     @relation(fields: [scopeMenuItemId], references: [id])
-  scopeCategory MenuCategory? @relation(fields: [scopeCategoryId], references: [id])
-  scopeMenuItems CouponScopeMenuItem[]
+  tenant          Tenant                @relation(fields: [tenantId], references: [id])
+  restaurant      Restaurant            @relation(fields: [restaurantId], references: [id])
+  branch          Branch?               @relation(fields: [branchId], references: [id])
+  scopeMenuItem   MenuItem?             @relation(fields: [scopeMenuItemId], references: [id])
+  scopeCategory   MenuCategory?         @relation(fields: [scopeCategoryId], references: [id])
+  scopeMenuItems  CouponScopeMenuItem[]
   scopeCategories CouponScopeCategory[]
-  orders        Order[]
-  usages        CouponUsage[]
+  orders          Order[]
+  usages          CouponUsage[]
 
   @@unique([restaurantId, code])
   @@index([restaurantId, status, isActive])
@@ -1049,17 +1050,21 @@ model CouponScopeMenuItem {
 }
 
 model CouponScopeCategory {
-  id             String   @id @default(cuid())
-  couponId       String   @map("coupon_id")
-  menuCategoryId String   @map("menu_category_id")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id                String   @id @default(cuid())
+  couponId          String   @map("coupon_id")
+  menuCategoryId    String   @map("menu_category_id")
+  itemLimit         Int?     @map("item_limit")
+  forcedVariationId String?  @map("forced_variation_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  coupon       Coupon       @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  menuCategory MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+  coupon          Coupon             @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  menuCategory    MenuCategory       @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+  forcedVariation MenuItemVariation? @relation("CouponScopeCategoryForcedVariation", fields: [forcedVariationId], references: [id])
 
   @@unique([couponId, menuCategoryId])
   @@index([menuCategoryId])
+  @@index([forcedVariationId])
   @@map("coupon_scope_categories")
 }
 
@@ -1249,42 +1254,42 @@ model CartItem {
 }
 
 model Order {
-  id                    String        @id @default(cuid())
-  tenantId              String        @map("tenant_id")
-  restaurantId          String        @map("restaurant_id")
-  branchId              String        @map("branch_id")
-  customerId            String        @map("customer_id")
-  couponId              String?       @map("coupon_id")
-  deliveryAddressId     String?       @map("delivery_address_id")
-  deliverymanId         String?       @map("deliveryman_id")
-  orderType             OrderType     @map("order_type")
-  paymentMethod         PaymentMethod @map("payment_method")
-  orderTime             DateTime?     @map("order_time") @db.Timestamptz
-  isScheduled           Boolean       @default(false) @map("is_scheduled")
-  status                OrderStatus   @default(PLACED)
-  subtotal              Decimal       @db.Decimal(10, 2)
-  taxAmount             Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
-  deliveryFee           Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  id                    String             @id @default(cuid())
+  tenantId              String             @map("tenant_id")
+  restaurantId          String             @map("restaurant_id")
+  branchId              String             @map("branch_id")
+  customerId            String             @map("customer_id")
+  couponId              String?            @map("coupon_id")
+  deliveryAddressId     String?            @map("delivery_address_id")
+  deliverymanId         String?            @map("deliveryman_id")
+  orderType             OrderType          @map("order_type")
+  paymentMethod         PaymentMethod      @map("payment_method")
+  orderTime             DateTime?          @map("order_time") @db.Timestamptz
+  isScheduled           Boolean            @default(false) @map("is_scheduled")
+  status                OrderStatus        @default(PLACED)
+  subtotal              Decimal            @db.Decimal(10, 2)
+  taxAmount             Decimal            @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  deliveryFee           Decimal            @default(0) @map("delivery_fee") @db.Decimal(10, 2)
   serviceChargeType     ServiceChargeType? @map("service_charge_type")
-  serviceChargeValue    Decimal?      @map("service_charge_value") @db.Decimal(10, 2)
-  serviceChargeAmount   Decimal       @default(0) @map("service_charge_amount") @db.Decimal(10, 2)
-  tipAmount             Decimal       @default(0) @map("tip_amount") @db.Decimal(10, 2)
-  discountAmount        Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
-  walletAppliedAmount   Decimal       @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
-  loyaltyDiscountAmount Decimal       @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
-  loyaltyPointsRedeemed Int           @default(0) @map("loyalty_points_redeemed")
-  loyaltyPointsAwarded  Int           @default(0) @map("loyalty_points_awarded")
-  totalAmount           Decimal       @map("total_amount") @db.Decimal(10, 2)
-  paymentStatus         PaymentStatus @default(PENDING) @map("payment_status")
-  paidAt                DateTime?     @map("paid_at") @db.Timestamptz
-  assignedAt            DateTime?     @map("assigned_at") @db.Timestamptz
-  deliveredAt           DateTime?     @map("delivered_at") @db.Timestamptz
-  deliveryOtp           String?       @map("delivery_otp") @db.VarChar(10)
-  customerNote          String?       @map("customer_note")
-  cancelledAt           DateTime?     @map("cancelled_at") @db.Timestamptz
-  cancelledByUserId     String?       @map("cancelled_by_user_id")
-  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  serviceChargeValue    Decimal?           @map("service_charge_value") @db.Decimal(10, 2)
+  serviceChargeAmount   Decimal            @default(0) @map("service_charge_amount") @db.Decimal(10, 2)
+  tipAmount             Decimal            @default(0) @map("tip_amount") @db.Decimal(10, 2)
+  discountAmount        Decimal            @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  walletAppliedAmount   Decimal            @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
+  loyaltyDiscountAmount Decimal            @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
+  loyaltyPointsRedeemed Int                @default(0) @map("loyalty_points_redeemed")
+  loyaltyPointsAwarded  Int                @default(0) @map("loyalty_points_awarded")
+  totalAmount           Decimal            @map("total_amount") @db.Decimal(10, 2)
+  paymentStatus         PaymentStatus      @default(PENDING) @map("payment_status")
+  paidAt                DateTime?          @map("paid_at") @db.Timestamptz
+  assignedAt            DateTime?          @map("assigned_at") @db.Timestamptz
+  deliveredAt           DateTime?          @map("delivered_at") @db.Timestamptz
+  deliveryOtp           String?            @map("delivery_otp") @db.VarChar(10)
+  customerNote          String?            @map("customer_note")
+  cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz
+  cancelledByUserId     String?            @map("cancelled_by_user_id")
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
   restaurant          Restaurant           @relation(fields: [restaurantId], references: [id])

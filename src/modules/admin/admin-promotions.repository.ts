@@ -58,6 +58,26 @@ export class AdminPromotionsRepository {
     });
   }
 
+  findActiveCategoryVariation(
+    restaurantId: string,
+    categoryId: string,
+    variationId: string,
+  ) {
+    return this.prisma.menuItemVariation.findFirst({
+      where: {
+        id: variationId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          { categoryId },
+          { categoryLinks: { some: { categoryId, isActive: true } } },
+        ],
+      },
+      select: { id: true },
+    });
+  }
+
   create(data: Prisma.CouponCreateInput) {
     return this.prisma.coupon.create({
       data,
@@ -333,6 +353,11 @@ export class AdminPromotionsRepository {
     },
     scopeCategories: {
       select: {
+        itemLimit: true,
+        forcedVariationId: true,
+        forcedVariation: {
+          select: { id: true, name: true },
+        },
         menuCategory: {
           select: { id: true, name: true },
         },

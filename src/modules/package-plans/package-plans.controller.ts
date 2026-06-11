@@ -26,8 +26,10 @@ import {
   ListPackagePlansDto,
   ListTenantSubscriptionsDto,
   SendTenantSubscriptionInvoiceDto,
+  SendWeeklyRestaurantPayoutInvoiceDto,
   UpdatePackagePlanDto,
   UpdateTenantSubscriptionDto,
+  WeeklyRestaurantPayoutInvoiceQueryDto,
 } from './dto';
 import { PackagePlansService } from './package-plans.service';
 
@@ -128,6 +130,44 @@ export class PackagePlansController {
     @Body() dto: SendTenantSubscriptionInvoiceDto,
   ) {
     return this.packagePlansService.sendSubscriptionInvoiceEmail(user, id, dto);
+  }
+
+  @Get('payouts/weekly-invoice')
+  @ApiOperation({ summary: 'Get weekly restaurant payout invoice details' })
+  getWeeklyPayoutInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: WeeklyRestaurantPayoutInvoiceQueryDto,
+  ) {
+    return this.packagePlansService.getWeeklyPayoutInvoice(user, query);
+  }
+
+  @Get('payouts/weekly-invoice/pdf')
+  @ApiOperation({ summary: 'Download weekly restaurant payout invoice PDF' })
+  async downloadWeeklyPayoutInvoicePdf(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: WeeklyRestaurantPayoutInvoiceQueryDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.packagePlansService.downloadWeeklyPayoutInvoicePdf(
+      user,
+      query,
+    );
+
+    response.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `attachment; filename="${file.fileName}"`,
+    });
+
+    return new StreamableFile(file.content);
+  }
+
+  @Post('payouts/weekly-invoice/send-email')
+  @ApiOperation({ summary: 'Send weekly restaurant payout invoice by email' })
+  sendWeeklyPayoutInvoiceEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: SendWeeklyRestaurantPayoutInvoiceDto,
+  ) {
+    return this.packagePlansService.sendWeeklyPayoutInvoiceEmail(user, dto);
   }
 
   @Get(':id')

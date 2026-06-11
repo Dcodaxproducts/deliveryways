@@ -24,14 +24,22 @@ import {
   ListPackagePlansDto,
   ListTenantSubscriptionsDto,
   SendTenantSubscriptionInvoiceDto,
+  SendWeeklyRestaurantPayoutInvoiceDto,
   UpdatePackagePlanDto,
   UpdateTenantSubscriptionDto,
+  WeeklyRestaurantPayoutInvoiceQueryDto,
 } from './dto';
 import { PackagePlansRepository } from './package-plans.repository';
 
 type TenantSubscriptionDetails = NonNullable<
   Awaited<ReturnType<PackagePlansRepository['findSubscriptionById']>>
 >;
+type RestaurantPayoutScope = NonNullable<
+  Awaited<ReturnType<PackagePlansRepository['findRestaurantPayoutScope']>>
+>;
+type RestaurantPayoutOrder = Awaited<
+  ReturnType<PackagePlansRepository['listPaidRestaurantOrders']>
+>[number];
 
 interface SubscriptionPlanSnapshot {
   id?: string;
@@ -436,6 +444,264 @@ export class PackagePlansService {
     };
   }
 
+  async getWeeklyPayoutInvoice(
+    user: AuthUserContext,
+    query: WeeklyRestaurantPayoutInvoiceQueryDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const invoice = await this.buildWeeklyPayoutInvoice(query);
+
+    return {
+      data: invoice,
+      message: 'Weekly payout invoice fetched successfully',
+    };
+  }
+
+  async downloadWeeklyPayoutInvoicePdf(
+    user: AuthUserContext,
+    query: WeeklyRestaurantPayoutInvoiceQueryDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const invoice = await this.buildWeeklyPayoutInvoice(query);
+
+    return {
+      fileName: `${invoice.invoiceNumber}.pdf`,
+      mimeType: 'application/pdf',
+      content: this.generateWeeklyPayoutInvoicePdf(invoice),
+    };
+  }
+
+  async sendWeeklyPayoutInvoiceEmail(
+    user: AuthUserContext,
+    dto: SendWeeklyRestaurantPayoutInvoiceDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const invoice = await this.buildWeeklyPayoutInvoice(dto);
+    const recipientEmail = dto.email ?? invoice.restaurant.billingEmail;
+
+    if (!recipientEmail) {
+      throw new BadRequestException(
+        'Restaurant billing email is required to send payout invoice',
+      );
+    }
+
+    if (!this.mailerService) {
+      throw new InternalServerErrorException(
+        'Mailer service is not configured',
+      );
+    }
+
+    const fileName = `${invoice.invoiceNumber}.pdf`;
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
+      this.buildWeeklyPayoutInvoiceEmailBody(invoice),
+      {
+        attachments: [
+          {
+            filename: fileName,
+            content: this.generateWeeklyPayoutInvoicePdf(invoice),
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    );
+
+    return {
+      data: {
+        invoiceNumber: invoice.invoiceNumber,
+        restaurantId: invoice.restaurant.id,
+        sentTo: recipientEmail,
+        fileName,
+        mimeType: 'application/pdf',
+      },
+      message: 'Weekly payout invoice generated and sent successfully',
+    };
+  }
+
+  private async buildWeeklyPayoutInvoice(
+    query: WeeklyRestaurantPayoutInvoiceQueryDto,
+  ) {
+    const period = this.resolveWeeklyPayoutPeriod(query);
+    const restaurant =
+      await this.packagePlansRepository.findRestaurantPayoutScope(
+        query.restaurantId,
+      );
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const [subscription, orders] = await Promise.all([
+      this.packagePlansRepository.findActiveRestaurantSubscription(
+        restaurant.id,
+      ),
+      this.packagePlansRepository.listPaidRestaurantOrders(
+        restaurant.id,
+        period.from,
+        period.to,
+      ),
+    ]);
+    const plan = subscription
+      ? this.resolveSubscriptionInvoicePlan(subscription)
+      : null;
+    const lineItems = orders.map((order) =>
+      this.toWeeklyPayoutOrderLine(order, plan),
+    );
+    const grossAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.grossAmount),
+      new Prisma.Decimal(0),
+    );
+    const platformCommissionAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.platformCommissionAmount),
+      new Prisma.Decimal(0),
+    );
+    const restaurantPayoutAmount = Prisma.Decimal.max(
+      grossAmount.minus(platformCommissionAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const currency =
+      lineItems[0]?.currency ?? plan?.currency ?? this.resolveDefaultCurrency();
+
+    return {
+      invoiceNumber: this.buildWeeklyPayoutInvoiceNumber(
+        restaurant.id,
+        period.from,
+        period.to,
+      ),
+      restaurant: {
+        id: restaurant.id,
+        name: restaurant.name,
+        slug: restaurant.slug,
+        billingEmail: this.resolveRestaurantPayoutEmail(restaurant),
+      },
+      tenant: restaurant.tenant,
+      subscription: subscription
+        ? {
+            id: subscription.id,
+            billingInterval: plan?.billingInterval ?? BillingInterval.MONTHLY,
+            payoutCycle: plan?.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+          }
+        : null,
+      issuedAt: new Date(),
+      period,
+      lineItems: lineItems.map((item) => ({
+        ...item,
+        grossAmount: Number(item.grossAmount),
+        platformCommissionAmount: Number(item.platformCommissionAmount),
+        restaurantPayoutAmount: Number(item.restaurantPayoutAmount),
+      })),
+      totals: {
+        ordersCount: lineItems.length,
+        grossAmount: Number(grossAmount.toDecimalPlaces(2)),
+        platformCommissionAmount: Number(
+          platformCommissionAmount.toDecimalPlaces(2),
+        ),
+        restaurantPayoutAmount: Number(restaurantPayoutAmount),
+        currency,
+      },
+      note: 'Customer order payments are collected by super admin first; this weekly invoice summarizes the net payout due to the restaurant.',
+    };
+  }
+
+  private toWeeklyPayoutOrderLine(
+    order: RestaurantPayoutOrder,
+    plan: ReturnType<
+      PackagePlansService['resolveSubscriptionInvoicePlan']
+    > | null,
+  ) {
+    const grossAmount = new Prisma.Decimal(order.totalAmount).toDecimalPlaces(
+      2,
+    );
+    const platformCommissionAmount = this.calculateOrderCommission(
+      grossAmount,
+      plan,
+    );
+    const restaurantPayoutAmount = Prisma.Decimal.max(
+      grossAmount.minus(platformCommissionAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+
+    return {
+      orderId: order.id,
+      branch: order.branch,
+      orderType: order.orderType,
+      paymentMethod: order.paymentMethod,
+      paidAt: order.paidAt,
+      grossAmount,
+      platformCommissionAmount,
+      restaurantPayoutAmount,
+      currency: order.transactions[0]?.currency ?? plan?.currency ?? 'PKR',
+      providerReference: order.transactions[0]?.providerRef ?? null,
+    };
+  }
+
+  private calculateOrderCommission(
+    grossAmount: Prisma.Decimal,
+    plan: ReturnType<
+      PackagePlansService['resolveSubscriptionInvoicePlan']
+    > | null,
+  ) {
+    if (!plan) {
+      return new Prisma.Decimal(0);
+    }
+
+    let commission =
+      plan.commissionType === PackageCommissionType.FIXED
+        ? new Prisma.Decimal(plan.commissionFixedAmount)
+        : grossAmount.mul(plan.commissionPercentage).div(100);
+
+    if (plan.commissionCapAmount !== null) {
+      commission = Prisma.Decimal.min(
+        commission,
+        new Prisma.Decimal(plan.commissionCapAmount),
+      );
+    }
+
+    return Prisma.Decimal.min(commission, grossAmount).toDecimalPlaces(2);
+  }
+
+  private resolveWeeklyPayoutPeriod(
+    query: WeeklyRestaurantPayoutInvoiceQueryDto,
+  ) {
+    const to = query.toDate ? new Date(query.toDate) : new Date();
+    const from = query.fromDate
+      ? new Date(query.fromDate)
+      : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    if (from >= to) {
+      throw new BadRequestException('toDate must be after fromDate');
+    }
+
+    return { from, to };
+  }
+
+  private buildWeeklyPayoutInvoiceNumber(
+    restaurantId: string,
+    from: Date,
+    to: Date,
+  ) {
+    const fromStamp = from.toISOString().slice(0, 10).replace(/-/g, '');
+    const toStamp = to.toISOString().slice(0, 10).replace(/-/g, '');
+    return `PAYOUT-${restaurantId.slice(-6).toUpperCase()}-${fromStamp}-${toStamp}`;
+  }
+
+  private resolveRestaurantPayoutEmail(restaurant: RestaurantPayoutScope) {
+    const settings = this.asJsonObject(restaurant.settings);
+    const supportContact = this.asJsonObject(restaurant.supportContact);
+
+    return (
+      this.readNestedString(settings, ['invoice', 'email']) ??
+      this.readNestedString(settings, ['billing', 'email']) ??
+      this.readNestedString(settings, ['email']) ??
+      this.readNestedString(supportContact, ['email'])
+    );
+  }
+
+  private resolveDefaultCurrency() {
+    return 'PKR';
+  }
+
   private normalizePlanInput(
     dto: CreatePackagePlanDto | UpdatePackagePlanDto,
   ): NormalizedPlanInput {
@@ -677,6 +943,51 @@ export class PackagePlansService {
       `Service Period: ${invoice.servicePeriod.from.toISOString()} - ${invoice.servicePeriod.to.toISOString()}`,
       `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
+      '',
+      'DeliveryWays',
+    ].join('\n');
+  }
+
+  private generateWeeklyPayoutInvoicePdf(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    const lines = [
+      `Payout Invoice ${invoice.invoiceNumber}`,
+      `Invoice Date: ${invoice.issuedAt.toISOString()}`,
+      `Payout Period: ${invoice.period.from.toISOString()} - ${invoice.period.to.toISOString()}`,
+      '',
+      'Restaurant',
+      `Restaurant: ${invoice.restaurant.name}`,
+      `Tenant: ${invoice.tenant.name}`,
+      `Email: ${invoice.restaurant.billingEmail ?? 'N/A'}`,
+      '',
+      `Orders Count: ${invoice.totals.ordersCount}`,
+      `Gross Collected By Super Admin: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
+      `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
+      `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
+      '',
+      invoice.note,
+    ];
+
+    return this.buildSimplePdf(lines);
+  }
+
+  private buildWeeklyPayoutInvoiceEmailBody(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    return [
+      `Hi ${invoice.restaurant.name},`,
+      '',
+      `Please find attached DeliveryWays payout invoice ${invoice.invoiceNumber}.`,
+      '',
+      `Payout Period: ${invoice.period.from.toISOString()} - ${invoice.period.to.toISOString()}`,
+      `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
+      `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
+      `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
       '',
       'DeliveryWays',
     ].join('\n');

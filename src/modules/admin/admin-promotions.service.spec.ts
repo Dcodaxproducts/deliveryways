@@ -357,6 +357,7 @@ describe('AdminPromotionsService', () => {
     const repository = {
       countActiveMenuItems: jest.fn().mockResolvedValue(0),
       countActiveMenuCategories: jest.fn().mockResolvedValue(2),
+      findActiveCategoryVariation: jest.fn().mockResolvedValue({ id: 'var-1' }),
       create: jest.fn().mockResolvedValue(
         makeCoupon({
           kind: CouponCampaignKind.PROMOTION,
@@ -365,8 +366,18 @@ describe('AdminPromotionsService', () => {
           dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
           dealRequiredQuantity: 2,
           scopeCategories: [
-            { menuCategory: { id: 'cat-1', name: 'Pizza' } },
-            { menuCategory: { id: 'cat-2', name: 'Burgers' } },
+            {
+              itemLimit: 1,
+              forcedVariationId: 'var-1',
+              forcedVariation: { id: 'var-1', name: 'Large' },
+              menuCategory: { id: 'cat-1', name: 'Pizza' },
+            },
+            {
+              itemLimit: 1,
+              forcedVariationId: null,
+              forcedVariation: null,
+              menuCategory: { id: 'cat-2', name: 'Burgers' },
+            },
           ],
         }),
       ),
@@ -385,9 +396,11 @@ describe('AdminPromotionsService', () => {
         discountValue: 1499,
         startsAt: '2026-04-22T00:00:00.000Z',
         expiresAt: '2026-05-22T00:00:00.000Z',
-        scopeCategoryIds: ['cat-1', 'cat-2'],
+        scopeCategories: [
+          { menuCategoryId: 'cat-1', itemLimit: 1, variationId: 'var-1' },
+          { menuCategoryId: 'cat-2', itemLimit: 1 },
+        ],
         dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
-        dealRequiredQuantity: 2,
       },
     );
 
@@ -397,8 +410,15 @@ describe('AdminPromotionsService', () => {
         dealRequiredQuantity: 2,
         scopeCategories: {
           create: [
-            { menuCategory: { connect: { id: 'cat-1' } } },
-            { menuCategory: { connect: { id: 'cat-2' } } },
+            {
+              menuCategory: { connect: { id: 'cat-1' } },
+              itemLimit: 1,
+              forcedVariation: { connect: { id: 'var-1' } },
+            },
+            {
+              menuCategory: { connect: { id: 'cat-2' } },
+              itemLimit: 1,
+            },
           ],
         },
       }),

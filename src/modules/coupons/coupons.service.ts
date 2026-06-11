@@ -74,6 +74,18 @@ export interface FixedPriceDealPricing {
   code: string;
   fixedPrice: Prisma.Decimal;
   menuItemIds: string[];
+  selectionMode: CouponDealSelectionMode;
+  requiredQuantity: number | null;
+  categoryScopes: Array<{
+    menuCategoryId: string;
+    itemLimit: number | null;
+    forcedVariationId: string | null;
+  }>;
+}
+
+export interface FixedPriceDealItemOptions {
+  dealId: string;
+  forcedVariationId: string | null;
 }
 
 @Injectable()
@@ -280,11 +292,22 @@ export class CouponsService {
       dealId,
     );
 
-    return (
-      !!deal &&
-      this.isFixedItemsFixedPriceDeal(deal) &&
-      this.resolveFixedDealMenuItemIds(deal).includes(menuItemId)
+    return !!this.resolveFixedPriceDealItemOptions(deal, menuItemId);
+  }
+
+  async getActiveFixedPriceDealItemOptions(
+    restaurantId: string,
+    branchId: string | undefined,
+    dealId: string,
+    menuItemId: string,
+  ): Promise<FixedPriceDealItemOptions | null> {
+    const deal = await this.couponsRepository.findActivePromotionById(
+      restaurantId,
+      branchId,
+      dealId,
     );
+
+    return this.resolveFixedPriceDealItemOptions(deal, menuItemId);
   }
 
   async getActiveFixedPriceDealPricing(
@@ -298,9 +321,13 @@ export class CouponsService {
       dealId,
     );
 
-    if (!deal || !this.isFixedItemsFixedPriceDeal(deal)) {
+    if (!deal || !this.isFixedPriceDeal(deal)) {
       return null;
     }
+
+    const selectionMode =
+      deal.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS;
+    const categoryScopes = this.resolveFixedDealCategoryScopes(deal);
 
     return {
       dealId: deal.id,
@@ -310,6 +337,12 @@ export class CouponsService {
       code: deal.code,
       fixedPrice: deal.discountValue,
       menuItemIds: this.resolveFixedDealMenuItemIds(deal),
+      selectionMode,
+      requiredQuantity:
+        selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS
+          ? deal.dealRequiredQuantity
+          : null,
+      categoryScopes,
     };
   }
 
@@ -379,6 +412,56 @@ export class CouponsService {
     );
   }
 
+  private isFixedPriceDeal(
+    coupon: Coupon & {
+      scopeMenuItem?: { id: string } | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategory?: { id: string } | null;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+  ) {
+    return (
+      coupon.discountType === CouponDiscountType.FIXED_PRICE &&
+      coupon.applyMode === CouponApplyMode.SCOPED_ITEMS &&
+      (this.resolveFixedDealMenuItemIds(coupon).length > 0 ||
+        this.resolveFixedDealCategoryScopes(coupon).length > 0)
+    );
+  }
+
+  private resolveFixedPriceDealItemOptions(
+    coupon:
+      | (Coupon & {
+          scopeMenuItem?: { id: string } | null;
+          scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+          scopeCategory?: { id: string } | null;
+          scopeCategories?: Array<{
+            menuCategory: { id: string };
+            forcedVariationId?: string | null;
+          }>;
+        })
+      | null,
+    menuItemId: string,
+  ): FixedPriceDealItemOptions | null {
+    if (!coupon || !this.isFixedPriceDeal(coupon)) {
+      return null;
+    }
+
+    if (this.resolveFixedDealMenuItemIds(coupon).includes(menuItemId)) {
+      return { dealId: coupon.id, forcedVariationId: null };
+    }
+
+    const categoryScope = this.resolveFixedDealCategoryScopes(coupon).find(
+      (scope) => scope.menuItemIds.includes(menuItemId),
+    );
+
+    return categoryScope
+      ? {
+          dealId: coupon.id,
+          forcedVariationId: categoryScope.forcedVariationId,
+        }
+      : null;
+  }
+
   private resolveFixedDealMenuItemIds(
     coupon: Coupon & {
       scopeMenuItem?: { id: string } | null;
@@ -388,6 +471,42 @@ export class CouponsService {
     return this.resolveScopedIds(
       coupon.scopeMenuItem?.id ?? coupon.scopeMenuItemId,
       coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
+    );
+  }
+
+  private resolveFixedDealCategoryScopes(
+    coupon: Coupon & {
+      scopeCategory?: { id: string } | null;
+      scopeCategories?: Array<{
+        itemLimit?: number | null;
+        forcedVariationId?: string | null;
+        menuCategory: { id: string; items?: Array<{ id: string }> };
+      }>;
+    },
+  ) {
+    return [
+      ...((coupon.scopeCategory?.id ?? coupon.scopeCategoryId)
+        ? [
+            {
+              menuCategoryId:
+                coupon.scopeCategory?.id ?? (coupon.scopeCategoryId as string),
+              itemLimit: null,
+              forcedVariationId: null,
+              menuItemIds: [] as string[],
+            },
+          ]
+        : []),
+      ...(coupon.scopeCategories ?? []).map((entry) => ({
+        menuCategoryId: entry.menuCategory.id,
+        itemLimit: entry.itemLimit ?? null,
+        forcedVariationId: entry.forcedVariationId ?? null,
+        menuItemIds: entry.menuCategory.items?.map((item) => item.id) ?? [],
+      })),
+    ].filter(
+      (entry, index, all) =>
+        all.findIndex(
+          (candidate) => candidate.menuCategoryId === entry.menuCategoryId,
+        ) === index,
     );
   }
 

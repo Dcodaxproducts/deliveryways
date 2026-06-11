@@ -662,10 +662,17 @@ export class CustomerAppService {
     const promotions = promotionContext.promotions
       .filter((promotion) => promotion.discountType !== 'FIXED_PRICE')
       .slice(0, query.limit);
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectPromotionTranslationRefs(promotions),
+    );
 
     return {
       data: await Promise.all(
-        promotions.map((promotion) => this.mapPublicPromotion(promotion)),
+        promotions.map((promotion) =>
+          this.mapPublicPromotion(promotion, undefined, translationContext),
+        ),
       ),
       message: 'Promotions fetched successfully',
     };
@@ -688,11 +695,20 @@ export class CustomerAppService {
       resolvedQuery,
       deals,
     );
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectPromotionTranslationRefs(deals),
+    );
 
     return {
       data: await Promise.all(
         deals.map((promotion) =>
-          this.mapPublicPromotion(promotion, scopedMenuItemsById),
+          this.mapPublicPromotion(
+            promotion,
+            scopedMenuItemsById,
+            translationContext,
+          ),
         ),
       ),
       message: 'Deals fetched successfully',
@@ -1563,6 +1579,28 @@ export class CustomerAppService {
           Parameters<CustomerAppService['collectMenuItemTranslationRefs']>[0]
         >
       ).flatMap((item) => this.collectMenuItemTranslationRefs(item)),
+    ]);
+  }
+
+  private collectPromotionTranslationRefs(
+    promotions: AutoApplyPromotion[],
+  ): EntityTranslationRef[] {
+    return promotions.flatMap((promotion) => [
+      { entityType: 'COUPON', entityId: promotion.id },
+      ...this.mergePromotionScopeEntities(
+        promotion.scopeMenuItem,
+        (promotion.scopeMenuItems ?? []).map((entry) => entry.menuItem),
+      ).map((item) => ({
+        entityType: 'MENU_ITEM' as const,
+        entityId: item.id,
+      })),
+      ...this.mergePromotionScopeEntities(
+        promotion.scopeCategory,
+        (promotion.scopeCategories ?? []).map((entry) => entry.menuCategory),
+      ).map((category) => ({
+        entityType: 'MENU_CATEGORY' as const,
+        entityId: category.id,
+      })),
     ]);
   }
 
@@ -2652,13 +2690,20 @@ export class CustomerAppService {
   private async mapPublicPromotion(
     promotion: AutoApplyPromotion,
     scopedMenuItemsById?: Map<string, PublicDealScopeMenuItem>,
+    translationContext?: CustomerAppTranslationContext,
   ) {
     const imageUrl = await this.resolveMediaUrl(promotion.imageUrl);
+    const translatedPromotion = this.applyEntityTranslation(
+      'COUPON',
+      promotion.id,
+      promotion,
+      translationContext,
+    );
 
     return {
       id: promotion.id,
-      title: promotion.title,
-      description: promotion.description,
+      title: translatedPromotion.title,
+      description: translatedPromotion.description,
       imageUrl,
       thumbnailUrl: imageUrl,
       applyMode: promotion.applyMode,
@@ -2700,15 +2745,24 @@ export class CustomerAppService {
         ).map(
           async (item) =>
             scopedMenuItemsById?.get(item.id) ??
-            (await this.mapPromotionScopeEntity(item)),
+            (await this.mapPromotionScopeEntity(item, translationContext)),
         ),
       ),
       scopeCategories: await Promise.all(
         this.mergePromotionScopeEntities(
           promotion.scopeCategory,
           (promotion.scopeCategories ?? []).map((entry) => entry.menuCategory),
-        ).map((category) => this.mapPromotionScopeEntity(category)),
+        ).map((category) =>
+          this.mapPromotionScopeEntity(category, translationContext),
+        ),
       ),
+      scopeCategoryRules:
+        promotion.scopeCategories?.map((entry) => ({
+          menuCategoryId: entry.menuCategory.id,
+          itemLimit: entry.itemLimit ?? null,
+          variationId: entry.forcedVariationId ?? null,
+          variation: entry.forcedVariation ?? null,
+        })) ?? [],
     };
   }
 
@@ -2774,14 +2828,26 @@ export class CustomerAppService {
     };
   }
 
-  private async mapPromotionScopeEntity(entity: PublicPromotionScopeEntity) {
+  private async mapPromotionScopeEntity(
+    entity: PublicPromotionScopeEntity,
+    translationContext?: CustomerAppTranslationContext,
+  ) {
+    const translatedEntity = this.applyEntityTranslation(
+      entity.basePrice !== undefined ? 'MENU_ITEM' : 'MENU_CATEGORY',
+      entity.id,
+      entity,
+      translationContext,
+    );
+
     return {
-      id: entity.id,
-      name: entity.name,
-      ...(entity.slug !== undefined ? { slug: entity.slug } : {}),
-      imageUrl: await this.resolveMediaUrl(entity.imageUrl),
-      ...(entity.basePrice !== undefined
-        ? { basePrice: Number(entity.basePrice) }
+      id: translatedEntity.id,
+      name: translatedEntity.name,
+      ...(translatedEntity.slug !== undefined
+        ? { slug: translatedEntity.slug }
+        : {}),
+      imageUrl: await this.resolveMediaUrl(translatedEntity.imageUrl),
+      ...(translatedEntity.basePrice !== undefined
+        ? { basePrice: Number(translatedEntity.basePrice) }
         : {}),
     };
   }

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDateString,
   IsArray,
@@ -14,6 +14,7 @@ import {
   MaxLength,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
 import {
@@ -453,6 +454,29 @@ export class AdminListPromotionsQueryDto extends AdminListQueryDto {
 
 export class AdminPromotionStatsQueryDto extends AdminReportsScopedQueryDto {}
 
+export class AdminDealCategoryScopeDto {
+  @ApiProperty()
+  @IsString()
+  menuCategoryId!: string;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    description: 'Required item count from this category for flexible deals.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  itemLimit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional variation forced for all selected deal items in this category.',
+  })
+  @IsOptional()
+  @IsString()
+  variationId?: string;
+}
+
 export class AdminPromotionBaseDto {
   @ApiPropertyOptional({
     description:
@@ -565,6 +589,17 @@ export class AdminPromotionBaseDto {
   scopeCategoryIds?: string[];
 
   @ApiPropertyOptional({
+    type: [AdminDealCategoryScopeDto],
+    description:
+      'Category scope rules for flexible deals, including per-category item limits and forced variations.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AdminDealCategoryScopeDto)
+  scopeCategories?: AdminDealCategoryScopeDto[];
+
+  @ApiPropertyOptional({
     enum: CouponDealSelectionMode,
     description:
       'FIXED_ITEMS requires every scoped item; FLEXIBLE_ITEMS applies to any required quantity from scoped items/categories.',
@@ -622,6 +657,7 @@ export class CreateAdminGiftCardDto extends OmitType(AdminPromotionBaseDto, [
   'scopeCategoryId',
   'scopeMenuItemIds',
   'scopeCategoryIds',
+  'scopeCategories',
   'applyMode',
   'autoApply',
 ] as const) {
@@ -673,6 +709,17 @@ export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
   @IsArray()
   @IsString({ each: true })
   scopeMenuItemIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [AdminDealCategoryScopeDto],
+    description:
+      'Category scope rules for flexible deals, including per-category item limits and forced variations.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AdminDealCategoryScopeDto)
+  scopeCategories?: AdminDealCategoryScopeDto[];
 }
 
 export class UpdateAdminPromotionDto {
@@ -863,6 +910,17 @@ export class UpdateAdminDealDto extends OmitType(UpdateAdminPromotionDto, [
   @IsArray()
   @IsString({ each: true })
   scopeMenuItemIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [AdminDealCategoryScopeDto],
+    description:
+      'Category scope rules for flexible deals, including per-category item limits and forced variations.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AdminDealCategoryScopeDto)
+  scopeCategories?: AdminDealCategoryScopeDto[];
 }
 
 export class CreateAdminHappyHourDto extends AdminPromotionBaseDto {

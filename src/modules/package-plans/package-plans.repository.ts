@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SubscriptionStatus } from '@prisma/client';
+import { PaymentStatus, Prisma, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { ListPackagePlansDto, ListTenantSubscriptionsDto } from './dto';
 
@@ -113,6 +113,78 @@ export class PackagePlansRepository {
     return this.prisma.tenantSubscription.findUnique({
       where: { id },
       include: this.subscriptionInclude,
+    });
+  }
+
+  findActiveRestaurantSubscription(restaurantId: string) {
+    return this.prisma.tenantSubscription.findFirst({
+      where: {
+        restaurantId,
+        status: {
+          in: [SubscriptionStatus.TRIALING, SubscriptionStatus.ACTIVE],
+        },
+      },
+      include: this.subscriptionInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  findRestaurantPayoutScope(restaurantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        slug: true,
+        supportContact: true,
+        settings: true,
+        tenant: { select: { id: true, name: true, slug: true } },
+      },
+    });
+  }
+
+  listPaidRestaurantOrders(restaurantId: string, fromDate: Date, toDate: Date) {
+    return this.prisma.order.findMany({
+      where: {
+        restaurantId,
+        paymentStatus: PaymentStatus.PAID,
+        paidAt: {
+          gte: fromDate,
+          lt: toDate,
+        },
+      },
+      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        branchId: true,
+        orderType: true,
+        paymentMethod: true,
+        subtotal: true,
+        taxAmount: true,
+        deliveryFee: true,
+        serviceChargeAmount: true,
+        tipAmount: true,
+        discountAmount: true,
+        walletAppliedAmount: true,
+        loyaltyDiscountAmount: true,
+        totalAmount: true,
+        paidAt: true,
+        createdAt: true,
+        branch: { select: { id: true, name: true } },
+        transactions: {
+          where: { status: PaymentStatus.PAID },
+          orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
+          select: {
+            id: true,
+            amount: true,
+            currency: true,
+            paymentMethod: true,
+            providerRef: true,
+            processedAt: true,
+          },
+        },
+      },
     });
   }
 

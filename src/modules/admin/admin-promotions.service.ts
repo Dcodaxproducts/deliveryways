@@ -18,6 +18,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import {
   AdminListPromotionsQueryDto,
+  AdminDealCategoryScopeDto,
   AdminPromotionStatsQueryDto,
   AdminPromotionsOverviewQueryDto,
   CreateAdminDealDto,
@@ -34,6 +35,12 @@ import {
   AdminPromotionsRepository,
 } from './admin-promotions.repository';
 import { StorageService } from '../storage/storage.service';
+
+interface NormalizedDealCategoryScope {
+  menuCategoryId: string;
+  itemLimit?: number;
+  variationId?: string;
+}
 
 @Injectable()
 export class AdminPromotionsService {
@@ -125,6 +132,7 @@ export class AdminPromotionsService {
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
     this.assertValidDateRange(dto.startsAt, dto.expiresAt);
     const scopeIds = this.normalizeScopeIds(dto);
+    const scopeCategoryRules = this.normalizeDealCategoryScopes(dto);
     const dealSelectionMode = this.resolveDealSelectionMode(
       dto,
       undefined,
@@ -139,6 +147,10 @@ export class AdminPromotionsService {
       scope.restaurantId,
       scopeIds.menuItemIds,
       scopeIds.categoryIds,
+    );
+    await this.validateDealCategoryRules(
+      scope.restaurantId,
+      scopeCategoryRules,
     );
     this.assertValidPromotionPricing(
       dto.discountType as CouponDiscountType,
@@ -199,6 +211,9 @@ export class AdminPromotionsService {
             scopeCategories: {
               create: scopeIds.categoryIds.map((menuCategoryId) => ({
                 menuCategory: { connect: { id: menuCategoryId } },
+                ...this.toDealCategoryRuleCreateInput(
+                  scopeCategoryRules.get(menuCategoryId),
+                ),
               })),
             },
           }
@@ -386,10 +401,15 @@ export class AdminPromotionsService {
       dto.expiresAt ?? existing.expiresAt.toISOString(),
     );
     const scopeIds = this.normalizeScopeIds(dto, existing);
+    const scopeCategoryRules = this.normalizeDealCategoryScopes(dto, existing);
     await this.validateScopeReferences(
       scope.restaurantId,
       scopeIds.menuItemIds,
       scopeIds.categoryIds,
+    );
+    await this.validateDealCategoryRules(
+      scope.restaurantId,
+      scopeCategoryRules,
     );
     this.assertValidPromotionPricing(
       discountType,
@@ -471,6 +491,9 @@ export class AdminPromotionsService {
                 ? {
                     create: scopeIds.categoryIds.map((menuCategoryId) => ({
                       menuCategory: { connect: { id: menuCategoryId } },
+                      ...this.toDealCategoryRuleCreateInput(
+                        scopeCategoryRules.get(menuCategoryId),
+                      ),
                     })),
                   }
                 : {}),
@@ -1080,14 +1103,41 @@ export class AdminPromotionsService {
 
   private resolveDealRequiredQuantity(
     dealSelectionMode: CouponDealSelectionMode | undefined,
-    dto: { dealRequiredQuantity?: number },
-    existing?: { dealRequiredQuantity?: number | null },
+    dto: {
+      dealRequiredQuantity?: number;
+      scopeCategories?: AdminDealCategoryScopeDto[];
+    },
+    existing?: {
+      dealRequiredQuantity?: number | null;
+      scopeCategories?: Array<{ itemLimit?: number | null }>;
+    },
   ) {
     if (dealSelectionMode !== CouponDealSelectionMode.FLEXIBLE_ITEMS) {
       return null;
     }
 
-    return dto.dealRequiredQuantity ?? existing?.dealRequiredQuantity ?? null;
+    if (dto.dealRequiredQuantity !== undefined) {
+      return dto.dealRequiredQuantity;
+    }
+
+    if (dto.scopeCategories !== undefined) {
+      const requiredQuantity = dto.scopeCategories.reduce(
+        (sum, entry) => sum + (entry.itemLimit ?? 0),
+        0,
+      );
+
+      return requiredQuantity > 0 ? requiredQuantity : null;
+    }
+
+    const existingCategoryLimit = (existing?.scopeCategories ?? []).reduce(
+      (sum, entry) => sum + (entry.itemLimit ?? 0),
+      0,
+    );
+
+    return (
+      existing?.dealRequiredQuantity ??
+      (existingCategoryLimit > 0 ? existingCategoryLimit : null)
+    );
   }
 
   private assertValidPromotionPricing(
@@ -1204,7 +1254,12 @@ export class AdminPromotionsService {
     scopeMenuItem?: { id: string; name: string } | null;
     scopeCategory?: { id: string; name: string } | null;
     scopeMenuItems?: Array<{ menuItem: { id: string; name: string } }>;
-    scopeCategories?: Array<{ menuCategory: { id: string; name: string } }>;
+    scopeCategories?: Array<{
+      itemLimit?: number | null;
+      forcedVariationId?: string | null;
+      forcedVariation?: { id: string; name: string } | null;
+      menuCategory: { id: string; name: string };
+    }>;
     createdAt: Date;
     updatedAt: Date;
   }) {
@@ -1254,6 +1309,13 @@ export class AdminPromotionsService {
         coupon.scopeCategory,
         coupon.scopeCategories?.map((entry) => entry.menuCategory) ?? [],
       ),
+      scopeCategoryRules:
+        coupon.scopeCategories?.map((entry) => ({
+          menuCategoryId: entry.menuCategory.id,
+          itemLimit: entry.itemLimit ?? null,
+          variationId: entry.forcedVariationId ?? null,
+          variation: entry.forcedVariation ?? null,
+        })) ?? [],
       createdAt: coupon.createdAt,
       updatedAt: coupon.updatedAt,
     };
@@ -1284,6 +1346,7 @@ export class AdminPromotionsService {
       scopeCategoryId?: string;
       scopeMenuItemIds?: string[];
       scopeCategoryIds?: string[];
+      scopeCategories?: AdminDealCategoryScopeDto[];
     },
     existing?: {
       scopeMenuItemId?: string | null;
@@ -1293,7 +1356,8 @@ export class AdminPromotionsService {
     },
   ) {
     const hasMenuItemArray = dto.scopeMenuItemIds !== undefined;
-    const hasCategoryArray = dto.scopeCategoryIds !== undefined;
+    const hasCategoryArray =
+      dto.scopeCategoryIds !== undefined || dto.scopeCategories !== undefined;
     const hasLegacyMenuItem = dto.scopeMenuItemId !== undefined;
     const hasLegacyCategory = dto.scopeCategoryId !== undefined;
 
@@ -1315,6 +1379,9 @@ export class AdminPromotionsService {
         ? [
             ...(dto.scopeCategoryId ? [dto.scopeCategoryId] : []),
             ...(dto.scopeCategoryIds ?? []).filter(Boolean),
+            ...(dto.scopeCategories ?? [])
+              .map((entry) => entry.menuCategoryId)
+              .filter(Boolean),
           ]
         : [
             ...(existing?.scopeCategoryId ? [existing.scopeCategoryId] : []),
@@ -1329,17 +1396,111 @@ export class AdminPromotionsService {
     };
   }
 
+  private normalizeDealCategoryScopes(
+    dto: unknown,
+    existing?: {
+      scopeCategories?: Array<{
+        menuCategory: { id: string };
+        itemLimit?: number | null;
+        forcedVariationId?: string | null;
+      }>;
+    },
+  ) {
+    const dtoScopeCategories = this.readDtoScopeCategories(dto);
+    const source =
+      dtoScopeCategories !== undefined
+        ? dtoScopeCategories.map((entry) => ({
+            menuCategoryId: entry.menuCategoryId,
+            itemLimit: entry.itemLimit,
+            variationId: entry.variationId,
+          }))
+        : (existing?.scopeCategories ?? []).map((entry) => ({
+            menuCategoryId: entry.menuCategory.id,
+            itemLimit: entry.itemLimit ?? undefined,
+            variationId: entry.forcedVariationId ?? undefined,
+          }));
+    const scopes = new Map<string, NormalizedDealCategoryScope>();
+
+    for (const entry of source) {
+      if (!entry.menuCategoryId) {
+        continue;
+      }
+
+      scopes.set(entry.menuCategoryId, {
+        menuCategoryId: entry.menuCategoryId,
+        ...(entry.itemLimit !== undefined
+          ? { itemLimit: entry.itemLimit }
+          : {}),
+        ...(entry.variationId ? { variationId: entry.variationId } : {}),
+      });
+    }
+
+    return scopes;
+  }
+
+  private readDtoScopeCategories(dto: unknown) {
+    if (!dto || typeof dto !== 'object' || !('scopeCategories' in dto)) {
+      return undefined;
+    }
+
+    const value = (dto as { scopeCategories?: unknown }).scopeCategories;
+    return Array.isArray(value)
+      ? (value as AdminDealCategoryScopeDto[])
+      : undefined;
+  }
+
+  private async validateDealCategoryRules(
+    restaurantId: string | undefined,
+    scopeCategoryRules: Map<string, NormalizedDealCategoryScope>,
+  ) {
+    if (!restaurantId || !scopeCategoryRules.size) {
+      return;
+    }
+
+    for (const rule of scopeCategoryRules.values()) {
+      if (rule.variationId) {
+        const variation =
+          await this.adminPromotionsRepository.findActiveCategoryVariation(
+            restaurantId,
+            rule.menuCategoryId,
+            rule.variationId,
+          );
+        if (!variation) {
+          throw new BadRequestException(
+            'Deal category variation was not found in category',
+          );
+        }
+      }
+    }
+  }
+
+  private toDealCategoryRuleCreateInput(
+    rule?: NormalizedDealCategoryScope,
+  ): Pick<
+    Prisma.CouponScopeCategoryCreateWithoutCouponInput,
+    'itemLimit' | 'forcedVariation'
+  > {
+    return {
+      ...(rule?.itemLimit !== undefined ? { itemLimit: rule.itemLimit } : {}),
+      ...(rule?.variationId
+        ? { forcedVariation: { connect: { id: rule.variationId } } }
+        : {}),
+    };
+  }
+
   private hasScopeInput(dto: {
     scopeMenuItemId?: string;
     scopeCategoryId?: string;
     scopeMenuItemIds?: string[];
     scopeCategoryIds?: string[];
+    scopeCategories?: AdminDealCategoryScopeDto[];
   }) {
     return (
       dto.scopeMenuItemId !== undefined ||
       dto.scopeCategoryId !== undefined ||
       dto.scopeMenuItemIds !== undefined ||
-      dto.scopeCategoryIds !== undefined
+      dto.scopeCategoryIds !== undefined ||
+      dto.scopeCategories !== undefined
     );
   }
 

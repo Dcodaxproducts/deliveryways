@@ -370,3 +370,34 @@ export class SendTenantSubscriptionInvoiceDto {
   @IsEmail()
   email?: string;
 }
+
+export class WeeklyRestaurantPayoutInvoiceQueryDto {
+  @ApiProperty()
+  @IsString()
+  restaurantId!: string;
+
+  @ApiPropertyOptional({
+    description: 'Inclusive period start. Defaults to the last 7 days.',
+  })
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Exclusive period end. Defaults to now.',
+  })
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
+export class SendWeeklyRestaurantPayoutInvoiceDto extends WeeklyRestaurantPayoutInvoiceQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional override recipient. Defaults to restaurant billing/support email.',
+    example: 'billing@restaurant.test',
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+}

@@ -246,7 +246,20 @@ export class CouponsRepository {
     },
     scopeCategories: {
       select: {
-        menuCategory: { select: { id: true, name: true, imageUrl: true } },
+        itemLimit: true,
+        forcedVariationId: true,
+        forcedVariation: { select: { id: true, name: true } },
+        menuCategory: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            items: {
+              where: { deletedAt: null, isActive: true },
+              select: { id: true },
+            },
+          },
+        },
       },
     },
   } satisfies Prisma.CouponInclude;

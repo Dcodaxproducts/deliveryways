@@ -356,4 +356,81 @@ describe('PackagePlansService', () => {
       ),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it('returns weekly payout invoice with super admin gross and restaurant net payout', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order-1',
+          branchId: 'branch-1',
+          orderType: 'DELIVERY',
+          paymentMethod: 'CARD',
+          subtotal: new Prisma.Decimal(1000),
+          taxAmount: new Prisma.Decimal(0),
+          deliveryFee: new Prisma.Decimal(0),
+          serviceChargeAmount: new Prisma.Decimal(0),
+          tipAmount: new Prisma.Decimal(0),
+          discountAmount: new Prisma.Decimal(0),
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          totalAmount: new Prisma.Decimal(1000),
+          paidAt: new Date('2026-06-09T10:00:00.000Z'),
+          createdAt: new Date('2026-06-09T09:55:00.000Z'),
+          branch: { id: 'branch-1', name: 'Main' },
+          transactions: [
+            {
+              id: 'txn-1',
+              amount: new Prisma.Decimal(1000),
+              currency: 'PKR',
+              paymentMethod: 'CARD',
+              providerRef: 'pi_123',
+              processedAt: new Date('2026-06-09T10:00:00.000Z'),
+            },
+          ],
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-04T00:00:00.000Z',
+      toDate: '2026-06-11T00:00:00.000Z',
+    });
+
+    expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      new Date('2026-06-04T00:00:00.000Z'),
+      new Date('2026-06-11T00:00:00.000Z'),
+    );
+    expect(result.data).toMatchObject({
+      restaurant: {
+        id: 'restaurant-1',
+        billingEmail: 'billing@pizza.test',
+      },
+      subscription: {
+        billingInterval: BillingInterval.MONTHLY,
+        payoutCycle: PackagePayoutCycle.WEEKLY,
+      },
+      totals: {
+        ordersCount: 1,
+        grossAmount: 1000,
+        platformCommissionAmount: 50,
+        restaurantPayoutAmount: 950,
+        currency: 'PKR',
+      },
+    });
+  });
 });

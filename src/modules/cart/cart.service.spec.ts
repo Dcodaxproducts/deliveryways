@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CouponDealSelectionMode, Prisma } from '@prisma/client';
 import {
   OrderTypeEnum,
   PaymentMethodEnum,
@@ -490,6 +490,140 @@ describe('CartService', () => {
         lineTotal: 20,
       }),
     ]);
+  });
+
+  it('groups complete flexible category deal rows as one cart deal', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'pizza-1',
+          variationId: 'large',
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-flex', modifiers: [] },
+        },
+        {
+          id: 'item-2',
+          menuItemId: 'drink-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-flex', modifiers: [] },
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'pizza-1',
+        name: 'Pizza',
+        slug: 'pizza',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 120,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        categoryId: 'cat-pizza',
+        categoryLinks: [],
+        category: { id: 'cat-pizza', name: 'Pizza', imageUrl: null, items: [] },
+        variations: [
+          { id: 'large', name: 'Large', price: new Prisma.Decimal(120) },
+        ],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+      {
+        id: 'drink-1',
+        name: 'Drink',
+        slug: 'drink',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 30,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        categoryId: 'cat-drink',
+        categoryLinks: [],
+        category: { id: 'cat-drink', name: 'Drink', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: { subtotal: 150, totalAmount: 99 },
+    });
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-flex',
+      title: 'Pizza + Drink',
+      description: null,
+      imageUrl: null,
+      code: 'FLEX',
+      fixedPrice: new Prisma.Decimal(99),
+      menuItemIds: [],
+      selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+      requiredQuantity: 2,
+      categoryScopes: [
+        {
+          menuCategoryId: 'cat-pizza',
+          itemLimit: 1,
+          forcedVariationId: 'large',
+        },
+        {
+          menuCategoryId: 'cat-drink',
+          itemLimit: 1,
+          forcedVariationId: null,
+        },
+      ],
+    });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data.items[0]).toMatchObject({
+      id: 'deal:deal-flex',
+      type: 'DEAL',
+      dealId: 'deal-flex',
+      quantity: 1,
+      unitPrice: 99,
+      lineTotal: 99,
+      includedItems: [
+        expect.objectContaining({
+          menuItemId: 'pizza-1',
+          variationId: 'large',
+        }),
+        expect.objectContaining({ menuItemId: 'drink-1' }),
+      ],
+    });
   });
 
   it('updates a fixed combo deal quantity as one cart group', async () => {

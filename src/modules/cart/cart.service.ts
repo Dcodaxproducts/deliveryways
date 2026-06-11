@@ -5,7 +5,12 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { OrderType, PaymentMethod, Prisma } from '@prisma/client';
+import {
+  CouponDealSelectionMode,
+  OrderType,
+  PaymentMethod,
+  Prisma,
+} from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
   OrderTypeEnum,
@@ -140,6 +145,8 @@ interface CartResponseDealLine {
   id: string;
   dealId: string | null;
   menuItemId: string;
+  categoryId: string | null;
+  categoryIds: string[];
   quantity: number;
   unitPrice: number | null;
   unitPriceWithModifiers: number | null;
@@ -1276,6 +1283,13 @@ export class CartService {
           type: 'ITEM' as const,
           menuItemId: cartItem.menuItemId,
           dealId: this.readDealId(cartItem.modifiers) ?? null,
+          categoryId: menuItem?.categoryId ?? null,
+          categoryIds: [
+            ...(menuItem?.categoryId ? [menuItem.categoryId] : []),
+            ...((menuItem?.categoryLinks ?? []).map(
+              (entry) => entry.menuCategoryId,
+            ) ?? []),
+          ],
           variationId: cartItem.variationId,
           quantity: cartItem.quantity,
           note: cartItem.note,
@@ -1433,35 +1447,22 @@ export class CartService {
         continue;
       }
 
-      const requiredItemIds = new Set(pricing.menuItemIds);
-      const dealItemIndexes = pricedItems.flatMap((item, index) =>
-        item.dealId === dealId && requiredItemIds.has(item.menuItemId)
-          ? [index]
-          : [],
+      const dealItemIndexes = this.findDealItemIndexes(
+        pricedItems,
+        dealId,
+        pricing,
       );
-      const presentItemIds = new Set(
-        dealItemIndexes.map((index) => pricedItems[index].menuItemId),
+      const dealQuantity = this.resolveDealGroupQuantity(
+        pricedItems,
+        dealItemIndexes,
+        pricing,
       );
 
-      if (
-        pricing.menuItemIds.some(
-          (menuItemId) => !presentItemIds.has(menuItemId),
-        )
-      ) {
+      if (!dealItemIndexes.length || !dealQuantity) {
         continue;
       }
 
-      const firstQuantity = pricedItems[dealItemIndexes[0]]?.quantity;
-      if (
-        firstQuantity === undefined ||
-        dealItemIndexes.some(
-          (index) => pricedItems[index].quantity !== firstQuantity,
-        )
-      ) {
-        continue;
-      }
-
-      const fixedTotal = pricing.fixedPrice.mul(firstQuantity);
+      const fixedTotal = pricing.fixedPrice.mul(dealQuantity);
       const merchandiseTotals = dealItemIndexes.map((index) => {
         const item = pricedItems[index];
         return new Prisma.Decimal(item.lineTotal ?? 0).minus(item.depositTotal);
@@ -1532,31 +1533,14 @@ export class CartService {
         continue;
       }
 
-      const requiredItemIds = new Set(pricing.menuItemIds);
-      const dealItemIndexes = items.flatMap((item, index) =>
-        item.dealId === dealId && requiredItemIds.has(item.menuItemId)
-          ? [index]
-          : [],
+      const dealItemIndexes = this.findDealItemIndexes(items, dealId, pricing);
+      const dealQuantity = this.resolveDealGroupQuantity(
+        items,
+        dealItemIndexes,
+        pricing,
       );
 
-      if (!dealItemIndexes.length) {
-        continue;
-      }
-
-      const presentItemIds = new Set(
-        dealItemIndexes.map((index) => items[index].menuItemId),
-      );
-      const isComplete = pricing.menuItemIds.every((menuItemId) =>
-        presentItemIds.has(menuItemId),
-      );
-      const firstQuantity = items[dealItemIndexes[0]]?.quantity;
-      const hasSingleQuantity =
-        firstQuantity !== undefined &&
-        dealItemIndexes.every(
-          (index) => items[index].quantity === firstQuantity,
-        );
-
-      if (!isComplete || !hasSingleQuantity || firstQuantity === undefined) {
+      if (!dealItemIndexes.length || !dealQuantity) {
         continue;
       }
 
@@ -1578,11 +1562,11 @@ export class CartService {
         dealId,
         cartItemIds: includedItems.map((item) => item.id),
         menuItemIds: includedItems.map((item) => item.menuItemId),
-        quantity: firstQuantity,
+        quantity: dealQuantity,
         unitPrice: Number(pricing.fixedPrice),
         modifiersTotal: 0,
         unitPriceWithModifiers: Number(pricing.fixedPrice),
-        depositAmount: Number(depositTotal.div(firstQuantity)),
+        depositAmount: Number(depositTotal.div(dealQuantity)),
         depositTotal: Number(depositTotal),
         lineTotal: Number(lineTotal),
         deal: {
@@ -1605,6 +1589,115 @@ export class CartService {
 
       return groupedIndexes.has(index) ? [] : [item];
     });
+  }
+
+  private findDealItemIndexes<T extends CartResponseDealLine>(
+    items: T[],
+    dealId: string,
+    pricing: Awaited<
+      ReturnType<CouponsService['getActiveFixedPriceDealPricing']>
+    >,
+  ) {
+    if (!pricing) {
+      return [];
+    }
+
+    if (pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      return items.flatMap((item, index) =>
+        item.dealId === dealId && this.isFlexibleDealEligibleItem(item, pricing)
+          ? [index]
+          : [],
+      );
+    }
+
+    const requiredItemIds = new Set(pricing.menuItemIds);
+
+    return items.flatMap((item, index) =>
+      item.dealId === dealId && requiredItemIds.has(item.menuItemId)
+        ? [index]
+        : [],
+    );
+  }
+
+  private resolveDealGroupQuantity<T extends CartResponseDealLine>(
+    items: T[],
+    dealItemIndexes: number[],
+    pricing: Awaited<
+      ReturnType<CouponsService['getActiveFixedPriceDealPricing']>
+    >,
+  ) {
+    if (!pricing || !dealItemIndexes.length) {
+      return 0;
+    }
+
+    if (pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      return this.resolveFlexibleDealGroupQuantity(
+        dealItemIndexes.map((index) => items[index]),
+        pricing,
+      );
+    }
+
+    const presentItemIds = new Set(
+      dealItemIndexes.map((index) => items[index].menuItemId),
+    );
+    const isComplete = pricing.menuItemIds.every((menuItemId) =>
+      presentItemIds.has(menuItemId),
+    );
+    const firstQuantity = items[dealItemIndexes[0]]?.quantity;
+    const hasSingleQuantity =
+      firstQuantity !== undefined &&
+      dealItemIndexes.every((index) => items[index].quantity === firstQuantity);
+
+    return isComplete && hasSingleQuantity && firstQuantity ? firstQuantity : 0;
+  }
+
+  private resolveFlexibleDealGroupQuantity<T extends CartResponseDealLine>(
+    items: T[],
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    const categoryScopes = pricing.categoryScopes.filter(
+      (scope) => scope.itemLimit && scope.itemLimit > 0,
+    );
+
+    if (categoryScopes.length) {
+      const quantities = categoryScopes.map((scope) => {
+        const selectedQuantity = items
+          .filter((item) => item.categoryIds.includes(scope.menuCategoryId))
+          .reduce((sum, item) => sum + item.quantity, 0);
+
+        return Math.floor(selectedQuantity / (scope.itemLimit ?? 1));
+      });
+
+      return quantities.length ? Math.min(...quantities) : 0;
+    }
+
+    const requiredQuantity = pricing.requiredQuantity ?? 0;
+    if (requiredQuantity < 1) {
+      return 0;
+    }
+
+    const selectedQuantity = items.reduce(
+      (sum, item) => sum + item.quantity,
+      0,
+    );
+
+    return Math.floor(selectedQuantity / requiredQuantity);
+  }
+
+  private isFlexibleDealEligibleItem<T extends CartResponseDealLine>(
+    item: T,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    return (
+      pricing.menuItemIds.includes(item.menuItemId) ||
+      pricing.categoryScopes.some((scope) =>
+        item.categoryIds.includes(scope.menuCategoryId),
+      )
+    );
   }
 
   private allocateFixedDealTotal(
@@ -2005,15 +2098,16 @@ export class CartService {
     }
 
     const explicitDealId = this.resolveOptionalString(dto.dealId);
-    const inferredDealId = explicitDealId
-      ? (await this.isReadyMadeDealItem(
+    const explicitDealOptions = explicitDealId
+      ? await this.getReadyMadeDealItemOptions(
           restaurantId,
           branchId,
           explicitDealId,
           menuItem.id,
-        ))
-        ? explicitDealId
-        : null
+        )
+      : null;
+    const inferredDealId = explicitDealId
+      ? (explicitDealOptions?.dealId ?? null)
       : await this.findReadyMadeDealIdForItem(
           restaurantId,
           branchId,
@@ -2030,7 +2124,7 @@ export class CartService {
       ? {
           ...dto,
           dealId: inferredDealId,
-          variationId: undefined,
+          variationId: explicitDealOptions?.forcedVariationId ?? undefined,
           modifiers: undefined,
           modifierSelections: undefined,
           sections: undefined,
@@ -2092,20 +2186,33 @@ export class CartService {
     return validatedDto;
   }
 
-  private async isReadyMadeDealItem(
+  private async getReadyMadeDealItemOptions(
     restaurantId: string,
     branchId: string,
     dealId: string,
     menuItemId: string,
   ) {
-    return (
+    const options =
+      (await this.couponsService?.getActiveFixedPriceDealItemOptions?.(
+        restaurantId,
+        branchId,
+        dealId,
+        menuItemId,
+      )) ?? null;
+
+    if (options) {
+      return options;
+    }
+
+    const isFixedDealItem =
       (await this.couponsService?.isActiveFixedPriceDealItem(
         restaurantId,
         branchId,
         dealId,
         menuItemId,
-      )) ?? false
-    );
+      )) ?? false;
+
+    return isFixedDealItem ? { dealId, forcedVariationId: null } : null;
   }
 
   private async findReadyMadeDealIdForItem(
