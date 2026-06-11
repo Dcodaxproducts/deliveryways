@@ -1400,13 +1400,13 @@ describe('CustomerAppService', () => {
     const { service, repository } = makeService();
     repository.findPublicMenuItemBySlug.mockResolvedValue(itemFixture);
 
-    const result = await service.getItemBySlug('zinger-burger', {
+    const result = await service.getItemBySlug(' Zinger-Burger ', {
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
     });
 
     expect(repository.findPublicMenuItemBySlug).toHaveBeenCalledWith(
-      'zinger-burger',
+      'Zinger-Burger',
       {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',

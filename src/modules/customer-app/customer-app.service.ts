@@ -721,8 +721,9 @@ export class CustomerAppService {
     user?: AuthUserContext,
   ) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    const normalizedSlug = slug.trim();
     const item = await this.customerAppRepository.findPublicMenuItemBySlug(
-      slug,
+      normalizedSlug,
       resolvedQuery,
     );
 

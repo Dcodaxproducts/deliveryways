@@ -862,7 +862,7 @@ export class CustomerAppRepository {
 
     return this.prisma.menuItem.findFirst({
       where: {
-        slug,
+        slug: { equals: slug.trim(), mode: 'insensitive' },
         restaurantId: query.restaurantId,
         deletedAt: null,
         isActive: true,
