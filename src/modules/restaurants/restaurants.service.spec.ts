@@ -189,6 +189,7 @@ describe('RestaurantsService notification settings', () => {
         },
         legalProfile: {
           legalBusinessName: 'DeliveryWays Kitchen LLC',
+          ownerName: 'Ali Khan',
           taxNumber: 'VAT-123',
           businessAddress: {
             city: 'Lahore',
@@ -207,6 +208,7 @@ describe('RestaurantsService notification settings', () => {
       } as never,
       'restaurant-1',
       {
+        ownerName: 'Ali Khan',
         legalBusinessName: 'DeliveryWays Kitchen LLC',
         taxNumber: 'VAT-123',
         businessAddress: {
@@ -226,6 +228,7 @@ describe('RestaurantsService notification settings', () => {
           },
           legalProfile: {
             legalBusinessName: 'DeliveryWays Kitchen LLC',
+            ownerName: 'Ali Khan',
             taxNumber: 'VAT-123',
             businessAddress: {
               city: 'Lahore',
@@ -238,6 +241,7 @@ describe('RestaurantsService notification settings', () => {
       undefined,
     );
     expect(result.data.legalProfile).toEqual({
+      ownerName: 'Ali Khan',
       legalBusinessName: 'DeliveryWays Kitchen LLC',
       taxNumber: 'VAT-123',
       businessAddress: {
@@ -255,6 +259,7 @@ describe('RestaurantsService notification settings', () => {
       deletedAt: null,
       settings: {
         billing: {
+          ownerName: 'Billing Owner',
           legalBusinessName: 'Billing Legal Name',
           taxNumber: 'VAT-456',
           businessAddress: {
@@ -278,6 +283,7 @@ describe('RestaurantsService notification settings', () => {
     );
 
     expect(result.data.legalProfile).toEqual({
+      ownerName: 'Billing Owner',
       legalBusinessName: 'Billing Legal Name',
       taxNumber: 'VAT-456',
       businessAddress: {

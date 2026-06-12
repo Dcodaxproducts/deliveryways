@@ -231,6 +231,24 @@ export class BranchSettingsDto {
   deliveryTime?: number;
 
   @ApiPropertyOptional({
+    description: 'Delivery time-slot interval in minutes for customer ordering',
+    example: 15,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  deliveryIntervalMinutes?: number;
+
+  @ApiPropertyOptional({
+    description: 'Pickup time-slot interval in minutes for customer ordering',
+    example: 10,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  pickupIntervalMinutes?: number;
+
+  @ApiPropertyOptional({
     description:
       'Delivery-only availability hours. If omitted, delivery follows the branch opening-hour behavior used by the client.',
     type: BranchOpeningHourItemDto,

@@ -569,6 +569,7 @@ export class CustomerAppRepository {
         coverImage: true,
         tagline: true,
         bio: true,
+        socialMedia: true,
         supportContact: true,
         branding: true,
         settings: true,

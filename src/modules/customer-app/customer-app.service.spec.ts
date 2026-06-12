@@ -1432,6 +1432,9 @@ describe('CustomerAppService', () => {
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       tagline: 'Fresh food fast',
       bio: 'Test bio',
+      socialMedia: {
+        instagram: 'https://instagram.example/deliveryways',
+      },
       supportContact: null,
       branding: {
         primaryColor: '#FF0000',
@@ -1448,6 +1451,8 @@ describe('CustomerAppService', () => {
       coverImage: 'branch-cover.jpg',
       description: 'Downtown branch',
       settings: {
+        deliveryIntervalMinutes: 20,
+        pickupIntervalMinutes: 10,
         tableReservationsEnabled: true,
         openingHours: [
           {
@@ -1478,6 +1483,9 @@ describe('CustomerAppService', () => {
     expect(result.data.restaurant.coverImage).toBe(
       'https://cdn.example.com/restaurant-cover.png',
     );
+    expect(result.data.restaurant.socialMediaLinks).toEqual({
+      instagram: 'https://instagram.example/deliveryways',
+    });
     expect(result.data.config).toEqual({
       currency: null,
       branding: {
@@ -1509,6 +1517,8 @@ describe('CustomerAppService', () => {
             closeTime: '22:00',
           },
         ],
+        deliveryIntervalMinutes: 20,
+        pickupIntervalMinutes: 10,
       },
       tableReservationsEnabled: true,
     });
@@ -1762,6 +1772,7 @@ describe('CustomerAppService', () => {
     );
     expect(result.data.content).toBe('Privacy text');
     expect(result.data.legalProfile).toEqual({
+      ownerName: null,
       legalBusinessName: null,
       taxNumber: null,
       businessAddress: null,

@@ -1421,10 +1421,40 @@ export class CartService {
       tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
       items: displayItems,
+      ...(quote ? this.extractCartBillSummary(quote.data) : {}),
       ...(quote ? { quote: quote.data } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
+  }
+
+  private extractCartBillSummary(quoteData: unknown) {
+    if (!quoteData || typeof quoteData !== 'object') {
+      return {};
+    }
+
+    const quote = quoteData as Record<string, unknown>;
+    const keys = [
+      'subtotal',
+      'taxAmount',
+      'deliveryFee',
+      'serviceChargeAmount',
+      'tipAmount',
+      'discountAmount',
+      'walletAppliedAmount',
+      'loyaltyDiscountAmount',
+      'loyaltyPointsRedeemed',
+      'totalAmount',
+      'payableAmount',
+      'couponCode',
+      'appliedPromotion',
+    ];
+
+    return Object.fromEntries(
+      keys
+        .filter((key) => quote[key] !== undefined)
+        .map((key) => [key, quote[key]]),
+    );
   }
 
   private async applyFixedDealPricingToCartItems<

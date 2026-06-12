@@ -302,7 +302,15 @@ describe('CartService', () => {
       metadata: { defaultAddressId: 'address-1' },
     });
     ordersService.quote.mockResolvedValue({
-      data: { deliveryFee: 250, totalAmount: 800 },
+      data: {
+        subtotal: 900,
+        taxAmount: 0,
+        deliveryFee: 250,
+        discountAmount: 100,
+        totalAmount: 1050,
+        payableAmount: 1050,
+        couponCode: 'SAVE10',
+      },
       message: 'Order quote generated successfully',
     });
 
@@ -356,7 +364,24 @@ describe('CartService', () => {
     expect(
       (result.data as { quote?: { deliveryFee: number; totalAmount: number } })
         .quote,
-    ).toEqual({ deliveryFee: 250, totalAmount: 800 });
+    ).toEqual({
+      subtotal: 900,
+      taxAmount: 0,
+      deliveryFee: 250,
+      discountAmount: 100,
+      totalAmount: 1050,
+      payableAmount: 1050,
+      couponCode: 'SAVE10',
+    });
+    expect(result.data).toMatchObject({
+      subtotal: 900,
+      taxAmount: 0,
+      deliveryFee: 250,
+      discountAmount: 100,
+      totalAmount: 1050,
+      payableAmount: 1050,
+      couponCode: 'SAVE10',
+    });
   });
 
   it('prices complete fixed combo deal rows at the deal fixed price in cart response', async () => {

@@ -2,6 +2,11 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsObject, IsOptional, IsString } from 'class-validator';
 
 export class UpdateRestaurantLegalProfileDto {
+  @ApiPropertyOptional({ example: 'Ali Khan' })
+  @IsOptional()
+  @IsString()
+  ownerName?: string;
+
   @ApiPropertyOptional({ example: 'DeliveryWays Kitchen LLC' })
   @IsOptional()
   @IsString()

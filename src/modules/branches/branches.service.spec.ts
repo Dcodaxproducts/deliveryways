@@ -593,6 +593,8 @@ describe('BranchesService', () => {
         lng: '74.3587',
         settings: {
           deliveryTime: 45,
+          deliveryIntervalMinutes: 15,
+          pickupIntervalMinutes: 10,
           allowedOrderTypes: [],
           allowedPaymentMethods: [],
           deliveryConfig: {
@@ -611,7 +613,11 @@ describe('BranchesService', () => {
       {
         tenantId: string;
         restaurantId: string;
-        settings?: { deliveryTime?: number };
+        settings?: {
+          deliveryTime?: number;
+          deliveryIntervalMinutes?: number;
+          pickupIntervalMinutes?: number;
+        };
       },
       unknown,
     ];
@@ -620,6 +626,8 @@ describe('BranchesService', () => {
       restaurantId: 'restaurant-1',
     });
     expect(createPayload.settings?.deliveryTime).toBe(45);
+    expect(createPayload.settings?.deliveryIntervalMinutes).toBe(15);
+    expect(createPayload.settings?.pickupIntervalMinutes).toBe(10);
     expect(result.message).toBe('Branch created successfully');
   });
 
@@ -1168,7 +1176,11 @@ describe('BranchesService', () => {
       restaurantId: 'restaurant-1',
       isActive: true,
       deletedAt: null,
-      settings: { deliveryTime: 35 },
+      settings: {
+        deliveryTime: 35,
+        deliveryIntervalMinutes: 15,
+        pickupIntervalMinutes: 10,
+      },
     });
 
     const result = await service.getDeliveryTime(
@@ -1184,6 +1196,8 @@ describe('BranchesService', () => {
       data: {
         branchId: 'branch-1',
         deliveryTime: 35,
+        deliveryIntervalMinutes: 15,
+        pickupIntervalMinutes: 10,
       },
       message: 'Branch delivery time fetched successfully',
     });
@@ -1220,7 +1234,11 @@ describe('BranchesService', () => {
         role: UserRoleEnum.BRANCH_ADMIN,
       },
       'branch-1',
-      { deliveryTime: 45 },
+      {
+        deliveryTime: 45,
+        deliveryIntervalMinutes: 20,
+        pickupIntervalMinutes: 10,
+      },
     );
 
     expect(repository.update).toHaveBeenCalledWith(
@@ -1229,6 +1247,8 @@ describe('BranchesService', () => {
         settings: {
           contact: { phone: '123' },
           deliveryTime: 45,
+          deliveryIntervalMinutes: 20,
+          pickupIntervalMinutes: 10,
           openingHours: [
             {
               dayOfWeek: BranchScheduleDayEnum.MONDAY,
@@ -1245,6 +1265,8 @@ describe('BranchesService', () => {
       data: {
         branchId: 'branch-1',
         deliveryTime: 45,
+        deliveryIntervalMinutes: 20,
+        pickupIntervalMinutes: 10,
       },
       message: 'Branch delivery time updated successfully',
     });

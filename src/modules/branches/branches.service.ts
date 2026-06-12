@@ -585,6 +585,14 @@ export class BranchesService {
       data: {
         branchId: branch.id,
         deliveryTime: this.readDeliveryTime(branch.settings),
+        deliveryIntervalMinutes: this.readTimeInterval(
+          branch.settings,
+          'deliveryIntervalMinutes',
+        ),
+        pickupIntervalMinutes: this.readTimeInterval(
+          branch.settings,
+          'pickupIntervalMinutes',
+        ),
       },
       message: 'Branch delivery time fetched successfully',
     };
@@ -610,7 +618,15 @@ export class BranchesService {
       {
         settings: {
           ...settings,
-          deliveryTime: dto.deliveryTime,
+          ...(dto.deliveryTime !== undefined
+            ? { deliveryTime: dto.deliveryTime }
+            : {}),
+          ...(dto.deliveryIntervalMinutes !== undefined
+            ? { deliveryIntervalMinutes: dto.deliveryIntervalMinutes }
+            : {}),
+          ...(dto.pickupIntervalMinutes !== undefined
+            ? { pickupIntervalMinutes: dto.pickupIntervalMinutes }
+            : {}),
         } as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -619,7 +635,18 @@ export class BranchesService {
     return {
       data: {
         branchId: data.id,
-        deliveryTime: dto.deliveryTime,
+        deliveryTime:
+          dto.deliveryTime !== undefined
+            ? dto.deliveryTime
+            : this.readDeliveryTime(settings),
+        deliveryIntervalMinutes:
+          dto.deliveryIntervalMinutes !== undefined
+            ? dto.deliveryIntervalMinutes
+            : this.readTimeInterval(settings, 'deliveryIntervalMinutes'),
+        pickupIntervalMinutes:
+          dto.pickupIntervalMinutes !== undefined
+            ? dto.pickupIntervalMinutes
+            : this.readTimeInterval(settings, 'pickupIntervalMinutes'),
       },
       message: 'Branch delivery time updated successfully',
     };
@@ -1686,6 +1713,18 @@ export class BranchesService {
     const settings = this.readSettings(value);
     return typeof settings.deliveryTime === 'number'
       ? settings.deliveryTime
+      : null;
+  }
+
+  private readTimeInterval(
+    value: unknown,
+    key: 'deliveryIntervalMinutes' | 'pickupIntervalMinutes',
+  ): number | null {
+    const settings = this.readSettings(value);
+    const interval = settings[key];
+
+    return typeof interval === 'number' && Number.isFinite(interval)
+      ? interval
       : null;
   }
 

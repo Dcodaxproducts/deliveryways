@@ -825,6 +825,10 @@ export class CustomerAppService {
           ),
           tagline: translatedRestaurant.tagline,
           bio: translatedRestaurant.bio,
+          socialMediaLinks: this.extractSocialMediaLinks(
+            translatedRestaurant.socialMedia,
+            restaurant.settings,
+          ),
         },
         config: {
           currency: this.readRestaurantCurrency(restaurant.settings),
@@ -849,6 +853,14 @@ export class CustomerAppService {
                 deliveryHours: this.readBranchScheduleHours(
                   translatedBranch.settings,
                   'deliveryHours',
+                ),
+                deliveryIntervalMinutes: this.readOptionalNumberValue(
+                  translatedBranch.settings,
+                  [['deliveryIntervalMinutes'], ['deliveryTimeInterval']],
+                ),
+                pickupIntervalMinutes: this.readOptionalNumberValue(
+                  translatedBranch.settings,
+                  [['pickupIntervalMinutes'], ['pickupTimeInterval']],
                 ),
               },
               tableReservationsEnabled: this.readBooleanValue(
@@ -3375,6 +3387,20 @@ export class CustomerAppService {
     return 0;
   }
 
+  private readOptionalNumberValue(
+    source: unknown,
+    paths: string[][],
+  ): number | null {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
   private readBranchScheduleHours(
     source: unknown,
     key: 'openingHours' | 'deliveryHours',
@@ -3409,6 +3435,13 @@ export class CustomerAppService {
     };
 
     return {
+      ownerName:
+        this.readStringValue(settings, [
+          ['legalProfile', 'ownerName'],
+          ['billing', 'ownerName'],
+          ['invoice', 'ownerName'],
+          ['ownerName'],
+        ]) ?? null,
       legalBusinessName:
         this.readStringValue(settings, [
           ['legalProfile', 'legalBusinessName'],
@@ -3436,6 +3469,24 @@ export class CustomerAppService {
           ['publicContent', 'contractText'],
           ['contractText'],
         ]) ?? null,
+    };
+  }
+
+  private extractSocialMediaLinks(
+    socialMedia: unknown,
+    settings: unknown,
+  ): Record<string, unknown> {
+    const direct = this.asObject(socialMedia);
+    const fromSettings = {
+      ...this.asObject(this.readPath(settings, ['socialMedia'])),
+      ...this.asObject(this.readPath(settings, ['socialLinks'])),
+      ...this.asObject(this.readPath(settings, ['customerApp', 'socialMedia'])),
+      ...this.asObject(this.readPath(settings, ['customerApp', 'socialLinks'])),
+    };
+
+    return {
+      ...fromSettings,
+      ...direct,
     };
   }
 
