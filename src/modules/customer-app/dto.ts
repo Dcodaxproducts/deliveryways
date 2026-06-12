@@ -314,6 +314,24 @@ export class PurchaseGiftCardDto {
   expiresAt?: string;
 }
 
+export class ListPublicGiftCardsQueryDto extends PublicRestaurantQueryDto {}
+
+export class GuestPurchaseGiftCardDto extends PurchaseGiftCardDto {
+  @ApiProperty({ example: 'buyer@example.com' })
+  @IsEmail()
+  buyerEmail!: string;
+
+  @ApiPropertyOptional({ example: 'Ali Khan' })
+  @IsOptional()
+  @IsString()
+  buyerName?: string;
+
+  @ApiPropertyOptional({ example: 'PKR' })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+}
+
 export class CreateTableReservationDto {
   @ApiProperty()
   @IsString()

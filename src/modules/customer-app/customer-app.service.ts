@@ -39,6 +39,8 @@ import {
   TABLE_RESERVATION_STATUS_VALUES,
   TableReservationStatus,
   CreateWalletTopUpDto,
+  GuestPurchaseGiftCardDto,
+  ListPublicGiftCardsQueryDto,
   ListWalletHistoryQueryDto,
   PurchaseGiftCardDto,
   RedeemGiftCardDto,
@@ -891,6 +893,17 @@ export class CustomerAppService {
           ),
         ),
         faqs: faqs.data.items,
+        giftCards: this.isGiftCardsEnabled(restaurant.settings)
+          ? {
+              isEnabled: true,
+              items: await this.mapPublicGiftCards(
+                await this.customerAppRepository.listPublicGiftCards(
+                  restaurant.id,
+                  branch?.id,
+                ),
+              ),
+            }
+          : null,
       },
       message: 'Home screen fetched successfully',
     };
@@ -1121,6 +1134,70 @@ export class CustomerAppService {
     return {
       data,
       message: 'Gift card purchased successfully',
+    };
+  }
+
+  async listPublicGiftCards(
+    query: ListPublicGiftCardsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    const { restaurant, branch } = await this.getPublicContent(
+      resolvedQuery,
+      user,
+    );
+
+    if (!this.isGiftCardsEnabled(restaurant.settings)) {
+      return {
+        data: {
+          isEnabled: false,
+          items: [],
+        },
+        message: 'Gift cards are not enabled',
+      };
+    }
+
+    return {
+      data: {
+        isEnabled: true,
+        items: await this.mapPublicGiftCards(
+          await this.customerAppRepository.listPublicGiftCards(
+            restaurant.id,
+            branch?.id,
+          ),
+        ),
+      },
+      message: 'Gift cards fetched successfully',
+    };
+  }
+
+  async guestPurchaseGiftCard(
+    query: PublicRestaurantQueryDto,
+    dto: GuestPurchaseGiftCardDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    const { restaurant, branch } = await this.getPublicContent(
+      resolvedQuery,
+      user,
+    );
+
+    if (!this.isGiftCardsEnabled(restaurant.settings)) {
+      throw new BadRequestException('Gift cards are not enabled');
+    }
+
+    const data = await this.paymentsService!.createGuestGiftCardPurchaseAttempt(
+      {
+        tenantId: restaurant.tenantId,
+        restaurantId: restaurant.id,
+        branchId: dto.branchId ?? branch?.id,
+      },
+      dto,
+    );
+
+    return {
+      data,
+      message: 'Gift card purchase payment intent created successfully',
     };
   }
 
@@ -3169,6 +3246,43 @@ export class CustomerAppService {
 
   private async resolveMediaUrl(value: string | null | undefined) {
     return this.storageService.resolveViewUrl(value);
+  }
+
+  private async mapPublicGiftCards(
+    giftCards: Array<{
+      id: string;
+      branchId: string | null;
+      title: string;
+      description: string | null;
+      imageUrl: string | null;
+      discountValue: Prisma.Decimal;
+      expiresAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>,
+  ) {
+    return Promise.all(
+      giftCards.map(async (giftCard) => ({
+        id: giftCard.id,
+        branchId: giftCard.branchId,
+        title: giftCard.title,
+        description: giftCard.description,
+        imageUrl: await this.resolveMediaUrl(giftCard.imageUrl),
+        amount: Number(giftCard.discountValue),
+        expiresAt: giftCard.expiresAt,
+        createdAt: giftCard.createdAt,
+        updatedAt: giftCard.updatedAt,
+      })),
+    );
+  }
+
+  private isGiftCardsEnabled(settings: unknown) {
+    return this.readBooleanValue(settings, [
+      ['giftCards', 'isEnabled'],
+      ['customerApp', 'giftCards', 'isEnabled'],
+      ['customerApp', 'giftCardsEnabled'],
+      ['giftCardsEnabled'],
+    ]);
   }
 
   private async resolveCuisineMedia<T extends { imageUrl?: string | null }>(

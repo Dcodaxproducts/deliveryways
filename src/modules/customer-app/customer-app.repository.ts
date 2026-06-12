@@ -623,6 +623,37 @@ export class CustomerAppRepository {
     });
   }
 
+  listPublicGiftCards(restaurantId: string, branchId?: string) {
+    const now = new Date();
+
+    return this.prisma.coupon.findMany({
+      where: {
+        restaurantId,
+        kind: 'GIFT_CARD',
+        deletedAt: null,
+        isActive: true,
+        status: 'ACTIVE',
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+        ],
+        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
+      },
+      select: {
+        id: true,
+        branchId: true,
+        title: true,
+        description: true,
+        imageUrl: true,
+        discountValue: true,
+        expiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+    });
+  }
+
   async getBranchPublicStats(restaurantId: string, branchId: string) {
     const [
       completedOrders,

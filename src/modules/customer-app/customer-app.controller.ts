@@ -32,6 +32,7 @@ import {
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
   ListCustomerGiftCardsQueryDto,
+  ListPublicGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
   ListPublicOrderReviewsQueryDto,
   ListPromotionalItemsQueryDto,
@@ -40,6 +41,7 @@ import {
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   CreateWalletTopUpDto,
+  GuestPurchaseGiftCardDto,
   ListWalletHistoryQueryDto,
   PurchaseGiftCardDto,
   RedeemGiftCardDto,
@@ -415,6 +417,29 @@ export class CustomerAppController {
       dto,
       scope.customerId,
     );
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('gift-cards/available')
+  @ApiOperation({ summary: 'List public gift cards when enabled' })
+  listPublicGiftCards(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListPublicGiftCardsQueryDto,
+  ) {
+    return this.customerAppService.listPublicGiftCards(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('gift-cards/guest-purchase')
+  @ApiOperation({ summary: 'Create guest gift-card purchase payment intent' })
+  guestPurchaseGiftCard(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Body() dto: GuestPurchaseGiftCardDto,
+    @Query() query: PublicRestaurantQueryDto,
+  ) {
+    return this.customerAppService.guestPurchaseGiftCard(query, dto, user);
   }
 
   @ApiBearerAuth()

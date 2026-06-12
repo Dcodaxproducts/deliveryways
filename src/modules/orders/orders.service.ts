@@ -306,8 +306,10 @@ export class OrdersService {
             : undefined,
           orderType: dto.orderType,
           paymentMethod: dto.paymentMethod,
-          orderTime: new Date(dto.orderTime),
-          isScheduled: this.isScheduledOrderTime(dto.orderTime),
+          orderTime: quote.orderTime ? new Date(quote.orderTime) : null,
+          isScheduled: quote.orderTime
+            ? this.isScheduledOrderTime(quote.orderTime)
+            : false,
           status: OrderStatus.PLACED,
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
@@ -405,6 +407,13 @@ export class OrdersService {
         data.id,
         undefined,
         user.uid,
+      );
+    } else {
+      await this.loyaltyWalletService!.awardPointsForPaidOrder(
+        data.id,
+        undefined,
+        user.uid,
+        { allowUnpaid: true },
       );
     }
 
@@ -713,7 +722,7 @@ export class OrdersService {
       throw new BadRequestException('At least one item is required');
     }
 
-    this.assertValidOrderTime(dto.orderTime);
+    const orderTime = this.resolveQuoteOrderTime(dto);
 
     const branch = await this.prisma.branch.findFirst({
       where: { id: dto.branchId, deletedAt: null, isActive: true },
@@ -747,13 +756,13 @@ export class OrdersService {
       );
     }
 
-    this.assertDeliveryOrderWithinHours(settings, dto.orderType, dto.orderTime);
+    this.assertDeliveryOrderWithinHours(settings, dto.orderType, orderTime);
 
     const selectedMenu = dto.restaurantMenuId
       ? await this.resolveSelectedRestaurantMenu(
           branch.restaurantId,
           dto.restaurantMenuId,
-          dto.orderTime,
+          orderTime ?? new Date().toISOString(),
         )
       : null;
 
@@ -1418,6 +1427,12 @@ export class OrdersService {
       serviceChargeType: serviceCharge.type,
       serviceChargeValue: serviceCharge.value,
       serviceChargeAmount: serviceCharge.amount,
+      chargeBreakdown: await this.buildChargeBreakdown(
+        pricedLines,
+        settings.taxation.taxPercentage,
+        taxAmount,
+        serviceCharge,
+      ),
       tipAmount,
       discountAmount: discountAmount.toDecimalPlaces(2),
       walletAppliedAmount: benefits.walletAppliedAmount,
@@ -1427,6 +1442,7 @@ export class OrdersService {
       couponId,
       appliedCouponCode,
       appliedPromotion,
+      orderTime,
     };
   }
 
@@ -1727,8 +1743,10 @@ export class OrdersService {
       restaurantId: quote.branch.restaurantId,
       customerId: quote.customer.customerId,
       orderType: dto.orderType,
-      orderTime: dto.orderTime,
-      isScheduled: this.isScheduledOrderTime(dto.orderTime),
+      orderTime: quote.orderTime,
+      isScheduled: quote.orderTime
+        ? this.isScheduledOrderTime(quote.orderTime)
+        : false,
       subtotal: amountSummary.subtotal,
       taxAmount: amountSummary.taxAmount,
       deliveryFee: amountSummary.deliveryFee,
@@ -1737,6 +1755,7 @@ export class OrdersService {
         ? Number(quote.serviceChargeValue)
         : null,
       serviceChargeAmount: amountSummary.serviceChargeAmount,
+      chargeBreakdown: quote.chargeBreakdown,
       tipAmount: amountSummary.tipAmount,
       discountAmount: amountSummary.discountAmount,
       walletAppliedAmount: amountSummary.walletAppliedAmount,
@@ -1825,6 +1844,17 @@ export class OrdersService {
     }
 
     return new Prisma.Decimal(0);
+  }
+
+  private resolveQuoteOrderTime(dto: QuoteOrderDto) {
+    if (dto.orderTime) {
+      this.assertValidOrderTime(dto.orderTime);
+      return dto.orderTime;
+    }
+
+    return dto.orderType === OrderTypeEnum.DELIVERY
+      ? new Date().toISOString()
+      : null;
   }
 
   private assertValidOrderTime(orderTime: string) {
@@ -4009,6 +4039,151 @@ export class OrdersService {
     };
   }
 
+  private async buildChargeBreakdown(
+    lines: QuoteLine[],
+    fallbackTaxPercentage: number,
+    totalTaxAmount: Prisma.Decimal,
+    serviceCharge: {
+      type: ServiceChargeType | null;
+      value: Prisma.Decimal | null;
+      amount: Prisma.Decimal;
+    },
+  ) {
+    const taxTypes = await this.resolveGlobalTaxTypes(fallbackTaxPercentage);
+    const taxTypeMap = new Map(
+      taxTypes.map((taxType) => [taxType.code, taxType]),
+    );
+    const taxes = new Map<
+      string,
+      {
+        code: string;
+        label: string;
+        percentage: number;
+        amount: Prisma.Decimal;
+      }
+    >();
+
+    for (const line of lines) {
+      const percentage = Number(
+        line.taxPercentage ?? new Prisma.Decimal(fallbackTaxPercentage),
+      );
+      const configuredTaxType = line.taxTypeCode
+        ? taxTypeMap.get(line.taxTypeCode)
+        : undefined;
+      const code = configuredTaxType?.code ?? line.taxTypeCode ?? 'STANDARD';
+      const label = configuredTaxType?.label ?? code;
+      const existing = taxes.get(code);
+      const amount = line.lineTotal
+        .mul(new Prisma.Decimal(percentage))
+        .div(100)
+        .toDecimalPlaces(2);
+
+      taxes.set(code, {
+        code,
+        label,
+        percentage,
+        amount: (existing?.amount ?? new Prisma.Decimal(0)).plus(amount),
+      });
+    }
+
+    return {
+      taxes: Array.from(taxes.values()).map((tax) => ({
+        ...tax,
+        amount: Number(tax.amount.toDecimalPlaces(2)),
+      })),
+      availableTaxTypes: taxTypes,
+      totalTaxAmount: Number(totalTaxAmount.toDecimalPlaces(2)),
+      serviceCharges: serviceCharge.amount.greaterThan(0)
+        ? [
+            {
+              code: 'SERVICE_CHARGE',
+              label: 'Service charge',
+              type: serviceCharge.type,
+              value: serviceCharge.value ? Number(serviceCharge.value) : null,
+              amount: Number(serviceCharge.amount.toDecimalPlaces(2)),
+            },
+          ]
+        : [],
+      totalServiceChargeAmount: Number(serviceCharge.amount.toDecimalPlaces(2)),
+    };
+  }
+
+  private async resolveGlobalTaxTypes(fallbackTaxPercentage: number) {
+    const globalSettingDelegate = (
+      this.prisma as unknown as {
+        globalSetting?: {
+          findUnique: (args: {
+            where: { scopeKey: string };
+            select: { taxTypes: boolean; globalTaxPercentage: boolean };
+          }) => Promise<{
+            taxTypes: Prisma.JsonValue | null;
+            globalTaxPercentage: Prisma.Decimal;
+          } | null>;
+        };
+      }
+    ).globalSetting;
+    const settings = globalSettingDelegate
+      ? await globalSettingDelegate.findUnique({
+          where: { scopeKey: 'GLOBAL' },
+          select: { taxTypes: true, globalTaxPercentage: true },
+        })
+      : null;
+    const fallback = [
+      {
+        code: 'STANDARD',
+        label: 'Standard tax',
+        percentage: Number(
+          (settings?.globalTaxPercentage ?? fallbackTaxPercentage).toString(),
+        ),
+        isActive: true,
+        isDefault: true,
+      },
+    ];
+
+    if (!Array.isArray(settings?.taxTypes)) {
+      return fallback;
+    }
+
+    const taxTypes = settings.taxTypes.flatMap((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return [];
+      }
+      const value = row as Record<string, unknown>;
+      const code =
+        typeof value.code === 'string' ? value.code.trim().toUpperCase() : '';
+      if (!code) {
+        return [];
+      }
+
+      return [
+        {
+          code,
+          label:
+            typeof value.label === 'string' && value.label.trim()
+              ? value.label.trim()
+              : code,
+          percentage: this.toFiniteNumber(value.percentage, 0),
+          isActive: typeof value.isActive === 'boolean' ? value.isActive : true,
+          isDefault:
+            typeof value.isDefault === 'boolean' ? value.isDefault : false,
+        },
+      ];
+    });
+
+    return taxTypes.length ? taxTypes : fallback;
+  }
+
+  private toFiniteNumber(value: unknown, fallback: number) {
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+          ? Number(value)
+          : NaN;
+
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
   private resolveTipAmount(tipAmount?: number) {
     return new Prisma.Decimal(tipAmount ?? 0).toDecimalPlaces(2);
   }
@@ -4053,13 +4228,19 @@ export class OrdersService {
   private assertDeliveryOrderWithinHours(
     settings: BranchSettings,
     orderType: OrderTypeEnum,
-    orderTime: string,
+    orderTime: string | null,
   ) {
     if (
       orderType !== OrderTypeEnum.DELIVERY ||
       !settings.deliveryHours.length
     ) {
       return;
+    }
+
+    if (!orderTime) {
+      throw new BadRequestException(
+        'Delivery is not available at requested order time',
+      );
     }
 
     const local = this.getScheduleLocalParts(orderTime);

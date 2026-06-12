@@ -1439,6 +1439,7 @@ export class CartService {
       'taxAmount',
       'deliveryFee',
       'serviceChargeAmount',
+      'chargeBreakdown',
       'tipAmount',
       'discountAmount',
       'walletAppliedAmount',
@@ -1958,18 +1959,24 @@ export class CartService {
   }
 
   private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {
+    const orderType = this.toOrderTypeEnum(cart.orderType);
+
     return {
       branchId: cart.branchId,
       customerId: cart.customerId,
       restaurantMenuId: cart.restaurantMenuId ?? undefined,
-      orderType: this.toOrderTypeEnum(cart.orderType),
+      orderType,
       deliveryAddressId:
         cart.orderType === OrderType.DELIVERY
           ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
           : undefined,
       couponCode: cart.couponCode ?? undefined,
       tipAmount: Number(cart.tipAmount),
-      orderTime: cart.orderTime?.toISOString() ?? new Date().toISOString(),
+      orderTime:
+        cart.orderTime?.toISOString() ??
+        (orderType === OrderTypeEnum.DELIVERY
+          ? new Date().toISOString()
+          : undefined),
       items: cart.items.map((item) => {
         const dealId = this.readDealId(item.modifiers);
 
@@ -1996,7 +2003,9 @@ export class CartService {
         dto.orderTime ??
         dto.scheduledDeliveryAt ??
         cart.orderTime?.toISOString() ??
-        new Date().toISOString(),
+        (cart.orderType === OrderType.DELIVERY
+          ? new Date().toISOString()
+          : undefined),
       paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
       walletAmount: dto.walletAmount,
       loyaltyPoints: dto.loyaltyPoints,

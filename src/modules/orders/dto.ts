@@ -263,12 +263,14 @@ export class QuoteOrderDto {
   @Min(0)
   tipAmount?: number;
 
-  @ApiProperty({
-    description: 'Requested order time in ISO 8601 format',
+  @ApiPropertyOptional({
+    description:
+      'Requested order time in ISO 8601 format. Optional for pickup/takeaway checkout.',
     example: '2026-03-24T19:30:00.000Z',
   })
+  @IsOptional()
   @IsDateString()
-  orderTime!: string;
+  orderTime?: string;
 }
 
 export class CreateOrderDto extends QuoteOrderDto {

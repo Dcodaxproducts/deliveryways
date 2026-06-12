@@ -11,6 +11,7 @@ import {
   PaymentTransactionType,
   Prisma,
 } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -26,7 +27,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StripePaymentsService } from './stripe-payments.service';
-import { CreateWalletTopUpDto } from '../customer-app/dto';
+import {
+  CreateWalletTopUpDto,
+  GuestPurchaseGiftCardDto,
+} from '../customer-app/dto';
 
 @Injectable()
 export class PaymentsService {
@@ -220,6 +224,119 @@ export class PaymentsService {
         paymentIntentId: intent.id,
       },
     };
+  }
+
+  async createGuestGiftCardPurchaseAttempt(
+    context: {
+      tenantId: string;
+      restaurantId: string;
+      branchId?: string;
+    },
+    dto: GuestPurchaseGiftCardDto,
+  ) {
+    const branchId = await this.resolveGuestGiftCardBranchId(context);
+    const currency = await this.resolvePreferredCurrency(
+      context.restaurantId,
+      dto.currency,
+    );
+    const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
+
+    if (amount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('Gift card amount must be greater than 0');
+    }
+
+    const data = await this.paymentsRepository.createUnchecked({
+      tenantId: context.tenantId,
+      restaurantId: context.restaurantId,
+      branchId,
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PENDING,
+      amount,
+      currency,
+      note: dto.message,
+      providerData: {
+        target: 'GUEST_GIFT_CARD_PURCHASE',
+        buyerEmail: dto.buyerEmail,
+        buyerName: dto.buyerName ?? null,
+        title: dto.title ?? null,
+        message: dto.message ?? null,
+        expiresAt: dto.expiresAt ?? null,
+      } as Prisma.InputJsonValue,
+    });
+
+    const intent = await this.stripePaymentsService.createPaymentIntent({
+      amount: Number(amount),
+      currency,
+      description: `DeliveryWays guest gift card ${data.id}`,
+      metadata: {
+        paymentTransactionId: data.id,
+        orderId: null,
+        customerId: dto.buyerEmail,
+        restaurantId: context.restaurantId,
+        giftCardPurchase: 'true',
+        buyerEmail: dto.buyerEmail,
+      },
+    });
+
+    const updated = await this.paymentsRepository.updateStatus(data.id, {
+      status: PaymentStatus.PENDING,
+      providerRef: intent.id,
+      providerData: {
+        target: 'GUEST_GIFT_CARD_PURCHASE',
+        buyerEmail: dto.buyerEmail,
+        buyerName: dto.buyerName ?? null,
+        title: dto.title ?? null,
+        message: dto.message ?? null,
+        expiresAt: dto.expiresAt ?? null,
+        provider: 'stripe',
+        clientSecret: intent.client_secret,
+        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        paymentIntentId: intent.id,
+      } as Prisma.InputJsonValue,
+      note: dto.message,
+    });
+
+    return {
+      transaction: updated,
+      paymentSession: {
+        provider: 'stripe',
+        clientSecret: intent.client_secret,
+        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        paymentIntentId: intent.id,
+      },
+    };
+  }
+
+  private async resolveGuestGiftCardBranchId(context: {
+    tenantId: string;
+    restaurantId: string;
+    branchId?: string;
+  }) {
+    if (context.branchId) {
+      const branch = await this.prisma.branch.findFirst({
+        where: {
+          id: context.branchId,
+          tenantId: context.tenantId,
+          restaurantId: context.restaurantId,
+          deletedAt: null,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (!branch) {
+        throw new BadRequestException('Branch not found or inactive');
+      }
+
+      return branch.id;
+    }
+
+    return this.resolveWalletTopUpBranchId({
+      customerId: '',
+      tenantId: context.tenantId,
+      restaurantId: context.restaurantId,
+    });
   }
 
   private async resolveWalletTopUpBranchId(context: {
@@ -840,6 +957,19 @@ export class PaymentsService {
     }
 
     if (!payment.orderId) {
+      if (
+        this.readPaymentTarget(payment.providerData) ===
+        'GUEST_GIFT_CARD_PURCHASE'
+      ) {
+        await this.fulfillGuestGiftCardPurchase(
+          payment,
+          providerRef,
+          paymentIntent,
+        );
+        await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+        return;
+      }
+
       const topUpContext = this.readWalletTopUpContext(payment);
 
       await this.prisma.$transaction(async (tx) => {
@@ -1009,6 +1139,129 @@ export class PaymentsService {
     }
 
     return id;
+  }
+
+  private readPaymentTarget(providerData: Prisma.JsonValue | null) {
+    if (!providerData || typeof providerData !== 'object') {
+      return null;
+    }
+
+    if (Array.isArray(providerData)) {
+      return null;
+    }
+
+    const target = (providerData as Record<string, unknown>).target;
+    return typeof target === 'string' ? target : null;
+  }
+
+  private async fulfillGuestGiftCardPurchase(
+    payment: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      amount: Prisma.Decimal;
+      currency: string;
+      providerData: Prisma.JsonValue | null;
+    },
+    providerRef: string,
+    paymentIntent: Record<string, unknown>,
+  ) {
+    const providerData =
+      payment.providerData &&
+      typeof payment.providerData === 'object' &&
+      !Array.isArray(payment.providerData)
+        ? (payment.providerData as Record<string, unknown>)
+        : {};
+    const code = await this.generateUniqueGiftCardCode(payment.restaurantId);
+    const now = new Date();
+    const requestedExpiry = providerData.expiresAt;
+    const expiresAt =
+      typeof requestedExpiry === 'string' && requestedExpiry.trim()
+        ? new Date(requestedExpiry)
+        : this.addDays(now, 365);
+
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
+      throw new BadRequestException('Gift card expiry must be in the future');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const giftCard = await tx.coupon.create({
+        data: {
+          tenantId: payment.tenantId,
+          restaurantId: payment.restaurantId,
+          branchId: payment.branchId,
+          code,
+          title:
+            typeof providerData.title === 'string' && providerData.title.trim()
+              ? providerData.title.trim()
+              : 'Gift Card',
+          description:
+            typeof providerData.message === 'string' &&
+            providerData.message.trim()
+              ? providerData.message.trim()
+              : null,
+          kind: 'GIFT_CARD',
+          status: 'ACTIVE',
+          applyMode: 'ORDER_TOTAL',
+          autoApply: false,
+          discountType: 'FLAT',
+          discountValue: payment.amount,
+          maxUses: 1,
+          maxUsesPerCustomer: 1,
+          startsAt: now,
+          expiresAt,
+          isActive: true,
+        },
+      });
+
+      await this.paymentsRepository.updateStatus(
+        payment.id,
+        {
+          status: PaymentStatus.PAID,
+          providerRef,
+          providerData: {
+            ...providerData,
+            provider: 'stripe',
+            paymentIntentId: providerRef,
+            giftCardId: giftCard.id,
+            giftCardCode: code,
+            qrPayload: `DWGC:${code}`,
+          } as Prisma.InputJsonValue,
+          processedAt: now,
+        },
+        tx,
+      );
+    });
+
+    void paymentIntent;
+  }
+
+  private async generateUniqueGiftCardCode(restaurantId: string) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = `GIFT-${randomBytes(5).toString('hex').toUpperCase()}`;
+      const existing = await this.prisma.coupon.findUnique({
+        where: {
+          restaurantId_code: {
+            restaurantId,
+            code,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return code;
+      }
+    }
+
+    throw new BadRequestException('Could not generate gift card code');
+  }
+
+  private addDays(date: Date, days: number) {
+    const next = new Date(date);
+    next.setUTCDate(next.getUTCDate() + days);
+    return next;
   }
 
   private readWalletTopUpContext(payment: {

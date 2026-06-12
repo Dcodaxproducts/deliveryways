@@ -1001,6 +1001,7 @@ export class LoyaltyWalletService {
     orderId: string,
     paymentTransactionId?: string,
     actorId?: string,
+    options: { allowUnpaid?: boolean } = {},
   ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await this.repository.findOrderWithBenefits(orderId, tx);
@@ -1008,7 +1009,7 @@ export class LoyaltyWalletService {
         throw new NotFoundException('Order not found');
       }
 
-      if (order.paymentStatus !== PaymentStatus.PAID) {
+      if (order.paymentStatus !== PaymentStatus.PAID && !options.allowUnpaid) {
         return null;
       }
 
