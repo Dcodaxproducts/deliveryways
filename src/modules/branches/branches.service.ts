@@ -121,7 +121,7 @@ export class BranchesService {
         name: dto.name,
         isMain: dto.isMain,
         street: dto.street,
-        area: dto.area,
+        area: this.resolveShopNumber(dto),
         postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,
@@ -461,9 +461,10 @@ export class BranchesService {
         address: address
           ? {
               street: address.street,
-              area: address.area,
+              shopNumber: address.area,
               postalCode: address.postalCode,
               city: address.city,
+              area: address.area,
               state: address.state,
               country: address.country,
               lat: address.lat,
@@ -793,7 +794,7 @@ export class BranchesService {
               tenantId: branch.tenantId,
               branchId: id,
               street: dto.street,
-              area: dto.area,
+              area: this.resolveShopNumber(dto),
               postalCode: dto.postalCode,
               city: dto.city,
               state: dto.state,
@@ -1162,6 +1163,7 @@ export class BranchesService {
   private hasBranchAddressPayload(dto: UpdateBranchDto) {
     return [
       dto.street,
+      dto.shopNumber,
       dto.area,
       dto.postalCode,
       dto.city,
@@ -1172,12 +1174,19 @@ export class BranchesService {
     ].some((value) => value !== undefined);
   }
 
+  private resolveShopNumber(dto: {
+    shopNumber?: string;
+    area?: string;
+  }): string | undefined {
+    return dto.shopNumber ?? dto.area;
+  }
+
   private toBranchAddressUpdateInput(
     dto: UpdateBranchDto,
   ): Prisma.AddressUpdateInput {
     return {
       street: dto.street,
-      area: dto.area,
+      area: this.resolveShopNumber(dto),
       postalCode: dto.postalCode,
       city: dto.city,
       state: dto.state,
@@ -1511,9 +1520,10 @@ export class BranchesService {
         address: address
           ? {
               street: address.street,
-              area: address.area,
+              shopNumber: address.area,
               postalCode: address.postalCode,
               city: address.city,
+              area: address.area,
               state: address.state,
               country: address.country,
               lat: address.lat,

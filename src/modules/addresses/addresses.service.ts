@@ -34,7 +34,7 @@ export class AddressesService {
         referenceId: user.uid,
         refType: 'USER',
         street: dto.street,
-        area: dto.area,
+        area: this.resolveHouseNumber(dto),
         postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,
@@ -52,7 +52,7 @@ export class AddressesService {
 
     return {
       data: {
-        ...data,
+        ...this.toCustomerAddressResponse(data),
         isDefault: dto.isDefault || !currentDefaultAddressId,
       },
       message: 'Address created successfully',
@@ -71,7 +71,7 @@ export class AddressesService {
 
     return {
       data: items.map((item) => ({
-        ...item,
+        ...this.toCustomerAddressResponse(item),
         isDefault: item.id === defaultAddressId,
       })),
       message: 'Addresses fetched successfully',
@@ -91,7 +91,7 @@ export class AddressesService {
       existingAddress.id,
       {
         street: dto.street,
-        area: dto.area,
+        area: this.resolveHouseNumber(dto),
         postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,
@@ -108,7 +108,7 @@ export class AddressesService {
 
     return {
       data: {
-        ...data,
+        ...this.toCustomerAddressResponse(data),
         isDefault:
           dto.isDefault ??
           (await this.getDefaultAddressId(user.uid)) === data.id,
@@ -257,5 +257,21 @@ export class AddressesService {
     }
 
     return user.tid;
+  }
+
+  private resolveHouseNumber(dto: {
+    houseNumber?: string;
+    area?: string;
+  }): string | undefined {
+    return dto.houseNumber ?? dto.area;
+  }
+
+  private toCustomerAddressResponse<T extends { area?: string | null }>(
+    address: T,
+  ) {
+    return {
+      ...address,
+      houseNumber: address.area ?? null,
+    };
   }
 }

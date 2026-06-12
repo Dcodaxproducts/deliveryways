@@ -47,13 +47,14 @@ export class BranchesController {
       example: {
         name: 'Main Branch',
         street: 'Street 12',
+        shopNumber: 'Shop 4',
+        postalCode: '54000',
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',
         lat: '31.5204',
         lng: '74.3587',
         isMain: false,
-        area: 'DHA Phase 5',
         branchAdmin: {
           email: 'branch.admin@example.com',
           password: 'Admin@12345',

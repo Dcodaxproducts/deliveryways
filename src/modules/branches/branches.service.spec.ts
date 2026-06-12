@@ -87,7 +87,8 @@ describe('BranchesService', () => {
       {
         name: 'Updated Branch',
         street: 'Street 99',
-        area: 'Phase 8',
+        shopNumber: 'Shop 8',
+        postalCode: '54000',
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',
@@ -107,7 +108,8 @@ describe('BranchesService', () => {
       'branch-1',
       expect.objectContaining({
         street: 'Street 99',
-        area: 'Phase 8',
+        area: 'Shop 8',
+        postalCode: '54000',
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',

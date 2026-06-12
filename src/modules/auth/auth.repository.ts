@@ -40,7 +40,9 @@ export class AuthRepository {
     restaurantSlug: string;
     branchName: string;
     street: string;
+    shopNumber?: string;
     area?: string;
+    postalCode?: string;
     city: string;
     state: string;
     country: string;
@@ -90,7 +92,8 @@ export class AuthRepository {
           referenceId: branch.id,
           refType: AddressRefType.BRANCH,
           street: payload.street,
-          area: payload.area,
+          area: payload.shopNumber ?? payload.area,
+          postalCode: payload.postalCode,
           city: payload.city,
           state: payload.state,
           country: payload.country,

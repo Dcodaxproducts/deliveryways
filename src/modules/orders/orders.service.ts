@@ -3031,7 +3031,7 @@ export class OrdersService {
         referenceId: customerId,
         refType: AddressRefType.USER,
         street: dto.street,
-        area: dto.area,
+        area: dto.houseNumber ?? dto.area,
         postalCode: dto.postalCode,
         city: dto.city,
         state: dto.state,

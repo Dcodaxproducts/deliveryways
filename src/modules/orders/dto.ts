@@ -144,10 +144,10 @@ export class GuestOrderDeliveryAddressDto {
   @IsNotEmpty()
   street!: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Customer house number' })
   @IsOptional()
   @IsString()
-  area?: string;
+  houseNumber?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -158,6 +158,13 @@ export class GuestOrderDeliveryAddressDto {
   @IsString()
   @IsNotEmpty()
   city!: string;
+
+  @ApiPropertyOptional({
+    description: 'Legacy second address line. Prefer houseNumber.',
+  })
+  @IsOptional()
+  @IsString()
+  area?: string;
 
   @ApiProperty()
   @IsString()

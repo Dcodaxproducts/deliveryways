@@ -26,10 +26,13 @@ describe('AddressesService', () => {
     return { service, addressesRepository, profilesRepository };
   };
 
-  it('sets first created address as default when none exists', async () => {
+  it('sets first created address as default and stores house number', async () => {
     const { service, addressesRepository, profilesRepository } = makeService();
     profilesRepository.findByUserId.mockResolvedValue(null);
-    addressesRepository.create.mockResolvedValue({ id: 'address-1' });
+    addressesRepository.create.mockResolvedValue({
+      id: 'address-1',
+      area: 'House 42',
+    });
 
     const result = await service.create(
       {
@@ -39,6 +42,8 @@ describe('AddressesService', () => {
       } as never,
       {
         street: 'Street 1',
+        houseNumber: 'House 42',
+        postalCode: '54000',
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',
@@ -47,9 +52,19 @@ describe('AddressesService', () => {
       },
     );
 
+    expect(addressesRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        street: 'Street 1',
+        area: 'House 42',
+        postalCode: '54000',
+        city: 'Lahore',
+      }),
+      undefined,
+    );
     expect(profilesRepository.upsertMetadata).toHaveBeenCalledWith('user-1', {
       defaultAddressId: 'address-1',
     });
+    expect(result.data.houseNumber).toBe('House 42');
     expect(result.data.isDefault).toBe(true);
   });
 
@@ -78,8 +93,8 @@ describe('AddressesService', () => {
     );
 
     expect(result.data).toEqual([
-      { id: 'address-1', isDefault: false },
-      { id: 'address-2', isDefault: true },
+      { id: 'address-1', houseNumber: null, isDefault: false },
+      { id: 'address-2', houseNumber: null, isDefault: true },
     ]);
   });
 
@@ -122,7 +137,11 @@ describe('AddressesService', () => {
       'customer-1',
       expect.objectContaining({ customerId: 'customer-1' }),
     );
-    expect(result.data[1]).toEqual({ id: 'address-2', isDefault: true });
+    expect(result.data[1]).toEqual({
+      id: 'address-2',
+      houseNumber: null,
+      isDefault: true,
+    });
   });
 
   it('enforces optional branch scope for business admin customer address fetch', async () => {

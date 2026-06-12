@@ -371,10 +371,10 @@ export class CreateBranchDto {
   @IsNotEmpty()
   street!: string;
 
-  @ApiPropertyOptional({ description: 'Area or sector' })
+  @ApiPropertyOptional({ description: 'Branch shop number' })
   @IsOptional()
   @IsString()
-  area?: string;
+  shopNumber?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -385,6 +385,13 @@ export class CreateBranchDto {
   @IsString()
   @IsNotEmpty()
   city!: string;
+
+  @ApiPropertyOptional({
+    description: 'Legacy second address line. Prefer shopNumber.',
+  })
+  @IsOptional()
+  @IsString()
+  area?: string;
 
   @ApiProperty()
   @IsString()
