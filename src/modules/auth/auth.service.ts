@@ -182,6 +182,7 @@ export class AuthService {
         allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
         allowedPaymentMethods: [
           PaymentMethodEnum.COD,
+          PaymentMethodEnum.CARD_ON_DELIVERY,
           PaymentMethodEnum.PAYPAL,
         ],
         deliveryConfig: {

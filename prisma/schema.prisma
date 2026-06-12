@@ -128,6 +128,7 @@ enum SubscriptionStatus {
 
 enum PaymentMethod {
   COD
+  CARD_ON_DELIVERY
   STRIPE
   PAYPAL
   EASYPAISA

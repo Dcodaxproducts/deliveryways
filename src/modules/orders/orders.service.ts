@@ -1279,8 +1279,6 @@ export class OrdersService {
       ) {
         deliveryFee = new Prisma.Decimal(0);
       }
-    } else {
-      this.assertMinimumOrderAmount(subtotal, branchMinOrderAmount, 'branch');
     }
 
     const taxAmount = subtotal
@@ -3842,7 +3840,7 @@ export class OrdersService {
   private readBranchSettings(input: unknown): BranchSettings {
     const fallback: BranchSettings = {
       allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
-      allowedPaymentMethods: ['COD', 'PAYPAL', 'WALLET'],
+      allowedPaymentMethods: ['COD', 'CARD_ON_DELIVERY', 'PAYPAL', 'WALLET'],
       deliveryConfig: {
         mode: 'RADIUS',
         radiusKm: 5,

@@ -305,7 +305,7 @@ describe('OrdersService - delivery pricing modes', () => {
             tenantId: 'tenant-1',
             restaurantId: 'restaurant-1',
             settings: {
-              allowedOrderTypes: ['DELIVERY'],
+              allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
               allowedPaymentMethods: ['COD'],
               deliveryConfig: {
                 mode: 'ZONE',
@@ -519,6 +519,23 @@ describe('OrdersService - delivery pricing modes', () => {
     await expect(service.quote(customerUser, zoneQuoteInput)).rejects.toThrow(
       'Subtotal is below zone minimum order amount',
     );
+  });
+
+  it('does not apply minimum order amount to pickup orders', async () => {
+    const service = createZonePricingService({
+      basePrice: 600,
+      branchMinOrderAmount: 1000,
+      zone: { deliveryFee: 250, minOrderAmount: 1200 },
+    });
+
+    const result = await service.quote(customerUser, {
+      ...zoneQuoteInput,
+      orderType: OrderTypeEnum.TAKEAWAY,
+      deliveryAddressId: undefined,
+    });
+
+    expect(result.data.subtotal).toBe(600);
+    expect(result.data.deliveryFee).toBe(0);
   });
 
   it('uses zone-band delivery fee when address falls inside a configured distance band', async () => {
@@ -3221,10 +3238,15 @@ describe('OrdersService - response mapping', () => {
     expect(result.isGroupOrder).toBe(false);
     expect(result.groupOrderSessionId).toBeNull();
     expect(result.groupOrderInviteCode).toBeNull();
-    expect(result.availablePaymentMethods).toEqual(['COD', 'PAYPAL', 'WALLET']);
+    expect(result.availablePaymentMethods).toEqual([
+      'COD',
+      'CARD_ON_DELIVERY',
+      'PAYPAL',
+      'WALLET',
+    ]);
     expect(result.paymentOptions).toEqual({
       selected: 'COD',
-      available: ['COD', 'PAYPAL', 'WALLET'],
+      available: ['COD', 'CARD_ON_DELIVERY', 'PAYPAL', 'WALLET'],
     });
   });
 });

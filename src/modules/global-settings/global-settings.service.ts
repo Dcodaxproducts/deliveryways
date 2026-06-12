@@ -289,6 +289,7 @@ export class GlobalSettingsService {
       label: this.paymentMethodLabel(code),
       isActive:
         code === PaymentMethod.COD ||
+        code === PaymentMethod.CARD_ON_DELIVERY ||
         code === PaymentMethod.PAYPAL ||
         code === PaymentMethod.WALLET,
     }));
@@ -383,6 +384,8 @@ export class GlobalSettingsService {
     switch (code) {
       case PaymentMethod.COD:
         return 'Cash on delivery';
+      case PaymentMethod.CARD_ON_DELIVERY:
+        return 'Card on delivery';
       case PaymentMethod.STRIPE:
         return 'Stripe';
       case PaymentMethod.PAYPAL:

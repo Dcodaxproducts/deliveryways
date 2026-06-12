@@ -1,5 +1,6 @@
 export enum PaymentMethodEnum {
   COD = 'COD',
+  CARD_ON_DELIVERY = 'CARD_ON_DELIVERY',
   STRIPE = 'STRIPE',
   PAYPAL = 'PAYPAL',
   EASYPAISA = 'EASYPAISA',
