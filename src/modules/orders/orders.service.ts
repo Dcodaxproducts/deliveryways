@@ -167,6 +167,7 @@ type BranchLocationContext = {
 
 type BuildQuoteOptions = {
   skipDeliveryAddressValidation?: boolean;
+  enforceMinimumOrderAmount?: boolean;
 };
 
 @Injectable()
@@ -185,6 +186,7 @@ export class OrdersService {
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
     const quote = await this.buildQuote(user, dto, {
       skipDeliveryAddressValidation: Boolean(dto.couponCode),
+      enforceMinimumOrderAmount: false,
     });
 
     return {
@@ -196,6 +198,7 @@ export class OrdersService {
   async quoteForCouponValidation(user: AuthUserContext, dto: QuoteOrderDto) {
     const quote = await this.buildQuote(user, dto, {
       skipDeliveryAddressValidation: true,
+      enforceMinimumOrderAmount: false,
     });
 
     return {
@@ -727,6 +730,7 @@ export class OrdersService {
     await this.ensureBranchAccess(user, branch.restaurantId, branch.id);
 
     const settings = this.readBranchSettings(branch.settings);
+    const enforceMinimumOrderAmount = options.enforceMinimumOrderAmount ?? true;
     this.assertBranchAcceptingOrders(settings);
     const customer = await this.resolveQuoteCustomer(
       user,
@@ -1254,6 +1258,7 @@ export class OrdersService {
             branch.id,
             settings.deliveryConfig,
             subtotal,
+            enforceMinimumOrderAmount,
           );
         } else if (dto.guestDeliveryAddress) {
           deliveryFee = await this.resolveDeliveryFeeForGuestAddress(
@@ -1261,12 +1266,19 @@ export class OrdersService {
             branch.id,
             settings.deliveryConfig,
             subtotal,
+            enforceMinimumOrderAmount,
           );
         }
       }
 
       if (options.skipDeliveryAddressValidation) {
-        this.assertMinimumOrderAmount(subtotal, branchMinOrderAmount, 'branch');
+        if (enforceMinimumOrderAmount) {
+          this.assertMinimumOrderAmount(
+            subtotal,
+            branchMinOrderAmount,
+            'branch',
+          );
+        }
         deliveryFee = new Prisma.Decimal(settings.deliveryConfig.deliveryFee);
       }
 
@@ -4165,6 +4177,7 @@ export class OrdersService {
     branchId: string,
     deliveryConfig: BranchSettings['deliveryConfig'],
     subtotal: Prisma.Decimal,
+    enforceMinimumOrderAmount: boolean,
   ) {
     const { address, branchAddress } = await this.resolveDeliveryLocations(
       customerId,
@@ -4179,6 +4192,7 @@ export class OrdersService {
           deliveryConfig.zones ?? [],
           subtotal,
           deliveryConfig.minOrderAmount,
+          enforceMinimumOrderAmount,
         );
       case 'ZONE_BANDS':
         return this.resolveZoneBandDeliveryFee(
@@ -4187,6 +4201,7 @@ export class OrdersService {
           deliveryConfig.zoneBands ?? [],
           subtotal,
           deliveryConfig.minOrderAmount,
+          enforceMinimumOrderAmount,
         );
       case 'POSTAL_CODE':
         return this.resolvePostalCodeDeliveryFee(
@@ -4194,14 +4209,17 @@ export class OrdersService {
           deliveryConfig.postalCodeRules ?? [],
           subtotal,
           deliveryConfig.minOrderAmount,
+          enforceMinimumOrderAmount,
         );
       case 'RADIUS':
       default:
-        this.assertMinimumOrderAmount(
-          subtotal,
-          new Prisma.Decimal(deliveryConfig.minOrderAmount),
-          'branch',
-        );
+        if (enforceMinimumOrderAmount) {
+          this.assertMinimumOrderAmount(
+            subtotal,
+            new Prisma.Decimal(deliveryConfig.minOrderAmount),
+            'branch',
+          );
+        }
         return this.resolveRadiusDeliveryFee(
           address,
           branchAddress,
@@ -4216,6 +4234,7 @@ export class OrdersService {
     branchId: string,
     deliveryConfig: BranchSettings['deliveryConfig'],
     subtotal: Prisma.Decimal,
+    enforceMinimumOrderAmount: boolean,
   ) {
     const address = this.toGuestDeliveryAddressContext(guestDeliveryAddress);
     const branchAddress = await this.resolveBranchAddress(branchId);
@@ -4227,6 +4246,7 @@ export class OrdersService {
           deliveryConfig.zones ?? [],
           subtotal,
           deliveryConfig.minOrderAmount,
+          enforceMinimumOrderAmount,
         );
       case 'ZONE_BANDS':
         return this.resolveZoneBandDeliveryFee(
@@ -4235,6 +4255,7 @@ export class OrdersService {
           deliveryConfig.zoneBands ?? [],
           subtotal,
           deliveryConfig.minOrderAmount,
+          enforceMinimumOrderAmount,
         );
       case 'POSTAL_CODE':
         return this.resolvePostalCodeDeliveryFee(
@@ -4242,14 +4263,17 @@ export class OrdersService {
           deliveryConfig.postalCodeRules ?? [],
           subtotal,
           deliveryConfig.minOrderAmount,
+          enforceMinimumOrderAmount,
         );
       case 'RADIUS':
       default:
-        this.assertMinimumOrderAmount(
-          subtotal,
-          new Prisma.Decimal(deliveryConfig.minOrderAmount),
-          'branch',
-        );
+        if (enforceMinimumOrderAmount) {
+          this.assertMinimumOrderAmount(
+            subtotal,
+            new Prisma.Decimal(deliveryConfig.minOrderAmount),
+            'branch',
+          );
+        }
         return this.resolveRadiusDeliveryFee(
           address,
           branchAddress,
@@ -4402,14 +4426,17 @@ export class OrdersService {
     zones: DeliveryZoneConfig[],
     subtotal: Prisma.Decimal,
     branchMinOrderAmount: number,
+    enforceMinimumOrderAmount: boolean,
   ) {
     const match = this.assertAddressInDeliveryZone(address, zones);
 
-    this.assertMinimumOrderAmount(
-      subtotal,
-      new Prisma.Decimal(match.minOrderAmount ?? branchMinOrderAmount),
-      'zone',
-    );
+    if (enforceMinimumOrderAmount) {
+      this.assertMinimumOrderAmount(
+        subtotal,
+        new Prisma.Decimal(match.minOrderAmount ?? branchMinOrderAmount),
+        'zone',
+      );
+    }
 
     if (
       match.freeDeliveryThreshold !== undefined &&
@@ -4428,6 +4455,7 @@ export class OrdersService {
     zoneBands: DeliveryZoneBandConfig[],
     subtotal: Prisma.Decimal,
     branchMinOrderAmount: number,
+    enforceMinimumOrderAmount: boolean,
   ) {
     const matchedBand = this.assertAddressInDeliveryZoneBand(
       address,
@@ -4435,11 +4463,13 @@ export class OrdersService {
       zoneBands,
     );
 
-    this.assertMinimumOrderAmount(
-      subtotal,
-      new Prisma.Decimal(matchedBand.minOrderAmount ?? branchMinOrderAmount),
-      'zone',
-    );
+    if (enforceMinimumOrderAmount) {
+      this.assertMinimumOrderAmount(
+        subtotal,
+        new Prisma.Decimal(matchedBand.minOrderAmount ?? branchMinOrderAmount),
+        'zone',
+      );
+    }
 
     if (
       matchedBand.freeDeliveryThreshold !== undefined &&
@@ -4553,17 +4583,20 @@ export class OrdersService {
     postalCodeRules: DeliveryPostalCodeRule[],
     subtotal: Prisma.Decimal,
     branchMinOrderAmount: number,
+    enforceMinimumOrderAmount: boolean,
   ) {
     const matchedRule = this.assertAddressPostalCodeServiceable(
       address,
       postalCodeRules,
     );
 
-    this.assertMinimumOrderAmount(
-      subtotal,
-      new Prisma.Decimal(matchedRule.minOrderAmount ?? branchMinOrderAmount),
-      'zone',
-    );
+    if (enforceMinimumOrderAmount) {
+      this.assertMinimumOrderAmount(
+        subtotal,
+        new Prisma.Decimal(matchedRule.minOrderAmount ?? branchMinOrderAmount),
+        'zone',
+      );
+    }
 
     if (
       matchedRule.freeDeliveryThreshold !== undefined &&

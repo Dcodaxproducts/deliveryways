@@ -509,16 +509,32 @@ describe('OrdersService - delivery pricing modes', () => {
     expect(result.data.deliveryFee).toBe(0);
   });
 
-  it('uses zone-level minimum order amount over branch minimum for zone orders', async () => {
+  it('allows delivery quotes below the zone minimum order amount', async () => {
     const service = createZonePricingService({
       basePrice: 600,
       branchMinOrderAmount: 0,
       zone: { deliveryFee: 250, minOrderAmount: 1000 },
     });
 
-    await expect(service.quote(customerUser, zoneQuoteInput)).rejects.toThrow(
-      'Subtotal is below zone minimum order amount',
-    );
+    const result = await service.quote(customerUser, zoneQuoteInput);
+
+    expect(result.data.subtotal).toBe(600);
+    expect(result.data.deliveryFee).toBe(250);
+  });
+
+  it('rejects delivery checkout below the zone minimum order amount', async () => {
+    const service = createZonePricingService({
+      basePrice: 600,
+      branchMinOrderAmount: 0,
+      zone: { deliveryFee: 250, minOrderAmount: 1000 },
+    });
+
+    await expect(
+      service.create(customerUser, {
+        ...zoneQuoteInput,
+        paymentMethod: PaymentMethodEnum.COD,
+      }),
+    ).rejects.toThrow('Subtotal is below zone minimum order amount');
   });
 
   it('does not apply minimum order amount to pickup orders', async () => {
