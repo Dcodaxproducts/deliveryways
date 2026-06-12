@@ -163,6 +163,71 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
+  it('preserves opening hours when branch settings update omits them', async () => {
+    const { service, repository, prisma } = makeService();
+    const existingOpeningHours = [
+      {
+        dayOfWeek: BranchScheduleDayEnum.MONDAY,
+        isClosed: false,
+        openTime: '09:00',
+        closeTime: '22:00',
+      },
+    ];
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        openingHours: existingOpeningHours,
+        contact: { phone: '123' },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Updated Branch',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        settings: {
+          contact: { phone: '456' },
+        } as never,
+      },
+    );
+
+    const updateCalls = repository.update.mock.calls as Array<
+      [
+        string,
+        {
+          settings?: {
+            contact?: { phone?: string };
+            openingHours?: typeof existingOpeningHours;
+          };
+        },
+        unknown,
+      ]
+    >;
+    const updatePayload = updateCalls[0]?.[1] as {
+      settings?: {
+        contact?: { phone?: string };
+        openingHours?: typeof existingOpeningHours;
+      };
+    };
+    expect(updatePayload.settings?.contact?.phone).toBe('456');
+    expect(updatePayload.settings?.openingHours).toEqual(existingOpeningHours);
+  });
+
   it('updates assigned branch admin info through branch update endpoint', async () => {
     const { service, repository, usersService, prisma } = makeService();
     repository.findById.mockResolvedValue({
@@ -966,6 +1031,69 @@ describe('BranchesService', () => {
     expect(
       (result.data as { openingHours: unknown[] }).openingHours,
     ).toHaveLength(2);
+  });
+
+  it('preserves branch opening hours when opening-hours edit omits them', async () => {
+    const { service, repository } = makeService();
+    const existingOpeningHours = [
+      {
+        dayOfWeek: BranchScheduleDayEnum.MONDAY,
+        isClosed: false,
+        openTime: '09:00',
+        closeTime: '22:00',
+      },
+    ];
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        openingHours: existingOpeningHours,
+        contact: { phone: '123' },
+      },
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    const result = await service.updateOpeningHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        settings: {
+          contact: { phone: '456' },
+        },
+      },
+    );
+
+    const updateCalls = repository.update.mock.calls as Array<
+      [
+        string,
+        {
+          settings?: {
+            contact?: { phone?: string };
+            openingHours?: typeof existingOpeningHours;
+          };
+        },
+        unknown?,
+      ]
+    >;
+    const updatePayload = updateCalls[0]?.[1] as {
+      settings?: {
+        contact?: { phone?: string };
+        openingHours?: typeof existingOpeningHours;
+      };
+    };
+    expect(updatePayload.settings?.contact?.phone).toBe('456');
+    expect(updatePayload.settings?.openingHours).toEqual(existingOpeningHours);
+    expect(result.data).toEqual({
+      branchId: 'branch-1',
+      openingHours: existingOpeningHours,
+    });
   });
 
   it('fetches branch delivery time from admin-managed settings', async () => {

@@ -673,7 +673,10 @@ export class BranchesService {
 
     this.assertBranchWriteAccess(user, branch);
 
-    const openingHours = this.normalizeOpeningHours(dto.openingHours);
+    const openingHours =
+      dto.openingHours === undefined
+        ? this.readOpeningHours(branch.settings)
+        : this.normalizeOpeningHours(dto.openingHours);
     const settings = this.readSettings(branch.settings);
 
     const data = await this.branchesRepository.update(
@@ -757,6 +760,13 @@ export class BranchesService {
 
     this.assertBranchWriteAccess(user, branch);
     this.assertValidDeliveryConfiguration(dto.settings);
+    const mergedSettings =
+      dto.settings === undefined
+        ? undefined
+        : ({
+            ...this.readSettings(branch.settings),
+            ...dto.settings,
+          } as unknown as Prisma.InputJsonValue);
 
     const operation = async (trx: PrismaTx) => {
       const data = await this.branchesRepository.update(
@@ -773,7 +783,7 @@ export class BranchesService {
               ? this.normalizeMediaUrl(dto.coverImage)
               : undefined,
           description: dto.description,
-          settings: dto.settings as unknown as Prisma.InputJsonValue,
+          settings: mergedSettings,
         },
         trx,
       );

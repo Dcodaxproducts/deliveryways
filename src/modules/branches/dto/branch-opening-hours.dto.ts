@@ -88,13 +88,18 @@ export class BranchOpeningHourItemDto {
 }
 
 export class UpdateBranchOpeningHoursDto {
-  @ApiProperty({ type: BranchOpeningHourItemDto, isArray: true })
+  @ApiProperty({
+    type: BranchOpeningHourItemDto,
+    isArray: true,
+    required: false,
+  })
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(7)
   @ValidateNested({ each: true })
   @Type(() => BranchOpeningHourItemDto)
-  openingHours!: BranchOpeningHourItemDto[];
+  openingHours?: BranchOpeningHourItemDto[];
 
   @ApiProperty({
     required: false,
