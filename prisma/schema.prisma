@@ -1004,8 +1004,8 @@ model Coupon {
   maxUses              Int?                     @map("max_uses")
   maxUsesPerCustomer   Int?                     @map("max_uses_per_customer")
   usedCount            Int                      @default(0) @map("used_count")
-  startsAt             DateTime                 @map("starts_at") @db.Timestamptz
-  expiresAt            DateTime                 @map("expires_at") @db.Timestamptz
+  startsAt             DateTime?                @map("starts_at") @db.Timestamptz
+  expiresAt            DateTime?                @map("expires_at") @db.Timestamptz
   activeDays           Json?                    @map("active_days")
   dailyStartTime       String?                  @map("daily_start_time")
   dailyEndTime         String?                  @map("daily_end_time")

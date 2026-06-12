@@ -395,8 +395,8 @@ export class LoyaltyWalletService {
       if (
         !giftCard.isActive ||
         giftCard.status !== CouponStatus.ACTIVE ||
-        giftCard.startsAt > now ||
-        giftCard.expiresAt < now
+        (giftCard.startsAt !== null && giftCard.startsAt > now) ||
+        (giftCard.expiresAt !== null && giftCard.expiresAt < now)
       ) {
         throw new BadRequestException('Gift card is not active');
       }

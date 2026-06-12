@@ -1114,9 +1114,17 @@ export class CouponsService {
     return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
   }
 
-  private isCouponWithinDateWindow(startsAt: Date, expiresAt: Date, now: Date) {
-    if (startsAt > now) {
+  private isCouponWithinDateWindow(
+    startsAt: Date | null,
+    expiresAt: Date | null,
+    now: Date,
+  ) {
+    if (startsAt && startsAt > now) {
       return false;
+    }
+
+    if (!expiresAt) {
+      return true;
     }
 
     const effectiveExpiresAt = this.isMidnightUtc(expiresAt)

@@ -238,7 +238,7 @@ describe('AdminPromotionsService', () => {
     expect(result.message).toBe('Deal created successfully');
   });
 
-  it('creates permanent deals when start and expiry dates are omitted', async () => {
+  it('keeps deal start and expiry dates empty when omitted', async () => {
     const createInputs: Prisma.CouponCreateInput[] = [];
     const repository = {
       countActiveMenuItems: jest.fn().mockResolvedValue(2),
@@ -252,8 +252,8 @@ describe('AdminPromotionsService', () => {
             makeCoupon({
               kind: CouponCampaignKind.PROMOTION,
               discountType: CouponDiscountType.FIXED_PRICE,
-              startsAt: input.startsAt as Date,
-              expiresAt: input.expiresAt as Date,
+              startsAt: input.startsAt as Date | null,
+              expiresAt: input.expiresAt as Date | null,
               scopeMenuItems: [
                 { menuItem: { id: 'item-1', name: 'Pizza' } },
                 { menuItem: { id: 'item-2', name: 'Drink' } },
@@ -284,8 +284,56 @@ describe('AdminPromotionsService', () => {
       throw new Error('Expected create input');
     }
 
-    expect(createInput.startsAt).toBeInstanceOf(Date);
-    expect(createInput.expiresAt).toEqual(new Date('9999-12-31T23:59:59.000Z'));
+    expect(createInput.startsAt).toBeNull();
+    expect(createInput.expiresAt).toBeNull();
+  });
+
+  it('keeps deal start and expiry dates empty when null is sent on edit', async () => {
+    const existingDeal = makeCoupon({
+      kind: CouponCampaignKind.PROMOTION,
+      discountType: CouponDiscountType.FIXED_PRICE,
+      discountValue: new Prisma.Decimal(1299),
+      dealSelectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+      scopeMenuItems: [
+        { menuItem: { id: 'item-1', name: 'Pizza' } },
+        { menuItem: { id: 'item-2', name: 'Drink' } },
+      ],
+    });
+    const repository = {
+      findById: jest.fn().mockResolvedValue(existingDeal),
+      countActiveMenuItems: jest.fn().mockResolvedValue(2),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+      update: jest.fn().mockResolvedValue(
+        makeCoupon({
+          ...existingDeal,
+          startsAt: null,
+          expiresAt: null,
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.updateDeal(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'promo-1',
+      {
+        startsAt: null,
+        expiresAt: null,
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'promo-1',
+      expect.objectContaining({
+        startsAt: null,
+        expiresAt: null,
+      }),
+    );
   });
 
   it('replaces fixed deal scoped items when an admin edits the deal', async () => {

@@ -684,20 +684,21 @@ export class CreateAdminDealDto extends OmitType(AdminPromotionBaseDto, [
 ] as const) {
   @ApiPropertyOptional({
     format: 'date-time',
-    description: 'Optional for deals. If omitted, the deal starts immediately.',
+    nullable: true,
+    description: 'Optional for deals. Null keeps the start date empty.',
   })
   @IsOptional()
   @IsDateString()
-  startsAt?: string;
+  startsAt?: string | null;
 
   @ApiPropertyOptional({
     format: 'date-time',
-    description:
-      'Optional for deals. If omitted, the deal remains active until deleted or dates are edited.',
+    nullable: true,
+    description: 'Optional for deals. Null keeps the end date empty.',
   })
   @IsOptional()
   @IsDateString()
-  expiresAt?: string;
+  expiresAt?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -797,15 +798,15 @@ export class UpdateAdminPromotionDto {
   @Min(1)
   maxUsesPerCustomer?: number;
 
-  @ApiPropertyOptional({ format: 'date-time' })
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
   @IsOptional()
   @IsDateString()
-  startsAt?: string;
+  startsAt?: string | null;
 
-  @ApiPropertyOptional({ format: 'date-time' })
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
   @IsOptional()
   @IsDateString()
-  expiresAt?: string;
+  expiresAt?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

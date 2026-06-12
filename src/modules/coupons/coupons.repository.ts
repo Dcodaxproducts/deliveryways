@@ -49,8 +49,10 @@ export class CouponsRepository {
         deletedAt: null,
         isActive: true,
         status: CouponStatus.ACTIVE,
-        startsAt: { lte: now },
-        expiresAt: { gte: now },
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+        ],
         OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
       },
       include: this.includeConfig,
@@ -73,8 +75,10 @@ export class CouponsRepository {
         deletedAt: null,
         isActive: true,
         status: CouponStatus.ACTIVE,
-        startsAt: { lte: now },
-        expiresAt: { gte: now },
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+        ],
         OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
       },
       include: this.includeConfig,
@@ -97,9 +101,6 @@ export class CouponsRepository {
         deletedAt: null,
         isActive: true,
         status: CouponStatus.ACTIVE,
-        startsAt: { lte: now },
-        expiresAt: { gte: now },
-        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
         AND: [
           {
             OR: [
@@ -107,7 +108,10 @@ export class CouponsRepository {
               { scopeMenuItems: { some: { menuItemId } } },
             ],
           },
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
         ],
+        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
       },
       include: this.includeConfig,
       orderBy: [{ createdAt: 'desc' }],

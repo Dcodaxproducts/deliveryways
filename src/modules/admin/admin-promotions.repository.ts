@@ -128,8 +128,10 @@ export class AdminPromotionsRepository {
     const activeWhere: Prisma.CouponWhereInput = {
       status: CouponStatus.ACTIVE,
       isActive: true,
-      startsAt: { lte: now },
-      expiresAt: { gte: now },
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+      ],
     };
     const scheduledWhere: Prisma.CouponWhereInput = {
       isActive: true,
@@ -303,13 +305,18 @@ export class AdminPromotionsRepository {
       ...(branchId && !scopedBranchFilter ? { branchId } : {}),
       ...(query.kind ? { kind: query.kind } : {}),
       ...(query.discountType ? { discountType: query.discountType } : {}),
-      ...(andFilters.length ? { AND: andFilters } : {}),
+      ...(query.lifecycle !== 'active' && andFilters.length
+        ? { AND: andFilters }
+        : {}),
       ...(query.lifecycle === 'active'
         ? {
             status: CouponStatus.ACTIVE,
             isActive: true,
-            startsAt: { lte: now },
-            expiresAt: { gte: now },
+            AND: [
+              ...andFilters,
+              { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+              { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+            ],
           }
         : {}),
       ...(query.lifecycle === 'scheduled'

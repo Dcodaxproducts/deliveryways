@@ -212,8 +212,10 @@ export class CustomerAppRepository {
       deletedAt: null,
       isActive: true,
       status: 'ACTIVE',
-      startsAt: { lte: now },
-      expiresAt: { gte: now },
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+      ],
       OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
     };
 

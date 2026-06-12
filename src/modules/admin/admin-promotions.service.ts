@@ -42,6 +42,15 @@ interface NormalizedDealCategoryScope {
   variationId?: string;
 }
 
+type PromotionDateInput = string | Date | null | undefined;
+type AdminPromotionCreateInput = Omit<
+  CreateAdminPromotionDto,
+  'startsAt' | 'expiresAt'
+> & {
+  startsAt: string | null;
+  expiresAt: string | null;
+};
+
 @Injectable()
 export class AdminPromotionsService {
   constructor(
@@ -126,7 +135,7 @@ export class AdminPromotionsService {
 
   async createPromotion(
     user: AuthUserContext,
-    dto: CreateAdminPromotionDto,
+    dto: AdminPromotionCreateInput,
     codePrefix = 'PROMO',
   ) {
     const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
@@ -187,8 +196,8 @@ export class AdminPromotionsService {
       maxUsesPerCustomer: dto.maxUsesPerCustomer,
       dealSelectionMode,
       dealRequiredQuantity,
-      startsAt: new Date(dto.startsAt),
-      expiresAt: new Date(dto.expiresAt),
+      startsAt: this.resolveDateWriteInput(dto.startsAt),
+      expiresAt: this.resolveDateWriteInput(dto.expiresAt),
       scopeMenuItem:
         scopeIds.menuItemIds.length === 1
           ? { connect: { id: scopeIds.menuItemIds[0] } }
@@ -305,8 +314,8 @@ export class AdminPromotionsService {
         discountType: CouponDiscountType.FIXED_PRICE,
         applyMode: CouponApplyMode.SCOPED_ITEMS,
         autoApply: true,
-        startsAt: dto.startsAt ?? new Date().toISOString(),
-        expiresAt: dto.expiresAt ?? '9999-12-31T23:59:59.000Z',
+        startsAt: dto.startsAt ?? null,
+        expiresAt: dto.expiresAt ?? null,
       },
       'DEAL',
     );
@@ -397,8 +406,8 @@ export class AdminPromotionsService {
     );
 
     this.assertValidDateRange(
-      dto.startsAt ?? existing.startsAt.toISOString(),
-      dto.expiresAt ?? existing.expiresAt.toISOString(),
+      dto.startsAt === undefined ? existing.startsAt : dto.startsAt,
+      dto.expiresAt === undefined ? existing.expiresAt : dto.expiresAt,
     );
     const scopeIds = this.normalizeScopeIds(dto, existing);
     const scopeCategoryRules = this.normalizeDealCategoryScopes(dto, existing);
@@ -463,8 +472,12 @@ export class AdminPromotionsService {
             dealRequiredQuantity,
           }
         : {}),
-      ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
-      ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
+      ...(dto.startsAt !== undefined
+        ? { startsAt: this.resolveDateWriteInput(dto.startsAt) }
+        : {}),
+      ...(dto.expiresAt !== undefined
+        ? { expiresAt: this.resolveDateWriteInput(dto.expiresAt) }
+        : {}),
       ...(this.hasScopeInput(dto)
         ? {
             scopeMenuItem:
@@ -538,8 +551,8 @@ export class AdminPromotionsService {
     this.ensureCouponInScope(scope, existing);
 
     this.assertValidDateRange(
-      dto.startsAt ?? existing.startsAt.toISOString(),
-      dto.expiresAt ?? existing.expiresAt.toISOString(),
+      dto.startsAt === undefined ? existing.startsAt : dto.startsAt,
+      dto.expiresAt === undefined ? existing.expiresAt : dto.expiresAt,
     );
 
     const data = await this.adminPromotionsRepository.update(id, {
@@ -567,8 +580,12 @@ export class AdminPromotionsService {
       ...(dto.maxUsesPerCustomer !== undefined
         ? { maxUsesPerCustomer: dto.maxUsesPerCustomer }
         : {}),
-      ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
-      ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
+      ...(dto.startsAt !== undefined
+        ? { startsAt: this.resolveDateWriteInput(dto.startsAt) }
+        : {}),
+      ...(dto.expiresAt !== undefined
+        ? { expiresAt: this.resolveDateWriteInput(dto.expiresAt) }
+        : {}),
       ...(dto.isActive !== undefined
         ? {
             isActive: dto.isActive,
@@ -749,8 +766,8 @@ export class AdminPromotionsService {
     this.ensureCouponInScope(scope, existing);
 
     this.assertValidDateRange(
-      dto.startsAt ?? existing.startsAt.toISOString(),
-      dto.expiresAt ?? existing.expiresAt.toISOString(),
+      dto.startsAt === undefined ? existing.startsAt : dto.startsAt,
+      dto.expiresAt === undefined ? existing.expiresAt : dto.expiresAt,
     );
     this.assertValidDailyWindow(
       dto.dailyStartTime ?? existing.dailyStartTime ?? '',
@@ -804,8 +821,12 @@ export class AdminPromotionsService {
       ...(dto.maxUsesPerCustomer !== undefined
         ? { maxUsesPerCustomer: dto.maxUsesPerCustomer }
         : {}),
-      ...(dto.startsAt ? { startsAt: new Date(dto.startsAt) } : {}),
-      ...(dto.expiresAt ? { expiresAt: new Date(dto.expiresAt) } : {}),
+      ...(dto.startsAt !== undefined
+        ? { startsAt: this.resolveDateWriteInput(dto.startsAt) }
+        : {}),
+      ...(dto.expiresAt !== undefined
+        ? { expiresAt: this.resolveDateWriteInput(dto.expiresAt) }
+        : {}),
       ...(dto.activeDays !== undefined ? { activeDays: dto.activeDays } : {}),
       ...(dto.dailyStartTime !== undefined
         ? { dailyStartTime: dto.dailyStartTime }
@@ -1198,10 +1219,25 @@ export class AdminPromotionsService {
     }
   }
 
-  private assertValidDateRange(startsAt: string, expiresAt: string) {
+  private assertValidDateRange(
+    startsAt: PromotionDateInput,
+    expiresAt: PromotionDateInput,
+  ) {
+    if (!startsAt || !expiresAt) {
+      return;
+    }
+
     if (new Date(startsAt) >= new Date(expiresAt)) {
       throw new BadRequestException('expiresAt must be after startsAt');
     }
+  }
+
+  private resolveDateWriteInput(value: PromotionDateInput) {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    return value instanceof Date ? value : new Date(value);
   }
 
   private assertValidDailyWindow(start: string, end: string) {
@@ -1241,8 +1277,8 @@ export class AdminPromotionsService {
     maxUses: number | null;
     maxUsesPerCustomer: number | null;
     usedCount: number;
-    startsAt: Date;
-    expiresAt: Date;
+    startsAt: Date | null;
+    expiresAt: Date | null;
     activeDays: Prisma.JsonValue | null;
     dailyStartTime: string | null;
     dailyEndTime: string | null;
