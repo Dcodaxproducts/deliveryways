@@ -328,6 +328,19 @@ export class OrdersRepository {
               },
             },
           },
+          deliveryAddress: {
+            select: {
+              id: true,
+              street: true,
+              area: true,
+              postalCode: true,
+              city: true,
+              state: true,
+              country: true,
+              lat: true,
+              lng: true,
+            },
+          },
           deliveryman: {
             select: {
               id: true,

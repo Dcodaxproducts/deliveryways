@@ -2863,6 +2863,17 @@ describe('OrdersService - response mapping', () => {
         email: 'customer@test.com',
         profile: null,
       },
+      deliveryAddress: {
+        id: 'address-1',
+        street: 'Main Street',
+        area: 'House 12',
+        postalCode: '54000',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'PK',
+        lat: new Prisma.Decimal('31.5204'),
+        lng: new Prisma.Decimal('74.3587'),
+      },
       deliveryman: null,
       sourceGroupOrder: {
         id: 'group-session-1',
@@ -2910,6 +2921,17 @@ describe('OrdersService - response mapping', () => {
     expect(result.isGroupOrder).toBe(true);
     expect(result.groupOrderSessionId).toBe('group-session-1');
     expect(result.groupOrderInviteCode).toBe('INVITE123');
+    expect(result.deliveryAddress).toEqual({
+      id: 'address-1',
+      street: 'Main Street',
+      area: 'House 12',
+      postalCode: '54000',
+      city: 'Lahore',
+      state: 'Punjab',
+      country: 'PK',
+      lat: 31.5204,
+      lng: 74.3587,
+    });
     expect(result.participantCount).toBe(1);
     expect(result.participants).toEqual([
       {

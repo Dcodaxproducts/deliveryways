@@ -1985,6 +1985,17 @@ export class OrdersService {
         metadata?: Prisma.JsonValue | null;
       } | null;
     };
+    deliveryAddress: {
+      id: string;
+      street: string;
+      area: string | null;
+      postalCode: string | null;
+      city: string;
+      state: string;
+      country: string;
+      lat: Prisma.Decimal | null;
+      lng: Prisma.Decimal | null;
+    } | null;
     deliveryman: {
       id: string;
       firstName: string;
@@ -2082,6 +2093,19 @@ export class OrdersService {
       branch: order.branch,
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),
+      deliveryAddress: order.deliveryAddress
+        ? {
+            ...order.deliveryAddress,
+            lat:
+              order.deliveryAddress.lat !== null
+                ? Number(order.deliveryAddress.lat)
+                : null,
+            lng:
+              order.deliveryAddress.lng !== null
+                ? Number(order.deliveryAddress.lng)
+                : null,
+          }
+        : null,
       deliveryman: order.deliveryman,
       isGroupOrder: Boolean(order.sourceGroupOrder),
       groupOrderSessionId: order.sourceGroupOrder?.id ?? null,
