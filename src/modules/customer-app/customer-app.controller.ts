@@ -33,8 +33,10 @@ import {
   ListCustomerFavoritesQueryDto,
   ListCustomerGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
+  ListPublicOrderReviewsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
+  PublicBranchStatsQueryDto,
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   CreateWalletTopUpDto,
@@ -233,6 +235,28 @@ export class CustomerAppController {
     @Query() query: HomeScreenQueryDto,
   ) {
     return this.customerAppService.getHomeScreen(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('branch-stats')
+  @ApiOperation({ summary: 'Fetch public customer-web branch stats' })
+  getBranchStats(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: PublicBranchStatsQueryDto,
+  ) {
+    return this.customerAppService.getBranchStats(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('reviews')
+  @ApiOperation({ summary: 'List public order reviews' })
+  listPublicReviews(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListPublicOrderReviewsQueryDto,
+  ) {
+    return this.customerAppService.listPublicReviews(query, user);
   }
 
   @ApiBearerAuth()

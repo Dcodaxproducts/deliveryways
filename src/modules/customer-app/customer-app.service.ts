@@ -29,8 +29,10 @@ import {
   ListCustomerFavoritesQueryDto,
   ListCustomerGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
+  ListPublicOrderReviewsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
+  PublicBranchStatsQueryDto,
   PublicMenuItemBySlugQueryDto,
   PublicRestaurantQueryDto,
   SubmitContactFormDto,
@@ -879,6 +881,65 @@ export class CustomerAppService {
         faqs: faqs.data.items,
       },
       message: 'Home screen fetched successfully',
+    };
+  }
+
+  async getBranchStats(
+    query: PublicBranchStatsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    if (!resolvedQuery.branchId) {
+      throw new BadRequestException('branchId is required');
+    }
+
+    const { restaurant, branch } = await this.getPublicContent(
+      resolvedQuery,
+      user,
+    );
+    const stats = await this.customerAppRepository.getBranchPublicStats(
+      restaurant.id,
+      branch!.id,
+    );
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        branchId: branch!.id,
+        branchName: branch!.name,
+        ...stats,
+      },
+      message: 'Branch stats fetched successfully',
+    };
+  }
+
+  async listPublicReviews(
+    query: ListPublicOrderReviewsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    if (resolvedQuery.branchId) {
+      await this.getPublicContent(resolvedQuery, user);
+    } else {
+      const restaurant =
+        await this.customerAppRepository.findRestaurantPublicContent(
+          resolvedQuery.restaurantId,
+        );
+      if (!restaurant) {
+        throw new NotFoundException('Restaurant not found');
+      }
+    }
+
+    const { items, total, summary } =
+      await this.customerAppRepository.listPublicReviews(resolvedQuery);
+
+    return {
+      data: {
+        items,
+        summary,
+      },
+      message: 'Order reviews fetched successfully',
+      meta: buildPaginationMeta(query, total),
     };
   }
 

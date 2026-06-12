@@ -162,6 +162,8 @@ describe('CustomerAppService', () => {
       listPromotionalItems: jest.fn(),
       listPublicDealScopeMenuItems: jest.fn(),
       findPublicMenuItemBySlug: jest.fn(),
+      getBranchPublicStats: jest.fn(),
+      listPublicReviews: jest.fn(),
     };
 
     const couponsService = {
@@ -1650,6 +1652,91 @@ describe('CustomerAppService', () => {
     });
 
     expect(result.data.config).toEqual({ currency: 'SAR', branding: {} });
+  });
+
+  it('returns public branch stats for customer web', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      settings: {},
+    });
+    repository.getBranchPublicStats.mockResolvedValue({
+      completedOrders: 120,
+      activeMenuItems: 45,
+      reviewCount: 18,
+      averageRating: 4.72,
+      fiveStarReviews: 14,
+    });
+
+    const result = await service.getBranchStats({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(repository.getBranchPublicStats).toHaveBeenCalledWith(
+      'restaurant-1',
+      'branch-1',
+    );
+    expect(result.data).toEqual({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      branchName: 'Main Branch',
+      completedOrders: 120,
+      activeMenuItems: 45,
+      reviewCount: 18,
+      averageRating: 4.72,
+      fiveStarReviews: 14,
+    });
+  });
+
+  it('lists public reviews with pagination summary', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      settings: {},
+    });
+    repository.listPublicReviews.mockResolvedValue({
+      items: [{ id: 'review-1', rating: 5 }],
+      total: 1,
+      summary: { reviewCount: 1, averageRating: 5 },
+    });
+
+    const result = await service.listPublicReviews({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(repository.listPublicReviews).toHaveBeenCalledWith(
+      expect.objectContaining({ restaurantId: 'restaurant-1' }),
+    );
+    expect(result.data).toEqual({
+      items: [{ id: 'review-1', rating: 5 }],
+      summary: { reviewCount: 1, averageRating: 5 },
+    });
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 10,
+      total: 1,
+      totalPages: 1,
+      hasNext: false,
+      hasPrevious: false,
+    });
   });
 
   it('uses customer token restaurant scope for privacy policy when query restaurantId is omitted', async () => {

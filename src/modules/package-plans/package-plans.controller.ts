@@ -13,7 +13,12 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import {
+  AuthUserContext,
+  CurrentUser,
+  Public,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -190,5 +195,18 @@ export class PackagePlansController {
   @ApiOperation({ summary: 'Delete package plan' })
   removePlan(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.packagePlansService.removePlan(user, id);
+  }
+}
+
+@ApiTags('Package Plans')
+@Controller('package-plans')
+export class PublicPackagePlansController {
+  constructor(private readonly packagePlansService: PackagePlansService) {}
+
+  @Public()
+  @Get()
+  @ApiOperation({ summary: 'List public package plans for landing pages' })
+  listPublicPlans(@Query() query: ListPackagePlansDto) {
+    return this.packagePlansService.listPublicPlans(query);
   }
 }

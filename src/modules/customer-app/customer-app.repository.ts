@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import {
   HomeScreenQueryDto,
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
+  ListPublicOrderReviewsQueryDto,
   ListPromotionalItemsQueryDto,
   PublicRestaurantQueryDto,
 } from './dto';
@@ -617,6 +618,132 @@ export class CustomerAppRepository {
         settings: true,
       },
     });
+  }
+
+  async getBranchPublicStats(restaurantId: string, branchId: string) {
+    const [
+      completedOrders,
+      activeMenuItems,
+      reviewsAggregate,
+      fiveStarReviews,
+    ] = await this.prisma.$transaction([
+      this.prisma.order.count({
+        where: {
+          restaurantId,
+          branchId,
+          status: OrderStatus.DELIVERED,
+        },
+      }),
+      this.prisma.menuItem.count({
+        where: {
+          restaurantId,
+          deletedAt: null,
+          isActive: true,
+          ...this.buildBranchMenuItemAvailabilityWhere(branchId),
+        },
+      }),
+      this.prisma.orderReview.aggregate({
+        where: { restaurantId, branchId },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.orderReview.count({
+        where: { restaurantId, branchId, rating: 5 },
+      }),
+    ]);
+
+    const reviewCount = reviewsAggregate._count._all;
+
+    return {
+      completedOrders,
+      activeMenuItems,
+      reviewCount,
+      averageRating:
+        reviewsAggregate._avg.rating !== null
+          ? Number(reviewsAggregate._avg.rating.toFixed(2))
+          : null,
+      fiveStarReviews,
+    };
+  }
+
+  async listPublicReviews(query: ListPublicOrderReviewsQueryDto) {
+    const where: Prisma.OrderReviewWhereInput = {
+      restaurantId: query.restaurantId!,
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...(query.rating ? { rating: query.rating } : {}),
+    };
+
+    const [items, total, summary] = await this.prisma.$transaction([
+      this.prisma.orderReview.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ createdAt: 'desc' }],
+        select: {
+          id: true,
+          restaurantId: true,
+          branchId: true,
+          orderId: true,
+          rating: true,
+          comment: true,
+          createdAt: true,
+          customer: {
+            select: {
+              id: true,
+              profile: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+          branch: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.orderReview.count({ where }),
+      this.prisma.orderReview.aggregate({
+        where: {
+          restaurantId: query.restaurantId!,
+          ...(query.branchId ? { branchId: query.branchId } : {}),
+        },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      items: items.map((item) => ({
+        id: item.id,
+        restaurantId: item.restaurantId,
+        branchId: item.branchId,
+        orderId: item.orderId,
+        rating: item.rating,
+        comment: item.comment,
+        createdAt: item.createdAt,
+        customer: {
+          id: item.customer.id,
+          firstName: item.customer.profile?.firstName ?? null,
+          lastName: item.customer.profile?.lastName ?? null,
+          avatarUrl: item.customer.profile?.avatarUrl ?? null,
+        },
+        branch: item.branch,
+      })),
+      total,
+      summary: {
+        reviewCount: summary._count._all,
+        averageRating:
+          summary._avg.rating !== null
+            ? Number(summary._avg.rating.toFixed(2))
+            : null,
+      },
+    };
   }
 
   async listCuisineCategories(

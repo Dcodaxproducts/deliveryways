@@ -232,6 +232,38 @@ describe('PackagePlansService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('lists active public package plans without requiring admin context', async () => {
+    const repository = {
+      listPublicPlans: jest
+        .fn()
+        .mockResolvedValue({ items: [makePlan()], total: 1 }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.listPublicPlans({
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(repository.listPublicPlans).toHaveBeenCalledWith({
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+    expect(result.data).toHaveLength(1);
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 10,
+      total: 1,
+      totalPages: 1,
+      hasNext: false,
+      hasPrevious: false,
+    });
+  });
+
   it('cancels existing active subscription when assigning a new package', async () => {
     const repository = {
       findTenantById: jest.fn().mockResolvedValue({ id: 'tenant-1' }),

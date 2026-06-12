@@ -130,6 +130,17 @@ export class PackagePlansService {
     };
   }
 
+  async listPublicPlans(query: ListPackagePlansDto) {
+    const { items, total } =
+      await this.packagePlansRepository.listPublicPlans(query);
+
+    return {
+      data: items,
+      message: 'Package plans fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
   getFeatureCatalog(user: AuthUserContext) {
     this.ensureSuperAdmin(user);
 

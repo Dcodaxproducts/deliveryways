@@ -180,6 +180,47 @@ export class ListCustomerPromotionsQueryDto extends PublicRestaurantQueryDto {
   limit = 20;
 }
 
+export class PublicBranchStatsQueryDto extends PublicRestaurantQueryDto {}
+
+export class ListPublicOrderReviewsQueryDto extends QueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional for authenticated customers; token restaurant scope is used when available',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional locale for translated public content, e.g. de, ar, pt-br',
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
+
+  @ApiPropertyOptional({ default: 10, minimum: 1, maximum: 50 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit = 10;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 5 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating?: number;
+}
+
 export class HomeScreenQueryDto extends PublicRestaurantQueryDto {
   @ApiPropertyOptional({ default: 8, minimum: 1, maximum: 25 })
   @IsOptional()

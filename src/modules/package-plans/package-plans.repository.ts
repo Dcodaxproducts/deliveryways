@@ -56,6 +56,63 @@ export class PackagePlansRepository {
     return { items, total };
   }
 
+  async listPublicPlans(query: ListPackagePlansDto) {
+    const where: Prisma.PackagePlanWhereInput = {
+      deletedAt: null,
+      isActive: true,
+      ...(query.billingModel ? { billingModel: query.billingModel } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              {
+                description: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.packagePlan.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [
+          { isDefault: 'desc' },
+          {
+            [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+          },
+        ],
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          billingModel: true,
+          billingInterval: true,
+          planPrice: true,
+          commissionType: true,
+          commissionPercentage: true,
+          commissionFixedAmount: true,
+          commissionCapAmount: true,
+          vatPercentage: true,
+          payoutCycle: true,
+          termsDocumentUrl: true,
+          currency: true,
+          trialDays: true,
+          features: true,
+          isDefault: true,
+        },
+      }),
+      this.prisma.packagePlan.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
   clearDefaultPlans(exceptPlanId?: string) {
     return this.prisma.packagePlan.updateMany({
       where: {
