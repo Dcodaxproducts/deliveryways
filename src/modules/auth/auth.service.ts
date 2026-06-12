@@ -2019,8 +2019,20 @@ export class AuthService {
   private async resolveLoginUser(dto: {
     email: string;
     restaurantId?: string;
+    role?: UserRoleEnum;
   }) {
     const normalizedEmail = dto.email.trim().toLowerCase();
+
+    if (dto.role) {
+      const [user] = await this.usersService.findManyForDevResolution({
+        email: normalizedEmail,
+        restaurantId: dto.restaurantId,
+        role: dto.role,
+        includeDeleted: true,
+      });
+
+      return user ?? null;
+    }
 
     if (dto.restaurantId) {
       return this.usersService.findByEmailIncludingDeleted(
@@ -2034,11 +2046,17 @@ export class AuthService {
       includeDeleted: true,
     });
 
-    const preferredUser = candidates.find(
+    const adminCandidates = candidates.filter(
       (candidate) => candidate.role !== 'CUSTOMER',
     );
 
-    return preferredUser ?? candidates[0] ?? null;
+    if (adminCandidates.length > 1) {
+      throw new BadRequestException(
+        'Multiple admin accounts use this email. Specify role to login.',
+      );
+    }
+
+    return adminCandidates[0] ?? candidates[0] ?? null;
   }
 
   private async assertAssignedBranchContext(user: {

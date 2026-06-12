@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
+import { UserRoleEnum } from '../../../common/enums';
 
 export class LoginDto {
   @ApiProperty()
@@ -19,4 +26,14 @@ export class LoginDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
+
+  @ApiProperty({
+    required: false,
+    enum: UserRoleEnum,
+    description:
+      'Optional account role used when the same email belongs to multiple accounts',
+  })
+  @IsOptional()
+  @IsEnum(UserRoleEnum)
+  role?: UserRoleEnum;
 }

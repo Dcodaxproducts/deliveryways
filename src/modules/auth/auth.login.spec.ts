@@ -254,6 +254,131 @@ describe('AuthService login', () => {
     });
   });
 
+  it('uses role to resolve business admin when email is shared with branch admin', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'business-admin-1',
+        email: 'shared.admin@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
+
+    const result = await service.login({
+      email: 'shared.admin@example.com',
+      password: 'Password@123',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith({
+      email: 'shared.admin@example.com',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      restaurantId: undefined,
+      includeDeleted: true,
+    });
+    expect(result.data.user.role).toBe(UserRoleEnum.BUSINESS_ADMIN);
+    expect(result.data.user.restaurantId).toBeNull();
+    expect(result.data.user.branchId).toBeNull();
+  });
+
+  it('uses role to resolve branch admin when email is shared with business admin', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'branch-admin-1',
+        email: 'shared.admin@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isVerified: true,
+        isApproved: true,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
+    prismaService.branch.findFirst.mockResolvedValue({
+      id: 'branch-1',
+      deletedAt: null,
+      isActive: true,
+    });
+
+    const result = await service.login({
+      email: 'shared.admin@example.com',
+      password: 'Password@123',
+      role: UserRoleEnum.BRANCH_ADMIN,
+    });
+
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith({
+      email: 'shared.admin@example.com',
+      role: UserRoleEnum.BRANCH_ADMIN,
+      restaurantId: undefined,
+      includeDeleted: true,
+    });
+    expect(result.data.user.role).toBe(UserRoleEnum.BRANCH_ADMIN);
+    expect(result.data.user.restaurantId).toBe('restaurant-1');
+    expect(result.data.user.branchId).toBe('branch-1');
+  });
+
+  it('requires role when email is shared by multiple admin accounts', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'branch-admin-1',
+        email: 'shared.admin@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isVerified: true,
+        isApproved: true,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+      {
+        id: 'business-admin-1',
+        email: 'shared.admin@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
+
+    await expect(
+      service.login({
+        email: 'shared.admin@example.com',
+        password: 'Password@123',
+      }),
+    ).rejects.toThrow(
+      'Multiple admin accounts use this email. Specify role to login.',
+    );
+  });
+
   it('rejects invalid credentials', async () => {
     usersService.findByEmailIncludingDeleted!.mockResolvedValue(null);
 
