@@ -148,6 +148,7 @@ interface CartResponseDealLine {
   categoryId: string | null;
   categoryIds: string[];
   quantity: number;
+  prepTimeMinutes?: number | null;
   unitPrice: number | null;
   unitPriceWithModifiers: number | null;
   depositTotal: number;
@@ -1297,6 +1298,7 @@ export class CartService {
           ],
           variationId: cartItem.variationId,
           quantity: cartItem.quantity,
+          prepTimeMinutes: menuItem?.prepTimeMinutes ?? null,
           note: cartItem.note,
           modifiers: selectedModifiers,
           selectedModifiers: selectedModifierDetails,
@@ -1326,6 +1328,7 @@ export class CartService {
                   : null,
                 isAvailable: branchOverride?.isAvailable ?? true,
                 pricingMode: menuItem.pricingMode,
+                prepTimeMinutes: menuItem.prepTimeMinutes ?? null,
                 unitPrice: unitPrice ? Number(unitPrice) : unitPrice,
                 deliveryPriceAdjustment:
                   menuItem.deliveryPriceAdjustment !== undefined &&

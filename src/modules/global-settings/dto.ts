@@ -128,6 +128,36 @@ export class PaymentMethodSettingDto {
   isActive?: boolean;
 }
 
+export class TaxTypeSettingDto {
+  @ApiPropertyOptional({ example: 'STANDARD' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  code!: string;
+
+  @ApiPropertyOptional({ example: 'Standard VAT' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  label?: string;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 100, example: 19 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  percentage!: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+}
+
 export class UpdateGlobalPaymentMethodsDto {
   @ApiPropertyOptional({ type: [PaymentMethodSettingDto] })
   @IsArray()
@@ -135,6 +165,15 @@ export class UpdateGlobalPaymentMethodsDto {
   @ValidateNested({ each: true })
   @Type(() => PaymentMethodSettingDto)
   paymentMethods!: PaymentMethodSettingDto[];
+}
+
+export class UpdateGlobalTaxTypesDto {
+  @ApiPropertyOptional({ type: [TaxTypeSettingDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => TaxTypeSettingDto)
+  taxTypes!: TaxTypeSettingDto[];
 }
 
 export class UpdateGlobalSettingsDto {
@@ -250,4 +289,12 @@ export class UpdateGlobalSettingsDto {
   @ValidateNested({ each: true })
   @Type(() => PaymentMethodSettingDto)
   paymentMethods?: PaymentMethodSettingDto[];
+
+  @ApiPropertyOptional({ type: [TaxTypeSettingDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => TaxTypeSettingDto)
+  taxTypes?: TaxTypeSettingDto[];
 }

@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -309,6 +310,27 @@ export class CreateMenuItemDto {
   @Min(0)
   prepTimeMinutes?: number;
 
+  @ApiPropertyOptional({
+    description: 'Tax type code configured by super admin, e.g. STANDARD',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  taxTypeCode?: string;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 100,
+    description:
+      'Direct item tax percentage. If taxTypeCode is sent, backend uses the configured tax type percentage.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  taxPercentage?: number;
+
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
@@ -550,6 +572,27 @@ export class UpdateMenuItemDto {
   @IsInt()
   @Min(0)
   prepTimeMinutes?: number;
+
+  @ApiPropertyOptional({
+    description: 'Tax type code configured by super admin, e.g. STANDARD',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  taxTypeCode?: string;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 100,
+    description:
+      'Direct item tax percentage. If taxTypeCode is sent, backend uses the configured tax type percentage.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  taxPercentage?: number;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

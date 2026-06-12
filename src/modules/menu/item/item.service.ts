@@ -30,6 +30,11 @@ import {
 } from './dto';
 import { MenuItemRepository } from './item.repository';
 
+interface MenuItemTaxInput {
+  taxTypeCode?: string | null;
+  taxPercentage?: Prisma.Decimal | null;
+}
+
 @Injectable()
 export class MenuItemService {
   constructor(
@@ -62,6 +67,7 @@ export class MenuItemService {
     );
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
+    const taxInput = await this.resolveTaxInput(dto);
     this.assertSelectionLimits(dto);
     await this.assertKnownLabels(restaurantId, dto.labels ?? dto.dietaryFlags);
     await this.assertUniqueFields(restaurantId, { sku });
@@ -72,6 +78,7 @@ export class MenuItemService {
       slug,
       sku,
       pricing,
+      taxInput,
       modifiers,
       categoryIds,
     );
@@ -92,6 +99,7 @@ export class MenuItemService {
       deliveryPriceAdjustment: Prisma.Decimal;
       takeawayPriceAdjustment: Prisma.Decimal;
     },
+    taxInput: MenuItemTaxInput,
     modifiers: Array<{ modifierId: string; priceDelta: number }> | undefined,
     categoryIds: string[],
   ) {
@@ -115,6 +123,8 @@ export class MenuItemService {
             deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
             takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
             prepTimeMinutes: dto.prepTimeMinutes,
+            taxTypeCode: taxInput.taxTypeCode,
+            taxPercentage: taxInput.taxPercentage,
             dietaryFlags: this.toStoredDietaryFlags(
               dto.labels ?? dto.dietaryFlags,
               dto.supportsSplitPizza,
@@ -173,6 +183,7 @@ export class MenuItemService {
 
     for (const item of dto.items) {
       const pricing = this.resolvePricingInput(item);
+      const taxInput = await this.resolveTaxInput(item);
       this.assertSelectionLimits(item);
       await this.assertKnownLabels(
         restaurantId,
@@ -207,6 +218,8 @@ export class MenuItemService {
         deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
         takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
         prepTimeMinutes: item.prepTimeMinutes,
+        taxTypeCode: taxInput.taxTypeCode,
+        taxPercentage: taxInput.taxPercentage,
         dietaryFlags: this.toStoredDietaryFlags(
           item.labels ?? item.dietaryFlags,
           item.supportsSplitPizza,
@@ -327,6 +340,7 @@ export class MenuItemService {
     const sku =
       dto.sku !== undefined ? this.resolveOptionalString(dto.sku) : undefined;
     const pricing = this.resolvePricingInput(dto, item);
+    const taxInput = await this.resolveTaxInput(dto, item);
     this.assertSelectionLimits(dto, item);
     await this.assertKnownLabels(
       item.restaurantId,
@@ -358,6 +372,8 @@ export class MenuItemService {
           deliveryPriceAdjustment: pricing.deliveryPriceAdjustment,
           takeawayPriceAdjustment: pricing.takeawayPriceAdjustment,
           prepTimeMinutes: dto.prepTimeMinutes,
+          taxTypeCode: taxInput.taxTypeCode,
+          taxPercentage: taxInput.taxPercentage,
           dietaryFlags: this.toStoredDietaryFlags(
             dto.labels ?? dto.dietaryFlags,
             dto.supportsSplitPizza,
@@ -2190,6 +2206,112 @@ export class MenuItemService {
 
   private async resolveMediaResponse<T>(data: T) {
     return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
+  }
+
+  private async resolveTaxInput(
+    dto: CreateMenuItemDto | UpdateMenuItemDto,
+    existing?: {
+      taxTypeCode?: string | null;
+      taxPercentage?: Prisma.Decimal | null;
+    },
+  ): Promise<MenuItemTaxInput> {
+    if (dto.taxTypeCode !== undefined) {
+      const code = dto.taxTypeCode.trim().toUpperCase();
+      const taxType = await this.findActiveTaxType(code);
+
+      if (!taxType) {
+        throw new BadRequestException('taxTypeCode is not configured');
+      }
+
+      return {
+        taxTypeCode: taxType.code,
+        taxPercentage: new Prisma.Decimal(taxType.percentage),
+      };
+    }
+
+    if (dto.taxPercentage !== undefined) {
+      return {
+        taxTypeCode: null,
+        taxPercentage: new Prisma.Decimal(dto.taxPercentage),
+      };
+    }
+
+    return {
+      taxTypeCode: existing?.taxTypeCode,
+      taxPercentage: existing?.taxPercentage,
+    };
+  }
+
+  private async findActiveTaxType(code: string) {
+    const settings = await this.prisma.globalSetting.findUnique({
+      where: { scopeKey: 'GLOBAL' },
+      select: { taxTypes: true, globalTaxPercentage: true },
+    });
+    const taxTypes = this.extractTaxTypes(
+      settings?.taxTypes,
+      settings?.globalTaxPercentage,
+    );
+
+    return taxTypes.find(
+      (taxType) => taxType.code === code && taxType.isActive,
+    );
+  }
+
+  private extractTaxTypes(
+    source: Prisma.JsonValue | null | undefined,
+    globalTaxPercentage?: Prisma.Decimal | null,
+  ) {
+    if (!Array.isArray(source)) {
+      return [
+        {
+          code: 'STANDARD',
+          label: 'Standard tax',
+          percentage: Number(
+            new Prisma.Decimal(globalTaxPercentage ?? 0).toDecimalPlaces(2),
+          ),
+          isActive: true,
+        },
+      ];
+    }
+
+    return source.flatMap((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return [];
+      }
+
+      const objectRow = row as Record<string, unknown>;
+      const code =
+        typeof objectRow.code === 'string'
+          ? objectRow.code.trim().toUpperCase()
+          : '';
+
+      if (!code) {
+        return [];
+      }
+
+      return [
+        {
+          code,
+          label:
+            typeof objectRow.label === 'string' ? objectRow.label.trim() : code,
+          percentage: this.toNumber(objectRow.percentage),
+          isActive:
+            typeof objectRow.isActive === 'boolean' ? objectRow.isActive : true,
+        },
+      ];
+    });
+  }
+
+  private toNumber(value: unknown) {
+    if (
+      typeof value !== 'string' &&
+      typeof value !== 'number' &&
+      !(value instanceof Prisma.Decimal)
+    ) {
+      return 0;
+    }
+
+    return Number(new Prisma.Decimal(value).toDecimalPlaces(2));
   }
 
   private resolvePricingInput(

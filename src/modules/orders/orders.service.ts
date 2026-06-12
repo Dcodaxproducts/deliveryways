@@ -126,6 +126,8 @@ type QuoteLine = {
   depositAmount: Prisma.Decimal;
   unitPrice: Prisma.Decimal;
   lineTotal: Prisma.Decimal;
+  taxTypeCode?: string | null;
+  taxPercentage?: Prisma.Decimal | null;
   note?: string;
   snapshotModifiers?: {
     modifierId: string;
@@ -1219,6 +1221,12 @@ export class OrdersService {
         depositAmount: depositAmount.toDecimalPlaces(2),
         unitPrice: unitPrice.toDecimalPlaces(2),
         lineTotal: lineTotal.toDecimalPlaces(2),
+        taxTypeCode: menuItem.taxTypeCode ?? null,
+        taxPercentage:
+          menuItem.taxPercentage !== undefined &&
+          menuItem.taxPercentage !== null
+            ? new Prisma.Decimal(menuItem.taxPercentage)
+            : null,
         note: requestedItem.note,
         snapshotModifiers,
         snapshotSections,
@@ -1293,10 +1301,10 @@ export class OrdersService {
       }
     }
 
-    const taxAmount = subtotal
-      .mul(settings.taxation.taxPercentage)
-      .div(100)
-      .toDecimalPlaces(2);
+    const taxAmount = this.resolveQuoteTaxAmount(
+      pricedLines,
+      settings.taxation.taxPercentage,
+    );
     const serviceCharge = this.resolveServiceCharge(
       settings.serviceCharge,
       subtotal,
@@ -1519,6 +1527,20 @@ export class OrdersService {
     return pricedLines;
   }
 
+  private resolveQuoteTaxAmount(
+    lines: QuoteLine[],
+    fallbackTaxPercentage: number,
+  ) {
+    return lines
+      .reduce((sum, line) => {
+        const taxPercentage =
+          line.taxPercentage ?? new Prisma.Decimal(fallbackTaxPercentage);
+
+        return sum.plus(line.lineTotal.mul(taxPercentage).div(100));
+      }, new Prisma.Decimal(0))
+      .toDecimalPlaces(2);
+  }
+
   private allocateFixedDealTotal(
     currentTotals: Prisma.Decimal[],
     fixedTotal: Prisma.Decimal,
@@ -1735,6 +1757,8 @@ export class OrdersService {
         depositAmount: Number(line.depositAmount),
         unitPrice: Number(line.unitPrice),
         lineTotal: Number(line.lineTotal),
+        taxTypeCode: line.taxTypeCode ?? null,
+        taxPercentage: line.taxPercentage ? Number(line.taxPercentage) : null,
         note: line.note,
         snapshotModifiers: line.snapshotModifiers,
         snapshotSections: line.snapshotSections,

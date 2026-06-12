@@ -228,6 +228,70 @@ describe('BranchesService', () => {
     expect(updatePayload.settings?.openingHours).toEqual(existingOpeningHours);
   });
 
+  it('hides and ignores service charge for branch settings outside super admin', async () => {
+    const { service, repository, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        contact: { phone: '123' },
+        serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Updated Branch',
+      settings: {
+        contact: { phone: '456' },
+        serviceCharge: { isEnabled: false, type: 'AMOUNT', value: 10 },
+      },
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      },
+      'branch-1',
+      {
+        settings: {
+          contact: { phone: '456' },
+          serviceCharge: { isEnabled: false, type: 'AMOUNT', value: 10 },
+        } as never,
+      },
+    );
+
+    const updateCalls = repository.update.mock.calls as Array<
+      [
+        string,
+        {
+          settings?: {
+            serviceCharge?: unknown;
+            contact?: { phone?: string };
+          };
+        },
+        unknown,
+      ]
+    >;
+    const updatePayload = updateCalls[0]?.[1];
+    expect(updatePayload.settings?.serviceCharge).toEqual({
+      isEnabled: true,
+      type: 'PERCENTAGE',
+      value: 5,
+    });
+    expect(updatePayload.settings?.contact?.phone).toBe('456');
+    expect(result.data.settings).not.toHaveProperty('serviceCharge');
+  });
+
   it('updates assigned branch admin info through branch update endpoint', async () => {
     const { service, repository, usersService, prisma } = makeService();
     repository.findById.mockResolvedValue({

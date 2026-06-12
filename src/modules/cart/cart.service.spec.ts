@@ -290,6 +290,7 @@ describe('CartService', () => {
         basePrice: 450,
         deliveryPriceAdjustment: 50,
         takeawayPriceAdjustment: 20,
+        prepTimeMinutes: 12,
         depositAmount: 50,
         category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
         variations: [],
@@ -314,16 +315,20 @@ describe('CartService', () => {
 
     const firstItem = result.data.items[0] as {
       menuItemId: string;
+      prepTimeMinutes: number | null;
       depositAmount: number;
       depositTotal: number;
       lineTotal: number;
       menuItem: {
         name: string;
+        prepTimeMinutes: number | null;
         depositAmount: number | null;
         unitPrice: number | null;
       } | null;
     };
     expect(firstItem.menuItem?.name).toBe('Burger');
+    expect(firstItem.prepTimeMinutes).toBe(12);
+    expect(firstItem.menuItem?.prepTimeMinutes).toBe(12);
     expect(firstItem.menuItem?.unitPrice).toBe(500);
     expect(firstItem.menuItem?.depositAmount).toBe(50);
     expect(firstItem.depositAmount).toBe(50);

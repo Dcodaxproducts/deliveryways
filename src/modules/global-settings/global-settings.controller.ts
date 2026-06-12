@@ -7,7 +7,11 @@ import {
   RolesGuard,
   TenantAccessGuard as TenantGuard,
 } from '../../common/guards';
-import { UpdateGlobalPaymentMethodsDto, UpdateGlobalSettingsDto } from './dto';
+import {
+  UpdateGlobalPaymentMethodsDto,
+  UpdateGlobalSettingsDto,
+  UpdateGlobalTaxTypesDto,
+} from './dto';
 import { GlobalSettingsService } from './global-settings.service';
 
 @ApiTags('Global Settings')
@@ -39,6 +43,17 @@ export class GlobalSettingsController {
     return this.globalSettingsService.getPaymentMethods();
   }
 
+  @Get('tax-types')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Get platform-defined tax types' })
+  getTaxTypes(): Promise<unknown> {
+    return this.globalSettingsService.getTaxTypes();
+  }
+
   @Patch()
   @Roles(RolesEnum.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update platform-wide global settings' })
@@ -57,5 +72,15 @@ export class GlobalSettingsController {
     @Body() dto: UpdateGlobalPaymentMethodsDto,
   ): Promise<unknown> {
     return this.globalSettingsService.updatePaymentMethods(user, dto);
+  }
+
+  @Patch('tax-types')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Update platform-defined tax types' })
+  updateTaxTypes(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateGlobalTaxTypesDto,
+  ): Promise<unknown> {
+    return this.globalSettingsService.updateTaxTypes(user, dto);
   }
 }

@@ -122,6 +122,29 @@ describe('GlobalSettingsService', () => {
             payoutUpdate: { email: false, sms: false, whatsapp: false },
           },
         },
+        taxTypes: [
+          {
+            code: 'STANDARD',
+            label: 'Standard tax',
+            percentage: 0,
+            isActive: true,
+            isDefault: true,
+          },
+          {
+            code: 'REDUCED',
+            label: 'Reduced tax',
+            percentage: 0,
+            isActive: true,
+            isDefault: false,
+          },
+          {
+            code: 'ZERO',
+            label: 'Zero tax',
+            percentage: 0,
+            isActive: true,
+            isDefault: false,
+          },
+        ],
       },
       message: 'Global settings fetched successfully',
     });
@@ -310,6 +333,73 @@ describe('GlobalSettingsService', () => {
         },
       ),
     ).rejects.toThrow('Duplicate payment method code');
+  });
+
+  it('updates platform tax types and rejects duplicate codes', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      globalTaxPercentage: new Prisma.Decimal(19),
+      taxTypes: null,
+    });
+
+    await service.updateTaxTypes(
+      { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        taxTypes: [
+          {
+            code: 'standard',
+            label: 'Standard VAT',
+            percentage: 19,
+            isActive: true,
+            isDefault: true,
+          },
+          {
+            code: 'reduced',
+            label: 'Reduced VAT',
+            percentage: 7,
+            isActive: true,
+          },
+        ],
+      },
+    );
+
+    const [updateData] = updateSingletonSpy.mock.calls[0];
+    expect(updateData.updatedBy).toBe('user-1');
+    expect(updateData.taxTypes).toEqual([
+      {
+        code: 'STANDARD',
+        label: 'Standard VAT',
+        percentage: 19,
+        isActive: true,
+        isDefault: true,
+      },
+      {
+        code: 'REDUCED',
+        label: 'Reduced VAT',
+        percentage: 7,
+        isActive: true,
+        isDefault: false,
+      },
+      {
+        code: 'ZERO',
+        label: 'Zero tax',
+        percentage: 0,
+        isActive: true,
+        isDefault: false,
+      },
+    ]);
+
+    await expect(
+      service.updateTaxTypes(
+        { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+        {
+          taxTypes: [
+            { code: 'standard', percentage: 19 },
+            { code: 'STANDARD', percentage: 19 },
+          ],
+        },
+      ),
+    ).rejects.toThrow('Duplicate tax type code');
   });
 
   it('rejects notification channels without required contact values', async () => {

@@ -77,6 +77,10 @@ describe('MenuItemService', () => {
       },
       globalSetting: {
         upsert: jest.fn().mockResolvedValue({ productLabels: null }),
+        findUnique: jest.fn().mockResolvedValue({
+          globalTaxPercentage: new Prisma.Decimal(0),
+          taxTypes: null,
+        }),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback(tx)),
@@ -175,6 +179,49 @@ describe('MenuItemService', () => {
 
     expect(itemRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({ slug: 'loaded-fries' }),
+      expect.anything(),
+    );
+  });
+
+  it('stores selected super-admin tax type when creating an item', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    prisma.globalSetting.findUnique.mockResolvedValue({
+      globalTaxPercentage: new Prisma.Decimal(0),
+      taxTypes: [
+        {
+          code: 'REDUCED',
+          label: 'Reduced tax',
+          percentage: 7,
+          isActive: true,
+        },
+      ],
+    });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+        name: 'Salad',
+        basePrice: 450,
+        taxTypeCode: 'reduced',
+      },
+    );
+
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taxTypeCode: 'REDUCED',
+        taxPercentage: new Prisma.Decimal(7),
+      }),
       expect.anything(),
     );
   });

@@ -10,8 +10,10 @@ import { AuthUserContext } from '../../common/decorators';
 import { GlobalSettingsRepository } from './global-settings.repository';
 import {
   PaymentMethodSettingDto,
+  TaxTypeSettingDto,
   UpdateGlobalPaymentMethodsDto,
   UpdateGlobalSettingsDto,
+  UpdateGlobalTaxTypesDto,
 } from './dto';
 
 export interface NotificationChannelMatrix {
@@ -40,6 +42,14 @@ export interface PaymentMethodSettingsShape {
   isActive: boolean;
 }
 
+export interface TaxTypeSettingsShape {
+  code: string;
+  label: string;
+  percentage: number;
+  isActive: boolean;
+  isDefault: boolean;
+}
+
 interface NormalizedGlobalSettingsInput {
   globalTaxPercentage?: Prisma.Decimal;
   vatHandlingRule?: VatHandlingRule;
@@ -55,6 +65,7 @@ interface NormalizedGlobalSettingsInput {
   fontFamily?: string | null;
   notificationSettings?: Prisma.InputJsonValue;
   paymentMethods?: Prisma.InputJsonValue;
+  taxTypes?: Prisma.InputJsonValue;
   isTaxEnforced?: boolean;
   isCommissionEnforced?: boolean;
   isCurrencyEnforced?: boolean;
@@ -86,6 +97,7 @@ export class GlobalSettingsService {
       dto,
       current.notificationSettings,
       current.paymentMethods,
+      current.taxTypes,
     );
 
     const data = await this.globalSettingsRepository.updateSingleton(
@@ -141,6 +153,46 @@ export class GlobalSettingsService {
     };
   }
 
+  async getTaxTypes() {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return {
+      data: this.extractTaxTypes(data.taxTypes, data.globalTaxPercentage),
+      message: 'Tax types fetched successfully',
+    };
+  }
+
+  async updateTaxTypes(user: AuthUserContext, dto: UpdateGlobalTaxTypesDto) {
+    const current = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+    const taxTypes = this.mergeTaxTypes(
+      current.taxTypes,
+      dto.taxTypes,
+      current.globalTaxPercentage,
+    );
+
+    const data = await this.globalSettingsRepository.updateSingleton(
+      {
+        taxTypes,
+        updatedBy: user.uid,
+      },
+      {
+        ...this.buildDefaultCreateInput(),
+        taxTypes,
+        createdBy: user.uid,
+        updatedBy: user.uid,
+      },
+    );
+
+    return {
+      data: this.extractTaxTypes(data.taxTypes, data.globalTaxPercentage),
+      message: 'Tax types updated successfully',
+    };
+  }
+
   private buildDefaultCreateInput(): Prisma.GlobalSettingCreateInput {
     return {
       scopeKey: 'GLOBAL',
@@ -158,6 +210,7 @@ export class GlobalSettingsService {
       fontFamily: null,
       notificationSettings: this.buildDefaultNotificationSettings(),
       paymentMethods: this.buildDefaultPaymentMethods(),
+      taxTypes: this.buildDefaultTaxTypes(new Prisma.Decimal(0)),
       isTaxEnforced: false,
       isCommissionEnforced: false,
       isCurrencyEnforced: false,
@@ -171,6 +224,7 @@ export class GlobalSettingsService {
     dto: UpdateGlobalSettingsDto,
     currentNotificationSettings?: Prisma.JsonValue | null,
     currentPaymentMethods?: Prisma.JsonValue | null,
+    currentTaxTypes?: Prisma.JsonValue | null,
   ): NormalizedGlobalSettingsInput {
     if (dto.timezone !== undefined) {
       this.assertValidTimeZone(dto.timezone);
@@ -226,6 +280,21 @@ export class GlobalSettingsService {
         dto.paymentMethods !== undefined
           ? this.mergePaymentMethods(currentPaymentMethods, dto.paymentMethods)
           : undefined,
+      taxTypes:
+        dto.taxTypes !== undefined
+          ? this.mergeTaxTypes(
+              currentTaxTypes,
+              dto.taxTypes,
+              dto.globalTaxPercentage !== undefined
+                ? new Prisma.Decimal(dto.globalTaxPercentage)
+                : undefined,
+            )
+          : dto.globalTaxPercentage !== undefined
+            ? this.refreshDefaultTaxTypePercentage(
+                currentTaxTypes,
+                new Prisma.Decimal(dto.globalTaxPercentage),
+              )
+            : undefined,
       isTaxEnforced: dto.isTaxEnforced,
       isCommissionEnforced: dto.isCommissionEnforced,
       isCurrencyEnforced: dto.isCurrencyEnforced,
@@ -257,8 +326,10 @@ export class GlobalSettingsService {
 
   private serializeSettings<
     T extends {
+      globalTaxPercentage?: Prisma.Decimal | number | null;
       notificationSettings?: Prisma.JsonValue | null;
       paymentMethods?: Prisma.JsonValue | null;
+      taxTypes?: Prisma.JsonValue | null;
     },
   >(settings: T) {
     return {
@@ -267,6 +338,10 @@ export class GlobalSettingsService {
         settings.notificationSettings,
       ),
       paymentMethods: this.extractPaymentMethods(settings.paymentMethods),
+      taxTypes: this.extractTaxTypes(
+        settings.taxTypes,
+        settings.globalTaxPercentage,
+      ),
     };
   }
 
@@ -281,6 +356,42 @@ export class GlobalSettingsService {
 
   private buildDefaultPaymentMethods(): Prisma.InputJsonValue {
     return this.defaultPaymentMethods() as unknown as Prisma.InputJsonValue;
+  }
+
+  private buildDefaultTaxTypes(
+    globalTaxPercentage?: Prisma.Decimal | number | null,
+  ): Prisma.InputJsonValue {
+    return this.defaultTaxTypes(
+      globalTaxPercentage,
+    ) as unknown as Prisma.InputJsonValue;
+  }
+
+  private defaultTaxTypes(
+    globalTaxPercentage?: Prisma.Decimal | number | null,
+  ): TaxTypeSettingsShape[] {
+    return [
+      {
+        code: 'STANDARD',
+        label: 'Standard tax',
+        percentage: this.toNumber(globalTaxPercentage ?? 0),
+        isActive: true,
+        isDefault: true,
+      },
+      {
+        code: 'REDUCED',
+        label: 'Reduced tax',
+        percentage: 0,
+        isActive: true,
+        isDefault: false,
+      },
+      {
+        code: 'ZERO',
+        label: 'Zero tax',
+        percentage: 0,
+        isActive: true,
+        isDefault: false,
+      },
+    ];
   }
 
   private defaultPaymentMethods(): PaymentMethodSettingsShape[] {
@@ -378,6 +489,127 @@ export class GlobalSettingsService {
 
   private isPaymentMethod(value: unknown): value is PaymentMethod {
     return Object.values(PaymentMethod).includes(value as PaymentMethod);
+  }
+
+  private mergeTaxTypes(
+    currentSource: Prisma.JsonValue | null | undefined,
+    updates: TaxTypeSettingDto[],
+    globalTaxPercentage?: Prisma.Decimal | number | null,
+  ): Prisma.InputJsonValue {
+    const merged = new Map(
+      this.extractTaxTypes(currentSource, globalTaxPercentage).map(
+        (taxType) => [taxType.code, taxType],
+      ),
+    );
+    const seen = new Set<string>();
+
+    for (const update of updates) {
+      const code = update.code.trim().toUpperCase();
+      if (seen.has(code)) {
+        throw new BadRequestException('Duplicate tax type code');
+      }
+
+      seen.add(code);
+
+      const current = merged.get(code) ?? {
+        code,
+        label: code,
+        percentage: 0,
+        isActive: true,
+        isDefault: false,
+      };
+
+      merged.set(code, {
+        code,
+        label:
+          update.label !== undefined
+            ? (this.resolveOptionalString(update.label) ?? code)
+            : current.label,
+        percentage: update.percentage,
+        isActive:
+          update.isActive !== undefined ? update.isActive : current.isActive,
+        isDefault:
+          update.isDefault !== undefined ? update.isDefault : current.isDefault,
+      });
+    }
+
+    return this.normalizeTaxTypeDefaults(
+      Array.from(merged.values()),
+    ) as unknown as Prisma.InputJsonValue;
+  }
+
+  private refreshDefaultTaxTypePercentage(
+    currentSource: Prisma.JsonValue | null | undefined,
+    globalTaxPercentage: Prisma.Decimal,
+  ): Prisma.InputJsonValue {
+    return this.extractTaxTypes(currentSource, globalTaxPercentage).map(
+      (taxType) =>
+        taxType.isDefault
+          ? { ...taxType, percentage: this.toNumber(globalTaxPercentage) }
+          : taxType,
+    ) as unknown as Prisma.InputJsonValue;
+  }
+
+  private extractTaxTypes(
+    source: Prisma.JsonValue | null | undefined,
+    globalTaxPercentage?: Prisma.Decimal | number | null,
+  ): TaxTypeSettingsShape[] {
+    const fallback = this.defaultTaxTypes(globalTaxPercentage);
+
+    if (!Array.isArray(source)) {
+      return fallback;
+    }
+
+    const taxTypes = source.flatMap((row) => {
+      const objectRow = this.asObject(row);
+      const code =
+        typeof objectRow.code === 'string'
+          ? objectRow.code.trim().toUpperCase()
+          : '';
+
+      if (!code) {
+        return [];
+      }
+
+      return [
+        {
+          code,
+          label:
+            typeof objectRow.label === 'string' &&
+            objectRow.label.trim().length > 0
+              ? objectRow.label.trim()
+              : code,
+          percentage: this.toNumber(objectRow.percentage ?? 0),
+          isActive:
+            typeof objectRow.isActive === 'boolean' ? objectRow.isActive : true,
+          isDefault:
+            typeof objectRow.isDefault === 'boolean'
+              ? objectRow.isDefault
+              : false,
+        },
+      ];
+    });
+
+    return taxTypes.length ? this.normalizeTaxTypeDefaults(taxTypes) : fallback;
+  }
+
+  private normalizeTaxTypeDefaults(taxTypes: TaxTypeSettingsShape[]) {
+    let defaultAssigned = false;
+
+    return taxTypes.map((taxType, index) => {
+      const shouldBeDefault =
+        (taxType.isDefault && !defaultAssigned) ||
+        (!defaultAssigned && index === 0);
+      if (shouldBeDefault) {
+        defaultAssigned = true;
+      }
+
+      return {
+        ...taxType,
+        percentage: Number(taxType.percentage.toFixed(2)),
+        isDefault: shouldBeDefault,
+      };
+    });
   }
 
   private paymentMethodLabel(code: PaymentMethod) {
@@ -622,5 +854,17 @@ export class GlobalSettingsService {
   private resolveOptionalString(value: string) {
     const trimmed = value.trim();
     return trimmed.length ? trimmed : null;
+  }
+
+  private toNumber(value: unknown) {
+    if (
+      typeof value !== 'string' &&
+      typeof value !== 'number' &&
+      !(value instanceof Prisma.Decimal)
+    ) {
+      return 0;
+    }
+
+    return Number(new Prisma.Decimal(value).toDecimalPlaces(2));
   }
 }

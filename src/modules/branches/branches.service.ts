@@ -153,12 +153,18 @@ export class BranchesService {
     const branchDto: CreateBranchDto = {
       ...dto,
       restaurantId: effectiveRestaurantId,
+      settings: this.sanitizeBranchSettingsInput(
+        user,
+        dto.settings,
+      ) as CreateBranchDto['settings'],
     };
 
     if (!dto.branchAdmin) {
       const data = await this.create(user.tid, branchDto, tx);
       return {
-        data: await this.resolveBranchMedia(data),
+        data: await this.resolveBranchMedia(
+          this.withVisibleBranchSettings(user, data),
+        ),
         message: 'Branch created successfully',
       };
     }
@@ -225,6 +231,7 @@ export class BranchesService {
     return {
       data: {
         ...result,
+        branch: this.withVisibleBranchSettings(user, result.branch),
         branchAdminCredentials: {
           email: result.branchAdmin.email,
           password: plainPassword,
@@ -255,6 +262,10 @@ export class BranchesService {
         const branchInput: CreateBranchDto = {
           ...item,
           restaurantId: effectiveRestaurantId,
+          settings: this.sanitizeBranchSettingsInput(
+            user,
+            item.settings,
+          ) as CreateBranchDto['settings'],
         };
 
         const branch = await this.create(user.tid as string, branchInput, trx);
@@ -265,7 +276,9 @@ export class BranchesService {
     });
 
     return {
-      data: createdBranches,
+      data: createdBranches.map((branch) =>
+        this.withVisibleBranchSettings(user, branch),
+      ),
       message: 'Branches created successfully',
       meta: {
         totalCreated: createdBranches.length,
@@ -285,7 +298,9 @@ export class BranchesService {
       );
 
       return {
-        data: data.items,
+        data: data.items.map((item) =>
+          this.withVisibleBranchSettings(user, item),
+        ),
         message: 'Branch admin scope applied',
         meta: buildPaginationMeta(query, data.total),
       };
@@ -363,7 +378,11 @@ export class BranchesService {
 
       return {
         data: await Promise.all(
-          data.items.map((item) => this.withBranchDeletionState(item)),
+          data.items.map((item) =>
+            this.withBranchDeletionState(
+              this.withVisibleBranchSettings(user, item),
+            ),
+          ),
         ),
         message: 'Branches fetched successfully',
         meta: buildPaginationMeta(query, data.total),
@@ -382,7 +401,9 @@ export class BranchesService {
     return {
       data: await Promise.all(
         (await this.attachBranchAddresses(items, null)).map((item) =>
-          this.withBranchDeletionState(item),
+          this.withBranchDeletionState(
+            this.withVisibleBranchSettings(user, item),
+          ),
         ),
       ),
       message: 'Branches fetched successfully',
@@ -417,7 +438,9 @@ export class BranchesService {
     return {
       data: await Promise.all(
         (await this.attachBranchAddresses(items, null)).map((item) =>
-          this.withBranchDeletionState(item),
+          this.withBranchDeletionState(
+            this.withVisibleBranchSettings(null, item),
+          ),
         ),
       ),
       message: 'Public branches fetched successfully',
@@ -457,7 +480,7 @@ export class BranchesService {
 
     return {
       data: await this.withBranchDeletionState({
-        ...branch,
+        ...this.withVisibleBranchSettings(user, branch),
         address: address
           ? {
               street: address.street,
@@ -678,13 +701,17 @@ export class BranchesService {
         ? this.readOpeningHours(branch.settings)
         : this.normalizeOpeningHours(dto.openingHours);
     const settings = this.readSettings(branch.settings);
+    const incomingSettings = this.sanitizeBranchSettingsInput(
+      user,
+      dto.settings,
+    );
 
     const data = await this.branchesRepository.update(
       id,
       {
         settings: {
           ...settings,
-          ...(dto.settings ?? {}),
+          ...(incomingSettings ?? {}),
           openingHours,
         } as unknown as Prisma.InputJsonValue,
       },
@@ -759,13 +786,17 @@ export class BranchesService {
     }
 
     this.assertBranchWriteAccess(user, branch);
-    this.assertValidDeliveryConfiguration(dto.settings);
+    const sanitizedSettings = this.sanitizeBranchSettingsInput(
+      user,
+      dto.settings,
+    );
+    this.assertValidDeliveryConfiguration(sanitizedSettings);
     const mergedSettings =
-      dto.settings === undefined
+      sanitizedSettings === undefined
         ? undefined
         : ({
             ...this.readSettings(branch.settings),
-            ...dto.settings,
+            ...sanitizedSettings,
           } as unknown as Prisma.InputJsonValue);
 
     const operation = async (trx: PrismaTx) => {
@@ -827,7 +858,9 @@ export class BranchesService {
       : await this.prisma.$transaction(async (trx) => operation(trx));
 
     return {
-      data: await this.resolveBranchMedia(data),
+      data: await this.resolveBranchMedia(
+        this.withVisibleBranchSettings(user, data),
+      ),
       message: 'Branch updated successfully',
     };
   }
@@ -1587,6 +1620,42 @@ export class BranchesService {
     }
 
     return value as BranchSettingsLike;
+  }
+
+  private withVisibleBranchSettings<
+    T extends {
+      settings?: unknown;
+    },
+  >(user: AuthUserContext | null, branch: T): T {
+    if (user?.role === UserRoleEnum.SUPER_ADMIN) {
+      return branch;
+    }
+
+    return {
+      ...branch,
+      settings: this.omitServiceCharge(branch.settings),
+    };
+  }
+
+  private sanitizeBranchSettingsInput(
+    user: AuthUserContext,
+    settings: unknown,
+  ) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      return settings;
+    }
+
+    return this.omitServiceCharge(settings);
+  }
+
+  private omitServiceCharge<T>(settings: T): T {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return settings;
+    }
+
+    const visibleSettings = { ...(settings as Record<string, unknown>) };
+    delete visibleSettings.serviceCharge;
+    return visibleSettings as T;
   }
 
   private readOpeningHours(value: unknown): BranchOpeningHourItemDto[] {
