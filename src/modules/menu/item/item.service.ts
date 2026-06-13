@@ -2257,6 +2257,19 @@ export class MenuItemService {
     );
   }
 
+  async getTaxTypes() {
+    const settings = await this.prisma.globalSetting.findUnique({
+      where: { scopeKey: 'GLOBAL' },
+      select: { taxTypes: true, globalTaxPercentage: true },
+    });
+    const taxTypes = this.extractTaxTypes(
+      settings?.taxTypes,
+      settings?.globalTaxPercentage,
+    ).filter((taxType) => taxType.isActive);
+
+    return { taxTypes };
+  }
+
   private extractTaxTypes(
     source: Prisma.JsonValue | null | undefined,
     globalTaxPercentage?: Prisma.Decimal | null,
@@ -2270,6 +2283,7 @@ export class MenuItemService {
             new Prisma.Decimal(globalTaxPercentage ?? 0).toDecimalPlaces(2),
           ),
           isActive: true,
+          isDefault: true,
         },
       ];
     }
@@ -2297,6 +2311,10 @@ export class MenuItemService {
           percentage: this.toNumber(objectRow.percentage),
           isActive:
             typeof objectRow.isActive === 'boolean' ? objectRow.isActive : true,
+          isDefault:
+            typeof objectRow.isDefault === 'boolean'
+              ? objectRow.isDefault
+              : false,
         },
       ];
     });

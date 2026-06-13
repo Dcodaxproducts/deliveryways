@@ -183,7 +183,7 @@ describe('MenuItemService', () => {
     );
   });
 
-  it('stores selected super-admin tax type when creating an item', async () => {
+  it('stores selected configured tax type when creating an item', async () => {
     const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
     prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
@@ -224,6 +224,40 @@ describe('MenuItemService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('returns active menu item tax type options', async () => {
+    const { service, prisma } = makeService();
+    prisma.globalSetting.findUnique.mockResolvedValue({
+      globalTaxPercentage: new Prisma.Decimal(19),
+      taxTypes: [
+        {
+          code: 'standard',
+          label: 'Standard tax',
+          percentage: 19,
+          isActive: true,
+          isDefault: true,
+        },
+        {
+          code: 'ARCHIVED',
+          label: 'Archived tax',
+          percentage: 5,
+          isActive: false,
+        },
+      ],
+    });
+
+    await expect(service.getTaxTypes()).resolves.toEqual({
+      taxTypes: [
+        {
+          code: 'STANDARD',
+          label: 'Standard tax',
+          percentage: 19,
+          isActive: true,
+          isDefault: true,
+        },
+      ],
+    });
   });
 
   it('rejects duplicate menu item sku before hitting the database', async () => {

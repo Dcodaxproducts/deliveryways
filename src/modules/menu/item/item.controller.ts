@@ -87,6 +87,14 @@ export class MenuItemController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Get('tax-types')
+  taxTypes() {
+    return this.menuItemService.getTaxTypes();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Post('labels')
   createLabel(
     @CurrentUser() user: AuthUserContext,
