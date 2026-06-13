@@ -9,6 +9,7 @@ import {
   AddressRefType,
   OrderStatus,
   OrderType,
+  PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -255,7 +256,15 @@ export class OrdersService {
     this.assertGuestContactForOrder(quote.customer, dto.guestContact);
 
     const branchSettings = this.readBranchSettings(quote.branch.settings);
-    if (!this.isPaymentAllowed(branchSettings, dto.paymentMethod)) {
+    const activeGlobalPaymentMethods =
+      await this.resolveActiveGlobalPaymentMethods();
+    if (
+      !this.isPaymentAllowed(
+        branchSettings,
+        dto.paymentMethod,
+        activeGlobalPaymentMethods,
+      )
+    ) {
       throw new BadRequestException(
         'Payment method is not allowed for this branch',
       );
@@ -3507,12 +3516,67 @@ export class OrdersService {
   private isPaymentAllowed(
     settings: BranchSettings,
     paymentMethod: string,
+    activeGlobalPaymentMethods: string[] = [],
   ): boolean {
     if (paymentMethod === 'WALLET' || paymentMethod === 'PAYPAL') {
       return true;
     }
 
-    return settings.allowedPaymentMethods.includes(paymentMethod);
+    return (
+      settings.allowedPaymentMethods.includes(paymentMethod) ||
+      activeGlobalPaymentMethods.includes(paymentMethod)
+    );
+  }
+
+  private async resolveActiveGlobalPaymentMethods(): Promise<string[]> {
+    const globalSettingDelegate = (
+      this.prisma as unknown as {
+        globalSetting?: {
+          findUnique: (args: {
+            where: { scopeKey: string };
+            select: { paymentMethods: boolean };
+          }) => Promise<{ paymentMethods: Prisma.JsonValue | null } | null>;
+        };
+      }
+    ).globalSetting;
+
+    if (!globalSettingDelegate) {
+      return [];
+    }
+
+    const settings = await globalSettingDelegate.findUnique({
+      where: { scopeKey: 'GLOBAL' },
+      select: { paymentMethods: true },
+    });
+
+    return this.readActiveGlobalPaymentMethods(settings?.paymentMethods);
+  }
+
+  private readActiveGlobalPaymentMethods(
+    source: Prisma.JsonValue | null | undefined,
+  ): string[] {
+    if (!Array.isArray(source)) {
+      return [];
+    }
+
+    return source.flatMap((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return [];
+      }
+
+      const code = (row as { code?: unknown }).code;
+      const isActive = (row as { isActive?: unknown }).isActive;
+
+      if (
+        typeof code === 'string' &&
+        Object.values(PaymentMethod).includes(code as PaymentMethod) &&
+        isActive === true
+      ) {
+        return [code];
+      }
+
+      return [];
+    });
   }
 
   private resolveItemVariations(item: {
@@ -3950,6 +4014,7 @@ export class OrdersService {
         type: ServiceChargeType.PERCENTAGE,
         value: 0,
       },
+      openingHours: [],
       deliveryHours: [],
       temporaryClosure: null,
       holidayOpeningHours: [],
@@ -4002,6 +4067,9 @@ export class OrdersService {
       temporaryClosure: raw.temporaryClosure ?? fallback.temporaryClosure,
       holidayOpeningHours:
         raw.holidayOpeningHours ?? fallback.holidayOpeningHours,
+      openingHours: Array.isArray(raw.openingHours)
+        ? raw.openingHours
+        : fallback.openingHours,
       deliveryHours: Array.isArray(raw.deliveryHours)
         ? raw.deliveryHours
         : fallback.deliveryHours,
@@ -4230,10 +4298,11 @@ export class OrdersService {
     orderType: OrderTypeEnum,
     orderTime: string | null,
   ) {
-    if (
-      orderType !== OrderTypeEnum.DELIVERY ||
-      !settings.deliveryHours.length
-    ) {
+    const deliverySchedule = settings.deliveryHours.length
+      ? settings.deliveryHours
+      : settings.openingHours;
+
+    if (orderType !== OrderTypeEnum.DELIVERY || !deliverySchedule.length) {
       return;
     }
 
@@ -4245,9 +4314,7 @@ export class OrdersService {
 
     const local = this.getScheduleLocalParts(orderTime);
     const daySchedule = local
-      ? settings.deliveryHours.find(
-          (item) => item.dayOfWeek === local.dayOfWeek,
-        )
+      ? deliverySchedule.find((item) => item.dayOfWeek === local.dayOfWeek)
       : null;
 
     if (
@@ -4960,6 +5027,7 @@ type BranchSettings = {
   allowedPaymentMethods: string[];
   temporaryClosure: BranchTemporaryClosure | null;
   holidayOpeningHours: BranchHolidayOpeningHour[];
+  openingHours: BranchDeliveryHour[];
   deliveryHours: BranchDeliveryHour[];
   deliveryConfig: {
     mode: 'RADIUS' | 'ZONE' | 'ZONE_BANDS' | 'POSTAL_CODE';

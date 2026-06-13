@@ -1732,8 +1732,8 @@ export class BranchesService {
     const settings = this.readSettings(value);
     const deliveryHours = settings.deliveryHours;
 
-    if (!Array.isArray(deliveryHours)) {
-      return [];
+    if (!Array.isArray(deliveryHours) || !deliveryHours.length) {
+      return this.readOpeningHours(value);
     }
 
     return this.normalizeOpeningHours(deliveryHours, 'delivery-hours');

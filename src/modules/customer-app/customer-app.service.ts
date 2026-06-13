@@ -3520,7 +3520,15 @@ export class CustomerAppService {
     key: 'openingHours' | 'deliveryHours',
   ): unknown[] {
     const value = this.readPath(source, [key]);
-    return Array.isArray(value) ? Array.from(value as unknown[]) : [];
+    if (Array.isArray(value) && value.length) {
+      return Array.from(value as unknown[]);
+    }
+
+    if (key === 'deliveryHours') {
+      return this.readBranchScheduleHours(source, 'openingHours');
+    }
+
+    return [];
   }
 
   private readRestaurantCurrency(source: unknown): string | null {

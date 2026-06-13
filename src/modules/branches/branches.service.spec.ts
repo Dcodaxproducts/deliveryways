@@ -1317,6 +1317,45 @@ describe('BranchesService', () => {
     });
   });
 
+  it('falls back to opening hours when branch delivery hours are not configured', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        openingHours: [
+          {
+            dayOfWeek: BranchScheduleDayEnum.MONDAY,
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '18:00',
+          },
+        ],
+      },
+    });
+
+    const result = await service.getDeliveryHours(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+    );
+
+    expect(result.data.deliveryHours).toEqual([
+      {
+        dayOfWeek: BranchScheduleDayEnum.MONDAY,
+        isClosed: false,
+        openTime: '09:00',
+        closeTime: '18:00',
+      },
+    ]);
+  });
+
   it('updates branch delivery hours without changing other settings', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({

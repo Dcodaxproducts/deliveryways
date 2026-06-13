@@ -206,6 +206,42 @@ describe('CustomerAppService', () => {
     };
   };
 
+  it('uses opening hours as customer-app delivery-hours fallback', () => {
+    const { service } = makeService();
+    const readBranchScheduleHours = (
+      service as unknown as {
+        readBranchScheduleHours: (
+          source: unknown,
+          key: 'openingHours' | 'deliveryHours',
+        ) => unknown[];
+      }
+    ).readBranchScheduleHours;
+
+    const hours = readBranchScheduleHours.call(
+      service,
+      {
+        openingHours: [
+          {
+            dayOfWeek: 'MONDAY',
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '18:00',
+          },
+        ],
+      },
+      'deliveryHours',
+    );
+
+    expect(hours).toEqual([
+      {
+        dayOfWeek: 'MONDAY',
+        isClosed: false,
+        openTime: '09:00',
+        closeTime: '18:00',
+      },
+    ]);
+  });
+
   it('adds favorite item to customer metadata', async () => {
     const { service, repository } = makeService();
     repository.findCustomerProfile.mockResolvedValue({

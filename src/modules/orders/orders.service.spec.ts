@@ -235,6 +235,54 @@ describe('OrdersService - delivery radius', () => {
     ).toThrow('Delivery is not available at requested order time');
   });
 
+  it('falls back to opening hours when delivery hours are not configured', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<never>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      openingHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '09:00',
+          closeTime: '18:00',
+        },
+      ],
+      deliveryHours: [],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T07:30:00.000Z',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T14:30:00.000Z',
+      ),
+    ).toThrow('Delivery is not available at requested order time');
+  });
+
   it('does not apply delivery hours to pickup orders', () => {
     const assertDeliveryOrderWithinHours = (
       service as unknown as {
@@ -3667,6 +3715,133 @@ describe('OrdersService - admin customer resolution', () => {
 });
 
 describe('OrdersService - wallet payment', () => {
+  it('allows checkout with a globally active payment method absent from branch settings', async () => {
+    const paymentTransactionCreate = jest.fn();
+    const ordersRepository = {
+      create: jest.fn().mockResolvedValue({
+        id: 'order-1',
+        tenantId: 'tenant-1',
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(0),
+        totalAmount: new Prisma.Decimal(500),
+      }),
+    };
+    const prisma = {
+      globalSetting: {
+        findUnique: jest.fn().mockResolvedValue({
+          paymentMethods: [
+            {
+              code: PaymentMethod.CARD_ON_DELIVERY,
+              label: 'Card on delivery',
+              isActive: true,
+            },
+          ],
+        }),
+      },
+      restaurant: {
+        findUnique: jest.fn().mockResolvedValue({
+          settings: { currency: 'USD' },
+        }),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(
+          callback({
+            paymentTransaction: {
+              create: paymentTransactionCreate,
+            },
+          }),
+        ),
+      ),
+    };
+    const loyaltyWalletService = {
+      applyOrderBenefits: jest.fn(),
+      awardPointsForPaidOrder: jest.fn(),
+    };
+    const service = new OrdersService(
+      prisma as never,
+      ordersRepository as never,
+      { registerUsage: jest.fn() } as never,
+      { notifyOrderPlaced: jest.fn() } as never,
+      {} as never,
+      {
+        emitOrderCreated: jest.fn(),
+        emitOrderStatusChanged: jest.fn(),
+      } as never,
+      undefined,
+      loyaltyWalletService as never,
+    );
+
+    jest
+      .spyOn(
+        service as unknown as {
+          buildQuote: (user: unknown, dto: unknown) => Promise<unknown>;
+        },
+        'buildQuote',
+      )
+      .mockResolvedValue({
+        branch: {
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedPaymentMethods: ['COD'],
+          },
+        },
+        customer: { customerId: 'customer-1' },
+        lines: [
+          {
+            menuItemId: 'menu-1',
+            categoryId: 'cat-1',
+            menuItemName: 'Burger',
+            quantity: 1,
+            depositAmount: new Prisma.Decimal(0),
+            unitPrice: new Prisma.Decimal(500),
+            lineTotal: new Prisma.Decimal(500),
+          },
+        ],
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(0),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        loyaltyPointsRedeemed: 0,
+        totalAmount: new Prisma.Decimal(500),
+        couponId: undefined,
+      });
+
+    await service.create(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        paymentMethod: PaymentMethodEnum.CARD_ON_DELIVERY,
+        items: [],
+        orderTime: '2026-04-16T12:00:00.000Z',
+      },
+    );
+
+    expect(prisma.globalSetting.findUnique).toHaveBeenCalledWith({
+      where: { scopeKey: 'GLOBAL' },
+      select: { paymentMethods: true },
+    });
+    expect(ordersRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
+      }),
+      expect.anything(),
+    );
+  });
+
   it('marks wallet-only orders as paid and awards loyalty points', async () => {
     const paymentTransactionCreate = jest.fn();
     const ordersRepository = {
