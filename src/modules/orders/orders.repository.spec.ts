@@ -3,7 +3,22 @@ import { OrdersRepository } from './orders.repository';
 type OrderSearchWhere = {
   restaurantId?: string;
   OR?: Array<{
-    id: { contains: string; mode: string };
+    id?: { contains: string; mode: string };
+    customer?: {
+      is: {
+        email?: { contains: string; mode: string };
+        profile?: {
+          is: {
+            AND: Array<{
+              OR: Array<{
+                firstName?: { contains: string; mode: string };
+                lastName?: { contains: string; mode: string };
+              }>;
+            }>;
+          };
+        };
+      };
+    };
   }>;
 };
 
@@ -29,7 +44,7 @@ describe('OrdersRepository', () => {
     jest.useRealTimers();
   });
 
-  it('filters order list search by order id', async () => {
+  it('filters order list search by order id and customer identity', async () => {
     const prisma = {
       $transaction: jest.fn().mockResolvedValue([[], 0]),
       order: {
@@ -47,7 +62,7 @@ describe('OrdersRepository', () => {
       limit: 10,
       sortBy: 'createdAt',
       sortOrder: 'DESC',
-      search: 'order-123',
+      search: 'Ali Khan',
     } as never);
 
     const findManyCalls = prisma.order.findMany.mock.calls as Array<
@@ -60,7 +75,58 @@ describe('OrdersRepository', () => {
         restaurantId: 'restaurant-1',
         OR: [
           {
-            id: { contains: 'order-123', mode: 'insensitive' },
+            id: { contains: 'Ali Khan', mode: 'insensitive' },
+          },
+          {
+            customer: {
+              is: {
+                email: { contains: 'Ali Khan', mode: 'insensitive' },
+              },
+            },
+          },
+          {
+            customer: {
+              is: {
+                profile: {
+                  is: {
+                    AND: [
+                      {
+                        OR: [
+                          {
+                            firstName: {
+                              contains: 'Ali',
+                              mode: 'insensitive',
+                            },
+                          },
+                          {
+                            lastName: {
+                              contains: 'Ali',
+                              mode: 'insensitive',
+                            },
+                          },
+                        ],
+                      },
+                      {
+                        OR: [
+                          {
+                            firstName: {
+                              contains: 'Khan',
+                              mode: 'insensitive',
+                            },
+                          },
+                          {
+                            lastName: {
+                              contains: 'Khan',
+                              mode: 'insensitive',
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            },
           },
         ],
       }),
@@ -70,7 +136,58 @@ describe('OrdersRepository', () => {
         restaurantId: 'restaurant-1',
         OR: [
           {
-            id: { contains: 'order-123', mode: 'insensitive' },
+            id: { contains: 'Ali Khan', mode: 'insensitive' },
+          },
+          {
+            customer: {
+              is: {
+                email: { contains: 'Ali Khan', mode: 'insensitive' },
+              },
+            },
+          },
+          {
+            customer: {
+              is: {
+                profile: {
+                  is: {
+                    AND: [
+                      {
+                        OR: [
+                          {
+                            firstName: {
+                              contains: 'Ali',
+                              mode: 'insensitive',
+                            },
+                          },
+                          {
+                            lastName: {
+                              contains: 'Ali',
+                              mode: 'insensitive',
+                            },
+                          },
+                        ],
+                      },
+                      {
+                        OR: [
+                          {
+                            firstName: {
+                              contains: 'Khan',
+                              mode: 'insensitive',
+                            },
+                          },
+                          {
+                            lastName: {
+                              contains: 'Khan',
+                              mode: 'insensitive',
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            },
           },
         ],
       }),

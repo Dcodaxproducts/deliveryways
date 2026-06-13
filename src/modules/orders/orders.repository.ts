@@ -12,6 +12,47 @@ export class OrdersRepository {
     return tx ?? this.prisma;
   }
 
+  private buildSearchFilter(search?: string): Prisma.OrderWhereInput {
+    const trimmedSearch = search?.trim();
+
+    if (!trimmedSearch) {
+      return {};
+    }
+
+    const customerNameTerms = trimmedSearch
+      .split(/\s+/)
+      .filter((term) => term.length > 0);
+
+    return {
+      OR: [
+        { id: { contains: trimmedSearch, mode: 'insensitive' } },
+        {
+          customer: {
+            is: {
+              email: { contains: trimmedSearch, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          customer: {
+            is: {
+              profile: {
+                is: {
+                  AND: customerNameTerms.map((term) => ({
+                    OR: [
+                      { firstName: { contains: term, mode: 'insensitive' } },
+                      { lastName: { contains: term, mode: 'insensitive' } },
+                    ],
+                  })),
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
   async create(data: Prisma.OrderCreateInput, tx: PrismaTx) {
     return tx.order.create({
       data,
@@ -278,11 +319,7 @@ export class OrdersRepository {
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(customerId ? { customerId } : {}),
       ...(deliverymanId ? { deliverymanId } : {}),
-      ...(query.search
-        ? {
-            OR: [{ id: { contains: query.search, mode: 'insensitive' } }],
-          }
-        : {}),
+      ...this.buildSearchFilter(query.search),
       ...(query.kind === 'group-orders'
         ? { sourceGroupOrder: { isNot: null } }
         : query.kind === 'order'
