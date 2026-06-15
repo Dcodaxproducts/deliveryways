@@ -283,6 +283,195 @@ describe('OrdersService - delivery radius', () => {
     ).toThrow('Delivery is not available at requested order time');
   });
 
+  it('uses date-specific holiday opening hours for scheduled delivery', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            holidayOpeningHours: Array<{
+              date: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      holidayOpeningHours: [
+        {
+          date: '2026-06-09',
+          isClosed: false,
+          openTime: '18:00',
+          closeTime: '20:00',
+        },
+      ],
+      openingHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '09:00',
+          closeTime: '22:00',
+        },
+      ],
+      deliveryHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '12:00',
+          closeTime: '22:00',
+        },
+      ],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T13:30:00.000Z',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T07:30:00.000Z',
+      ),
+    ).toThrow('Delivery is not available at requested order time');
+  });
+
+  it('uses date-specific holiday opening hours for scheduled pickup', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            holidayOpeningHours: Array<{
+              date: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<never>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      holidayOpeningHours: [
+        {
+          date: '2026-06-09',
+          isClosed: false,
+          openTime: '20:00',
+          closeTime: '22:00',
+        },
+      ],
+      openingHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '09:00',
+          closeTime: '18:00',
+        },
+      ],
+      deliveryHours: [],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.TAKEAWAY,
+        '2026-06-09T15:30:00.000Z',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.TAKEAWAY,
+        '2026-06-09T07:30:00.000Z',
+      ),
+    ).toThrow('Pickup is not available at requested order time');
+  });
+
+  it('blocks scheduled orders on date-specific closed days', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            holidayOpeningHours: Array<{
+              date: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<never>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        {
+          holidayOpeningHours: [
+            {
+              date: '2026-06-09',
+              isClosed: true,
+              openTime: null,
+              closeTime: null,
+            },
+          ],
+          openingHours: [
+            {
+              dayOfWeek: 'TUESDAY',
+              isClosed: false,
+              openTime: '09:00',
+              closeTime: '22:00',
+            },
+          ],
+          deliveryHours: [],
+        },
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T13:30:00.000Z',
+      ),
+    ).toThrow('Delivery is not available at requested order time');
+  });
+
   it('does not apply delivery hours to pickup orders', () => {
     const assertDeliveryOrderWithinHours = (
       service as unknown as {

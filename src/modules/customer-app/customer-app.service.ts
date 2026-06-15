@@ -856,6 +856,9 @@ export class CustomerAppService {
                   translatedBranch.settings,
                   'deliveryHours',
                 ),
+                holidayOpeningHours: this.readBranchHolidayOpeningHours(
+                  translatedBranch.settings,
+                ),
                 deliveryIntervalMinutes: this.readOptionalNumberValue(
                   translatedBranch.settings,
                   [['deliveryIntervalMinutes'], ['deliveryTimeInterval']],
@@ -3529,6 +3532,11 @@ export class CustomerAppService {
     }
 
     return [];
+  }
+
+  private readBranchHolidayOpeningHours(source: unknown): unknown[] {
+    const value = this.readPath(source, ['holidayOpeningHours']);
+    return Array.isArray(value) ? Array.from(value as unknown[]) : [];
   }
 
   private readRestaurantCurrency(source: unknown): string | null {

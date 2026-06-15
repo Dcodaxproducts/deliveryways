@@ -1506,6 +1506,15 @@ describe('CustomerAppService', () => {
             closeTime: '22:00',
           },
         ],
+        holidayOpeningHours: [
+          {
+            date: '2026-06-09',
+            isClosed: false,
+            openTime: '18:00',
+            closeTime: '20:00',
+            note: 'Custom date hours',
+          },
+        ],
       },
     });
 
@@ -1551,6 +1560,15 @@ describe('CustomerAppService', () => {
             isClosed: false,
             openTime: '12:00',
             closeTime: '22:00',
+          },
+        ],
+        holidayOpeningHours: [
+          {
+            date: '2026-06-09',
+            isClosed: false,
+            openTime: '18:00',
+            closeTime: '20:00',
+            note: 'Custom date hours',
           },
         ],
         deliveryIntervalMinutes: 20,

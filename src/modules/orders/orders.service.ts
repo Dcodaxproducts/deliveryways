@@ -4298,24 +4298,36 @@ export class OrdersService {
     orderType: OrderTypeEnum,
     orderTime: string | null,
   ) {
-    const deliverySchedule = settings.deliveryHours.length
-      ? settings.deliveryHours
-      : settings.openingHours;
-
-    if (orderType !== OrderTypeEnum.DELIVERY || !deliverySchedule.length) {
+    if (
+      orderType !== OrderTypeEnum.DELIVERY &&
+      orderType !== OrderTypeEnum.TAKEAWAY
+    ) {
       return;
     }
 
-    if (!orderTime) {
-      throw new BadRequestException(
-        'Delivery is not available at requested order time',
-      );
-    }
+    const availabilityMessage =
+      orderType === OrderTypeEnum.TAKEAWAY
+        ? 'Pickup is not available at requested order time'
+        : 'Delivery is not available at requested order time';
 
     const local = this.getScheduleLocalParts(orderTime);
-    const daySchedule = local
-      ? deliverySchedule.find((item) => item.dayOfWeek === local.dayOfWeek)
+    const holidayOpeningHour = local
+      ? this.resolveHolidayOpeningHourForDate(
+          settings.holidayOpeningHours,
+          local.date,
+        )
       : null;
+    const baseSchedule = this.resolveOrderTypeSchedule(settings, orderType);
+
+    if (!holidayOpeningHour && !baseSchedule.length) {
+      return;
+    }
+
+    const daySchedule = holidayOpeningHour
+      ? this.toHolidayDeliveryHour(local?.dayOfWeek, holidayOpeningHour)
+      : local
+        ? baseSchedule.find((item) => item.dayOfWeek === local.dayOfWeek)
+        : null;
 
     if (
       !local ||
@@ -4324,18 +4336,14 @@ export class OrdersService {
       !daySchedule.openTime ||
       !daySchedule.closeTime
     ) {
-      throw new BadRequestException(
-        'Delivery is not available at requested order time',
-      );
+      throw new BadRequestException(availabilityMessage);
     }
 
     const openMinutes = this.parseScheduleTimeMinutes(daySchedule.openTime);
     const closeMinutes = this.parseScheduleTimeMinutes(daySchedule.closeTime);
 
     if (openMinutes === null || closeMinutes === null) {
-      throw new BadRequestException(
-        'Delivery is not available at requested order time',
-      );
+      throw new BadRequestException(availabilityMessage);
     }
 
     const inDeliveryWindow =
@@ -4344,9 +4352,7 @@ export class OrdersService {
         : local.minutes >= openMinutes || local.minutes < closeMinutes;
 
     if (!inDeliveryWindow) {
-      throw new BadRequestException(
-        'Delivery is not available at requested order time',
-      );
+      throw new BadRequestException(availabilityMessage);
     }
 
     const isInBreak = (daySchedule.breakTimes ?? []).some((breakTime) => {
@@ -4361,13 +4367,60 @@ export class OrdersService {
     });
 
     if (isInBreak) {
-      throw new BadRequestException(
-        'Delivery is not available at requested order time',
-      );
+      throw new BadRequestException(availabilityMessage);
     }
   }
 
-  private getScheduleLocalParts(orderTime: string) {
+  private resolveOrderTypeSchedule(
+    settings: BranchSettings,
+    orderType: OrderTypeEnum,
+  ) {
+    const openingHours = settings.openingHours ?? [];
+
+    if (orderType === OrderTypeEnum.TAKEAWAY) {
+      return openingHours;
+    }
+
+    const deliveryHours = settings.deliveryHours ?? [];
+    return deliveryHours.length ? deliveryHours : openingHours;
+  }
+
+  private resolveHolidayOpeningHourForDate(
+    holidayOpeningHours: BranchHolidayOpeningHour[] | undefined,
+    date: string,
+  ): BranchHolidayOpeningHour | null {
+    if (!Array.isArray(holidayOpeningHours)) {
+      return null;
+    }
+
+    return (
+      holidayOpeningHours.find((item) => this.isHolidayDateMatch(item, date)) ??
+      null
+    );
+  }
+
+  private toHolidayDeliveryHour(
+    dayOfWeek: BranchScheduleDay | undefined,
+    holidayOpeningHour: BranchHolidayOpeningHour,
+  ): BranchDeliveryHour | null {
+    if (!dayOfWeek) {
+      return null;
+    }
+
+    return {
+      dayOfWeek,
+      isClosed: holidayOpeningHour.isClosed,
+      openTime: holidayOpeningHour.openTime,
+      closeTime: holidayOpeningHour.closeTime,
+      breakTimes: [],
+    };
+  }
+
+  private getScheduleLocalParts(orderTime: string | null) {
+    if (!orderTime) {
+      return null;
+    }
+
     const date = new Date(orderTime);
     if (Number.isNaN(date.getTime())) {
       return null;
@@ -4376,6 +4429,9 @@ export class OrdersService {
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Karachi',
       weekday: 'long',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -4384,18 +4440,26 @@ export class OrdersService {
     const dayOfWeek = parts
       .find((part) => part.type === 'weekday')
       ?.value.toUpperCase();
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+    const rawHour = Number(parts.find((part) => part.type === 'hour')?.value);
+    const hour = rawHour === 24 ? 0 : rawHour;
     const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
 
     if (
       !this.isScheduleDay(dayOfWeek) ||
       Number.isNaN(hour) ||
-      Number.isNaN(minute)
+      Number.isNaN(minute) ||
+      !year ||
+      !month ||
+      !day
     ) {
       return null;
     }
 
     return {
+      date: `${year}-${month}-${day}`,
       dayOfWeek,
       minutes: hour * 60 + minute,
     };
