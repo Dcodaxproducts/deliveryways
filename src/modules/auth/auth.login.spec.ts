@@ -18,7 +18,11 @@ describe('AuthService login', () => {
   >;
   let prismaService: {
     branch: { findFirst: jest.Mock };
-    deliveryman: { findUnique: jest.Mock; update: jest.Mock };
+    deliveryman: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
   };
   let jwtService: { signAsync: jest.Mock; verifyAsync: jest.Mock };
 
@@ -41,6 +45,7 @@ describe('AuthService login', () => {
         findFirst: jest.fn(),
       },
       deliveryman: {
+        findFirst: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
       },
@@ -467,6 +472,43 @@ describe('AuthService login', () => {
         password: 'Password@123',
       }),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('logs in deliveryman with the password stored on the deliveryman record', async () => {
+    prismaService.deliveryman.findFirst.mockResolvedValue({
+      id: 'deliveryman-1',
+      email: 'rider@example.com',
+      password: 'hashed-rider-password',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      isActive: true,
+      deletedAt: null,
+      firstName: 'Rider',
+      lastName: 'User',
+      phone: '03000000000',
+    });
+
+    const result = await service.loginDeliveryman({
+      email: 'rider@example.com',
+      password: 'Rider@123',
+    });
+
+    expect(prismaService.deliveryman.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: 'rider@example.com',
+        deletedAt: null,
+      },
+    });
+    expect(bcrypt.compare).toHaveBeenCalledWith(
+      'Rider@123',
+      'hashed-rider-password',
+    );
+    expect(prismaService.deliveryman.update).toHaveBeenCalledWith({
+      where: { id: 'deliveryman-1' },
+      data: { refreshTokenHash: 'hashed-refresh' },
+    });
+    expect(result.message).toBe('Deliveryman login successful');
   });
 
   it('refreshes deliveryman tokens with the deliveryman actor store', async () => {

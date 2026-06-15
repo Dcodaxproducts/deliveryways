@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { DeliverymanStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { UserRoleEnum } from '../../common/enums/user-role.enum';
 import { DeliverymenService } from './deliverymen.service';
 import { DeliverymenRepository } from './deliverymen.repository';
@@ -80,6 +81,10 @@ describe('DeliverymenService', () => {
     );
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('assigns order and marks deliveryman busy', async () => {
     const result = await service.assignOrder(adminUser, 'dm-1', {
       orderId: 'order-1',
@@ -144,6 +149,31 @@ describe('DeliverymenService', () => {
       status: DeliverymanStatus.BUSY,
     });
     expect(result.message).toBe('Order accepted by deliveryman successfully');
+  });
+
+  it('hashes admin-provided deliveryman password on create', async () => {
+    jest
+      .spyOn(bcrypt, 'hash')
+      .mockResolvedValue('hashed-rider-password' as never);
+
+    await service.create(adminUser, {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      firstName: 'Wajih',
+      lastName: 'Hassan',
+      email: 'rider@example.com',
+      phone: '03410279181',
+      vehicleType: 'motor',
+      vehicleNumber: '1234',
+      password: 'Rider@123',
+    });
+
+    expect(bcrypt.hash).toHaveBeenCalledWith('Rider@123', 10);
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        password: 'hashed-rider-password',
+      }),
+    );
   });
 
   it('rejects order accept when deliveryman already has active delivery order', async () => {
