@@ -68,6 +68,49 @@ export class CreateDeliverymanDto {
   status?: DeliverymanStatus;
 }
 
+export class DeliverymanSignupDto {
+  @ApiPropertyOptional({
+    description: 'Optional guard; branch restaurant scope is used when omitted',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiProperty()
+  @IsString()
+  branchId!: string;
+
+  @ApiProperty()
+  @IsString()
+  firstName!: string;
+
+  @ApiProperty()
+  @IsString()
+  lastName!: string;
+
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty()
+  @IsString()
+  phone!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  vehicleType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  vehicleNumber?: string;
+
+  @ApiProperty()
+  @IsString()
+  password!: string;
+}
+
 export class UpdateDeliverymanDto {
   @ApiPropertyOptional()
   @IsOptional()

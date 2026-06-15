@@ -176,6 +176,83 @@ describe('DeliverymenService', () => {
     );
   });
 
+  it('allows public deliveryman signup with branch-derived scope', async () => {
+    const prisma = (
+      service as unknown as {
+        prisma: { branch: { findFirst: jest.Mock } };
+      }
+    ).prisma;
+    prisma.branch.findFirst.mockResolvedValueOnce({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      restaurant: {
+        id: 'restaurant-1',
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    jest
+      .spyOn(bcrypt, 'hash')
+      .mockResolvedValue('hashed-signup-password' as never);
+
+    const result = await service.signup({
+      branchId: 'branch-1',
+      firstName: 'New',
+      lastName: 'Rider',
+      email: 'new.rider@example.com',
+      phone: '03410000000',
+      vehicleType: 'bike',
+      vehicleNumber: 'RDR-1',
+      password: 'Rider@123',
+    });
+
+    expect(bcrypt.hash).toHaveBeenCalledWith('Rider@123', 10);
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant: { connect: { id: 'tenant-1' } },
+        restaurant: { connect: { id: 'restaurant-1' } },
+        branch: { connect: { id: 'branch-1' } },
+        password: 'hashed-signup-password',
+        status: DeliverymanStatus.OFFLINE,
+        isActive: true,
+      }),
+    );
+    expect(result.message).toBe('Deliveryman signup completed successfully');
+  });
+
+  it('rejects public deliveryman signup when restaurant scope mismatches branch', async () => {
+    const prisma = (
+      service as unknown as {
+        prisma: { branch: { findFirst: jest.Mock } };
+      }
+    ).prisma;
+    prisma.branch.findFirst.mockResolvedValueOnce({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      restaurant: {
+        id: 'restaurant-1',
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    await expect(
+      service.signup({
+        restaurantId: 'restaurant-2',
+        branchId: 'branch-1',
+        firstName: 'New',
+        lastName: 'Rider',
+        email: 'new.rider@example.com',
+        phone: '03410000000',
+        password: 'Rider@123',
+      }),
+    ).rejects.toThrow('Branch does not belong to restaurant');
+
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
   it('rejects order accept when deliveryman already has active delivery order', async () => {
     repository.findById!.mockResolvedValue({
       ...deliveryman,

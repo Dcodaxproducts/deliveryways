@@ -14,6 +14,7 @@ import { OrdersService } from '../orders/orders.service';
 import {
   AssignDeliverymanOrderDto,
   CreateDeliverymanDto,
+  DeliverymanSignupDto,
   ListDeliverymenDto,
   UpdateMyDeliverymanStatusDto,
   UpdateDeliverymanDto,
@@ -64,6 +65,63 @@ export class DeliverymenService {
     return {
       data: this.withDeletionState(data),
       message: 'Deliveryman created successfully',
+    };
+  }
+
+  async signup(dto: DeliverymanSignupDto) {
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        id: dto.branchId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        restaurant: {
+          select: {
+            id: true,
+            isActive: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!branch || !branch.restaurant.isActive || branch.restaurant.deletedAt) {
+      throw new BadRequestException('Branch not found or inactive');
+    }
+
+    if (dto.restaurantId && dto.restaurantId !== branch.restaurantId) {
+      throw new BadRequestException('Branch does not belong to restaurant');
+    }
+
+    await this.assertUniqueFields(
+      branch.restaurantId,
+      branch.id,
+      dto.email,
+      dto.phone,
+    );
+
+    const data = await this.deliverymenRepository.create({
+      tenant: { connect: { id: branch.tenantId } },
+      restaurant: { connect: { id: branch.restaurantId } },
+      branch: { connect: { id: branch.id } },
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      email: dto.email,
+      phone: dto.phone,
+      vehicleType: dto.vehicleType,
+      vehicleNumber: dto.vehicleNumber,
+      password: await bcrypt.hash(dto.password, 10),
+      status: DeliverymanStatus.OFFLINE,
+      isActive: true,
+    });
+
+    return {
+      data: this.withDeletionState(data),
+      message: 'Deliveryman signup completed successfully',
     };
   }
 

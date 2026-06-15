@@ -10,7 +10,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import { Throttle } from '@nestjs/throttler';
+import {
+  AuthUserContext,
+  CurrentUser,
+  Public,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -20,6 +26,7 @@ import {
 import {
   AssignDeliverymanOrderDto,
   CreateDeliverymanDto,
+  DeliverymanSignupDto,
   ListDeliverymenDto,
   UpdateMyDeliverymanStatusDto,
   UpdateDeliverymanDto,
@@ -32,6 +39,14 @@ import { DeliverymenService } from './deliverymen.service';
 @Controller('deliverymen')
 export class DeliverymenController {
   constructor(private readonly deliverymenService: DeliverymenService) {}
+
+  @Public()
+  @Throttle({ default: { ttl: 10 * 60_000, limit: 5 } })
+  @Post('signup')
+  @ApiOperation({ summary: 'Public deliveryman signup for rider app' })
+  signup(@Body() dto: DeliverymanSignupDto) {
+    return this.deliverymenService.signup(dto);
+  }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
