@@ -68,6 +68,7 @@ describe('CouponsService', () => {
       findActivePromotionsForMenuItem: jest.fn().mockResolvedValue([]),
       findTenantRestaurants: jest.fn(),
       findRestaurantInTenant: jest.fn(),
+      findBranchScope: jest.fn(),
       findActiveScopeMenuItem: jest.fn(),
       findActiveScopeCategory: jest.fn(),
     };
@@ -99,6 +100,46 @@ describe('CouponsService', () => {
       expect.objectContaining({
         tenant: { connect: { id: 'tid-1' } },
         restaurant: { connect: { id: 'rid-1' } },
+        code: 'SAVE20',
+      }),
+    );
+  });
+
+  it('creates coupon by deriving restaurantId from branchId for business admin without restaurant context', async () => {
+    repository.findBranchScope!.mockResolvedValue({
+      id: 'bid-1',
+      tenantId: 'tid-1',
+      restaurantId: 'rid-1',
+    });
+    repository.create!.mockResolvedValue({ id: 'coupon-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tid-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        code: 'SAVE20',
+        title: 'Save 20',
+        branchId: 'bid-1',
+        discountType: CouponDiscountType.PERCENTAGE,
+        discountValue: 20,
+        startsAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-12-31T23:59:59.000Z',
+      },
+    );
+
+    expect(repository.findBranchScope).toHaveBeenCalledWith(
+      'bid-1',
+      'tid-1',
+      undefined,
+    );
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant: { connect: { id: 'tid-1' } },
+        restaurant: { connect: { id: 'rid-1' } },
+        branch: { connect: { id: 'bid-1' } },
         code: 'SAVE20',
       }),
     );

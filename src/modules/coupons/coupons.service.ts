@@ -93,7 +93,11 @@ export class CouponsService {
   constructor(private readonly couponsRepository: CouponsRepository) {}
 
   async create(user: AuthUserContext, dto: CreateCouponDto) {
-    const restaurantId = await this.requireRestaurantId(user, dto.restaurantId);
+    const restaurantId = await this.requireRestaurantId(
+      user,
+      dto.restaurantId,
+      dto.branchId,
+    );
 
     await this.validateScopeReferences(
       restaurantId,
@@ -950,13 +954,30 @@ export class CouponsService {
   private async resolveRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
+    requestedBranchId?: string,
   ): Promise<string | undefined> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      if (requestedBranchId) {
+        return this.resolveRestaurantIdFromBranch(
+          requestedBranchId,
+          undefined,
+          requestedRestaurantId,
+        );
+      }
+
       return requestedRestaurantId;
     }
 
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       const tenantId = this.requireTenantId(user);
+
+      if (requestedBranchId) {
+        return this.resolveRestaurantIdFromBranch(
+          requestedBranchId,
+          tenantId,
+          requestedRestaurantId ?? user.rid,
+        );
+      }
 
       if (requestedRestaurantId) {
         await this.assertRestaurantInTenant(tenantId, requestedRestaurantId);
@@ -987,10 +1008,12 @@ export class CouponsService {
   private async requireRestaurantId(
     user: AuthUserContext,
     requestedRestaurantId?: string,
+    requestedBranchId?: string,
   ): Promise<string> {
     const restaurantId = await this.resolveRestaurantId(
       user,
       requestedRestaurantId,
+      requestedBranchId,
     );
 
     if (!restaurantId) {
@@ -998,6 +1021,26 @@ export class CouponsService {
     }
 
     return restaurantId;
+  }
+
+  private async resolveRestaurantIdFromBranch(
+    branchId: string,
+    tenantId?: string,
+    restaurantId?: string,
+  ): Promise<string> {
+    const branch = await this.couponsRepository.findBranchScope(
+      branchId,
+      tenantId,
+      restaurantId,
+    );
+
+    if (!branch) {
+      throw new ForbiddenException(
+        'branchId does not belong to the provided restaurant scope',
+      );
+    }
+
+    return branch.restaurantId;
   }
 
   private async ensureRestaurantAccess(

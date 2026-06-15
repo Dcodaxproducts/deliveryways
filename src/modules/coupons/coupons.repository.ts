@@ -188,6 +188,18 @@ export class CouponsRepository {
     });
   }
 
+  findBranchScope(branchId: string, tenantId?: string, restaurantId?: string) {
+    return this.prisma.branch.findFirst({
+      where: {
+        id: branchId,
+        deletedAt: null,
+        ...(tenantId ? { tenantId } : {}),
+        ...(restaurantId ? { restaurantId } : {}),
+      },
+      select: { id: true, tenantId: true, restaurantId: true },
+    });
+  }
+
   findActiveScopeMenuItem(restaurantId: string, menuItemId: string) {
     return this.prisma.menuItem.findFirst({
       where: {
