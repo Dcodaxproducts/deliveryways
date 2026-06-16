@@ -55,7 +55,12 @@ export class MenuVariationRepository {
       deletedAt: null,
       ...this.resolveActiveFilter(query),
       ...(query.categoryId
-        ? { categoryLinks: { some: { categoryId: query.categoryId } } }
+        ? {
+            OR: [
+              { categoryId: query.categoryId },
+              { categoryLinks: { some: { categoryId: query.categoryId } } },
+            ],
+          }
         : {}),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
