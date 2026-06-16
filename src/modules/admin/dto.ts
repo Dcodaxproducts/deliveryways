@@ -20,6 +20,7 @@ import { AdminListQueryDto } from '../../common/dto';
 import {
   CouponCampaignKind,
   CouponDealSelectionMode,
+  DeliverymanStatus,
   OrderStatus,
   PaymentStatus,
 } from '@prisma/client';
@@ -292,10 +293,52 @@ export class AdminExportCustomersCsvQueryDto extends AdminReportsScopedQueryDto 
   toDate?: string;
 }
 
+export class AdminExportDeliverymenCsvQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({ enum: DeliverymanStatus })
+  @IsOptional()
+  @IsEnum(DeliverymanStatus)
+  status?: DeliverymanStatus;
+}
+
+export class AdminExportEmployeesCsvQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === 'true' || value === true,
+  )
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  staffRoleId?: string;
+}
+
 export const ADMIN_REPORT_EXPORT_EMAIL_TYPES = [
   'menu',
   'orders',
   'customers',
+  'deliverymen',
+  'employees',
 ] as const;
 export type AdminReportExportEmailType =
   (typeof ADMIN_REPORT_EXPORT_EMAIL_TYPES)[number];
@@ -375,6 +418,11 @@ export class AdminEmailReportExportDto extends AdminReportsScopedQueryDto {
   @IsOptional()
   @IsDateString()
   toDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  staffRoleId?: string;
 }
 
 export class AdminOrdersReportQueryDto extends AdminExportOrdersCsvQueryDto {}

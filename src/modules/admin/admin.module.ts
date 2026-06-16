@@ -4,6 +4,8 @@ import { UsersModule } from '../users/users.module';
 import { SystemHealthModule } from '../system-health/system-health.module';
 import { MailerModule } from '../mailer/mailer.module';
 import { StorageModule } from '../storage/storage.module';
+import { DeliverymenModule } from '../deliverymen/deliverymen.module';
+import { StaffManagementModule } from '../staff-management/staff-management.module';
 import { AdminDealsController } from './admin-deals.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
@@ -21,6 +23,8 @@ import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 import { AdminImportSamplesController } from './admin-import-samples.controller';
 import { AdminImportSamplesService } from './admin-import-samples.service';
+import { AdminImportsController } from './admin-imports.controller';
+import { AdminImportsService } from './admin-imports.service';
 
 @Module({
   imports: [
@@ -29,6 +33,8 @@ import { AdminImportSamplesService } from './admin-import-samples.service';
     SystemHealthModule,
     MailerModule,
     StorageModule,
+    DeliverymenModule,
+    StaffManagementModule,
   ],
   controllers: [
     AdminUsersController,
@@ -38,6 +44,7 @@ import { AdminImportSamplesService } from './admin-import-samples.service';
     AdminPromotionsController,
     AdminPrintingController,
     AdminImportSamplesController,
+    AdminImportsController,
   ],
   providers: [
     AdminUsersService,
@@ -50,6 +57,7 @@ import { AdminImportSamplesService } from './admin-import-samples.service';
     AdminPrintingService,
     AdminPrintingRepository,
     AdminImportSamplesService,
+    AdminImportsService,
   ],
 })
 export class AdminModule {}

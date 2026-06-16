@@ -15,6 +15,8 @@ import {
 import {
   AdminEmailReportExportDto,
   AdminExportCustomersCsvQueryDto,
+  AdminExportDeliverymenCsvQueryDto,
+  AdminExportEmployeesCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
@@ -183,6 +185,97 @@ export class AdminReportsService {
         content: this.toCsv(rows),
       },
       message: 'Customers export generated successfully',
+    };
+  }
+
+  async exportDeliverymenCsv(
+    user: AuthUserContext,
+    query: AdminExportDeliverymenCsvQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const deliverymen = await this.adminReportsRepository.exportDeliverymen(
+      scope,
+      {
+        ...query,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+    );
+
+    const rows = deliverymen.map((deliveryman) => ({
+      deliverymanId: deliveryman.id,
+      restaurantId: deliveryman.restaurantId,
+      restaurantName: deliveryman.restaurant.name,
+      branchId: deliveryman.branchId,
+      branchName: deliveryman.branch.name,
+      firstName: deliveryman.firstName,
+      lastName: deliveryman.lastName,
+      email: deliveryman.email,
+      phone: deliveryman.phone,
+      vehicleType: deliveryman.vehicleType ?? '',
+      vehicleNumber: deliveryman.vehicleNumber ?? '',
+      status: deliveryman.status,
+      isActive: deliveryman.isActive,
+      totalOrders: deliveryman._count.orders,
+      createdAt: deliveryman.createdAt.toISOString(),
+    }));
+
+    return {
+      data: {
+        fileName: this.buildFileName('deliverymen-export', scope),
+        mimeType: 'text/csv',
+        rowCount: rows.length,
+        content: this.toCsv(rows),
+      },
+      message: 'Deliverymen export generated successfully',
+    };
+  }
+
+  async exportEmployeesCsv(
+    user: AuthUserContext,
+    query: AdminExportEmployeesCsvQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const employees = await this.adminReportsRepository.exportEmployees(scope, {
+      ...query,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
+    });
+
+    const rows = employees.map((employee) => ({
+      employeeId: employee.id,
+      tenantId: employee.tenantId ?? '',
+      restaurantId: employee.restaurantId ?? '',
+      restaurantName: employee.restaurant?.name ?? '',
+      branchId: employee.branchId ?? '',
+      branchName: employee.branch?.name ?? '',
+      staffRoleId: employee.staffRoleId,
+      staffRoleName: employee.staffRole.name,
+      panelType: employee.panelType,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      email: employee.email,
+      phone: employee.phone ?? '',
+      isActive: employee.isActive,
+      createdAt: employee.createdAt.toISOString(),
+    }));
+
+    return {
+      data: {
+        fileName: this.buildFileName('employees-export', scope),
+        mimeType: 'text/csv',
+        rowCount: rows.length,
+        content: this.toCsv(rows),
+      },
+      message: 'Employees export generated successfully',
     };
   }
 
@@ -440,6 +533,25 @@ export class AdminReportsService {
       return this.exportOrdersCsv(user, dto);
     }
 
+    if (dto.type === 'deliverymen') {
+      return this.exportDeliverymenCsv(user, {
+        restaurantId: dto.restaurantId,
+        branchId: dto.branchId,
+        search: dto.search,
+        isActive: dto.isActive,
+      });
+    }
+
+    if (dto.type === 'employees') {
+      return this.exportEmployeesCsv(user, {
+        restaurantId: dto.restaurantId,
+        branchId: dto.branchId,
+        search: dto.search,
+        isActive: dto.isActive,
+        staffRoleId: dto.staffRoleId,
+      });
+    }
+
     return this.exportCustomersCsv(user, dto);
   }
 
@@ -450,6 +562,14 @@ export class AdminReportsService {
 
     if (type === 'orders') {
       return 'orders';
+    }
+
+    if (type === 'deliverymen') {
+      return 'deliverymen';
+    }
+
+    if (type === 'employees') {
+      return 'employees';
     }
 
     return 'customers';

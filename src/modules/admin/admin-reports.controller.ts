@@ -22,6 +22,8 @@ import {
 import {
   AdminEmailReportExportDto,
   AdminExportCustomersCsvQueryDto,
+  AdminExportDeliverymenCsvQueryDto,
+  AdminExportEmployeesCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
@@ -78,6 +80,34 @@ export class AdminReportsController {
     @Query() query: AdminExportCustomersCsvQueryDto,
   ) {
     return this.adminReportsService.exportCustomersCsv(user, query);
+  }
+
+  @Get('deliverymen/export')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Export deliverymen to CSV for admin reporting' })
+  exportDeliverymenCsv(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminExportDeliverymenCsvQueryDto,
+  ) {
+    return this.adminReportsService.exportDeliverymenCsv(user, query);
+  }
+
+  @Get('employees/export')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Export employees to CSV for admin reporting' })
+  exportEmployeesCsv(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminExportEmployeesCsvQueryDto,
+  ) {
+    return this.adminReportsService.exportEmployeesCsv(user, query);
   }
 
   @Post('export/send-email')

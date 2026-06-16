@@ -160,6 +160,14 @@ export class ValidateCouponDto {
 }
 
 export class SetCouponStatusDto {
+  @ApiPropertyOptional({
+    description:
+      'Required when the authenticated user does not have restaurant context.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
   @ApiProperty({ enum: CouponStatus })
   @IsEnum(CouponStatus)
   status!: CouponStatus;

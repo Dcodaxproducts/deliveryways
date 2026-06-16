@@ -11,6 +11,8 @@ describe('AdminImportSamplesService', () => {
       'menu',
       'menu-items',
       'deliverymen',
+      'employees',
+      'customers',
       'coupons',
       'promotions',
       'happy-hours',

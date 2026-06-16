@@ -8,6 +8,8 @@ import {
 import { PrismaService } from '../../database';
 import {
   AdminExportCustomersCsvQueryDto,
+  AdminExportDeliverymenCsvQueryDto,
+  AdminExportEmployeesCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
@@ -246,6 +248,100 @@ export class AdminReportsRepository {
             couponUsages: true,
           },
         },
+      },
+    });
+  }
+
+  async exportDeliverymen(
+    scope: AdminReportsScope,
+    query: AdminExportDeliverymenCsvQueryDto,
+  ) {
+    return this.prisma.deliveryman.findMany({
+      where: {
+        deletedAt: null,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                { firstName: { contains: query.search, mode: 'insensitive' } },
+                { lastName: { contains: query.search, mode: 'insensitive' } },
+                { email: { contains: query.search, mode: 'insensitive' } },
+                { phone: { contains: query.search, mode: 'insensitive' } },
+                {
+                  vehicleNumber: {
+                    contains: query.search,
+                    mode: 'insensitive',
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        restaurantId: true,
+        branchId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        vehicleType: true,
+        vehicleNumber: true,
+        status: true,
+        isActive: true,
+        createdAt: true,
+        restaurant: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        _count: { select: { orders: true } },
+      },
+    });
+  }
+
+  async exportEmployees(
+    scope: AdminReportsScope,
+    query: AdminExportEmployeesCsvQueryDto,
+  ) {
+    return this.prisma.staffUser.findMany({
+      where: {
+        deletedAt: null,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+        ...(query.staffRoleId ? { staffRoleId: query.staffRoleId } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                { firstName: { contains: query.search, mode: 'insensitive' } },
+                { lastName: { contains: query.search, mode: 'insensitive' } },
+                { email: { contains: query.search, mode: 'insensitive' } },
+                { phone: { contains: query.search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        staffRoleId: true,
+        panelType: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        isActive: true,
+        createdAt: true,
+        restaurant: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        staffRole: { select: { id: true, name: true } },
       },
     });
   }
