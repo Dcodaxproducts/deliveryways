@@ -43,6 +43,18 @@ export class MenuVariationController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('items/:itemId/variations')
+  createForItem(
+    @CurrentUser() user: AuthUserContext,
+    @Param('itemId') itemId: string,
+    @Body() dto: CreateMenuVariationDto,
+  ) {
+    return this.menuVariationService.createForItem(user, itemId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,

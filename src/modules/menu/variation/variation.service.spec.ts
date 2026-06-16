@@ -20,6 +20,7 @@ describe('MenuVariationService', () => {
     };
 
     const prisma = {
+      menuItem: { findFirst: jest.fn() },
       menuCategory: { findUnique: jest.fn() },
       modifier: { count: jest.fn() },
       restaurant: { findFirst: jest.fn() },
@@ -34,6 +35,7 @@ describe('MenuVariationService', () => {
               findMany: jest.fn().mockResolvedValue([]),
             },
             menuItemVariationPriceOverride: {
+              create: jest.fn(),
               createMany: jest.fn(),
             },
           }),
@@ -192,6 +194,86 @@ describe('MenuVariationService', () => {
     expect(createInput.price).toBeInstanceOf(Prisma.Decimal);
     expect(Number(createInput.price)).toBe(250);
     expect(Number(result.data.price)).toBe(250);
+  });
+
+  it('creates item-scoped variation using item restaurant scope', async () => {
+    const { service, variationRepository, prisma } = makeService();
+    const createOverride = jest.fn();
+
+    prisma.menuItem.findFirst.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+    });
+    prisma.modifier.count.mockResolvedValue(0);
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.$transaction.mockImplementation(
+      (callback: (tx: unknown) => unknown) =>
+        Promise.resolve(
+          callback({
+            menuVariationModifierPriceOverride: {
+              deleteMany: jest.fn(),
+              createMany: jest.fn(),
+            },
+            menuItem: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            menuItemVariationPriceOverride: {
+              create: createOverride,
+              createMany: jest.fn(),
+            },
+          }),
+        ),
+    );
+    variationRepository.create.mockResolvedValue({
+      id: 'variation-1',
+      price: new Prisma.Decimal(6),
+    });
+
+    const result = await service.createForItem(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'item-1',
+      {
+        name: 'Small',
+        sku: 'SMALL-1',
+        price: 6,
+        sortOrder: 0,
+        isDefault: true,
+        isActive: true,
+      },
+    );
+
+    expect(prisma.menuItem.findFirst).toHaveBeenCalledWith({
+      where: { id: 'item-1', deletedAt: null },
+      select: { id: true, restaurantId: true },
+    });
+    expect(variationRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurant: { connect: { id: 'restaurant-1' } },
+        name: 'Small',
+        sku: 'SMALL-1',
+        isDefault: true,
+      }),
+      expect.anything(),
+    );
+    const [overrideArg] = createOverride.mock.calls[0] as [
+      {
+        data: {
+          menuItemId: string;
+          variationId: string;
+          price: Prisma.Decimal;
+        };
+      },
+    ];
+    expect(overrideArg.data).toMatchObject({
+      menuItemId: 'item-1',
+      variationId: 'variation-1',
+    });
+    expect(overrideArg.data.price).toBeInstanceOf(Prisma.Decimal);
+    expect(result.message).toBe('Menu item variation created successfully');
   });
 
   it('passes variation list filters and sorting to repository', async () => {

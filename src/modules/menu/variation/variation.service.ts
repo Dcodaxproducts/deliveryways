@@ -64,6 +64,73 @@ export class MenuVariationService {
     });
   }
 
+  async createForItem(
+    user: AuthUserContext,
+    itemId: string,
+    dto: CreateMenuVariationDto,
+  ) {
+    const item = await this.prisma.menuItem.findFirst({
+      where: { id: itemId, deletedAt: null },
+      select: { id: true, restaurantId: true },
+    });
+
+    if (!item) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    if (dto.restaurantId && dto.restaurantId !== item.restaurantId) {
+      throw new BadRequestException(
+        'restaurantId does not match menu item restaurant',
+      );
+    }
+
+    if (!dto.name.trim().length) {
+      throw new BadRequestException('name is required');
+    }
+
+    await this.ensureRestaurantWriteAccess(user, item.restaurantId);
+    await this.assertModifierOverridesBelongToRestaurant(
+      item.restaurantId,
+      dto.modifierPriceOverrides,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const data = await this.variationRepository.create(
+        {
+          restaurant: { connect: { id: item.restaurantId } },
+          name: dto.name.trim(),
+          description: dto.description,
+          sku: dto.sku,
+          price: new Prisma.Decimal(dto.price ?? 0),
+          sortOrder: dto.sortOrder ?? 0,
+          isDefault: dto.isDefault ?? false,
+          isActive: dto.isActive ?? true,
+        },
+        tx,
+      );
+
+      await tx.menuItemVariationPriceOverride.create({
+        data: {
+          menuItemId: item.id,
+          variationId: data.id,
+          price: new Prisma.Decimal(dto.price ?? 0),
+        },
+      });
+
+      await this.syncModifierPriceOverrides(
+        data.id,
+        dto.modifierPriceOverrides,
+        tx,
+        item.id,
+      );
+
+      return {
+        data,
+        message: 'Menu item variation created successfully',
+      };
+    });
+  }
+
   async list(user: AuthUserContext, query: ListMenuVariationsDto) {
     const restaurantId = await this.resolveRestaurantIdForList(
       user,
@@ -318,9 +385,10 @@ export class MenuVariationService {
     variationId: string,
     overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
     tx: Prisma.TransactionClient,
+    menuItemId: string | null = null,
   ) {
     await tx.menuVariationModifierPriceOverride.deleteMany({
-      where: { variationId, menuItemId: null },
+      where: { variationId, menuItemId },
     });
 
     if (!overrides?.length) {
@@ -330,6 +398,7 @@ export class MenuVariationService {
     await tx.menuVariationModifierPriceOverride.createMany({
       data: overrides.map((item) => ({
         variationId,
+        menuItemId,
         modifierId: item.modifierId,
         priceDelta: new Prisma.Decimal(item.priceDelta),
       })),

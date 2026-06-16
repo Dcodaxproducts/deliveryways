@@ -379,6 +379,47 @@ describe('RestaurantMenuService', () => {
     });
   });
 
+  it('removes a menu item link when mobile sends menu item id', async () => {
+    const { service, restaurantMenuRepository } = makeService();
+
+    restaurantMenuRepository.findById.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    restaurantMenuRepository.findRestaurantInTenant.mockResolvedValue({
+      id: 'restaurant-1',
+    });
+    restaurantMenuRepository.findMenuItemLinkById.mockResolvedValue(null);
+    restaurantMenuRepository.findMenuItemLink.mockResolvedValue({
+      id: 'link-1',
+      restaurantMenuId: 'menu-1',
+      menuItemId: 'item-1',
+    });
+    restaurantMenuRepository.removeMenuItemLink.mockResolvedValue({
+      id: 'link-1',
+    });
+
+    const result = await service.removeItem(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'menu-1',
+      'item-1',
+    );
+
+    expect(restaurantMenuRepository.findMenuItemLink).toHaveBeenCalledWith(
+      'menu-1',
+      'item-1',
+    );
+    expect(restaurantMenuRepository.removeMenuItemLink).toHaveBeenCalledWith(
+      'link-1',
+    );
+    expect(result.message).toBe('Menu item removed from menu successfully');
+  });
+
   it('does not expose legacy modifierGroups on fetched menu items', async () => {
     const { service, restaurantMenuRepository } = makeService();
 

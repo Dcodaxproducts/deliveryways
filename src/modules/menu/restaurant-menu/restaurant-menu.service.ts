@@ -274,14 +274,10 @@ export class RestaurantMenuService {
 
     await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
-    const link =
-      await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
-    if (!link || link.restaurantMenuId !== menu.id) {
-      throw new NotFoundException('Restaurant menu item link not found');
-    }
+    const link = await this.resolveMenuItemLink(menu.id, linkId);
 
     const data = await this.restaurantMenuRepository.updateMenuItemLink(
-      linkId,
+      link.id,
       {
         sortOrder: dto.sortOrder,
         isActive: dto.isActive,
@@ -299,14 +295,30 @@ export class RestaurantMenuService {
 
     await this.ensureCanWriteRestaurant(user, menu.restaurantId);
 
-    const link =
-      await this.restaurantMenuRepository.findMenuItemLinkById(linkId);
-    if (!link || link.restaurantMenuId !== menu.id) {
-      throw new NotFoundException('Restaurant menu item link not found');
+    const link = await this.resolveMenuItemLink(menu.id, linkId);
+
+    const data = await this.restaurantMenuRepository.removeMenuItemLink(
+      link.id,
+    );
+    return { data, message: 'Menu item removed from menu successfully' };
+  }
+
+  private async resolveMenuItemLink(menuId: string, linkOrItemId: string) {
+    const linkById =
+      await this.restaurantMenuRepository.findMenuItemLinkById(linkOrItemId);
+    if (linkById?.restaurantMenuId === menuId) {
+      return linkById;
     }
 
-    const data = await this.restaurantMenuRepository.removeMenuItemLink(linkId);
-    return { data, message: 'Menu item removed from menu successfully' };
+    const linkByItemId = await this.restaurantMenuRepository.findMenuItemLink(
+      menuId,
+      linkOrItemId,
+    );
+    if (linkByItemId) {
+      return linkByItemId;
+    }
+
+    throw new NotFoundException('Restaurant menu item link not found');
   }
 
   private async attachItemsToMenu(
