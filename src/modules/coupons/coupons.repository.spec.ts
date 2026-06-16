@@ -1,11 +1,19 @@
-import { CouponDiscountType } from '@prisma/client';
+import { CouponCampaignKind, CouponDiscountType } from '@prisma/client';
 import { CouponsRepository } from './coupons.repository';
 
 describe('CouponsRepository', () => {
   it('excludes fixed-price deals from coupon list queries', async () => {
     const findMany = jest.fn<
       Promise<unknown[]>,
-      [{ where?: { discountType?: unknown } }]
+      [
+        {
+          where?: {
+            autoApply?: unknown;
+            discountType?: unknown;
+            kind?: unknown;
+          };
+        },
+      ]
     >();
     const count = jest.fn();
     const transaction = jest.fn(async (ops: Promise<unknown>[]) =>
@@ -33,6 +41,8 @@ describe('CouponsRepository', () => {
 
     const findManyArgs = findMany.mock.calls[0]?.[0];
 
+    expect(findManyArgs?.where?.kind).toBe(CouponCampaignKind.PROMOTION);
+    expect(findManyArgs?.where?.autoApply).toBe(false);
     expect(findManyArgs?.where?.discountType).toEqual({
       not: CouponDiscountType.FIXED_PRICE,
     });

@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { CouponCampaignKind, CouponStatus, Prisma } from '@prisma/client';
+import {
+  CouponCampaignKind,
+  CouponDiscountType,
+  CouponStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../database';
 import { AdminListPromotionsQueryDto } from './dto';
 
@@ -8,6 +13,11 @@ export interface AdminPromotionScope {
   restaurantId?: string;
   branchId?: string;
 }
+
+export type AdminPromotionListQuery = AdminListPromotionsQueryDto & {
+  autoApply?: boolean;
+  excludeDiscountType?: CouponDiscountType;
+};
 
 @Injectable()
 export class AdminPromotionsRepository {
@@ -100,7 +110,7 @@ export class AdminPromotionsRepository {
     });
   }
 
-  async list(scope: AdminPromotionScope, query: AdminListPromotionsQueryDto) {
+  async list(scope: AdminPromotionScope, query: AdminPromotionListQuery) {
     const now = new Date();
     const where = this.buildWhere(scope, query, now);
     const [items, total] = await this.prisma.$transaction([
@@ -271,7 +281,7 @@ export class AdminPromotionsRepository {
 
   private buildWhere(
     scope: AdminPromotionScope,
-    query: AdminListPromotionsQueryDto,
+    query: AdminPromotionListQuery,
     now: Date,
   ): Prisma.CouponWhereInput {
     const branchId = query.branchId ?? scope.branchId;
@@ -297,6 +307,20 @@ export class AdminPromotionsRepository {
       andFilters.push(searchFilter);
     }
 
+    const discountTypeFilter =
+      query.discountType && query.excludeDiscountType
+        ? {
+            discountType: {
+              equals: query.discountType,
+              not: query.excludeDiscountType,
+            },
+          }
+        : query.discountType
+          ? { discountType: query.discountType }
+          : query.excludeDiscountType
+            ? { discountType: { not: query.excludeDiscountType } }
+            : {};
+
     return {
       deletedAt: null,
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
@@ -304,7 +328,8 @@ export class AdminPromotionsRepository {
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
       ...(branchId && !scopedBranchFilter ? { branchId } : {}),
       ...(query.kind ? { kind: query.kind } : {}),
-      ...(query.discountType ? { discountType: query.discountType } : {}),
+      ...discountTypeFilter,
+      ...(query.autoApply !== undefined ? { autoApply: query.autoApply } : {}),
       ...(query.lifecycle !== 'active' && andFilters.length
         ? { AND: andFilters }
         : {}),

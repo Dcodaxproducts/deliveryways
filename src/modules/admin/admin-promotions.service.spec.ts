@@ -623,6 +623,46 @@ describe('AdminPromotionsService', () => {
     expect(result.message).toBe('Deals fetched successfully');
   });
 
+  it('passes campaign-only filters for promotion lists', async () => {
+    const repository = {
+      list: jest.fn().mockResolvedValue({
+        items: [
+          makeCoupon({
+            kind: CouponCampaignKind.PROMOTION,
+            autoApply: true,
+            discountType: CouponDiscountType.PERCENTAGE,
+          }),
+        ],
+        total: 1,
+      }),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.list(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      { page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' },
+      CouponCampaignKind.PROMOTION,
+      {
+        autoApply: true,
+        excludeDiscountType: CouponDiscountType.FIXED_PRICE,
+      },
+    );
+
+    expect(repository.list).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining({
+        kind: CouponCampaignKind.PROMOTION,
+        autoApply: true,
+        excludeDiscountType: CouponDiscountType.FIXED_PRICE,
+      }),
+    );
+  });
+
   it('lists branch admin promotions locked to token branch', async () => {
     const repository = {
       list: jest.fn().mockResolvedValue({ items: [makeCoupon()], total: 1 }),

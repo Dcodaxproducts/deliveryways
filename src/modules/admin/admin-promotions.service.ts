@@ -31,6 +31,7 @@ import {
   UpdateAdminPromotionDto,
 } from './dto';
 import {
+  AdminPromotionListQuery,
   AdminPromotionScope,
   AdminPromotionsRepository,
 } from './admin-promotions.repository';
@@ -50,6 +51,10 @@ type AdminPromotionCreateInput = Omit<
   startsAt: string | null;
   expiresAt: string | null;
 };
+type AdminPromotionListOptions = Pick<
+  AdminPromotionListQuery,
+  'autoApply' | 'excludeDiscountType'
+>;
 
 @Injectable()
 export class AdminPromotionsService {
@@ -85,13 +90,14 @@ export class AdminPromotionsService {
     user: AuthUserContext,
     query: AdminListPromotionsQueryDto,
     kind?: CouponCampaignKind,
+    options: AdminPromotionListOptions = {},
   ) {
     const scope = await this.resolveScope(
       user,
       query.restaurantId,
       query.branchId,
     );
-    const effectiveQuery = kind ? { ...query, kind } : query;
+    const effectiveQuery = kind ? { ...query, kind, ...options } : query;
     const { items, total } = await this.adminPromotionsRepository.list(
       scope,
       effectiveQuery,

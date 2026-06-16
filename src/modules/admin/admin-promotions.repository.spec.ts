@@ -1,14 +1,14 @@
-import { CouponCampaignKind, Prisma } from '@prisma/client';
+import { CouponCampaignKind, CouponDiscountType, Prisma } from '@prisma/client';
 import {
+  AdminPromotionListQuery,
   AdminPromotionScope,
   AdminPromotionsRepository,
 } from './admin-promotions.repository';
-import { AdminListPromotionsQueryDto } from './dto';
 
 interface RepositoryWithBuildWhere {
   buildWhere(
     scope: AdminPromotionScope,
-    query: AdminListPromotionsQueryDto,
+    query: AdminPromotionListQuery,
     now: Date,
   ): Prisma.CouponWhereInput;
 }
@@ -40,5 +40,31 @@ describe('AdminPromotionsRepository', () => {
         OR: [{ branchId: 'branch-1' }, { branchId: null }],
       },
     ]);
+  });
+
+  it('can filter promotion campaigns away from fixed-price deals', () => {
+    const repository = new AdminPromotionsRepository(
+      {} as never,
+    ) as unknown as RepositoryWithBuildWhere;
+
+    const where = repository.buildWhere(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+        kind: CouponCampaignKind.PROMOTION,
+        autoApply: true,
+        excludeDiscountType: CouponDiscountType.FIXED_PRICE,
+      },
+      new Date('2026-06-10T00:00:00.000Z'),
+    );
+
+    expect(where.kind).toBe(CouponCampaignKind.PROMOTION);
+    expect(where.autoApply).toBe(true);
+    expect(where.discountType).toEqual({
+      not: CouponDiscountType.FIXED_PRICE,
+    });
   });
 });

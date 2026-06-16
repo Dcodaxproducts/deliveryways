@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { CouponCampaignKind } from '@prisma/client';
+import { CouponCampaignKind, CouponDiscountType } from '@prisma/client';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -69,6 +69,10 @@ export class AdminPromotionsController {
       user,
       query,
       CouponCampaignKind.PROMOTION,
+      {
+        autoApply: true,
+        excludeDiscountType: CouponDiscountType.FIXED_PRICE,
+      },
     );
   }
 
