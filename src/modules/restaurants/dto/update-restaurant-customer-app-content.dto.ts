@@ -21,6 +21,13 @@ export class UpdateRestaurantCustomerAppContentDto {
   helpSupport?: string;
 
   @ApiPropertyOptional({
+    description: 'Restaurant-managed About Us content shown on customer web',
+  })
+  @IsOptional()
+  @IsString()
+  aboutUs?: string;
+
+  @ApiPropertyOptional({
     description: 'Restaurant-level allergens PDF URL shown on menu items',
   })
   @IsOptional()

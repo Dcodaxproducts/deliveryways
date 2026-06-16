@@ -68,6 +68,7 @@ describe('RestaurantsService notification settings', () => {
         customerApp: {
           privacyPolicy: 'privacy',
           helpSupport: 'help',
+          aboutUs: '<p>Family-owned restaurant since 2020.</p>',
           allergenPdfUrl: 'https://cdn.example.com/allergens.pdf',
           faqs: [
             {
@@ -107,6 +108,9 @@ describe('RestaurantsService notification settings', () => {
     });
     expect(result.data.privacyPolicy).toBe('privacy');
     expect(result.data.helpSupport).toBe('help');
+    expect(result.data.aboutUs).toBe(
+      '<p>Family-owned restaurant since 2020.</p>',
+    );
     expect(result.data.allergenPdfUrl).toBe(
       'https://cdn.example.com/allergens.pdf',
     );
@@ -309,6 +313,7 @@ describe('RestaurantsService notification settings', () => {
       settings: {
         privacy_policy: 'Legacy privacy',
         help_support: 'Legacy help',
+        about_us: 'Legacy about',
         faqs: [
           { question: '  Legacy Q  ', answer: '  Legacy A  ' },
           { question: '   ', answer: 'Ignored' },
@@ -327,6 +332,7 @@ describe('RestaurantsService notification settings', () => {
 
     expect(result.data.privacyPolicy).toBe('Legacy privacy');
     expect(result.data.helpSupport).toBe('Legacy help');
+    expect(result.data.aboutUs).toBe('Legacy about');
     expect(result.data.faqs).toEqual([
       {
         id: 'legacy:0',
@@ -344,6 +350,66 @@ describe('RestaurantsService notification settings', () => {
       email: 'support@example.com',
       phone: '1234567898',
     });
+  });
+
+  it('updates restaurant-managed about us content without replacing other customer content', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        customerApp: {
+          privacyPolicy: 'Privacy text',
+          helpSupport: 'Help text',
+        },
+      },
+      supportContact: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      name: 'Demo Restaurant',
+      slug: null,
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      settings: {
+        customerApp: {
+          privacyPolicy: 'Privacy text',
+          helpSupport: 'Help text',
+          aboutUs: '<p>About the restaurant</p>',
+        },
+      },
+      supportContact: null,
+    });
+
+    const result = await service.updateCustomerAppContent(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      { aboutUs: '<p>About the restaurant</p>' },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'restaurant-1',
+      {
+        settings: {
+          customerApp: {
+            privacyPolicy: 'Privacy text',
+            helpSupport: 'Help text',
+            aboutUs: '<p>About the restaurant</p>',
+          },
+        },
+        supportContact: undefined,
+      },
+      undefined,
+    );
+    expect(result.data.aboutUs).toBe('<p>About the restaurant</p>');
   });
 
   it('allows branch admins to fetch restaurant customer app content for their restaurant', async () => {

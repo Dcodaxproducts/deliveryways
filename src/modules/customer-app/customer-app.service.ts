@@ -387,6 +387,29 @@ export class CustomerAppService {
     };
   }
 
+  async getAboutUs(query: PublicRestaurantQueryDto, user?: AuthUserContext) {
+    const { restaurant } = await this.getPublicContent(query, user);
+    const aboutUs = this.readStringValue(restaurant.settings, [
+      ['customerApp', 'aboutUs'],
+      ['publicContent', 'aboutUs'],
+      ['aboutUs'],
+      ['about_us'],
+    ]);
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        tenantId: restaurant.tenantId,
+        tenantName: restaurant.tenant?.name ?? restaurant.name,
+        restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
+        title: 'About Us',
+        content: aboutUs,
+      },
+      message: 'About us fetched successfully',
+    };
+  }
+
   async submitContactForm(
     query: PublicRestaurantQueryDto,
     dto: SubmitContactFormDto,

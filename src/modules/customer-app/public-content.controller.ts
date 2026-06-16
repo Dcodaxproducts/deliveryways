@@ -34,6 +34,17 @@ export class PublicContentController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @Get('about-us')
+  @ApiOperation({ summary: 'Fetch public About Us content' })
+  getAboutUs(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: PublicRestaurantQueryDto,
+  ) {
+    return this.customerAppService.getAboutUs(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('contact-form')
   @ApiOperation({ summary: 'Submit public contact form message' })
   submitContactForm(

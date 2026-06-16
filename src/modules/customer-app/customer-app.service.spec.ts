@@ -2012,6 +2012,40 @@ describe('CustomerAppService', () => {
     );
   });
 
+  it('fetches restaurant-managed about us content for customer web', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      tenant: { id: 'tenant-1', name: 'Tenant Kitchen Group' },
+      name: 'DeliveryWays Kitchen',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
+      settings: {
+        customerApp: {
+          aboutUs: '<p>Fresh food from local chefs.</p>',
+        },
+      },
+    });
+
+    const result = await service.getAboutUs({ restaurantId: 'restaurant-1' });
+
+    expect(repository.findRestaurantPublicContent).toHaveBeenCalledWith(
+      'restaurant-1',
+    );
+    expect(result).toEqual({
+      data: {
+        restaurantId: 'restaurant-1',
+        restaurantName: 'DeliveryWays Kitchen',
+        tenantId: 'tenant-1',
+        tenantName: 'Tenant Kitchen Group',
+        restaurantCoverImage: 'https://cdn.example.com/restaurant-cover.png',
+        title: 'About Us',
+        content: '<p>Fresh food from local chefs.</p>',
+      },
+      message: 'About us fetched successfully',
+    });
+  });
+
   it('uses customer token restaurant scope for promotional items when query restaurantId is omitted', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

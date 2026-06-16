@@ -642,6 +642,12 @@ export class RestaurantsService {
         ['helpSupport'],
         ['help_support'],
       ]),
+      aboutUs: this.readStringValue(restaurant.settings, [
+        ['customerApp', 'aboutUs'],
+        ['publicContent', 'aboutUs'],
+        ['aboutUs'],
+        ['about_us'],
+      ]),
       allergenPdfUrl: await this.resolveMediaUrl(
         this.readRestaurantAllergenPdfUrl(restaurant.settings),
       ),
@@ -697,6 +703,7 @@ export class RestaurantsService {
         ...(dto.helpSupport !== undefined
           ? { helpSupport: dto.helpSupport }
           : {}),
+        ...(dto.aboutUs !== undefined ? { aboutUs: dto.aboutUs } : {}),
         ...(dto.allergenPdfUrl !== undefined
           ? { allergenPdfUrl: dto.allergenPdfUrl }
           : {}),
