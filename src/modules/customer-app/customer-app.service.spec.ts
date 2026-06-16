@@ -155,6 +155,7 @@ describe('CustomerAppService', () => {
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
       findBranchPublicContent: jest.fn(),
+      findPublicAddress: jest.fn().mockResolvedValue(null),
       findBranchesPublicContent,
       listCuisineCategories: jest.fn(),
       findPublicCuisine: jest.fn(),
@@ -1471,7 +1472,11 @@ describe('CustomerAppService', () => {
       socialMedia: {
         instagram: 'https://instagram.example/deliveryways',
       },
-      supportContact: null,
+      supportContact: {
+        phone: '+923001111111',
+        whatsapp: '+923002222222',
+        email: 'support@deliveryways.test',
+      },
       branding: {
         primaryColor: '#FF0000',
         secondaryColor: '#000000',
@@ -1487,6 +1492,10 @@ describe('CustomerAppService', () => {
       coverImage: 'branch-cover.jpg',
       description: 'Downtown branch',
       settings: {
+        contact: {
+          phone: '+923003333333',
+          email: 'branch@deliveryways.test',
+        },
         deliveryIntervalMinutes: 20,
         pickupIntervalMinutes: 10,
         tableReservationsEnabled: true,
@@ -1517,6 +1526,27 @@ describe('CustomerAppService', () => {
         ],
       },
     });
+    repository.findPublicAddress
+      .mockResolvedValueOnce({
+        street: 'Restaurant Street',
+        area: 'HQ 1',
+        postalCode: '46000',
+        city: 'Rawalpindi',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: new Prisma.Decimal('33.6000000'),
+        lng: new Prisma.Decimal('73.0500000'),
+      })
+      .mockResolvedValueOnce({
+        street: 'Branch Street',
+        area: 'Shop 8',
+        postalCode: '54000',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: new Prisma.Decimal('31.5204000'),
+        lng: new Prisma.Decimal('74.3587000'),
+      });
 
     const result = await service.getHomeScreen({
       restaurantId: 'restaurant-1',
@@ -1530,6 +1560,22 @@ describe('CustomerAppService', () => {
     );
     expect(result.data.restaurant.socialMediaLinks).toEqual({
       instagram: 'https://instagram.example/deliveryways',
+    });
+    expect(result.data.restaurant.contactInfo).toEqual({
+      phone: '+923001111111',
+      whatsapp: '+923002222222',
+      email: 'support@deliveryways.test',
+    });
+    expect(result.data.restaurant.address).toEqual({
+      street: 'Restaurant Street',
+      shopNumber: 'HQ 1',
+      area: 'HQ 1',
+      postalCode: '46000',
+      city: 'Rawalpindi',
+      state: 'Punjab',
+      country: 'Pakistan',
+      lat: 33.6,
+      lng: 73.05,
     });
     expect(result.data.config).toEqual({
       currency: null,
@@ -1545,6 +1591,25 @@ describe('CustomerAppService', () => {
       logoUrl: null,
       coverImage: 'branch-cover.jpg',
       description: 'Downtown branch',
+      contactInfo: {
+        phone: '+923003333333',
+        whatsapp: '+923002222222',
+        email: 'branch@deliveryways.test',
+      },
+      phone: '+923003333333',
+      whatsapp: '+923002222222',
+      email: 'branch@deliveryways.test',
+      address: {
+        street: 'Branch Street',
+        shopNumber: 'Shop 8',
+        area: 'Shop 8',
+        postalCode: '54000',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        lat: 31.5204,
+        lng: 74.3587,
+      },
       scheduleTimings: {
         openingHours: [
           {

@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
+  AddressRefType,
   CouponDealSelectionMode,
   LocalizationEntityType,
   Prisma,
@@ -826,6 +827,28 @@ export class CustomerAppService {
           translationContext,
         )
       : null;
+    const [restaurantAddress, branchAddress] = await Promise.all([
+      this.customerAppRepository.findPublicAddress(
+        translatedRestaurant.id,
+        AddressRefType.RESTAURANT,
+      ),
+      translatedBranch
+        ? this.customerAppRepository.findPublicAddress(
+            translatedBranch.id,
+            AddressRefType.BRANCH,
+          )
+        : Promise.resolve(null),
+    ]);
+    const restaurantContactInfo = this.readRestaurantContactInfo(
+      restaurant.supportContact,
+      restaurant.settings,
+    );
+    const branchContactInfo = translatedBranch
+      ? this.readBranchContactInfo(
+          translatedBranch.settings,
+          restaurantContactInfo,
+        )
+      : null;
 
     return {
       data: {
@@ -842,6 +865,11 @@ export class CustomerAppService {
             translatedRestaurant.socialMedia,
             restaurant.settings,
           ),
+          contactInfo: restaurantContactInfo,
+          phone: restaurantContactInfo.phone,
+          whatsapp: restaurantContactInfo.whatsapp,
+          email: restaurantContactInfo.email,
+          address: this.mapPublicAddress(restaurantAddress, 'shopNumber'),
         },
         config: {
           currency: this.readRestaurantCurrency(restaurant.settings),
@@ -858,6 +886,11 @@ export class CustomerAppService {
                 translatedBranch.coverImage,
               ),
               description: translatedBranch.description,
+              contactInfo: branchContactInfo,
+              phone: branchContactInfo?.phone ?? null,
+              whatsapp: branchContactInfo?.whatsapp ?? null,
+              email: branchContactInfo?.email ?? null,
+              address: this.mapPublicAddress(branchAddress, 'shopNumber'),
               scheduleTimings: {
                 openingHours: this.readBranchScheduleHours(
                   translatedBranch.settings,
@@ -3537,6 +3570,102 @@ export class CustomerAppService {
     }
 
     return input.filter((value): value is string => typeof value === 'string');
+  }
+
+  private readRestaurantContactInfo(
+    supportContact: unknown,
+    restaurantSettings: unknown,
+  ) {
+    return {
+      phone:
+        this.readStringValue(supportContact, [
+          ['phone'],
+          ['phoneNumber'],
+          ['contactPhone'],
+          ['contactNumber'],
+          ['mobile'],
+        ]) ??
+        this.readStringValue(restaurantSettings, [
+          ['contact', 'phone'],
+          ['contact', 'phoneNumber'],
+          ['contact', 'contactPhone'],
+          ['contact', 'contactNumber'],
+          ['contact', 'mobile'],
+        ]),
+      whatsapp:
+        this.readStringValue(supportContact, [['whatsapp']]) ??
+        this.readStringValue(restaurantSettings, [['contact', 'whatsapp']]),
+      email:
+        this.readStringValue(supportContact, [
+          ['email'],
+          ['contactEmail'],
+          ['supportEmail'],
+        ]) ??
+        this.readStringValue(restaurantSettings, [
+          ['contact', 'email'],
+          ['contact', 'contactEmail'],
+          ['contact', 'supportEmail'],
+        ]),
+    };
+  }
+
+  private readBranchContactInfo(
+    branchSettings: unknown,
+    restaurantContactInfo: {
+      phone: string | null;
+      whatsapp: string | null;
+      email: string | null;
+    },
+  ) {
+    return {
+      phone:
+        this.readStringValue(branchSettings, [
+          ['contact', 'phone'],
+          ['contact', 'phoneNumber'],
+          ['contact', 'contactPhone'],
+          ['contact', 'contactNumber'],
+          ['contact', 'mobile'],
+        ]) ?? restaurantContactInfo.phone,
+      whatsapp:
+        this.readStringValue(branchSettings, [['contact', 'whatsapp']]) ??
+        restaurantContactInfo.whatsapp,
+      email:
+        this.readStringValue(branchSettings, [
+          ['contact', 'email'],
+          ['contact', 'contactEmail'],
+          ['contact', 'supportEmail'],
+        ]) ?? restaurantContactInfo.email,
+    };
+  }
+
+  private mapPublicAddress(
+    address: {
+      street: string;
+      area: string | null;
+      postalCode: string | null;
+      city: string;
+      state: string;
+      country: string;
+      lat: Prisma.Decimal | null;
+      lng: Prisma.Decimal | null;
+    } | null,
+    labelKey: 'houseNumber' | 'shopNumber',
+  ) {
+    if (!address) {
+      return null;
+    }
+
+    return {
+      street: address.street,
+      [labelKey]: address.area,
+      area: address.area,
+      postalCode: address.postalCode,
+      city: address.city,
+      state: address.state,
+      country: address.country,
+      lat: address.lat ? Number(address.lat) : null,
+      lng: address.lng ? Number(address.lng) : null,
+    };
   }
 
   private readStringValue(source: unknown, paths: string[][]): string | null {

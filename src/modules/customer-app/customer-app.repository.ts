@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { AddressRefType, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import {
   HomeScreenQueryDto,
@@ -595,6 +595,27 @@ export class CustomerAppRepository {
         coverImage: true,
         description: true,
         settings: true,
+      },
+    });
+  }
+
+  async findPublicAddress(referenceId: string, refType: AddressRefType) {
+    return this.prisma.address.findFirst({
+      where: {
+        referenceId,
+        refType,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        street: true,
+        area: true,
+        postalCode: true,
+        city: true,
+        state: true,
+        country: true,
+        lat: true,
+        lng: true,
       },
     });
   }
