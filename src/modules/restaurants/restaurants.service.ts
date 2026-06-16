@@ -769,11 +769,11 @@ export class RestaurantsService {
     );
     const billing = this.asObject(this.readPath(settings, ['billing']));
     const invoice = this.asObject(this.readPath(settings, ['invoice']));
-    const businessAddress = {
+    const businessAddress = this.normalizeBusinessAddress({
       ...this.asObject(invoice.businessAddress),
       ...this.asObject(billing.businessAddress),
       ...this.asObject(legalProfile.businessAddress),
-    };
+    });
 
     return {
       ownerName:
@@ -810,6 +810,25 @@ export class RestaurantsService {
           ['publicContent', 'contractText'],
           ['contractText'],
         ]) ?? null,
+    };
+  }
+
+  private normalizeBusinessAddress(address: Record<string, unknown>) {
+    if (Object.keys(address).length === 0) {
+      return address;
+    }
+
+    const shopNumber = this.readStringValue(address, [
+      ['shopNumber'],
+      ['houseNumber'],
+      ['area'],
+      ['addressLine2'],
+      ['line2'],
+    ]);
+
+    return {
+      ...address,
+      ...(shopNumber ? { shopNumber } : {}),
     };
   }
 

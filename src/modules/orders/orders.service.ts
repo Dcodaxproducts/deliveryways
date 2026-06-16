@@ -2164,17 +2164,7 @@ export class OrdersService {
       coupon: order.coupon,
       customer: this.toCustomerSummary(order.customer),
       deliveryAddress: order.deliveryAddress
-        ? {
-            ...order.deliveryAddress,
-            lat:
-              order.deliveryAddress.lat !== null
-                ? Number(order.deliveryAddress.lat)
-                : null,
-            lng:
-              order.deliveryAddress.lng !== null
-                ? Number(order.deliveryAddress.lng)
-                : null,
-          }
+        ? this.toCustomerAddressResponse(order.deliveryAddress)
         : null,
       deliveryman: order.deliveryman,
       isGroupOrder: Boolean(order.sourceGroupOrder),
@@ -2437,17 +2427,7 @@ export class OrdersService {
         snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
       })),
       deliveryAddress: order.deliveryAddress
-        ? {
-            ...order.deliveryAddress,
-            lat:
-              order.deliveryAddress.lat !== null
-                ? Number(order.deliveryAddress.lat)
-                : null,
-            lng:
-              order.deliveryAddress.lng !== null
-                ? Number(order.deliveryAddress.lng)
-                : null,
-          }
+        ? this.toCustomerAddressResponse(order.deliveryAddress)
         : null,
       deliveryman: order.deliveryman,
       transactions: order.transactions.map((transaction) => ({
@@ -2874,27 +2854,11 @@ export class OrdersService {
       branch: {
         ...order.branch,
         address: branchAddress
-          ? {
-              ...branchAddress,
-              lat:
-                branchAddress.lat !== null ? Number(branchAddress.lat) : null,
-              lng:
-                branchAddress.lng !== null ? Number(branchAddress.lng) : null,
-            }
+          ? this.toBranchAddressResponse(branchAddress)
           : null,
       },
       deliveryAddress: order.deliveryAddress
-        ? {
-            ...order.deliveryAddress,
-            lat:
-              order.deliveryAddress.lat !== null
-                ? Number(order.deliveryAddress.lat)
-                : null,
-            lng:
-              order.deliveryAddress.lng !== null
-                ? Number(order.deliveryAddress.lng)
-                : null,
-          }
+        ? this.toCustomerAddressResponse(order.deliveryAddress)
         : null,
       deliveryman: order.deliveryman
         ? {
@@ -4775,6 +4739,48 @@ export class OrdersService {
     const branchAddress = await this.resolveBranchAddress(branchId);
 
     return { address, branchAddress };
+  }
+
+  private toCustomerAddressResponse<
+    T extends {
+      area?: string | null;
+      lat?: Prisma.Decimal | number | null;
+      lng?: Prisma.Decimal | number | null;
+    },
+  >(address: T) {
+    return {
+      ...address,
+      houseNumber: address.area ?? null,
+      lat:
+        address.lat !== null && address.lat !== undefined
+          ? Number(address.lat)
+          : null,
+      lng:
+        address.lng !== null && address.lng !== undefined
+          ? Number(address.lng)
+          : null,
+    };
+  }
+
+  private toBranchAddressResponse<
+    T extends {
+      area?: string | null;
+      lat?: Prisma.Decimal | number | null;
+      lng?: Prisma.Decimal | number | null;
+    },
+  >(address: T) {
+    return {
+      ...address,
+      shopNumber: address.area ?? null,
+      lat:
+        address.lat !== null && address.lat !== undefined
+          ? Number(address.lat)
+          : null,
+      lng:
+        address.lng !== null && address.lng !== undefined
+          ? Number(address.lng)
+          : null,
+    };
   }
 
   private async resolveBranchAddress(branchId: string) {

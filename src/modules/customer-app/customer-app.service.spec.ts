@@ -1897,7 +1897,18 @@ describe('CustomerAppService', () => {
       tenant: { id: 'tenant-1', name: 'Tenant Kitchen Group' },
       name: 'DeliveryWays Kitchen',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
-      settings: { privacyPolicy: 'Privacy text' },
+      settings: {
+        privacyPolicy: 'Privacy text',
+        legalProfile: {
+          businessAddress: {
+            street: 'Street 12',
+            area: 'Shop 4',
+            city: 'Lahore',
+            state: 'Punjab',
+            country: 'Pakistan',
+          },
+        },
+      },
     });
 
     const result = await service.getPrivacyPolicy(
@@ -1918,10 +1929,17 @@ describe('CustomerAppService', () => {
     expect(result.data.tenantId).toBe('tenant-1');
     expect(result.data.tenantName).toBe('Tenant Kitchen Group');
     expect(result.data.legalProfile).toEqual({
-      ownerName: null,
+      ownerName: 'Tenant Kitchen Group',
       legalBusinessName: null,
       taxNumber: null,
-      businessAddress: null,
+      businessAddress: {
+        street: 'Street 12',
+        area: 'Shop 4',
+        city: 'Lahore',
+        state: 'Punjab',
+        country: 'Pakistan',
+        shopNumber: 'Shop 4',
+      },
       contractText: null,
     });
     expect(result.data.policyLink).toBe(

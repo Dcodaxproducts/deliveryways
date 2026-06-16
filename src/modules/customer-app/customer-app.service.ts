@@ -318,17 +318,22 @@ export class CustomerAppService {
       ['privacyPolicy'],
       ['privacy_policy'],
     ]);
+    const tenantName = restaurant.tenant?.name ?? restaurant.name;
+    const legalProfile = this.extractLegalProfile(restaurant.settings);
 
     return {
       data: {
         restaurantId: restaurant.id,
         restaurantName: restaurant.name,
         tenantId: restaurant.tenantId,
-        tenantName: restaurant.tenant?.name ?? restaurant.name,
+        tenantName,
         restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         title: 'Privacy Policy',
         content: privacyPolicy,
-        legalProfile: this.extractLegalProfile(restaurant.settings),
+        legalProfile: {
+          ...legalProfile,
+          ownerName: tenantName,
+        },
         policyLink: this.buildPrivacyPolicyLink(restaurant.id),
       },
       message: 'Privacy policy fetched successfully',
@@ -3621,11 +3626,11 @@ export class CustomerAppService {
     const legalAddress = this.asObject(legalProfile.businessAddress);
     const billingAddress = this.asObject(billing.businessAddress);
     const invoiceAddress = this.asObject(invoice.businessAddress);
-    const businessAddress = {
+    const businessAddress = this.normalizeBusinessAddress({
       ...invoiceAddress,
       ...billingAddress,
       ...legalAddress,
-    };
+    });
 
     return {
       ownerName:
@@ -3662,6 +3667,25 @@ export class CustomerAppService {
           ['publicContent', 'contractText'],
           ['contractText'],
         ]) ?? null,
+    };
+  }
+
+  private normalizeBusinessAddress(address: Record<string, unknown>) {
+    if (Object.keys(address).length === 0) {
+      return address;
+    }
+
+    const shopNumber = this.readStringValue(address, [
+      ['shopNumber'],
+      ['houseNumber'],
+      ['area'],
+      ['addressLine2'],
+      ['line2'],
+    ]);
+
+    return {
+      ...address,
+      ...(shopNumber ? { shopNumber } : {}),
     };
   }
 

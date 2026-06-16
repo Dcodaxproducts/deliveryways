@@ -1090,7 +1090,9 @@ export class GroupOrdersService {
       host: this.toUserSummary(session.hostUser),
       restaurant: session.restaurant,
       branch: session.branch,
-      deliveryAddress: session.deliveryAddress,
+      deliveryAddress: session.deliveryAddress
+        ? this.toCustomerAddressResponse(session.deliveryAddress)
+        : null,
       finalOrder: session.finalOrder
         ? {
             ...session.finalOrder,
@@ -1398,6 +1400,27 @@ export class GroupOrdersService {
     }
     const trimmed = value.trim();
     return trimmed.length ? trimmed : null;
+  }
+
+  private toCustomerAddressResponse<
+    T extends {
+      area?: string | null;
+      lat?: Prisma.Decimal | number | null;
+      lng?: Prisma.Decimal | number | null;
+    },
+  >(address: T) {
+    return {
+      ...address,
+      houseNumber: address.area ?? null,
+      lat:
+        address.lat !== null && address.lat !== undefined
+          ? Number(address.lat)
+          : null,
+      lng:
+        address.lng !== null && address.lng !== undefined
+          ? Number(address.lng)
+          : null,
+    };
   }
 
   private async requireRestaurantMenu(

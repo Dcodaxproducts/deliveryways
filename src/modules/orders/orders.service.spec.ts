@@ -3231,6 +3231,7 @@ describe('OrdersService - response mapping', () => {
       city: 'Lahore',
       state: 'Punjab',
       country: 'PK',
+      houseNumber: 'House 12',
       lat: 31.5204,
       lng: 74.3587,
     });
