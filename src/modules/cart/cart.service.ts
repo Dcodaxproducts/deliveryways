@@ -296,10 +296,7 @@ export class CartService {
         dto.tipAmount !== undefined
           ? new Prisma.Decimal(dto.tipAmount).toDecimalPlaces(2)
           : undefined,
-      customerNote:
-        dto.customerNote !== undefined
-          ? this.resolveOptionalString(dto.customerNote)
-          : undefined,
+      customerNote: this.resolveCartNoteUpdate(dto),
       deliveryAddress:
         dto.orderType !== undefined
           ? nextDeliveryAddressId
@@ -1420,6 +1417,7 @@ export class CartService {
       orderTime: cart.orderTime,
       tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
+      note: cart.customerNote,
       items: displayItems,
       ...(quote ? this.extractCartBillSummary(quote.data) : {}),
       ...(quote ? { quote: quote.data } : {}),
@@ -2013,8 +2011,9 @@ export class CartService {
       guestDeliveryAddress: dto.guestDeliveryAddress,
       tipAmount: dto.tipAmount ?? Number(cart.tipAmount),
       customerNote:
-        dto.customerNote !== undefined
-          ? (this.resolveOptionalString(dto.customerNote) ?? undefined)
+        this.resolveCartNoteInput(dto) !== undefined
+          ? (this.resolveOptionalString(this.resolveCartNoteInput(dto)) ??
+            undefined)
           : (cart.customerNote ?? undefined),
     };
   }
@@ -3077,9 +3076,25 @@ export class CartService {
       orderTime: null,
       tipAmount: 0,
       customerNote: null,
+      note: null,
       items: [],
       createdAt: null,
       updatedAt: null,
     };
+  }
+
+  private resolveCartNoteInput(dto: {
+    customerNote?: string | null;
+    note?: string | null;
+  }) {
+    return dto.customerNote !== undefined ? dto.customerNote : dto.note;
+  }
+
+  private resolveCartNoteUpdate(dto: {
+    customerNote?: string | null;
+    note?: string | null;
+  }) {
+    const note = this.resolveCartNoteInput(dto);
+    return note !== undefined ? this.resolveOptionalString(note) : undefined;
   }
 }

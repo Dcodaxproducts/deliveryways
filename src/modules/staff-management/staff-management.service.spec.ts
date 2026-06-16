@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { StaffPanelType } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { UserRoleEnum } from '../../common/enums';
 import { StaffRolesService } from '../staff-roles/staff-roles.service';
 import { StaffManagementRepository } from './staff-management.repository';
@@ -120,5 +121,69 @@ describe('StaffManagementService', () => {
         'staff-1',
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('restores a deleted staff account when creating with the same email', async () => {
+    const staffRolesService = {
+      getManageableRoleOrThrow: jest.fn().mockResolvedValue({
+        id: 'role-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+      }),
+    };
+    service = new StaffManagementService(
+      repository,
+      staffRolesService as unknown as StaffRolesService,
+    );
+    repository.findByEmail.mockResolvedValue({
+      id: 'staff-deleted',
+      deletedAt: new Date('2026-06-01T10:00:00.000Z'),
+    } as never);
+    repository.update.mockResolvedValue({
+      id: 'staff-deleted',
+      email: 'employee@example.com',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed-password',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      {
+        staffRoleId: 'role-1',
+        email: 'Employee@Example.com',
+        password: 'Employee@123',
+        firstName: 'New',
+        lastName: 'Employee',
+      },
+    );
+
+    expect(repository.create.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls[0]).toEqual([
+      'staff-deleted',
+      expect.objectContaining({
+        email: 'employee@example.com',
+        password: 'hashed-password',
+        deletedAt: null,
+        refreshTokenHash: null,
+        isActive: true,
+      }),
+    ]);
   });
 });

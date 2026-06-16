@@ -281,6 +281,13 @@ export class OrdersService {
     const data = await this.prisma.$transaction(async (tx) => {
       const processedAt =
         initialPaymentStatus === PaymentStatus.PAID ? new Date() : undefined;
+      await this.assertDineInTableCapacity(
+        tx,
+        dto.orderType,
+        quote.branch.id,
+        quote.orderTime,
+        branchSettings,
+      );
       const guestDeliveryAddress = dto.guestDeliveryAddress
         ? await this.createGuestDeliveryAddress(
             tx,
@@ -4018,6 +4025,9 @@ export class OrdersService {
       deliveryHours: [],
       temporaryClosure: null,
       holidayOpeningHours: [],
+      tableReservationsEnabled: false,
+      tableReservationAutoAccept: false,
+      tableCount: 0,
     };
 
     if (!input || typeof input !== 'object') {
@@ -4073,7 +4083,62 @@ export class OrdersService {
       deliveryHours: Array.isArray(raw.deliveryHours)
         ? raw.deliveryHours
         : fallback.deliveryHours,
+      tableReservationsEnabled:
+        raw.tableReservationsEnabled ?? fallback.tableReservationsEnabled,
+      tableReservationAutoAccept:
+        raw.tableReservationAutoAccept ?? fallback.tableReservationAutoAccept,
+      tableCount: raw.tableCount ?? fallback.tableCount,
     };
+  }
+
+  private async assertDineInTableCapacity(
+    tx: PrismaTx,
+    orderType: OrderTypeEnum,
+    branchId: string,
+    orderTime: string | null,
+    settings: BranchSettings,
+  ) {
+    if (orderType !== OrderTypeEnum.DINE_IN) {
+      return;
+    }
+
+    if (!settings.tableReservationsEnabled && !settings.tableCount) {
+      return;
+    }
+
+    if (!orderTime) {
+      throw new BadRequestException(
+        'orderTime is required for table reservations',
+      );
+    }
+
+    const tableCount = settings.tableCount ?? 0;
+    if (tableCount <= 0) {
+      throw new BadRequestException(
+        'No tables are available for reservations at this branch',
+      );
+    }
+
+    const activeReservations = await tx.order.count({
+      where: {
+        branchId,
+        orderType: OrderType.DINE_IN,
+        orderTime: new Date(orderTime),
+        status: {
+          notIn: [
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.SERVED,
+          ],
+        },
+      },
+    });
+
+    if (activeReservations >= tableCount) {
+      throw new BadRequestException(
+        'No tables are available for the selected time slot',
+      );
+    }
   }
 
   private withPlatformPaymentMethods(methods: string[]) {
@@ -5093,6 +5158,9 @@ type BranchSettings = {
   holidayOpeningHours: BranchHolidayOpeningHour[];
   openingHours: BranchDeliveryHour[];
   deliveryHours: BranchDeliveryHour[];
+  tableReservationsEnabled: boolean;
+  tableReservationAutoAccept: boolean;
+  tableCount: number;
   deliveryConfig: {
     mode: 'RADIUS' | 'ZONE' | 'ZONE_BANDS' | 'POSTAL_CODE';
     radiusKm: number;

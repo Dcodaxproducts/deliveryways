@@ -1313,6 +1313,71 @@ describe('OrdersService - status transitions', () => {
   });
 });
 
+describe('OrdersService - table reservation capacity', () => {
+  type TestOrderTx = { order: { count: jest.Mock } };
+
+  let service: OrdersService;
+  let tx: TestOrderTx;
+
+  beforeEach(() => {
+    service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    tx = { order: { count: jest.fn() } };
+  });
+
+  const assertCapacity = (
+    orderType: OrderTypeEnum,
+    orderTime: string | null,
+    tableCount: number,
+  ) =>
+    (
+      service as unknown as {
+        assertDineInTableCapacity: (
+          tx: TestOrderTx,
+          orderType: OrderTypeEnum,
+          branchId: string,
+          orderTime: string | null,
+          settings: {
+            tableReservationsEnabled: boolean;
+            tableCount: number;
+          },
+        ) => Promise<void>;
+      }
+    ).assertDineInTableCapacity(tx, orderType, 'branch-1', orderTime, {
+      tableReservationsEnabled: true,
+      tableCount,
+    });
+
+  it('rejects dine-in reservation when branch table count is full', async () => {
+    tx.order.count.mockResolvedValue(1);
+
+    await expect(
+      assertCapacity(OrderTypeEnum.DINE_IN, '2026-06-16T15:00:00.000Z', 1),
+    ).rejects.toThrow('No tables are available for the selected time slot');
+  });
+
+  it('allows dine-in reservation when capacity remains', async () => {
+    tx.order.count.mockResolvedValue(1);
+
+    await expect(
+      assertCapacity(OrderTypeEnum.DINE_IN, '2026-06-16T15:00:00.000Z', 2),
+    ).resolves.toBeUndefined();
+  });
+
+  it('requires an order time for table reservations', async () => {
+    await expect(
+      assertCapacity(OrderTypeEnum.DINE_IN, null, 1),
+    ).rejects.toThrow('orderTime is required for table reservations');
+    expect(tx.order.count).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrdersService - order time validation', () => {
   let service: OrdersService;
 

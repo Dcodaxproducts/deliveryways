@@ -3798,6 +3798,111 @@ describe('CartService', () => {
     expect(result.message).toBe('Order created from cart successfully');
   });
 
+  it('accepts note alias when updating saved cart customer note', async () => {
+    const { service, cartRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      restaurantMenuId: null,
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      tipAmount: new Prisma.Decimal(0),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({
+        ...cart,
+        customerNote: 'Leave at counter',
+      });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+
+    const result = await service.updateCart(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { note: 'Leave at counter' },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith(
+      'cart-1',
+      expect.objectContaining({ customerNote: 'Leave at counter' }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        customerNote: 'Leave at counter',
+        note: 'Leave at counter',
+      }),
+    );
+  });
+
+  it('uses checkout note alias when creating order from cart', async () => {
+    const { service, cartRepository, ordersService, profilesRepository } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: PaymentMethodEnum.COD,
+      orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.create.mockResolvedValue({
+      data: { id: 'order-1' },
+      message: 'Order created successfully',
+    });
+
+    await service.checkout(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        paymentMethod: PaymentMethodEnum.COD,
+        note: 'Call on arrival',
+      },
+    );
+
+    expect(ordersService.create).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        customerNote: 'Call on arrival',
+      }),
+    );
+  });
+
   it('passes guest contact consent and inline delivery address at cart checkout', async () => {
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();

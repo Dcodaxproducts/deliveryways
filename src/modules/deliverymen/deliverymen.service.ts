@@ -39,28 +39,41 @@ export class DeliverymenService {
       restaurantId,
       dto.branchId,
     );
+    const email = this.normalizeEmail(dto.email);
+    const phone = dto.phone.trim();
 
-    await this.assertUniqueFields(
+    await this.assertUniqueFields(restaurantId, branch.id, email, phone);
+
+    const deletedDeliveryman = await this.findDeletedDeliverymanForReuse(
       restaurantId,
       branch.id,
-      dto.email,
-      dto.phone,
+      email,
+      phone,
     );
-
-    const data = await this.deliverymenRepository.create({
-      tenant: { connect: { id: tenantId } },
-      restaurant: { connect: { id: restaurantId } },
-      branch: { connect: { id: branch.id } },
+    const deliverymanPayload = {
       firstName: dto.firstName,
       lastName: dto.lastName,
-      email: dto.email,
-      phone: dto.phone,
+      email,
+      phone,
       vehicleType: dto.vehicleType,
       vehicleNumber: dto.vehicleNumber,
-      password: await bcrypt.hash(dto.password ?? dto.phone, 10),
+      password: await bcrypt.hash(dto.password ?? phone, 10),
       status: dto.status ?? DeliverymanStatus.OFFLINE,
       isActive: true,
-    });
+      deletedAt: null,
+      refreshTokenHash: null,
+      branch: { connect: { id: branch.id } },
+    };
+    const data = deletedDeliveryman
+      ? await this.deliverymenRepository.update(
+          deletedDeliveryman.id,
+          deliverymanPayload,
+        )
+      : await this.deliverymenRepository.create({
+          tenant: { connect: { id: tenantId } },
+          restaurant: { connect: { id: restaurantId } },
+          ...deliverymanPayload,
+        });
 
     return {
       data: this.withDeletionState(data),
@@ -97,27 +110,41 @@ export class DeliverymenService {
       throw new BadRequestException('Branch does not belong to restaurant');
     }
 
-    await this.assertUniqueFields(
+    const email = this.normalizeEmail(dto.email);
+    const phone = dto.phone.trim();
+
+    await this.assertUniqueFields(branch.restaurantId, branch.id, email, phone);
+
+    const deletedDeliveryman = await this.findDeletedDeliverymanForReuse(
       branch.restaurantId,
       branch.id,
-      dto.email,
-      dto.phone,
+      email,
+      phone,
     );
-
-    const data = await this.deliverymenRepository.create({
-      tenant: { connect: { id: branch.tenantId } },
-      restaurant: { connect: { id: branch.restaurantId } },
-      branch: { connect: { id: branch.id } },
+    const deliverymanPayload = {
       firstName: dto.firstName,
       lastName: dto.lastName,
-      email: dto.email,
-      phone: dto.phone,
+      email,
+      phone,
       vehicleType: dto.vehicleType,
       vehicleNumber: dto.vehicleNumber,
       password: await bcrypt.hash(dto.password, 10),
       status: DeliverymanStatus.OFFLINE,
       isActive: true,
-    });
+      deletedAt: null,
+      refreshTokenHash: null,
+      branch: { connect: { id: branch.id } },
+    };
+    const data = deletedDeliveryman
+      ? await this.deliverymenRepository.update(
+          deletedDeliveryman.id,
+          deliverymanPayload,
+        )
+      : await this.deliverymenRepository.create({
+          tenant: { connect: { id: branch.tenantId } },
+          restaurant: { connect: { id: branch.restaurantId } },
+          ...deliverymanPayload,
+        });
 
     return {
       data: this.withDeletionState(data),
@@ -177,16 +204,16 @@ export class DeliverymenService {
     await this.assertUniqueFields(
       deliveryman.restaurantId,
       targetBranchId,
-      dto.email,
-      dto.phone,
+      dto.email ? this.normalizeEmail(dto.email) : undefined,
+      dto.phone?.trim(),
       deliveryman.id,
     );
 
     const data = await this.deliverymenRepository.update(id, {
       firstName: dto.firstName,
       lastName: dto.lastName,
-      email: dto.email,
-      phone: dto.phone,
+      email: dto.email ? this.normalizeEmail(dto.email) : undefined,
+      phone: dto.phone?.trim(),
       vehicleType: dto.vehicleType,
       vehicleNumber: dto.vehicleNumber,
       password: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
@@ -583,6 +610,7 @@ export class DeliverymenService {
         where: {
           restaurantId,
           email,
+          deletedAt: null,
           ...(excludeId ? { id: { not: excludeId } } : {}),
         },
         select: { id: true },
@@ -600,6 +628,7 @@ export class DeliverymenService {
         where: {
           branchId,
           phone,
+          deletedAt: null,
           ...(excludeId ? { id: { not: excludeId } } : {}),
         },
         select: { id: true },
@@ -611,5 +640,28 @@ export class DeliverymenService {
         );
       }
     }
+  }
+
+  private normalizeEmail(email: string) {
+    return email.trim().toLowerCase();
+  }
+
+  private async findDeletedDeliverymanForReuse(
+    restaurantId: string,
+    branchId: string,
+    email: string,
+    phone: string,
+  ) {
+    return this.prisma.deliveryman.findFirst({
+      where: {
+        deletedAt: { not: null },
+        OR: [
+          { restaurantId, email },
+          { branchId, phone },
+        ],
+      },
+      select: { id: true },
+      orderBy: { updatedAt: 'desc' },
+    });
   }
 }

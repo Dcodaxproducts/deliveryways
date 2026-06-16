@@ -216,6 +216,14 @@ export class UpdateCartDto {
   @IsString()
   customerNote?: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Alias for customerNote.',
+  })
+  @IsOptional()
+  @IsString()
+  note?: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
@@ -313,6 +321,14 @@ export class CheckoutCartDto {
   @IsOptional()
   @IsString()
   customerNote?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Alias for customerNote.',
+  })
+  @IsOptional()
+  @IsString()
+  note?: string | null;
 
   @ApiPropertyOptional({
     type: GuestOrderContactDto,

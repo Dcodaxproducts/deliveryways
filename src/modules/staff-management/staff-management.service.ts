@@ -35,9 +35,8 @@ export class StaffManagementService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateStaffDto) {
-    const existing = await this.staffManagementRepository.findByEmail(
-      dto.email.trim().toLowerCase(),
-    );
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.staffManagementRepository.findByEmail(email);
     if (existing && !existing.deletedAt) {
       throw new BadRequestException('Email already exists');
     }
@@ -47,8 +46,8 @@ export class StaffManagementService {
       dto.staffRoleId,
     );
 
-    const data = await this.staffManagementRepository.create({
-      email: dto.email.trim().toLowerCase(),
+    const staffPayload = {
+      email,
       password: await bcrypt.hash(dto.password, 10),
       firstName: dto.firstName.trim(),
       lastName: dto.lastName.trim(),
@@ -70,7 +69,13 @@ export class StaffManagementService {
       branch: staffRole.branchId
         ? { connect: { id: staffRole.branchId } }
         : undefined,
-    });
+      deletedAt: null,
+      refreshTokenHash: null,
+    };
+    const data =
+      existing && existing.deletedAt
+        ? await this.staffManagementRepository.update(existing.id, staffPayload)
+        : await this.staffManagementRepository.create(staffPayload);
 
     return {
       data: await this.resolveMediaResponse(this.toStaffResponse(data)),

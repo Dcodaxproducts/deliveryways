@@ -310,6 +310,50 @@ describe('DeliverymenService', () => {
     expect(repository.create).not.toHaveBeenCalled();
   });
 
+  it('restores a deleted deliveryman when creating with the same email', async () => {
+    const prisma = (
+      service as unknown as {
+        prisma: { deliveryman: { findFirst: jest.Mock } };
+      }
+    ).prisma;
+    prisma.deliveryman.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'dm-deleted' });
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
+    repository.update!.mockResolvedValue({
+      ...deliveryman,
+      id: 'dm-deleted',
+      email: 'rider@example.com',
+      deletedAt: null,
+      isActive: true,
+    });
+
+    await service.create(adminUser, {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      firstName: 'Restored',
+      lastName: 'Rider',
+      email: 'Rider@Example.com',
+      phone: '03410279181',
+      vehicleType: 'motor',
+      vehicleNumber: '1234',
+      password: 'Rider@123',
+    });
+
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(repository.update).toHaveBeenCalledWith(
+      'dm-deleted',
+      expect.objectContaining({
+        email: 'rider@example.com',
+        password: 'hashed-password',
+        isActive: true,
+        deletedAt: null,
+        refreshTokenHash: null,
+      }),
+    );
+  });
+
   it('rejects duplicate deliveryman phone in the same branch', async () => {
     const prisma = (
       service as unknown as {
