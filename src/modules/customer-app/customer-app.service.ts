@@ -322,6 +322,9 @@ export class CustomerAppService {
     return {
       data: {
         restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        tenantId: restaurant.tenantId,
+        tenantName: restaurant.tenant?.name ?? restaurant.name,
         restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         title: 'Privacy Policy',
         content: privacyPolicy,

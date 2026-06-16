@@ -564,6 +564,7 @@ export class CustomerAppRepository {
       select: {
         id: true,
         tenantId: true,
+        tenant: { select: { id: true, name: true } },
         name: true,
         logoUrl: true,
         coverImage: true,

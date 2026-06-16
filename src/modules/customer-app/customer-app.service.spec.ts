@@ -1893,6 +1893,9 @@ describe('CustomerAppService', () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      tenant: { id: 'tenant-1', name: 'Tenant Kitchen Group' },
+      name: 'DeliveryWays Kitchen',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       settings: { privacyPolicy: 'Privacy text' },
     });
@@ -1911,6 +1914,9 @@ describe('CustomerAppService', () => {
       'restaurant-1',
     );
     expect(result.data.content).toBe('Privacy text');
+    expect(result.data.restaurantName).toBe('DeliveryWays Kitchen');
+    expect(result.data.tenantId).toBe('tenant-1');
+    expect(result.data.tenantName).toBe('Tenant Kitchen Group');
     expect(result.data.legalProfile).toEqual({
       ownerName: null,
       legalBusinessName: null,
