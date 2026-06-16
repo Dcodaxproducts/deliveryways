@@ -214,9 +214,9 @@ export class CouponsService {
     dto: SetCouponStatusDto,
   ) {
     const restaurantId = await this.requireRestaurantId(user, dto.restaurantId);
-    const coupon = await this.couponsRepository.findByCode(
+    const coupon = await this.couponsRepository.findByCodeOrId(
       restaurantId,
-      code.trim().toUpperCase(),
+      code,
     );
 
     if (!coupon) {

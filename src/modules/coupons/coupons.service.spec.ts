@@ -60,8 +60,10 @@ describe('CouponsService', () => {
   beforeEach(() => {
     repository = {
       create: jest.fn(),
+      update: jest.fn(),
       list: jest.fn(),
       findByCode: jest.fn(),
+      findByCodeOrId: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
       findActivePromotionById: jest.fn(),
@@ -202,6 +204,36 @@ describe('CouponsService', () => {
     expect(repository.list).toHaveBeenCalledWith('rid-1', expect.any(Object));
     expect(result.data).toEqual([mockItem]);
     expect(result.meta.total).toBe(1);
+  });
+
+  it('sets coupon status using body restaurant scope and coupon id fallback', async () => {
+    repository.findByCodeOrId!.mockResolvedValue(makeCoupon({ id: 'cpn-1' }));
+    repository.update!.mockResolvedValue(
+      makeCoupon({
+        id: 'cpn-1',
+        status: CouponStatus.SUSPENDED,
+        isActive: false,
+      }),
+    );
+
+    const result = await service.setStatus(
+      {
+        uid: 'admin-1',
+        role: 'SUPER_ADMIN',
+      } as never,
+      'cpn-1',
+      {
+        restaurantId: 'rid-1',
+        status: CouponStatus.SUSPENDED,
+      },
+    );
+
+    expect(repository.findByCodeOrId).toHaveBeenCalledWith('rid-1', 'cpn-1');
+    expect(repository.update).toHaveBeenCalledWith('cpn-1', {
+      status: CouponStatus.SUSPENDED,
+      isActive: false,
+    });
+    expect(result.message).toBe('Coupon suspended successfully');
   });
 
   it('returns uncapped percentage discount when maxDiscountAmount absent', async () => {

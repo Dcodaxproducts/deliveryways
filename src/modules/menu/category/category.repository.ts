@@ -278,9 +278,34 @@ export class MenuCategoryRepository {
     });
   }
 
+  deleteMenuLinks(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).restaurantMenuCategory.deleteMany({
+      where: { menuCategoryId: categoryId },
+    });
+  }
+
+  deleteModifierLinks(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).menuCategoryModifierGroup.deleteMany({
+      where: { categoryId },
+    });
+  }
+
+  deleteCouponScopeLinks(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).couponScopeCategory.deleteMany({
+      where: { menuCategoryId: categoryId },
+    });
+  }
+
   deleteVariations(categoryId: string, tx?: PrismaTx) {
     return this.client(tx).menuCategoryVariation.deleteMany({
       where: { categoryId },
+    });
+  }
+
+  clearDirectVariationCategory(categoryId: string, tx?: PrismaTx) {
+    return this.client(tx).menuItemVariation.updateMany({
+      where: { categoryId },
+      data: { categoryId: null },
     });
   }
 

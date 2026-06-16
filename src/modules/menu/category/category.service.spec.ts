@@ -16,7 +16,11 @@ describe('MenuCategoryService', () => {
       countItems: jest.fn(),
       clearCouponScopes: jest.fn(),
       deleteBranchOverrides: jest.fn(),
+      deleteMenuLinks: jest.fn(),
+      deleteModifierLinks: jest.fn(),
+      deleteCouponScopeLinks: jest.fn(),
       deleteVariations: jest.fn(),
+      clearDirectVariationCategory: jest.fn(),
       hardDelete: jest.fn(),
     };
 
@@ -220,10 +224,25 @@ describe('MenuCategoryService', () => {
       'category-1',
       expect.anything(),
     );
+    expect(categoryRepository.deleteMenuLinks).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(categoryRepository.deleteModifierLinks).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(categoryRepository.deleteCouponScopeLinks).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
     expect(categoryRepository.deleteVariations).toHaveBeenCalledWith(
       'category-1',
       expect.anything(),
     );
+    expect(
+      categoryRepository.clearDirectVariationCategory,
+    ).toHaveBeenCalledWith('category-1', expect.anything());
     expect(categoryRepository.hardDelete).toHaveBeenCalledWith(
       'category-1',
       expect.anything(),

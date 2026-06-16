@@ -38,6 +38,21 @@ export class CouponsRepository {
     });
   }
 
+  async findByCodeOrId(
+    restaurantId: string,
+    codeOrId: string,
+  ): Promise<Coupon | null> {
+    const trimmedCodeOrId = codeOrId.trim();
+
+    return this.prisma.coupon.findFirst({
+      where: {
+        restaurantId,
+        deletedAt: null,
+        OR: [{ code: trimmedCodeOrId.toUpperCase() }, { id: trimmedCodeOrId }],
+      },
+    });
+  }
+
   async findAutoApplyPromotions(restaurantId: string, branchId?: string) {
     const now = new Date();
 

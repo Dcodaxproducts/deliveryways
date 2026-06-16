@@ -20,6 +20,7 @@ import {
   CreateCouponDto,
   ListCouponsDto,
   SetCouponStatusDto,
+  SetCouponStatusScopeQueryDto,
   UpdateCouponDto,
   ValidateCouponDto,
 } from './dto';
@@ -86,7 +87,11 @@ export class CouponsController {
     @CurrentUser() user: AuthUserContext,
     @Param('code') code: string,
     @Body() dto: SetCouponStatusDto,
+    @Query() query: SetCouponStatusScopeQueryDto,
   ) {
-    return this.couponsService.setStatus(user, code, dto);
+    return this.couponsService.setStatus(user, code, {
+      ...dto,
+      restaurantId: dto.restaurantId ?? query.restaurantId,
+    });
   }
 }

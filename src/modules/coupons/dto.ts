@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { CouponDiscountType, CouponStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsDateString,
@@ -165,10 +165,28 @@ export class SetCouponStatusDto {
       'Required when the authenticated user does not have restaurant context.',
   })
   @IsOptional()
+  @Transform(
+    ({ obj, value }: { obj: { restaurant_id?: unknown }; value: unknown }) =>
+      value ?? obj.restaurant_id,
+  )
   @IsString()
   restaurantId?: string;
 
   @ApiProperty({ enum: CouponStatus })
   @IsEnum(CouponStatus)
   status!: CouponStatus;
+}
+
+export class SetCouponStatusScopeQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Restaurant scope fallback for clients that send status scope in query params.',
+  })
+  @IsOptional()
+  @Transform(
+    ({ obj, value }: { obj: { restaurant_id?: unknown }; value: unknown }) =>
+      value ?? obj.restaurant_id,
+  )
+  @IsString()
+  restaurantId?: string;
 }

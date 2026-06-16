@@ -273,7 +273,11 @@ export class MenuCategoryService {
     const data = await this.prisma.$transaction(async (tx) => {
       await this.categoryRepository.clearCouponScopes(id, tx);
       await this.categoryRepository.deleteBranchOverrides(id, tx);
+      await this.categoryRepository.deleteMenuLinks(id, tx);
+      await this.categoryRepository.deleteModifierLinks(id, tx);
+      await this.categoryRepository.deleteCouponScopeLinks(id, tx);
       await this.categoryRepository.deleteVariations(id, tx);
+      await this.categoryRepository.clearDirectVariationCategory(id, tx);
       return this.categoryRepository.hardDelete(id, tx);
     });
 
