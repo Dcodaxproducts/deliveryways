@@ -3685,7 +3685,7 @@ export class CustomerAppService {
 
     return {
       ...address,
-      ...(shopNumber ? { shopNumber } : {}),
+      shopNumber: shopNumber ?? null,
     };
   }
 

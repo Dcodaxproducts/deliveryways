@@ -828,7 +828,7 @@ export class RestaurantsService {
 
     return {
       ...address,
-      ...(shopNumber ? { shopNumber } : {}),
+      shopNumber: shopNumber ?? null,
     };
   }
 

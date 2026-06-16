@@ -247,6 +247,7 @@ describe('RestaurantsService notification settings', () => {
       businessAddress: {
         city: 'Lahore',
         country: 'Pakistan',
+        shopNumber: null,
       },
       contractText: 'Contract terms',
     });
@@ -288,6 +289,7 @@ describe('RestaurantsService notification settings', () => {
       taxNumber: 'VAT-456',
       businessAddress: {
         city: 'Karachi',
+        shopNumber: null,
       },
       contractText: 'Legacy contract',
     });
