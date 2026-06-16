@@ -98,6 +98,25 @@ export class CreateCouponDto extends CouponInputDto {
 }
 
 export class UpdateCouponDto extends PartialType(CouponInputDto) {
+  @ApiPropertyOptional({
+    description:
+      'Restaurant scope for clients that toggle coupons from scoped lists.',
+  })
+  @IsOptional()
+  @Transform(
+    ({ obj, value }: { obj: { restaurant_id?: unknown }; value: unknown }) =>
+      value ?? obj.restaurant_id,
+  )
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Snake-case alias for restaurantId.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurant_id?: string;
+
   @ApiPropertyOptional({ enum: CouponStatus })
   @IsOptional()
   @IsEnum(CouponStatus)
@@ -172,6 +191,13 @@ export class SetCouponStatusDto {
   @IsString()
   restaurantId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Snake-case alias for restaurantId.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurant_id?: string;
+
   @ApiProperty({ enum: CouponStatus })
   @IsEnum(CouponStatus)
   status!: CouponStatus;
@@ -189,4 +215,11 @@ export class SetCouponStatusScopeQueryDto {
   )
   @IsString()
   restaurantId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Snake-case alias for restaurantId.',
+  })
+  @IsOptional()
+  @IsString()
+  restaurant_id?: string;
 }

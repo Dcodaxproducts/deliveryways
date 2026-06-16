@@ -236,6 +236,68 @@ describe('CouponsService', () => {
     expect(result.message).toBe('Coupon suspended successfully');
   });
 
+  it('sets coupon status using snake-case restaurant scope', async () => {
+    repository.findByCodeOrId!.mockResolvedValue(makeCoupon({ id: 'cpn-1' }));
+    repository.update!.mockResolvedValue(
+      makeCoupon({
+        id: 'cpn-1',
+        status: CouponStatus.ACTIVE,
+        isActive: true,
+      }),
+    );
+
+    const result = await service.setStatus(
+      {
+        uid: 'admin-1',
+        role: 'SUPER_ADMIN',
+      } as never,
+      'cpn-1',
+      {
+        restaurant_id: 'rid-1',
+        status: CouponStatus.ACTIVE,
+      },
+    );
+
+    expect(repository.findByCodeOrId).toHaveBeenCalledWith('rid-1', 'cpn-1');
+    expect(repository.update).toHaveBeenCalledWith('cpn-1', {
+      status: CouponStatus.ACTIVE,
+      isActive: true,
+    });
+    expect(result.message).toBe('Coupon activated successfully');
+  });
+
+  it('updates coupon status while accepting restaurant scope from coupons list payloads', async () => {
+    repository.findById = jest.fn().mockResolvedValue(makeCoupon());
+    repository.update!.mockResolvedValue(
+      makeCoupon({
+        status: CouponStatus.SUSPENDED,
+        isActive: false,
+      }),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'admin-1',
+        role: 'SUPER_ADMIN',
+      } as never,
+      'cpn-1',
+      {
+        restaurantId: 'rid-1',
+        status: CouponStatus.SUSPENDED,
+        isActive: false,
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'cpn-1',
+      expect.objectContaining({
+        status: CouponStatus.SUSPENDED,
+        isActive: false,
+      }),
+    );
+    expect(result.message).toBe('Coupon updated successfully');
+  });
+
   it('returns uncapped percentage discount when maxDiscountAmount absent', async () => {
     repository.findByCode!.mockResolvedValue(
       makeCoupon({ maxDiscountAmount: null }),

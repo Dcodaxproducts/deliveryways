@@ -163,6 +163,16 @@ export class CouponsService {
       throw new NotFoundException('Coupon not found');
     }
 
+    const requestedRestaurantId = dto.restaurantId ?? dto.restaurant_id;
+    if (
+      requestedRestaurantId &&
+      requestedRestaurantId !== coupon.restaurantId
+    ) {
+      throw new BadRequestException(
+        'coupon does not belong to the provided restaurantId',
+      );
+    }
+
     await this.ensureRestaurantAccess(user, coupon.restaurantId);
 
     await this.validateScopeReferences(
@@ -213,7 +223,10 @@ export class CouponsService {
     code: string,
     dto: SetCouponStatusDto,
   ) {
-    const restaurantId = await this.requireRestaurantId(user, dto.restaurantId);
+    const restaurantId = await this.requireRestaurantId(
+      user,
+      dto.restaurantId ?? dto.restaurant_id,
+    );
     const coupon = await this.couponsRepository.findByCodeOrId(
       restaurantId,
       code,

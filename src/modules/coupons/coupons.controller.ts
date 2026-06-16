@@ -91,7 +91,11 @@ export class CouponsController {
   ) {
     return this.couponsService.setStatus(user, code, {
       ...dto,
-      restaurantId: dto.restaurantId ?? query.restaurantId,
+      restaurantId:
+        dto.restaurantId ??
+        dto.restaurant_id ??
+        query.restaurantId ??
+        query.restaurant_id,
     });
   }
 }
