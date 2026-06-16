@@ -4,10 +4,16 @@ import { AuthUserContext } from '../../common/decorators';
 import { CreateCouponDto } from '../coupons/dto';
 import { CouponsService } from '../coupons/coupons.service';
 import { DeliverymenService } from '../deliverymen/deliverymen.service';
+import { CreateMenuItemDto } from '../menu/item/dto';
+import { MenuItemService } from '../menu/item/item.service';
+import { CreateRestaurantMenuDto } from '../menu/restaurant-menu/dto';
+import { RestaurantMenuService } from '../menu/restaurant-menu/restaurant-menu.service';
 import { CreateAdminHappyHourDto, CreateAdminPromotionDto } from './dto';
 import { AdminPromotionsService } from './admin-promotions.service';
 
 export type AdminImportType =
+  | 'menu'
+  | 'menu-items'
   | 'deliverymen'
   | 'coupons'
   | 'promotions'
@@ -39,6 +45,8 @@ export class AdminImportsService {
     private readonly deliverymenService: DeliverymenService,
     private readonly couponsService: CouponsService,
     private readonly adminPromotionsService: AdminPromotionsService,
+    private readonly restaurantMenuService: RestaurantMenuService,
+    private readonly menuItemService: MenuItemService,
   ) {}
 
   async uploadCsv(user: AuthUserContext, type: string, file?: UploadedCsvFile) {
@@ -85,6 +93,14 @@ export class AdminImportsService {
     type: AdminImportType,
     row: Record<string, string>,
   ): Promise<{ id: string; email?: string; code?: string }> {
+    if (type === 'menu') {
+      return this.importMenu(user, row);
+    }
+
+    if (type === 'menu-items') {
+      return this.importMenuItem(user, row);
+    }
+
     if (type === 'deliverymen') {
       return this.importDeliveryman(user, row);
     }
@@ -98,6 +114,71 @@ export class AdminImportsService {
     }
 
     return this.importHappyHour(user, row);
+  }
+
+  private async importMenu(user: AuthUserContext, row: Record<string, string>) {
+    const dto: CreateRestaurantMenuDto = {
+      restaurantId: this.optionalString(row.restaurantId),
+      name: this.requiredString(row.name, 'name'),
+      slug:
+        this.optionalString(row.slug) ?? this.requiredString(row.name, 'name'),
+      description: this.optionalString(row.description),
+      itemIds: this.optionalStringList(row.itemIds),
+      categoryIds: this.optionalStringList(row.categoryIds),
+      isTimed: this.optionalBoolean(row.isTimed),
+      timingConfig: this.optionalJsonObject(row.timingConfig),
+      sortOrder: this.optionalInteger(row.sortOrder),
+      isActive: this.optionalBoolean(row.isActive),
+    };
+    const response = await this.restaurantMenuService.create(user, dto);
+
+    return { id: response.data.id };
+  }
+
+  private async importMenuItem(
+    user: AuthUserContext,
+    row: Record<string, string>,
+  ) {
+    const dto: CreateMenuItemDto = {
+      restaurantId: this.optionalString(row.restaurantId),
+      categoryId: this.requiredString(row.categoryId, 'categoryId'),
+      categoryIds: this.optionalStringList(row.categoryIds),
+      name: this.requiredString(row.name, 'name'),
+      slug: this.optionalString(row.slug),
+      description: this.optionalString(row.description),
+      ingredients: this.optionalString(row.ingredients),
+      nutritionalInformation: this.optionalString(row.nutritionalInformation),
+      allergenPdfUrl: this.optionalString(row.allergenPdfUrl),
+      imageUrl: this.optionalString(row.imageUrl),
+      sku: this.optionalString(row.sku),
+      sortOrder: this.optionalInteger(row.sortOrder),
+      pricingMode: this.optionalPricingMode(row.pricingMode),
+      basePrice: this.requiredNumber(row.basePrice, 'basePrice'),
+      deliveryPriceAdjustment: this.optionalNumber(row.deliveryPriceAdjustment),
+      takeawayPriceAdjustment: this.optionalNumber(row.takeawayPriceAdjustment),
+      prepTimeMinutes: this.optionalInteger(row.prepTimeMinutes),
+      taxTypeCode: this.optionalString(row.taxTypeCode),
+      taxPercentage: this.optionalNumber(row.taxPercentage),
+      dietaryFlags: this.optionalStringList(row.dietaryFlags),
+      labels: this.optionalStringList(row.labels),
+      allergenFlags: this.optionalStringList(row.allergenFlags),
+      allergenCodes: this.optionalStringList(row.allergenCodes),
+      depositAmount: this.optionalNumber(row.depositAmount),
+      minQuantity: this.optionalInteger(row.minQuantity),
+      maxQuantity: this.optionalInteger(row.maxQuantity),
+      minSelect: this.optionalInteger(row.minSelect),
+      maxSelect: this.optionalInteger(row.maxSelect),
+      supportsSplitPizza: this.optionalBoolean(row.supportsSplitPizza),
+      isRequired: this.optionalBoolean(row.isRequired),
+      isActive: this.optionalBoolean(row.isActive),
+      modifiers: this.optionalJsonArray(row.modifiers),
+      variationPriceOverrides: this.optionalJsonArray(
+        row.variationPriceOverrides,
+      ),
+    };
+    const response = await this.menuItemService.create(user, dto);
+
+    return { id: response.data.id };
   }
 
   private async importDeliveryman(
@@ -234,6 +315,8 @@ export class AdminImportsService {
   private parseImportType(type: string): AdminImportType {
     if (
       type === 'deliverymen' ||
+      type === 'menu' ||
+      type === 'menu-items' ||
       type === 'coupons' ||
       type === 'promotions' ||
       type === 'happy-hours'
@@ -242,7 +325,7 @@ export class AdminImportsService {
     }
 
     throw new BadRequestException(
-      'Unsupported import type. Use deliverymen, coupons, promotions, or happy-hours',
+      'Unsupported import type. Use menu, menu-items, deliverymen, coupons, promotions, or happy-hours',
     );
   }
 
@@ -403,6 +486,42 @@ export class AdminImportsService {
       .filter(Boolean);
   }
 
+  private optionalJsonObject(value: string | undefined) {
+    const normalized = this.optionalString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed: unknown = this.parseJsonValue(normalized);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new BadRequestException(`Invalid JSON object value: ${value}`);
+    }
+
+    return parsed as Record<string, unknown>;
+  }
+
+  private optionalJsonArray<T = never>(value: string | undefined) {
+    const normalized = this.optionalString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed: unknown = this.parseJsonValue(normalized);
+    if (!Array.isArray(parsed)) {
+      throw new BadRequestException(`Invalid JSON array value: ${value}`);
+    }
+
+    return parsed as T[];
+  }
+
+  private parseJsonValue(value: string) {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      throw new BadRequestException(`Invalid JSON value: ${value}`);
+    }
+  }
+
   private requiredIntegerList(value: string | undefined, field: string) {
     const values = this.optionalStringList(value);
     if (!values?.length) {
@@ -472,7 +591,28 @@ export class AdminImportsService {
     throw new BadRequestException(`Invalid apply mode: ${value}`);
   }
 
+  private optionalPricingMode(value: string | undefined) {
+    const normalized = this.optionalString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (normalized === 'SINGLE' || normalized === 'MULTIPLE') {
+      return normalized;
+    }
+
+    throw new BadRequestException(`Invalid pricing mode: ${value}`);
+  }
+
   private importTypeLabel(type: AdminImportType) {
+    if (type === 'menu') {
+      return 'Menu';
+    }
+
+    if (type === 'menu-items') {
+      return 'Menu item';
+    }
+
     if (type === 'deliverymen') {
       return 'Deliveryman';
     }

@@ -34,11 +34,27 @@ describe('AdminImportsService', () => {
         },
       }),
     };
+    const restaurantMenuService = {
+      create: jest.fn().mockResolvedValue({
+        data: {
+          id: 'menu-1',
+        },
+      }),
+    };
+    const menuItemService = {
+      create: jest.fn().mockResolvedValue({
+        data: {
+          id: 'item-1',
+        },
+      }),
+    };
 
     const service = new AdminImportsService(
       deliverymenService as never,
       couponsService as never,
       adminPromotionsService as never,
+      restaurantMenuService as never,
+      menuItemService as never,
     );
 
     return {
@@ -46,8 +62,102 @@ describe('AdminImportsService', () => {
       deliverymenService,
       couponsService,
       adminPromotionsService,
+      restaurantMenuService,
+      menuItemService,
     };
   };
+
+  it('imports restaurant menus from uploaded CSV rows', async () => {
+    const { service, restaurantMenuService } = makeService();
+    const csv = [
+      'restaurantId,name,slug,description,itemIds,categoryIds,isTimed,timingConfig,sortOrder,isActive',
+      'restaurant-1,Lunch Menu,lunch-menu,Weekday lunch,item-1|item-2,cat-1|cat-2,true,"{""days"":[1,2,3],""startTime"":""12:00"",""endTime"":""16:00""}",1,true',
+    ].join('\n');
+
+    const result = await service.uploadCsv(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'menu',
+      {
+        buffer: Buffer.from(csv),
+        originalname: 'menu.csv',
+      },
+    );
+
+    expect(restaurantMenuService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'admin-1' }),
+      expect.objectContaining({
+        name: 'Lunch Menu',
+        slug: 'lunch-menu',
+        itemIds: ['item-1', 'item-2'],
+        categoryIds: ['cat-1', 'cat-2'],
+        isTimed: true,
+        timingConfig: {
+          days: [1, 2, 3],
+          startTime: '12:00',
+          endTime: '16:00',
+        },
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        type: 'menu',
+        totalRows: 1,
+        imported: 1,
+        failed: 0,
+      }),
+    );
+  });
+
+  it('imports menu items from uploaded CSV rows', async () => {
+    const { service, menuItemService } = makeService();
+    const csv = [
+      'restaurantId,categoryId,categoryIds,name,slug,basePrice,pricingMode,modifiers,variationPriceOverrides,isActive',
+      'restaurant-1,cat-1,cat-1|cat-2,Chicken Burger,chicken-burger,1299,SINGLE,"[{""modifierId"":""mod-1"",""priceDelta"":150}]","[{""variationId"":""var-1"",""price"":1499,""pickupPrice"":1399}]",true',
+    ].join('\n');
+
+    const result = await service.uploadCsv(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'menu-items',
+      {
+        buffer: Buffer.from(csv),
+        originalname: 'menu-items.csv',
+      },
+    );
+
+    expect(menuItemService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'admin-1' }),
+      expect.objectContaining({
+        categoryId: 'cat-1',
+        categoryIds: ['cat-1', 'cat-2'],
+        name: 'Chicken Burger',
+        basePrice: 1299,
+        pricingMode: 'SINGLE',
+        isActive: true,
+        modifiers: [{ modifierId: 'mod-1', priceDelta: 150 }],
+        variationPriceOverrides: [
+          { variationId: 'var-1', price: 1499, pickupPrice: 1399 },
+        ],
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        type: 'menu-items',
+        totalRows: 1,
+        imported: 1,
+        failed: 0,
+      }),
+    );
+  });
 
   it('imports deliverymen from uploaded CSV rows', async () => {
     const { service, deliverymenService } = makeService();

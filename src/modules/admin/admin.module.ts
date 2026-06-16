@@ -6,6 +6,7 @@ import { MailerModule } from '../mailer/mailer.module';
 import { StorageModule } from '../storage/storage.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { DeliverymenModule } from '../deliverymen/deliverymen.module';
+import { MenuModule } from '../menu/menu.module';
 import { AdminDealsController } from './admin-deals.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
@@ -35,6 +36,7 @@ import { AdminImportsService } from './admin-imports.service';
     StorageModule,
     CouponsModule,
     DeliverymenModule,
+    MenuModule,
   ],
   controllers: [
     AdminUsersController,
