@@ -2,6 +2,90 @@ import { Prisma } from '@prisma/client';
 import { RestaurantMenuRepository } from './restaurant-menu.repository';
 
 describe('RestaurantMenuRepository', () => {
+  it('filters deleted menu item and category targets from menu list relations', async () => {
+    type MenuListArgs = {
+      include: {
+        items: { where: unknown };
+        categories: { where: unknown };
+      };
+    };
+    const findMany = jest.fn<Promise<unknown[]>, [MenuListArgs]>();
+    const count = jest.fn<Promise<number>, []>();
+    findMany.mockResolvedValue([]);
+    count.mockResolvedValue(0);
+
+    const prisma = {
+      restaurantMenu: {
+        findMany,
+        count,
+      },
+      $transaction: jest.fn((operations: Array<Promise<unknown>>) =>
+        Promise.all(operations),
+      ),
+    };
+
+    const repository = new RestaurantMenuRepository(prisma as never);
+
+    await repository.list('restaurant-1', {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      includeInactive: true,
+    } as never);
+
+    expect(findMany).toHaveBeenCalled();
+    const listArgs = findMany.mock.calls[0][0];
+
+    expect(listArgs.include.items.where).toEqual({
+      menuItem: { deletedAt: null },
+    });
+    expect(listArgs.include.categories.where).toEqual({
+      menuCategory: { deletedAt: null },
+    });
+  });
+
+  it('filters deleted menu item and category targets from menu link lists', async () => {
+    const prisma = {
+      restaurantMenuItem: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      restaurantMenuCategory: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    const repository = new RestaurantMenuRepository(prisma as never);
+
+    await repository.listMenuItemLinks('menu-1');
+    await repository.listMenuCategoryLinks('menu-1');
+    await repository.listMenuCategories('menu-1');
+
+    expect(prisma.restaurantMenuItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { restaurantMenuId: 'menu-1', menuItem: { deletedAt: null } },
+      }),
+    );
+    expect(prisma.restaurantMenuCategory.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: {
+          restaurantMenuId: 'menu-1',
+          menuCategory: { deletedAt: null },
+        },
+      }),
+    );
+    expect(prisma.restaurantMenuCategory.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          restaurantMenuId: 'menu-1',
+          menuCategory: { deletedAt: null },
+        },
+      }),
+    );
+  });
+
   it('exposes modifier groups with item and variation price overrides in listMenuItems', async () => {
     const prisma = {
       menuItem: {

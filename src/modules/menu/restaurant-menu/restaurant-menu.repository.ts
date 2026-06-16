@@ -38,6 +38,11 @@ export class RestaurantMenuRepository {
       where: { id },
       include: {
         items: {
+          where: {
+            menuItem: {
+              deletedAt: null,
+            },
+          },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
           include: {
             menuItem: {
@@ -152,6 +157,11 @@ export class RestaurantMenuRepository {
           },
         },
         categories: {
+          where: {
+            menuCategory: {
+              deletedAt: null,
+            },
+          },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
           include: {
             menuCategory: {
@@ -196,15 +206,13 @@ export class RestaurantMenuRepository {
         include: {
           _count: { select: { items: true, categories: true } },
           items: {
-            where: query.includeInactive
-              ? undefined
-              : {
-                  isActive: true,
-                  menuItem: {
-                    deletedAt: null,
-                    isActive: true,
-                  },
-                },
+            where: {
+              ...(query.includeInactive ? {} : { isActive: true }),
+              menuItem: {
+                deletedAt: null,
+                ...(query.includeInactive ? {} : { isActive: true }),
+              },
+            },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             include: {
               menuItem: {
@@ -314,6 +322,11 @@ export class RestaurantMenuRepository {
             },
           },
           categories: {
+            where: {
+              menuCategory: {
+                deletedAt: null,
+              },
+            },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             include: {
               menuCategory: {
@@ -442,7 +455,7 @@ export class RestaurantMenuRepository {
 
   async listMenuItemLinks(restaurantMenuId: string) {
     return this.prisma.restaurantMenuItem.findMany({
-      where: { restaurantMenuId },
+      where: { restaurantMenuId, menuItem: { deletedAt: null } },
       select: { id: true, menuItemId: true },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
@@ -473,7 +486,7 @@ export class RestaurantMenuRepository {
 
   async listMenuCategoryLinks(restaurantMenuId: string) {
     return this.prisma.restaurantMenuCategory.findMany({
-      where: { restaurantMenuId },
+      where: { restaurantMenuId, menuCategory: { deletedAt: null } },
       select: { id: true, menuCategoryId: true },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
@@ -530,7 +543,7 @@ export class RestaurantMenuRepository {
 
   async listMenuCategories(restaurantMenuId: string) {
     return this.prisma.restaurantMenuCategory.findMany({
-      where: { restaurantMenuId },
+      where: { restaurantMenuId, menuCategory: { deletedAt: null } },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: {
         menuCategory: {
