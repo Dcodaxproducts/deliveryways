@@ -9,8 +9,6 @@ export type ImportSampleType =
   | 'menu'
   | 'menu-items'
   | 'deliverymen'
-  | 'employees'
-  | 'customers'
   | 'coupons'
   | 'promotions'
   | 'happy-hours';
@@ -88,39 +86,6 @@ export class AdminImportSamplesService {
           vehicleNumber: 'ABC-123',
           password: 'Temp@12345',
           status: 'OFFLINE',
-        },
-      ],
-    },
-    employees: {
-      fileName: 'employees-import-sample.csv',
-      rows: [
-        {
-          staffRoleId: 'staff_role_123',
-          firstName: 'Sara',
-          lastName: 'Ahmed',
-          email: 'sara.employee@example.com',
-          phone: '+923001112233',
-          password: 'Temp@12345',
-          avatarUrl: '',
-          bio: 'Branch cashier',
-          isActive: true,
-        },
-      ],
-    },
-    customers: {
-      fileName: 'customers-import-sample.csv',
-      rows: [
-        {
-          restaurantId: 'restaurant_123',
-          branchId: 'branch_123',
-          firstName: 'Hassan',
-          lastName: 'Ali',
-          email: 'hassan.customer@example.com',
-          phone: '+923004445566',
-          password: 'Temp@12345',
-          avatarUrl: '',
-          bio: '',
-          isVerified: true,
         },
       ],
     },

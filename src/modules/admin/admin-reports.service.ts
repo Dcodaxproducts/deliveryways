@@ -14,9 +14,9 @@ import {
 } from './admin-reports.repository';
 import {
   AdminEmailReportExportDto,
+  AdminExportCampaignsCsvQueryDto,
   AdminExportCustomersCsvQueryDto,
   AdminExportDeliverymenCsvQueryDto,
-  AdminExportEmployeesCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
@@ -235,47 +235,84 @@ export class AdminReportsService {
     };
   }
 
-  async exportEmployeesCsv(
+  async exportCampaignsCsv(
     user: AuthUserContext,
-    query: AdminExportEmployeesCsvQueryDto,
+    query: AdminExportCampaignsCsvQueryDto,
+    type: 'coupons' | 'promotions' | 'happy-hours',
   ) {
     const scope = await this.resolveScope(
       user,
       query.restaurantId,
       query.branchId,
     );
-    const employees = await this.adminReportsRepository.exportEmployees(scope, {
-      ...query,
-      restaurantId: scope.restaurantId,
-      branchId: scope.branchId,
-    });
+    const campaigns = await this.adminReportsRepository.exportCampaigns(
+      scope,
+      {
+        ...query,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+      type,
+    );
 
-    const rows = employees.map((employee) => ({
-      employeeId: employee.id,
-      tenantId: employee.tenantId ?? '',
-      restaurantId: employee.restaurantId ?? '',
-      restaurantName: employee.restaurant?.name ?? '',
-      branchId: employee.branchId ?? '',
-      branchName: employee.branch?.name ?? '',
-      staffRoleId: employee.staffRoleId,
-      staffRoleName: employee.staffRole.name,
-      panelType: employee.panelType,
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      email: employee.email,
-      phone: employee.phone ?? '',
-      isActive: employee.isActive,
-      createdAt: employee.createdAt.toISOString(),
+    const rows = campaigns.map((campaign) => ({
+      campaignId: campaign.id,
+      restaurantId: campaign.restaurantId,
+      restaurantName: campaign.restaurant.name,
+      branchId: campaign.branchId ?? '',
+      branchName: campaign.branch?.name ?? '',
+      code: campaign.code ?? '',
+      title: campaign.title,
+      description: campaign.description ?? '',
+      kind: campaign.kind,
+      status: campaign.status,
+      applyMode: campaign.applyMode,
+      autoApply: campaign.autoApply,
+      discountType: campaign.discountType,
+      discountValue: Number(campaign.discountValue),
+      maxDiscountAmount:
+        campaign.maxDiscountAmount !== null
+          ? Number(campaign.maxDiscountAmount)
+          : '',
+      minOrderAmount:
+        campaign.minOrderAmount !== null ? Number(campaign.minOrderAmount) : '',
+      maxUses: campaign.maxUses ?? '',
+      maxUsesPerCustomer: campaign.maxUsesPerCustomer ?? '',
+      usedCount: campaign.usedCount,
+      startsAt: campaign.startsAt?.toISOString() ?? '',
+      expiresAt: campaign.expiresAt?.toISOString() ?? '',
+      activeDays:
+        campaign.activeDays !== null ? JSON.stringify(campaign.activeDays) : '',
+      dailyStartTime: campaign.dailyStartTime ?? '',
+      dailyEndTime: campaign.dailyEndTime ?? '',
+      scopeMenuItemId: campaign.scopeMenuItem?.id ?? '',
+      scopeMenuItemName: campaign.scopeMenuItem?.name ?? '',
+      scopeCategoryId: campaign.scopeCategory?.id ?? '',
+      scopeCategoryName: campaign.scopeCategory?.name ?? '',
+      scopeMenuItemIds: campaign.scopeMenuItems
+        .map((scopeItem) => scopeItem.menuItem.id)
+        .join('|'),
+      scopeMenuItemNames: campaign.scopeMenuItems
+        .map((scopeItem) => scopeItem.menuItem.name)
+        .join('|'),
+      scopeCategoryIds: campaign.scopeCategories
+        .map((scopeCategory) => scopeCategory.menuCategory.id)
+        .join('|'),
+      scopeCategoryNames: campaign.scopeCategories
+        .map((scopeCategory) => scopeCategory.menuCategory.name)
+        .join('|'),
+      isActive: campaign.isActive,
+      createdAt: campaign.createdAt.toISOString(),
     }));
 
     return {
       data: {
-        fileName: this.buildFileName('employees-export', scope),
+        fileName: this.buildFileName(`${type}-export`, scope),
         mimeType: 'text/csv',
         rowCount: rows.length,
         content: this.toCsv(rows),
       },
-      message: 'Employees export generated successfully',
+      message: `${this.getCampaignExportLabel(type)} export generated successfully`,
     };
   }
 
@@ -542,14 +579,21 @@ export class AdminReportsService {
       });
     }
 
-    if (dto.type === 'employees') {
-      return this.exportEmployeesCsv(user, {
-        restaurantId: dto.restaurantId,
-        branchId: dto.branchId,
-        search: dto.search,
-        isActive: dto.isActive,
-        staffRoleId: dto.staffRoleId,
-      });
+    if (
+      dto.type === 'coupons' ||
+      dto.type === 'promotions' ||
+      dto.type === 'happy-hours'
+    ) {
+      return this.exportCampaignsCsv(
+        user,
+        {
+          restaurantId: dto.restaurantId,
+          branchId: dto.branchId,
+          search: dto.search,
+          isActive: dto.isActive,
+        },
+        dto.type,
+      );
     }
 
     return this.exportCustomersCsv(user, dto);
@@ -568,11 +612,21 @@ export class AdminReportsService {
       return 'deliverymen';
     }
 
-    if (type === 'employees') {
-      return 'employees';
+    if (type === 'coupons' || type === 'promotions' || type === 'happy-hours') {
+      return this.getCampaignExportLabel(type);
     }
 
     return 'customers';
+  }
+
+  private getCampaignExportLabel(
+    type: 'coupons' | 'promotions' | 'happy-hours',
+  ) {
+    if (type === 'happy-hours') {
+      return 'Happy hours';
+    }
+
+    return type === 'coupons' ? 'Coupons' : 'Promotions';
   }
 
   private generateInvoicePdf(invoice: InvoiceOrder) {

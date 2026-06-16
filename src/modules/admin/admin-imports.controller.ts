@@ -36,7 +36,7 @@ export class AdminImportsController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Upload filled CSV import file for deliverymen, employees, or customers',
+      'Upload filled CSV import file for deliverymen, coupons, promotions, or happy-hours',
   })
   @ApiBody({
     schema: {

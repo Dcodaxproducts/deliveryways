@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
+  CouponCampaignKind,
+  CouponDiscountType,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -8,8 +10,8 @@ import {
 import { PrismaService } from '../../database';
 import {
   AdminExportCustomersCsvQueryDto,
+  AdminExportCampaignsCsvQueryDto,
   AdminExportDeliverymenCsvQueryDto,
-  AdminExportEmployeesCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
@@ -302,25 +304,32 @@ export class AdminReportsRepository {
     });
   }
 
-  async exportEmployees(
+  async exportCampaigns(
     scope: AdminReportsScope,
-    query: AdminExportEmployeesCsvQueryDto,
+    query: AdminExportCampaignsCsvQueryDto,
+    type: 'coupons' | 'promotions' | 'happy-hours',
   ) {
-    return this.prisma.staffUser.findMany({
+    return this.prisma.coupon.findMany({
       where: {
         deletedAt: null,
         ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
         ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
         ...(scope.branchId ? { branchId: scope.branchId } : {}),
         ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-        ...(query.staffRoleId ? { staffRoleId: query.staffRoleId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.discountType ? { discountType: query.discountType } : {}),
+        ...this.buildCampaignTypeWhere(type),
         ...(query.search
           ? {
               OR: [
-                { firstName: { contains: query.search, mode: 'insensitive' } },
-                { lastName: { contains: query.search, mode: 'insensitive' } },
-                { email: { contains: query.search, mode: 'insensitive' } },
-                { phone: { contains: query.search, mode: 'insensitive' } },
+                { code: { contains: query.search, mode: 'insensitive' } },
+                { title: { contains: query.search, mode: 'insensitive' } },
+                {
+                  description: {
+                    contains: query.search,
+                    mode: 'insensitive',
+                  },
+                },
               ],
             }
           : {}),
@@ -328,20 +337,39 @@ export class AdminReportsRepository {
       orderBy: [{ createdAt: 'desc' }],
       select: {
         id: true,
-        tenantId: true,
         restaurantId: true,
         branchId: true,
-        staffRoleId: true,
-        panelType: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
+        code: true,
+        title: true,
+        description: true,
+        kind: true,
+        status: true,
+        applyMode: true,
+        autoApply: true,
+        discountType: true,
+        discountValue: true,
+        maxDiscountAmount: true,
+        minOrderAmount: true,
+        maxUses: true,
+        maxUsesPerCustomer: true,
+        usedCount: true,
+        startsAt: true,
+        expiresAt: true,
+        activeDays: true,
+        dailyStartTime: true,
+        dailyEndTime: true,
         isActive: true,
         createdAt: true,
         restaurant: { select: { id: true, name: true } },
         branch: { select: { id: true, name: true } },
-        staffRole: { select: { id: true, name: true } },
+        scopeMenuItem: { select: { id: true, name: true } },
+        scopeCategory: { select: { id: true, name: true } },
+        scopeMenuItems: {
+          select: { menuItem: { select: { id: true, name: true } } },
+        },
+        scopeCategories: {
+          select: { menuCategory: { select: { id: true, name: true } } },
+        },
       },
     });
   }
@@ -661,6 +689,30 @@ export class AdminReportsRepository {
         ...(toDate ? { lte: new Date(toDate) } : {}),
       },
     };
+  }
+
+  private buildCampaignTypeWhere(
+    type: 'coupons' | 'promotions' | 'happy-hours',
+  ) {
+    if (type === 'happy-hours') {
+      return {
+        kind: CouponCampaignKind.HAPPY_HOUR,
+      } satisfies Prisma.CouponWhereInput;
+    }
+
+    if (type === 'coupons') {
+      return {
+        kind: CouponCampaignKind.PROMOTION,
+        autoApply: false,
+        NOT: { discountType: CouponDiscountType.FIXED_PRICE },
+      } satisfies Prisma.CouponWhereInput;
+    }
+
+    return {
+      kind: CouponCampaignKind.PROMOTION,
+      autoApply: true,
+      NOT: { discountType: CouponDiscountType.FIXED_PRICE },
+    } satisfies Prisma.CouponWhereInput;
   }
 
   private countByField<T extends Record<string, string>>(

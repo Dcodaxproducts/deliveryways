@@ -1,18 +1,17 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
-import { DeliverymanStatus } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { CouponDiscountType, DeliverymanStatus } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { UserRoleEnum } from '../../common/enums';
-import { PrismaService } from '../../database';
+import { CreateCouponDto } from '../coupons/dto';
+import { CouponsService } from '../coupons/coupons.service';
 import { DeliverymenService } from '../deliverymen/deliverymen.service';
-import { StaffManagementService } from '../staff-management/staff-management.service';
-import { UsersService } from '../users/users.service';
+import { CreateAdminHappyHourDto, CreateAdminPromotionDto } from './dto';
+import { AdminPromotionsService } from './admin-promotions.service';
 
-export type AdminImportType = 'deliverymen' | 'employees' | 'customers';
+export type AdminImportType =
+  | 'deliverymen'
+  | 'coupons'
+  | 'promotions'
+  | 'happy-hours';
 
 export interface UploadedCsvFile {
   buffer: Buffer;
@@ -30,22 +29,16 @@ export interface ImportRowResult {
   status: 'imported' | 'failed';
   id?: string;
   email?: string;
+  code?: string;
   error?: string;
-}
-
-interface CustomerImportScope {
-  tenantId: string;
-  restaurantId: string;
-  branchId?: string;
 }
 
 @Injectable()
 export class AdminImportsService {
   constructor(
     private readonly deliverymenService: DeliverymenService,
-    private readonly staffManagementService: StaffManagementService,
-    private readonly usersService: UsersService,
-    private readonly prisma: PrismaService,
+    private readonly couponsService: CouponsService,
+    private readonly adminPromotionsService: AdminPromotionsService,
   ) {}
 
   async uploadCsv(user: AuthUserContext, type: string, file?: UploadedCsvFile) {
@@ -61,6 +54,7 @@ export class AdminImportsService {
           status: 'imported',
           id: result.id,
           email: result.email,
+          code: result.code,
         });
       } catch (error) {
         results.push({
@@ -90,16 +84,20 @@ export class AdminImportsService {
     user: AuthUserContext,
     type: AdminImportType,
     row: Record<string, string>,
-  ) {
+  ): Promise<{ id: string; email?: string; code?: string }> {
     if (type === 'deliverymen') {
       return this.importDeliveryman(user, row);
     }
 
-    if (type === 'employees') {
-      return this.importEmployee(user, row);
+    if (type === 'coupons') {
+      return this.importCoupon(user, row);
     }
 
-    return this.importCustomer(user, row);
+    if (type === 'promotions') {
+      return this.importPromotion(user, row);
+    }
+
+    return this.importHappyHour(user, row);
   }
 
   private async importDeliveryman(
@@ -125,89 +123,126 @@ export class AdminImportsService {
     };
   }
 
-  private async importEmployee(
+  private async importCoupon(
     user: AuthUserContext,
     row: Record<string, string>,
   ) {
-    const response = await this.staffManagementService.create(user, {
-      email: this.requiredString(row.email, 'email'),
-      password: this.requiredString(row.password, 'password'),
-      firstName: this.requiredString(row.firstName, 'firstName'),
-      lastName: this.requiredString(row.lastName, 'lastName'),
-      phone: this.optionalString(row.phone),
-      avatarUrl: this.optionalString(row.avatarUrl),
-      bio: this.optionalString(row.bio),
-      staffRoleId: this.requiredString(row.staffRoleId, 'staffRoleId'),
-      isActive: this.optionalBoolean(row.isActive),
-    });
-    const employee = response.data as unknown as { id: string; email: string };
+    const dto: CreateCouponDto = {
+      restaurantId: this.optionalString(row.restaurantId),
+      branchId: this.optionalString(row.branchId),
+      code: this.requiredString(row.code, 'code'),
+      title: this.requiredString(row.title, 'title'),
+      description: this.optionalString(row.description),
+      discountType: this.requiredDiscountType(row.discountType),
+      discountValue: this.requiredNumber(row.discountValue, 'discountValue'),
+      maxDiscountAmount: this.optionalNumber(row.maxDiscountAmount),
+      minOrderAmount: this.optionalNumber(row.minOrderAmount),
+      maxUses: this.optionalInteger(row.maxUses),
+      maxUsesPerCustomer: this.optionalInteger(row.maxUsesPerCustomer),
+      startsAt: this.requiredString(row.startsAt, 'startsAt'),
+      expiresAt: this.requiredString(row.expiresAt, 'expiresAt'),
+      scopeMenuItemId: this.optionalString(row.scopeMenuItemId),
+      scopeCategoryId: this.optionalString(row.scopeCategoryId),
+    };
+    const response = await this.couponsService.create(user, dto);
 
     return {
-      id: employee.id,
-      email: employee.email,
+      id: response.data.id,
+      code: response.data.code,
     };
   }
 
-  private async importCustomer(
+  private async importPromotion(
     user: AuthUserContext,
     row: Record<string, string>,
   ) {
-    const scope = await this.resolveCustomerImportScope(
+    const dto: CreateAdminPromotionDto = {
+      restaurantId: this.optionalString(row.restaurantId),
+      branchId: this.optionalString(row.branchId),
+      code: this.optionalString(row.code),
+      title: this.requiredString(row.title, 'title'),
+      description: this.optionalString(row.description),
+      imageUrl: this.optionalString(row.imageUrl),
+      discountType: this.requiredPromotionDiscountType(row.discountType),
+      discountValue: this.requiredNumber(row.discountValue, 'discountValue'),
+      maxDiscountAmount: this.optionalNumber(row.maxDiscountAmount),
+      minOrderAmount: this.optionalNumber(row.minOrderAmount),
+      maxUses: this.optionalInteger(row.maxUses),
+      maxUsesPerCustomer: this.optionalInteger(row.maxUsesPerCustomer),
+      startsAt: this.requiredString(row.startsAt, 'startsAt'),
+      expiresAt: this.requiredString(row.expiresAt, 'expiresAt'),
+      scopeMenuItemId: this.optionalString(row.scopeMenuItemId),
+      scopeCategoryId: this.optionalString(row.scopeCategoryId),
+      scopeMenuItemIds: this.optionalStringList(row.scopeMenuItemIds),
+      scopeCategoryIds: this.optionalStringList(row.scopeCategoryIds),
+      applyMode: this.optionalApplyMode(row.applyMode),
+      autoApply: this.optionalBoolean(row.autoApply),
+      isActive: this.optionalBoolean(row.isActive),
+    };
+    const response = await this.adminPromotionsService.createPromotion(
       user,
-      this.optionalString(row.restaurantId),
-      this.optionalString(row.branchId),
+      dto,
     );
-    const email = this.requiredString(row.email, 'email').toLowerCase();
-    const existing = await this.usersService.findByEmailIncludingDeleted(
-      email,
-      scope.restaurantId,
-    );
-
-    if (existing && !existing.deletedAt) {
-      throw new BadRequestException(
-        'A customer with this email already exists in this restaurant',
-      );
-    }
-
-    const customer = await this.usersService.create({
-      email,
-      password: await bcrypt.hash(
-        this.requiredString(row.password, 'password'),
-        10,
-      ),
-      role: UserRoleEnum.CUSTOMER,
-      tenantId: scope.tenantId,
-      restaurantId: scope.restaurantId,
-      branchId: scope.branchId,
-      isVerified: this.optionalBoolean(row.isVerified) ?? true,
-      isApproved: true,
-      isGuest: false,
-      profile: {
-        firstName: this.requiredString(row.firstName, 'firstName'),
-        lastName: this.requiredString(row.lastName, 'lastName'),
-        phone: this.optionalString(row.phone),
-        avatarUrl: this.optionalString(row.avatarUrl),
-        bio: this.optionalString(row.bio),
-      },
-    });
 
     return {
-      id: customer.id,
-      email: customer.email,
+      id: response.data.id,
+      code: response.data.code ?? undefined,
+    };
+  }
+
+  private async importHappyHour(
+    user: AuthUserContext,
+    row: Record<string, string>,
+  ) {
+    const dto: CreateAdminHappyHourDto = {
+      restaurantId: this.optionalString(row.restaurantId),
+      branchId: this.optionalString(row.branchId),
+      code: this.optionalString(row.code),
+      title: this.requiredString(row.title, 'title'),
+      description: this.optionalString(row.description),
+      imageUrl: this.optionalString(row.imageUrl),
+      discountType: this.requiredPromotionDiscountType(row.discountType),
+      discountValue: this.requiredNumber(row.discountValue, 'discountValue'),
+      maxDiscountAmount: this.optionalNumber(row.maxDiscountAmount),
+      minOrderAmount: this.optionalNumber(row.minOrderAmount),
+      maxUses: this.optionalInteger(row.maxUses),
+      maxUsesPerCustomer: this.optionalInteger(row.maxUsesPerCustomer),
+      startsAt: this.requiredString(row.startsAt, 'startsAt'),
+      expiresAt: this.requiredString(row.expiresAt, 'expiresAt'),
+      activeDays: this.requiredIntegerList(row.activeDays, 'activeDays'),
+      dailyStartTime: this.requiredString(row.dailyStartTime, 'dailyStartTime'),
+      dailyEndTime: this.requiredString(row.dailyEndTime, 'dailyEndTime'),
+      scopeMenuItemId: this.optionalString(row.scopeMenuItemId),
+      scopeCategoryId: this.optionalString(row.scopeCategoryId),
+      scopeMenuItemIds: this.optionalStringList(row.scopeMenuItemIds),
+      scopeCategoryIds: this.optionalStringList(row.scopeCategoryIds),
+      applyMode: this.optionalApplyMode(row.applyMode),
+      autoApply: this.optionalBoolean(row.autoApply),
+      isActive: this.optionalBoolean(row.isActive),
+    };
+    const response = await this.adminPromotionsService.createHappyHour(
+      user,
+      dto,
+    );
+
+    return {
+      id: response.data.id,
+      code: response.data.code ?? undefined,
     };
   }
 
   private parseImportType(type: string): AdminImportType {
     if (
       type === 'deliverymen' ||
-      type === 'employees' ||
-      type === 'customers'
+      type === 'coupons' ||
+      type === 'promotions' ||
+      type === 'happy-hours'
     ) {
       return type;
     }
 
     throw new BadRequestException(
-      'Unsupported import type. Use deliverymen, employees, or customers',
+      'Unsupported import type. Use deliverymen, coupons, promotions, or happy-hours',
     );
   }
 
@@ -288,80 +323,6 @@ export class AdminImportsService {
     return rows;
   }
 
-  private async resolveCustomerImportScope(
-    user: AuthUserContext,
-    restaurantId?: string,
-    branchId?: string,
-  ): Promise<CustomerImportScope> {
-    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.tid || !user.rid || !user.bid) {
-        throw new ForbiddenException('Branch context is required');
-      }
-
-      if (restaurantId && restaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot import customers outside your restaurant',
-        );
-      }
-
-      if (branchId && branchId !== user.bid) {
-        throw new ForbiddenException(
-          'You cannot import customers outside your branch',
-        );
-      }
-
-      return {
-        tenantId: user.tid,
-        restaurantId: user.rid,
-        branchId: user.bid,
-      };
-    }
-
-    const resolvedRestaurantId = restaurantId;
-    if (!resolvedRestaurantId) {
-      throw new BadRequestException('restaurantId is required');
-    }
-
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: {
-        id: resolvedRestaurantId,
-        deletedAt: null,
-        ...(user.role === UserRoleEnum.SUPER_ADMIN
-          ? {}
-          : { tenantId: user.tid }),
-      },
-      select: { id: true, tenantId: true },
-    });
-
-    if (!restaurant) {
-      throw new ForbiddenException('Restaurant is not accessible');
-    }
-
-    if (branchId) {
-      const branch = await this.prisma.branch.findFirst({
-        where: {
-          id: branchId,
-          restaurantId: restaurant.id,
-          tenantId: restaurant.tenantId,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-
-      if (!branch) {
-        throw new BadRequestException(
-          'branchId does not belong to restaurantId',
-        );
-      }
-    }
-
-    return {
-      tenantId: restaurant.tenantId,
-      restaurantId: restaurant.id,
-      branchId,
-    };
-  }
-
   private requiredString(value: string | undefined, field: string) {
     const normalized = this.optionalString(value);
     if (!normalized) {
@@ -394,6 +355,70 @@ export class AdminImportsService {
     throw new BadRequestException(`Invalid boolean value: ${value}`);
   }
 
+  private requiredNumber(value: string | undefined, field: string) {
+    const parsed = this.optionalNumber(value);
+    if (parsed === undefined) {
+      throw new BadRequestException(`${field} is required`);
+    }
+
+    return parsed;
+  }
+
+  private optionalNumber(value: string | undefined) {
+    const normalized = this.optionalString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) {
+      throw new BadRequestException(`Invalid number value: ${value}`);
+    }
+
+    return parsed;
+  }
+
+  private optionalInteger(value: string | undefined) {
+    const parsed = this.optionalNumber(value);
+    if (parsed === undefined) {
+      return undefined;
+    }
+
+    if (!Number.isInteger(parsed)) {
+      throw new BadRequestException(`Invalid integer value: ${value}`);
+    }
+
+    return parsed;
+  }
+
+  private optionalStringList(value: string | undefined) {
+    const normalized = this.optionalString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    return normalized
+      .split('|')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  private requiredIntegerList(value: string | undefined, field: string) {
+    const values = this.optionalStringList(value);
+    if (!values?.length) {
+      throw new BadRequestException(`${field} is required`);
+    }
+
+    return values.map((item) => {
+      const parsed = Number(item);
+      if (!Number.isInteger(parsed)) {
+        throw new BadRequestException(`Invalid integer value: ${item}`);
+      }
+
+      return parsed;
+    });
+  }
+
   private optionalDeliverymanStatus(value: string | undefined) {
     const normalized = this.optionalString(value);
 
@@ -414,11 +439,48 @@ export class AdminImportsService {
     );
   }
 
+  private requiredDiscountType(value: string | undefined) {
+    const normalized = this.requiredString(value, 'discountType');
+    if (this.isCouponDiscountType(normalized)) {
+      return normalized;
+    }
+
+    throw new BadRequestException(`Invalid discount type: ${value}`);
+  }
+
+  private requiredPromotionDiscountType(value: string | undefined) {
+    const discountType = this.requiredDiscountType(value);
+    return discountType as 'FLAT' | 'PERCENTAGE' | 'FIXED_PRICE';
+  }
+
+  private isCouponDiscountType(value: string): value is CouponDiscountType {
+    return Object.values(CouponDiscountType).includes(
+      value as CouponDiscountType,
+    );
+  }
+
+  private optionalApplyMode(value: string | undefined) {
+    const normalized = this.optionalString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (normalized === 'ORDER_TOTAL' || normalized === 'SCOPED_ITEMS') {
+      return normalized;
+    }
+
+    throw new BadRequestException(`Invalid apply mode: ${value}`);
+  }
+
   private importTypeLabel(type: AdminImportType) {
-    return type === 'deliverymen'
-      ? 'Deliveryman'
-      : type === 'employees'
-        ? 'Employee'
-        : 'Customer';
+    if (type === 'deliverymen') {
+      return 'Deliveryman';
+    }
+
+    if (type === 'happy-hours') {
+      return 'Happy hour';
+    }
+
+    return type === 'coupons' ? 'Coupon' : 'Promotion';
   }
 }

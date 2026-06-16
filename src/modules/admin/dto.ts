@@ -20,6 +20,8 @@ import { AdminListQueryDto } from '../../common/dto';
 import {
   CouponCampaignKind,
   CouponDealSelectionMode,
+  CouponDiscountType,
+  CouponStatus,
   DeliverymanStatus,
   OrderStatus,
   PaymentStatus,
@@ -313,7 +315,7 @@ export class AdminExportDeliverymenCsvQueryDto extends AdminReportsScopedQueryDt
   status?: DeliverymanStatus;
 }
 
-export class AdminExportEmployeesCsvQueryDto extends AdminReportsScopedQueryDto {
+export class AdminExportCampaignsCsvQueryDto extends AdminReportsScopedQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -327,10 +329,15 @@ export class AdminExportEmployeesCsvQueryDto extends AdminReportsScopedQueryDto 
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: CouponStatus })
   @IsOptional()
-  @IsString()
-  staffRoleId?: string;
+  @IsEnum(CouponStatus)
+  status?: CouponStatus;
+
+  @ApiPropertyOptional({ enum: CouponDiscountType })
+  @IsOptional()
+  @IsEnum(CouponDiscountType)
+  discountType?: CouponDiscountType;
 }
 
 export const ADMIN_REPORT_EXPORT_EMAIL_TYPES = [
@@ -338,7 +345,9 @@ export const ADMIN_REPORT_EXPORT_EMAIL_TYPES = [
   'orders',
   'customers',
   'deliverymen',
-  'employees',
+  'coupons',
+  'promotions',
+  'happy-hours',
 ] as const;
 export type AdminReportExportEmailType =
   (typeof ADMIN_REPORT_EXPORT_EMAIL_TYPES)[number];

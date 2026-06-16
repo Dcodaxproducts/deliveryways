@@ -21,9 +21,9 @@ import {
 } from '../../common/guards';
 import {
   AdminEmailReportExportDto,
+  AdminExportCampaignsCsvQueryDto,
   AdminExportCustomersCsvQueryDto,
   AdminExportDeliverymenCsvQueryDto,
-  AdminExportEmployeesCsvQueryDto,
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
@@ -96,18 +96,54 @@ export class AdminReportsController {
     return this.adminReportsService.exportDeliverymenCsv(user, query);
   }
 
-  @Get('employees/export')
+  @Get('coupons/export')
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
   )
-  @ApiOperation({ summary: 'Export employees to CSV for admin reporting' })
-  exportEmployeesCsv(
+  @ApiOperation({ summary: 'Export coupons to CSV for admin reporting' })
+  exportCouponsCsv(
     @CurrentUser() user: AuthUserContext,
-    @Query() query: AdminExportEmployeesCsvQueryDto,
+    @Query() query: AdminExportCampaignsCsvQueryDto,
   ) {
-    return this.adminReportsService.exportEmployeesCsv(user, query);
+    return this.adminReportsService.exportCampaignsCsv(user, query, 'coupons');
+  }
+
+  @Get('promotions/export')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Export promotions to CSV for admin reporting' })
+  exportPromotionsCsv(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminExportCampaignsCsvQueryDto,
+  ) {
+    return this.adminReportsService.exportCampaignsCsv(
+      user,
+      query,
+      'promotions',
+    );
+  }
+
+  @Get('happy-hours/export')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Export happy hours to CSV for admin reporting' })
+  exportHappyHoursCsv(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminExportCampaignsCsvQueryDto,
+  ) {
+    return this.adminReportsService.exportCampaignsCsv(
+      user,
+      query,
+      'happy-hours',
+    );
   }
 
   @Post('export/send-email')
