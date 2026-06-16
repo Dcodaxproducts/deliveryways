@@ -782,10 +782,11 @@ export class CustomerAppRepository {
 
   async listCuisineCategories(
     query: ListCuisinesQueryDto,
-    scope?: { categoryIds?: string[] },
+    scope?: { categoryIds?: string[]; includeItems?: boolean },
   ) {
     const branchId = query.branchId;
     const categoryIds = scope?.categoryIds ?? [];
+    const includeItems = scope?.includeItems ?? true;
     const where: Prisma.MenuCategoryWhereInput = {
       restaurantId: query.restaurantId,
       deletedAt: null,
@@ -836,26 +837,30 @@ export class CustomerAppRepository {
               },
             },
           },
-          items: {
-            where: {
-              deletedAt: null,
-              isActive: true,
-              ...(branchId
-                ? {
-                    OR: [
-                      { branchOverrides: { none: { branchId } } },
-                      {
-                        branchOverrides: {
-                          some: { branchId, isAvailable: true },
-                        },
-                      },
-                    ],
-                  }
-                : {}),
-            },
-            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-            include: this.buildPublicMenuItemInclude(branchId),
-          },
+          ...(includeItems
+            ? {
+                items: {
+                  where: {
+                    deletedAt: null,
+                    isActive: true,
+                    ...(branchId
+                      ? {
+                          OR: [
+                            { branchOverrides: { none: { branchId } } },
+                            {
+                              branchOverrides: {
+                                some: { branchId, isAvailable: true },
+                              },
+                            },
+                          ],
+                        }
+                      : {}),
+                  },
+                  orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+                  include: this.buildPublicMenuItemInclude(branchId),
+                },
+              }
+            : {}),
         },
       }),
       this.prisma.menuCategory.count({ where }),

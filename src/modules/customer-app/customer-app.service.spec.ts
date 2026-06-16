@@ -1578,6 +1578,92 @@ describe('CustomerAppService', () => {
     });
   });
 
+  it('keeps home screen cuisine and promotion payloads compact', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      socialMedia: null,
+      supportContact: null,
+      branding: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue(null);
+    repository.listCuisineCategories.mockResolvedValue({
+      items: [
+        {
+          id: 'category-1',
+          name: 'Burgers',
+          slug: 'burgers',
+          description: null,
+          imageUrl: 'category.png',
+          sortOrder: 0,
+          _count: { items: 3 },
+        },
+      ],
+      total: 1,
+    });
+    repository.listPromotionalItems.mockResolvedValue([itemFixture]);
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: 'Auto discount',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(repository.listCuisineCategories).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        page: 1,
+        limit: 12,
+      }),
+      { includeItems: false },
+    );
+    expect(result.data.cuisines[0]).toEqual(
+      expect.objectContaining({
+        id: 'category-1',
+        itemCount: 3,
+        items: [],
+      }),
+    );
+    expect(result.data.promotionalItems[0]).toEqual(
+      expect.objectContaining({
+        id: 'item-1',
+        name: 'Zinger Burger',
+        slug: 'zinger-burger',
+        discountedBasePrice: 719.1,
+        category: {
+          id: 'category-1',
+          name: 'Burgers',
+          imageUrl: 'https://cdn.example.com/category.png',
+        },
+      }),
+    );
+    expect(result.data.promotionalItems[0]).not.toHaveProperty('modifiers');
+    expect(result.data.promotionalItems[0]).not.toHaveProperty('variations');
+    expect(result.data.promotionalItems[0]).not.toHaveProperty('restaurant');
+  });
+
   it('returns temporary closure popup on home screen', async () => {
     const { service, repository } = makeService();
     const closedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();

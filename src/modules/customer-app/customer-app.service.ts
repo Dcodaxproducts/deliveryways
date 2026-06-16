@@ -770,13 +770,16 @@ export class CustomerAppService {
       resolvedQuery.branchId,
     );
     const [cuisines, promotionalItems, faqs] = await Promise.all([
-      this.customerAppRepository.listCuisineCategories({
-        ...resolvedQuery,
-        page: 1,
-        limit: query.cuisineLimit,
-        sortBy: 'sortOrder',
-        sortOrder: 'ASC',
-      }),
+      this.customerAppRepository.listCuisineCategories(
+        {
+          ...resolvedQuery,
+          page: 1,
+          limit: query.cuisineLimit,
+          sortBy: 'sortOrder',
+          sortOrder: 'ASC',
+        },
+        { includeItems: false },
+      ),
       promotionContext.menuItemIds.length || promotionContext.categoryIds.length
         ? this.customerAppRepository.listPromotionalItems(resolvedQuery, {
             menuItemIds: promotionContext.menuItemIds,
@@ -888,7 +891,7 @@ export class CustomerAppService {
         ),
         promotionalItems: await Promise.all(
           visiblePromotionalItems.map((item) =>
-            this.mapMenuItem(
+            this.mapHomeMenuItemCard(
               item,
               promotionContext.promotions,
               translationContext,
@@ -2483,6 +2486,63 @@ export class CustomerAppService {
       variations: normalizedVariations,
       modifierPriceOverrides: item.modifierPriceOverrides ?? [],
       modifiers: this.mapItemModifiers(item, translationContext),
+      isAvailable: branchOverride?.isAvailable ?? true,
+    };
+  }
+
+  private async mapHomeMenuItemCard(
+    item: Parameters<CustomerAppService['mapMenuItem']>[0],
+    promotions: Array<Record<string, unknown>> = [],
+    translationContext?: CustomerAppTranslationContext,
+  ) {
+    const translatedItem = this.applyEntityTranslation(
+      'MENU_ITEM',
+      item.id,
+      item,
+      translationContext,
+    );
+    const translatedCategory = item.category
+      ? this.applyEntityTranslation(
+          'MENU_CATEGORY',
+          item.category.id,
+          item.category,
+          translationContext,
+        )
+      : null;
+    const branchOverride = item.branchOverrides?.[0];
+    const effectiveBasePrice = branchOverride?.priceOverride ?? item.basePrice;
+    const dietaryFlags = this.readStringArray(item.dietaryFlags).filter(
+      (flag) => flag !== '__SPLIT_PIZZA_ENABLED__',
+    );
+    const settings =
+      item.restaurant?.tenant?.settings ?? item.restaurant?.settings;
+    const itemPromotion = this.resolveBestScopedItemPromotion(
+      item.id,
+      this.itemCategoryIds(item),
+      effectiveBasePrice,
+      promotions,
+    );
+
+    return {
+      id: item.id,
+      name: translatedItem.name,
+      slug: item.slug,
+      description: translatedItem.description,
+      imageUrl: await this.resolveMediaUrl(item.imageUrl),
+      basePrice: effectiveBasePrice,
+      discountedBasePrice: itemPromotion?.discountedAmount ?? null,
+      promotion: itemPromotion ?? null,
+      prepTimeMinutes: item.prepTimeMinutes,
+      dietaryFlags,
+      labels: dietaryFlags,
+      productLabels: this.resolveProductLabels(dietaryFlags, settings),
+      category: translatedCategory
+        ? {
+            id: translatedCategory.id,
+            name: translatedCategory.name,
+            imageUrl: await this.resolveMediaUrl(translatedCategory.imageUrl),
+          }
+        : null,
       isAvailable: branchOverride?.isAvailable ?? true,
     };
   }
