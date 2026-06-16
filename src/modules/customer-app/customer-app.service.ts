@@ -1983,7 +1983,12 @@ export class CustomerAppService {
         throw new NotFoundException('Customer not found');
       }
 
-      return customer;
+      return {
+        ...customer,
+        tenantId: customer.tenantId ?? user.tid ?? null,
+        restaurantId: customer.restaurantId ?? user.rid ?? null,
+        branchId: customer.branchId ?? user.bid ?? null,
+      };
     }
 
     if (!requestedCustomerId) {
