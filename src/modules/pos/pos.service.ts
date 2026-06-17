@@ -893,22 +893,57 @@ export class PosService {
       return null;
     }
 
-    const result = await this.ordersService.quote(user, {
-      branchId: draft.branchId,
-      customerId: draft.customerId,
-      orderType: draft.orderType as never,
-      items: draft.items.map((item) => ({
-        menuItemId: item.menuItemId,
-        variationId: item.variationId ?? undefined,
-        quantity: item.quantity,
-        modifiers: this.toOrderModifiers(item.modifiers),
-        note: item.note ?? undefined,
-      })),
-      couponCode: draft.couponCode ?? undefined,
-      orderTime: new Date().toISOString(),
-    });
+    try {
+      const result = await this.ordersService.quote(user, {
+        branchId: draft.branchId,
+        customerId: draft.customerId,
+        orderType: draft.orderType as never,
+        items: draft.items.map((item) => ({
+          menuItemId: item.menuItemId,
+          variationId: item.variationId ?? undefined,
+          quantity: item.quantity,
+          modifiers: this.toOrderModifiers(item.modifiers),
+          note: item.note ?? undefined,
+        })),
+        couponCode: draft.couponCode ?? undefined,
+        orderTime: new Date().toISOString(),
+      });
 
-    return result.data;
+      return result.data;
+    } catch (error) {
+      if (this.isModifierSelectionError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  private isModifierSelectionError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const normalizedMessage = this.getBadRequestMessage(error);
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      normalizedMessage.includes('modifier selection')
+    );
+  }
+
+  private getBadRequestMessage(error: BadRequestException) {
+    const response = error.getResponse();
+    const message =
+      typeof response === 'string'
+        ? response
+        : typeof response === 'object' &&
+            response !== null &&
+            'message' in response
+          ? (response as { message?: unknown }).message
+          : error.message;
+
+    return Array.isArray(message) ? message.join(' ') : message;
   }
 
   private async toDraftResponse(

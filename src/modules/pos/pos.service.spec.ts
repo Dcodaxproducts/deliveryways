@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserRoleEnum } from '../../common/enums';
 import { PosService } from './pos.service';
 
@@ -381,6 +381,66 @@ describe('PosService', () => {
       id: 'variation-1',
       name: 'Large',
       price: 550,
+    });
+  });
+
+  it('returns POS draft details when quote cannot be calculated for missing modifiers', async () => {
+    const { service, posRepository, ordersService } = makeService();
+    posRepository.findDraftById.mockResolvedValue(
+      makeDraft({
+        customerId: 'customer-1',
+        items: [
+          {
+            id: 'item-1',
+            menuItemId: 'menu-1',
+            variationId: null,
+            quantity: 1,
+            note: null,
+            modifiers: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      }),
+    );
+    posRepository.findDraftItemDetails.mockResolvedValue({
+      menuItems: [
+        {
+          id: 'menu-1',
+          name: 'test item 23',
+          slug: 'test-item-23',
+          description: null,
+          imageUrl: null,
+          basePrice: { toString: () => '100' },
+          pricingMode: 'SINGLE',
+          category: null,
+        },
+      ],
+      variations: [],
+    });
+    ordersService.quote.mockRejectedValue(
+      new BadRequestException(
+        'test item 23 requires modifier selection(s): Extra Cheese',
+      ),
+    );
+
+    const result = await service.details(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      'draft-1',
+    );
+
+    expect(result.data.quote).toBeNull();
+    expect(result.data.items[0]).toMatchObject({
+      menuItemId: 'menu-1',
+      menuItemName: 'test item 23',
+      unitPrice: null,
+      lineTotal: null,
     });
   });
 
