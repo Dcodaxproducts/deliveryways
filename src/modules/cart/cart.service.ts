@@ -322,7 +322,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart),
+      data: await this.buildCartResponse(updatedCart, user),
       message: 'Cart updated successfully',
     };
   }
@@ -475,7 +475,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart),
+      data: await this.buildCartResponse(updatedCart, user),
       message: 'Cart coupon removed successfully',
     };
   }
@@ -539,7 +539,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart),
+      data: await this.buildCartResponse(updatedCart, user),
       message: 'Item added to cart successfully',
     };
   }
@@ -636,7 +636,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart),
+      data: await this.buildCartResponse(updatedCart, user),
       message: 'Cart item updated successfully',
     };
   }
@@ -668,7 +668,7 @@ export class CartService {
 
     return {
       data: cart
-        ? await this.buildCartResponse(cart)
+        ? await this.buildCartResponse(cart, user)
         : await this.buildEmptyCart(item.cart.customerId),
       message: 'Cart item removed successfully',
     };
@@ -704,7 +704,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart),
+      data: await this.buildCartResponse(updatedCart, user),
       message: 'Cart deal updated successfully',
     };
   }
@@ -734,7 +734,7 @@ export class CartService {
 
     return {
       data: updatedCart
-        ? await this.buildCartResponse(updatedCart)
+        ? await this.buildCartResponse(updatedCart, user)
         : await this.buildEmptyCart(cart.customerId),
       message: 'Cart deal removed successfully',
     };

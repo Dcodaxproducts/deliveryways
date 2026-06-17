@@ -1847,23 +1847,22 @@ describe('CartService', () => {
     });
     cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
-    jest
+    const buildCartResponseSpy = jest
       .spyOn(service as never, 'buildCartResponse' as never)
       .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
-    const result = await service.addItem(
-      {
-        uid: 'user-1',
-        tid: 'tenant-1',
-        rid: 'restaurant-1',
-        role: UserRoleEnum.CUSTOMER,
-      },
-      {
-        branchId: 'branch-1',
-        menuItemId: 'menu-1',
-        quantity: 2,
-      },
-    );
+    const user = {
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    };
+
+    const result = await service.addItem(user, {
+      branchId: 'branch-1',
+      menuItemId: 'menu-1',
+      quantity: 2,
+    });
 
     expect(cartRepository.create).toHaveBeenCalledWith({
       tenant: { connect: { id: 'tenant-1' } },
@@ -1871,6 +1870,10 @@ describe('CartService', () => {
       branch: { connect: { id: 'branch-1' } },
       customer: { connect: { id: 'user-1' } },
     });
+    expect(buildCartResponseSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'cart-1' }),
+      user,
+    );
     expect(result.message).toBe('Item added to cart successfully');
   });
 
