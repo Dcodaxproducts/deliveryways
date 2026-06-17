@@ -87,7 +87,7 @@ export class PosService {
     });
 
     return {
-      data: await this.resolveMediaResponse(this.toDraftResponse(data)),
+      data: await this.resolveMediaResponse(await this.toDraftResponse(data)),
       message: 'POS draft created successfully',
     };
   }
@@ -177,7 +177,9 @@ export class PosService {
 
     return {
       data: await this.resolveMediaResponse(
-        items.map((item) => this.toDraftResponse(item)),
+        await Promise.all(
+          items.map((item) => this.toDraftResponse(item, false)),
+        ),
       ),
       message: 'POS drafts fetched successfully',
       meta: buildPaginationMeta(query, total),
@@ -189,7 +191,7 @@ export class PosService {
     const draft = await this.getScopedDraftOrThrow(user, id);
 
     return {
-      data: await this.resolveMediaResponse(this.toDraftResponse(draft)),
+      data: await this.resolveMediaResponse(await this.toDraftResponse(draft)),
       message: 'POS draft fetched successfully',
     };
   }
@@ -264,7 +266,7 @@ export class PosService {
     });
 
     return {
-      data: await this.resolveMediaResponse(this.toDraftResponse(data)),
+      data: await this.resolveMediaResponse(await this.toDraftResponse(data)),
       message: 'POS draft updated successfully',
     };
   }
@@ -290,7 +292,7 @@ export class PosService {
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
-      data: this.toDraftResponse(refreshed),
+      data: await this.toDraftResponse(refreshed),
       message: 'POS draft item added successfully',
     };
   }
@@ -327,7 +329,7 @@ export class PosService {
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
-      data: this.toDraftResponse(refreshed),
+      data: await this.toDraftResponse(refreshed),
       message: 'POS draft item updated successfully',
     };
   }
@@ -346,7 +348,7 @@ export class PosService {
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
-      data: this.toDraftResponse(refreshed),
+      data: await this.toDraftResponse(refreshed),
       message: 'POS draft item removed successfully',
     };
   }
@@ -413,7 +415,7 @@ export class PosService {
 
     return {
       data: {
-        draft: this.toDraftResponse(updatedDraft),
+        draft: await this.toDraftResponse(updatedDraft),
         order: orderResult.data,
       },
       message: 'POS order checked out successfully',
@@ -430,7 +432,7 @@ export class PosService {
     });
 
     return {
-      data: this.toDraftResponse(data),
+      data: await this.toDraftResponse(data),
       message: 'POS draft cancelled successfully',
     };
   }
@@ -850,62 +852,90 @@ export class PosService {
     return value as Record<string, unknown>;
   }
 
-  private toDraftResponse(draft: {
-    id: string;
-    tenantId: string;
-    restaurantId: string;
-    branchId: string;
-    createdByActorId: string;
-    createdByActorType: PosActorType;
-    customerId: string | null;
-    orderType: OrderType;
-    paymentMethod: PaymentMethod | null;
-    guestName: string | null;
-    guestPhone: string | null;
-    tableLabel: string | null;
-    guestCount: number | null;
-    couponCode: string | null;
-    note: string | null;
-    status: PosOrderDraftStatus;
-    checkedOutAt: Date | null;
-    finalOrderId: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    restaurant: {
+  private async toDraftResponse(
+    draft: {
       id: string;
-      name: string;
-      slug: string;
-      logoUrl: string | null;
-      coverImage: string | null;
-    };
-    branch: {
-      id: string;
-      name: string;
-      logoUrl: string | null;
-      coverImage: string | null;
-    };
-    customer: {
-      id: string;
-      email: string;
-      isGuest: boolean;
-      profile: {
-        firstName: string;
-        lastName: string;
-        phone: string | null;
-        avatarUrl: string | null;
-      } | null;
-    } | null;
-    items: Array<{
-      id: string;
-      menuItemId: string;
-      variationId: string | null;
-      quantity: number;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      createdByActorId: string;
+      createdByActorType: PosActorType;
+      customerId: string | null;
+      orderType: OrderType;
+      paymentMethod: PaymentMethod | null;
+      guestName: string | null;
+      guestPhone: string | null;
+      tableLabel: string | null;
+      guestCount: number | null;
+      couponCode: string | null;
       note: string | null;
-      modifiers: Prisma.JsonValue | null;
+      status: PosOrderDraftStatus;
+      checkedOutAt: Date | null;
+      finalOrderId: string | null;
       createdAt: Date;
       updatedAt: Date;
-    }>;
-  }) {
+      restaurant: {
+        id: string;
+        name: string;
+        slug: string;
+        logoUrl: string | null;
+        coverImage: string | null;
+      };
+      branch: {
+        id: string;
+        name: string;
+        logoUrl: string | null;
+        coverImage: string | null;
+      };
+      customer: {
+        id: string;
+        email: string;
+        isGuest: boolean;
+        profile: {
+          firstName: string;
+          lastName: string;
+          phone: string | null;
+          avatarUrl: string | null;
+        } | null;
+      } | null;
+      items: Array<{
+        id: string;
+        menuItemId: string;
+        variationId: string | null;
+        quantity: number;
+        note: string | null;
+        modifiers: Prisma.JsonValue | null;
+        createdAt: Date;
+        updatedAt: Date;
+      }>;
+    },
+    includeItemDetails = true,
+  ) {
+    const menuItemIds = [
+      ...new Set(draft.items.map((item) => item.menuItemId)),
+    ];
+    const variationIds = [
+      ...new Set(
+        draft.items
+          .map((item) => item.variationId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const itemDetails =
+      includeItemDetails && draft.items.length
+        ? await this.posRepository.findDraftItemDetails(
+            draft.restaurantId,
+            menuItemIds,
+            variationIds,
+          )
+        : { menuItems: [], variations: [] };
+    const menuItemsById = new Map(
+      itemDetails.menuItems.map((item) => [item.id, item]),
+    );
+    const variationsById = new Map(
+      itemDetails.variations.map((variation) => [variation.id, variation]),
+    );
+
     return {
       id: draft.id,
       tenantId: draft.tenantId,
@@ -943,16 +973,45 @@ export class PosService {
           }
         : null,
       itemCount: draft.items.length,
-      items: draft.items.map((item) => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        variationId: item.variationId,
-        quantity: item.quantity,
-        note: item.note,
-        modifiers: item.modifiers,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-      })),
+      items: draft.items.map((item) => {
+        const menuItem = menuItemsById.get(item.menuItemId);
+        const variation = item.variationId
+          ? variationsById.get(item.variationId)
+          : undefined;
+
+        return {
+          id: item.id,
+          menuItemId: item.menuItemId,
+          menuItemName: menuItem?.name ?? null,
+          imageUrl: menuItem?.imageUrl ?? null,
+          variationId: item.variationId,
+          variationName: variation?.name ?? null,
+          quantity: item.quantity,
+          note: item.note,
+          modifiers: item.modifiers,
+          menuItem: menuItem
+            ? {
+                id: menuItem.id,
+                name: menuItem.name,
+                slug: menuItem.slug,
+                description: menuItem.description,
+                imageUrl: menuItem.imageUrl,
+                basePrice: Number(menuItem.basePrice),
+                pricingMode: menuItem.pricingMode,
+                category: menuItem.category,
+              }
+            : null,
+          variation: variation
+            ? {
+                id: variation.id,
+                name: variation.name,
+                price: Number(variation.price),
+              }
+            : null,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        };
+      }),
     };
   }
 

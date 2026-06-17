@@ -226,6 +226,44 @@ export class PosRepository {
     return this.client(tx).posOrderDraftItem.delete({ where: { id: itemId } });
   }
 
+  async findDraftItemDetails(
+    restaurantId: string,
+    menuItemIds: string[],
+    variationIds: string[],
+  ) {
+    const [menuItems, variations] = await this.prisma.$transaction([
+      this.prisma.menuItem.findMany({
+        where: { id: { in: menuItemIds }, restaurantId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          description: true,
+          imageUrl: true,
+          basePrice: true,
+          pricingMode: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+              imageUrl: true,
+            },
+          },
+        },
+      }),
+      this.prisma.menuItemVariation.findMany({
+        where: { id: { in: variationIds }, restaurantId },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+        },
+      }),
+    ]);
+
+    return { menuItems, variations };
+  }
+
   async findDraftItem(itemId: string, draftId: string) {
     return this.prisma.posOrderDraftItem.findFirst({
       where: { id: itemId, draftId },

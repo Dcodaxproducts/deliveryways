@@ -49,6 +49,9 @@ describe('PosService', () => {
       findDraftItem: jest.fn(),
       updateDraftItem: jest.fn(),
       deleteDraftItem: jest.fn(),
+      findDraftItemDetails: jest
+        .fn()
+        .mockResolvedValue({ menuItems: [], variations: [] }),
       findCustomerProfileMetadata: jest.fn(),
       upsertCustomerProfileMetadata: jest.fn(),
     };
@@ -243,6 +246,84 @@ describe('PosService', () => {
     expect(posRepository.createDraftItem).toHaveBeenCalled();
     expect(result.data.itemCount).toBe(1);
     expect(result.message).toBe('POS draft item added successfully');
+  });
+
+  it('includes menu item details in POS draft item responses', async () => {
+    const { service, posRepository } = makeService();
+    posRepository.findDraftById.mockResolvedValue(
+      makeDraft({
+        items: [
+          {
+            id: 'item-1',
+            menuItemId: 'menu-1',
+            variationId: 'variation-1',
+            quantity: 1,
+            note: null,
+            modifiers: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      }),
+    );
+    posRepository.findDraftItemDetails.mockResolvedValue({
+      menuItems: [
+        {
+          id: 'menu-1',
+          name: 'Chicken Burger',
+          slug: 'chicken-burger',
+          description: 'Crispy chicken burger',
+          imageUrl: 'burger.jpg',
+          basePrice: { toString: () => '450' },
+          pricingMode: 'SINGLE',
+          category: {
+            id: 'category-1',
+            name: 'Burgers',
+            imageUrl: null,
+          },
+        },
+      ],
+      variations: [
+        {
+          id: 'variation-1',
+          name: 'Large',
+          price: { toString: () => '550' },
+        },
+      ],
+    });
+
+    const result = await service.details(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      'draft-1',
+    );
+
+    expect(posRepository.findDraftItemDetails).toHaveBeenCalledWith(
+      'restaurant-1',
+      ['menu-1'],
+      ['variation-1'],
+    );
+    const responseItem = result.data.items[0];
+    expect(responseItem.menuItemId).toBe('menu-1');
+    expect(responseItem.menuItemName).toBe('Chicken Burger');
+    expect(responseItem.imageUrl).toBe('burger.jpg');
+    expect(responseItem.variationId).toBe('variation-1');
+    expect(responseItem.variationName).toBe('Large');
+    expect(responseItem.menuItem).toMatchObject({
+      id: 'menu-1',
+      name: 'Chicken Burger',
+      basePrice: 450,
+    });
+    expect(responseItem.variation).toMatchObject({
+      id: 'variation-1',
+      name: 'Large',
+      price: 550,
+    });
   });
 
   it('checks out walk-in POS draft by creating a guest customer and final order', async () => {
