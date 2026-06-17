@@ -1778,125 +1778,12 @@ export class CartService {
         await this.toQuotePayload(cart),
       );
     } catch (error) {
-      if (
-        this.isDeliveryCoverageError(error) ||
-        this.isMissingDeliveryAddressError(error) ||
-        this.isModifierSelectionLimitError(error) ||
-        this.isMinimumOrderAmountError(error) ||
-        this.isOrderTimeAvailabilityError(error)
-      ) {
+      if (error instanceof BadRequestException) {
         return null;
       }
 
       throw error;
     }
-  }
-
-  private isDeliveryCoverageError(error: unknown) {
-    if (!(error instanceof BadRequestException)) {
-      return false;
-    }
-
-    const normalizedMessage = this.getBadRequestMessage(error);
-    const deliveryMessage =
-      typeof normalizedMessage === 'string'
-        ? normalizedMessage.toLowerCase()
-        : null;
-
-    return (
-      deliveryMessage !== null &&
-      (deliveryMessage.includes('outside branch delivery radius') ||
-        deliveryMessage.includes('outside branch delivery zones') ||
-        deliveryMessage.includes('outside branch delivery zone bands') ||
-        deliveryMessage.includes('delivery address must include lat/lng') ||
-        deliveryMessage.includes('branch delivery zones are not configured') ||
-        deliveryMessage.includes(
-          'branch delivery zone bands are not configured',
-        ) ||
-        deliveryMessage.includes(
-          'must include postalcode for postal-code delivery pricing',
-        ) ||
-        (deliveryMessage.includes('postal code') &&
-          (deliveryMessage.includes('not serviceable') ||
-            deliveryMessage.includes('not in deliveryzone') ||
-            deliveryMessage.includes('not in delivery zone') ||
-            deliveryMessage.includes('service area'))) ||
-        (deliveryMessage.includes('delivery address') &&
-          deliveryMessage.includes('service area')))
-    );
-  }
-
-  private isMissingDeliveryAddressError(error: unknown) {
-    if (!(error instanceof BadRequestException)) {
-      return false;
-    }
-
-    const normalizedMessage = this.getBadRequestMessage(error);
-
-    return (
-      typeof normalizedMessage === 'string' &&
-      normalizedMessage
-        .toLowerCase()
-        .includes('deliveryaddressid or guestdeliveryaddress is required')
-    );
-  }
-
-  private isModifierSelectionLimitError(error: unknown) {
-    if (!(error instanceof BadRequestException)) {
-      return false;
-    }
-
-    const normalizedMessage = this.getBadRequestMessage(error);
-
-    return (
-      typeof normalizedMessage === 'string' &&
-      (normalizedMessage.includes('requires at least') ||
-        normalizedMessage.includes('allows at most')) &&
-      normalizedMessage.includes('modifier selection(s)')
-    );
-  }
-
-  private isMinimumOrderAmountError(error: unknown) {
-    if (!(error instanceof BadRequestException)) {
-      return false;
-    }
-
-    const normalizedMessage = this.getBadRequestMessage(error);
-
-    return (
-      typeof normalizedMessage === 'string' &&
-      normalizedMessage.includes('Subtotal is below') &&
-      normalizedMessage.includes('minimum order amount')
-    );
-  }
-
-  private isOrderTimeAvailabilityError(error: unknown) {
-    if (!(error instanceof BadRequestException)) {
-      return false;
-    }
-
-    const normalizedMessage = this.getBadRequestMessage(error);
-
-    return (
-      typeof normalizedMessage === 'string' &&
-      (normalizedMessage.includes('Pickup is not available') ||
-        normalizedMessage.includes('Delivery is not available')) &&
-      normalizedMessage.includes('requested order time')
-    );
-  }
-
-  private getBadRequestMessage(error: BadRequestException) {
-    const response = error.getResponse();
-    const message =
-      typeof response === 'string'
-        ? response
-        : typeof response === 'object' &&
-            response !== null &&
-            'message' in response
-          ? (response as { message?: unknown }).message
-          : error.message;
-
-    return Array.isArray(message) ? message.join(' ') : message;
   }
 
   private async resolveMediaResponse<T>(data: T) {

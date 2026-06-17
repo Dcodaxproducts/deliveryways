@@ -1274,6 +1274,68 @@ describe('CartService', () => {
     expect(result.data).not.toHaveProperty('quote');
   });
 
+  it('returns cart without quote for unsupported checkout-only quote validation errors', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(500),
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0,
+        category: { id: 'cat-1', name: 'Burgers', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockRejectedValue(
+      new BadRequestException('Selected cart option is not supported'),
+    );
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data).not.toHaveProperty('quote');
+  });
+
   it('uses exact item variation price in cart totals', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
