@@ -435,12 +435,23 @@ describe('PosService', () => {
       'draft-1',
     );
 
-    expect(result.data.quote).toBeNull();
+    expect(result.data).toMatchObject({
+      pricingStatus: 'DRAFT_BASE_PRICE',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+      payableAmount: 100,
+    });
+    expect(result.data.quote).toMatchObject({
+      subtotal: 100,
+      totalAmount: 100,
+      payableAmount: 100,
+    });
     expect(result.data.items[0]).toMatchObject({
       menuItemId: 'menu-1',
       menuItemName: 'test item 23',
-      unitPrice: null,
-      lineTotal: null,
+      unitPrice: 100,
+      lineTotal: 100,
     });
   });
 

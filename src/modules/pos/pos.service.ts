@@ -1034,6 +1034,59 @@ export class PosService {
       options.includeQuote && options.user
         ? await this.buildDraftQuoteResponse(options.user, draft)
         : null;
+    const fallbackItems = quoteData
+      ? []
+      : draft.items.map((item) => {
+          const menuItem = menuItemsById.get(item.menuItemId);
+          const variation = item.variationId
+            ? variationsById.get(item.variationId)
+            : undefined;
+          const unitPrice = Number(
+            variation?.price ?? menuItem?.basePrice ?? 0,
+          );
+          const lineTotal = unitPrice * item.quantity;
+
+          return {
+            menuItemId: item.menuItemId,
+            menuItemName: menuItem?.name ?? null,
+            variationId: item.variationId,
+            variationName: variation?.name ?? null,
+            quantity: item.quantity,
+            unitPrice,
+            depositAmount: 0,
+            lineTotal,
+            taxTypeCode: null,
+            taxPercentage: null,
+            snapshotModifiers: [],
+            snapshotSections: [],
+          };
+        });
+    const fallbackSubtotal = fallbackItems.reduce(
+      (sum, item) => sum + item.lineTotal,
+      0,
+    );
+    const pricingData =
+      quoteData ??
+      (fallbackItems.length
+        ? {
+            subtotal: fallbackSubtotal,
+            taxAmount: 0,
+            deliveryFee: 0,
+            serviceChargeType: null,
+            serviceChargeValue: null,
+            serviceChargeAmount: 0,
+            chargeBreakdown: [],
+            tipAmount: 0,
+            discountAmount: 0,
+            walletAppliedAmount: 0,
+            loyaltyDiscountAmount: 0,
+            loyaltyPointsRedeemed: 0,
+            totalAmount: fallbackSubtotal,
+            payableAmount: fallbackSubtotal,
+            appliedPromotion: null,
+            items: fallbackItems,
+          }
+        : null);
 
     return {
       id: draft.id,
@@ -1056,23 +1109,28 @@ export class PosService {
       status: draft.status,
       checkedOutAt: draft.checkedOutAt,
       finalOrderId: draft.finalOrderId,
-      ...(quoteData
+      pricingStatus: quoteData
+        ? 'QUOTED'
+        : pricingData
+          ? 'DRAFT_BASE_PRICE'
+          : 'UNAVAILABLE',
+      ...(pricingData
         ? {
-            subtotal: quoteData.subtotal,
-            taxAmount: quoteData.taxAmount,
-            deliveryFee: quoteData.deliveryFee,
-            serviceChargeType: quoteData.serviceChargeType,
-            serviceChargeValue: quoteData.serviceChargeValue,
-            serviceChargeAmount: quoteData.serviceChargeAmount,
-            chargeBreakdown: quoteData.chargeBreakdown,
-            tipAmount: quoteData.tipAmount,
-            discountAmount: quoteData.discountAmount,
-            walletAppliedAmount: quoteData.walletAppliedAmount,
-            loyaltyDiscountAmount: quoteData.loyaltyDiscountAmount,
-            loyaltyPointsRedeemed: quoteData.loyaltyPointsRedeemed,
-            totalAmount: quoteData.totalAmount,
-            payableAmount: quoteData.payableAmount,
-            appliedPromotion: quoteData.appliedPromotion,
+            subtotal: pricingData.subtotal,
+            taxAmount: pricingData.taxAmount,
+            deliveryFee: pricingData.deliveryFee,
+            serviceChargeType: pricingData.serviceChargeType,
+            serviceChargeValue: pricingData.serviceChargeValue,
+            serviceChargeAmount: pricingData.serviceChargeAmount,
+            chargeBreakdown: pricingData.chargeBreakdown,
+            tipAmount: pricingData.tipAmount,
+            discountAmount: pricingData.discountAmount,
+            walletAppliedAmount: pricingData.walletAppliedAmount,
+            loyaltyDiscountAmount: pricingData.loyaltyDiscountAmount,
+            loyaltyPointsRedeemed: pricingData.loyaltyPointsRedeemed,
+            totalAmount: pricingData.totalAmount,
+            payableAmount: pricingData.payableAmount,
+            appliedPromotion: pricingData.appliedPromotion,
           }
         : {
             quote: null,
@@ -1093,13 +1151,13 @@ export class PosService {
           }
         : null,
       itemCount: draft.items.length,
-      quote: quoteData,
+      quote: pricingData,
       items: draft.items.map((item, index) => {
         const menuItem = menuItemsById.get(item.menuItemId);
         const variation = item.variationId
           ? variationsById.get(item.variationId)
           : undefined;
-        const quotedItem = quoteData?.items[index];
+        const pricedItem = pricingData?.items[index];
 
         return {
           id: item.id,
@@ -1109,15 +1167,15 @@ export class PosService {
           variationId: item.variationId,
           variationName: variation?.name ?? null,
           quantity: item.quantity,
-          unitPrice: quotedItem?.unitPrice ?? null,
-          depositAmount: quotedItem?.depositAmount ?? null,
-          lineTotal: quotedItem?.lineTotal ?? null,
-          taxTypeCode: quotedItem?.taxTypeCode ?? null,
-          taxPercentage: quotedItem?.taxPercentage ?? null,
+          unitPrice: pricedItem?.unitPrice ?? null,
+          depositAmount: pricedItem?.depositAmount ?? null,
+          lineTotal: pricedItem?.lineTotal ?? null,
+          taxTypeCode: pricedItem?.taxTypeCode ?? null,
+          taxPercentage: pricedItem?.taxPercentage ?? null,
           note: item.note,
           modifiers: item.modifiers,
-          snapshotModifiers: quotedItem?.snapshotModifiers ?? null,
-          snapshotSections: quotedItem?.snapshotSections ?? null,
+          snapshotModifiers: pricedItem?.snapshotModifiers ?? null,
+          snapshotSections: pricedItem?.snapshotSections ?? null,
           menuItem: menuItem
             ? {
                 id: menuItem.id,
