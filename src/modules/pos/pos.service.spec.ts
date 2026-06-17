@@ -249,9 +249,10 @@ describe('PosService', () => {
   });
 
   it('includes menu item details in POS draft item responses', async () => {
-    const { service, posRepository } = makeService();
+    const { service, posRepository, ordersService } = makeService();
     posRepository.findDraftById.mockResolvedValue(
       makeDraft({
+        customerId: 'customer-1',
         items: [
           {
             id: 'item-1',
@@ -291,6 +292,41 @@ describe('PosService', () => {
         },
       ],
     });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 450,
+        taxAmount: 45,
+        deliveryFee: 0,
+        serviceChargeType: null,
+        serviceChargeValue: null,
+        serviceChargeAmount: 0,
+        chargeBreakdown: [],
+        tipAmount: 0,
+        discountAmount: 0,
+        walletAppliedAmount: 0,
+        loyaltyDiscountAmount: 0,
+        loyaltyPointsRedeemed: 0,
+        totalAmount: 495,
+        payableAmount: 495,
+        appliedPromotion: null,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            menuItemName: 'Chicken Burger',
+            variationId: 'variation-1',
+            variationName: 'Large',
+            quantity: 1,
+            unitPrice: 450,
+            depositAmount: 0,
+            lineTotal: 450,
+            taxTypeCode: 'VAT',
+            taxPercentage: 10,
+            snapshotModifiers: [],
+            snapshotSections: [],
+          },
+        ],
+      },
+    });
 
     const result = await service.details(
       {
@@ -308,12 +344,34 @@ describe('PosService', () => {
       ['menu-1'],
       ['variation-1'],
     );
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        customerId: 'customer-1',
+        orderType: 'TAKEAWAY',
+      }),
+    );
+    expect(result.data).toMatchObject({
+      subtotal: 450,
+      taxAmount: 45,
+      totalAmount: 495,
+      payableAmount: 495,
+    });
+    expect(result.data.quote).toMatchObject({
+      subtotal: 450,
+      totalAmount: 495,
+    });
     const responseItem = result.data.items[0];
     expect(responseItem.menuItemId).toBe('menu-1');
     expect(responseItem.menuItemName).toBe('Chicken Burger');
     expect(responseItem.imageUrl).toBe('burger.jpg');
     expect(responseItem.variationId).toBe('variation-1');
     expect(responseItem.variationName).toBe('Large');
+    expect(responseItem.unitPrice).toBe(450);
+    expect(responseItem.lineTotal).toBe(450);
+    expect(responseItem.taxTypeCode).toBe('VAT');
+    expect(responseItem.taxPercentage).toBe(10);
     expect(responseItem.menuItem).toMatchObject({
       id: 'menu-1',
       name: 'Chicken Burger',

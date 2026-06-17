@@ -29,6 +29,26 @@ import {
 } from './dto';
 import { PosRepository } from './pos.repository';
 
+interface DraftResponseOptions {
+  includeItemDetails?: boolean;
+  includeQuote?: boolean;
+  user?: AuthUserContext;
+}
+
+interface PosDraftQuoteSource {
+  branchId: string;
+  customerId: string | null;
+  orderType: OrderType;
+  couponCode: string | null;
+  items: Array<{
+    menuItemId: string;
+    variationId: string | null;
+    quantity: number;
+    modifiers: Prisma.JsonValue | null;
+    note: string | null;
+  }>;
+}
+
 @Injectable()
 export class PosService {
   constructor(
@@ -178,7 +198,9 @@ export class PosService {
     return {
       data: await this.resolveMediaResponse(
         await Promise.all(
-          items.map((item) => this.toDraftResponse(item, false)),
+          items.map((item) =>
+            this.toDraftResponse(item, { includeItemDetails: false }),
+          ),
         ),
       ),
       message: 'POS drafts fetched successfully',
@@ -191,7 +213,9 @@ export class PosService {
     const draft = await this.getScopedDraftOrThrow(user, id);
 
     return {
-      data: await this.resolveMediaResponse(await this.toDraftResponse(draft)),
+      data: await this.resolveMediaResponse(
+        await this.toDraftResponse(draft, { includeQuote: true, user }),
+      ),
       message: 'POS draft fetched successfully',
     };
   }
@@ -292,7 +316,10 @@ export class PosService {
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
-      data: await this.toDraftResponse(refreshed),
+      data: await this.toDraftResponse(refreshed, {
+        includeQuote: true,
+        user,
+      }),
       message: 'POS draft item added successfully',
     };
   }
@@ -329,7 +356,10 @@ export class PosService {
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
-      data: await this.toDraftResponse(refreshed),
+      data: await this.toDraftResponse(refreshed, {
+        includeQuote: true,
+        user,
+      }),
       message: 'POS draft item updated successfully',
     };
   }
@@ -348,7 +378,10 @@ export class PosService {
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
-      data: await this.toDraftResponse(refreshed),
+      data: await this.toDraftResponse(refreshed, {
+        includeQuote: true,
+        user,
+      }),
       message: 'POS draft item removed successfully',
     };
   }
@@ -852,6 +885,32 @@ export class PosService {
     return value as Record<string, unknown>;
   }
 
+  private async buildDraftQuoteResponse(
+    user: AuthUserContext,
+    draft: PosDraftQuoteSource,
+  ) {
+    if (!draft.customerId || !draft.items.length) {
+      return null;
+    }
+
+    const result = await this.ordersService.quote(user, {
+      branchId: draft.branchId,
+      customerId: draft.customerId,
+      orderType: draft.orderType as never,
+      items: draft.items.map((item) => ({
+        menuItemId: item.menuItemId,
+        variationId: item.variationId ?? undefined,
+        quantity: item.quantity,
+        modifiers: this.toOrderModifiers(item.modifiers),
+        note: item.note ?? undefined,
+      })),
+      couponCode: draft.couponCode ?? undefined,
+      orderTime: new Date().toISOString(),
+    });
+
+    return result.data;
+  }
+
   private async toDraftResponse(
     draft: {
       id: string;
@@ -909,8 +968,9 @@ export class PosService {
         updatedAt: Date;
       }>;
     },
-    includeItemDetails = true,
+    options: DraftResponseOptions = {},
   ) {
+    const includeItemDetails = options.includeItemDetails ?? true;
     const menuItemIds = [
       ...new Set(draft.items.map((item) => item.menuItemId)),
     ];
@@ -935,6 +995,10 @@ export class PosService {
     const variationsById = new Map(
       itemDetails.variations.map((variation) => [variation.id, variation]),
     );
+    const quoteData =
+      options.includeQuote && options.user
+        ? await this.buildDraftQuoteResponse(options.user, draft)
+        : null;
 
     return {
       id: draft.id,
@@ -957,6 +1021,27 @@ export class PosService {
       status: draft.status,
       checkedOutAt: draft.checkedOutAt,
       finalOrderId: draft.finalOrderId,
+      ...(quoteData
+        ? {
+            subtotal: quoteData.subtotal,
+            taxAmount: quoteData.taxAmount,
+            deliveryFee: quoteData.deliveryFee,
+            serviceChargeType: quoteData.serviceChargeType,
+            serviceChargeValue: quoteData.serviceChargeValue,
+            serviceChargeAmount: quoteData.serviceChargeAmount,
+            chargeBreakdown: quoteData.chargeBreakdown,
+            tipAmount: quoteData.tipAmount,
+            discountAmount: quoteData.discountAmount,
+            walletAppliedAmount: quoteData.walletAppliedAmount,
+            loyaltyDiscountAmount: quoteData.loyaltyDiscountAmount,
+            loyaltyPointsRedeemed: quoteData.loyaltyPointsRedeemed,
+            totalAmount: quoteData.totalAmount,
+            payableAmount: quoteData.payableAmount,
+            appliedPromotion: quoteData.appliedPromotion,
+          }
+        : {
+            quote: null,
+          }),
       createdAt: draft.createdAt,
       updatedAt: draft.updatedAt,
       restaurant: draft.restaurant,
@@ -973,11 +1058,13 @@ export class PosService {
           }
         : null,
       itemCount: draft.items.length,
-      items: draft.items.map((item) => {
+      quote: quoteData,
+      items: draft.items.map((item, index) => {
         const menuItem = menuItemsById.get(item.menuItemId);
         const variation = item.variationId
           ? variationsById.get(item.variationId)
           : undefined;
+        const quotedItem = quoteData?.items[index];
 
         return {
           id: item.id,
@@ -987,8 +1074,15 @@ export class PosService {
           variationId: item.variationId,
           variationName: variation?.name ?? null,
           quantity: item.quantity,
+          unitPrice: quotedItem?.unitPrice ?? null,
+          depositAmount: quotedItem?.depositAmount ?? null,
+          lineTotal: quotedItem?.lineTotal ?? null,
+          taxTypeCode: quotedItem?.taxTypeCode ?? null,
+          taxPercentage: quotedItem?.taxPercentage ?? null,
           note: item.note,
           modifiers: item.modifiers,
+          snapshotModifiers: quotedItem?.snapshotModifiers ?? null,
+          snapshotSections: quotedItem?.snapshotSections ?? null,
           menuItem: menuItem
             ? {
                 id: menuItem.id,
