@@ -1782,7 +1782,8 @@ export class CartService {
         this.isDeliveryCoverageError(error) ||
         this.isMissingDeliveryAddressError(error) ||
         this.isModifierSelectionLimitError(error) ||
-        this.isMinimumOrderAmountError(error)
+        this.isMinimumOrderAmountError(error) ||
+        this.isOrderTimeAvailabilityError(error)
       ) {
         return null;
       }
@@ -1866,6 +1867,21 @@ export class CartService {
       typeof normalizedMessage === 'string' &&
       normalizedMessage.includes('Subtotal is below') &&
       normalizedMessage.includes('minimum order amount')
+    );
+  }
+
+  private isOrderTimeAvailabilityError(error: unknown) {
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
+    const normalizedMessage = this.getBadRequestMessage(error);
+
+    return (
+      typeof normalizedMessage === 'string' &&
+      (normalizedMessage.includes('Pickup is not available') ||
+        normalizedMessage.includes('Delivery is not available')) &&
+      normalizedMessage.includes('requested order time')
     );
   }
 
