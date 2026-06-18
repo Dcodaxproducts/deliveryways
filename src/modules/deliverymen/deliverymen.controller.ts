@@ -139,6 +139,18 @@ export class DeliverymenController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.DELIVERYMAN)
+  @Delete('me/addresses/:id')
+  @ApiOperation({ summary: 'Delete deliveryman own address' })
+  removeMyAddress(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.deliverymenService.removeMyAddress(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
   @Post('me/accept-order')
   @ApiOperation({ summary: 'Accept an available delivery order' })
   acceptOrder(

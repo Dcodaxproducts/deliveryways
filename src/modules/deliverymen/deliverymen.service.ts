@@ -337,6 +337,12 @@ export class DeliverymenService {
     return this.addressesService.update(user, id, dto);
   }
 
+  async removeMyAddress(user: AuthUserContext, id: string) {
+    await this.getActiveDeliverymanForSelf(user);
+
+    return this.addressesService.remove(user, id);
+  }
+
   async update(user: AuthUserContext, id: string, dto: UpdateDeliverymanDto) {
     const deliveryman = await this.getAccessibleDeliveryman(user, id);
 

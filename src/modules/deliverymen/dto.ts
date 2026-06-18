@@ -189,6 +189,15 @@ export class UpdateMyDeliverymanProfileDto {
   @IsString()
   @MaxLength(100)
   vehicleNumber?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Accepted for driver app compatibility. Deliveryman bio is not persisted in the current schema.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  bio?: string;
 }
 
 export class UpdateMyDeliverymanTwoFactorDto {

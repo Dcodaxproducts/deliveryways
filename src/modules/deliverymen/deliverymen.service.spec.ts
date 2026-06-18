@@ -68,6 +68,7 @@ describe('DeliverymenService', () => {
       create: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
+      remove: jest.fn(),
     };
 
     service = new DeliverymenService(
@@ -448,6 +449,7 @@ describe('DeliverymenService', () => {
         firstName: 'Updated',
         vehicleType: 'car',
         vehicleNumber: 'CAR-1',
+        bio: 'Rider bio',
       },
     );
 
@@ -462,6 +464,30 @@ describe('DeliverymenService', () => {
       type: 'car',
       number: 'CAR-1',
     });
+  });
+
+  it('deletes deliveryman own address through driver alias', async () => {
+    addressesService.remove!.mockResolvedValue({
+      data: { id: 'address-1' },
+      message: 'Address deleted successfully',
+    });
+
+    const result = await service.removeMyAddress(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      'address-1',
+    );
+
+    expect(addressesService.remove).toHaveBeenCalledWith(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      },
+      'address-1',
+    );
+    expect(result.message).toBe('Address deleted successfully');
   });
 
   it('returns deliveryman earnings summary and recent deliveries', async () => {
