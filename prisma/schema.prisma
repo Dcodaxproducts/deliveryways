@@ -1174,26 +1174,30 @@ model StaffUser {
 }
 
 model Deliveryman {
-  id                String            @id @default(cuid())
-  tenantId          String            @map("tenant_id")
-  restaurantId      String            @map("restaurant_id")
-  branchId          String            @map("branch_id")
-  firstName         String            @map("first_name")
-  lastName          String            @map("last_name")
-  email             String
-  phone             String
-  vehicleType       String?           @map("vehicle_type")
-  vehicleNumber     String?           @map("vehicle_number")
-  password          String?
-  refreshTokenHash  String?           @map("refresh_token_hash")
-  status            DeliverymanStatus @default(OFFLINE)
-  currentLat        Decimal?          @map("current_lat") @db.Decimal(10, 7)
-  currentLng        Decimal?          @map("current_lng") @db.Decimal(10, 7)
-  locationUpdatedAt DateTime?         @map("location_updated_at") @db.Timestamptz
-  isActive          Boolean           @default(true) @map("is_active")
-  deletedAt         DateTime?         @map("deleted_at") @db.Timestamptz
-  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String            @id @default(cuid())
+  tenantId              String            @map("tenant_id")
+  restaurantId          String            @map("restaurant_id")
+  branchId              String            @map("branch_id")
+  firstName             String            @map("first_name")
+  lastName              String            @map("last_name")
+  email                 String
+  phone                 String
+  vehicleType           String?           @map("vehicle_type")
+  vehicleNumber         String?           @map("vehicle_number")
+  password              String?
+  refreshTokenHash      String?           @map("refresh_token_hash")
+  twoFactorEnabled      Boolean           @default(false) @map("two_factor_enabled")
+  twoFactorOtp          String?           @map("two_factor_otp")
+  twoFactorOtpExpiresAt DateTime?         @map("two_factor_otp_expires_at") @db.Timestamptz
+  twoFactorOtpAttempts  Int               @default(0) @map("two_factor_otp_attempts")
+  status                DeliverymanStatus @default(OFFLINE)
+  currentLat            Decimal?          @map("current_lat") @db.Decimal(10, 7)
+  currentLng            Decimal?          @map("current_lng") @db.Decimal(10, 7)
+  locationUpdatedAt     DateTime?         @map("location_updated_at") @db.Timestamptz
+  isActive              Boolean           @default(true) @map("is_active")
+  deletedAt             DateTime?         @map("deleted_at") @db.Timestamptz
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant           Tenant        @relation(fields: [tenantId], references: [id])
   restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])

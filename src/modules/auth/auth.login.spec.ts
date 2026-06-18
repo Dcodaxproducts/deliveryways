@@ -487,6 +487,9 @@ describe('AuthService login', () => {
       firstName: 'Rider',
       lastName: 'User',
       phone: '03000000000',
+      vehicleType: 'bike',
+      vehicleNumber: 'RDR-1',
+      twoFactorEnabled: false,
     });
 
     const result = await service.loginDeliveryman({
@@ -509,6 +512,98 @@ describe('AuthService login', () => {
       data: { refreshTokenHash: 'hashed-refresh' },
     });
     expect(result.message).toBe('Deliveryman login successful');
+    const loginData = result.data as {
+      user: { vehicle: { type: string | null; number: string | null } };
+    };
+    expect(loginData.user.vehicle).toEqual({
+      type: 'bike',
+      number: 'RDR-1',
+    });
+  });
+
+  it('requires OTP verification when deliveryman 2FA is enabled', async () => {
+    prismaService.deliveryman.findFirst.mockResolvedValue({
+      id: 'deliveryman-1',
+      email: 'rider@example.com',
+      password: 'hashed-rider-password',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      isActive: true,
+      deletedAt: null,
+      firstName: 'Rider',
+      lastName: 'User',
+      phone: '03000000000',
+      vehicleType: 'bike',
+      vehicleNumber: 'RDR-1',
+      twoFactorEnabled: true,
+    });
+
+    const result = await service.loginDeliveryman({
+      email: 'rider@example.com',
+      password: 'Rider@123',
+    });
+
+    expect(prismaService.deliveryman.update).toHaveBeenCalledWith({
+      where: { id: 'deliveryman-1' },
+      data: {
+        twoFactorOtp: expect.any(String) as unknown as string,
+        twoFactorOtpExpiresAt: expect.any(Date) as unknown as Date,
+        twoFactorOtpAttempts: 0,
+      },
+    });
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        requiresTwoFactor: true,
+        twoFactorToken: 'access-token',
+      }),
+    );
+  });
+
+  it('verifies deliveryman 2FA OTP and issues auth tokens', async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      uid: 'deliveryman-1',
+      actorType: 'DELIVERYMAN',
+      purpose: 'DELIVERYMAN_2FA',
+    });
+    prismaService.deliveryman.findUnique.mockResolvedValue({
+      id: 'deliveryman-1',
+      email: 'rider@example.com',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      isActive: true,
+      deletedAt: null,
+      firstName: 'Rider',
+      lastName: 'User',
+      phone: '03000000000',
+      vehicleType: 'bike',
+      vehicleNumber: 'RDR-1',
+      twoFactorEnabled: true,
+      twoFactorOtp: '123456',
+      twoFactorOtpExpiresAt: new Date(Date.now() + 60_000),
+      twoFactorOtpAttempts: 0,
+    });
+
+    const result = await service.verifyDeliverymanTwoFactor({
+      twoFactorToken: '2fa-token',
+      otp: '123456',
+    });
+
+    expect(prismaService.deliveryman.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 'deliveryman-1' },
+      data: {
+        twoFactorOtp: null,
+        twoFactorOtpExpiresAt: null,
+        twoFactorOtpAttempts: 0,
+      },
+    });
+    expect(prismaService.deliveryman.update).toHaveBeenNthCalledWith(2, {
+      where: { id: 'deliveryman-1' },
+      data: { refreshTokenHash: 'hashed-refresh' },
+    });
+    expect(result.data.accessToken).toBe('access-token');
+    expect(result.data.user.twoFactorEnabled).toBe(true);
   });
 
   it('refreshes deliveryman tokens with the deliveryman actor store', async () => {

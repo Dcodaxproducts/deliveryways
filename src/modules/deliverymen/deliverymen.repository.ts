@@ -19,6 +19,7 @@ export class DeliverymenRepository {
     phone: true,
     vehicleType: true,
     vehicleNumber: true,
+    twoFactorEnabled: true,
     status: true,
     currentLat: true,
     currentLng: true,
@@ -134,6 +135,48 @@ export class DeliverymenRepository {
         ...this.deliverymanSelect,
         branch: { select: { id: true, name: true } },
       },
+    });
+  }
+
+  async listDeliveredOrdersForEarnings(deliverymanId: string, since: Date) {
+    return this.prisma.order.findMany({
+      where: {
+        deliverymanId,
+        status: 'DELIVERED',
+        deliveredAt: { gte: since },
+      },
+      select: {
+        id: true,
+        orderTime: true,
+        deliveredAt: true,
+        deliveryFee: true,
+        totalAmount: true,
+        status: true,
+        paymentStatus: true,
+        branch: { select: { id: true, name: true } },
+        deliveryAddress: {
+          select: {
+            street: true,
+            area: true,
+            city: true,
+            postalCode: true,
+          },
+        },
+        customer: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: {
+                firstName: true,
+                lastName: true,
+                phone: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ deliveredAt: 'desc' }, { createdAt: 'desc' }],
     });
   }
 

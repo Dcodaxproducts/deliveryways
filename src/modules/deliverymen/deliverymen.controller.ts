@@ -28,11 +28,18 @@ import {
   CreateDeliverymanDto,
   DeliverymanSignupDto,
   ListDeliverymenDto,
+  UpdateMyDeliverymanProfileDto,
   UpdateMyDeliverymanStatusDto,
+  UpdateMyDeliverymanTwoFactorDto,
   UpdateDeliverymanDto,
   UpdateDeliverymanLocationDto,
   UpdateDeliverymanStatusDto,
 } from './dto';
+import {
+  CreateAddressDto,
+  ListAddressesDto,
+  UpdateAddressDto,
+} from '../addresses/dto';
 import { DeliverymenService } from './deliverymen.service';
 
 @ApiTags('Deliverymen')
@@ -46,6 +53,87 @@ export class DeliverymenController {
   @ApiOperation({ summary: 'Public deliveryman signup for rider app' })
   signup(@Body() dto: DeliverymanSignupDto) {
     return this.deliverymenService.signup(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Get('me/profile')
+  @ApiOperation({ summary: 'Fetch deliveryman own profile for driver app' })
+  myProfile(@CurrentUser() user: AuthUserContext) {
+    return this.deliverymenService.myProfile(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/profile')
+  @ApiOperation({ summary: 'Update deliveryman own profile and vehicle info' })
+  updateMyProfile(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateMyDeliverymanProfileDto,
+  ) {
+    return this.deliverymenService.updateMyProfile(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/2fa')
+  @ApiOperation({ summary: 'Enable or disable deliveryman 2FA' })
+  updateMyTwoFactor(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateMyDeliverymanTwoFactorDto,
+  ) {
+    return this.deliverymenService.updateMyTwoFactor(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Get('me/earnings')
+  @ApiOperation({
+    summary: 'Fetch deliveryman earnings summary and recent deliveries',
+  })
+  myEarnings(@CurrentUser() user: AuthUserContext) {
+    return this.deliverymenService.myEarnings(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Get('me/addresses')
+  @ApiOperation({ summary: 'List deliveryman own addresses' })
+  listMyAddresses(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListAddressesDto,
+  ) {
+    return this.deliverymenService.listMyAddresses(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Post('me/addresses')
+  @ApiOperation({ summary: 'Create deliveryman own address' })
+  createMyAddress(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateAddressDto,
+  ) {
+    return this.deliverymenService.createMyAddress(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.DELIVERYMAN)
+  @Patch('me/addresses/:id')
+  @ApiOperation({ summary: 'Update deliveryman own address' })
+  updateMyAddress(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateAddressDto,
+  ) {
+    return this.deliverymenService.updateMyAddress(user, id, dto);
   }
 
   @ApiBearerAuth()

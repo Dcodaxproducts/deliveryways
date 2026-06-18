@@ -30,6 +30,7 @@ import {
   ResetPasswordDto,
   UpdateMyAvatarDto,
   UpdateMyProfileDto,
+  VerifyDeliverymanTwoFactorDto,
   VerifyEmailDto,
 } from './dto';
 import {
@@ -112,6 +113,13 @@ export class AuthController {
   @Post('deliveryman/login')
   deliverymanLogin(@Body() dto: LoginDto) {
     return this.authService.loginDeliveryman(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Post('deliveryman/2fa/verify')
+  verifyDeliverymanTwoFactor(@Body() dto: VerifyDeliverymanTwoFactorDto) {
+    return this.authService.verifyDeliverymanTwoFactor(dto);
   }
 
   @Public()

@@ -42,6 +42,7 @@ import {
   ResetPasswordDto,
   UpdateMyAvatarDto,
   UpdateMyProfileDto,
+  VerifyDeliverymanTwoFactorDto,
   VerifyEmailDto,
 } from './dto';
 import { TenantsService } from '../tenants/tenants.service';
@@ -858,6 +859,41 @@ export class AuthService {
       throw new ForbiddenException('Your account is inactive');
     }
 
+    if (deliveryman.twoFactorEnabled) {
+      const otp = this.generateOtp();
+      const expiresAt = this.generateOtpExpiry();
+      const emailEnabled = process.env.EMAIL_ENABLED === 'true';
+      const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
+
+      await this.prisma.deliveryman.update({
+        where: { id: deliveryman.id },
+        data: {
+          twoFactorOtp: otp,
+          twoFactorOtpExpiresAt: expiresAt,
+          twoFactorOtpAttempts: 0,
+        },
+      });
+
+      if (emailEnabled) {
+        await this.mailerService.sendEmail(
+          deliveryman.email,
+          'Deliveryman login verification',
+          `Your deliveryman login OTP is: ${otp}. It expires in 10 minutes.`,
+        );
+      }
+
+      return {
+        data: {
+          requiresTwoFactor: true,
+          twoFactorToken: await this.issueDeliverymanTwoFactorToken(
+            deliveryman.id,
+          ),
+          twoFactorOtp: shouldExposeDevToken ? otp : undefined,
+        },
+        message: 'Two-factor verification required',
+      };
+    }
+
     const auth = await this.issueAuthTokens({
       uid: deliveryman.id,
       actorType: 'DELIVERYMAN',
@@ -871,25 +907,74 @@ export class AuthService {
       data: await this.resolveMediaResponse({
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
-        user: {
-          id: deliveryman.id,
-          email: deliveryman.email,
-          role: 'DELIVERYMAN',
-          actorType: 'DELIVERYMAN',
-          tenantId: deliveryman.tenantId,
-          restaurantId: deliveryman.restaurantId,
-          branchId: deliveryman.branchId,
-          isVerified: true,
-          isApproved: true,
-          isGuest: false,
-          profile: {
-            firstName: deliveryman.firstName,
-            lastName: deliveryman.lastName,
-            phone: deliveryman.phone,
-            avatarUrl: null,
-            bio: null,
-          },
-        },
+        user: this.toDeliverymanAuthUser(deliveryman),
+      }),
+      message: 'Deliveryman login successful',
+    };
+  }
+
+  async verifyDeliverymanTwoFactor(dto: VerifyDeliverymanTwoFactorDto) {
+    const payload = await this.verifyDeliverymanTwoFactorToken(
+      dto.twoFactorToken,
+    );
+    const deliveryman = await this.prisma.deliveryman.findUnique({
+      where: { id: payload.uid },
+    });
+
+    if (
+      !deliveryman ||
+      deliveryman.deletedAt ||
+      !deliveryman.isActive ||
+      !deliveryman.twoFactorEnabled
+    ) {
+      throw new UnauthorizedException('Invalid two-factor verification');
+    }
+
+    if (
+      !deliveryman.twoFactorOtp ||
+      !deliveryman.twoFactorOtpExpiresAt ||
+      deliveryman.twoFactorOtpExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    if (deliveryman.twoFactorOtpAttempts >= 5) {
+      throw new BadRequestException(
+        'Too many invalid attempts. Please login again.',
+      );
+    }
+
+    if (deliveryman.twoFactorOtp !== dto.otp) {
+      await this.prisma.deliveryman.update({
+        where: { id: deliveryman.id },
+        data: { twoFactorOtpAttempts: { increment: 1 } },
+      });
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    await this.prisma.deliveryman.update({
+      where: { id: deliveryman.id },
+      data: {
+        twoFactorOtp: null,
+        twoFactorOtpExpiresAt: null,
+        twoFactorOtpAttempts: 0,
+      },
+    });
+
+    const auth = await this.issueAuthTokens({
+      uid: deliveryman.id,
+      actorType: 'DELIVERYMAN',
+      role: 'DELIVERYMAN',
+      tid: deliveryman.tenantId,
+      rid: deliveryman.restaurantId,
+      bid: deliveryman.branchId,
+    });
+
+    return {
+      data: await this.resolveMediaResponse({
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: this.toDeliverymanAuthUser(deliveryman),
       }),
       message: 'Deliveryman login successful',
     };
@@ -1541,23 +1626,7 @@ export class AuthService {
       return {
         data: await this.resolveMediaResponse(
           this.withDeletionState({
-            id: deliveryman.id,
-            email: deliveryman.email,
-            role: 'DELIVERYMAN',
-            actorType: 'DELIVERYMAN',
-            tenantId: deliveryman.tenantId,
-            restaurantId: deliveryman.restaurantId,
-            branchId: deliveryman.branchId,
-            isVerified: true,
-            isApproved: true,
-            isGuest: false,
-            profile: {
-              firstName: deliveryman.firstName,
-              lastName: deliveryman.lastName,
-              phone: deliveryman.phone,
-              avatarUrl: null,
-              bio: null,
-            },
+            ...this.toDeliverymanAuthUser(deliveryman),
             isActive: deliveryman.isActive,
             deletedAt: deliveryman.deletedAt,
           }),
@@ -1598,6 +1667,45 @@ export class AuthService {
 
   async updateMyAvatar(user: AuthUserContext, dto: UpdateMyAvatarDto) {
     return this.updateMyProfile(user, { avatarUrl: dto.avatarUrl }, true);
+  }
+
+  private toDeliverymanAuthUser(deliveryman: {
+    id: string;
+    email: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+    vehicleType?: string | null;
+    vehicleNumber?: string | null;
+    twoFactorEnabled?: boolean;
+  }) {
+    return {
+      id: deliveryman.id,
+      email: deliveryman.email,
+      role: 'DELIVERYMAN',
+      actorType: 'DELIVERYMAN',
+      tenantId: deliveryman.tenantId,
+      restaurantId: deliveryman.restaurantId,
+      branchId: deliveryman.branchId,
+      isVerified: true,
+      isApproved: true,
+      isGuest: false,
+      profile: {
+        firstName: deliveryman.firstName,
+        lastName: deliveryman.lastName,
+        phone: deliveryman.phone,
+        avatarUrl: null,
+        bio: null,
+      },
+      vehicle: {
+        type: deliveryman.vehicleType ?? null,
+        number: deliveryman.vehicleNumber ?? null,
+      },
+      twoFactorEnabled: deliveryman.twoFactorEnabled ?? false,
+    };
   }
 
   async updateMyProfile(
@@ -1892,6 +2000,44 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  private async issueDeliverymanTwoFactorToken(deliverymanId: string) {
+    return this.jwtService.signAsync(
+      {
+        uid: deliverymanId,
+        actorType: 'DELIVERYMAN',
+        purpose: 'DELIVERYMAN_2FA',
+      },
+      {
+        expiresIn: '10m',
+        secret: process.env.JWT_ACCESS_SECRET || 'change-me',
+      },
+    );
+  }
+
+  private async verifyDeliverymanTwoFactorToken(token: string) {
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        uid?: string;
+        actorType?: string;
+        purpose?: string;
+      }>(token, {
+        secret: process.env.JWT_ACCESS_SECRET || 'change-me',
+      });
+
+      if (
+        !payload.uid ||
+        payload.actorType !== 'DELIVERYMAN' ||
+        payload.purpose !== 'DELIVERYMAN_2FA'
+      ) {
+        throw new UnauthorizedException('Invalid two-factor token');
+      }
+
+      return { uid: payload.uid };
+    } catch {
+      throw new UnauthorizedException('Invalid two-factor token');
+    }
   }
 
   private normalizeAuthPayload(payload: {

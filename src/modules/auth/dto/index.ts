@@ -24,6 +24,7 @@ export {
   ResendOtpDto,
   ResetPasswordDto,
   ChangePasswordDto,
+  VerifyDeliverymanTwoFactorDto,
   CancelDeletionDto,
   OtpPurposeEnum,
 } from './token.dto';

@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
@@ -156,6 +157,44 @@ export class UpdateDeliverymanDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class UpdateMyDeliverymanProfileDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  firstName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  lastName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  vehicleType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  vehicleNumber?: string;
+}
+
+export class UpdateMyDeliverymanTwoFactorDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean;
 }
 
 const DELIVERYMAN_STATUS_INPUTS = [

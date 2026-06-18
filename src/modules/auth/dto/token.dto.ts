@@ -88,6 +88,18 @@ export class ChangePasswordDto {
   newPassword!: string;
 }
 
+export class VerifyDeliverymanTwoFactorDto {
+  @ApiProperty({ description: 'Temporary token returned by deliveryman login' })
+  @IsString()
+  @IsNotEmpty()
+  twoFactorToken!: string;
+
+  @ApiProperty({ description: '6-digit OTP code sent to deliveryman email' })
+  @IsString()
+  @IsNotEmpty()
+  otp!: string;
+}
+
 export class CancelDeletionDto {
   @ApiProperty({ required: false })
   @IsOptional()

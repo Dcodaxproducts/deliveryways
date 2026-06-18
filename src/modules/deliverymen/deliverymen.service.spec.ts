@@ -5,11 +5,13 @@ import { UserRoleEnum } from '../../common/enums/user-role.enum';
 import { DeliverymenService } from './deliverymen.service';
 import { DeliverymenRepository } from './deliverymen.repository';
 import { OrdersService } from '../orders/orders.service';
+import { AddressesService } from '../addresses/addresses.service';
 
 describe('DeliverymenService', () => {
   let service: DeliverymenService;
   let repository: Partial<Record<keyof DeliverymenRepository, jest.Mock>>;
   let ordersService: Partial<Record<keyof OrdersService, jest.Mock>>;
+  let addressesService: Partial<Record<keyof AddressesService, jest.Mock>>;
 
   const adminUser = {
     uid: 'user-1',
@@ -29,6 +31,7 @@ describe('DeliverymenService', () => {
     phone: '+923001112233',
     vehicleType: 'bike',
     vehicleNumber: 'ABC-123',
+    twoFactorEnabled: false,
     status: DeliverymanStatus.AVAILABLE,
     isActive: true,
     deletedAt: null,
@@ -45,6 +48,7 @@ describe('DeliverymenService', () => {
         .fn()
         .mockResolvedValue({ ...deliveryman, status: DeliverymanStatus.BUSY }),
       create: jest.fn().mockResolvedValue(deliveryman),
+      listDeliveredOrdersForEarnings: jest.fn().mockResolvedValue([]),
     };
 
     ordersService = {
@@ -60,9 +64,16 @@ describe('DeliverymenService', () => {
       }),
     };
 
+    addressesService = {
+      create: jest.fn(),
+      list: jest.fn(),
+      update: jest.fn(),
+    };
+
     service = new DeliverymenService(
       repository as unknown as DeliverymenRepository,
       ordersService as unknown as OrdersService,
+      addressesService as unknown as AddressesService,
       {
         branch: {
           findFirst: jest.fn().mockResolvedValue({
@@ -73,6 +84,9 @@ describe('DeliverymenService', () => {
         },
         restaurant: {
           findFirst: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            settings: { customerApp: { currency: 'PKR' } },
+          }),
         },
         deliveryman: {
           findFirst: jest.fn().mockResolvedValue(null),
@@ -401,6 +415,106 @@ describe('DeliverymenService', () => {
     });
     expect(result.message).toBe(
       'Deliveryman availability updated successfully',
+    );
+  });
+
+  it('returns driver profile with vehicle info', async () => {
+    const result = await service.myProfile({
+      uid: 'dm-1',
+      role: 'DELIVERYMAN',
+    } as never);
+
+    expect(result.data.vehicle).toEqual({
+      type: 'bike',
+      number: 'ABC-123',
+    });
+    expect(result.data.profile.firstName).toBe('Bilal');
+  });
+
+  it('updates deliveryman own profile and vehicle info', async () => {
+    repository.update!.mockResolvedValue({
+      ...deliveryman,
+      firstName: 'Updated',
+      vehicleType: 'car',
+      vehicleNumber: 'CAR-1',
+    });
+
+    const result = await service.updateMyProfile(
+      {
+        uid: 'dm-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      {
+        firstName: 'Updated',
+        vehicleType: 'car',
+        vehicleNumber: 'CAR-1',
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith('dm-1', {
+      firstName: 'Updated',
+      lastName: undefined,
+      phone: undefined,
+      vehicleType: 'car',
+      vehicleNumber: 'CAR-1',
+    });
+    expect(result.data.vehicle).toEqual({
+      type: 'car',
+      number: 'CAR-1',
+    });
+  });
+
+  it('returns deliveryman earnings summary and recent deliveries', async () => {
+    const deliveredAt = new Date();
+    repository.listDeliveredOrdersForEarnings!.mockResolvedValue([
+      {
+        id: 'order-1',
+        status: 'DELIVERED',
+        paymentStatus: 'PAID',
+        orderTime: deliveredAt,
+        deliveredAt,
+        deliveryFee: { toString: () => '25.50' },
+        totalAmount: { toString: () => '125.50' },
+        branch: { id: 'branch-1', name: 'Main Branch' },
+        customer: {
+          id: 'customer-1',
+          email: 'customer@example.com',
+          profile: {
+            firstName: 'Test',
+            lastName: 'Customer',
+            phone: '123',
+          },
+        },
+        deliveryAddress: {
+          street: 'Street 1',
+          area: '12',
+          city: 'Lahore',
+          postalCode: '54000',
+        },
+      },
+    ]);
+
+    const result = await service.myEarnings({
+      uid: 'dm-1',
+      role: 'DELIVERYMAN',
+    } as never);
+
+    expect(repository.listDeliveredOrdersForEarnings).toHaveBeenCalledWith(
+      'dm-1',
+      expect.any(Date),
+    );
+    expect(result.data.summary.daily).toEqual(
+      expect.objectContaining({
+        deliveriesCount: 1,
+        earningsAmount: 25.5,
+      }),
+    );
+    expect(result.data.currency).toBe('PKR');
+    expect(result.data.recentDeliveries[0]).toEqual(
+      expect.objectContaining({
+        id: 'order-1',
+        earningAmount: 25.5,
+      }),
     );
   });
 

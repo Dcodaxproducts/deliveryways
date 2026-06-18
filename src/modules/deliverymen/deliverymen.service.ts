@@ -11,12 +11,20 @@ import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import { OrdersService } from '../orders/orders.service';
+import { AddressesService } from '../addresses/addresses.service';
+import {
+  CreateAddressDto,
+  ListAddressesDto,
+  UpdateAddressDto,
+} from '../addresses/dto';
 import {
   AssignDeliverymanOrderDto,
   CreateDeliverymanDto,
   DeliverymanSignupDto,
   ListDeliverymenDto,
+  UpdateMyDeliverymanProfileDto,
   UpdateMyDeliverymanStatusDto,
+  UpdateMyDeliverymanTwoFactorDto,
   UpdateDeliverymanDto,
   UpdateDeliverymanLocationDto,
   UpdateDeliverymanStatusDto,
@@ -28,6 +36,7 @@ export class DeliverymenService {
   constructor(
     private readonly deliverymenRepository: DeliverymenRepository,
     private readonly ordersService: OrdersService,
+    private readonly addressesService: AddressesService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -185,6 +194,147 @@ export class DeliverymenService {
       data: this.withDeletionState(deliveryman),
       message: 'Deliveryman fetched successfully',
     };
+  }
+
+  async myProfile(user: AuthUserContext) {
+    const deliveryman = await this.getActiveDeliverymanForSelf(user);
+
+    return {
+      data: this.toDriverProfileResponse(deliveryman),
+      message: 'Deliveryman profile fetched successfully',
+    };
+  }
+
+  async updateMyProfile(
+    user: AuthUserContext,
+    dto: UpdateMyDeliverymanProfileDto,
+  ) {
+    const deliveryman = await this.getActiveDeliverymanForSelf(user);
+
+    if (dto.phone && dto.phone !== deliveryman.phone) {
+      await this.assertUniqueFields(
+        deliveryman.restaurantId,
+        deliveryman.branchId,
+        undefined,
+        dto.phone.trim(),
+        deliveryman.id,
+      );
+    }
+
+    const data = await this.deliverymenRepository.update(deliveryman.id, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone?.trim(),
+      vehicleType: dto.vehicleType,
+      vehicleNumber: dto.vehicleNumber,
+    });
+
+    return {
+      data: this.toDriverProfileResponse(data),
+      message: 'Deliveryman profile updated successfully',
+    };
+  }
+
+  async updateMyTwoFactor(
+    user: AuthUserContext,
+    dto: UpdateMyDeliverymanTwoFactorDto,
+  ) {
+    const deliveryman = await this.getActiveDeliverymanForSelf(user);
+    const data = await this.deliverymenRepository.update(deliveryman.id, {
+      twoFactorEnabled: dto.enabled,
+      twoFactorOtp: null,
+      twoFactorOtpExpiresAt: null,
+      twoFactorOtpAttempts: 0,
+    });
+
+    return {
+      data: {
+        id: data.id,
+        twoFactorEnabled: data.twoFactorEnabled,
+      },
+      message: data.twoFactorEnabled
+        ? 'Deliveryman 2FA enabled successfully'
+        : 'Deliveryman 2FA disabled successfully',
+    };
+  }
+
+  async myEarnings(user: AuthUserContext) {
+    const deliveryman = await this.getActiveDeliverymanForSelf(user);
+    const now = new Date();
+    const monthStart = this.startOfMonth(now);
+    const weekStart = this.startOfWeek(now);
+    const dayStart = this.startOfDay(now);
+    const deliveredOrders =
+      await this.deliverymenRepository.listDeliveredOrdersForEarnings(
+        deliveryman.id,
+        monthStart,
+      );
+    const currency = await this.resolveRestaurantCurrency(
+      deliveryman.restaurantId,
+    );
+    const daily = this.buildEarningsPeriod(deliveredOrders, dayStart);
+    const weekly = this.buildEarningsPeriod(deliveredOrders, weekStart);
+    const monthly = this.buildEarningsPeriod(deliveredOrders, monthStart);
+
+    return {
+      data: {
+        currency,
+        earningsSource: 'deliveryFee',
+        summary: {
+          daily,
+          weekly,
+          monthly,
+        },
+        recentDeliveries: deliveredOrders.slice(0, 10).map((order) => ({
+          id: order.id,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          deliveredAt: order.deliveredAt,
+          orderTime: order.orderTime,
+          totalAmount: Number(order.totalAmount),
+          earningAmount: Number(order.deliveryFee),
+          branch: order.branch,
+          customer: {
+            id: order.customer.id,
+            email: order.customer.email,
+            firstName: order.customer.profile?.firstName ?? null,
+            lastName: order.customer.profile?.lastName ?? null,
+            phone: order.customer.profile?.phone ?? null,
+          },
+          deliveryAddress: order.deliveryAddress
+            ? {
+                street: order.deliveryAddress.street,
+                houseNumber: order.deliveryAddress.area,
+                postalCode: order.deliveryAddress.postalCode,
+                city: order.deliveryAddress.city,
+              }
+            : null,
+        })),
+      },
+      message: 'Deliveryman earnings fetched successfully',
+    };
+  }
+
+  async listMyAddresses(user: AuthUserContext, query: ListAddressesDto) {
+    await this.getActiveDeliverymanForSelf(user);
+
+    return this.addressesService.list(user, query);
+  }
+
+  async createMyAddress(user: AuthUserContext, dto: CreateAddressDto) {
+    await this.getActiveDeliverymanForSelf(user);
+
+    return this.addressesService.create(user, dto);
+  }
+
+  async updateMyAddress(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateAddressDto,
+  ) {
+    await this.getActiveDeliverymanForSelf(user);
+
+    return this.addressesService.update(user, id, dto);
   }
 
   async update(user: AuthUserContext, id: string, dto: UpdateDeliverymanDto) {
@@ -460,6 +610,159 @@ export class DeliverymenService {
         isActive: entity.isActive ?? true,
       },
     };
+  }
+
+  private async getActiveDeliverymanForSelf(user: AuthUserContext) {
+    if (user.role !== 'DELIVERYMAN') {
+      throw new ForbiddenException('Only deliverymen can access this resource');
+    }
+
+    const deliveryman = await this.deliverymenRepository.findById(user.uid);
+
+    if (!deliveryman || deliveryman.deletedAt || !deliveryman.isActive) {
+      throw new NotFoundException('Deliveryman not found');
+    }
+
+    return deliveryman;
+  }
+
+  private toDriverProfileResponse<
+    T extends {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      vehicleType?: string | null;
+      vehicleNumber?: string | null;
+      twoFactorEnabled?: boolean;
+      status: DeliverymanStatus;
+      currentLat?: Prisma.Decimal | null;
+      currentLng?: Prisma.Decimal | null;
+      locationUpdatedAt?: Date | null;
+      branch?: { id: string; name: string } | null;
+      isActive: boolean;
+      deletedAt?: Date | null;
+    },
+  >(deliveryman: T) {
+    return this.withDeletionState({
+      id: deliveryman.id,
+      email: deliveryman.email,
+      role: 'DELIVERYMAN',
+      actorType: 'DELIVERYMAN',
+      tenantId: deliveryman.tenantId,
+      restaurantId: deliveryman.restaurantId,
+      branchId: deliveryman.branchId,
+      profile: {
+        firstName: deliveryman.firstName,
+        lastName: deliveryman.lastName,
+        phone: deliveryman.phone,
+        avatarUrl: null,
+        bio: null,
+      },
+      vehicle: {
+        type: deliveryman.vehicleType ?? null,
+        number: deliveryman.vehicleNumber ?? null,
+      },
+      twoFactorEnabled: deliveryman.twoFactorEnabled ?? false,
+      status: deliveryman.status,
+      currentLocation:
+        deliveryman.currentLat !== null && deliveryman.currentLng !== null
+          ? {
+              lat: Number(deliveryman.currentLat),
+              lng: Number(deliveryman.currentLng),
+              updatedAt: deliveryman.locationUpdatedAt ?? null,
+            }
+          : null,
+      branch: deliveryman.branch ?? null,
+      isActive: deliveryman.isActive,
+      deletedAt: deliveryman.deletedAt ?? null,
+    });
+  }
+
+  private buildEarningsPeriod<
+    T extends { deliveredAt: Date | null; deliveryFee: Prisma.Decimal },
+  >(orders: T[], since: Date) {
+    const periodOrders = orders.filter(
+      (order) => order.deliveredAt && order.deliveredAt >= since,
+    );
+    const total = periodOrders.reduce(
+      (sum, order) => sum + Number(order.deliveryFee),
+      0,
+    );
+
+    return {
+      deliveriesCount: periodOrders.length,
+      earningsAmount: Number(total.toFixed(2)),
+      from: since,
+    };
+  }
+
+  private startOfDay(date: Date) {
+    return new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+  }
+
+  private startOfWeek(date: Date) {
+    const start = this.startOfDay(date);
+    const day = start.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - diff);
+
+    return start;
+  }
+
+  private startOfMonth(date: Date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+  }
+
+  private async resolveRestaurantCurrency(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { settings: true },
+    });
+
+    return this.readStringValue(restaurant?.settings, [
+      ['customerApp', 'currency'],
+      ['checkout', 'currency'],
+      ['payments', 'currency'],
+      ['currency'],
+      ['defaultCurrency'],
+    ]);
+  }
+
+  private readStringValue(
+    source: Prisma.JsonValue | null | undefined,
+    paths: string[][],
+  ) {
+    for (const path of paths) {
+      let current: unknown = source;
+
+      for (const key of path) {
+        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+          current = undefined;
+          break;
+        }
+
+        current = (current as Record<string, unknown>)[key];
+      }
+
+      if (typeof current === 'string' && current.trim()) {
+        return current.trim();
+      }
+    }
+
+    return null;
   }
 
   private async getAccessibleDeliveryman(user: AuthUserContext, id: string) {
