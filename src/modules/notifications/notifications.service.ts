@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -14,8 +15,13 @@ import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { MailerService } from '../mailer/mailer.service';
-import { ListNotificationsDto } from './dto';
+import {
+  ListNotificationsDto,
+  RegisterPushTokenDto,
+  UnregisterPushTokenDto,
+} from './dto';
 import { NotificationsRepository } from './notifications.repository';
+import { PushNotificationsService } from './push-notifications.service';
 
 const CUSTOMER_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.ORDER_PLACED,
@@ -49,9 +55,12 @@ const DELIVERYMAN_NOTIFICATION_TYPES: NotificationType[] = [
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly notificationsRepository: NotificationsRepository,
     private readonly mailerService: MailerService,
+    private readonly pushNotificationsService: PushNotificationsService,
   ) {}
 
   async list(user: AuthUserContext, query: ListNotificationsDto) {
@@ -175,6 +184,51 @@ export class NotificationsService {
     return {
       data,
       message: 'Notification retried successfully',
+    };
+  }
+
+  async registerPushToken(user: AuthUserContext, dto: RegisterPushTokenDto) {
+    const data = await this.notificationsRepository.upsertPushToken({
+      token: dto.token,
+      platform: dto.platform,
+      tenantId: user.tid,
+      restaurantId: user.rid,
+      branchId: user.bid,
+      userId: user.role === 'DELIVERYMAN' ? undefined : user.uid,
+      deliverymanId: user.role === 'DELIVERYMAN' ? user.uid : undefined,
+      deviceId: dto.deviceId,
+      appPackageName: dto.appPackageName,
+    });
+
+    return {
+      data: {
+        id: data.id,
+        platform: data.platform,
+        appPackageName: data.appPackageName,
+        isActive: data.isActive,
+        lastSeenAt: data.lastSeenAt,
+      },
+      message: 'Push token registered successfully',
+    };
+  }
+
+  async unregisterPushToken(
+    user: AuthUserContext,
+    dto: UnregisterPushTokenDto,
+  ) {
+    const data = await this.notificationsRepository.deactivatePushTokenForOwner(
+      {
+        token: dto.token,
+        userId: user.role === 'DELIVERYMAN' ? undefined : user.uid,
+        deliverymanId: user.role === 'DELIVERYMAN' ? user.uid : undefined,
+      },
+    );
+
+    return {
+      data: {
+        count: data.count,
+      },
+      message: 'Push token removed successfully',
     };
   }
 
@@ -577,7 +631,7 @@ export class NotificationsService {
     body: string;
     payload?: Record<string, unknown>;
   }) {
-    return this.notificationsRepository.create({
+    const notification = await this.notificationsRepository.create({
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
       branch: { connect: { id: input.branchId } },
@@ -595,6 +649,10 @@ export class NotificationsService {
       body: input.body,
       payload: input.payload as Prisma.InputJsonValue | undefined,
     });
+
+    await this.dispatchInAppPush(notification);
+
+    return notification;
   }
 
   private async createCustomerInAppNotification(input: {
@@ -607,7 +665,7 @@ export class NotificationsService {
     body: string;
     payload?: Record<string, unknown>;
   }) {
-    return this.notificationsRepository.create({
+    const notification = await this.notificationsRepository.create({
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
       branch: { connect: { id: input.branchId } },
@@ -622,6 +680,10 @@ export class NotificationsService {
       body: input.body,
       payload: input.payload as Prisma.InputJsonValue | undefined,
     });
+
+    await this.dispatchInAppPush(notification);
+
+    return notification;
   }
 
   private async createDeliverymanInAppNotification(input: {
@@ -635,7 +697,7 @@ export class NotificationsService {
     body: string;
     payload?: Record<string, unknown>;
   }) {
-    return this.notificationsRepository.create({
+    const notification = await this.notificationsRepository.create({
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
       branch: { connect: { id: input.branchId } },
@@ -651,6 +713,10 @@ export class NotificationsService {
       body: input.body,
       payload: input.payload as Prisma.InputJsonValue | undefined,
     });
+
+    await this.dispatchInAppPush(notification);
+
+    return notification;
   }
 
   private async createAndDispatchAdminEmail(input: {
@@ -729,6 +795,51 @@ export class NotificationsService {
         errorMessage:
           error instanceof Error ? error.message : 'Failed to deliver email',
       });
+    }
+  }
+
+  private async dispatchInAppPush(notification: {
+    id: string;
+    audience: NotificationAudience;
+    type: NotificationType;
+    subject: string;
+    body: string;
+    payload: Prisma.JsonValue | null;
+    restaurantId: string;
+    branchId: string;
+    recipientUserId?: string | null;
+    deliverymanId?: string | null;
+  }): Promise<void> {
+    try {
+      const tokenRows =
+        await this.notificationsRepository.listPushTokensForNotification({
+          audience: notification.audience,
+          restaurantId: notification.restaurantId,
+          branchId: notification.branchId,
+          recipientUserId: notification.recipientUserId,
+          deliverymanId: notification.deliverymanId,
+        });
+      const invalidTokens = await this.pushNotificationsService.sendToTokens({
+        notificationId: notification.id,
+        audience: notification.audience,
+        type: notification.type,
+        title: notification.subject,
+        body: notification.body,
+        payload: notification.payload,
+        tokens: tokenRows.map((item) => item.token),
+      });
+
+      await Promise.all(
+        invalidTokens.map((token) =>
+          this.notificationsRepository.deactivatePushToken(token),
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        error instanceof Error
+          ? error.message
+          : 'Failed to dispatch push notification',
+      );
     }
   }
 

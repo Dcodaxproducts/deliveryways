@@ -206,6 +206,11 @@ enum NotificationChannel {
   IN_APP
 }
 
+enum PushPlatform {
+  ANDROID
+  IOS
+}
+
 enum NotificationAudience {
   CUSTOMER
   ADMIN
@@ -315,6 +320,7 @@ model Tenant {
   loyaltyAccounts     LoyaltyAccount[]
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
+  pushDeviceTokens    PushDeviceToken[]
   deliverymen         Deliveryman[]
   chatThreads         ChatThread[]
   groupOrders         GroupOrderSession[]
@@ -370,6 +376,7 @@ model Restaurant {
   loyaltyAccounts     LoyaltyAccount[]
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
+  pushDeviceTokens    PushDeviceToken[]
   deliverymen         Deliveryman[]
   chatThreads         ChatThread[]
   groupOrders         GroupOrderSession[]
@@ -413,6 +420,7 @@ model Branch {
   walletTransactions  WalletTransaction[]
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
+  pushDeviceTokens    PushDeviceToken[]
   deliverymen         Deliveryman[]
   chatThreads         ChatThread[]
   groupOrders         GroupOrderSession[]
@@ -491,6 +499,7 @@ model User {
   loyaltyAccounts        LoyaltyAccount[]
   loyaltyTransactions    LoyaltyTransaction[]
   receivedNotifications  Notification[]          @relation("NotificationRecipient")
+  pushDeviceTokens       PushDeviceToken[]       @relation("UserPushDeviceTokens")
   customerChatThreads    ChatThread[]            @relation("ChatThreadCustomer")
   sentChatMessages       ChatMessage[]           @relation("ChatMessageUserSender")
   hostedGroupOrders      GroupOrderSession[]     @relation("GroupOrderHost")
@@ -1201,13 +1210,14 @@ model Deliveryman {
   createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant           Tenant         @relation(fields: [tenantId], references: [id])
-  restaurant       Restaurant     @relation(fields: [restaurantId], references: [id])
-  branch           Branch         @relation(fields: [branchId], references: [id])
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  restaurant       Restaurant        @relation(fields: [restaurantId], references: [id])
+  branch           Branch            @relation(fields: [branchId], references: [id])
   orders           Order[]
-  chatThreads      ChatThread[]   @relation("ChatThreadDeliveryman")
-  sentChatMessages ChatMessage[]  @relation("ChatMessageDeliverymanSender")
-  notifications    Notification[] @relation("NotificationDeliverymanRecipient")
+  chatThreads      ChatThread[]      @relation("ChatThreadDeliveryman")
+  sentChatMessages ChatMessage[]     @relation("ChatMessageDeliverymanSender")
+  notifications    Notification[]    @relation("NotificationDeliverymanRecipient")
+  pushDeviceTokens PushDeviceToken[] @relation("DeliverymanPushDeviceTokens")
 
   @@unique([restaurantId, email])
   @@unique([branchId, phone])
@@ -1865,4 +1875,32 @@ model Notification {
   @@index([orderId, createdAt])
   @@index([paymentTransactionId, createdAt])
   @@map("notifications")
+}
+
+model PushDeviceToken {
+  id             String       @id @default(cuid())
+  tenantId       String?      @map("tenant_id")
+  restaurantId   String?      @map("restaurant_id")
+  branchId       String?      @map("branch_id")
+  userId         String?      @map("user_id")
+  deliverymanId  String?      @map("deliveryman_id")
+  platform       PushPlatform
+  token          String       @unique
+  deviceId       String?      @map("device_id")
+  appPackageName String?      @map("app_package_name")
+  isActive       Boolean      @default(true) @map("is_active")
+  lastSeenAt     DateTime     @default(now()) @map("last_seen_at") @db.Timestamptz
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant      Tenant?      @relation(fields: [tenantId], references: [id])
+  restaurant  Restaurant?  @relation(fields: [restaurantId], references: [id])
+  branch      Branch?      @relation(fields: [branchId], references: [id])
+  user        User?        @relation("UserPushDeviceTokens", fields: [userId], references: [id])
+  deliveryman Deliveryman? @relation("DeliverymanPushDeviceTokens", fields: [deliverymanId], references: [id])
+
+  @@index([userId, isActive, platform])
+  @@index([deliverymanId, isActive, platform])
+  @@index([restaurantId, branchId, isActive, platform])
+  @@map("push_device_tokens")
 }

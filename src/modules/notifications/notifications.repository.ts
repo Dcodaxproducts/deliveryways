@@ -6,6 +6,7 @@ import {
   NotificationType,
   Prisma,
   PrismaClient,
+  PushPlatform,
   UserRole,
 } from '@prisma/client';
 import { PrismaTx } from '../../common/types';
@@ -296,6 +297,146 @@ export class NotificationsRepository {
         id: true,
         email: true,
       },
+    });
+  }
+
+  async upsertPushToken(input: {
+    token: string;
+    platform: PushPlatform;
+    tenantId?: string;
+    restaurantId?: string;
+    branchId?: string;
+    userId?: string;
+    deliverymanId?: string;
+    deviceId?: string;
+    appPackageName?: string;
+  }) {
+    return this.prisma.pushDeviceToken.upsert({
+      where: { token: input.token },
+      create: {
+        token: input.token,
+        platform: input.platform,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+        userId: input.userId,
+        deliverymanId: input.deliverymanId,
+        deviceId: input.deviceId,
+        appPackageName: input.appPackageName,
+        isActive: true,
+        lastSeenAt: new Date(),
+      },
+      update: {
+        platform: input.platform,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+        userId: input.userId,
+        deliverymanId: input.deliverymanId,
+        deviceId: input.deviceId,
+        appPackageName: input.appPackageName,
+        isActive: true,
+        lastSeenAt: new Date(),
+      },
+    });
+  }
+
+  async deactivatePushToken(token: string) {
+    return this.prisma.pushDeviceToken.updateMany({
+      where: { token },
+      data: {
+        isActive: false,
+      },
+    });
+  }
+
+  async deactivatePushTokenForOwner(input: {
+    token: string;
+    userId?: string;
+    deliverymanId?: string;
+  }) {
+    return this.prisma.pushDeviceToken.updateMany({
+      where: {
+        token: input.token,
+        ...(input.deliverymanId
+          ? { deliverymanId: input.deliverymanId }
+          : { userId: input.userId }),
+      },
+      data: {
+        isActive: false,
+      },
+    });
+  }
+
+  async listPushTokensForNotification(input: {
+    audience: NotificationAudience;
+    restaurantId: string;
+    branchId: string;
+    recipientUserId?: string | null;
+    deliverymanId?: string | null;
+  }) {
+    if (input.audience === NotificationAudience.CUSTOMER) {
+      if (!input.recipientUserId) {
+        return [];
+      }
+
+      return this.prisma.pushDeviceToken.findMany({
+        where: {
+          userId: input.recipientUserId,
+          isActive: true,
+          platform: PushPlatform.ANDROID,
+        },
+        select: { token: true },
+      });
+    }
+
+    if (input.audience === NotificationAudience.DELIVERYMAN) {
+      if (!input.deliverymanId) {
+        return [];
+      }
+
+      return this.prisma.pushDeviceToken.findMany({
+        where: {
+          deliverymanId: input.deliverymanId,
+          isActive: true,
+          platform: PushPlatform.ANDROID,
+        },
+        select: { token: true },
+      });
+    }
+
+    const adminUsers = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        OR: [
+          {
+            role: UserRole.BUSINESS_ADMIN,
+            restaurantId: input.restaurantId,
+          },
+          {
+            role: UserRole.BRANCH_ADMIN,
+            branchId: input.branchId,
+          },
+        ],
+      },
+      select: {
+        id: true,
+      },
+    });
+    const adminUserIds = adminUsers.map((user) => user.id);
+
+    if (!adminUserIds.length) {
+      return [];
+    }
+
+    return this.prisma.pushDeviceToken.findMany({
+      where: {
+        userId: { in: adminUserIds },
+        isActive: true,
+        platform: PushPlatform.ANDROID,
+      },
+      select: { token: true },
     });
   }
 }

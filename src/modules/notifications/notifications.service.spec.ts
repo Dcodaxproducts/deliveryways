@@ -3,6 +3,7 @@ import {
   NotificationChannel,
   NotificationStatus,
   NotificationType,
+  PushPlatform,
 } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 
@@ -20,9 +21,16 @@ describe('NotificationsService', () => {
     markSeen: jest.Mock;
     markAllSeen: jest.Mock;
     listAdminEmailRecipients: jest.Mock;
+    upsertPushToken: jest.Mock;
+    deactivatePushToken: jest.Mock;
+    deactivatePushTokenForOwner: jest.Mock;
+    listPushTokensForNotification: jest.Mock;
   };
   let mailerService: {
     sendEmail: jest.Mock;
+  };
+  let pushNotificationsService: {
+    sendToTokens: jest.Mock;
   };
 
   beforeEach(() => {
@@ -40,14 +48,22 @@ describe('NotificationsService', () => {
       markSeen: jest.fn(),
       markAllSeen: jest.fn(),
       listAdminEmailRecipients: jest.fn(),
+      upsertPushToken: jest.fn(),
+      deactivatePushToken: jest.fn(),
+      deactivatePushTokenForOwner: jest.fn(),
+      listPushTokensForNotification: jest.fn().mockResolvedValue([]),
     };
     mailerService = {
       sendEmail: jest.fn(),
+    };
+    pushNotificationsService = {
+      sendToTokens: jest.fn().mockResolvedValue([]),
     };
 
     service = new NotificationsService(
       notificationsRepository as never,
       mailerService as never,
+      pushNotificationsService as never,
     );
   });
 
@@ -248,6 +264,75 @@ describe('NotificationsService', () => {
     expect(result.data.isSeen).toBe(true);
   });
 
+  it('registers deliveryman push token under the logged-in deliveryman', async () => {
+    notificationsRepository.upsertPushToken.mockResolvedValue({
+      id: 'push-token-1',
+      platform: PushPlatform.ANDROID,
+      appPackageName: 'com.dcodax.deliveryway_driver',
+      isActive: true,
+      lastSeenAt: new Date('2026-06-18T10:00:00.000Z'),
+    });
+
+    const result = await service.registerPushToken(
+      {
+        uid: 'dm-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: 'DELIVERYMAN',
+      } as never,
+      {
+        token: 'fcm-token',
+        platform: PushPlatform.ANDROID,
+        appPackageName: 'com.dcodax.deliveryway_driver',
+      },
+    );
+
+    expect(notificationsRepository.upsertPushToken).toHaveBeenCalledWith({
+      token: 'fcm-token',
+      platform: PushPlatform.ANDROID,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      userId: undefined,
+      deliverymanId: 'dm-1',
+      deviceId: undefined,
+      appPackageName: 'com.dcodax.deliveryway_driver',
+    });
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: 'push-token-1',
+        platform: PushPlatform.ANDROID,
+        isActive: true,
+      }),
+    );
+  });
+
+  it('unregisters only the logged-in user push token', async () => {
+    notificationsRepository.deactivatePushTokenForOwner.mockResolvedValue({
+      count: 1,
+    });
+
+    const result = await service.unregisterPushToken(
+      {
+        uid: 'customer-1',
+        role: 'CUSTOMER',
+      } as never,
+      {
+        token: 'fcm-token',
+      },
+    );
+
+    expect(
+      notificationsRepository.deactivatePushTokenForOwner,
+    ).toHaveBeenCalledWith({
+      token: 'fcm-token',
+      userId: 'customer-1',
+      deliverymanId: undefined,
+    });
+    expect(result.data.count).toBe(1);
+  });
+
   it('creates both customer email and admin in-app notification on order placed', async () => {
     notificationsRepository.findOrderForNotification.mockResolvedValue({
       id: 'order-1',
@@ -337,14 +422,24 @@ describe('NotificationsService', () => {
       })
       .mockResolvedValueOnce({
         id: 'deliveryman-notification-1',
+        audience: NotificationAudience.DELIVERYMAN,
+        type: NotificationType.ORDER_STATUS_CHANGED,
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        deliverymanId: 'dm-1',
+        recipientUserId: null,
         recipientEmail: null,
         subject: 'Order order-1 is now OUT_FOR_DELIVERY',
         body: 'body',
+        payload: { orderId: 'order-1' },
       });
     notificationsRepository.updateDelivery.mockResolvedValue({
       id: 'customer-notification-1',
       status: NotificationStatus.SENT,
     });
+    notificationsRepository.listPushTokensForNotification.mockResolvedValue([
+      { token: 'fcm-token-1' },
+    ]);
 
     await service.notifyOrderStatusChanged('order-1');
 
@@ -355,6 +450,13 @@ describe('NotificationsService', () => {
         channel: NotificationChannel.IN_APP,
         type: NotificationType.ORDER_STATUS_CHANGED,
         deliveryman: { connect: { id: 'dm-1' } },
+      }),
+    );
+    expect(pushNotificationsService.sendToTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notificationId: 'deliveryman-notification-1',
+        audience: NotificationAudience.DELIVERYMAN,
+        tokens: ['fcm-token-1'],
       }),
     );
   });

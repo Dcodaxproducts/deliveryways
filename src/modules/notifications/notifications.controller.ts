@@ -1,4 +1,13 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -7,7 +16,11 @@ import {
   RolesGuard,
   TenantAccessGuard,
 } from '../../common/guards';
-import { ListNotificationsDto } from './dto';
+import {
+  ListNotificationsDto,
+  RegisterPushTokenDto,
+  UnregisterPushTokenDto,
+} from './dto';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
@@ -47,6 +60,38 @@ export class NotificationsController {
     @Query() query: ListNotificationsDto,
   ) {
     return this.notificationsService.list(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
+  )
+  @Post('push-token')
+  registerPushToken(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: RegisterPushTokenDto,
+  ) {
+    return this.notificationsService.registerPushToken(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+    RolesEnum.DELIVERYMAN,
+  )
+  @Delete('push-token')
+  unregisterPushToken(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UnregisterPushTokenDto,
+  ) {
+    return this.notificationsService.unregisterPushToken(user, dto);
   }
 
   @ApiBearerAuth()
