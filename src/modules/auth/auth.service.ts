@@ -1680,6 +1680,7 @@ export class AuthService {
     phone: string;
     vehicleType?: string | null;
     vehicleNumber?: string | null;
+    avatarUrl?: string | null;
     twoFactorEnabled?: boolean;
   }) {
     return {
@@ -1697,7 +1698,7 @@ export class AuthService {
         firstName: deliveryman.firstName,
         lastName: deliveryman.lastName,
         phone: deliveryman.phone,
-        avatarUrl: null,
+        avatarUrl: deliveryman.avatarUrl ?? null,
         bio: null,
       },
       vehicle: {
@@ -1754,9 +1755,9 @@ export class AuthService {
         throw new NotFoundException('Deliveryman account not found');
       }
 
-      if (avatarOnly || dto.avatarUrl !== undefined || dto.bio !== undefined) {
+      if (dto.bio !== undefined) {
         throw new ForbiddenException(
-          'Deliveryman avatar and bio updates are not supported',
+          'Deliveryman bio updates are not supported',
         );
       }
 
@@ -1783,21 +1784,24 @@ export class AuthService {
           firstName: dto.firstName,
           lastName: dto.lastName,
           phone: dto.phone,
+          avatarUrl: dto.avatarUrl,
         },
       });
 
       return {
-        data: {
+        data: await this.resolveMediaResponse({
           id: updated.id,
           profile: {
             firstName: updated.firstName,
             lastName: updated.lastName,
             phone: updated.phone,
-            avatarUrl: null,
+            avatarUrl: updated.avatarUrl,
             bio: null,
           },
-        },
-        message: 'Profile updated successfully',
+        }),
+        message: avatarOnly
+          ? 'Profile avatar updated successfully'
+          : 'Profile updated successfully',
       };
     }
 

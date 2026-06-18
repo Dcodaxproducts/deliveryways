@@ -19,6 +19,7 @@ export class DeliverymenRepository {
     phone: true,
     vehicleType: true,
     vehicleNumber: true,
+    avatarUrl: true,
     twoFactorEnabled: true,
     status: true,
     currentLat: true,

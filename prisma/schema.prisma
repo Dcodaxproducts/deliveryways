@@ -209,6 +209,7 @@ enum NotificationChannel {
 enum NotificationAudience {
   CUSTOMER
   ADMIN
+  DELIVERYMAN
 }
 
 enum NotificationStatus {
@@ -1184,6 +1185,7 @@ model Deliveryman {
   phone                 String
   vehicleType           String?           @map("vehicle_type")
   vehicleNumber         String?           @map("vehicle_number")
+  avatarUrl             String?           @map("avatar_url")
   password              String?
   refreshTokenHash      String?           @map("refresh_token_hash")
   twoFactorEnabled      Boolean           @default(false) @map("two_factor_enabled")
@@ -1199,12 +1201,13 @@ model Deliveryman {
   createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant           Tenant        @relation(fields: [tenantId], references: [id])
-  restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])
-  branch           Branch        @relation(fields: [branchId], references: [id])
+  tenant           Tenant         @relation(fields: [tenantId], references: [id])
+  restaurant       Restaurant     @relation(fields: [restaurantId], references: [id])
+  branch           Branch         @relation(fields: [branchId], references: [id])
   orders           Order[]
-  chatThreads      ChatThread[]  @relation("ChatThreadDeliveryman")
-  sentChatMessages ChatMessage[] @relation("ChatMessageDeliverymanSender")
+  chatThreads      ChatThread[]   @relation("ChatThreadDeliveryman")
+  sentChatMessages ChatMessage[]  @relation("ChatMessageDeliverymanSender")
+  notifications    Notification[] @relation("NotificationDeliverymanRecipient")
 
   @@unique([restaurantId, email])
   @@unique([branchId, phone])
@@ -1827,6 +1830,7 @@ model Notification {
   orderId              String?              @map("order_id")
   paymentTransactionId String?              @map("payment_transaction_id")
   recipientUserId      String?              @map("recipient_user_id")
+  deliverymanId        String?              @map("deliveryman_id")
   recipientEmail       String?              @map("recipient_email")
   channel              NotificationChannel  @default(EMAIL)
   audience             NotificationAudience @default(CUSTOMER)
@@ -1848,11 +1852,14 @@ model Notification {
   order              Order?              @relation(fields: [orderId], references: [id])
   paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
   recipientUser      User?               @relation("NotificationRecipient", fields: [recipientUserId], references: [id])
+  deliveryman        Deliveryman?        @relation("NotificationDeliverymanRecipient", fields: [deliverymanId], references: [id])
 
   @@index([tenantId, status, createdAt])
   @@index([restaurantId, branchId, createdAt])
   @@index([recipientUserId, createdAt])
+  @@index([deliverymanId, createdAt])
   @@index([audience, recipientUserId, createdAt])
+  @@index([audience, deliverymanId, createdAt])
   @@index([audience, restaurantId, branchId, createdAt])
   @@index([audience, seenAt, createdAt])
   @@index([orderId, createdAt])

@@ -12,6 +12,7 @@ import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import { OrdersService } from '../orders/orders.service';
 import { AddressesService } from '../addresses/addresses.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CreateAddressDto,
   ListAddressesDto,
@@ -38,6 +39,7 @@ export class DeliverymenService {
     private readonly ordersService: OrdersService,
     private readonly addressesService: AddressesService,
     private readonly prisma: PrismaService,
+    private readonly storageService?: StorageService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateDeliverymanDto) {
@@ -200,7 +202,9 @@ export class DeliverymenService {
     const deliveryman = await this.getActiveDeliverymanForSelf(user);
 
     return {
-      data: this.toDriverProfileResponse(deliveryman),
+      data: await this.resolveMediaResponse(
+        this.toDriverProfileResponse(deliveryman),
+      ),
       message: 'Deliveryman profile fetched successfully',
     };
   }
@@ -227,10 +231,11 @@ export class DeliverymenService {
       phone: dto.phone?.trim(),
       vehicleType: dto.vehicleType,
       vehicleNumber: dto.vehicleNumber,
+      avatarUrl: dto.avatarUrl,
     });
 
     return {
-      data: this.toDriverProfileResponse(data),
+      data: await this.resolveMediaResponse(this.toDriverProfileResponse(data)),
       message: 'Deliveryman profile updated successfully',
     };
   }
@@ -644,6 +649,7 @@ export class DeliverymenService {
       phone: string;
       vehicleType?: string | null;
       vehicleNumber?: string | null;
+      avatarUrl?: string | null;
       twoFactorEnabled?: boolean;
       status: DeliverymanStatus;
       currentLat?: Prisma.Decimal | null;
@@ -666,7 +672,7 @@ export class DeliverymenService {
         firstName: deliveryman.firstName,
         lastName: deliveryman.lastName,
         phone: deliveryman.phone,
-        avatarUrl: null,
+        avatarUrl: deliveryman.avatarUrl ?? null,
         bio: null,
       },
       vehicle: {
@@ -687,6 +693,10 @@ export class DeliverymenService {
       isActive: deliveryman.isActive,
       deletedAt: deliveryman.deletedAt ?? null,
     });
+  }
+
+  private async resolveMediaResponse<T>(data: T): Promise<T> {
+    return (await this.storageService?.resolveMediaUrlsDeep(data)) ?? data;
   }
 
   private buildEarningsPeriod<

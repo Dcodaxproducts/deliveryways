@@ -6,12 +6,14 @@ import { DeliverymenService } from './deliverymen.service';
 import { DeliverymenRepository } from './deliverymen.repository';
 import { OrdersService } from '../orders/orders.service';
 import { AddressesService } from '../addresses/addresses.service';
+import { StorageService } from '../storage/storage.service';
 
 describe('DeliverymenService', () => {
   let service: DeliverymenService;
   let repository: Partial<Record<keyof DeliverymenRepository, jest.Mock>>;
   let ordersService: Partial<Record<keyof OrdersService, jest.Mock>>;
   let addressesService: Partial<Record<keyof AddressesService, jest.Mock>>;
+  let storageService: Partial<Record<keyof StorageService, jest.Mock>>;
 
   const adminUser = {
     uid: 'user-1',
@@ -70,6 +72,9 @@ describe('DeliverymenService', () => {
       update: jest.fn(),
       remove: jest.fn(),
     };
+    storageService = {
+      resolveMediaUrlsDeep: jest.fn(<T>(value: T) => Promise.resolve(value)),
+    };
 
     service = new DeliverymenService(
       repository as unknown as DeliverymenRepository,
@@ -93,6 +98,7 @@ describe('DeliverymenService', () => {
           findFirst: jest.fn().mockResolvedValue(null),
         },
       } as never,
+      storageService as unknown as StorageService,
     );
   });
 
@@ -420,6 +426,21 @@ describe('DeliverymenService', () => {
   });
 
   it('returns driver profile with vehicle info', async () => {
+    storageService.resolveMediaUrlsDeep!.mockResolvedValueOnce({
+      ...deliveryman,
+      profile: {
+        firstName: 'Bilal',
+        lastName: 'Shah',
+        phone: '+923001112233',
+        avatarUrl: 'https://signed.example/avatar.png',
+        bio: null,
+      },
+      vehicle: {
+        type: 'bike',
+        number: 'ABC-123',
+      },
+    });
+
     const result = await service.myProfile({
       uid: 'dm-1',
       role: 'DELIVERYMAN',
@@ -430,6 +451,12 @@ describe('DeliverymenService', () => {
       number: 'ABC-123',
     });
     expect(result.data.profile.firstName).toBe('Bilal');
+    expect(storageService.resolveMediaUrlsDeep).toHaveBeenCalled();
+    const [mediaPayload] = (storageService.resolveMediaUrlsDeep as jest.Mock)
+      .mock.calls[0] as Array<{
+      profile: { avatarUrl: string | null };
+    }>;
+    expect(mediaPayload.profile.avatarUrl).toBeNull();
   });
 
   it('updates deliveryman own profile and vehicle info', async () => {
@@ -459,6 +486,7 @@ describe('DeliverymenService', () => {
       phone: undefined,
       vehicleType: 'car',
       vehicleNumber: 'CAR-1',
+      avatarUrl: undefined,
     });
     expect(result.data.vehicle).toEqual({
       type: 'car',

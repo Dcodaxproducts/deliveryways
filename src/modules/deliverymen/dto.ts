@@ -191,6 +191,13 @@ export class UpdateMyDeliverymanProfileDto {
   vehicleNumber?: string;
 
   @ApiPropertyOptional({
+    description: 'Avatar URL returned from the storage upload flow',
+  })
+  @IsOptional()
+  @IsString()
+  avatarUrl?: string;
+
+  @ApiPropertyOptional({
     description:
       'Accepted for driver app compatibility. Deliveryman bio is not persisted in the current schema.',
   })

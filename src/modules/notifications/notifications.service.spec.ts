@@ -137,14 +137,14 @@ describe('NotificationsService', () => {
     expect(result.data).toEqual({ total: 5, unseen: 3, seen: 2 });
   });
 
-  it('lists admin notifications for deliveryman within own branch scope', async () => {
+  it('lists deliveryman notifications for the logged-in deliveryman', async () => {
     notificationsRepository.list.mockResolvedValue({
       items: [
         {
-          id: 'notification-branch-1',
-          audience: NotificationAudience.ADMIN,
-          type: NotificationType.ORDER_PLACED,
-          subject: 'New branch order',
+          id: 'notification-deliveryman-1',
+          audience: NotificationAudience.DELIVERYMAN,
+          type: NotificationType.ORDER_STATUS_CHANGED,
+          subject: 'Order assigned',
           body: 'Order assigned in your branch',
           payload: { orderId: 'order-1' },
           seenAt: null,
@@ -178,12 +178,13 @@ describe('NotificationsService', () => {
 
     expect(notificationsRepository.buildWhere).toHaveBeenCalledWith(
       expect.objectContaining({
-        audience: NotificationAudience.ADMIN,
+        audience: NotificationAudience.DELIVERYMAN,
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
+        deliverymanId: 'dm-1',
       }),
     );
-    expect(result.data[0].audience).toBe(NotificationAudience.ADMIN);
+    expect(result.data[0].audience).toBe(NotificationAudience.DELIVERYMAN);
   });
 
   it('marks a notification as seen', async () => {
@@ -217,18 +218,19 @@ describe('NotificationsService', () => {
     });
   });
 
-  it('allows deliveryman to mark branch notification as seen', async () => {
+  it('allows deliveryman to mark own notification as seen', async () => {
     notificationsRepository.findById.mockResolvedValue({
-      id: 'notification-branch-1',
-      audience: NotificationAudience.ADMIN,
+      id: 'notification-deliveryman-1',
+      audience: NotificationAudience.DELIVERYMAN,
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
       recipientUserId: null,
+      deliverymanId: 'dm-1',
       recipientEmail: null,
       channel: NotificationChannel.IN_APP,
     });
     notificationsRepository.markSeen.mockResolvedValue({
-      id: 'notification-branch-1',
+      id: 'notification-deliveryman-1',
       seenAt: new Date('2026-03-27T10:30:00.000Z'),
     });
 
@@ -239,10 +241,10 @@ describe('NotificationsService', () => {
         bid: 'branch-1',
         role: 'DELIVERYMAN',
       } as never,
-      'notification-branch-1',
+      'notification-deliveryman-1',
     );
 
-    expect(result.data.id).toBe('notification-branch-1');
+    expect(result.data.id).toBe('notification-deliveryman-1');
     expect(result.data.isSeen).toBe(true);
   });
 
@@ -300,6 +302,59 @@ describe('NotificationsService', () => {
         audience: NotificationAudience.ADMIN,
         channel: NotificationChannel.IN_APP,
         type: NotificationType.ORDER_PLACED,
+      }),
+    );
+  });
+
+  it('creates deliveryman in-app notification when assigned order status changes', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      deliverymanId: 'dm-1',
+      totalAmount: 450,
+      status: 'OUT_FOR_DELIVERY',
+      paymentStatus: 'PAID',
+      customer: {
+        email: 'customer@example.com',
+        profile: {
+          firstName: 'Bilal',
+        },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+      },
+    });
+    notificationsRepository.create
+      .mockResolvedValueOnce({
+        id: 'customer-notification-1',
+        recipientEmail: 'customer@example.com',
+        subject: 'Order order-1 is now OUT_FOR_DELIVERY',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'deliveryman-notification-1',
+        recipientEmail: null,
+        subject: 'Order order-1 is now OUT_FOR_DELIVERY',
+        body: 'body',
+      });
+    notificationsRepository.updateDelivery.mockResolvedValue({
+      id: 'customer-notification-1',
+      status: NotificationStatus.SENT,
+    });
+
+    await service.notifyOrderStatusChanged('order-1');
+
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        audience: NotificationAudience.DELIVERYMAN,
+        channel: NotificationChannel.IN_APP,
+        type: NotificationType.ORDER_STATUS_CHANGED,
+        deliveryman: { connect: { id: 'dm-1' } },
       }),
     );
   });

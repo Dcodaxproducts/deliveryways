@@ -54,8 +54,10 @@ export class NotificationsRepository {
             customerId: true,
             restaurantId: true,
             branchId: true,
+            deliverymanId: true,
             status: true,
             paymentStatus: true,
+            totalAmount: true,
           },
         },
         paymentTransaction: {
@@ -79,6 +81,13 @@ export class NotificationsRepository {
         customer: {
           include: {
             profile: true,
+          },
+        },
+        deliveryman: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
           },
         },
         branch: {
@@ -119,6 +128,7 @@ export class NotificationsRepository {
     restaurantId?: string;
     branchId?: string;
     recipientUserId?: string;
+    deliverymanId?: string;
     allowedTypes?: NotificationType[];
     query: ListNotificationsDto;
   }): Prisma.NotificationWhereInput {
@@ -127,6 +137,7 @@ export class NotificationsRepository {
       restaurantId,
       branchId,
       recipientUserId,
+      deliverymanId,
       allowedTypes,
       query,
     } = input;
@@ -143,6 +154,7 @@ export class NotificationsRepository {
       ...(query.type ? { type: query.type } : {}),
       ...(query.channel ? { channel: query.channel } : {}),
       ...(recipientUserId ? { recipientUserId } : {}),
+      ...(deliverymanId ? { deliverymanId } : {}),
       ...(allowedTypes?.length ? { type: { in: allowedTypes } } : {}),
       ...(query.seen === undefined
         ? {}
@@ -182,8 +194,10 @@ export class NotificationsRepository {
               customerId: true,
               restaurantId: true,
               branchId: true,
+              deliverymanId: true,
               status: true,
               paymentStatus: true,
+              totalAmount: true,
             },
           },
           paymentTransaction: {

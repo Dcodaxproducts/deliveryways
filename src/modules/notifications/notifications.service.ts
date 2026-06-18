@@ -42,6 +42,11 @@ const ADMIN_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.PAYMENT_REFUNDED,
 ];
 
+const DELIVERYMAN_NOTIFICATION_TYPES: NotificationType[] = [
+  NotificationType.ORDER_STATUS_CHANGED,
+  NotificationType.ORDER_CANCELLED,
+];
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -56,6 +61,7 @@ export class NotificationsService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
       recipientUserId: scope.recipientUserId,
+      deliverymanId: scope.deliverymanId,
       allowedTypes: scope.allowedTypes,
       query,
     });
@@ -78,6 +84,7 @@ export class NotificationsService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
       recipientUserId: scope.recipientUserId,
+      deliverymanId: scope.deliverymanId,
       allowedTypes: scope.allowedTypes,
       query,
     });
@@ -132,6 +139,7 @@ export class NotificationsService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
       recipientUserId: scope.recipientUserId,
+      deliverymanId: scope.deliverymanId,
       allowedTypes: scope.allowedTypes,
       query,
     });
@@ -267,6 +275,26 @@ export class NotificationsService {
           branchName: order.branch.name,
           status: order.status,
           customerId: order.customerId,
+        },
+      });
+    }
+
+    if (order.deliverymanId) {
+      await this.createDeliverymanInAppNotification({
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
+        deliverymanId: order.deliverymanId,
+        orderId: order.id,
+        type,
+        subject: `Order ${order.id} is now ${order.status}`,
+        body: `${order.branch.name} order ${order.id} is now ${order.status}.`,
+        payload: {
+          orderId: order.id,
+          branchName: order.branch.name,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          totalAmount: Number(order.totalAmount),
         },
       });
     }
@@ -596,6 +624,35 @@ export class NotificationsService {
     });
   }
 
+  private async createDeliverymanInAppNotification(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    deliverymanId: string;
+    orderId?: string;
+    type: NotificationType;
+    subject: string;
+    body: string;
+    payload?: Record<string, unknown>;
+  }) {
+    return this.notificationsRepository.create({
+      tenant: { connect: { id: input.tenantId } },
+      restaurant: { connect: { id: input.restaurantId } },
+      branch: { connect: { id: input.branchId } },
+      deliveryman: { connect: { id: input.deliverymanId } },
+      order: input.orderId ? { connect: { id: input.orderId } } : undefined,
+      recipientEmail: null,
+      audience: NotificationAudience.DELIVERYMAN,
+      channel: NotificationChannel.IN_APP,
+      status: NotificationStatus.SENT,
+      sentAt: new Date(),
+      type: input.type,
+      subject: input.subject,
+      body: input.body,
+      payload: input.payload as Prisma.InputJsonValue | undefined,
+    });
+  }
+
   private async createAndDispatchAdminEmail(input: {
     tenantId: string;
     restaurantId: string;
@@ -682,6 +739,7 @@ export class NotificationsService {
       restaurantId: string;
       branchId: string;
       recipientUserId: string | null;
+      deliverymanId?: string | null;
     },
   ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
@@ -696,6 +754,22 @@ export class NotificationsService {
       }
 
       if (notification.recipientUserId !== user.uid) {
+        throw new ForbiddenException(
+          'You do not have access to this notification',
+        );
+      }
+
+      return;
+    }
+
+    if (notification.audience === NotificationAudience.DELIVERYMAN) {
+      if (user.role !== 'DELIVERYMAN') {
+        throw new ForbiddenException(
+          'You do not have access to this notification',
+        );
+      }
+
+      if (notification.deliverymanId !== user.uid) {
         throw new ForbiddenException(
           'You do not have access to this notification',
         );
@@ -762,11 +836,12 @@ export class NotificationsService {
       }
 
       return {
-        audience: NotificationAudience.ADMIN,
+        audience: NotificationAudience.DELIVERYMAN,
         restaurantId: user.rid,
         branchId: user.bid,
         recipientUserId: undefined,
-        allowedTypes: ADMIN_NOTIFICATION_TYPES,
+        deliverymanId: user.uid,
+        allowedTypes: DELIVERYMAN_NOTIFICATION_TYPES,
       };
     }
 
