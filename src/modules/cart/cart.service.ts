@@ -390,7 +390,7 @@ export class CartService {
     );
 
     return {
-      data: quote.data,
+      data: this.toCartQuoteResponse(quote.data),
       message: 'Cart address updated successfully',
     };
   }
@@ -442,7 +442,7 @@ export class CartService {
     return {
       data: {
         cart: await this.buildCartResponse(updatedCart),
-        quote: quote.data,
+        quote: this.toCartQuoteResponse(quote.data),
       },
       message: 'Cart coupon updated successfully',
     };
@@ -782,7 +782,7 @@ export class CartService {
       await this.toQuotePayload(cart),
     );
     return {
-      data: quote.data,
+      data: this.toCartQuoteResponse(quote.data),
       message: 'Cart quote generated successfully',
     };
   }
@@ -1404,6 +1404,8 @@ export class CartService {
       ? await this.getCartQuoteForResponse(user, cart)
       : null;
 
+    const cartQuote = quote ? this.toCartQuoteResponse(quote.data) : null;
+
     return this.resolveMediaResponse({
       id: cart.id,
       restaurantId: cart.restaurantId,
@@ -1419,11 +1421,22 @@ export class CartService {
       customerNote: cart.customerNote,
       note: cart.customerNote,
       items: displayItems,
-      ...(quote ? this.extractCartBillSummary(quote.data) : {}),
-      ...(quote ? { quote: quote.data } : {}),
+      ...(cartQuote ? this.extractCartBillSummary(cartQuote) : {}),
+      ...(cartQuote ? { quote: cartQuote } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
+  }
+
+  private toCartQuoteResponse<T>(quoteData: T): T {
+    if (!quoteData || typeof quoteData !== 'object') {
+      return quoteData;
+    }
+
+    const quote = { ...(quoteData as Record<string, unknown>) };
+    delete quote.chargeBreakdown;
+
+    return quote as T;
   }
 
   private extractCartBillSummary(quoteData: unknown) {
@@ -1437,7 +1450,6 @@ export class CartService {
       'taxAmount',
       'deliveryFee',
       'serviceChargeAmount',
-      'chargeBreakdown',
       'tipAmount',
       'discountAmount',
       'walletAppliedAmount',

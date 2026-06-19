@@ -307,6 +307,19 @@ describe('CartService', () => {
         taxAmount: 0,
         deliveryFee: 250,
         discountAmount: 100,
+        chargeBreakdown: {
+          taxes: [
+            {
+              code: 'STANDARD',
+              label: 'Standard tax',
+              percentage: 19,
+              amount: 171,
+            },
+          ],
+          serviceCharges: [],
+          totalTaxAmount: 171,
+          totalServiceChargeAmount: 0,
+        },
         totalAmount: 1050,
         payableAmount: 1050,
         couponCode: 'SAVE10',
@@ -373,6 +386,9 @@ describe('CartService', () => {
       payableAmount: 1050,
       couponCode: 'SAVE10',
     });
+    expect((result.data as { quote?: unknown }).quote).not.toHaveProperty(
+      'chargeBreakdown',
+    );
     expect(result.data).toMatchObject({
       subtotal: 900,
       taxAmount: 0,
@@ -382,6 +398,7 @@ describe('CartService', () => {
       payableAmount: 1050,
       couponCode: 'SAVE10',
     });
+    expect(result.data).not.toHaveProperty('chargeBreakdown');
   });
 
   it('prices complete fixed combo deal rows at the deal fixed price in cart response', async () => {
@@ -3395,7 +3412,13 @@ describe('CartService', () => {
     cartRepository.findOwnedAddress.mockResolvedValue({ id: 'address-1' });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
     ordersService.quote.mockResolvedValue({
-      data: { totalAmount: 900, deliveryFee: 100 },
+      data: {
+        totalAmount: 900,
+        deliveryFee: 100,
+        chargeBreakdown: {
+          taxes: [{ code: 'STANDARD', label: 'Standard tax', amount: 50 }],
+        },
+      },
       message: 'Order quote generated successfully',
     });
 
@@ -3413,6 +3436,7 @@ describe('CartService', () => {
       deliveryAddress: { connect: { id: 'address-1' } },
     });
     expect(ordersService.quote).toHaveBeenCalled();
+    expect(result.data).not.toHaveProperty('chargeBreakdown');
     expect(result.message).toBe('Cart address updated successfully');
   });
 
@@ -3458,6 +3482,9 @@ describe('CartService', () => {
     ordersService.quote.mockResolvedValue({
       data: {
         subtotal: 1100,
+        chargeBreakdown: {
+          taxes: [{ code: 'STANDARD', label: 'Standard tax', amount: 209 }],
+        },
         discountAmount: 301,
         totalAmount: 799,
         appliedPromotion: {
@@ -3503,6 +3530,7 @@ describe('CartService', () => {
       discountValue: 799,
       discountAmount: 301,
     });
+    expect(result.data).not.toHaveProperty('chargeBreakdown');
     expect(result.data.discountAmount).toBe(301);
   });
 
@@ -3551,6 +3579,9 @@ describe('CartService', () => {
     ordersService.quoteForCouponValidation.mockResolvedValue({
       data: {
         couponCode: 'SAVE10',
+        chargeBreakdown: {
+          taxes: [{ code: 'STANDARD', label: 'Standard tax', amount: 50 }],
+        },
         discountAmount: 100,
         totalAmount: 400,
       },
@@ -3580,6 +3611,7 @@ describe('CartService', () => {
       couponCode: 'SAVE10',
     });
     expect(result.data.quote.discountAmount).toBe(100);
+    expect(result.data.quote).not.toHaveProperty('chargeBreakdown');
     expect(result.data.cart.couponCode).toBe('SAVE10');
     expect(result.message).toBe('Cart coupon updated successfully');
   });
