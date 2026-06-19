@@ -400,4 +400,78 @@ describe('AdminUsersService', () => {
       expect(usersService.softDeleteUser).not.toHaveBeenCalled();
     });
   });
+
+  describe('approveBusinessAdmin', () => {
+    it('marks a pending business admin approved and verified', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          isApproved: false,
+          isVerified: false,
+          deletedAt: null,
+        }),
+        setApprovalStatus: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          isApproved: true,
+          isVerified: true,
+        }),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      const result = await service.approveBusinessAdmin(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'business-admin-1',
+      );
+
+      expect(usersService.setApprovalStatus).toHaveBeenCalledWith(
+        'business-admin-1',
+        true,
+      );
+      expect(result).toEqual({
+        data: {
+          id: 'business-admin-1',
+          isApproved: true,
+          isVerified: true,
+        },
+        message: 'Business admin approved successfully',
+      });
+    });
+
+    it('repairs an approved business admin that is still unverified', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          isApproved: true,
+          isVerified: false,
+          deletedAt: null,
+        }),
+        setApprovalStatus: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          isApproved: true,
+          isVerified: true,
+        }),
+      };
+
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await service.approveBusinessAdmin(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'business-admin-1',
+      );
+
+      expect(usersService.setApprovalStatus).toHaveBeenCalledWith(
+        'business-admin-1',
+        true,
+      );
+    });
+  });
 });

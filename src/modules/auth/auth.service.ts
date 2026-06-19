@@ -1416,11 +1416,12 @@ export class AuthService {
       );
     }
 
-    if (dbUser.isApproved) {
+    if (dbUser.isApproved && dbUser.isVerified) {
       return {
         data: {
           id: dbUser.id,
           isApproved: dbUser.isApproved,
+          isVerified: dbUser.isVerified,
         },
         message: 'Business admin already approved',
       };
@@ -1435,6 +1436,7 @@ export class AuthService {
       data: {
         id: updated.id,
         isApproved: updated.isApproved,
+        isVerified: updated.isVerified,
       },
       message: 'Business admin approved successfully',
     };

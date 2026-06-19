@@ -220,7 +220,10 @@ export class UsersService {
   }
 
   async setApprovalStatus(userId: string, isApproved: boolean) {
-    return this.usersRepository.update(userId, { isApproved });
+    return this.usersRepository.update(userId, {
+      isApproved,
+      ...(isApproved ? { isVerified: true } : {}),
+    });
   }
 
   async setActiveStatus(userId: string, isActive: boolean) {
