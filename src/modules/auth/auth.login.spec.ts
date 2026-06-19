@@ -296,6 +296,99 @@ describe('AuthService login', () => {
     expect(result.data.user.branchId).toBeNull();
   });
 
+  it('rejects business admin login when registration verification is pending', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'business-admin-1',
+        email: 'owner@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        isVerified: false,
+        isApproved: true,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
+
+    await expect(
+      service.login({
+        email: 'owner@example.com',
+        password: 'Password@123',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      }),
+    ).rejects.toThrow('Your tenant profile is pending verification');
+
+    expect(usersService.setRefreshTokenHash).not.toHaveBeenCalled();
+  });
+
+  it('rejects business admin login when super admin approval is pending', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'business-admin-1',
+        email: 'owner@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        isVerified: true,
+        isApproved: false,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
+
+    await expect(
+      service.login({
+        email: 'owner@example.com',
+        password: 'Password@123',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      }),
+    ).rejects.toThrow('Your tenant profile is pending super admin approval');
+
+    expect(usersService.setRefreshTokenHash).not.toHaveBeenCalled();
+  });
+
+  it('rejects business admin login when platform access is inactive', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'business-admin-1',
+        email: 'owner@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isActive: false,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
+
+    await expect(
+      service.login({
+        email: 'owner@example.com',
+        password: 'Password@123',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      }),
+    ).rejects.toThrow('Your account is inactive');
+
+    expect(usersService.setRefreshTokenHash).not.toHaveBeenCalled();
+  });
+
   it('uses role to resolve branch admin when email is shared with business admin', async () => {
     usersService.findManyForDevResolution!.mockResolvedValue([
       {

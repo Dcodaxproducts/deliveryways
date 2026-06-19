@@ -649,11 +649,7 @@ export class AuthService {
 
     const loginDeletionState = this.resolveRecoverableLoginState(user);
 
-    if (user.role === 'BUSINESS_ADMIN' && !user.isApproved) {
-      throw new ForbiddenException(
-        'Your tenant profile is pending super admin approval',
-      );
-    }
+    this.assertBusinessAdminLoginAccess(user);
 
     if (!user.isActive && !loginDeletionState) {
       throw new ForbiddenException('Your account is inactive');
@@ -763,6 +759,33 @@ export class AuthService {
       }),
       message: 'Account deletion cancelled successfully',
     };
+  }
+
+  private assertBusinessAdminLoginAccess(user: {
+    role: string;
+    isVerified: boolean;
+    isApproved: boolean;
+    isActive: boolean;
+  }) {
+    if (user.role !== 'BUSINESS_ADMIN') {
+      return;
+    }
+
+    if (!user.isVerified) {
+      throw new ForbiddenException(
+        'Your tenant profile is pending verification',
+      );
+    }
+
+    if (!user.isApproved) {
+      throw new ForbiddenException(
+        'Your tenant profile is pending super admin approval',
+      );
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenException('Your account is inactive');
+    }
   }
 
   async loginStaff(dto: LoginDto) {
