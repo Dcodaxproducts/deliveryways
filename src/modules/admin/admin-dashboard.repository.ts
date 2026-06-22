@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DeliverymanStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../database';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   AdminDashboardTopRestaurantsRange,
   AdminDashboardTrendRange,
@@ -152,7 +153,10 @@ export interface AdminDashboardScope {
 
 @Injectable()
 export class AdminDashboardRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly globalSettingsService?: GlobalSettingsService,
+  ) {}
 
   async getOverview(): Promise<AdminDashboardOverview> {
     const [
@@ -332,7 +336,10 @@ export class AdminDashboardRepository {
       totalRevenueInRange: Number(
         points.reduce((sum, point) => sum + point.value, 0).toFixed(2),
       ),
-      currency: transactions[0]?.currency ?? 'PKR',
+      currency:
+        transactions[0]?.currency ??
+        (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+        'PKR',
       points,
     };
   }

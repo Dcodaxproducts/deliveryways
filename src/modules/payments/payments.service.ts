@@ -28,6 +28,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { StripePaymentsService } from './stripe-payments.service';
 import {
   CreateWalletTopUpDto,
@@ -54,6 +55,7 @@ export class PaymentsService {
     private readonly notificationsService: NotificationsService,
     private readonly stripePaymentsService: StripePaymentsService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async createAttempt(
@@ -396,6 +398,7 @@ export class PaymentsService {
     return (
       this.readRestaurantCurrency(restaurant?.settings) ??
       fallbackCurrency?.trim().toUpperCase() ??
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
       this.stripePaymentsService.getDefaultCurrency()
     );
   }

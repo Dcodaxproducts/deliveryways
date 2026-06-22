@@ -13,6 +13,7 @@ import { PrismaService } from '../../database';
 import { OrdersService } from '../orders/orders.service';
 import { AddressesService } from '../addresses/addresses.service';
 import { StorageService } from '../storage/storage.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   CreateAddressDto,
   ListAddressesDto,
@@ -40,6 +41,7 @@ export class DeliverymenService {
     private readonly addressesService: AddressesService,
     private readonly prisma: PrismaService,
     private readonly storageService?: StorageService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateDeliverymanDto) {
@@ -748,13 +750,17 @@ export class DeliverymenService {
       select: { settings: true },
     });
 
-    return this.readStringValue(restaurant?.settings, [
-      ['customerApp', 'currency'],
-      ['checkout', 'currency'],
-      ['payments', 'currency'],
-      ['currency'],
-      ['defaultCurrency'],
-    ]);
+    return (
+      this.readStringValue(restaurant?.settings, [
+        ['customerApp', 'currency'],
+        ['checkout', 'currency'],
+        ['payments', 'currency'],
+        ['currency'],
+        ['defaultCurrency'],
+      ]) ??
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+      'PKR'
+    );
   }
 
   private readStringValue(

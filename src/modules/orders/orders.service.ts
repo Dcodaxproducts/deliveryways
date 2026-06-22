@@ -29,6 +29,7 @@ import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -184,6 +185,7 @@ export class OrdersService {
     private readonly orderTrackingRealtimeService: OrderTrackingRealtimeService,
     private readonly storageService?: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -1623,7 +1625,11 @@ export class OrdersService {
       select: { settings: true },
     });
 
-    return this.readRestaurantCurrency(restaurant?.settings) ?? 'PKR';
+    return (
+      this.readRestaurantCurrency(restaurant?.settings) ??
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+      'PKR'
+    );
   }
 
   private readRestaurantCurrency(

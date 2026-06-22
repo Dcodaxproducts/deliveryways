@@ -7,6 +7,7 @@ import { StorageModule } from '../storage/storage.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { DeliverymenModule } from '../deliverymen/deliverymen.module';
 import { MenuModule } from '../menu/menu.module';
+import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 import { AdminDealsController } from './admin-deals.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
@@ -37,6 +38,7 @@ import { AdminImportsService } from './admin-imports.service';
     CouponsModule,
     DeliverymenModule,
     MenuModule,
+    GlobalSettingsModule,
   ],
   controllers: [
     AdminUsersController,

@@ -21,6 +21,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { AdjustCustomerLoyaltyPointsDto, UpdateLoyaltyProgramDto } from './dto';
 import { LoyaltyWalletRepository } from './loyalty-wallet.repository';
 
@@ -65,6 +66,7 @@ export class LoyaltyWalletService {
   constructor(
     private readonly repository: LoyaltyWalletRepository,
     private readonly prisma: PrismaService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async getAdminCustomerLoyalty(user: AuthUserContext, customerId: string) {
@@ -1223,6 +1225,7 @@ export class LoyaltyWalletService {
         ['wallet', 'currency'],
       ]) ??
       restaurantCurrency ??
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
       'PKR';
 
     return this.repository.createWalletAccount(

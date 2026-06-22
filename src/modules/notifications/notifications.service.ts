@@ -15,6 +15,7 @@ import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { MailerService } from '../mailer/mailer.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   ListNotificationsDto,
   RegisterPushTokenDto,
@@ -61,6 +62,7 @@ export class NotificationsService {
     private readonly notificationsRepository: NotificationsRepository,
     private readonly mailerService: MailerService,
     private readonly pushNotificationsService: PushNotificationsService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async list(user: AuthUserContext, query: ListNotificationsDto) {
@@ -240,6 +242,9 @@ export class NotificationsService {
       throw new NotFoundException('Order not found');
     }
 
+    const currency =
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR';
+
     await this.createAndDispatchCustomerEmail({
       tenantId: order.tenantId,
       restaurantId: order.restaurantId,
@@ -254,6 +259,7 @@ export class NotificationsService {
         order.id,
         order.branch.name,
         Number(order.totalAmount),
+        currency,
       ),
       payload: {
         orderId: order.id,
@@ -269,7 +275,7 @@ export class NotificationsService {
       orderId: order.id,
       type: NotificationType.ORDER_PLACED,
       subject: `New order ${order.id}`,
-      body: `${order.branch.name} received a new order for PKR ${Number(order.totalAmount).toFixed(2)}.`,
+      body: `${order.branch.name} received a new order for ${currency} ${Number(order.totalAmount).toFixed(2)}.`,
       payload: {
         orderId: order.id,
         branchName: order.branch.name,
@@ -1088,10 +1094,11 @@ export class NotificationsService {
     orderId: string,
     branchName: string,
     totalAmount: number,
+    currency: string,
   ): string {
     const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
 
-    return `${greeting}\n\nYour order ${orderId} has been placed successfully at ${branchName}. Total payable amount: PKR ${totalAmount.toFixed(2)}.`;
+    return `${greeting}\n\nYour order ${orderId} has been placed successfully at ${branchName}. Total payable amount: ${currency} ${totalAmount.toFixed(2)}.`;
   }
 
   private buildOrderStatusBody(

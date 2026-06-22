@@ -89,6 +89,14 @@ export class GlobalSettingsService {
     };
   }
 
+  async getDefaultCurrencyCode(): Promise<string> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return data.defaultCurrency.trim().toUpperCase();
+  }
+
   async updateSettings(user: AuthUserContext, dto: UpdateGlobalSettingsDto) {
     const current = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),

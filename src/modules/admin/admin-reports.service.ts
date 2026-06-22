@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AuthUserContext } from '../../common/decorators';
 import { MailerService } from '../mailer/mailer.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { UserRoleEnum } from '../../common/enums';
 import {
   AdminReportsRepository,
@@ -34,6 +35,7 @@ export class AdminReportsService {
   constructor(
     private readonly adminReportsRepository: AdminReportsRepository,
     private readonly mailerService?: MailerService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async exportMenuCsv(
@@ -403,7 +405,7 @@ export class AdminReportsService {
     }
 
     return {
-      data: this.toInvoiceDetails(invoice),
+      data: await this.toInvoiceDetails(invoice),
       message: 'Invoice fetched successfully',
     };
   }
@@ -414,13 +416,13 @@ export class AdminReportsService {
     query: AdminReportsScopedQueryDto,
   ) {
     const invoice = await this.getInvoiceOrder(user, orderId, query);
-    const details = this.toInvoiceDetails(invoice);
+    const details = await this.toInvoiceDetails(invoice);
     const invoiceNumber = details.invoiceNumber;
 
     return {
       fileName: `${invoiceNumber}.pdf`,
       mimeType: 'application/pdf',
-      content: this.generateInvoicePdf(invoice),
+      content: await this.generateInvoicePdf(invoice),
     };
   }
 
@@ -431,10 +433,10 @@ export class AdminReportsService {
   ) {
     const invoice = await this.getInvoiceOrder(user, orderId, query);
 
-    const details = this.toInvoiceDetails(invoice);
+    const details = await this.toInvoiceDetails(invoice);
     const invoiceNumber = details.invoiceNumber;
     const fileName = `${invoiceNumber}.pdf`;
-    const pdf = this.generateInvoicePdf(invoice);
+    const pdf = await this.generateInvoicePdf(invoice);
     const recipientEmail = invoice.customer.email;
 
     if (!this.mailerService) {
@@ -446,7 +448,11 @@ export class AdminReportsService {
     await this.mailerService.sendEmail(
       recipientEmail,
       `Invoice ${invoiceNumber} for order ${invoice.id}`,
-      this.buildInvoiceEmailBody(invoice, invoiceNumber),
+      this.buildInvoiceEmailBody(
+        invoice,
+        invoiceNumber,
+        details.payment.currency,
+      ),
       {
         attachments: [
           {
@@ -629,8 +635,8 @@ export class AdminReportsService {
     return type === 'coupons' ? 'Coupons' : 'Promotions';
   }
 
-  private generateInvoicePdf(invoice: InvoiceOrder) {
-    const summary = this.toInvoiceDetails(invoice);
+  private async generateInvoicePdf(invoice: InvoiceOrder) {
+    const summary = await this.toInvoiceDetails(invoice);
     const business = summary.business;
     const customer = summary.customer;
     const lines = [
@@ -684,7 +690,11 @@ export class AdminReportsService {
     return this.buildSimplePdf(lines);
   }
 
-  private buildInvoiceEmailBody(invoice: InvoiceOrder, invoiceNumber: string) {
+  private buildInvoiceEmailBody(
+    invoice: InvoiceOrder,
+    invoiceNumber: string,
+    currency: string,
+  ) {
     const customerName = this.toInvoiceCustomer(invoice.customer).name;
 
     return [
@@ -694,7 +704,7 @@ export class AdminReportsService {
       '',
       `Restaurant: ${invoice.restaurant.name}`,
       `Branch: ${invoice.branch.name}`,
-      `Total: ${this.formatMoney(Number(invoice.totalAmount))} ${invoice.transactions[0]?.currency ?? 'PKR'}`,
+      `Total: ${this.formatMoney(Number(invoice.totalAmount))} ${currency}`,
       '',
       'Thank you for ordering with DeliveryWays.',
     ].join('\n');
@@ -791,12 +801,14 @@ export class AdminReportsService {
     };
   }
 
-  private toInvoiceDetails(
+  private async toInvoiceDetails(
     invoice: NonNullable<
       Awaited<ReturnType<AdminReportsRepository['findInvoiceOrder']>>
     >,
   ) {
-    const business = this.toInvoiceBusiness(invoice);
+    const fallbackCurrency =
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR';
+    const business = this.toInvoiceBusiness(invoice, fallbackCurrency);
     const customerBillingAddress = this.toInvoiceAddress(
       invoice.deliveryAddress,
     );
@@ -862,7 +874,7 @@ export class AdminReportsService {
     };
   }
 
-  private toInvoiceBusiness(invoice: InvoiceOrder) {
+  private toInvoiceBusiness(invoice: InvoiceOrder, fallbackCurrency: string) {
     const restaurantSettings = this.asObject(invoice.restaurant.settings);
     const branchSettings = this.asObject(invoice.branch.settings);
     const supportContact = this.asObject(invoice.restaurant.supportContact);
@@ -872,7 +884,7 @@ export class AdminReportsService {
         [branchSettings, restaurantSettings],
         [['invoice', 'currency'], ['billing', 'currency'], ['currency']],
       ) ??
-      'PKR';
+      fallbackCurrency;
 
     return {
       id: invoice.restaurant.id,

@@ -18,6 +18,7 @@ import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { MailerService } from '../mailer/mailer.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   AssignTenantSubscriptionDto,
   CreatePackagePlanDto,
@@ -81,6 +82,7 @@ export class PackagePlansService {
   constructor(
     private readonly packagePlansRepository: PackagePlansRepository,
     private readonly mailerService?: MailerService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async createPlan(user: AuthUserContext, dto: CreatePackagePlanDto) {
@@ -106,7 +108,7 @@ export class PackagePlansService {
       vatPercentage: input.vatPercentage ?? new Prisma.Decimal(0),
       payoutCycle: input.payoutCycle ?? PackagePayoutCycle.WEEKLY,
       termsDocumentUrl: input.termsDocumentUrl,
-      currency: input.currency ?? 'PKR',
+      currency: input.currency ?? (await this.resolveDefaultCurrency()),
       trialDays: input.trialDays ?? 0,
       features: input.features,
       isActive: input.isActive ?? true,
@@ -554,8 +556,9 @@ export class PackagePlansService {
     const plan = subscription
       ? this.resolveSubscriptionInvoicePlan(subscription)
       : null;
+    const defaultCurrency = await this.resolveDefaultCurrency();
     const lineItems = orders.map((order) =>
-      this.toWeeklyPayoutOrderLine(order, plan),
+      this.toWeeklyPayoutOrderLine(order, plan, defaultCurrency),
     );
     const grossAmount = lineItems.reduce(
       (sum, item) => sum.plus(item.grossAmount),
@@ -570,7 +573,7 @@ export class PackagePlansService {
       new Prisma.Decimal(0),
     ).toDecimalPlaces(2);
     const currency =
-      lineItems[0]?.currency ?? plan?.currency ?? this.resolveDefaultCurrency();
+      lineItems[0]?.currency ?? plan?.currency ?? defaultCurrency;
 
     return {
       invoiceNumber: this.buildWeeklyPayoutInvoiceNumber(
@@ -618,6 +621,7 @@ export class PackagePlansService {
     plan: ReturnType<
       PackagePlansService['resolveSubscriptionInvoicePlan']
     > | null,
+    defaultCurrency: string,
   ) {
     const grossAmount = new Prisma.Decimal(order.totalAmount).toDecimalPlaces(
       2,
@@ -640,7 +644,8 @@ export class PackagePlansService {
       grossAmount,
       platformCommissionAmount,
       restaurantPayoutAmount,
-      currency: order.transactions[0]?.currency ?? plan?.currency ?? 'PKR',
+      currency:
+        order.transactions[0]?.currency ?? plan?.currency ?? defaultCurrency,
       providerReference: order.transactions[0]?.providerRef ?? null,
     };
   }
@@ -707,8 +712,10 @@ export class PackagePlansService {
     );
   }
 
-  private resolveDefaultCurrency() {
-    return 'PKR';
+  private async resolveDefaultCurrency() {
+    return (
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR'
+    );
   }
 
   private normalizePlanInput(
