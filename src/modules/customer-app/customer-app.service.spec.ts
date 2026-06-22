@@ -2039,7 +2039,7 @@ describe('CustomerAppService', () => {
     });
   });
 
-  it('returns currency config on home screen when restaurant settings include it', async () => {
+  it('uses global currency config on home screen when restaurant settings include another currency', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -2067,7 +2067,7 @@ describe('CustomerAppService', () => {
       cuisineLimit: 12,
     });
 
-    expect(result.data.config).toEqual({ currency: 'SAR', branding: {} });
+    expect(result.data.config).toEqual({ currency: 'PKR', branding: {} });
   });
 
   it('falls back to global default currency on home screen', async () => {

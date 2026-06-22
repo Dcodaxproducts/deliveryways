@@ -1215,17 +1215,13 @@ export class LoyaltyWalletService {
       ['customerApp', 'wallet', 'balance'],
       ['wallet', 'balance'],
     ]);
-    const restaurantCurrency = await this.resolveRestaurantCurrency(
-      context.restaurantId,
-      tx,
-    );
     const legacyCurrency =
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
       this.readString(metadata, [
         ['customerApp', 'wallet', 'currency'],
         ['wallet', 'currency'],
       ]) ??
-      restaurantCurrency ??
-      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+      (await this.resolveRestaurantCurrency(context.restaurantId, tx)) ??
       'PKR';
 
     return this.repository.createWalletAccount(

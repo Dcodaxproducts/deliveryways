@@ -751,6 +751,7 @@ export class DeliverymenService {
     });
 
     return (
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
       this.readStringValue(restaurant?.settings, [
         ['customerApp', 'currency'],
         ['checkout', 'currency'],
@@ -758,7 +759,6 @@ export class DeliverymenService {
         ['currency'],
         ['defaultCurrency'],
       ]) ??
-      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
       'PKR'
     );
   }

@@ -396,9 +396,9 @@ export class PaymentsService {
     });
 
     return (
-      this.readRestaurantCurrency(restaurant?.settings) ??
-      fallbackCurrency?.trim().toUpperCase() ??
       (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+      fallbackCurrency?.trim().toUpperCase() ??
+      this.readRestaurantCurrency(restaurant?.settings) ??
       this.stripePaymentsService.getDefaultCurrency()
     );
   }

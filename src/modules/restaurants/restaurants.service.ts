@@ -19,6 +19,7 @@ import { PrismaTx } from '../../common/types';
 import { RestaurantsRepository } from './restaurants.repository';
 import { TenantsService } from '../tenants/tenants.service';
 import { StorageService } from '../storage/storage.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   CreateRestaurantCustomerAppFaqDto,
   CreateRestaurantDto,
@@ -37,6 +38,7 @@ export class RestaurantsService {
     private readonly restaurantsRepository: RestaurantsRepository,
     private readonly tenantsService: TenantsService,
     private readonly storageService: StorageService,
+    private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async create(tenantId: string, dto: CreateRestaurantDto, tx?: PrismaTx) {
@@ -658,7 +660,9 @@ export class RestaurantsService {
       supportContact: this.asObject(restaurant.supportContact),
       legalProfile: this.extractLegalProfile(restaurant.settings),
       config: {
-        currency: this.readRestaurantCurrency(restaurant.settings),
+        currency:
+          (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+          this.readRestaurantCurrency(restaurant.settings),
         branding: this.asObject(restaurant.branding),
       },
     };

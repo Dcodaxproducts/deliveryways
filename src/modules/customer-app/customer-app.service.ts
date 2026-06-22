@@ -4088,12 +4088,10 @@ export class CustomerAppService {
   }
 
   private async resolveHomeCurrency(settings: unknown): Promise<string | null> {
-    const restaurantCurrency = this.readRestaurantCurrency(settings);
-    if (restaurantCurrency) {
-      return restaurantCurrency;
-    }
-
-    return (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? null;
+    return (
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+      this.readRestaurantCurrency(settings)
+    );
   }
 
   private extractLegalProfile(settings: unknown) {

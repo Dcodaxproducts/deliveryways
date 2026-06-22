@@ -337,9 +337,7 @@ export class AdminDashboardRepository {
         points.reduce((sum, point) => sum + point.value, 0).toFixed(2),
       ),
       currency:
-        transactions[0]?.currency ??
-        (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
-        'PKR',
+        (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR',
       points,
     };
   }

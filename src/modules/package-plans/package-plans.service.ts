@@ -572,8 +572,7 @@ export class PackagePlansService {
       grossAmount.minus(platformCommissionAmount),
       new Prisma.Decimal(0),
     ).toDecimalPlaces(2);
-    const currency =
-      lineItems[0]?.currency ?? plan?.currency ?? defaultCurrency;
+    const currency = defaultCurrency;
 
     return {
       invoiceNumber: this.buildWeeklyPayoutInvoiceNumber(
@@ -644,8 +643,7 @@ export class PackagePlansService {
       grossAmount,
       platformCommissionAmount,
       restaurantPayoutAmount,
-      currency:
-        order.transactions[0]?.currency ?? plan?.currency ?? defaultCurrency,
+      currency: defaultCurrency,
       providerReference: order.transactions[0]?.providerRef ?? null,
     };
   }
@@ -946,7 +944,7 @@ export class PackagePlansService {
         snapshot.payoutCycle ??
         packagePlan.payoutCycle ??
         PackagePayoutCycle.WEEKLY,
-      currency: snapshot.currency ?? packagePlan.currency,
+      currency: packagePlan.currency,
     };
   }
 

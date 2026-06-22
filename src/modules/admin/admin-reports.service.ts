@@ -831,7 +831,7 @@ export class AdminReportsService {
       payment: {
         method: invoice.paymentMethod,
         status: invoice.paymentStatus,
-        currency: invoice.transactions[0]?.currency ?? business.currency,
+        currency: business.currency,
         paidAt: invoice.paidAt,
         providerReference: invoice.transactions[0]?.providerRef ?? null,
       },
@@ -878,13 +878,7 @@ export class AdminReportsService {
     const restaurantSettings = this.asObject(invoice.restaurant.settings);
     const branchSettings = this.asObject(invoice.branch.settings);
     const supportContact = this.asObject(invoice.restaurant.supportContact);
-    const currency =
-      invoice.transactions[0]?.currency ??
-      this.readSettingsString(
-        [branchSettings, restaurantSettings],
-        [['invoice', 'currency'], ['billing', 'currency'], ['currency']],
-      ) ??
-      fallbackCurrency;
+    const currency = fallbackCurrency;
 
     return {
       id: invoice.restaurant.id,

@@ -9,6 +9,7 @@ import { RestaurantsRepository } from './restaurants.repository';
 import { RestaurantsService } from './restaurants.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { StorageService } from '../storage/storage.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 
 describe('RestaurantsService notification settings', () => {
   let service: RestaurantsService;
@@ -45,6 +46,12 @@ describe('RestaurantsService notification settings', () => {
               (value: string | null | undefined) => value ?? null,
             ),
             resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
+          },
+        },
+        {
+          provide: GlobalSettingsService,
+          useValue: {
+            getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
           },
         },
       ],
@@ -135,7 +142,7 @@ describe('RestaurantsService notification settings', () => {
     ]);
     expect(result.data.restaurantId).toBe('restaurant-1');
     expect(result.data.config).toEqual({
-      currency: null,
+      currency: 'PKR',
       branding: {
         primaryColor: '#FF0000',
         secondaryColor: '#000000',
@@ -144,7 +151,7 @@ describe('RestaurantsService notification settings', () => {
     });
   });
 
-  it('returns customer app currency config when present in settings', async () => {
+  it('uses global customer app currency config when restaurant settings include another currency', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -168,7 +175,7 @@ describe('RestaurantsService notification settings', () => {
       rid: 'restaurant-1',
     } as never);
 
-    expect(result.data.config).toEqual({ currency: 'AED', branding: {} });
+    expect(result.data.config).toEqual({ currency: 'PKR', branding: {} });
   });
 
   it('updates restaurant legal profile without replacing other settings', async () => {

@@ -1626,8 +1626,8 @@ export class OrdersService {
     });
 
     return (
-      this.readRestaurantCurrency(restaurant?.settings) ??
       (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
+      this.readRestaurantCurrency(restaurant?.settings) ??
       'PKR'
     );
   }

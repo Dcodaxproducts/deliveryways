@@ -4016,6 +4016,9 @@ describe('OrdersService - wallet payment', () => {
       applyOrderBenefits: jest.fn(),
       awardPointsForPaidOrder: jest.fn(),
     };
+    const globalSettingsService = {
+      getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+    };
     const service = new OrdersService(
       prisma as never,
       ordersRepository as never,
@@ -4028,6 +4031,7 @@ describe('OrdersService - wallet payment', () => {
       } as never,
       undefined,
       loyaltyWalletService as never,
+      globalSettingsService as never,
     );
 
     jest
@@ -4132,6 +4136,9 @@ describe('OrdersService - wallet payment', () => {
       applyOrderBenefits: jest.fn(),
       awardPointsForPaidOrder: jest.fn(),
     };
+    const globalSettingsService = {
+      getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+    };
     const service = new OrdersService(
       prisma as never,
       ordersRepository as never,
@@ -4144,6 +4151,7 @@ describe('OrdersService - wallet payment', () => {
       } as never,
       undefined,
       loyaltyWalletService as never,
+      globalSettingsService as never,
     );
 
     jest
@@ -4240,7 +4248,7 @@ describe('OrdersService - wallet payment', () => {
       PaymentMethod.WALLET,
     );
     expect(paymentTransactionArgs.data.status).toBe(PaymentStatus.PAID);
-    expect(paymentTransactionArgs.data.currency).toBe('USD');
+    expect(paymentTransactionArgs.data.currency).toBe('PKR');
     expect(
       paymentTransactionArgs.data.amount.equals(new Prisma.Decimal(500)),
     ).toBe(true);

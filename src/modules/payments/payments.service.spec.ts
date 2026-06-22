@@ -80,6 +80,9 @@ describe('PaymentsService', () => {
       restoreOrderBenefits: jest.fn(),
       applyWalletTopUp: jest.fn(),
     };
+    const globalSettingsService = {
+      getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+    };
 
     const service = new PaymentsService(
       paymentsRepository as never,
@@ -87,6 +90,7 @@ describe('PaymentsService', () => {
       notificationsService as never,
       stripePaymentsService as never,
       loyaltyWalletService as never,
+      globalSettingsService as never,
     );
 
     return {
@@ -96,6 +100,7 @@ describe('PaymentsService', () => {
       notificationsService,
       stripePaymentsService,
       loyaltyWalletService,
+      globalSettingsService,
     };
   };
 
@@ -154,7 +159,7 @@ describe('PaymentsService', () => {
       }),
     );
     expect(stripePaymentsService.createPaymentIntent).toHaveBeenCalledWith(
-      expect.objectContaining({ currency: 'USD' }),
+      expect.objectContaining({ currency: 'PKR' }),
     );
     expect(result.paymentSession).toEqual({
       provider: 'stripe',
@@ -279,7 +284,7 @@ describe('PaymentsService', () => {
 
     expect(stripePaymentsService.createTransfer).toHaveBeenCalledWith({
       amount: 125.5,
-      currency: 'USD',
+      currency: 'PKR',
       destinationAccountId: 'acct_123',
       description: 'Weekly payout',
       idempotencyKey: undefined,
@@ -299,7 +304,7 @@ describe('PaymentsService', () => {
       expect.objectContaining({
         id: 'tr_123',
         amount: 125.5,
-        currency: 'USD',
+        currency: 'PKR',
         destinationAccountId: 'acct_123',
         createdBy: 'super-1',
       }),
@@ -308,7 +313,7 @@ describe('PaymentsService', () => {
       expect.objectContaining({
         id: 'tr_123',
         amount: 125.5,
-        currency: 'USD',
+        currency: 'PKR',
       }),
     );
   });
@@ -467,7 +472,7 @@ describe('PaymentsService', () => {
     expect(paymentsRepository.createUnchecked).toHaveBeenCalledWith(
       expect.objectContaining({
         branchId: 'branch-main-1',
-        currency: 'USD',
+        currency: 'PKR',
       }),
     );
     expect(result.paymentSession).toEqual({
