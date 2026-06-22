@@ -25,6 +25,7 @@ import {
   CreateMenuItemDto,
   DuplicateMenuItemDto,
   ListMenuItemsDto,
+  ReorderMenuItemDto,
   ReorderMenuItemsDto,
   UpdateAllergenAdditiveTemplateEntryDto,
   UpdateAllergenAdditiveTemplatesDto,
@@ -225,6 +226,18 @@ export class MenuItemController {
     @Body() dto: DuplicateMenuItemDto,
   ) {
     return this.menuItemService.duplicate(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch(':id/reorder')
+  reorderOne(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: ReorderMenuItemDto,
+  ) {
+    return this.menuItemService.reorderOne(user, id, dto);
   }
 
   @ApiBearerAuth()

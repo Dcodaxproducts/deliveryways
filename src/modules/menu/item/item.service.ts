@@ -22,6 +22,7 @@ import {
   DEFAULT_MENU_ITEM_LABELS,
   DuplicateMenuItemDto,
   ListMenuItemsDto,
+  ReorderMenuItemDto,
   ReorderMenuItemsDto,
   UpdateAllergenAdditiveTemplateEntryDto,
   UpdateAllergenAdditiveTemplatesDto,
@@ -1118,6 +1119,68 @@ export class MenuItemService {
     return {
       data: { count: dto.items.length },
       message: 'Menu items reordered successfully',
+    };
+  }
+
+  async reorderOne(user: AuthUserContext, id: string, dto: ReorderMenuItemDto) {
+    if (dto.menuId) {
+      const menu = await this.prisma.restaurantMenu.findUnique({
+        where: { id: dto.menuId },
+        select: { id: true, restaurantId: true, deletedAt: true },
+      });
+
+      if (!menu || menu.deletedAt) {
+        throw new NotFoundException('Restaurant menu not found');
+      }
+
+      await this.ensureCanAccessRestaurant(user, menu.restaurantId);
+
+      const link = await this.prisma.restaurantMenuItem.findUnique({
+        where: {
+          restaurantMenuId_menuItemId: {
+            restaurantMenuId: dto.menuId,
+            menuItemId: id,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!link) {
+        throw new BadRequestException('Item must be attached to the menu');
+      }
+
+      const data = await this.prisma.restaurantMenuItem.update({
+        where: { id: link.id },
+        data: { sortOrder: dto.sortOrder },
+        select: { menuItemId: true, restaurantMenuId: true, sortOrder: true },
+      });
+
+      return {
+        data,
+        message: 'Menu item reordered successfully',
+      };
+    }
+
+    const item = await this.prisma.menuItem.findUnique({
+      where: { id },
+      select: { id: true, restaurantId: true, deletedAt: true },
+    });
+
+    if (!item || item.deletedAt) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    await this.ensureCanAccessRestaurant(user, item.restaurantId);
+
+    const data = await this.prisma.menuItem.update({
+      where: { id },
+      data: { sortOrder: dto.sortOrder },
+      select: { id: true, sortOrder: true },
+    });
+
+    return {
+      data,
+      message: 'Menu item reordered successfully',
     };
   }
 

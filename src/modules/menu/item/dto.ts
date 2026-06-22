@@ -826,3 +826,18 @@ export class ReorderMenuItemsDto {
   @Type(() => ReorderMenuEntryDto)
   items!: ReorderMenuEntryDto[];
 }
+
+export class ReorderMenuItemDto {
+  @ApiPropertyOptional({
+    description: 'When provided, reorders this item link inside the menu',
+  })
+  @IsOptional()
+  @IsString()
+  menuId?: string;
+
+  @ApiProperty({ minimum: 0 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  sortOrder!: number;
+}

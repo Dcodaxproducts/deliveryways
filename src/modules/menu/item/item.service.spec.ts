@@ -68,6 +68,14 @@ describe('MenuItemService', () => {
       menuItem: {
         count: jest.fn().mockResolvedValue(0),
         findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      restaurantMenu: {
+        findUnique: jest.fn(),
+      },
+      restaurantMenuItem: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
       },
       modifierGroup: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -1398,5 +1406,112 @@ describe('MenuItemService', () => {
 
     expect('categoryModifierGroups' in result.data[0]).toBe(false);
     expect('modifierLinks' in result.data[0]).toBe(false);
+  });
+
+  it('reorders a single menu item globally', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuItem.findUnique.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.menuItem.update.mockResolvedValue({
+      id: 'item-1',
+      sortOrder: 4,
+    });
+
+    const result = await service.reorderOne(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'item-1',
+      { sortOrder: 4 },
+    );
+
+    expect(prisma.menuItem.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: { sortOrder: 4 },
+      select: { id: true, sortOrder: true },
+    });
+    expect(result).toEqual({
+      data: { id: 'item-1', sortOrder: 4 },
+      message: 'Menu item reordered successfully',
+    });
+  });
+
+  it('reorders a single menu item inside a restaurant menu', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.restaurantMenu.findUnique.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.restaurantMenuItem.findUnique.mockResolvedValue({ id: 'link-1' });
+    prisma.restaurantMenuItem.update.mockResolvedValue({
+      menuItemId: 'item-1',
+      restaurantMenuId: 'menu-1',
+      sortOrder: 2,
+    });
+
+    const result = await service.reorderOne(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'item-1',
+      { menuId: 'menu-1', sortOrder: 2 },
+    );
+
+    expect(prisma.restaurantMenuItem.findUnique).toHaveBeenCalledWith({
+      where: {
+        restaurantMenuId_menuItemId: {
+          restaurantMenuId: 'menu-1',
+          menuItemId: 'item-1',
+        },
+      },
+      select: { id: true },
+    });
+    expect(prisma.restaurantMenuItem.update).toHaveBeenCalledWith({
+      where: { id: 'link-1' },
+      data: { sortOrder: 2 },
+      select: { menuItemId: true, restaurantMenuId: true, sortOrder: true },
+    });
+    expect(result).toEqual({
+      data: {
+        menuItemId: 'item-1',
+        restaurantMenuId: 'menu-1',
+        sortOrder: 2,
+      },
+      message: 'Menu item reordered successfully',
+    });
+  });
+
+  it('rejects menu-specific reorder when item is not attached to the menu', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.restaurantMenu.findUnique.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.restaurantMenuItem.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.reorderOne(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'item-1',
+        { menuId: 'menu-1', sortOrder: 2 },
+      ),
+    ).rejects.toThrow('Item must be attached to the menu');
+    expect(prisma.restaurantMenuItem.update).not.toHaveBeenCalled();
   });
 });
