@@ -72,6 +72,10 @@ type CustomerCoupon = Awaited<
   ReturnType<CouponsService['getActiveCustomerCoupons']>
 >[number];
 
+type ActiveHappyHour = Awaited<
+  ReturnType<CouponsService['getActiveHappyHours']>
+>[number];
+
 type PublicPromotionScopeEntity = {
   id: string;
   name: string;
@@ -253,7 +257,11 @@ export class CustomerAppService {
     return {
       data: await Promise.all(
         this.filterAvailableMenuItems(items).map((item) =>
-          this.mapMenuItem(item, promotionContext.promotions),
+          this.mapMenuItem(
+            item,
+            promotionContext.promotions,
+            promotionContext.happyHours,
+          ),
         ),
       ),
       message: 'Favorite items fetched successfully',
@@ -525,6 +533,7 @@ export class CustomerAppService {
           this.mapCuisineCategory(
             item,
             promotionContext.promotions,
+            promotionContext.happyHours,
             translationContext,
           ),
         ),
@@ -587,6 +596,7 @@ export class CustomerAppService {
             this.mapMenuItem(
               item,
               promotionContext.promotions,
+              promotionContext.happyHours,
               translationContext,
             ),
           ),
@@ -632,6 +642,7 @@ export class CustomerAppService {
           this.mapCuisineCategory(
             item,
             promotionContext.promotions,
+            promotionContext.happyHours,
             translationContext,
           ),
         ),
@@ -681,6 +692,7 @@ export class CustomerAppService {
           this.mapMenuItem(
             item,
             promotionContext.promotions,
+            promotionContext.happyHours,
             translationContext,
           ),
         ),
@@ -817,6 +829,7 @@ export class CustomerAppService {
       data: await this.mapMenuItem(
         item,
         promotionContext.promotions,
+        promotionContext.happyHours,
         translationContext,
       ),
       message: 'Menu item fetched successfully',
@@ -981,6 +994,7 @@ export class CustomerAppService {
             this.mapCuisineCategory(
               item,
               promotionContext.promotions,
+              promotionContext.happyHours,
               translationContext,
             ),
           ),
@@ -990,6 +1004,7 @@ export class CustomerAppService {
             this.mapHomeMenuItemCard(
               item,
               promotionContext.promotions,
+              promotionContext.happyHours,
               translationContext,
             ),
           ),
@@ -2472,6 +2487,7 @@ export class CustomerAppService {
       }>;
     },
     promotions: Array<Record<string, unknown>> = [],
+    happyHours: Array<Record<string, unknown>> = [],
     translationContext?: CustomerAppTranslationContext,
   ) {
     const translatedItem = this.applyEntityTranslation(
@@ -2515,6 +2531,12 @@ export class CustomerAppService {
       effectiveBasePrice,
       promotions,
     );
+    const itemHappyHour = this.resolveBestScopedItemHappyHour(
+      item.id,
+      this.itemCategoryIds(item),
+      effectiveBasePrice,
+      happyHours,
+    );
     const normalizedVariations = this.normalizeVariations(
       variations,
       item.id,
@@ -2531,11 +2553,19 @@ export class CustomerAppService {
         translatedVariation.price,
         promotions,
       );
+      const variationHappyHour = this.resolveBestScopedItemHappyHour(
+        item.id,
+        this.itemCategoryIds(item),
+        translatedVariation.price,
+        happyHours,
+      );
 
       return {
         ...translatedVariation,
         discountedPrice: variationPromotion?.discountedAmount ?? null,
         promotion: variationPromotion ?? null,
+        happyHourDiscountedPrice: variationHappyHour?.discountedPrice ?? null,
+        happyHour: variationHappyHour ?? null,
       };
     });
 
@@ -2565,6 +2595,8 @@ export class CustomerAppService {
       basePrice: effectiveBasePrice,
       discountedBasePrice: itemPromotion?.discountedAmount ?? null,
       promotion: itemPromotion ?? null,
+      happyHourDiscountedBasePrice: itemHappyHour?.discountedPrice ?? null,
+      happyHour: itemHappyHour ?? null,
       depositAmount: item.depositAmount ? Number(item.depositAmount) : null,
       prepTimeMinutes: item.prepTimeMinutes,
       isRequired: item.isRequired ?? false,
@@ -2594,6 +2626,7 @@ export class CustomerAppService {
   private async mapHomeMenuItemCard(
     item: Parameters<CustomerAppService['mapMenuItem']>[0],
     promotions: Array<Record<string, unknown>> = [],
+    happyHours: Array<Record<string, unknown>> = [],
     translationContext?: CustomerAppTranslationContext,
   ) {
     const translatedItem = this.applyEntityTranslation(
@@ -2623,6 +2656,12 @@ export class CustomerAppService {
       effectiveBasePrice,
       promotions,
     );
+    const itemHappyHour = this.resolveBestScopedItemHappyHour(
+      item.id,
+      this.itemCategoryIds(item),
+      effectiveBasePrice,
+      happyHours,
+    );
 
     return {
       id: item.id,
@@ -2633,6 +2672,8 @@ export class CustomerAppService {
       basePrice: effectiveBasePrice,
       discountedBasePrice: itemPromotion?.discountedAmount ?? null,
       promotion: itemPromotion ?? null,
+      happyHourDiscountedBasePrice: itemHappyHour?.discountedPrice ?? null,
+      happyHour: itemHappyHour ?? null,
       prepTimeMinutes: item.prepTimeMinutes,
       dietaryFlags,
       labels: dietaryFlags,
@@ -2763,6 +2804,7 @@ export class CustomerAppService {
       items?: unknown[];
     },
     promotions: Array<Record<string, unknown>> = [],
+    happyHours: Array<Record<string, unknown>> = [],
     translationContext?: CustomerAppTranslationContext,
   ) {
     const translatedItem = this.applyEntityTranslation(
@@ -2788,11 +2830,13 @@ export class CustomerAppService {
           this.mapMenuItem(
             menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
             promotions,
+            happyHours,
             translationContext,
           ),
         ),
       ),
       promotion: this.resolveBestCategoryPromotion(item.id, promotions),
+      happyHour: this.resolveBestCategoryHappyHour(item.id, happyHours),
     };
   }
 
@@ -2834,6 +2878,35 @@ export class CustomerAppService {
           ? Number(matched.maxDiscountAmount)
           : (matched.maxDiscountAmount ?? null),
     };
+  }
+
+  private resolveBestCategoryHappyHour(
+    categoryId: string,
+    happyHours: Array<Record<string, unknown>>,
+  ) {
+    const matched = happyHours.find((happyHour) => {
+      if ((happyHour.applyMode as string) !== 'SCOPED_ITEMS') {
+        return false;
+      }
+
+      const scopedCategoryIds = this.collectPromotionScopeIds(
+        (happyHour.scopeCategory as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (happyHour.scopeCategories as Array<{
+            menuCategory: { id: string };
+          }>) ?? []
+        ).map((entry) => entry.menuCategory.id),
+      );
+
+      return scopedCategoryIds.includes(categoryId);
+    });
+
+    if (!matched) {
+      return null;
+    }
+
+    return this.buildCategoryHappyHourSummary(matched);
   }
 
   private resolveBranchClosedPeriodPopup(settings: unknown) {
@@ -2969,15 +3042,19 @@ export class CustomerAppService {
   }
 
   private async loadPromotionContext(restaurantId: string, branchId?: string) {
-    const promotions: AutoApplyPromotion[] =
-      (await this.couponsService?.getActiveAutoApplyPromotions(
-        restaurantId,
-        branchId,
-      )) ?? [];
+    const [promotions, happyHours]: [AutoApplyPromotion[], ActiveHappyHour[]] =
+      await Promise.all([
+        this.couponsService?.getActiveAutoApplyPromotions(
+          restaurantId,
+          branchId,
+        ) ?? Promise.resolve([]),
+        this.couponsService?.getActiveHappyHours(restaurantId, branchId) ??
+          Promise.resolve([]),
+      ]);
     const menuItemIds = new Set<string>();
     const categoryIds = new Set<string>();
 
-    for (const promotion of promotions) {
+    for (const promotion of [...promotions, ...happyHours]) {
       if (promotion.applyMode !== 'SCOPED_ITEMS') {
         continue;
       }
@@ -2997,6 +3074,7 @@ export class CustomerAppService {
 
     return {
       promotions,
+      happyHours,
       menuItemIds: [...menuItemIds],
       categoryIds: [...categoryIds],
     };
@@ -3336,6 +3414,143 @@ export class CustomerAppService {
     }
 
     return best;
+  }
+
+  private resolveBestScopedItemHappyHour(
+    menuItemId: string,
+    categoryIds: string[],
+    baseAmount: Prisma.Decimal,
+    happyHours: Array<Record<string, unknown>>,
+  ) {
+    let best: ReturnType<CustomerAppService['buildHappyHourPreview']> | null =
+      null;
+
+    for (const happyHour of happyHours) {
+      if ((happyHour.applyMode as string) !== 'SCOPED_ITEMS') {
+        continue;
+      }
+
+      const scopedMenuItemIds = this.collectPromotionScopeIds(
+        (happyHour.scopeMenuItem as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (happyHour.scopeMenuItems as Array<{ menuItem: { id: string } }>) ??
+          []
+        ).map((entry) => entry.menuItem.id),
+      );
+      const scopedCategoryIds = this.collectPromotionScopeIds(
+        (happyHour.scopeCategory as { id?: string } | null | undefined)?.id ??
+          null,
+        (
+          (happyHour.scopeCategories as Array<{
+            menuCategory: { id: string };
+          }>) ?? []
+        ).map((entry) => entry.menuCategory.id),
+      );
+      const matches =
+        (!scopedMenuItemIds.length && !scopedCategoryIds.length) ||
+        scopedMenuItemIds.includes(menuItemId) ||
+        categoryIds.some((categoryId) =>
+          scopedCategoryIds.includes(categoryId),
+        );
+
+      if (!matches) {
+        continue;
+      }
+
+      const preview = this.buildHappyHourPreview(
+        happyHour as {
+          id: string;
+          title: string;
+          description: string | null;
+          imageUrl?: string | null;
+          applyMode: string;
+          discountType: string;
+          discountValue: Prisma.Decimal;
+          maxDiscountAmount: Prisma.Decimal | null;
+          startsAt?: Date | null;
+          expiresAt?: Date | null;
+          activeDays?: Prisma.JsonValue | null;
+          dailyStartTime?: string | null;
+          dailyEndTime?: string | null;
+        },
+        baseAmount,
+      );
+
+      if (!best || preview.discountAmount > best.discountAmount) {
+        best = preview;
+      }
+    }
+
+    return best;
+  }
+
+  private buildCategoryHappyHourSummary(happyHour: Record<string, unknown>) {
+    return {
+      id: happyHour.id,
+      title: happyHour.title,
+      description: (happyHour.description as string | null | undefined) ?? null,
+      imageUrl: (happyHour.imageUrl as string | null | undefined) ?? null,
+      thumbnailUrl: (happyHour.imageUrl as string | null | undefined) ?? null,
+      applyMode: happyHour.applyMode,
+      discountType: happyHour.discountType,
+      discountValue: Number(happyHour.discountValue),
+      maxDiscountAmount:
+        happyHour.maxDiscountAmount instanceof Prisma.Decimal
+          ? Number(happyHour.maxDiscountAmount)
+          : ((happyHour.maxDiscountAmount as number | null | undefined) ??
+            null),
+      startsAt: (happyHour.startsAt as Date | null | undefined) ?? null,
+      expiresAt: (happyHour.expiresAt as Date | null | undefined) ?? null,
+      activeDays: this.readNumberArray(happyHour.activeDays),
+      dailyStartTime:
+        (happyHour.dailyStartTime as string | null | undefined) ?? null,
+      dailyEndTime:
+        (happyHour.dailyEndTime as string | null | undefined) ?? null,
+      isCurrentlyActive: true,
+    };
+  }
+
+  private buildHappyHourPreview(
+    happyHour: {
+      id: string;
+      title: string;
+      description: string | null;
+      imageUrl?: string | null;
+      applyMode: string;
+      discountType: string;
+      discountValue: Prisma.Decimal;
+      maxDiscountAmount: Prisma.Decimal | null;
+      startsAt?: Date | null;
+      expiresAt?: Date | null;
+      activeDays?: Prisma.JsonValue | null;
+      dailyStartTime?: string | null;
+      dailyEndTime?: string | null;
+    },
+    baseAmount: Prisma.Decimal,
+  ) {
+    const preview = this.buildScopedPromotionPreview(happyHour, baseAmount);
+
+    return {
+      id: happyHour.id,
+      title: happyHour.title,
+      description: happyHour.description,
+      imageUrl: happyHour.imageUrl ?? null,
+      thumbnailUrl: happyHour.imageUrl ?? null,
+      applyMode: preview.applyMode,
+      discountType: preview.discountType,
+      discountValue: preview.discountValue,
+      maxDiscountAmount: preview.maxDiscountAmount,
+      originalPrice: Number(baseAmount),
+      discountAmount: preview.discountAmount,
+      discountedPrice: preview.discountedAmount,
+      startsAt: happyHour.startsAt ?? null,
+      expiresAt: happyHour.expiresAt ?? null,
+      activeDays: this.readNumberArray(happyHour.activeDays),
+      dailyStartTime: happyHour.dailyStartTime ?? null,
+      dailyEndTime: happyHour.dailyEndTime ?? null,
+      isCurrentlyActive: true,
+    };
   }
 
   private buildScopedPromotionPreview(
@@ -3685,6 +3900,14 @@ export class CustomerAppService {
     }
 
     return input.filter((value): value is string => typeof value === 'string');
+  }
+
+  private readNumberArray(input: unknown): number[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((value): value is number => Number.isInteger(value));
   }
 
   private readRestaurantContactInfo(

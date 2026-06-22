@@ -170,6 +170,7 @@ describe('CustomerAppService', () => {
     const couponsService = {
       getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
       getActiveCustomerCoupons: jest.fn().mockResolvedValue([]),
+      getActiveHappyHours: jest.fn().mockResolvedValue([]),
     };
 
     const notificationsService = {
@@ -1286,6 +1287,118 @@ describe('CustomerAppService', () => {
     );
     expect('modifierLinks' in result.data.items[0]).toBe(false);
     expect('modifierGroups' in result.data.items[0]).toBe(false);
+  });
+
+  it('attaches active happy hour pricing to customer cuisine items', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: {},
+    });
+    repository.findPublicCuisine.mockResolvedValue({
+      id: 'category-1',
+      name: 'Burgers',
+      slug: 'burgers',
+      description: null,
+      imageUrl: 'https://cdn.example.com/category.png',
+    });
+    repository.listCuisineMenuItems.mockResolvedValue({
+      items: [itemFixture],
+      total: 1,
+    });
+    couponsService.getActiveHappyHours.mockResolvedValue([
+      {
+        id: 'happy-1',
+        title: 'Lunch happy hour',
+        description: '20% off burgers',
+        imageUrl: 'happy.png',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(20),
+        maxDiscountAmount: null,
+        startsAt: new Date('2026-06-01T00:00:00.000Z'),
+        expiresAt: new Date('2026-06-30T23:59:59.000Z'),
+        activeDays: [1, 2, 3, 4, 5],
+        dailyStartTime: '12:00',
+        dailyEndTime: '14:00',
+        scopeMenuItem: null,
+        scopeMenuItems: [],
+        scopeCategory: { id: 'category-1' },
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.listCuisineItems('category-1', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      page: 1,
+      limit: 10,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(couponsService.getActiveHappyHours).toHaveBeenCalledWith(
+      'restaurant-1',
+      'branch-1',
+    );
+    const item = result.data.items[0] as {
+      happyHourDiscountedBasePrice: number | null;
+      happyHour: {
+        id: string;
+        title: string;
+        discountType: string;
+        discountValue: number;
+        originalPrice: number;
+        discountedPrice: number;
+        activeDays: number[];
+        dailyStartTime: string | null;
+        dailyEndTime: string | null;
+        isCurrentlyActive: boolean;
+      } | null;
+      variations: Array<{
+        happyHourDiscountedPrice: number | null;
+        happyHour: {
+          id: string;
+          originalPrice: number;
+          discountedPrice: number;
+        } | null;
+      }>;
+    };
+
+    expect(item.happyHourDiscountedBasePrice).toBe(639.2);
+    expect(item.happyHour).toMatchObject({
+      id: 'happy-1',
+      title: 'Lunch happy hour',
+      discountType: 'PERCENTAGE',
+      discountValue: 20,
+      originalPrice: 799,
+      discountedPrice: 639.2,
+      activeDays: [1, 2, 3, 4, 5],
+      dailyStartTime: '12:00',
+      dailyEndTime: '14:00',
+      isCurrentlyActive: true,
+    });
+    expect(item.variations[0]?.happyHourDiscountedPrice).toBe(719.2);
+    expect(item.variations[0]?.happyHour).toMatchObject({
+      id: 'happy-1',
+      originalPrice: 899,
+      discountedPrice: 719.2,
+    });
   });
 
   it('applies active translations to public cuisine item responses', async () => {

@@ -66,6 +66,7 @@ describe('CouponsService', () => {
       findByCodeOrId: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
+      findActiveHappyHours: jest.fn(),
       findActivePromotionById: jest.fn(),
       findActivePromotionsForMenuItem: jest.fn().mockResolvedValue([]),
       findTenantRestaurants: jest.fn(),
@@ -836,6 +837,51 @@ describe('CouponsService', () => {
     await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
       'Coupon is not valid at this time',
     );
+
+    global.Date = originalDate;
+  });
+
+  it('returns only currently scheduled active happy hours', async () => {
+    const originalDate = global.Date;
+
+    class MockDate extends Date {
+      constructor(...args: ConstructorParameters<DateConstructor>) {
+        if (args.length) {
+          super(...args);
+          return;
+        }
+
+        super('2026-04-22T15:00:00.000Z');
+      }
+
+      static now() {
+        return new originalDate('2026-04-22T15:00:00.000Z').getTime();
+      }
+    }
+
+    global.Date = MockDate as DateConstructor;
+    repository.findActiveHappyHours!.mockResolvedValue([
+      makeCoupon({
+        id: 'happy-active',
+        activeDays: [3],
+        dailyStartTime: '14:00',
+        dailyEndTime: '17:00',
+      }),
+      makeCoupon({
+        id: 'happy-inactive',
+        activeDays: [3],
+        dailyStartTime: '18:00',
+        dailyEndTime: '20:00',
+      }),
+    ]);
+
+    const result = await service.getActiveHappyHours('rid-1', 'bid-1');
+
+    expect(repository.findActiveHappyHours).toHaveBeenCalledWith(
+      'rid-1',
+      'bid-1',
+    );
+    expect(result.map((coupon) => coupon.id)).toEqual(['happy-active']);
 
     global.Date = originalDate;
   });

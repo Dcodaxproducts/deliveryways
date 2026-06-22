@@ -304,6 +304,18 @@ export class CouponsService {
     );
   }
 
+  async getActiveHappyHours(restaurantId: string, branchId?: string) {
+    const now = new Date();
+    const happyHours = await this.couponsRepository.findActiveHappyHours(
+      restaurantId,
+      branchId,
+    );
+
+    return happyHours.filter((happyHour) =>
+      this.isCouponScheduleActive(happyHour, now),
+    );
+  }
+
   async isActiveFixedPriceDealItem(
     restaurantId: string,
     branchId: string | undefined,
