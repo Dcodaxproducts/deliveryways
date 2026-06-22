@@ -68,6 +68,10 @@ type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
 >[number];
 
+type CustomerCoupon = Awaited<
+  ReturnType<CouponsService['getActiveCustomerCoupons']>
+>[number];
+
 type PublicPromotionScopeEntity = {
   id: string;
   name: string;
@@ -711,6 +715,34 @@ export class CustomerAppService {
         ),
       ),
       message: 'Promotions fetched successfully',
+    };
+  }
+
+  async listCoupons(
+    query: ListCustomerPromotionsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const coupons =
+      (await this.couponsService?.getActiveCustomerCoupons(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+      )) ?? [];
+    const pageItems = coupons.slice(0, query.limit);
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectPromotionTranslationRefs(pageItems),
+    );
+
+    return {
+      data: await Promise.all(
+        pageItems.map((coupon) =>
+          this.mapPublicCoupon(coupon, translationContext),
+        ),
+      ),
+      message: 'Coupons fetched successfully',
     };
   }
 
@@ -3041,6 +3073,61 @@ export class CustomerAppService {
           variationId: entry.forcedVariationId ?? null,
           variation: entry.forcedVariation ?? null,
         })) ?? [],
+    };
+  }
+
+  private async mapPublicCoupon(
+    coupon: CustomerCoupon,
+    translationContext?: CustomerAppTranslationContext,
+  ) {
+    const imageUrl = await this.resolveMediaUrl(coupon.imageUrl);
+    const translatedCoupon = this.applyEntityTranslation(
+      'COUPON',
+      coupon.id,
+      coupon,
+      translationContext,
+    );
+
+    return {
+      id: coupon.id,
+      code: coupon.code,
+      title: translatedCoupon.title,
+      description: translatedCoupon.description,
+      imageUrl,
+      thumbnailUrl: imageUrl,
+      applyMode: coupon.applyMode,
+      discountType: coupon.discountType,
+      discountValue: Number(coupon.discountValue),
+      maxDiscountAmount: coupon.maxDiscountAmount
+        ? Number(coupon.maxDiscountAmount)
+        : null,
+      minOrderAmount: coupon.minOrderAmount
+        ? Number(coupon.minOrderAmount)
+        : null,
+      maxUses: coupon.maxUses,
+      maxUsesPerCustomer: coupon.maxUsesPerCustomer,
+      usedCount: coupon.usedCount,
+      startsAt: coupon.startsAt,
+      expiresAt: coupon.expiresAt,
+      branch: coupon.branch
+        ? {
+            id: coupon.branch.id,
+            name: coupon.branch.name,
+            logoUrl: await this.resolveMediaUrl(coupon.branch.logoUrl),
+            coverImage: await this.resolveMediaUrl(coupon.branch.coverImage),
+          }
+        : null,
+      restaurant: coupon.restaurant
+        ? {
+            id: coupon.restaurant.id,
+            name: coupon.restaurant.name,
+            slug: coupon.restaurant.slug,
+            logoUrl: await this.resolveMediaUrl(coupon.restaurant.logoUrl),
+            coverImage: await this.resolveMediaUrl(
+              coupon.restaurant.coverImage,
+            ),
+          }
+        : null,
     };
   }
 

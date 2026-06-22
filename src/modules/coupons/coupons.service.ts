@@ -297,6 +297,13 @@ export class CouponsService {
     );
   }
 
+  async getActiveCustomerCoupons(restaurantId: string, branchId?: string) {
+    return this.couponsRepository.findActiveCustomerCoupons(
+      restaurantId,
+      branchId,
+    );
+  }
+
   async isActiveFixedPriceDealItem(
     restaurantId: string,
     branchId: string | undefined,
