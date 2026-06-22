@@ -620,7 +620,10 @@ export class CustomerAppService {
       resolvedQuery.branchId,
     );
 
-    if (!promotionContext.categoryIds.length) {
+    if (
+      !promotionContext.categoryIds.length &&
+      !promotionContext.hasBroadHappyHour
+    ) {
       return {
         data: [],
         message: 'Promotional cuisines fetched successfully',
@@ -630,7 +633,9 @@ export class CustomerAppService {
 
     const { items, total } =
       await this.customerAppRepository.listCuisineCategories(resolvedQuery, {
-        categoryIds: promotionContext.categoryIds,
+        categoryIds: promotionContext.hasBroadHappyHour
+          ? []
+          : promotionContext.categoryIds,
       });
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
@@ -666,7 +671,8 @@ export class CustomerAppService {
     );
     if (
       !promotionContext.menuItemIds.length &&
-      !promotionContext.categoryIds.length
+      !promotionContext.categoryIds.length &&
+      !promotionContext.hasBroadHappyHour
     ) {
       return {
         data: [],
@@ -677,8 +683,12 @@ export class CustomerAppService {
     const items = await this.customerAppRepository.listPromotionalItems(
       resolvedQuery,
       {
-        menuItemIds: promotionContext.menuItemIds,
-        categoryIds: promotionContext.categoryIds,
+        menuItemIds: promotionContext.hasBroadHappyHour
+          ? []
+          : promotionContext.menuItemIds,
+        categoryIds: promotionContext.hasBroadHappyHour
+          ? []
+          : promotionContext.categoryIds,
       },
     );
     const visibleItems = this.filterAvailableMenuItems(items);
@@ -859,10 +869,16 @@ export class CustomerAppService {
         },
         { includeItems: false },
       ),
-      promotionContext.menuItemIds.length || promotionContext.categoryIds.length
+      promotionContext.menuItemIds.length ||
+      promotionContext.categoryIds.length ||
+      promotionContext.hasBroadHappyHour
         ? this.customerAppRepository.listPromotionalItems(resolvedQuery, {
-            menuItemIds: promotionContext.menuItemIds,
-            categoryIds: promotionContext.categoryIds,
+            menuItemIds: promotionContext.hasBroadHappyHour
+              ? []
+              : promotionContext.menuItemIds,
+            categoryIds: promotionContext.hasBroadHappyHour
+              ? []
+              : promotionContext.categoryIds,
           })
         : Promise.resolve([]),
       this.getFaqs(resolvedQuery, user),
@@ -2902,7 +2918,9 @@ export class CustomerAppService {
         ).map((entry) => entry.menuCategory.id),
       );
 
-      return scopedCategoryIds.includes(categoryId);
+      return (
+        !scopedCategoryIds.length || scopedCategoryIds.includes(categoryId)
+      );
     });
 
     if (!matched) {
@@ -3056,6 +3074,7 @@ export class CustomerAppService {
       ]);
     const menuItemIds = new Set<string>();
     const categoryIds = new Set<string>();
+    let hasBroadHappyHour = false;
 
     for (const promotion of [...promotions, ...happyHours]) {
       if (promotion.applyMode !== 'SCOPED_ITEMS') {
@@ -3073,6 +3092,14 @@ export class CustomerAppService {
 
       scopedMenuItemIds.forEach((id) => menuItemIds.add(id));
       scopedCategoryIds.forEach((id) => categoryIds.add(id));
+
+      if (
+        promotion.kind === 'HAPPY_HOUR' &&
+        !scopedMenuItemIds.length &&
+        !scopedCategoryIds.length
+      ) {
+        hasBroadHappyHour = true;
+      }
     }
 
     return {
@@ -3080,6 +3107,7 @@ export class CustomerAppService {
       happyHours,
       menuItemIds: [...menuItemIds],
       categoryIds: [...categoryIds],
+      hasBroadHappyHour,
     };
   }
 

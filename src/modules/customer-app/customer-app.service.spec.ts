@@ -1930,6 +1930,99 @@ describe('CustomerAppService', () => {
     expect(result.data.promotionalItems[0]).not.toHaveProperty('restaurant');
   });
 
+  it('loads broad happy hour items on the home screen', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      socialMedia: null,
+      supportContact: null,
+      branding: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue(null);
+    repository.listCuisineCategories.mockResolvedValue({
+      items: [
+        {
+          id: 'category-1',
+          name: 'Burgers',
+          slug: 'burgers',
+          description: null,
+          imageUrl: 'category.png',
+          sortOrder: 0,
+          _count: { items: 3 },
+        },
+      ],
+      total: 1,
+    });
+    repository.listPromotionalItems.mockResolvedValue([itemFixture]);
+    couponsService.getActiveHappyHours.mockResolvedValue([
+      {
+        id: 'happy-1',
+        kind: 'HAPPY_HOUR',
+        title: 'All items happy hour',
+        description: '20% off everything',
+        imageUrl: 'happy.png',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(20),
+        maxDiscountAmount: null,
+        startsAt: new Date('2026-06-01T00:00:00.000Z'),
+        expiresAt: new Date('2026-06-30T23:59:59.000Z'),
+        activeDays: [0, 1, 2, 3, 4, 5, 6],
+        dailyStartTime: '12:00',
+        dailyEndTime: '14:00',
+        scopeMenuItem: null,
+        scopeMenuItems: [],
+        scopeCategory: null,
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+      expect.objectContaining({ restaurantId: 'restaurant-1' }),
+      { menuItemIds: [], categoryIds: [] },
+    );
+    const [promotionalItem] = result.data.promotionalItems as Array<{
+      id: string;
+      happyHourDiscountedBasePrice: number | null;
+      happyHour: {
+        id: string;
+        title: string;
+        originalPrice: number;
+        discountedPrice: number;
+      } | null;
+    }>;
+    expect(promotionalItem).toMatchObject({
+      id: 'item-1',
+      happyHourDiscountedBasePrice: 639.2,
+    });
+    expect(promotionalItem?.happyHour).toMatchObject({
+      id: 'happy-1',
+      title: 'All items happy hour',
+      originalPrice: 799,
+      discountedPrice: 639.2,
+    });
+
+    const [cuisine] = result.data.cuisines as Array<{
+      id: string;
+      happyHour: { id: string } | null;
+    }>;
+    expect(cuisine).toMatchObject({ id: 'category-1' });
+    expect(cuisine?.happyHour).toMatchObject({ id: 'happy-1' });
+  });
+
   it('returns temporary closure popup on home screen', async () => {
     const { service, repository } = makeService();
     const closedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
