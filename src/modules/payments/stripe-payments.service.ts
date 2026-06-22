@@ -95,6 +95,29 @@ export class StripePaymentsService {
     });
   }
 
+  async createTransfer(input: {
+    amount: number;
+    currency?: string;
+    destinationAccountId: string;
+    description?: string;
+    metadata: Record<string, string>;
+    idempotencyKey?: string;
+  }) {
+    const stripe = this.requireStripe();
+    const currency = (input.currency ?? this.defaultCurrency).toLowerCase();
+
+    return stripe.transfers.create(
+      {
+        amount: this.toMinorUnitAmount(input.amount),
+        currency,
+        destination: input.destinationAccountId,
+        description: input.description,
+        metadata: input.metadata,
+      },
+      input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {},
+    );
+  }
+
   constructWebhookEvent(payload: Buffer | string, signature?: string) {
     const stripe = this.requireStripe();
     if (!signature) {

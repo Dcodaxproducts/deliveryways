@@ -25,9 +25,11 @@ import {
 } from '../../common/guards';
 import {
   AdminUpdatePaymentStatusDto,
+  CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
+  UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
 } from './dto';
 import type { Request } from 'express';
@@ -76,6 +78,49 @@ export class PaymentsController {
   @Get()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListPaymentsDto) {
     return this.paymentsService.list(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Get('stripe/restaurants/:restaurantId/account')
+  getRestaurantStripeAccount(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+  ) {
+    return this.paymentsService.getRestaurantStripeAccount(user, restaurantId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('stripe/restaurants/:restaurantId/account')
+  updateRestaurantStripeAccount(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: UpdateRestaurantStripeAccountDto,
+  ) {
+    return this.paymentsService.updateRestaurantStripeAccount(
+      user,
+      restaurantId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('stripe/restaurants/:restaurantId/transfers')
+  createRestaurantStripeTransfer(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: CreateRestaurantStripeTransferDto,
+  ) {
+    return this.paymentsService.createRestaurantStripeTransfer(
+      user,
+      restaurantId,
+      dto,
+    );
   }
 
   @ApiBearerAuth()

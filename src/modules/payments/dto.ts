@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -120,4 +121,68 @@ export class RefundPaymentDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+export class UpdateRestaurantStripeAccountDto {
+  @ApiPropertyOptional({ maxLength: 191 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  accountId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  payoutsEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  chargesEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  onboardingComplete?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  dashboardUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
+export class CreateRestaurantStripeTransferDto {
+  @ApiPropertyOptional()
+  @Transform(({ value }) =>
+    value === undefined || value === null || value === ''
+      ? undefined
+      : Number(value),
+  )
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @ApiPropertyOptional({ maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  currency?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @ApiPropertyOptional({ maxLength: 191 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
 }

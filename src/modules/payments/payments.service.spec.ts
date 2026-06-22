@@ -3,6 +3,31 @@ import { UserRoleEnum } from '../../common/enums';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
+  type RestaurantStripeSettingsUpdateArgs = {
+    where: { id: string };
+    data: {
+      settings: {
+        payments: {
+          stripe: {
+            accountId?: string | null;
+            payoutsEnabled?: boolean;
+            chargesEnabled?: boolean;
+            onboardingComplete?: boolean;
+            note?: string | null;
+            updatedBy?: string | null;
+            lastTransfer?: {
+              id?: string;
+              amount?: number;
+              currency?: string;
+              destinationAccountId?: string;
+              createdBy?: string;
+            };
+          };
+        };
+      };
+    };
+  };
+
   const makeService = () => {
     const paymentsRepository = {
       create: jest.fn(),
@@ -26,6 +51,8 @@ describe('PaymentsService', () => {
       },
       restaurant: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
         Promise.resolve(callback({})),
@@ -40,7 +67,9 @@ describe('PaymentsService', () => {
     const stripePaymentsService = {
       getDefaultCurrency: jest.fn().mockReturnValue('PKR'),
       getPublishableKey: jest.fn().mockReturnValue('pk_test_123'),
+      isConfigured: jest.fn().mockReturnValue(true),
       createPaymentIntent: jest.fn(),
+      createTransfer: jest.fn(),
       constructWebhookEvent: jest.fn(),
       cancelPaymentIntent: jest.fn(),
       refundPaymentIntent: jest.fn(),
@@ -137,6 +166,151 @@ describe('PaymentsService', () => {
       notificationsService.notifyPaymentAttemptCreated,
     ).toHaveBeenCalledWith('payment-1');
     expect(paymentsRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('updates restaurant Stripe account settings', async () => {
+    const { service, prisma, stripePaymentsService } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          stripe: {
+            accountId: 'acct_old',
+            payoutsEnabled: false,
+          },
+        },
+      },
+    });
+    prisma.restaurant.update.mockResolvedValue({
+      id: 'restaurant-1',
+      settings: {
+        payments: {
+          stripe: {
+            accountId: 'acct_new',
+            payoutsEnabled: true,
+            chargesEnabled: true,
+            onboardingComplete: true,
+            dashboardUrl: null,
+            note: 'Connected',
+            updatedAt: '2026-06-22T00:00:00.000Z',
+            updatedBy: 'admin-1',
+          },
+        },
+      },
+    });
+
+    const result = await service.updateRestaurantStripeAccount(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      {
+        accountId: ' acct_new ',
+        payoutsEnabled: true,
+        chargesEnabled: true,
+        onboardingComplete: true,
+        note: 'Connected',
+      },
+    );
+
+    expect(prisma.restaurant.findFirst).toHaveBeenCalledWith({
+      where: { id: 'restaurant-1', tenantId: 'tenant-1', deletedAt: null },
+      select: { id: true },
+    });
+    const restaurantUpdate = prisma.restaurant.update as jest.Mock<
+      unknown,
+      [RestaurantStripeSettingsUpdateArgs]
+    >;
+    const updateArgs = restaurantUpdate.mock.calls[0]?.[0];
+    expect(updateArgs?.where).toEqual({ id: 'restaurant-1' });
+    expect(updateArgs?.data.settings.payments.stripe).toEqual(
+      expect.objectContaining({
+        accountId: 'acct_new',
+        payoutsEnabled: true,
+        chargesEnabled: true,
+        onboardingComplete: true,
+        note: 'Connected',
+        updatedBy: 'admin-1',
+      }),
+    );
+    expect(stripePaymentsService.createTransfer).not.toHaveBeenCalled();
+    expect(result.data.stripe.accountId).toBe('acct_new');
+  });
+
+  it('creates a super-admin Stripe transfer to restaurant account', async () => {
+    const { service, prisma, stripePaymentsService } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        currency: 'USD',
+        payments: {
+          stripe: {
+            accountId: 'acct_123',
+            payoutsEnabled: true,
+            chargesEnabled: true,
+            onboardingComplete: true,
+          },
+        },
+      },
+    });
+    prisma.restaurant.findUnique.mockResolvedValue({
+      settings: { currency: 'USD' },
+    });
+    stripePaymentsService.createTransfer.mockResolvedValue({
+      id: 'tr_123',
+    });
+    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    const result = await service.createRestaurantStripeTransfer(
+      {
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'restaurant-1',
+      {
+        amount: 125.5,
+        description: 'Weekly payout',
+      },
+    );
+
+    expect(stripePaymentsService.createTransfer).toHaveBeenCalledWith({
+      amount: 125.5,
+      currency: 'USD',
+      destinationAccountId: 'acct_123',
+      description: 'Weekly payout',
+      idempotencyKey: undefined,
+      metadata: {
+        restaurantId: 'restaurant-1',
+        tenantId: 'tenant-1',
+        actorId: 'super-1',
+      },
+    });
+    const restaurantUpdate = prisma.restaurant.update as jest.Mock<
+      unknown,
+      [RestaurantStripeSettingsUpdateArgs]
+    >;
+    const updateArgs = restaurantUpdate.mock.calls[0]?.[0];
+    expect(updateArgs?.where).toEqual({ id: 'restaurant-1' });
+    expect(updateArgs?.data.settings.payments.stripe.lastTransfer).toEqual(
+      expect.objectContaining({
+        id: 'tr_123',
+        amount: 125.5,
+        currency: 'USD',
+        destinationAccountId: 'acct_123',
+        createdBy: 'super-1',
+      }),
+    );
+    expect(result.data.transfer).toEqual(
+      expect.objectContaining({
+        id: 'tr_123',
+        amount: 125.5,
+        currency: 'USD',
+      }),
+    );
   });
 
   it('marks payment paid from stripe webhook success', async () => {

@@ -18,9 +18,11 @@ import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import {
   AdminUpdatePaymentStatusDto,
+  CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
+  UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
 } from './dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -31,6 +33,18 @@ import {
   CreateWalletTopUpDto,
   GuestPurchaseGiftCardDto,
 } from '../customer-app/dto';
+
+export interface RestaurantStripeSettings {
+  accountId: string | null;
+  payoutsEnabled: boolean;
+  chargesEnabled: boolean;
+  onboardingComplete: boolean;
+  dashboardUrl: string | null;
+  note: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  lastTransfer?: Prisma.JsonObject;
+}
 
 @Injectable()
 export class PaymentsService {
@@ -422,6 +436,160 @@ export class PaymentsService {
     }
 
     return null;
+  }
+
+  async getRestaurantStripeAccount(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.requireRestaurantForStripe(
+      user,
+      restaurantId,
+    );
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        stripe: this.readRestaurantStripeSettings(restaurant.settings),
+        publishableKey: this.stripePaymentsService.getPublishableKey() ?? null,
+        configured: this.stripePaymentsService.isConfigured(),
+      },
+      message: 'Restaurant Stripe account fetched successfully',
+    };
+  }
+
+  async updateRestaurantStripeAccount(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: UpdateRestaurantStripeAccountDto,
+  ) {
+    const hasUpdates = Object.values(dto).some((value) => value !== undefined);
+    if (!hasUpdates) {
+      throw new BadRequestException(
+        'At least one Stripe account field is required',
+      );
+    }
+
+    const restaurant = await this.requireRestaurantForStripe(
+      user,
+      restaurantId,
+    );
+    const current = this.readRestaurantStripeSettings(restaurant.settings);
+    const nextSettings = this.writeRestaurantStripeSettings(
+      restaurant.settings,
+      {
+        accountId:
+          dto.accountId !== undefined
+            ? (this.resolveOptionalString(dto.accountId) ?? null)
+            : current.accountId,
+        payoutsEnabled: dto.payoutsEnabled ?? current.payoutsEnabled,
+        chargesEnabled: dto.chargesEnabled ?? current.chargesEnabled,
+        onboardingComplete:
+          dto.onboardingComplete ?? current.onboardingComplete,
+        dashboardUrl:
+          dto.dashboardUrl !== undefined
+            ? (this.resolveOptionalString(dto.dashboardUrl) ?? null)
+            : current.dashboardUrl,
+        note:
+          dto.note !== undefined
+            ? (this.resolveOptionalString(dto.note) ?? null)
+            : current.note,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+        ...(current.lastTransfer ? { lastTransfer: current.lastTransfer } : {}),
+      },
+    );
+
+    const updated = await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true, settings: true },
+    });
+
+    return {
+      data: {
+        restaurantId: updated.id,
+        stripe: this.readRestaurantStripeSettings(updated.settings),
+      },
+      message: 'Restaurant Stripe account updated successfully',
+    };
+  }
+
+  async createRestaurantStripeTransfer(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: CreateRestaurantStripeTransferDto,
+  ) {
+    const restaurant = await this.requireRestaurantForStripe(
+      user,
+      restaurantId,
+    );
+    const stripeSettings = this.readRestaurantStripeSettings(
+      restaurant.settings,
+    );
+
+    if (!stripeSettings.accountId) {
+      throw new BadRequestException(
+        'Restaurant Stripe accountId is required before transfers',
+      );
+    }
+
+    if (!stripeSettings.payoutsEnabled) {
+      throw new BadRequestException(
+        'Stripe payouts are disabled for this restaurant',
+      );
+    }
+
+    const currency = await this.resolvePreferredCurrency(
+      restaurant.id,
+      dto.currency,
+    );
+    const transfer = await this.stripePaymentsService.createTransfer({
+      amount: dto.amount,
+      currency,
+      destinationAccountId: stripeSettings.accountId,
+      description:
+        dto.description ?? `DeliveryWays restaurant payout ${restaurant.id}`,
+      idempotencyKey: dto.idempotencyKey,
+      metadata: {
+        restaurantId: restaurant.id,
+        tenantId: restaurant.tenantId,
+        actorId: user.uid,
+      },
+    });
+    const transferSnapshot: Prisma.JsonObject = {
+      id: transfer.id,
+      amount: dto.amount,
+      currency,
+      destinationAccountId: stripeSettings.accountId,
+      description:
+        dto.description ?? `DeliveryWays restaurant payout ${restaurant.id}`,
+      createdAt: new Date().toISOString(),
+      createdBy: user.uid,
+    };
+    const nextSettings = this.writeRestaurantStripeSettings(
+      restaurant.settings,
+      {
+        ...stripeSettings,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+        lastTransfer: transferSnapshot,
+      },
+    );
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true },
+    });
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        transfer: transferSnapshot,
+      },
+      message: 'Restaurant Stripe transfer created successfully',
+    };
   }
 
   async list(user: AuthUserContext, query: ListPaymentsDto) {
@@ -1288,6 +1456,132 @@ export class PaymentsService {
       restaurantId: payment.restaurantId,
       branchId: payment.branchId,
     };
+  }
+
+  private async requireRestaurantForStripe(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    await this.assertAdminPaymentAccess(user, restaurantId);
+
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        settings: true,
+      },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    return restaurant;
+  }
+
+  private readRestaurantStripeSettings(
+    settings: Prisma.JsonValue | null | undefined,
+  ): RestaurantStripeSettings {
+    const payments = this.asJsonObject(this.readPath(settings, ['payments']));
+    const stripe = this.asJsonObject(payments.stripe);
+
+    return {
+      accountId: this.readString(stripe.accountId),
+      payoutsEnabled: this.readBoolean(stripe.payoutsEnabled, false),
+      chargesEnabled: this.readBoolean(stripe.chargesEnabled, false),
+      onboardingComplete: this.readBoolean(stripe.onboardingComplete, false),
+      dashboardUrl: this.readString(stripe.dashboardUrl),
+      note: this.readString(stripe.note),
+      updatedAt: this.readString(stripe.updatedAt),
+      updatedBy: this.readString(stripe.updatedBy),
+      ...(this.asOptionalJsonObject(stripe.lastTransfer)
+        ? { lastTransfer: this.asJsonObject(stripe.lastTransfer) }
+        : {}),
+    };
+  }
+
+  private writeRestaurantStripeSettings(
+    settings: Prisma.JsonValue | null | undefined,
+    stripeSettings: RestaurantStripeSettings,
+  ) {
+    const root = this.asJsonObject(settings);
+    const payments = this.asJsonObject(root.payments);
+
+    return {
+      ...root,
+      payments: {
+        ...payments,
+        stripe: {
+          accountId: stripeSettings.accountId,
+          payoutsEnabled: stripeSettings.payoutsEnabled,
+          chargesEnabled: stripeSettings.chargesEnabled,
+          onboardingComplete: stripeSettings.onboardingComplete,
+          dashboardUrl: stripeSettings.dashboardUrl,
+          note: stripeSettings.note,
+          updatedAt: stripeSettings.updatedAt,
+          updatedBy: stripeSettings.updatedBy,
+          ...(stripeSettings.lastTransfer
+            ? { lastTransfer: stripeSettings.lastTransfer }
+            : {}),
+        },
+      },
+    } satisfies Prisma.JsonObject;
+  }
+
+  private readPath(
+    source: Prisma.JsonValue | null | undefined,
+    path: string[],
+  ) {
+    let current: unknown = source;
+
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return null;
+      }
+
+      current = (current as Record<string, unknown>)[key];
+    }
+
+    return current;
+  }
+
+  private asJsonObject(value: unknown): Prisma.JsonObject {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return { ...(value as Prisma.JsonObject) };
+  }
+
+  private asOptionalJsonObject(value: unknown): Prisma.JsonObject | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    return value as Prisma.JsonObject;
+  }
+
+  private readString(value: unknown) {
+    return typeof value === 'string' && value.trim().length
+      ? value.trim()
+      : null;
+  }
+
+  private readBoolean(value: unknown, fallback: boolean) {
+    return typeof value === 'boolean' ? value : fallback;
+  }
+
+  private resolveOptionalString(value: string | null | undefined) {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length ? normalized : undefined;
   }
 
   private async resolveRestaurantId(

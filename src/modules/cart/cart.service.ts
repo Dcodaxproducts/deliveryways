@@ -160,6 +160,7 @@ export interface CartResponseItem extends CartResponseDealLine {
   variationId: string | null;
   note: string | null;
   modifiers: CartItemModifierDto[];
+  modifierSelections: CartItemModifierSelectionDto[] | undefined;
   selectedModifiers: unknown[];
   sections: CartItemSectionDto[] | undefined;
   selectedSections: unknown[];
@@ -1152,6 +1153,9 @@ export class CartService {
                     ),
               );
         const selectedModifiers = this.readModifiers(cartItem.modifiers) ?? [];
+        const modifierSelections = this.readModifierSelections(
+          cartItem.modifiers,
+        );
         const sections = this.readSections(cartItem.modifiers);
         const selectedModifierDetails = menuItem
           ? selectedModifiers.map((selectedModifier) => {
@@ -1298,6 +1302,7 @@ export class CartService {
           prepTimeMinutes: menuItem?.prepTimeMinutes ?? null,
           note: cartItem.note,
           modifiers: selectedModifiers,
+          modifierSelections,
           selectedModifiers: selectedModifierDetails,
           sections,
           selectedSections: selectedSectionDetails,
@@ -2086,8 +2091,6 @@ export class CartService {
           ...dto,
           dealId: inferredDealId,
           variationId: explicitDealOptions?.forcedVariationId ?? undefined,
-          modifiers: undefined,
-          modifierSelections: undefined,
           sections: undefined,
         }
       : dto;

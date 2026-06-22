@@ -564,7 +564,16 @@ describe('CartService', () => {
           variationId: 'large',
           quantity: 1,
           note: null,
-          modifiers: { dealId: 'deal-flex', modifiers: [] },
+          modifiers: {
+            dealId: 'deal-flex',
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 2 }],
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-toppings',
+                modifiers: [{ modifierId: 'modifier-cheese', quantity: 2 }],
+              },
+            ],
+          },
         },
         {
           id: 'item-2',
@@ -663,6 +672,13 @@ describe('CartService', () => {
         expect.objectContaining({
           menuItemId: 'pizza-1',
           variationId: 'large',
+          modifiers: [{ modifierId: 'modifier-cheese', quantity: 2 }],
+          modifierSelections: [
+            {
+              modifierGroupId: 'group-toppings',
+              modifiers: [{ modifierId: 'modifier-cheese', quantity: 2 }],
+            },
+          ],
         }),
         expect.objectContaining({ menuItemId: 'drink-1' }),
       ],
@@ -2086,7 +2102,7 @@ describe('CartService', () => {
     );
   });
 
-  it('adds ready-made deal items while ignoring customization payloads', async () => {
+  it('adds ready-made deal items while preserving selected modifiers', async () => {
     const { service, cartRepository, couponsService } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
@@ -2108,7 +2124,33 @@ describe('CartService', () => {
       id: 'menu-1',
       name: 'Deal Pizza',
       variations: [{ id: 'variation-1' }],
-      modifierLinks: [],
+      modifierLinks: [
+        {
+          sortOrder: 0,
+          selectionType: 'SINGLE',
+          minSelect: 0,
+          maxSelect: 1,
+          modifierGroup: {
+            id: 'group-toppings',
+            name: 'Toppings',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              {
+                sortOrder: 0,
+                modifier: {
+                  id: 'modifier-1',
+                  name: 'Extra Cheese',
+                  priceDelta: new Prisma.Decimal(0),
+                  itemPriceOverrides: [],
+                  variationPriceOverrides: [],
+                },
+              },
+            ],
+          },
+        },
+      ],
       branchOverrides: [],
       dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
       category: {
@@ -2136,7 +2178,12 @@ describe('CartService', () => {
         menuItemId: 'menu-1',
         dealId: 'deal-1',
         variationId: 'variation-1',
-        modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+        modifierSelections: [
+          {
+            modifierGroupId: 'group-toppings',
+            modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+          },
+        ],
         sections: [
           { slot: 'LEFT', menuItemId: 'section-left' },
           { slot: 'RIGHT', menuItemId: 'section-right' },
@@ -2151,7 +2198,13 @@ describe('CartService', () => {
         variationId: undefined,
         modifiers: {
           dealId: 'deal-1',
-          modifiers: [],
+          modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+          modifierSelections: [
+            {
+              modifierGroupId: 'group-toppings',
+              modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+            },
+          ],
         },
       }),
     );
