@@ -63,6 +63,7 @@ import {
 } from '../localizations/localizations.service';
 import { normalizeLocale } from '../localizations/localization.util';
 import { MailerService } from '../mailer/mailer.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
@@ -222,6 +223,7 @@ export class CustomerAppService {
     private readonly notificationsService?: NotificationsService,
     @Optional() private readonly localizationsService?: LocalizationsService,
     private readonly mailerService?: MailerService,
+    @Optional() private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async listFavorites(
@@ -917,6 +919,7 @@ export class CustomerAppService {
           restaurantContactInfo,
         )
       : null;
+    const currency = await this.resolveHomeCurrency(restaurant.settings);
 
     return {
       data: {
@@ -940,7 +943,7 @@ export class CustomerAppService {
           address: this.mapPublicAddress(restaurantAddress, 'shopNumber'),
         },
         config: {
-          currency: this.readRestaurantCurrency(restaurant.settings),
+          currency,
           branding: this.asObject(restaurant.branding),
         },
         branch: translatedBranch
@@ -4082,6 +4085,15 @@ export class CustomerAppService {
       ['currency'],
       ['defaultCurrency'],
     ]);
+  }
+
+  private async resolveHomeCurrency(settings: unknown): Promise<string | null> {
+    const restaurantCurrency = this.readRestaurantCurrency(settings);
+    if (restaurantCurrency) {
+      return restaurantCurrency;
+    }
+
+    return (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? null;
   }
 
   private extractLegalProfile(settings: unknown) {

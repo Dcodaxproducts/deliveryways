@@ -185,6 +185,9 @@ describe('CustomerAppService', () => {
     const mailerService = {
       sendEmail: jest.fn(),
     };
+    const globalSettingsService = {
+      getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+    };
 
     const service = new CustomerAppService(
       repository as never,
@@ -195,6 +198,7 @@ describe('CustomerAppService', () => {
       options.notifications ? (notificationsService as never) : undefined,
       options.localizations ? (localizationsService as never) : undefined,
       mailerService as never,
+      globalSettingsService as never,
     );
     return {
       service,
@@ -206,6 +210,7 @@ describe('CustomerAppService', () => {
       notificationsService,
       localizationsService,
       mailerService,
+      globalSettingsService,
     };
   };
 
@@ -1774,7 +1779,7 @@ describe('CustomerAppService', () => {
       lng: 73.05,
     });
     expect(result.data.config).toEqual({
-      currency: null,
+      currency: 'PKR',
       branding: {
         primaryColor: '#FF0000',
         secondaryColor: '#000000',
@@ -2063,6 +2068,34 @@ describe('CustomerAppService', () => {
     });
 
     expect(result.data.config).toEqual({ currency: 'SAR', branding: {} });
+  });
+
+  it('falls back to global default currency on home screen', async () => {
+    const { service, repository, globalSettingsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      branding: null,
+      settings: {},
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    repository.findBranchPublicContent.mockResolvedValue(null);
+    globalSettingsService.getDefaultCurrencyCode.mockResolvedValue('AED');
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(result.data.config).toEqual({ currency: 'AED', branding: {} });
   });
 
   it('returns public branch stats for customer web', async () => {

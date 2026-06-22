@@ -10,6 +10,7 @@ import { CouponsModule } from '../coupons/coupons.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { LocalizationsModule } from '../localizations';
 import { MailerModule } from '../mailer/mailer.module';
+import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MailerModule } from '../mailer/mailer.module';
     NotificationsModule,
     LocalizationsModule,
     MailerModule,
+    GlobalSettingsModule,
   ],
   controllers: [CustomerAppController, PublicContentController],
   providers: [CustomerAppRepository, CustomerAppService],
