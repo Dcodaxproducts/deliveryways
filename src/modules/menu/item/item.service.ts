@@ -42,6 +42,7 @@ interface DuplicateMenuItemModifierGroupLink {
   minSelect: number;
   maxSelect: number;
   modifierGroup: {
+    id: string;
     name: string;
     description: string | null;
     minSelect: number;
@@ -1023,12 +1024,7 @@ export class MenuItemService {
         })),
         tx,
       );
-      await this.duplicateModifierGroupsForCopy(
-        copy.id,
-        item.restaurantId,
-        item.modifierLinks,
-        tx,
-      );
+      await this.attachModifierGroupsToCopy(copy.id, item.modifierLinks, tx);
 
       return copy;
     });
@@ -1428,80 +1424,23 @@ export class MenuItemService {
     return candidate;
   }
 
-  private async duplicateModifierGroupsForCopy(
+  private async attachModifierGroupsToCopy(
     menuItemId: string,
-    restaurantId: string,
     links: DuplicateMenuItemModifierGroupLink[],
     tx: Prisma.TransactionClient,
   ) {
-    const reservedNames = new Set<string>();
-
     for (const link of links) {
-      const groupName = await this.resolveUniqueModifierGroupName(
-        restaurantId,
-        link.modifierGroup.name,
-        reservedNames,
-      );
-      reservedNames.add(groupName);
-
-      const group = await tx.modifierGroup.create({
-        data: {
-          restaurantId,
-          name: groupName,
-          description: link.modifierGroup.description,
-          minSelect: link.modifierGroup.minSelect,
-          maxSelect: link.modifierGroup.maxSelect,
-          isRequired: link.modifierGroup.isRequired,
-          sortOrder: link.modifierGroup.sortOrder,
-          isActive: link.modifierGroup.isActive,
-        },
-        select: { id: true },
-      });
-
       await tx.menuItemModifierGroup.create({
         data: {
           menuItemId,
-          modifierGroupId: group.id,
+          modifierGroupId: link.modifierGroup.id,
           sortOrder: link.sortOrder,
           selectionType: link.selectionType,
           minSelect: link.minSelect,
           maxSelect: link.maxSelect,
         },
       });
-
-      if (link.modifierGroup.modifierLinks.length) {
-        await tx.modifierGroupModifier.createMany({
-          data: link.modifierGroup.modifierLinks.map((modifierLink) => ({
-            modifierGroupId: group.id,
-            modifierId: modifierLink.modifierId,
-            sortOrder: modifierLink.sortOrder,
-          })),
-        });
-      }
     }
-  }
-
-  private async resolveUniqueModifierGroupName(
-    restaurantId: string,
-    sourceName: string,
-    reservedNames: Set<string>,
-  ) {
-    const baseName = `${sourceName.trim()} Copy`;
-    let candidate = baseName;
-    let suffix = 2;
-
-    while (
-      reservedNames.has(candidate) ||
-      (await this.prisma.modifierGroup.findFirst({
-        where: { restaurantId, name: candidate },
-        select: { id: true },
-      }))
-    ) {
-      candidate = `${baseName} ${suffix}`;
-      suffix += 1;
-    }
-
-    return candidate;
   }
 
   private slugify(value: string) {

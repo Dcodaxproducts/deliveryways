@@ -847,7 +847,7 @@ describe('MenuItemService', () => {
     });
   });
 
-  it('duplicates item modifier groups with their modifier links', async () => {
+  it('attaches existing modifier groups when duplicating an item', async () => {
     const { service, itemRepository, prisma, tx } = makeService();
     prisma.menuItem.findUnique.mockResolvedValue({
       id: 'item-source',
@@ -884,6 +884,7 @@ describe('MenuItemService', () => {
           minSelect: 1,
           maxSelect: 2,
           modifierGroup: {
+            id: 'group-sauces',
             name: 'Sauces',
             description: 'Choose sauces',
             minSelect: 0,
@@ -903,13 +904,9 @@ describe('MenuItemService', () => {
       variationModifierPriceOverrides: [],
     });
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    prisma.modifierGroup.findFirst
-      .mockResolvedValueOnce({ id: 'existing-group' })
-      .mockResolvedValueOnce(null);
     itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
     itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
     itemRepository.create.mockResolvedValue({ id: 'item-copy' });
-    tx.modifierGroup.create.mockResolvedValue({ id: 'group-copy' });
 
     await service.duplicate(
       {
@@ -921,42 +918,17 @@ describe('MenuItemService', () => {
       {},
     );
 
-    expect(tx.modifierGroup.create).toHaveBeenCalledWith({
-      data: {
-        restaurantId: 'restaurant-1',
-        name: 'Sauces Copy 2',
-        description: 'Choose sauces',
-        minSelect: 0,
-        maxSelect: 3,
-        isRequired: false,
-        sortOrder: 7,
-        isActive: true,
-      },
-      select: { id: true },
-    });
+    expect(tx.modifierGroup.create).not.toHaveBeenCalled();
+    expect(tx.modifierGroupModifier.createMany).not.toHaveBeenCalled();
     expect(tx.menuItemModifierGroup.create).toHaveBeenCalledWith({
       data: {
         menuItemId: 'item-copy',
-        modifierGroupId: 'group-copy',
+        modifierGroupId: 'group-sauces',
         sortOrder: 2,
         selectionType: 'MULTIPLE',
         minSelect: 1,
         maxSelect: 2,
       },
-    });
-    expect(tx.modifierGroupModifier.createMany).toHaveBeenCalledWith({
-      data: [
-        {
-          modifierGroupId: 'group-copy',
-          modifierId: 'modifier-ketchup',
-          sortOrder: 1,
-        },
-        {
-          modifierGroupId: 'group-copy',
-          modifierId: 'modifier-mayo',
-          sortOrder: 2,
-        },
-      ],
     });
   });
 
