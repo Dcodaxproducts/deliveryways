@@ -49,6 +49,15 @@ describe('MenuItemService', () => {
         deleteMany: jest.fn(),
         createMany: jest.fn(),
       },
+      modifierGroup: {
+        create: jest.fn(),
+      },
+      menuItemModifierGroup: {
+        create: jest.fn(),
+      },
+      modifierGroupModifier: {
+        createMany: jest.fn(),
+      },
       menuItemCategory: {
         deleteMany: jest.fn(),
         createMany: jest.fn(),
@@ -59,6 +68,9 @@ describe('MenuItemService', () => {
       menuItem: {
         count: jest.fn().mockResolvedValue(0),
         findUnique: jest.fn(),
+      },
+      modifierGroup: {
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       restaurant: {
         findFirst: jest.fn(),
@@ -822,6 +834,119 @@ describe('MenuItemService', () => {
           modifierId: 'modifier-optional',
           priceDelta: new Prisma.Decimal(75),
           isRequired: false,
+        },
+      ],
+    });
+  });
+
+  it('duplicates item modifier groups with their modifier links', async () => {
+    const { service, itemRepository, prisma, tx } = makeService();
+    prisma.menuItem.findUnique.mockResolvedValue({
+      id: 'item-source',
+      restaurantId: 'restaurant-1',
+      categoryId: 'category-1',
+      name: 'Burger',
+      slug: 'burger',
+      description: 'Classic',
+      ingredients: null,
+      allergenPdfUrl: null,
+      nutritionalInformation: null,
+      imageUrl: null,
+      sku: null,
+      sortOrder: 4,
+      pricingMode: 'SINGLE',
+      basePrice: new Prisma.Decimal(500),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      prepTimeMinutes: 10,
+      dietaryFlags: [],
+      allergenFlags: [],
+      depositAmount: new Prisma.Decimal(0),
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: 1,
+      minQuantity: 1,
+      maxQuantity: null,
+      isActive: true,
+      deletedAt: null,
+      modifierLinks: [
+        {
+          sortOrder: 2,
+          selectionType: 'MULTIPLE',
+          minSelect: 1,
+          maxSelect: 2,
+          modifierGroup: {
+            name: 'Sauces',
+            description: 'Choose sauces',
+            minSelect: 0,
+            maxSelect: 3,
+            isRequired: false,
+            sortOrder: 7,
+            isActive: true,
+            modifierLinks: [
+              { modifierId: 'modifier-ketchup', sortOrder: 1 },
+              { modifierId: 'modifier-mayo', sortOrder: 2 },
+            ],
+          },
+        },
+      ],
+      modifierPriceOverrides: [],
+      variationPriceOverrides: [],
+      variationModifierPriceOverrides: [],
+    });
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.modifierGroup.findFirst
+      .mockResolvedValueOnce({ id: 'existing-group' })
+      .mockResolvedValueOnce(null);
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.create.mockResolvedValue({ id: 'item-copy' });
+    tx.modifierGroup.create.mockResolvedValue({ id: 'group-copy' });
+
+    await service.duplicate(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'item-source',
+      {},
+    );
+
+    expect(tx.modifierGroup.create).toHaveBeenCalledWith({
+      data: {
+        restaurantId: 'restaurant-1',
+        name: 'Sauces Copy 2',
+        description: 'Choose sauces',
+        minSelect: 0,
+        maxSelect: 3,
+        isRequired: false,
+        sortOrder: 7,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    expect(tx.menuItemModifierGroup.create).toHaveBeenCalledWith({
+      data: {
+        menuItemId: 'item-copy',
+        modifierGroupId: 'group-copy',
+        sortOrder: 2,
+        selectionType: 'MULTIPLE',
+        minSelect: 1,
+        maxSelect: 2,
+      },
+    });
+    expect(tx.modifierGroupModifier.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          modifierGroupId: 'group-copy',
+          modifierId: 'modifier-ketchup',
+          sortOrder: 1,
+        },
+        {
+          modifierGroupId: 'group-copy',
+          modifierId: 'modifier-mayo',
+          sortOrder: 2,
         },
       ],
     });
