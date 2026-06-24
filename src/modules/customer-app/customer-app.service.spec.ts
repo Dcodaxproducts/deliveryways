@@ -188,6 +188,9 @@ describe('CustomerAppService', () => {
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
     };
+    const configService = {
+      get: jest.fn().mockReturnValue(undefined),
+    };
 
     const service = new CustomerAppService(
       repository as never,
@@ -199,6 +202,7 @@ describe('CustomerAppService', () => {
       options.localizations ? (localizationsService as never) : undefined,
       mailerService as never,
       globalSettingsService as never,
+      configService as never,
     );
     return {
       service,
@@ -211,6 +215,7 @@ describe('CustomerAppService', () => {
       localizationsService,
       mailerService,
       globalSettingsService,
+      configService,
     };
   };
 
@@ -634,12 +639,85 @@ describe('CustomerAppService', () => {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
         submitted: true,
+        notifiedRecipients: 1,
       },
       message: 'Contact form submitted successfully',
     });
   });
 
-  it('rejects contact form when restaurant support email is missing', async () => {
+  it('copies configured superadmin contact recipients', async () => {
+    const { service, repository, mailerService, configService } = makeService();
+    configService.get.mockImplementation((key: string) =>
+      key === 'CONTACT_FORM_SUPERADMIN_EMAILS'
+        ? 'superadmin@deliveryways.test, support@restaurant.test'
+        : undefined,
+    );
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      coverImage: null,
+      supportContact: { email: 'support@restaurant.test' },
+      settings: {},
+    });
+
+    const result = await service.submitContactForm(
+      { restaurantId: 'restaurant-1' },
+      {
+        name: 'Jane Customer',
+        email: 'jane@example.com',
+        subject: 'Delivery question',
+        message: 'Please confirm delivery timing.',
+      },
+    );
+
+    expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'support@restaurant.test',
+      'Contact form: Delivery question',
+      expect.stringContaining('Restaurant: DeliveryWays Kitchen'),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'superadmin@deliveryways.test',
+      'Contact form: Delivery question',
+      expect.stringContaining('Restaurant: DeliveryWays Kitchen'),
+    );
+    expect(result.data.notifiedRecipients).toBe(2);
+  });
+
+  it('uses configured contact recipient when restaurant support email is missing', async () => {
+    const { service, repository, mailerService, configService } = makeService();
+    configService.get.mockImplementation((key: string) =>
+      key === 'CONTACT_FORM_SUPPORT_EMAILS'
+        ? 'support@deliveryways.test'
+        : undefined,
+    );
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      name: 'DeliveryWays Kitchen',
+      coverImage: null,
+      supportContact: null,
+      settings: {},
+    });
+
+    const result = await service.submitContactForm(
+      { restaurantId: 'restaurant-1' },
+      {
+        name: 'Jane Customer',
+        email: 'jane@example.com',
+        subject: 'Delivery question',
+        message: 'Please confirm delivery timing.',
+      },
+    );
+
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'support@deliveryways.test',
+      'Contact form: Delivery question',
+      expect.stringContaining('Email: jane@example.com'),
+    );
+    expect(result.data.notifiedRecipients).toBe(1);
+  });
+
+  it('rejects contact form when no recipient email is configured', async () => {
     const { service, repository, mailerService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',

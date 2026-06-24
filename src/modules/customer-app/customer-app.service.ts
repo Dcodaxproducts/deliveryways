@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   AddressRefType,
   CouponDealSelectionMode,
@@ -224,6 +225,7 @@ export class CustomerAppService {
     @Optional() private readonly localizationsService?: LocalizationsService,
     private readonly mailerService?: MailerService,
     @Optional() private readonly globalSettingsService?: GlobalSettingsService,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   async listFavorites(
@@ -430,13 +432,13 @@ export class CustomerAppService {
     user?: AuthUserContext,
   ) {
     const { restaurant, branch } = await this.getPublicContent(query, user);
-    const supportEmail = this.readStringValue(restaurant.supportContact, [
-      ['email'],
-    ]);
+    const recipients = this.resolveContactFormRecipients(
+      restaurant.supportContact,
+    );
 
-    if (!supportEmail) {
+    if (!recipients.length) {
       throw new BadRequestException(
-        'Restaurant support email is not configured',
+        'Contact form recipient email is not configured',
       );
     }
 
@@ -448,18 +450,22 @@ export class CustomerAppService {
       ? `Branch: ${branch.name} (${branch.id})`
       : 'Branch: Not selected';
 
-    await this.mailerService!.sendEmail(
-      supportEmail,
-      `Contact form: ${subject}`,
-      [
-        `Restaurant: ${restaurant.name} (${restaurant.id})`,
-        branchLine,
-        `Name: ${name}`,
-        `Email: ${email}`,
-        `Subject: ${subject}`,
-        '',
-        message,
-      ].join('\n'),
+    await Promise.all(
+      recipients.map((recipient) =>
+        this.mailerService!.sendEmail(
+          recipient,
+          `Contact form: ${subject}`,
+          [
+            `Restaurant: ${restaurant.name} (${restaurant.id})`,
+            branchLine,
+            `Name: ${name}`,
+            `Email: ${email}`,
+            `Subject: ${subject}`,
+            '',
+            message,
+          ].join('\n'),
+        ),
+      ),
     );
 
     return {
@@ -467,9 +473,47 @@ export class CustomerAppService {
         restaurantId: restaurant.id,
         branchId: branch?.id ?? null,
         submitted: true,
+        notifiedRecipients: recipients.length,
       },
       message: 'Contact form submitted successfully',
     };
+  }
+
+  private resolveContactFormRecipients(supportContact: unknown): string[] {
+    return this.dedupeEmails([
+      this.readStringValue(supportContact, [['email']]),
+      ...this.readConfiguredEmails('CONTACT_FORM_SUPERADMIN_EMAILS'),
+      ...this.readConfiguredEmails('CONTACT_FORM_SUPPORT_EMAILS'),
+      ...this.readConfiguredEmails('PLATFORM_SUPPORT_EMAILS'),
+    ]);
+  }
+
+  private readConfiguredEmails(key: string): string[] {
+    const value = this.configService?.get<string>(key);
+    if (!value) {
+      return [];
+    }
+
+    return value
+      .split(',')
+      .map((email) => email.trim())
+      .filter((email) => email.length > 0);
+  }
+
+  private dedupeEmails(values: Array<string | null | undefined>): string[] {
+    const seen = new Set<string>();
+    const emails: string[] = [];
+    for (const value of values) {
+      const email = value?.trim().toLowerCase();
+      if (!email || seen.has(email)) {
+        continue;
+      }
+
+      seen.add(email);
+      emails.push(email);
+    }
+
+    return emails;
   }
 
   async getFaqs(query: PublicRestaurantQueryDto, user?: AuthUserContext) {
