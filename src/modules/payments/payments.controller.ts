@@ -27,6 +27,7 @@ import {
   AdminUpdatePaymentStatusDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
+  CreateSubscriptionPaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
@@ -67,6 +68,25 @@ export class PaymentsController {
     @Body() dto: CreatePaymentAttemptDto,
   ) {
     return this.paymentsService.createAttempt(user, orderId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('subscriptions/:subscriptionId/attempts')
+  @ApiOperation({
+    summary: 'Create Stripe payment intent for tenant subscription fee',
+  })
+  createSubscriptionAttempt(
+    @CurrentUser() user: AuthUserContext,
+    @Param('subscriptionId') subscriptionId: string,
+    @Body() dto: CreateSubscriptionPaymentAttemptDto,
+  ) {
+    return this.paymentsService.createSubscriptionAttempt(
+      user,
+      subscriptionId,
+      dto,
+    );
   }
 
   @ApiBearerAuth()

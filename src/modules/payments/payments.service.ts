@@ -10,6 +10,7 @@ import {
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
+  SubscriptionStatus,
 } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
@@ -20,6 +21,7 @@ import {
   AdminUpdatePaymentStatusDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
+  CreateSubscriptionPaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
@@ -67,6 +69,131 @@ export class PaymentsService {
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
+
+  async createSubscriptionAttempt(
+    user: AuthUserContext,
+    subscriptionId: string,
+    dto: CreateSubscriptionPaymentAttemptDto,
+  ) {
+    const subscription = await this.prisma.tenantSubscription.findUnique({
+      where: { id: subscriptionId },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        packagePlanId: true,
+        paymentStatus: true,
+        planSnapshot: true,
+        packagePlan: {
+          select: {
+            id: true,
+            name: true,
+            billingInterval: true,
+            planPrice: true,
+            vatPercentage: true,
+            currency: true,
+          },
+        },
+      },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Tenant subscription not found');
+    }
+
+    if (!subscription.restaurantId) {
+      throw new BadRequestException(
+        'Subscription restaurant context is required for payment',
+      );
+    }
+
+    await this.assertAdminPaymentAccess(user, subscription.restaurantId);
+
+    if (subscription.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Subscription is already paid');
+    }
+
+    const plan = this.resolveSubscriptionPaymentPlan(subscription);
+    const amount = this.calculateSubscriptionPaymentAmount(plan);
+    if (amount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('Subscription does not require payment');
+    }
+
+    const currency =
+      dto.currency?.trim().toUpperCase() || plan.currency.toUpperCase();
+    const branchId = await this.resolveSubscriptionPaymentBranchId(
+      subscription.tenantId,
+      subscription.restaurantId,
+    );
+    const transaction = await this.paymentsRepository.createUnchecked({
+      tenantId: subscription.tenantId,
+      restaurantId: subscription.restaurantId,
+      branchId,
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PENDING,
+      amount,
+      currency,
+      note: dto.note,
+      providerData: {
+        target: 'TENANT_SUBSCRIPTION',
+        subscriptionId: subscription.id,
+        packagePlanId: subscription.packagePlanId,
+        planName: plan.name,
+        subscriptionFeeAmount: Number(plan.planPrice),
+        vatPercentage: Number(plan.vatPercentage),
+        vatAmount: Number(amount.minus(plan.planPrice).toDecimalPlaces(2)),
+      } as Prisma.InputJsonValue,
+    });
+
+    const intent = await this.stripePaymentsService.createPaymentIntent({
+      amount: Number(amount),
+      currency,
+      description: `DeliveryWays subscription ${subscription.id}`,
+      metadata: {
+        paymentTransactionId: transaction.id,
+        orderId: null,
+        customerId: user.uid,
+        restaurantId: subscription.restaurantId,
+        subscriptionId: subscription.id,
+        tenantId: subscription.tenantId,
+        target: 'TENANT_SUBSCRIPTION',
+      },
+    });
+    const paymentSession = {
+      provider: 'stripe',
+      clientSecret: intent.client_secret,
+      publishableKey: this.stripePaymentsService.getPublishableKey(),
+      paymentIntentId: intent.id,
+    };
+    const updated = await this.paymentsRepository.updateStatus(transaction.id, {
+      status: PaymentStatus.PENDING,
+      providerRef: intent.id,
+      providerData: {
+        target: 'TENANT_SUBSCRIPTION',
+        subscriptionId: subscription.id,
+        packagePlanId: subscription.packagePlanId,
+        planName: plan.name,
+        subscriptionFeeAmount: Number(plan.planPrice),
+        vatPercentage: Number(plan.vatPercentage),
+        vatAmount: Number(amount.minus(plan.planPrice).toDecimalPlaces(2)),
+        ...paymentSession,
+      } as Prisma.InputJsonValue,
+      note: dto.note,
+    });
+
+    await this.notificationsService.notifyPaymentAttemptCreated(updated.id);
+
+    return {
+      data: {
+        subscriptionId: subscription.id,
+        paymentStatus: subscription.paymentStatus,
+        transaction: updated,
+      },
+      paymentSession,
+      message: 'Subscription payment intent created successfully',
+    };
+  }
 
   async createAttempt(
     user: AuthUserContext,
@@ -394,6 +521,73 @@ export class PaymentsService {
     }
 
     return branch.id;
+  }
+
+  private async resolveSubscriptionPaymentBranchId(
+    tenantId: string,
+    restaurantId: string,
+  ) {
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        tenantId,
+        restaurantId,
+        deletedAt: null,
+      },
+      select: { id: true },
+      orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
+    });
+
+    if (!branch) {
+      throw new BadRequestException(
+        'Restaurant branch context is required for subscription payment',
+      );
+    }
+
+    return branch.id;
+  }
+
+  private resolveSubscriptionPaymentPlan(subscription: {
+    planSnapshot: Prisma.JsonValue | null;
+    packagePlan: {
+      id: string;
+      name: string;
+      billingInterval: string;
+      planPrice: Prisma.Decimal;
+      vatPercentage: Prisma.Decimal;
+      currency: string;
+    };
+  }) {
+    const snapshot = this.asJsonObject(subscription.planSnapshot);
+
+    return {
+      id: this.readString(snapshot.id) ?? subscription.packagePlan.id,
+      name: this.readString(snapshot.name) ?? subscription.packagePlan.name,
+      billingInterval:
+        this.readString(snapshot.billingInterval) ??
+        subscription.packagePlan.billingInterval,
+      planPrice: this.readDecimal(
+        snapshot.planPrice,
+        subscription.packagePlan.planPrice,
+      ),
+      vatPercentage: this.readDecimal(
+        snapshot.vatPercentage,
+        subscription.packagePlan.vatPercentage,
+      ),
+      currency:
+        this.readString(snapshot.currency) ?? subscription.packagePlan.currency,
+    };
+  }
+
+  private calculateSubscriptionPaymentAmount(plan: {
+    planPrice: Prisma.Decimal;
+    vatPercentage: Prisma.Decimal;
+  }) {
+    const vatAmount = plan.planPrice
+      .mul(plan.vatPercentage)
+      .div(100)
+      .toDecimalPlaces(2);
+
+    return plan.planPrice.plus(vatAmount).toDecimalPlaces(2);
   }
 
   private async resolvePreferredCurrency(
@@ -1245,6 +1439,19 @@ export class PaymentsService {
 
     if (!payment.orderId) {
       if (
+        this.readPaymentTarget(payment.providerData) === 'TENANT_SUBSCRIPTION'
+      ) {
+        await this.updateTenantSubscriptionPaymentStatus(
+          payment,
+          providerRef,
+          paymentIntent,
+          PaymentStatus.PAID,
+        );
+        await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+        return;
+      }
+
+      if (
         this.readPaymentTarget(payment.providerData) ===
         'GUEST_GIFT_CARD_PURCHASE'
       ) {
@@ -1329,6 +1536,19 @@ export class PaymentsService {
     }
 
     if (!payment.orderId) {
+      if (
+        this.readPaymentTarget(payment.providerData) === 'TENANT_SUBSCRIPTION'
+      ) {
+        await this.updateTenantSubscriptionPaymentStatus(
+          payment,
+          providerRef,
+          paymentIntent,
+          status,
+          note,
+        );
+        return;
+      }
+
       await this.prisma.$transaction(async (tx) => {
         await this.paymentsRepository.updateStatus(
           payment.id,
@@ -1439,6 +1659,68 @@ export class PaymentsService {
 
     const target = (providerData as Record<string, unknown>).target;
     return typeof target === 'string' ? target : null;
+  }
+
+  private readSubscriptionId(providerData: Prisma.JsonValue | null) {
+    if (!providerData || typeof providerData !== 'object') {
+      throw new BadRequestException('Subscription payment context is missing');
+    }
+
+    if (Array.isArray(providerData)) {
+      throw new BadRequestException('Subscription payment context is missing');
+    }
+
+    const subscriptionId = (providerData as Record<string, unknown>)
+      .subscriptionId;
+    if (typeof subscriptionId !== 'string' || !subscriptionId.trim()) {
+      throw new BadRequestException('Subscription payment context is missing');
+    }
+
+    return subscriptionId;
+  }
+
+  private async updateTenantSubscriptionPaymentStatus(
+    payment: {
+      id: string;
+      providerData: Prisma.JsonValue | null;
+    },
+    providerRef: string,
+    paymentIntent: Record<string, unknown>,
+    status: PaymentStatus,
+    note?: string,
+  ) {
+    const subscriptionId = this.readSubscriptionId(payment.providerData);
+    const existingProviderData = this.asJsonObject(payment.providerData);
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.paymentsRepository.updateStatus(
+        payment.id,
+        {
+          status,
+          providerRef,
+          providerData: {
+            ...existingProviderData,
+            provider: 'stripe',
+            paymentIntent,
+            paymentIntentId: providerRef,
+          } as Prisma.InputJsonValue,
+          note,
+          processedAt: new Date(),
+        },
+        tx,
+      );
+
+      await tx.tenantSubscription.update({
+        where: { id: subscriptionId },
+        data: {
+          paymentStatus: status,
+          ...(status === PaymentStatus.PAID
+            ? { status: SubscriptionStatus.ACTIVE }
+            : {}),
+          updatedBy: 'stripe:webhook',
+        },
+      });
+    });
   }
 
   private async fulfillGuestGiftCardPurchase(
@@ -1820,6 +2102,18 @@ export class PaymentsService {
     return typeof value === 'string' && value.trim().length
       ? value.trim()
       : null;
+  }
+
+  private readDecimal(value: unknown, fallback: Prisma.Decimal) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return new Prisma.Decimal(value);
+    }
+
+    if (typeof value === 'string' && value.trim().length) {
+      return new Prisma.Decimal(value.trim());
+    }
+
+    return fallback;
   }
 
   private dedupePaymentMethods(methods: PaymentMethod[]) {

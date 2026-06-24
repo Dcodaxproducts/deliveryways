@@ -51,9 +51,19 @@ describe('PaymentsService', () => {
       sumSuccessfulRefunds: jest.fn(),
     };
 
+    const transactionTx = {
+      tenantSubscription: {
+        update: jest.fn(),
+      },
+    };
+
     const prisma = {
       order: {
         findUnique: jest.fn(),
+      },
+      tenantSubscription: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
       },
       branch: {
         findFirst: jest.fn(),
@@ -64,7 +74,7 @@ describe('PaymentsService', () => {
         update: jest.fn(),
       },
       $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-        Promise.resolve(callback({})),
+        Promise.resolve(callback(transactionTx)),
       ),
     };
 
@@ -117,6 +127,7 @@ describe('PaymentsService', () => {
       stripePaymentsService,
       loyaltyWalletService,
       globalSettingsService,
+      transactionTx,
     };
   };
 
@@ -187,6 +198,101 @@ describe('PaymentsService', () => {
       notificationsService.notifyPaymentAttemptCreated,
     ).toHaveBeenCalledWith('payment-1');
     expect(paymentsRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a Stripe payment intent for subscription payment attempts', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      stripePaymentsService,
+      notificationsService,
+    } = makeService();
+
+    prisma.tenantSubscription.findUnique.mockResolvedValue({
+      id: 'subscription-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      packagePlanId: 'plan-1',
+      paymentStatus: PaymentStatus.PENDING,
+      planSnapshot: {
+        name: 'Growth',
+        planPrice: 100,
+        vatPercentage: 15,
+        currency: 'USD',
+      },
+      packagePlan: {
+        id: 'plan-1',
+        name: 'Growth',
+        billingInterval: 'MONTHLY',
+        planPrice: new Prisma.Decimal(100),
+        vatPercentage: new Prisma.Decimal(15),
+        currency: 'USD',
+      },
+    });
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+    });
+    prisma.branch.findFirst.mockResolvedValue({ id: 'branch-1' });
+    paymentsRepository.createUnchecked.mockResolvedValue({
+      id: 'payment-subscription-1',
+    });
+    stripePaymentsService.createPaymentIntent.mockResolvedValue({
+      id: 'pi_subscription_123',
+      client_secret: 'pi_subscription_123_secret',
+    });
+    paymentsRepository.updateStatus.mockResolvedValue({
+      id: 'payment-subscription-1',
+      providerRef: 'pi_subscription_123',
+    });
+
+    const result = await service.createSubscriptionAttempt(
+      {
+        uid: 'owner-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'subscription-1',
+      { note: 'Initial plan payment' },
+    );
+
+    expect(paymentsRepository.createUnchecked).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        amount: new Prisma.Decimal(115),
+        currency: 'USD',
+        paymentMethod: PaymentMethod.STRIPE,
+      }),
+    );
+    expect(stripePaymentsService.createPaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 115,
+        currency: 'USD',
+      }),
+    );
+    const createPaymentIntentMock =
+      stripePaymentsService.createPaymentIntent as jest.Mock<
+        unknown,
+        [{ metadata: Record<string, unknown> }]
+      >;
+    const paymentIntentInput = createPaymentIntentMock.mock.calls[0]?.[0];
+    expect(paymentIntentInput.metadata).toMatchObject({
+      paymentTransactionId: 'payment-subscription-1',
+      subscriptionId: 'subscription-1',
+      target: 'TENANT_SUBSCRIPTION',
+    });
+    expect(result.paymentSession).toEqual({
+      provider: 'stripe',
+      clientSecret: 'pi_subscription_123_secret',
+      publishableKey: 'pk_test_123',
+      paymentIntentId: 'pi_subscription_123',
+    });
+    expect(
+      notificationsService.notifyPaymentAttemptCreated,
+    ).toHaveBeenCalledWith('payment-subscription-1');
   });
 
   it('updates restaurant Stripe account settings', async () => {
@@ -536,6 +642,109 @@ describe('PaymentsService', () => {
     expect(
       notificationsService.notifyPaymentStatusChanged,
     ).toHaveBeenCalledWith('payment-1');
+    expect(result.received).toBe(true);
+  });
+
+  it('marks subscription paid from stripe webhook success', async () => {
+    const {
+      service,
+      stripePaymentsService,
+      paymentsRepository,
+      notificationsService,
+      transactionTx,
+    } = makeService();
+
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_subscription_123',
+        },
+      },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-subscription-1',
+      orderId: null,
+      status: PaymentStatus.PENDING,
+      providerData: {
+        target: 'TENANT_SUBSCRIPTION',
+        subscriptionId: 'subscription-1',
+      },
+    });
+
+    const result = await service.handleStripeWebhook(
+      Buffer.from('{}'),
+      'sig_123',
+    );
+
+    expect(paymentsRepository.updateStatus).toHaveBeenCalledWith(
+      'payment-subscription-1',
+      expect.objectContaining({
+        status: PaymentStatus.PAID,
+        providerRef: 'pi_subscription_123',
+      }),
+      expect.anything(),
+    );
+    expect(transactionTx.tenantSubscription.update).toHaveBeenCalledWith({
+      where: { id: 'subscription-1' },
+      data: {
+        paymentStatus: PaymentStatus.PAID,
+        status: 'ACTIVE',
+        updatedBy: 'stripe:webhook',
+      },
+    });
+    expect(
+      notificationsService.notifyPaymentStatusChanged,
+    ).toHaveBeenCalledWith('payment-subscription-1');
+    expect(result.received).toBe(true);
+  });
+
+  it('marks subscription failed from stripe webhook failure', async () => {
+    const {
+      service,
+      stripePaymentsService,
+      paymentsRepository,
+      transactionTx,
+    } = makeService();
+
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: 'pi_subscription_123',
+        },
+      },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-subscription-1',
+      orderId: null,
+      status: PaymentStatus.PENDING,
+      providerData: {
+        target: 'TENANT_SUBSCRIPTION',
+        subscriptionId: 'subscription-1',
+      },
+    });
+
+    const result = await service.handleStripeWebhook(
+      Buffer.from('{}'),
+      'sig_123',
+    );
+
+    expect(paymentsRepository.updateStatus).toHaveBeenCalledWith(
+      'payment-subscription-1',
+      expect.objectContaining({
+        status: PaymentStatus.FAILED,
+        note: 'Stripe payment failed',
+      }),
+      expect.anything(),
+    );
+    expect(transactionTx.tenantSubscription.update).toHaveBeenCalledWith({
+      where: { id: 'subscription-1' },
+      data: {
+        paymentStatus: PaymentStatus.FAILED,
+        updatedBy: 'stripe:webhook',
+      },
+    });
     expect(result.received).toBe(true);
   });
 

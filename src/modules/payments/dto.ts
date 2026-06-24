@@ -36,6 +36,19 @@ export class CreatePaymentAttemptDto {
   note?: string;
 }
 
+export class CreateSubscriptionPaymentAttemptDto {
+  @ApiPropertyOptional({ maxLength: 50 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class ListPaymentsDto extends QueryDto {
   @ApiPropertyOptional()
   @IsOptional()
