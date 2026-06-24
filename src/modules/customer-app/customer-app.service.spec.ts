@@ -2246,7 +2246,22 @@ describe('CustomerAppService', () => {
       settings: {},
     });
     repository.listPublicReviews.mockResolvedValue({
-      items: [{ id: 'review-1', rating: 5 }],
+      items: [
+        {
+          id: 'review-1',
+          rating: 5,
+          order: {
+            id: 'order-1',
+            items: [
+              {
+                id: 'order-item-1',
+                menuItemName: 'Zinger Burger',
+                quantity: 2,
+              },
+            ],
+          },
+        },
+      ],
       total: 1,
       summary: { reviewCount: 1, averageRating: 5 },
     });
@@ -2263,7 +2278,22 @@ describe('CustomerAppService', () => {
       expect.objectContaining({ restaurantId: 'restaurant-1' }),
     );
     expect(result.data).toEqual({
-      items: [{ id: 'review-1', rating: 5 }],
+      items: [
+        {
+          id: 'review-1',
+          rating: 5,
+          order: {
+            id: 'order-1',
+            items: [
+              {
+                id: 'order-item-1',
+                menuItemName: 'Zinger Burger',
+                quantity: 2,
+              },
+            ],
+          },
+        },
+      ],
       summary: { reviewCount: 1, averageRating: 5 },
     });
     expect(result.meta).toEqual({
