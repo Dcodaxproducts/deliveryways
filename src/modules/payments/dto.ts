@@ -6,7 +6,9 @@ import {
 } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsBoolean,
+  IsArray,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -49,6 +51,28 @@ export class ListPaymentsDto extends QueryDto {
   @IsOptional()
   @IsString()
   orderId?: string;
+
+  @ApiPropertyOptional({ enum: PaymentStatus })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  status?: PaymentStatus;
+
+  @ApiPropertyOptional({ enum: PaymentMethod })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
+
+  @ApiPropertyOptional({ enum: PaymentTransactionType })
+  @IsOptional()
+  @IsEnum(PaymentTransactionType)
+  type?: PaymentTransactionType;
+}
+
+export class RestaurantPaymentManagementQueryDto extends QueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
 
   @ApiPropertyOptional({ enum: PaymentStatus })
   @IsOptional()
@@ -120,6 +144,25 @@ export class RefundPaymentDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  note?: string;
+}
+
+export class UpdateRestaurantPaymentMethodsDto {
+  @ApiPropertyOptional({ enum: PaymentMethod, isArray: true })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(PaymentMethod, { each: true })
+  allowedPaymentMethods!: PaymentMethod[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  walletEnabled?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
   note?: string;
 }
 

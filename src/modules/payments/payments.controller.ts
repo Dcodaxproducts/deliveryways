@@ -29,6 +29,8 @@ import {
   CreatePaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
+  RestaurantPaymentManagementQueryDto,
+  UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
 } from './dto';
@@ -78,6 +80,43 @@ export class PaymentsController {
   @Get()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListPaymentsDto) {
     return this.paymentsService.list(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Get('restaurants/:restaurantId/management')
+  @ApiOperation({
+    summary:
+      'Get restaurant payment methods, payout, wallet, and ledger summary',
+  })
+  getRestaurantPaymentManagement(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Query() query: RestaurantPaymentManagementQueryDto,
+  ) {
+    return this.paymentsService.getRestaurantPaymentManagement(
+      user,
+      restaurantId,
+      query,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('restaurants/:restaurantId/methods')
+  @ApiOperation({ summary: 'Update restaurant payment method settings' })
+  updateRestaurantPaymentMethods(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: UpdateRestaurantPaymentMethodsDto,
+  ) {
+    return this.paymentsService.updateRestaurantPaymentMethods(
+      user,
+      restaurantId,
+      dto,
+    );
   }
 
   @ApiBearerAuth()

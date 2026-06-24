@@ -189,6 +189,92 @@ export class PaymentsRepository {
     return { items, total };
   }
 
+  async listRestaurantTransactions(
+    restaurantId: string,
+    query: ListPaymentsDto,
+  ) {
+    return this.list(restaurantId, query);
+  }
+
+  async summarizeRestaurantTransactions(
+    restaurantId: string,
+    branchId?: string,
+  ) {
+    const where: Prisma.PaymentTransactionWhereInput = {
+      restaurantId,
+      ...(branchId ? { branchId } : {}),
+    };
+
+    const [
+      paidCharges,
+      pendingCharges,
+      failedCharges,
+      refundedAmount,
+      transactionCount,
+    ] = await this.prisma.$transaction([
+      this.prisma.paymentTransaction.aggregate({
+        where: {
+          ...where,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PAID,
+        },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.paymentTransaction.aggregate({
+        where: {
+          ...where,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PENDING,
+        },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.paymentTransaction.aggregate({
+        where: {
+          ...where,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.FAILED,
+        },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.paymentTransaction.aggregate({
+        where: {
+          ...where,
+          type: PaymentTransactionType.REFUND,
+          status: PaymentStatus.REFUNDED,
+        },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.paymentTransaction.count({ where }),
+    ]);
+
+    return {
+      paidCharges,
+      pendingCharges,
+      failedCharges,
+      refundedAmount,
+      transactionCount,
+    };
+  }
+
+  async summarizeRestaurantWallets(restaurantId: string) {
+    const [summary, accountCount] = await this.prisma.$transaction([
+      this.prisma.walletAccount.aggregate({
+        where: { restaurantId },
+        _sum: { balance: true },
+      }),
+      this.prisma.walletAccount.count({ where: { restaurantId } }),
+    ]);
+
+    return {
+      accountCount,
+      totalBalance: summary._sum.balance ?? new Prisma.Decimal(0),
+    };
+  }
+
   async updateStatus(
     id: string,
     payload: {

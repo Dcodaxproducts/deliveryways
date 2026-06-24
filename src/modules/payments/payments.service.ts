@@ -22,6 +22,8 @@ import {
   CreatePaymentAttemptDto,
   ListPaymentsDto,
   RefundPaymentDto,
+  RestaurantPaymentManagementQueryDto,
+  UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
 } from './dto';
@@ -45,6 +47,14 @@ export interface RestaurantStripeSettings {
   updatedAt: string | null;
   updatedBy: string | null;
   lastTransfer?: Prisma.JsonObject;
+}
+
+export interface RestaurantPaymentMethodSettings {
+  allowedPaymentMethods: PaymentMethod[];
+  walletEnabled: boolean;
+  note: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
 }
 
 @Injectable()
@@ -592,6 +602,112 @@ export class PaymentsService {
         transfer: transferSnapshot,
       },
       message: 'Restaurant Stripe transfer created successfully',
+    };
+  }
+
+  async getRestaurantPaymentManagement(
+    user: AuthUserContext,
+    restaurantId: string,
+    query: RestaurantPaymentManagementQueryDto,
+  ) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const [transactionSummary, walletSummary, transactions, globalMethods] =
+      await Promise.all([
+        this.paymentsRepository.summarizeRestaurantTransactions(
+          restaurant.id,
+          query.branchId,
+        ),
+        this.paymentsRepository.summarizeRestaurantWallets(restaurant.id),
+        this.paymentsRepository.listRestaurantTransactions(restaurant.id, {
+          ...query,
+          restaurantId: restaurant.id,
+        }),
+        this.getGlobalPaymentMethods(),
+      ]);
+    const stripe = this.readRestaurantStripeSettings(restaurant.settings);
+    const paymentMethods = this.readRestaurantPaymentMethodSettings(
+      restaurant.settings,
+    );
+
+    return {
+      data: {
+        restaurantId: restaurant.id,
+        payments: {
+          currency: await this.resolvePreferredCurrency(restaurant.id),
+          methods: {
+            activePlatformMethods: globalMethods
+              .filter((method) => method.isActive)
+              .map((method) => method.code),
+            restaurantMethods: paymentMethods,
+          },
+          stripe: {
+            ...stripe,
+            publishableKey:
+              this.stripePaymentsService.getPublishableKey() ?? null,
+            configured: this.stripePaymentsService.isConfigured(),
+          },
+          payouts: {
+            provider: 'stripe',
+            enabled: stripe.payoutsEnabled,
+            lastTransfer: stripe.lastTransfer ?? null,
+          },
+          wallet: {
+            type: 'CUSTOMER_WALLET_EXPOSURE',
+            accountCount: walletSummary.accountCount,
+            totalBalance: Number(walletSummary.totalBalance),
+          },
+          summary: this.serializeRestaurantPaymentSummary(transactionSummary),
+        },
+        transactions: transactions.items,
+      },
+      message: 'Restaurant payment management fetched successfully',
+      meta: buildPaginationMeta(query, transactions.total),
+    };
+  }
+
+  async updateRestaurantPaymentMethods(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: UpdateRestaurantPaymentMethodsDto,
+  ) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const nextSettings = this.writeRestaurantPaymentMethodSettings(
+      restaurant.settings,
+      {
+        allowedPaymentMethods: this.dedupePaymentMethods(
+          dto.allowedPaymentMethods,
+        ),
+        walletEnabled:
+          dto.walletEnabled ??
+          dto.allowedPaymentMethods.includes(PaymentMethod.WALLET),
+        note:
+          dto.note !== undefined
+            ? (this.resolveOptionalString(dto.note) ?? null)
+            : this.readRestaurantPaymentMethodSettings(restaurant.settings)
+                .note,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+      },
+    );
+
+    const updated = await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true, settings: true },
+    });
+
+    return {
+      data: {
+        restaurantId: updated.id,
+        methods: this.readRestaurantPaymentMethodSettings(updated.settings),
+      },
+      message: 'Restaurant payment methods updated successfully',
     };
   }
 
@@ -1486,6 +1602,84 @@ export class PaymentsService {
     return restaurant;
   }
 
+  private async requireRestaurantForPayments(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    await this.assertAdminPaymentAccess(user, restaurantId);
+
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        settings: true,
+      },
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    return restaurant;
+  }
+
+  private async getGlobalPaymentMethods() {
+    const response = await this.globalSettingsService?.getPaymentMethods();
+
+    return (
+      response?.data?.map((method) => ({
+        code: method.code,
+        label: method.label,
+        isActive: method.isActive,
+      })) ?? []
+    );
+  }
+
+  private serializeRestaurantPaymentSummary(summary: {
+    paidCharges: {
+      _sum: { amount: Prisma.Decimal | null };
+      _count: { _all: number };
+    };
+    pendingCharges: {
+      _sum: { amount: Prisma.Decimal | null };
+      _count: { _all: number };
+    };
+    failedCharges: {
+      _sum: { amount: Prisma.Decimal | null };
+      _count: { _all: number };
+    };
+    refundedAmount: {
+      _sum: { amount: Prisma.Decimal | null };
+      _count: { _all: number };
+    };
+    transactionCount: number;
+  }) {
+    const paidAmount = summary.paidCharges._sum.amount ?? new Prisma.Decimal(0);
+    const refundedAmount =
+      summary.refundedAmount._sum.amount ?? new Prisma.Decimal(0);
+
+    return {
+      transactionCount: summary.transactionCount,
+      paidChargeCount: summary.paidCharges._count._all,
+      paidChargeAmount: Number(paidAmount),
+      pendingChargeCount: summary.pendingCharges._count._all,
+      pendingChargeAmount: Number(
+        summary.pendingCharges._sum.amount ?? new Prisma.Decimal(0),
+      ),
+      failedChargeCount: summary.failedCharges._count._all,
+      failedChargeAmount: Number(
+        summary.failedCharges._sum.amount ?? new Prisma.Decimal(0),
+      ),
+      refundedCount: summary.refundedAmount._count._all,
+      refundedAmount: Number(refundedAmount),
+      estimatedAvailableBalance: Number(paidAmount.minus(refundedAmount)),
+    };
+  }
+
   private readRestaurantStripeSettings(
     settings: Prisma.JsonValue | null | undefined,
   ): RestaurantStripeSettings {
@@ -1505,6 +1699,60 @@ export class PaymentsService {
         ? { lastTransfer: this.asJsonObject(stripe.lastTransfer) }
         : {}),
     };
+  }
+
+  private readRestaurantPaymentMethodSettings(
+    settings: Prisma.JsonValue | null | undefined,
+  ): RestaurantPaymentMethodSettings {
+    const payments = this.asJsonObject(this.readPath(settings, ['payments']));
+    const methods = this.asJsonObject(payments.methods);
+    const allowedPaymentMethods = Array.isArray(methods.allowedPaymentMethods)
+      ? this.dedupePaymentMethods(
+          methods.allowedPaymentMethods.filter(
+            (method): method is PaymentMethod =>
+              typeof method === 'string' &&
+              Object.values(PaymentMethod).includes(method as PaymentMethod),
+          ),
+        )
+      : [
+          PaymentMethod.COD,
+          PaymentMethod.CARD_ON_DELIVERY,
+          PaymentMethod.PAYPAL,
+          PaymentMethod.WALLET,
+        ];
+
+    return {
+      allowedPaymentMethods,
+      walletEnabled: this.readBoolean(
+        methods.walletEnabled,
+        allowedPaymentMethods.includes(PaymentMethod.WALLET),
+      ),
+      note: this.readString(methods.note),
+      updatedAt: this.readString(methods.updatedAt),
+      updatedBy: this.readString(methods.updatedBy),
+    };
+  }
+
+  private writeRestaurantPaymentMethodSettings(
+    settings: Prisma.JsonValue | null | undefined,
+    methodSettings: RestaurantPaymentMethodSettings,
+  ) {
+    const root = this.asJsonObject(settings);
+    const payments = this.asJsonObject(root.payments);
+
+    return {
+      ...root,
+      payments: {
+        ...payments,
+        methods: {
+          allowedPaymentMethods: methodSettings.allowedPaymentMethods,
+          walletEnabled: methodSettings.walletEnabled,
+          note: methodSettings.note,
+          updatedAt: methodSettings.updatedAt,
+          updatedBy: methodSettings.updatedBy,
+        },
+      },
+    } satisfies Prisma.JsonObject;
   }
 
   private writeRestaurantStripeSettings(
@@ -1572,6 +1820,10 @@ export class PaymentsService {
     return typeof value === 'string' && value.trim().length
       ? value.trim()
       : null;
+  }
+
+  private dedupePaymentMethods(methods: PaymentMethod[]) {
+    return [...new Set(methods)];
   }
 
   private readBoolean(value: unknown, fallback: boolean) {

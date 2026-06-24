@@ -23,6 +23,12 @@ describe('PaymentsService', () => {
               createdBy?: string;
             };
           };
+          methods?: {
+            allowedPaymentMethods?: string[];
+            walletEnabled?: boolean;
+            note?: string | null;
+            updatedBy?: string | null;
+          };
         };
       };
     };
@@ -39,6 +45,9 @@ describe('PaymentsService', () => {
       findLatestPendingChargeByOrderId: jest.fn(),
       findById: jest.fn(),
       list: jest.fn(),
+      listRestaurantTransactions: jest.fn(),
+      summarizeRestaurantTransactions: jest.fn(),
+      summarizeRestaurantWallets: jest.fn(),
       sumSuccessfulRefunds: jest.fn(),
     };
 
@@ -82,6 +91,13 @@ describe('PaymentsService', () => {
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+      getPaymentMethods: jest.fn().mockResolvedValue({
+        data: [
+          { code: PaymentMethod.COD, label: 'Cash', isActive: true },
+          { code: PaymentMethod.STRIPE, label: 'Stripe', isActive: true },
+          { code: PaymentMethod.BANK_TRANSFER, label: 'Bank', isActive: false },
+        ],
+      }),
     };
 
     const service = new PaymentsService(
@@ -316,6 +332,163 @@ describe('PaymentsService', () => {
         currency: 'PKR',
       }),
     );
+  });
+
+  it('fetches restaurant payment management summary', async () => {
+    const { service, prisma, paymentsRepository, stripePaymentsService } =
+      makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          stripe: {
+            accountId: 'acct_123',
+            payoutsEnabled: true,
+          },
+          methods: {
+            allowedPaymentMethods: ['COD', 'STRIPE', 'WALLET'],
+            walletEnabled: true,
+          },
+        },
+      },
+    });
+    prisma.restaurant.findUnique.mockResolvedValue({ settings: null });
+    paymentsRepository.summarizeRestaurantTransactions.mockResolvedValue({
+      paidCharges: {
+        _sum: { amount: new Prisma.Decimal(1000) },
+        _count: { _all: 4 },
+      },
+      pendingCharges: {
+        _sum: { amount: new Prisma.Decimal(200) },
+        _count: { _all: 1 },
+      },
+      failedCharges: {
+        _sum: { amount: new Prisma.Decimal(50) },
+        _count: { _all: 1 },
+      },
+      refundedAmount: {
+        _sum: { amount: new Prisma.Decimal(100) },
+        _count: { _all: 1 },
+      },
+      transactionCount: 7,
+    });
+    paymentsRepository.summarizeRestaurantWallets.mockResolvedValue({
+      accountCount: 3,
+      totalBalance: new Prisma.Decimal(250),
+    });
+    paymentsRepository.listRestaurantTransactions.mockResolvedValue({
+      items: [{ id: 'payment-1' }],
+      total: 1,
+    });
+
+    const result = await service.getRestaurantPaymentManagement(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' },
+    );
+
+    expect(
+      paymentsRepository.summarizeRestaurantTransactions,
+    ).toHaveBeenCalledWith('restaurant-1', undefined);
+    expect(result.data.payments.summary).toEqual(
+      expect.objectContaining({
+        paidChargeAmount: 1000,
+        refundedAmount: 100,
+        estimatedAvailableBalance: 900,
+      }),
+    );
+    expect(result.data.payments.wallet).toEqual({
+      type: 'CUSTOMER_WALLET_EXPOSURE',
+      accountCount: 3,
+      totalBalance: 250,
+    });
+    expect(result.data.payments.methods.activePlatformMethods).toEqual([
+      PaymentMethod.COD,
+      PaymentMethod.STRIPE,
+    ]);
+    expect(result.data.payments.stripe).toEqual(
+      expect.objectContaining({
+        accountId: 'acct_123',
+        publishableKey: 'pk_test_123',
+        configured: true,
+      }),
+    );
+    expect(stripePaymentsService.createTransfer).not.toHaveBeenCalled();
+  });
+
+  it('updates restaurant payment method settings without clearing stripe settings', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          stripe: {
+            accountId: 'acct_123',
+            payoutsEnabled: true,
+          },
+          methods: {
+            allowedPaymentMethods: ['COD'],
+            walletEnabled: false,
+            note: 'Old note',
+          },
+        },
+      },
+    });
+    prisma.restaurant.update.mockImplementation(
+      (args: RestaurantStripeSettingsUpdateArgs) =>
+        Promise.resolve({
+          id: args.where.id,
+          settings: args.data.settings,
+        }),
+    );
+
+    const result = await service.updateRestaurantPaymentMethods(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      {
+        allowedPaymentMethods: [
+          PaymentMethod.COD,
+          PaymentMethod.STRIPE,
+          PaymentMethod.STRIPE,
+        ],
+        walletEnabled: false,
+        note: 'Use cash and card',
+      },
+    );
+
+    const restaurantUpdate = prisma.restaurant.update as jest.Mock<
+      unknown,
+      [RestaurantStripeSettingsUpdateArgs]
+    >;
+    const updateArgs = restaurantUpdate.mock.calls[0]?.[0];
+    expect(updateArgs?.data.settings.payments.stripe).toEqual(
+      expect.objectContaining({
+        accountId: 'acct_123',
+        payoutsEnabled: true,
+      }),
+    );
+    expect(updateArgs?.data.settings.payments.methods).toEqual(
+      expect.objectContaining({
+        allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+        walletEnabled: false,
+        note: 'Use cash and card',
+        updatedBy: 'admin-1',
+      }),
+    );
+    expect(result.data.methods.allowedPaymentMethods).toEqual([
+      PaymentMethod.COD,
+      PaymentMethod.STRIPE,
+    ]);
   });
 
   it('marks payment paid from stripe webhook success', async () => {
