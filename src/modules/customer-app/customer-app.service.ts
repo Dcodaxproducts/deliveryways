@@ -65,6 +65,7 @@ import {
 import { normalizeLocale } from '../localizations/localization.util';
 import { MailerService } from '../mailer/mailer.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
+import { ContactSubmissionsService } from '../contact-submissions/contact-submissions.service';
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
@@ -226,6 +227,8 @@ export class CustomerAppService {
     private readonly mailerService?: MailerService,
     @Optional() private readonly globalSettingsService?: GlobalSettingsService,
     @Optional() private readonly configService?: ConfigService,
+    @Optional()
+    private readonly contactSubmissionsService?: ContactSubmissionsService,
   ) {}
 
   async listFavorites(
@@ -449,6 +452,20 @@ export class CustomerAppService {
     const branchLine = branch
       ? `Branch: ${branch.name} (${branch.id})`
       : 'Branch: Not selected';
+    const submission =
+      await this.contactSubmissionsService?.createPublicSubmission({
+        tenantId: restaurant.tenantId,
+        restaurantId: restaurant.id,
+        branchId: branch?.id ?? null,
+        customerId: user?.role === UserRoleEnum.CUSTOMER ? user.uid : undefined,
+        name,
+        email,
+        subject,
+        message,
+        metadata: {
+          source: 'PUBLIC_CONTACT_FORM',
+        },
+      });
 
     await Promise.all(
       recipients.map((recipient) =>
@@ -470,6 +487,7 @@ export class CustomerAppService {
 
     return {
       data: {
+        ...(submission ? { id: submission.id } : {}),
         restaurantId: restaurant.id,
         branchId: branch?.id ?? null,
         submitted: true,

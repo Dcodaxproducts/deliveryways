@@ -11,6 +11,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { LocalizationsModule } from '../localizations';
 import { MailerModule } from '../mailer/mailer.module';
 import { GlobalSettingsModule } from '../global-settings/global-settings.module';
+import { ContactSubmissionsModule } from '../contact-submissions/contact-submissions.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { GlobalSettingsModule } from '../global-settings/global-settings.module'
     LocalizationsModule,
     MailerModule,
     GlobalSettingsModule,
+    ContactSubmissionsModule,
   ],
   controllers: [CustomerAppController, PublicContentController],
   providers: [CustomerAppRepository, CustomerAppService],

@@ -42,6 +42,7 @@ import { LoyaltyWalletModule } from './modules/loyalty-wallet/loyalty-wallet.mod
 import { SystemHealthModule } from './modules/system-health/system-health.module';
 import { PackagePlansModule } from './modules/package-plans/package-plans.module';
 import { LocalizationsModule } from './modules/localizations';
+import { ContactSubmissionsModule } from './modules/contact-submissions/contact-submissions.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -110,6 +111,7 @@ import { AppController } from './app.controller';
     SystemHealthModule,
     PackagePlansModule,
     LocalizationsModule,
+    ContactSubmissionsModule,
   ],
   providers: [
     {

@@ -145,6 +145,13 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum ContactSubmissionStatus {
+  NEW
+  READ
+  REPLIED
+  ARCHIVED
+}
+
 enum PaymentTransactionType {
   CHARGE
   REFUND
@@ -329,6 +336,7 @@ model Tenant {
   tenantSubscriptions TenantSubscription[]
   orderReviews        OrderReview[]
   entityTranslations  EntityTranslation[]
+  contactSubmissions  ContactSubmission[]
 
   @@map("tenants")
 }
@@ -384,6 +392,7 @@ model Restaurant {
   tenantSubscriptions TenantSubscription[]
   orderReviews        OrderReview[]
   entityTranslations  EntityTranslation[]
+  contactSubmissions  ContactSubmission[]
 
   @@map("restaurants")
 }
@@ -426,6 +435,7 @@ model Branch {
   groupOrders         GroupOrderSession[]
   posOrderDrafts      PosOrderDraft[]
   orderReviews        OrderReview[]
+  contactSubmissions  ContactSubmission[]
 
   @@map("branches")
 }
@@ -504,9 +514,43 @@ model User {
   sentChatMessages       ChatMessage[]           @relation("ChatMessageUserSender")
   hostedGroupOrders      GroupOrderSession[]     @relation("GroupOrderHost")
   groupOrderParticipants GroupOrderParticipant[]
+  contactSubmissions     ContactSubmission[]     @relation("ContactSubmissionCustomer")
+  contactReplies         ContactSubmission[]     @relation("ContactSubmissionReplier")
 
   @@unique([email, restaurantId])
   @@map("users")
+}
+
+model ContactSubmission {
+  id           String                  @id @default(cuid())
+  tenantId     String                  @map("tenant_id")
+  restaurantId String                  @map("restaurant_id")
+  branchId     String?                 @map("branch_id")
+  customerId   String?                 @map("customer_id")
+  name         String
+  email        String
+  subject      String
+  message      String
+  status       ContactSubmissionStatus @default(NEW)
+  replySubject String?                 @map("reply_subject")
+  replyMessage String?                 @map("reply_message")
+  repliedAt    DateTime?               @map("replied_at") @db.Timestamptz
+  repliedById  String?                 @map("replied_by_id")
+  metadata     Json?
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime                @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  branch     Branch?    @relation(fields: [branchId], references: [id])
+  customer   User?      @relation("ContactSubmissionCustomer", fields: [customerId], references: [id])
+  repliedBy  User?      @relation("ContactSubmissionReplier", fields: [repliedById], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([restaurantId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([status, createdAt])
+  @@map("contact_submissions")
 }
 
 model Profile {

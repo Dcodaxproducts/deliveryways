@@ -111,7 +111,11 @@ describe('CustomerAppService', () => {
   };
 
   const makeService = (
-    options: { notifications?: boolean; localizations?: boolean } = {},
+    options: {
+      notifications?: boolean;
+      localizations?: boolean;
+      contactSubmissions?: boolean;
+    } = {},
   ) => {
     const findBranchesPublicContent = jest.fn<
       Promise<
@@ -191,6 +195,11 @@ describe('CustomerAppService', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     };
+    const contactSubmissionsService = {
+      createPublicSubmission: jest.fn().mockResolvedValue({
+        id: 'contact-submission-1',
+      }),
+    };
 
     const service = new CustomerAppService(
       repository as never,
@@ -203,6 +212,9 @@ describe('CustomerAppService', () => {
       mailerService as never,
       globalSettingsService as never,
       configService as never,
+      options.contactSubmissions
+        ? (contactSubmissionsService as never)
+        : undefined,
     );
     return {
       service,
@@ -216,6 +228,7 @@ describe('CustomerAppService', () => {
       mailerService,
       globalSettingsService,
       configService,
+      contactSubmissionsService,
     };
   };
 
@@ -643,6 +656,58 @@ describe('CustomerAppService', () => {
       },
       message: 'Contact form submitted successfully',
     });
+  });
+
+  it('stores contact form submission when submission management is available', async () => {
+    const { service, repository, contactSubmissionsService } = makeService({
+      contactSubmissions: true,
+    });
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      coverImage: null,
+      supportContact: { email: 'support@restaurant.test' },
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      settings: {},
+    });
+
+    const result = await service.submitContactForm(
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+      {
+        name: 'Jane Customer',
+        email: 'JANE@EXAMPLE.COM',
+        subject: 'Delivery question',
+        message: 'Please confirm delivery timing.',
+      },
+      {
+        uid: 'customer-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+    );
+
+    expect(
+      contactSubmissionsService.createPublicSubmission,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'customer-1',
+        name: 'Jane Customer',
+        email: 'jane@example.com',
+        subject: 'Delivery question',
+      }),
+    );
+    expect(result.data.id).toBe('contact-submission-1');
   });
 
   it('copies configured superadmin contact recipients', async () => {
