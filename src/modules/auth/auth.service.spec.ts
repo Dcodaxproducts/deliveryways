@@ -4,6 +4,15 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  BillingInterval,
+  PackageBillingModel,
+  PackageCommissionType,
+  PackagePayoutCycle,
+  PaymentStatus,
+  Prisma,
+  SubscriptionStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UserRoleEnum } from '../../common/enums';
@@ -81,6 +90,7 @@ describe('AuthService registerTenant duplicate email checks', () => {
   };
 
   const registerTenantDto = {
+    packagePlanId: 'plan-1',
     user: {
       email: ' Owner@Example.COM ',
       password: 'password123',
@@ -158,14 +168,54 @@ describe('AuthService registerTenant duplicate email checks', () => {
 });
 
 describe('AuthService registerTenant branch admin onboarding', () => {
+  type SubscriptionCreateArg = {
+    data: {
+      tenant: { connect: { id: string } };
+      restaurant: { connect: { id: string } };
+      packagePlan: { connect: { id: string } };
+      status: SubscriptionStatus;
+      paymentStatus: PaymentStatus;
+      startsAt: Date;
+      nextBillingAt: Date;
+      planSnapshot: Prisma.InputJsonValue;
+      note: string;
+      createdBy: string;
+      updatedBy: string;
+    };
+    select: {
+      id: true;
+      packagePlanId: true;
+      status: true;
+      paymentStatus: true;
+      startsAt: true;
+      nextBillingAt: true;
+    };
+  };
+  type SubscriptionCreateResult = {
+    id: string;
+    packagePlanId: string;
+    status: SubscriptionStatus;
+    paymentStatus: PaymentStatus;
+    startsAt: Date;
+    nextBillingAt: Date;
+  };
   let service: AuthService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;
   const prisma = {
     $transaction: jest.fn(),
+    packagePlan: {
+      findFirst: jest.fn(),
+    },
   };
   const tx = {
     branch: {
       update: jest.fn(),
+    },
+    tenantSubscription: {
+      create: jest.fn<
+        Promise<SubscriptionCreateResult>,
+        [SubscriptionCreateArg]
+      >(),
     },
   };
   const jwtService = {
@@ -201,10 +251,34 @@ describe('AuthService registerTenant branch admin onboarding', () => {
     tenantsService.assignOwner.mockResolvedValue(undefined);
     restaurantsService.create.mockResolvedValue({ id: 'restaurant-1' });
     branchesService.create.mockResolvedValue({ id: 'branch-1' });
+    prisma.packagePlan.findFirst.mockResolvedValue({
+      id: 'plan-1',
+      name: 'Growth Plan',
+      billingModel: PackageBillingModel.PLAN,
+      billingInterval: BillingInterval.MONTHLY,
+      planPrice: new Prisma.Decimal(2500),
+      commissionType: PackageCommissionType.PERCENTAGE,
+      commissionPercentage: new Prisma.Decimal(0),
+      commissionFixedAmount: new Prisma.Decimal(0),
+      commissionCapAmount: null,
+      vatPercentage: new Prisma.Decimal(0),
+      payoutCycle: PackagePayoutCycle.WEEKLY,
+      currency: 'PKR',
+      trialDays: 0,
+      features: null,
+    });
     prisma.$transaction.mockImplementation(
       (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
     );
     tx.branch.update.mockResolvedValue({ id: 'branch-1' });
+    tx.tenantSubscription.create.mockResolvedValue({
+      id: 'subscription-1',
+      packagePlanId: 'plan-1',
+      status: SubscriptionStatus.ACTIVE,
+      paymentStatus: PaymentStatus.PENDING,
+      startsAt: new Date('2026-06-24T04:30:00.000Z'),
+      nextBillingAt: new Date('2026-07-24T04:30:00.000Z'),
+    });
     jwtService.signAsync
       .mockResolvedValueOnce('access-token')
       .mockResolvedValueOnce('refresh-token');
@@ -223,6 +297,7 @@ describe('AuthService registerTenant branch admin onboarding', () => {
 
   it('creates branch admin credentials while registering a tenant', async () => {
     const result = await service.registerTenant({
+      packagePlanId: 'plan-1',
       user: {
         email: ' Owner@Example.COM ',
         password: 'Owner@12345',
@@ -255,6 +330,23 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
     });
 
+    expect(prisma.packagePlan.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'plan-1',
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    const subscriptionCreateArg = tx.tenantSubscription.create.mock.calls[0][0];
+    expect(subscriptionCreateArg.data).toMatchObject({
+      tenant: { connect: { id: 'tenant-1' } },
+      restaurant: { connect: { id: 'restaurant-1' } },
+      packagePlan: { connect: { id: 'plan-1' } },
+      status: SubscriptionStatus.ACTIVE,
+      paymentStatus: PaymentStatus.PENDING,
+      createdBy: 'owner-1',
+      updatedBy: 'owner-1',
+    });
     expect(usersService.create).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
@@ -287,6 +379,18 @@ describe('AuthService registerTenant branch admin onboarding', () => {
     expect(result.data.branchAdminCredentials).toEqual({
       email: 'branch.admin@example.com',
       password: 'Branch@12345',
+    });
+    expect(result.data.subscription).toMatchObject({
+      id: 'subscription-1',
+      packagePlanId: 'plan-1',
+      paymentStatus: PaymentStatus.PENDING,
+      paymentRequiredNow: true,
+      plan: {
+        id: 'plan-1',
+        name: 'Growth Plan',
+        planPrice: 2500,
+        currency: 'PKR',
+      },
     });
   });
 });

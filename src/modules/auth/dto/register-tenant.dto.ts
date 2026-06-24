@@ -217,6 +217,13 @@ export class RegisterBranchInfoDto {
 }
 
 export class RegisterTenantDto {
+  @ApiProperty({
+    description: 'Selected active package plan for business owner onboarding',
+  })
+  @IsString()
+  @IsNotEmpty()
+  packagePlanId!: string;
+
   @ApiProperty({ type: RegisterOwnerDto })
   @ValidateNested()
   @Type(() => RegisterOwnerDto)

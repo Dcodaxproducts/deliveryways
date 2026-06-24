@@ -61,8 +61,11 @@ export class DevTestingService {
 
     const ownerPassword = dto.ownerPassword ?? 'Pass@12345';
     const customerPassword = dto.customerPassword ?? 'Pass@12345';
+    const packagePlanId =
+      dto.packagePlanId ?? (await this.resolveBootstrapPackagePlanId());
 
     const registerPayload: RegisterTenantDto = {
+      packagePlanId,
       user: {
         email: dto.ownerEmail ?? `owner.${suffix}@deliveryways.dev`,
         password: ownerPassword,
@@ -180,6 +183,25 @@ export class DevTestingService {
       },
       message: 'Development store bootstrap completed successfully',
     };
+  }
+
+  private async resolveBootstrapPackagePlanId(): Promise<string> {
+    const packagePlan = await this.prisma.packagePlan.findFirst({
+      where: {
+        isActive: true,
+        deletedAt: null,
+      },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+
+    if (!packagePlan) {
+      throw new BadRequestException(
+        'Active package plan is required for dev store bootstrap',
+      );
+    }
+
+    return packagePlan.id;
   }
 
   async approveUser(dto: DevTestingUserIdentifierDto) {

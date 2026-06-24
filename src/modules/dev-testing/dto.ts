@@ -23,6 +23,11 @@ export class DevBootstrapStoreDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  packagePlanId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   @MinLength(8)
   ownerPassword?: string;
 

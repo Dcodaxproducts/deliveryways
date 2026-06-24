@@ -9,7 +9,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
+import {
+  BillingInterval,
+  PackageBillingModel,
+  PaymentStatus,
+  Prisma,
+  SubscriptionStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database';
@@ -132,6 +138,17 @@ export class AuthService {
     );
     if (existingTenant) {
       throw new ConflictException('Tenant slug already exists');
+    }
+
+    const packagePlan = await this.prisma.packagePlan.findFirst({
+      where: {
+        id: dto.packagePlanId,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    if (!packagePlan) {
+      throw new BadRequestException('Active package plan is required');
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
@@ -305,6 +322,43 @@ export class AuthService {
       }
 
       await this.tenantsService.assignOwner(tenant.id, user.id, tx);
+      const subscriptionStartsAt = new Date();
+      const subscriptionPaymentRequired =
+        this.isPackagePlanPaymentRequiredNow(packagePlan);
+      const subscription = await tx.tenantSubscription.create({
+        data: {
+          tenant: { connect: { id: tenant.id } },
+          restaurant: { connect: { id: restaurant.id } },
+          packagePlan: { connect: { id: packagePlan.id } },
+          status:
+            packagePlan.trialDays > 0
+              ? SubscriptionStatus.TRIALING
+              : SubscriptionStatus.ACTIVE,
+          paymentStatus: subscriptionPaymentRequired
+            ? PaymentStatus.PENDING
+            : PaymentStatus.PAID,
+          startsAt: subscriptionStartsAt,
+          nextBillingAt: this.resolvePackagePlanNextBillingAt(
+            packagePlan.billingInterval,
+            subscriptionStartsAt,
+            packagePlan.trialDays,
+          ),
+          planSnapshot: this.buildPackagePlanSnapshot(packagePlan),
+          note: subscriptionPaymentRequired
+            ? 'Payment required to activate selected package plan.'
+            : 'Selected during business owner registration.',
+          createdBy: user.id,
+          updatedBy: user.id,
+        },
+        select: {
+          id: true,
+          packagePlanId: true,
+          status: true,
+          paymentStatus: true,
+          startsAt: true,
+          nextBillingAt: true,
+        },
+      });
 
       return {
         ownerId: user.id,
@@ -312,6 +366,8 @@ export class AuthService {
         tenantId: tenant.id,
         restaurantId: restaurant.id,
         branchId: branch.id,
+        subscription,
+        paymentRequiredNow: subscriptionPaymentRequired,
         email: user.email,
         branchAdminCredentials: branchAdmin
           ? {
@@ -341,7 +397,13 @@ export class AuthService {
 
     return {
       data: {
-        ...result,
+        ownerId: result.ownerId,
+        branchAdminId: result.branchAdminId,
+        tenantId: result.tenantId,
+        restaurantId: result.restaurantId,
+        branchId: result.branchId,
+        email: result.email,
+        branchAdminCredentials: result.branchAdminCredentials,
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
         user: {
@@ -355,11 +417,101 @@ export class AuthService {
           isApproved: false,
           isGuest: false,
         },
+        subscription: {
+          id: result.subscription.id,
+          packagePlanId: result.subscription.packagePlanId,
+          status: result.subscription.status,
+          paymentStatus: result.subscription.paymentStatus,
+          startsAt: result.subscription.startsAt,
+          nextBillingAt: result.subscription.nextBillingAt,
+          paymentRequiredNow: result.paymentRequiredNow,
+          plan: {
+            id: packagePlan.id,
+            name: packagePlan.name,
+            billingModel: packagePlan.billingModel,
+            billingInterval: packagePlan.billingInterval,
+            planPrice: Number(packagePlan.planPrice),
+            currency: packagePlan.currency,
+            trialDays: packagePlan.trialDays,
+          },
+        },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
       },
       message: shouldAutoVerifyUser
         ? 'Tenant registration completed. Email verification is disabled.'
         : 'Tenant registration completed. Verify email with OTP.',
+    };
+  }
+
+  private isPackagePlanPaymentRequiredNow(packagePlan: {
+    billingModel: PackageBillingModel;
+    planPrice: Prisma.Decimal;
+    trialDays: number;
+  }): boolean {
+    if (packagePlan.trialDays > 0) {
+      return false;
+    }
+
+    return (
+      packagePlan.billingModel !== PackageBillingModel.COMMISSION &&
+      packagePlan.planPrice.greaterThan(0)
+    );
+  }
+
+  private resolvePackagePlanNextBillingAt(
+    billingInterval: BillingInterval,
+    startsAt: Date,
+    trialDays: number,
+  ): Date {
+    const nextBillingAt = new Date(startsAt);
+    if (trialDays > 0) {
+      nextBillingAt.setDate(nextBillingAt.getDate() + trialDays);
+      return nextBillingAt;
+    }
+
+    if (billingInterval === BillingInterval.YEARLY) {
+      nextBillingAt.setFullYear(nextBillingAt.getFullYear() + 1);
+      return nextBillingAt;
+    }
+
+    nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
+    return nextBillingAt;
+  }
+
+  private buildPackagePlanSnapshot(packagePlan: {
+    id: string;
+    name: string;
+    billingModel: PackageBillingModel;
+    billingInterval: BillingInterval;
+    planPrice: Prisma.Decimal;
+    commissionType: string;
+    commissionPercentage: Prisma.Decimal;
+    commissionFixedAmount: Prisma.Decimal;
+    commissionCapAmount: Prisma.Decimal | null;
+    vatPercentage: Prisma.Decimal;
+    payoutCycle: string;
+    currency: string;
+    trialDays: number;
+    features: Prisma.JsonValue | null;
+  }): Prisma.InputJsonValue {
+    return {
+      id: packagePlan.id,
+      name: packagePlan.name,
+      billingModel: packagePlan.billingModel,
+      billingInterval: packagePlan.billingInterval,
+      planPrice: Number(packagePlan.planPrice),
+      commissionType: packagePlan.commissionType,
+      commissionPercentage: Number(packagePlan.commissionPercentage),
+      commissionFixedAmount: Number(packagePlan.commissionFixedAmount),
+      commissionCapAmount:
+        packagePlan.commissionCapAmount === null
+          ? null
+          : Number(packagePlan.commissionCapAmount),
+      vatPercentage: Number(packagePlan.vatPercentage),
+      payoutCycle: packagePlan.payoutCycle,
+      currency: packagePlan.currency,
+      trialDays: packagePlan.trialDays,
+      features: packagePlan.features,
     };
   }
 
