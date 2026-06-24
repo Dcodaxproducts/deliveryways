@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  AllowUnverified,
   AuthUserContext,
   CurrentUser,
   Public,
@@ -71,6 +72,7 @@ export class PaymentsController {
   }
 
   @ApiBearerAuth()
+  @AllowUnverified()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
   @Post('subscriptions/:subscriptionId/attempts')
