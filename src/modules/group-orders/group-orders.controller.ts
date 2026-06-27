@@ -124,6 +124,12 @@ export class GroupOrdersController {
   }
 
   @Roles(RolesEnum.CUSTOMER)
+  @Post(':id/cancel')
+  cancel(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.groupOrdersService.cancel(user, id);
+  }
+
+  @Roles(RolesEnum.CUSTOMER)
   @Post(':id/quote')
   quote(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.groupOrdersService.quote(user, id);

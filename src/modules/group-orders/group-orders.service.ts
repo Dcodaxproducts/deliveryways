@@ -509,6 +509,10 @@ export class GroupOrdersService {
     };
   }
 
+  cancel(user: AuthUserContext, id: string) {
+    return this.updateStatus(user, id, { status: GroupOrderStatus.CANCELLED });
+  }
+
   async quote(user: AuthUserContext, id: string) {
     const session = await this.pruneInvalidActiveItems(
       user,

@@ -712,8 +712,9 @@ export class CouponsService {
         new Prisma.Decimal(0),
       );
     } else if (coupon.discountType === CouponDiscountType.FLAT) {
-      discountAmount = Prisma.Decimal.min(
-        coupon.discountValue,
+      discountAmount = this.resolveFlatDiscountAmount(
+        coupon,
+        input,
         eligibleSubtotal,
       );
     } else {
@@ -882,6 +883,69 @@ export class CouponsService {
     throw new BadRequestException(
       'Coupon is not applicable to selected categories',
     );
+  }
+
+  private resolveFlatDiscountAmount(
+    coupon: Coupon & {
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+    input: CouponValidationInput,
+    eligibleSubtotal: Prisma.Decimal,
+  ) {
+    if (coupon.applyMode === CouponApplyMode.ORDER_TOTAL) {
+      return Prisma.Decimal.min(coupon.discountValue, eligibleSubtotal);
+    }
+
+    const eligibleLineItems = this.resolveEligibleLineItems(coupon, input);
+    if (!eligibleLineItems.length) {
+      return Prisma.Decimal.min(coupon.discountValue, eligibleSubtotal);
+    }
+
+    const discountAmount = eligibleLineItems.reduce((sum, line) => {
+      const quantity = Math.max(1, line.quantity ?? 1);
+      return sum.plus(coupon.discountValue.mul(quantity));
+    }, new Prisma.Decimal(0));
+
+    return Prisma.Decimal.min(discountAmount, eligibleSubtotal);
+  }
+
+  private resolveEligibleLineItems(
+    coupon: Coupon & {
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+      scopeCategories?: Array<{ menuCategory: { id: string } }>;
+    },
+    input: CouponValidationInput,
+  ) {
+    if (!input.lineItems?.length) {
+      return [];
+    }
+
+    const scopedMenuItemIds = this.resolveScopedIds(
+      coupon.scopeMenuItemId,
+      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
+    );
+    const scopedCategoryIds = this.resolveScopedIds(
+      coupon.scopeCategoryId,
+      coupon.scopeCategories?.map((entry) => entry.menuCategory.id) ?? [],
+    );
+
+    if (!scopedMenuItemIds.length && !scopedCategoryIds.length) {
+      return input.lineItems.filter((line) => !line.dealId);
+    }
+
+    return input.lineItems.filter((line) => {
+      if (line.dealId) {
+        return false;
+      }
+
+      return (
+        scopedMenuItemIds.includes(line.menuItemId) ||
+        (line.categoryIds ?? [line.categoryId]).some((categoryId) =>
+          scopedCategoryIds.includes(categoryId),
+        )
+      );
+    });
   }
 
   private resolveFlexibleDealEligibleSubtotal(

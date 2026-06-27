@@ -246,6 +246,102 @@ describe('CartService', () => {
     expect(cartRepository.findByCustomerId).toHaveBeenCalledWith('user-1');
   });
 
+  it('clears stale carts before returning the customer cart', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      restaurantMenuId: null,
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      tipAmount: new Prisma.Decimal(0),
+      customerNote: null,
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      items: [],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(cartRepository.deleteByCustomerId).toHaveBeenCalledWith('user-1');
+    expect(result.data.id).toBeNull();
+    expect(result.data.items).toEqual([]);
+  });
+
+  it('keeps selected modifier totals on top of fixed deal cart pricing', async () => {
+    const { service, couponsService } = makeService();
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-1',
+      title: 'Combo',
+      description: null,
+      imageUrl: null,
+      code: 'COMBO',
+      fixedPrice: new Prisma.Decimal(10),
+      menuItemIds: ['menu-1'],
+      selectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+      requiredQuantity: null,
+      categoryScopes: [],
+    });
+
+    const priced = await (
+      service as unknown as {
+        applyFixedDealPricingToCartItems: (
+          items: Array<{
+            id: string;
+            dealId: string;
+            menuItemId: string;
+            categoryId: string | null;
+            categoryIds: string[];
+            quantity: number;
+            unitPrice: number;
+            unitPriceWithModifiers: number;
+            modifiersTotal: number;
+            depositTotal: number;
+            lineTotal: number;
+          }>,
+          cart: {
+            restaurantId: string;
+            branchId: string;
+          },
+        ) => Promise<
+          Array<{ unitPriceWithModifiers: number; lineTotal: number }>
+        >;
+      }
+    ).applyFixedDealPricingToCartItems(
+      [
+        {
+          id: 'item-1',
+          dealId: 'deal-1',
+          menuItemId: 'menu-1',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 1,
+          unitPrice: 20,
+          unitPriceWithModifiers: 23,
+          modifiersTotal: 3,
+          depositTotal: 0,
+          lineTotal: 23,
+        },
+      ],
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+    );
+
+    expect(priced[0].unitPriceWithModifiers).toBe(13);
+    expect(priced[0].lineTotal).toBe(13);
+  });
+
   it('returns populated cart item details and selected address state', async () => {
     const {
       service,

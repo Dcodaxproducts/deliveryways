@@ -39,6 +39,8 @@ import {
 } from './dto';
 import { CartRepository } from './cart.repository';
 
+const CART_INACTIVITY_TTL_MS = 12 * 60 * 60 * 1000;
+
 interface CartSnapshotItem {
   id: string;
   menuItemId: string;
@@ -151,6 +153,7 @@ interface CartResponseDealLine {
   prepTimeMinutes?: number | null;
   unitPrice: number | null;
   unitPriceWithModifiers: number | null;
+  modifiersTotal?: number;
   depositTotal: number;
   lineTotal: number | null;
 }
@@ -239,7 +242,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (!cart) {
       return {
@@ -265,7 +268,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (!cart) {
       return {
@@ -353,7 +356,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -407,7 +410,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -459,7 +462,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -663,9 +666,7 @@ export class CartService {
     }
 
     await this.cartRepository.deleteItem(item.id);
-    const cart = await this.cartRepository.findByCustomerId(
-      item.cart.customerId,
-    );
+    const cart = await this.findActiveCartByCustomerId(item.cart.customerId);
 
     return {
       data: cart
@@ -729,9 +730,7 @@ export class CartService {
 
     await this.cartRepository.deleteItems(dealItems.map((item) => item.id));
 
-    const updatedCart = await this.cartRepository.findByCustomerId(
-      cart.customerId,
-    );
+    const updatedCart = await this.findActiveCartByCustomerId(cart.customerId);
 
     return {
       data: updatedCart
@@ -751,7 +750,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (cart) {
       await this.cartRepository.deleteByCustomerId(customerId);
@@ -826,13 +825,27 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const cart = await this.cartRepository.findByCustomerId(customerId);
+    const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
     }
 
     return cart;
+  }
+
+  private async findActiveCartByCustomerId(customerId: string) {
+    const cart = await this.cartRepository.findByCustomerId(customerId);
+    if (!cart) {
+      return null;
+    }
+
+    if (Date.now() - cart.updatedAt.getTime() <= CART_INACTIVITY_TTL_MS) {
+      return cart;
+    }
+
+    await this.cartRepository.deleteByCustomerId(customerId);
+    return null;
   }
 
   private findCartItemsByDealId(cart: CartSnapshot, dealId: string) {
@@ -853,9 +866,7 @@ export class CartService {
       user,
       requestedCustomerId,
     );
-    const existingCart = await this.cartRepository.findByCustomerId(
-      customer.id,
-    );
+    const existingCart = await this.findActiveCartByCustomerId(customer.id);
     const requestedBranchId = this.resolveOptionalString(dto.branchId);
     const requestedRestaurantMenuId = this.resolveOptionalString(
       dto.restaurantMenuId,
@@ -1517,9 +1528,14 @@ export class CartService {
       }
 
       const fixedTotal = pricing.fixedPrice.mul(dealQuantity);
-      const merchandiseTotals = dealItemIndexes.map((index) => {
+      const modifierTotals = dealItemIndexes.map(
+        (index) => new Prisma.Decimal(pricedItems[index].modifiersTotal ?? 0),
+      );
+      const merchandiseTotals = dealItemIndexes.map((index, offset) => {
         const item = pricedItems[index];
-        return new Prisma.Decimal(item.lineTotal ?? 0).minus(item.depositTotal);
+        return new Prisma.Decimal(item.lineTotal ?? 0)
+          .minus(item.depositTotal)
+          .minus(modifierTotals[offset].mul(item.quantity));
       });
       const allocations = this.allocateFixedDealTotal(
         merchandiseTotals,
@@ -1538,10 +1554,13 @@ export class CartService {
           return item;
         }
 
+        const modifierTotal = new Prisma.Decimal(item.modifiersTotal ?? 0);
         const unitPrice = allocatedMerchandiseTotal
           .div(item.quantity)
+          .plus(modifierTotal)
           .toDecimalPlaces(2);
         const lineTotal = allocatedMerchandiseTotal
+          .plus(modifierTotal.mul(item.quantity))
           .plus(item.depositTotal)
           .toDecimalPlaces(2);
 
@@ -1618,8 +1637,15 @@ export class CartService {
         menuItemIds: includedItems.map((item) => item.menuItemId),
         quantity: dealQuantity,
         unitPrice: Number(pricing.fixedPrice),
-        modifiersTotal: 0,
-        unitPriceWithModifiers: Number(pricing.fixedPrice),
+        modifiersTotal: Number(
+          includedItems.reduce(
+            (sum, item) => sum.plus(item.modifiersTotal),
+            new Prisma.Decimal(0),
+          ),
+        ),
+        unitPriceWithModifiers: Number(
+          lineTotal.minus(depositTotal).div(dealQuantity),
+        ),
         depositAmount: Number(depositTotal.div(dealQuantity)),
         depositTotal: Number(depositTotal),
         lineTotal: Number(lineTotal),
@@ -1904,6 +1930,7 @@ export class CartService {
           variationId: dealId ? undefined : (item.variationId ?? undefined),
           quantity: item.quantity,
           modifiers: this.readModifiers(item.modifiers),
+          modifierSelections: this.readModifierSelections(item.modifiers),
           sections: dealId ? undefined : this.readSections(item.modifiers),
           note: item.note ?? undefined,
         };

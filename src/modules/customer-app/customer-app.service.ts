@@ -1040,6 +1040,7 @@ export class CustomerAppService {
               whatsapp: branchContactInfo?.whatsapp ?? null,
               email: branchContactInfo?.email ?? null,
               address: this.mapPublicAddress(branchAddress, 'shopNumber'),
+              isOpen: this.isBranchOpenNow(translatedBranch.settings),
               scheduleTimings: {
                 openingHours: this.readBranchScheduleHours(
                   translatedBranch.settings,
@@ -4094,9 +4095,79 @@ export class CustomerAppService {
       city: address.city,
       state: address.state,
       country: address.country,
+      addressLines: [
+        [address.street, address.area].filter(Boolean).join(' - '),
+        [address.postalCode, address.city].filter(Boolean).join(' - '),
+      ].filter((line) => line.length > 0),
       lat: address.lat ? Number(address.lat) : null,
       lng: address.lng ? Number(address.lng) : null,
     };
+  }
+
+  private isBranchOpenNow(settings: unknown) {
+    const hours = this.readBranchScheduleHours(settings, 'openingHours');
+    if (!hours.length) {
+      return true;
+    }
+
+    const local = this.getKarachiLocalNow();
+    const today = hours.find(
+      (entry) =>
+        this.readStringValue(entry, [['dayOfWeek']]) === local.dayOfWeek,
+    );
+
+    if (
+      !today ||
+      this.readBooleanValue(today, [['isClosed']]) ||
+      !this.readStringValue(today, [['openTime']]) ||
+      !this.readStringValue(today, [['closeTime']])
+    ) {
+      return false;
+    }
+
+    const openMinutes = this.parseTimeMinutes(
+      this.readStringValue(today, [['openTime']]),
+    );
+    const closeMinutes = this.parseTimeMinutes(
+      this.readStringValue(today, [['closeTime']]),
+    );
+
+    if (openMinutes === null || closeMinutes === null) {
+      return false;
+    }
+
+    return openMinutes <= closeMinutes
+      ? local.minutes >= openMinutes && local.minutes < closeMinutes
+      : local.minutes >= openMinutes || local.minutes < closeMinutes;
+  }
+
+  private getKarachiLocalNow() {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Karachi',
+      weekday: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+    const read = (type: string) =>
+      parts.find((part) => part.type === type)?.value ?? '';
+    return {
+      dayOfWeek: read('weekday').toUpperCase(),
+      minutes: Number(read('hour')) * 60 + Number(read('minute')),
+    };
+  }
+
+  private parseTimeMinutes(value: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const [hour, minute] = value.split(':').map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return null;
+    }
+
+    return hour * 60 + minute;
   }
 
   private readStringValue(source: unknown, paths: string[][]): string | null {

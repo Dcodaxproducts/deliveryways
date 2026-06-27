@@ -1918,6 +1918,7 @@ describe('CustomerAppService', () => {
       city: 'Rawalpindi',
       state: 'Punjab',
       country: 'Pakistan',
+      addressLines: ['Restaurant Street - HQ 1', '46000 - Rawalpindi'],
       lat: 33.6,
       lng: 73.05,
     });
@@ -1951,9 +1952,11 @@ describe('CustomerAppService', () => {
         city: 'Lahore',
         state: 'Punjab',
         country: 'Pakistan',
+        addressLines: ['Branch Street - Shop 8', '54000 - Lahore'],
         lat: 31.5204,
         lng: 74.3587,
       },
+      isOpen: false,
       scheduleTimings: {
         openingHours: [
           {

@@ -323,6 +323,49 @@ describe('CouponsService', () => {
     expect(Number(result.discountAmount)).toBe(150);
   });
 
+  it('applies scoped flat category discounts once per eligible item quantity', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FLAT,
+        discountValue: new Prisma.Decimal(5),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        scopeCategories: [{ menuCategory: { id: 'cat-1' } }],
+      }),
+    );
+
+    const result = await service.validateForCheckout({
+      ...baseInput,
+      subtotal: 50,
+      lineItems: [
+        {
+          menuItemId: 'mi-1',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 2,
+          lineTotal: 20,
+        },
+        {
+          menuItemId: 'mi-2',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 1,
+          lineTotal: 10,
+        },
+        {
+          menuItemId: 'mi-3',
+          categoryId: 'cat-2',
+          categoryIds: ['cat-2'],
+          quantity: 1,
+          lineTotal: 20,
+        },
+      ],
+    });
+
+    expect(Number(result.discountAmount)).toBe(15);
+  });
+
   it('caps flat discount at subtotal', async () => {
     repository.findByCode!.mockResolvedValue(
       makeCoupon({

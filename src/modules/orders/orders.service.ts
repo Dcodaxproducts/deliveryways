@@ -760,7 +760,7 @@ export class OrdersService {
 
     const settings = this.readBranchSettings(branch.settings);
     const enforceMinimumOrderAmount = options.enforceMinimumOrderAmount ?? true;
-    this.assertBranchAcceptingOrders(settings);
+    this.assertBranchAcceptingOrders(settings, orderTime);
     const customer = await this.resolveQuoteCustomer(
       user,
       branch,
@@ -1367,6 +1367,8 @@ export class OrdersService {
         categoryId: line.categoryId,
         categoryIds: line.categoryIds,
         dealId: line.dealId,
+        quantity: line.quantity,
+        unitPrice: Number(line.unitPrice),
         lineTotal: Number(line.lineTotal),
       })),
     };
@@ -1522,9 +1524,20 @@ export class OrdersService {
       }
 
       const fixedTotal = pricing.fixedPrice.mul(firstQuantity);
-      const merchandiseTotals = dealLineIndexes.map((index) => {
+      const modifierTotals = dealLineIndexes.map((index) =>
+        (pricedLines[index].snapshotModifiers ?? []).reduce(
+          (sum, modifier) =>
+            sum.plus(
+              new Prisma.Decimal(modifier.unitPrice).mul(modifier.quantity),
+            ),
+          new Prisma.Decimal(0),
+        ),
+      );
+      const merchandiseTotals = dealLineIndexes.map((index, offset) => {
         const line = pricedLines[index];
-        return line.lineTotal.minus(line.depositAmount.mul(line.quantity));
+        return line.lineTotal
+          .minus(line.depositAmount.mul(line.quantity))
+          .minus(modifierTotals[offset].mul(line.quantity));
       });
       const allocations = this.allocateFixedDealTotal(
         merchandiseTotals,
@@ -1543,10 +1556,19 @@ export class OrdersService {
           return line;
         }
 
+        const modifierTotal = (line.snapshotModifiers ?? []).reduce(
+          (sum, modifier) =>
+            sum.plus(
+              new Prisma.Decimal(modifier.unitPrice).mul(modifier.quantity),
+            ),
+          new Prisma.Decimal(0),
+        );
         const unitPrice = allocatedMerchandiseTotal
           .div(line.quantity)
+          .plus(modifierTotal)
           .toDecimalPlaces(2);
         const lineTotal = allocatedMerchandiseTotal
+          .plus(modifierTotal.mul(line.quantity))
           .plus(line.depositAmount.mul(line.quantity))
           .toDecimalPlaces(2);
 
@@ -4291,10 +4313,14 @@ export class OrdersService {
     return new Prisma.Decimal(tipAmount ?? 0).toDecimalPlaces(2);
   }
 
-  private assertBranchAcceptingOrders(settings: BranchSettings) {
+  private assertBranchAcceptingOrders(
+    settings: BranchSettings,
+    orderTime: string | null,
+  ) {
     const closure = settings.temporaryClosure;
-    const holidayOpeningHour = this.resolveTodayHolidayOpeningHour(
+    const holidayOpeningHour = this.resolveHolidayOpeningHourForOrderTime(
       settings.holidayOpeningHours,
+      orderTime,
     );
 
     if (
@@ -4432,6 +4458,16 @@ export class OrdersService {
       holidayOpeningHours.find((item) => this.isHolidayDateMatch(item, date)) ??
       null
     );
+  }
+
+  private resolveHolidayOpeningHourForOrderTime(
+    holidayOpeningHours: BranchHolidayOpeningHour[] | undefined,
+    orderTime: string | null,
+  ): BranchHolidayOpeningHour | null {
+    const local = this.getScheduleLocalParts(orderTime);
+    return local
+      ? this.resolveHolidayOpeningHourForDate(holidayOpeningHours, local.date)
+      : this.resolveTodayHolidayOpeningHour(holidayOpeningHours ?? []);
   }
 
   private toHolidayDeliveryHour(

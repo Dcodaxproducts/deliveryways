@@ -307,6 +307,19 @@ describe('GroupOrdersService', () => {
     );
   });
 
+  it('cancels group orders through the direct cancel action', async () => {
+    const { service } = makeService();
+    const updateStatus = jest
+      .spyOn(service, 'updateStatus')
+      .mockResolvedValue({ data: { id: 'session-1' }, message: 'ok' } as never);
+
+    await service.cancel(customerUser, 'session-1');
+
+    expect(updateStatus).toHaveBeenCalledWith(customerUser, 'session-1', {
+      status: 'CANCELLED',
+    });
+  });
+
   it('does not require delivery coordinates when fetching group-order details', async () => {
     const { service, groupOrdersRepository, ordersService } = makeService();
     groupOrdersRepository.findSessionById.mockResolvedValue({
