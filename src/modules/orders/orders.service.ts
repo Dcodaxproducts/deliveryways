@@ -4371,7 +4371,8 @@ export class OrdersService {
         ? 'Pickup is not available at requested order time'
         : 'Delivery is not available at requested order time';
 
-    const local = this.getScheduleLocalParts(orderTime);
+    const effectiveOrderTime = orderTime ?? new Date().toISOString();
+    const local = this.getScheduleLocalParts(effectiveOrderTime);
     const holidayOpeningHour = local
       ? this.resolveHolidayOpeningHourForDate(
           settings.holidayOpeningHours,
@@ -4581,12 +4582,12 @@ export class OrdersService {
   private resolveTodayHolidayOpeningHour(
     holidayOpeningHours: BranchHolidayOpeningHour[],
   ): BranchHolidayOpeningHour | null {
-    const today = new Date().toISOString().slice(0, 10);
-    return (
-      holidayOpeningHours.find((item) =>
-        this.isHolidayDateMatch(item, today),
-      ) ?? null
-    );
+    const today = this.getScheduleLocalParts(new Date().toISOString())?.date;
+    return today
+      ? (holidayOpeningHours.find((item) =>
+          this.isHolidayDateMatch(item, today),
+        ) ?? null)
+      : null;
   }
 
   private isHolidayDateMatch(item: BranchHolidayOpeningHour, date: string) {

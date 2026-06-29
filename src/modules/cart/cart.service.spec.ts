@@ -39,6 +39,7 @@ describe('CartService', () => {
       quoteForCouponValidation: jest.fn(),
       assertDeliveryAddressCoverage: jest.fn(),
       create: jest.fn(),
+      details: jest.fn(),
     };
 
     const profilesRepository = {
@@ -105,6 +106,79 @@ describe('CartService', () => {
       selectedModifiers,
       modifierSelections,
     );
+
+  it('reorders a previous order using only the order id', async () => {
+    const { service, ordersService } = makeService();
+    const user = {
+      id: 'customer-user',
+      role: UserRoleEnum.CUSTOMER,
+      tenantId: 'tenant-1',
+    };
+    const cartResponse = {
+      data: { id: 'cart-1', items: [] },
+      message: 'Item added to cart successfully',
+    };
+
+    ordersService.details.mockResolvedValue({
+      data: {
+        id: 'order-1',
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        items: [
+          {
+            id: 'order-item-1',
+            menuItemId: 'menu-item-1',
+            variationId: 'variation-1',
+            quantity: 2,
+            note: 'Less spicy',
+            snapshotModifiers: {
+              dealId: 'deal-1',
+              modifierSelections: [
+                {
+                  modifierGroupId: 'group-1',
+                  modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const addItemSpy = jest
+      .spyOn(service, 'addItem')
+      .mockResolvedValue(cartResponse as never);
+
+    const result = await service.reorder(
+      user as never,
+      { orderId: 'order-1' },
+      'customer-user',
+    );
+
+    expect(ordersService.details).toHaveBeenCalledWith(user, 'order-1');
+    expect(addItemSpy).toHaveBeenCalledWith(
+      user,
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        menuItemId: 'menu-item-1',
+        variationId: 'variation-1',
+        quantity: 2,
+        note: 'Less spicy',
+        modifiers: undefined,
+        modifierSelections: [
+          {
+            modifierGroupId: 'group-1',
+            modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+          },
+        ],
+        sections: undefined,
+        dealId: 'deal-1',
+      },
+      'customer-user',
+      undefined,
+    );
+    expect(result.message).toBe('Order added to cart successfully');
+  });
 
   it('requires only item-attached modifiers marked as required', () => {
     const { service } = makeService();

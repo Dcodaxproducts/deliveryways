@@ -235,6 +235,46 @@ describe('OrdersService - delivery radius', () => {
     ).toThrow('Delivery is not available at requested order time');
   });
 
+  it('validates normal delivery orders against current branch hours', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-09T07:30:00.000Z'));
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            deliveryHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string | null,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      deliveryHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '12:00',
+          closeTime: '22:00',
+        },
+      ],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        null,
+      ),
+    ).not.toThrow();
+    jest.useRealTimers();
+  });
+
   it('falls back to opening hours when delivery hours are not configured', () => {
     const assertDeliveryOrderWithinHours = (
       service as unknown as {

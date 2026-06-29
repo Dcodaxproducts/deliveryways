@@ -22,6 +22,7 @@ import {
   CartCustomerScopeDto,
   CheckoutCartDto,
   QuoteCartDto,
+  ReorderCartDto,
   UpdateCartDealDto,
   UpdateCartAddressDto,
   UpdateCartCouponDto,
@@ -115,6 +116,20 @@ export class CartController {
   ) {
     return this.cartService.removeCoupon(
       user,
+      scope.customerId,
+      scope.restaurantId,
+    );
+  }
+
+  @Post('reorder')
+  reorder(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ReorderCartDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.reorder(
+      user,
+      dto,
       scope.customerId,
       scope.restaurantId,
     );

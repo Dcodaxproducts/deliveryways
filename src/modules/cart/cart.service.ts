@@ -30,6 +30,7 @@ import {
   CartItemSectionDto,
   CheckoutCartDto,
   QuoteCartDto,
+  ReorderCartDto,
   UpdateCartAddressDto,
   UpdateCartCouponDto,
   UpdateCartDealDto,
@@ -481,6 +482,72 @@ export class CartService {
     return {
       data: await this.buildCartResponse(updatedCart, user),
       message: 'Cart coupon removed successfully',
+    };
+  }
+
+  async reorder(
+    user: AuthUserContext,
+    dto: ReorderCartDto,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    const orderResponse = await this.ordersService.details(user, dto.orderId);
+    const order = this.asObject(orderResponse.data);
+    const branch = this.asObject(order.branch);
+    const branchId =
+      this.readString(order.branchId) ?? this.readString(branch.id);
+    const orderType = this.readOrderType(order.orderType);
+    const items = Array.isArray(order.items)
+      ? order.items
+      : Array.isArray(order.itemsPreview)
+        ? order.itemsPreview
+        : [];
+
+    if (!branchId) {
+      throw new BadRequestException('Order branch is required for reorder');
+    }
+
+    let updatedCart: Awaited<ReturnType<typeof this.addItem>> | null = null;
+    let addedItems = 0;
+
+    for (const rawItem of items) {
+      const item = this.asObject(rawItem);
+      const menuItemId = this.readString(item.menuItemId);
+
+      if (!menuItemId) {
+        continue;
+      }
+
+      const snapshotModifiers = this.asCartJsonValue(item.snapshotModifiers);
+      const payload: AddCartItemDto = {
+        branchId,
+        orderType,
+        menuItemId,
+        variationId: this.readString(item.variationId) ?? undefined,
+        quantity: this.readPositiveInt(item.quantity),
+        note: this.readString(item.note) ?? undefined,
+        modifiers: this.readModifiers(snapshotModifiers),
+        modifierSelections: this.readModifierSelections(snapshotModifiers),
+        sections: this.readSections(snapshotModifiers),
+        dealId: this.readDealId(snapshotModifiers),
+      };
+
+      updatedCart = await this.addItem(
+        user,
+        payload,
+        requestedCustomerId,
+        requestedRestaurantId,
+      );
+      addedItems += 1;
+    }
+
+    if (!updatedCart || addedItems === 0) {
+      throw new BadRequestException('Order has no reorderable items');
+    }
+
+    return {
+      ...updatedCart,
+      message: 'Order added to cart successfully',
     };
   }
 
@@ -2026,6 +2093,37 @@ export class CartService {
     }
 
     return value as Record<string, unknown>;
+  }
+
+  private asCartJsonValue(value: unknown): Prisma.JsonValue | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    return value as Prisma.JsonValue;
+  }
+
+  private readString(value: unknown): string | null {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+
+    return typeof value === 'number' && Number.isFinite(value)
+      ? String(value)
+      : null;
+  }
+
+  private readPositiveInt(value: unknown): number {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  }
+
+  private readOrderType(value: unknown): OrderTypeEnum | undefined {
+    return value === OrderTypeEnum.DELIVERY ||
+      value === OrderTypeEnum.TAKEAWAY ||
+      value === OrderTypeEnum.DINE_IN
+      ? value
+      : undefined;
   }
 
   private toOrderTypeEnum(orderType: OrderType): OrderTypeEnum {

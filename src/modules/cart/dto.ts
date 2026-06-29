@@ -54,6 +54,14 @@ export class CartItemSectionDto {
   menuItemId!: string;
 }
 
+export class ReorderCartDto {
+  @ApiProperty({
+    description: 'Previous order id to copy into the active cart',
+  })
+  @IsString()
+  orderId!: string;
+}
+
 export class AddCartItemDto {
   @ApiPropertyOptional({
     description:
