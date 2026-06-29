@@ -1804,6 +1804,7 @@ describe('CustomerAppService', () => {
   });
 
   it('includes restaurant cover image on home-screen/public content responses', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-04T00:00:00.000Z'));
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -1988,6 +1989,7 @@ describe('CustomerAppService', () => {
       },
       tableReservationsEnabled: true,
     });
+    jest.useRealTimers();
   });
 
   it('keeps home screen cuisine and promotion payloads compact', async () => {

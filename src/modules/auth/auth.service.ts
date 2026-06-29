@@ -37,6 +37,7 @@ import {
   DevUserUpdateDto,
   ForceDeleteUsersDto,
   ForgotPasswordDto,
+  GoogleLoginDto,
   ListCustomersDto,
   LoginDto,
   RefreshDto,
@@ -75,6 +76,13 @@ type DevUserRecord = {
   createdAt: Date;
   updatedAt: Date;
   profile?: unknown;
+};
+
+type GoogleTokenInfo = {
+  aud?: string;
+  email?: string;
+  email_verified?: string | boolean;
+  sub?: string;
 };
 
 @Injectable()
@@ -846,6 +854,87 @@ export class AuthService {
         deletionState: loginDeletionState,
       }),
       message: loginDeletionState?.message ?? 'Login successful',
+    };
+  }
+
+  async googleLogin(dto: GoogleLoginDto) {
+    const tokenInfo = await this.verifyGoogleIdToken(dto.idToken);
+    const email = tokenInfo.email?.trim().toLowerCase();
+
+    if (!email) {
+      throw new UnauthorizedException('Invalid Google credentials');
+    }
+
+    const user = await this.resolveLoginUser({
+      email,
+      restaurantId: dto.restaurantId,
+      role: dto.role,
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(
+        'No account is linked to this Google email',
+      );
+    }
+
+    if (user.email.trim().toLowerCase() !== email) {
+      throw new UnauthorizedException('Invalid Google credentials');
+    }
+
+    if (user.role === 'CUSTOMER' && !dto.restaurantId) {
+      throw new BadRequestException(
+        'restaurantId is required for customer login',
+      );
+    }
+
+    const loginDeletionState = this.resolveRecoverableLoginState(user);
+
+    this.assertBusinessAdminLoginAccess(user);
+
+    if (!user.isActive && !loginDeletionState) {
+      throw new ForbiddenException('Your account is inactive');
+    }
+
+    if (!loginDeletionState) {
+      await this.assertAssignedBranchContext(user);
+    }
+
+    const auth = await this.issueAuthTokens({
+      uid: user.id,
+      actorType: 'USER',
+      role: user.role,
+      tid: user.tenantId,
+      rid: user.restaurantId,
+      bid: user.branchId,
+      isGuest: user.isGuest,
+    });
+
+    return {
+      data: await this.resolveMediaResponse({
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          actorType: 'USER',
+          tenantId: user.tenantId,
+          restaurantId:
+            user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
+          branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
+          isVerified: user.isVerified,
+          isApproved: user.isApproved,
+          isGuest: user.isGuest,
+          profile: user.profile,
+          deletionScheduled: !!loginDeletionState,
+          deleteAfter: loginDeletionState?.deleteAfter ?? null,
+          canCancelDeletion: !!loginDeletionState,
+          deletionReason: loginDeletionState?.reason ?? null,
+          authProvider: 'GOOGLE',
+        },
+        deletionState: loginDeletionState,
+      }),
+      message: loginDeletionState?.message ?? 'Google login successful',
     };
   }
 
@@ -2384,6 +2473,40 @@ export class AuthService {
     }
 
     return adminCandidates[0] ?? candidates[0] ?? null;
+  }
+
+  private async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenInfo> {
+    const response = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(
+        idToken,
+      )}`,
+    );
+
+    if (!response.ok) {
+      throw new UnauthorizedException('Invalid Google credentials');
+    }
+
+    const tokenInfo = (await response.json()) as GoogleTokenInfo;
+    const verified =
+      tokenInfo.email_verified === true || tokenInfo.email_verified === 'true';
+
+    if (!verified || !tokenInfo.email) {
+      throw new UnauthorizedException('Google email is not verified');
+    }
+
+    const allowedAudiences = (process.env.GOOGLE_CLIENT_ID ?? '')
+      .split(',')
+      .map((audience) => audience.trim())
+      .filter(Boolean);
+
+    if (
+      allowedAudiences.length > 0 &&
+      (!tokenInfo.aud || !allowedAudiences.includes(tokenInfo.aud))
+    ) {
+      throw new UnauthorizedException('Invalid Google credentials');
+    }
+
+    return tokenInfo;
   }
 
   private async assertAssignedBranchContext(user: {

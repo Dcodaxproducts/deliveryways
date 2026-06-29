@@ -18,7 +18,9 @@ import {
 } from '../../common/guards';
 import {
   AdminLoyaltyProgramQueryDto,
+  AdminCustomerWalletHistoryQueryDto,
   AdjustCustomerLoyaltyPointsDto,
+  AdjustCustomerWalletDto,
   UpdateLoyaltyProgramDto,
 } from './dto';
 import { LoyaltyWalletService } from './loyalty-wallet.service';
@@ -59,6 +61,56 @@ export class LoyaltyWalletController {
     @Body() dto: AdjustCustomerLoyaltyPointsDto,
   ) {
     return this.loyaltyWalletService.adjustCustomerLoyalty(
+      user,
+      customerId,
+      dto,
+    );
+  }
+
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Get('wallet/customers/:customerId')
+  @ApiOperation({
+    summary: 'Fetch wallet summary and recent history for a customer',
+  })
+  getCustomerWallet(
+    @CurrentUser() user: AuthUserContext,
+    @Param('customerId') customerId: string,
+  ) {
+    return this.loyaltyWalletService.getAdminCustomerWallet(user, customerId);
+  }
+
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Get('wallet/customers/:customerId/history')
+  @ApiOperation({ summary: 'List customer wallet transaction history' })
+  listCustomerWalletHistory(
+    @CurrentUser() user: AuthUserContext,
+    @Param('customerId') customerId: string,
+    @Query() query: AdminCustomerWalletHistoryQueryDto,
+  ) {
+    return this.loyaltyWalletService.listAdminCustomerWalletHistory(
+      user,
+      customerId,
+      query,
+    );
+  }
+
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Post('wallet/customers/:customerId/adjust')
+  @ApiOperation({ summary: 'Manually credit or debit customer wallet balance' })
+  adjustCustomerWallet(
+    @CurrentUser() user: AuthUserContext,
+    @Param('customerId') customerId: string,
+    @Body() dto: AdjustCustomerWalletDto,
+  ) {
+    return this.loyaltyWalletService.adjustCustomerWallet(
       user,
       customerId,
       dto,

@@ -22,7 +22,11 @@ import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
-import { AdjustCustomerLoyaltyPointsDto, UpdateLoyaltyProgramDto } from './dto';
+import {
+  AdjustCustomerLoyaltyPointsDto,
+  AdjustCustomerWalletDto,
+  UpdateLoyaltyProgramDto,
+} from './dto';
 import { LoyaltyWalletRepository } from './loyalty-wallet.repository';
 
 export interface CustomerWalletLoyaltyContext {
@@ -165,6 +169,135 @@ export class LoyaltyWalletService {
     return {
       data,
       message: 'Customer loyalty points updated successfully',
+    };
+  }
+
+  async getAdminCustomerWallet(user: AuthUserContext, customerId: string) {
+    const customer = await this.resolveAdminManagedCustomer(user, customerId);
+    const data = await this.getWalletSummary({
+      customerId: customer.id,
+      tenantId: customer.tenantId!,
+      restaurantId: customer.restaurantId!,
+      branchId: customer.branchId,
+    });
+
+    return {
+      data,
+      message: 'Customer wallet fetched successfully',
+    };
+  }
+
+  async listAdminCustomerWalletHistory(
+    user: AuthUserContext,
+    customerId: string,
+    query: QueryDto,
+  ) {
+    const customer = await this.resolveAdminManagedCustomer(user, customerId);
+    const data = await this.listWalletHistory(
+      {
+        customerId: customer.id,
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        branchId: customer.branchId,
+      },
+      query,
+    );
+
+    return {
+      data,
+      message: 'Customer wallet history fetched successfully',
+    };
+  }
+
+  async adjustCustomerWallet(
+    user: AuthUserContext,
+    customerId: string,
+    dto: AdjustCustomerWalletDto,
+  ) {
+    const customer = await this.resolveAdminManagedCustomer(user, customerId);
+    const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
+    const signedAmount = dto.isCredit === false ? amount.negated() : amount;
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const account = await this.ensureWalletAccount(
+        {
+          customerId: customer.id,
+          tenantId: customer.tenantId!,
+          restaurantId: customer.restaurantId!,
+          branchId: customer.branchId,
+        },
+        tx,
+      );
+      const nextBalance = account.balance.plus(signedAmount);
+
+      if (nextBalance.lessThan(0)) {
+        throw new BadRequestException('Insufficient wallet balance');
+      }
+
+      await this.repository.updateWalletAccount(
+        account.id,
+        { balance: nextBalance },
+        tx,
+      );
+
+      await this.repository.createWalletTransaction(
+        {
+          walletAccount: { connect: { id: account.id } },
+          tenant: { connect: { id: customer.tenantId! } },
+          restaurant: { connect: { id: customer.restaurantId! } },
+          branch: customer.branchId
+            ? { connect: { id: customer.branchId } }
+            : undefined,
+          customer: { connect: { id: customer.id } },
+          type:
+            dto.isCredit === false
+              ? WalletTransactionType.ADJUSTMENT
+              : WalletTransactionType.CREDIT,
+          amount: signedAmount,
+          balanceAfter: nextBalance,
+          currency: account.currency,
+          note:
+            dto.note?.trim() ||
+            (dto.isCredit === false
+              ? 'Admin debited wallet balance'
+              : 'Admin credited wallet balance'),
+          metadata: {
+            adjustedByRole: user.role,
+            adjustmentMode: dto.isCredit === false ? 'DEBIT' : 'CREDIT',
+          },
+          createdBy: user.uid,
+          updatedBy: user.uid,
+        },
+        tx,
+      );
+
+      const history = await this.repository.listWalletTransactions(
+        account.id,
+        20,
+      );
+
+      return {
+        customerId: customer.id,
+        balance: Number(nextBalance),
+        currency: account.currency,
+        history: history.map((entry) => ({
+          id: entry.id,
+          type: entry.type,
+          amount: Number(entry.amount),
+          balanceAfter: Number(entry.balanceAfter),
+          currency: entry.currency,
+          orderId: entry.orderId,
+          paymentTransactionId: entry.paymentTransactionId,
+          note: entry.note,
+          metadata: entry.metadata,
+          createdAt: entry.createdAt,
+        })),
+      };
+    });
+
+    return {
+      data,
+      message: 'Customer wallet updated successfully',
     };
   }
 

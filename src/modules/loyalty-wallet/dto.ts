@@ -9,6 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { QueryDto } from '../../common/dto';
 
 export class AdminLoyaltyProgramQueryDto {
   @ApiPropertyOptional({
@@ -52,6 +53,41 @@ export class AdjustCustomerLoyaltyPointsDto {
   @MaxLength(255)
   note?: string;
 }
+
+export class AdjustCustomerWalletDto {
+  @ApiProperty({ minimum: 0.01, example: 10 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @ApiPropertyOptional({
+    description: 'Use false to debit wallet balance instead of crediting it',
+    default: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    return value === 'true' || value === '1';
+  })
+  @IsBoolean()
+  isCredit = true;
+
+  @ApiPropertyOptional({ maxLength: 255 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  note?: string;
+}
+
+export class AdminCustomerWalletHistoryQueryDto extends QueryDto {}
 
 export class UpdateLoyaltyProgramDto extends AdminLoyaltyProgramQueryDto {
   @ApiPropertyOptional()

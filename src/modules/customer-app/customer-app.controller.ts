@@ -26,6 +26,7 @@ import {
 import {
   CreateTableReservationDto,
   CustomerAppCustomerScopeDto,
+  DomainContextQueryDto,
   HomeScreenQueryDto,
   ListAdminTableReservationsQueryDto,
   ListCuisineItemsQueryDto,
@@ -55,6 +56,15 @@ import { CustomerAppService } from './customer-app.service';
 @Controller('customer-app')
 export class CustomerAppController {
   constructor(private readonly customerAppService: CustomerAppService) {}
+
+  @Public()
+  @Get('domain-context')
+  @ApiOperation({
+    summary: 'Resolve restaurant context from a subdomain or custom domain',
+  })
+  resolveDomainContext(@Query() query: DomainContextQueryDto) {
+    return this.customerAppService.resolveDomainContext(query.host);
+  }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)

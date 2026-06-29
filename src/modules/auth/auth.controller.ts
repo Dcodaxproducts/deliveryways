@@ -21,6 +21,7 @@ import {
   DevUserLookupDto,
   DevUserUpdateDto,
   ForgotPasswordDto,
+  GoogleLoginDto,
   LoginDto,
   RefreshDto,
   RegisterCustomerDto,
@@ -101,6 +102,12 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Public()
+  @Post('google-login')
+  googleLogin(@Body() dto: GoogleLoginDto) {
+    return this.authService.googleLogin(dto);
   }
 
   @Public()

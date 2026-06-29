@@ -59,6 +59,13 @@ export class PublicRestaurantQueryDto {
   locale?: string;
 }
 
+export class DomainContextQueryDto {
+  @ApiProperty({ description: 'Current browser hostname or full host header' })
+  @IsString()
+  @IsNotEmpty()
+  host!: string;
+}
+
 export class PublicMenuItemBySlugQueryDto extends PublicRestaurantQueryDto {}
 
 export class SubmitContactFormDto {

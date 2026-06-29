@@ -554,6 +554,40 @@ export class CustomerAppRepository {
     });
   }
 
+  async findRestaurantDomainContext(hostname: string, slug?: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          { customDomain: { equals: hostname, mode: 'insensitive' } },
+          ...(slug
+            ? [
+                {
+                  slug: { equals: slug, mode: Prisma.QueryMode.insensitive },
+                },
+              ]
+            : []),
+        ],
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        slug: true,
+        customDomain: true,
+        logoUrl: true,
+        branding: true,
+        branches: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
+          take: 1,
+          select: { id: true, name: true, isMain: true },
+        },
+      },
+    });
+  }
+
   async findRestaurantPublicContent(restaurantId: string) {
     return this.prisma.restaurant.findFirst({
       where: {

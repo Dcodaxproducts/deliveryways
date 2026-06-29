@@ -276,6 +276,48 @@ export class CustomerAppService {
     };
   }
 
+  async resolveDomainContext(host: string) {
+    const hostname = this.normalizeDomainHost(host);
+    const baseDomain = this.normalizeDomainHost(
+      this.configService?.get<string>('CUSTOMER_APP_BASE_DOMAIN') ??
+        process.env.CUSTOMER_APP_BASE_DOMAIN ??
+        '',
+    );
+    const subdomain = this.extractRestaurantSubdomain(hostname, baseDomain);
+
+    const restaurant =
+      await this.customerAppRepository.findRestaurantDomainContext(
+        hostname,
+        subdomain,
+      );
+
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant domain context not found');
+    }
+
+    const restaurantContext = restaurant as typeof restaurant & {
+      branches: Array<{ id: string; name: string }>;
+    };
+    const defaultBranch = restaurantContext.branches[0] ?? null;
+
+    return {
+      data: {
+        tenantId: restaurant.tenantId,
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        restaurantSlug: restaurant.slug,
+        branchId: defaultBranch?.id ?? null,
+        branchName: defaultBranch?.name ?? null,
+        host: hostname,
+        subdomain,
+        customDomain: restaurant.customDomain,
+        logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
+        branding: restaurant.branding,
+      },
+      message: 'Domain context resolved successfully',
+    };
+  }
+
   async addFavorite(
     user: AuthUserContext,
     dto: ToggleFavoriteDto,
@@ -1857,6 +1899,39 @@ export class CustomerAppService {
       ...query,
       restaurantId,
     };
+  }
+
+  private normalizeDomainHost(value: string) {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      const url = trimmed.includes('://')
+        ? new URL(trimmed)
+        : new URL(`https://${trimmed}`);
+      return url.hostname.replace(/^www\./, '');
+    } catch {
+      return trimmed
+        .split('/')[0]
+        .split(':')[0]
+        .replace(/^www\./, '');
+    }
+  }
+
+  private extractRestaurantSubdomain(hostname: string, baseDomain: string) {
+    if (!hostname || !baseDomain || hostname === baseDomain) {
+      return undefined;
+    }
+
+    const suffix = `.${baseDomain}`;
+    if (!hostname.endsWith(suffix)) {
+      return undefined;
+    }
+
+    const candidate = hostname.slice(0, -suffix.length);
+    return candidate && !candidate.includes('.') ? candidate : undefined;
   }
 
   private async loadTranslationContext(
