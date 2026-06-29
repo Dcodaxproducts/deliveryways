@@ -561,14 +561,14 @@ export class CouponsService {
   async findBestAutoApplyPromotion(
     input: Omit<CouponValidationInput, 'code'>,
   ): Promise<CouponValidationResult | null> {
-    const promotions = await this.getActiveAutoApplyPromotions(
-      input.restaurantId,
-      input.branchId,
-    );
+    const [promotions, happyHours] = await Promise.all([
+      this.getActiveAutoApplyPromotions(input.restaurantId, input.branchId),
+      this.getActiveHappyHours(input.restaurantId, input.branchId),
+    ]);
 
     let best: CouponValidationResult | null = null;
 
-    for (const promotion of promotions) {
+    for (const promotion of [...promotions, ...happyHours]) {
       try {
         const result = await this.validateResolvedCoupon(promotion, {
           ...input,

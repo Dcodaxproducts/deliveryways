@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   CouponApplyMode,
+  CouponCampaignKind,
   CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
@@ -882,6 +883,51 @@ describe('CouponsService', () => {
     );
 
     global.Date = originalDate;
+  });
+
+  it('includes active happy hours when selecting the best auto discount', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([
+      makeCoupon({
+        id: 'promotion-1',
+        code: 'PROMO10',
+        autoApply: true,
+        discountType: CouponDiscountType.FLAT,
+        discountValue: new Prisma.Decimal(10),
+        minOrderAmount: new Prisma.Decimal(0),
+      }),
+    ]);
+    repository.findActiveHappyHours!.mockResolvedValue([
+      makeCoupon({
+        id: 'happy-hour-1',
+        code: 'HAPPY25',
+        kind: CouponCampaignKind.HAPPY_HOUR,
+        autoApply: true,
+        discountType: CouponDiscountType.FLAT,
+        discountValue: new Prisma.Decimal(25),
+        minOrderAmount: new Prisma.Decimal(0),
+      }),
+    ]);
+
+    const input = {
+      restaurantId: baseInput.restaurantId,
+      branchId: baseInput.branchId,
+      customerId: baseInput.customerId,
+      subtotal: baseInput.subtotal,
+      menuItemIds: baseInput.menuItemIds,
+      categoryIds: baseInput.categoryIds,
+    };
+    const result = await service.findBestAutoApplyPromotion(input);
+
+    expect(repository.findAutoApplyPromotions).toHaveBeenCalledWith(
+      'rid-1',
+      'bid-1',
+    );
+    expect(repository.findActiveHappyHours).toHaveBeenCalledWith(
+      'rid-1',
+      'bid-1',
+    );
+    expect(result?.coupon.id).toBe('happy-hour-1');
+    expect(Number(result?.discountAmount)).toBe(25);
   });
 
   it('returns only currently scheduled active happy hours', async () => {
