@@ -2503,9 +2503,7 @@ export class AuthService {
       throw new UnauthorizedException('Google login is not configured');
     }
 
-    if (
-      (!tokenInfo.aud || !allowedAudiences.includes(tokenInfo.aud))
-    ) {
+    if (!tokenInfo.aud || !allowedAudiences.includes(tokenInfo.aud)) {
       throw new UnauthorizedException('Invalid Google credentials');
     }
 
