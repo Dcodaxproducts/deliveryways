@@ -2499,8 +2499,11 @@ export class AuthService {
       .map((audience) => audience.trim())
       .filter(Boolean);
 
+    if (allowedAudiences.length === 0) {
+      throw new UnauthorizedException('Google login is not configured');
+    }
+
     if (
-      allowedAudiences.length > 0 &&
       (!tokenInfo.aud || !allowedAudiences.includes(tokenInfo.aud))
     ) {
       throw new UnauthorizedException('Invalid Google credentials');
