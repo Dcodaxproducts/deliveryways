@@ -1882,17 +1882,27 @@ export class CartService {
     user: AuthUserContext,
     cart: CartSnapshot,
   ) {
+    const quotePayload = await this.toQuotePayload(cart);
+
     try {
-      return await this.ordersService.quote(
-        user,
-        await this.toQuotePayload(cart),
-      );
+      return await this.ordersService.quote(user, quotePayload);
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        return null;
+      if (!(error instanceof BadRequestException)) {
+        throw error;
       }
 
-      throw error;
+      try {
+        return await this.ordersService.quoteForCouponValidation(
+          user,
+          quotePayload,
+        );
+      } catch (fallbackError) {
+        if (fallbackError instanceof BadRequestException) {
+          return null;
+        }
+
+        throw fallbackError;
+      }
     }
   }
 

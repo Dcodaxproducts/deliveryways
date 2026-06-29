@@ -3504,6 +3504,88 @@ describe('CartService', () => {
     expect(result.message).toBe('Cart updated successfully');
   });
 
+  it('falls back to coupon-validation quote so cart promotions still render when delivery address validation fails', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-without-coordinates',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({
+      metadata: { defaultAddressId: 'address-without-coordinates' },
+    });
+    ordersService.quote.mockRejectedValue(
+      new BadRequestException('Delivery address must include lat/lng'),
+    );
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        subtotal: 114,
+        deliveryFee: 0,
+        discountAmount: 14,
+        totalAmount: 100,
+        appliedPromotion: {
+          id: 'promo-1',
+          title: 'Auto promo',
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+          discountType: 'FLAT',
+          discountValue: 14,
+          discountAmount: 14,
+        },
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.getCart({
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'customer-1' }),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        deliveryAddressId: 'address-without-coordinates',
+        items: [expect.objectContaining({ menuItemId: 'menu-1' })],
+      }),
+    );
+    const responseData = result.data as unknown as {
+      quote?: unknown;
+      discountAmount?: unknown;
+    };
+    const quoteData = responseData.quote as {
+      discountAmount?: unknown;
+      appliedPromotion?: { id?: unknown } | null;
+    };
+    expect(quoteData.discountAmount).toBe(14);
+    expect(quoteData.appliedPromotion?.id).toBe('promo-1');
+    expect(responseData.discountAmount).toBe(14);
+  });
+
   it('returns guest delivery cart without quote when address is not selected yet', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();
