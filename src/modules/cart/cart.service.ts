@@ -294,9 +294,15 @@ export class CartService {
       orderType: dto.orderType,
       paymentMethod: dto.paymentMethod,
       orderTime:
-        dto.orderTime || dto.scheduledDeliveryAt
-          ? new Date(dto.orderTime ?? dto.scheduledDeliveryAt!)
-          : undefined,
+        dto.orderTime !== undefined
+          ? dto.orderTime
+            ? new Date(dto.orderTime)
+            : null
+          : dto.scheduledDeliveryAt !== undefined
+            ? dto.scheduledDeliveryAt
+              ? new Date(dto.scheduledDeliveryAt)
+              : null
+            : undefined,
       tipAmount:
         dto.tipAmount !== undefined
           ? new Prisma.Decimal(dto.tipAmount).toDecimalPlaces(2)
@@ -389,9 +395,11 @@ export class CartService {
       throw new BadRequestException('Cart is empty');
     }
 
-    const quote = await this.ordersService.quote(
+    const quote = await this.quoteCartClearingStaleOrderTime(
       user,
-      await this.toQuotePayload(updatedCart),
+      updatedCart,
+      requestedCustomerId,
+      requestedRestaurantId,
     );
 
     return {
@@ -844,9 +852,11 @@ export class CartService {
       throw new BadRequestException('Cart is empty');
     }
 
-    const quote = await this.ordersService.quote(
+    const quote = await this.quoteCartClearingStaleOrderTime(
       user,
-      await this.toQuotePayload(cart),
+      cart,
+      requestedCustomerId,
+      requestedRestaurantId,
     );
     return {
       data: this.toCartQuoteResponse(quote.data),
@@ -1876,6 +1886,51 @@ export class CartService {
     });
 
     return allocations;
+  }
+
+  private async quoteCartClearingStaleOrderTime(
+    user: AuthUserContext,
+    cart: CartSnapshot,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    try {
+      return await this.ordersService.quote(
+        user,
+        await this.toQuotePayload(cart),
+      );
+    } catch (error) {
+      if (
+        !(error instanceof BadRequestException) ||
+        !this.isOrderTimeAvailabilityError(error) ||
+        !cart.orderTime
+      ) {
+        throw error;
+      }
+
+      await this.cartRepository.update(cart.id, { orderTime: null });
+      const refreshedCart = await this.getExistingCartOrThrow(
+        user,
+        requestedCustomerId,
+        requestedRestaurantId,
+      );
+
+      return this.ordersService.quote(
+        user,
+        await this.toQuotePayload(refreshedCart),
+      );
+    }
+  }
+
+  private isOrderTimeAvailabilityError(error: BadRequestException) {
+    const response = error.getResponse();
+    const message =
+      typeof response === 'object' && response && 'message' in response
+        ? (response as { message?: unknown }).message
+        : error.message;
+    const text = Array.isArray(message) ? message.join(' ') : String(message);
+
+    return text.includes('available at requested order time');
   }
 
   private async getCartQuoteForResponse(

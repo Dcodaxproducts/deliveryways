@@ -3682,6 +3682,46 @@ describe('CartService', () => {
     );
   });
 
+  it('clears cart order time when orderTime is explicitly null', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({ ...cart, orderTime: null });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    await service.updateCart(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { orderTime: null },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith(
+      'cart-1',
+      expect.objectContaining({ orderTime: null }),
+    );
+  });
+
   it('updates cart address and returns refreshed quote', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();
@@ -3742,6 +3782,74 @@ describe('CartService', () => {
     });
     expect(ordersService.quote).toHaveBeenCalled();
     expect(result.data).not.toHaveProperty('chargeBreakdown');
+    expect(result.message).toBe('Cart address updated successfully');
+  });
+
+  it('clears stale scheduled order time when updating address for an immediate cart', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    const staleCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      customerNote: null,
+      orderTime: new Date('2026-03-24T19:30:00.000Z'),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    };
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(staleCart)
+      .mockResolvedValueOnce({ ...staleCart, deliveryAddressId: 'address-1' })
+      .mockResolvedValueOnce({
+        ...staleCart,
+        deliveryAddressId: 'address-1',
+        orderTime: null,
+      });
+    cartRepository.findOwnedAddress.mockResolvedValue({ id: 'address-1' });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote
+      .mockRejectedValueOnce(
+        new BadRequestException(
+          'Delivery is not available at requested order time',
+        ),
+      )
+      .mockResolvedValueOnce({
+        data: { totalAmount: 900, deliveryFee: 100 },
+        message: 'Order quote generated successfully',
+      });
+
+    const result = await service.updateAddress(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { deliveryAddressId: 'address-1' },
+    );
+
+    expect(cartRepository.update).toHaveBeenNthCalledWith(1, 'cart-1', {
+      deliveryAddress: { connect: { id: 'address-1' } },
+    });
+    expect(cartRepository.update).toHaveBeenNthCalledWith(2, 'cart-1', {
+      orderTime: null,
+    });
+    expect(ordersService.quote).toHaveBeenCalledTimes(2);
     expect(result.message).toBe('Cart address updated successfully');
   });
 

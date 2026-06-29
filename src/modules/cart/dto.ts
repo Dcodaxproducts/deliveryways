@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
@@ -195,18 +196,20 @@ export class UpdateCartDto {
       'Requested order time in ISO 8601 format. Saved on cart for later checkout.',
     example: '2026-03-24T19:30:00.000Z',
   })
+  @ValidateIf((_object, value) => value !== null)
   @IsOptional()
   @IsDateString()
-  orderTime?: string;
+  orderTime?: string | null;
 
   @ApiPropertyOptional({
     description:
       'Alias for scheduled delivery/takeaway time. If provided, it is saved as orderTime.',
     example: '2026-03-24T19:30:00.000Z',
   })
+  @ValidateIf((_object, value) => value !== null)
   @IsOptional()
   @IsDateString()
-  scheduledDeliveryAt?: string;
+  scheduledDeliveryAt?: string | null;
 
   @ApiPropertyOptional({
     description: 'Optional customer tip saved on cart and applied at checkout',
@@ -282,18 +285,20 @@ export class CheckoutCartDto {
       'Requested order time in ISO 8601 format. Falls back to saved cart orderTime, then current time.',
     example: '2026-03-24T19:30:00.000Z',
   })
+  @ValidateIf((_object, value) => value !== null)
   @IsOptional()
   @IsDateString()
-  orderTime?: string;
+  orderTime?: string | null;
 
   @ApiPropertyOptional({
     description:
       'Alias for scheduled delivery/takeaway time. If provided, it overrides saved cart orderTime at checkout.',
     example: '2026-03-24T19:30:00.000Z',
   })
+  @ValidateIf((_object, value) => value !== null)
   @IsOptional()
   @IsDateString()
-  scheduledDeliveryAt?: string;
+  scheduledDeliveryAt?: string | null;
 
   @ApiPropertyOptional({ enum: PaymentMethodEnum })
   @IsOptional()
