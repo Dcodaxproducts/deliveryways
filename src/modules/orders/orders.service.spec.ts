@@ -540,6 +540,113 @@ describe('OrdersService - delivery radius', () => {
     ).not.toThrow();
   });
 
+  it('treats timezone-less scheduled order time as local branch wall time', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            holidayOpeningHours: unknown[];
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+          timezone: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      holidayOpeningHours: [],
+      openingHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '16:00',
+          closeTime: '18:00',
+        },
+      ],
+      deliveryHours: [],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-30T16:15:00',
+        'Asia/Karachi',
+      ),
+    ).not.toThrow();
+  });
+
+  it('validates scheduled order times in the configured schedule timezone', () => {
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            holidayOpeningHours: unknown[];
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+          timezone: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+    const settings = {
+      holidayOpeningHours: [],
+      openingHours: [
+        {
+          dayOfWeek: 'TUESDAY',
+          isClosed: false,
+          openTime: '16:00',
+          closeTime: '18:00',
+        },
+      ],
+      deliveryHours: [],
+    };
+
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-30T14:15:00.000Z',
+        'Europe/Berlin',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-30T14:15:00.000Z',
+        'Asia/Karachi',
+      ),
+    ).toThrow('Delivery is not available at requested order time');
+  });
+
   it('falls back to opening hours when delivery hours are not configured', () => {
     const assertDeliveryOrderWithinHours = (
       service as unknown as {

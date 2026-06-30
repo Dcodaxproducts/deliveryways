@@ -45,6 +45,8 @@ import {
 } from './dto';
 import { OrdersRepository } from './orders.repository';
 
+const DEFAULT_SCHEDULE_TIMEZONE = 'Asia/Karachi';
+
 interface OrderModifierLink {
   modifierGroup: {
     id: string;
@@ -775,7 +777,9 @@ export class OrdersService {
       branch.restaurant?.settings,
     );
     const enforceMinimumOrderAmount = options.enforceMinimumOrderAmount ?? true;
-    this.assertBranchAcceptingOrders(settings, orderTime);
+    const scheduleTimeZone = await this.resolveScheduleTimeZone();
+
+    this.assertBranchAcceptingOrders(settings, orderTime, scheduleTimeZone);
     const customer = await this.resolveQuoteCustomer(
       user,
       branch,
@@ -790,7 +794,12 @@ export class OrdersService {
     }
 
     if (!options.skipOrderTimeAvailabilityValidation) {
-      this.assertDeliveryOrderWithinHours(settings, dto.orderType, orderTime);
+      this.assertDeliveryOrderWithinHours(
+        settings,
+        dto.orderType,
+        orderTime,
+        scheduleTimeZone,
+      );
     }
 
     const selectedMenu = dto.restaurantMenuId
@@ -4387,11 +4396,13 @@ export class OrdersService {
   private assertBranchAcceptingOrders(
     settings: BranchSettings,
     orderTime: string | null,
+    timeZone = DEFAULT_SCHEDULE_TIMEZONE,
   ) {
     const closure = settings.temporaryClosure;
     const holidayOpeningHour = this.resolveHolidayOpeningHourForOrderTime(
       settings.holidayOpeningHours,
       orderTime,
+      timeZone,
     );
 
     if (this.isOrderTimeBlockedByTemporaryClosure(closure, orderTime)) {
@@ -4457,6 +4468,7 @@ export class OrdersService {
     settings: BranchSettings,
     orderType: OrderTypeEnum,
     orderTime: string | null,
+    timeZone = DEFAULT_SCHEDULE_TIMEZONE,
   ) {
     if (
       orderType !== OrderTypeEnum.DELIVERY &&
@@ -4471,7 +4483,7 @@ export class OrdersService {
         : 'Delivery is not available at requested order time';
 
     const effectiveOrderTime = orderTime ?? new Date().toISOString();
-    const local = this.getScheduleLocalParts(effectiveOrderTime);
+    const local = this.getScheduleLocalParts(effectiveOrderTime, timeZone);
     const holidayOpeningHour = local
       ? this.resolveHolidayOpeningHourForDate(
           settings.holidayOpeningHours,
@@ -4563,11 +4575,15 @@ export class OrdersService {
   private resolveHolidayOpeningHourForOrderTime(
     holidayOpeningHours: BranchHolidayOpeningHour[] | undefined,
     orderTime: string | null,
+    timeZone = DEFAULT_SCHEDULE_TIMEZONE,
   ): BranchHolidayOpeningHour | null {
-    const local = this.getScheduleLocalParts(orderTime);
+    const local = this.getScheduleLocalParts(orderTime, timeZone);
     return local
       ? this.resolveHolidayOpeningHourForDate(holidayOpeningHours, local.date)
-      : this.resolveTodayHolidayOpeningHour(holidayOpeningHours ?? []);
+      : this.resolveTodayHolidayOpeningHour(
+          holidayOpeningHours ?? [],
+          timeZone,
+        );
   }
 
   private toHolidayDeliveryHour(
@@ -4587,9 +4603,17 @@ export class OrdersService {
     };
   }
 
-  private getScheduleLocalParts(orderTime: string | null) {
+  private getScheduleLocalParts(
+    orderTime: string | null,
+    timeZone = DEFAULT_SCHEDULE_TIMEZONE,
+  ) {
     if (!orderTime) {
       return null;
+    }
+
+    const localParts = this.parseTimezoneLessScheduleParts(orderTime);
+    if (localParts) {
+      return localParts;
     }
 
     const date = new Date(orderTime);
@@ -4598,7 +4622,7 @@ export class OrdersService {
     }
 
     const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Karachi',
+      timeZone,
       weekday: 'long',
       year: 'numeric',
       month: '2-digit',
@@ -4634,6 +4658,56 @@ export class OrdersService {
       dayOfWeek,
       minutes: hour * 60 + minute,
     };
+  }
+
+  private parseTimezoneLessScheduleParts(orderTime: string) {
+    const match =
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d{1,3})?)?$/.exec(
+        orderTime,
+      );
+
+    if (!match) {
+      return null;
+    }
+
+    const [, year, month, day, hourValue, minuteValue] = match;
+    const hour = Number(hourValue);
+    const minute = Number(minuteValue);
+    const date = new Date(
+      Date.UTC(Number(year), Number(month) - 1, Number(day)),
+    );
+    const dayOfWeek = date
+      .toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
+      .toUpperCase();
+
+    if (
+      !this.isScheduleDay(dayOfWeek) ||
+      Number.isNaN(hour) ||
+      Number.isNaN(minute) ||
+      hour < 0 ||
+      hour > 23 ||
+      minute < 0 ||
+      minute > 59
+    ) {
+      return null;
+    }
+
+    return {
+      date: `${year}-${month}-${day}`,
+      dayOfWeek,
+      minutes: hour * 60 + minute,
+    };
+  }
+
+  private async resolveScheduleTimeZone() {
+    try {
+      const timezone = (await this.globalSettingsService?.getSettings())?.data
+        ?.timezone;
+
+      return timezone || DEFAULT_SCHEDULE_TIMEZONE;
+    } catch {
+      return DEFAULT_SCHEDULE_TIMEZONE;
+    }
   }
 
   private isScheduleDay(value: unknown): value is BranchScheduleDay {
@@ -4680,8 +4754,12 @@ export class OrdersService {
 
   private resolveTodayHolidayOpeningHour(
     holidayOpeningHours: BranchHolidayOpeningHour[],
+    timeZone = DEFAULT_SCHEDULE_TIMEZONE,
   ): BranchHolidayOpeningHour | null {
-    const today = this.getScheduleLocalParts(new Date().toISOString())?.date;
+    const today = this.getScheduleLocalParts(
+      new Date().toISOString(),
+      timeZone,
+    )?.date;
     return today
       ? (holidayOpeningHours.find((item) =>
           this.isHolidayDateMatch(item, today),
