@@ -155,6 +155,7 @@ type QuoteBranchContext = {
   tenantId: string;
   restaurantId: string;
   settings: unknown;
+  restaurant?: { settings: unknown } | null;
 };
 
 type DeliveryAddressContext = {
@@ -227,6 +228,9 @@ export class OrdersService {
         tenantId: true,
         restaurantId: true,
         settings: true,
+        restaurant: {
+          select: { settings: true },
+        },
       },
     });
 
@@ -240,7 +244,10 @@ export class OrdersService {
       branch,
       dto.customerId,
     );
-    const settings = this.readBranchSettings(branch.settings);
+    const settings = this.readBranchSettings(
+      branch.settings,
+      branch.restaurant?.settings,
+    );
 
     await this.assertDeliveryAddressInCoverage(
       customer.customerId,
@@ -749,6 +756,9 @@ export class OrdersService {
         tenantId: true,
         restaurantId: true,
         settings: true,
+        restaurant: {
+          select: { settings: true },
+        },
       },
     });
 
@@ -758,7 +768,10 @@ export class OrdersService {
 
     await this.ensureBranchAccess(user, branch.restaurantId, branch.id);
 
-    const settings = this.readBranchSettings(branch.settings);
+    const settings = this.readBranchSettings(
+      branch.settings,
+      branch.restaurant?.settings,
+    );
     const enforceMinimumOrderAmount = options.enforceMinimumOrderAmount ?? true;
     this.assertBranchAcceptingOrders(settings, orderTime);
     const customer = await this.resolveQuoteCustomer(
@@ -3990,7 +4003,10 @@ export class OrdersService {
       : false;
   }
 
-  private readBranchSettings(input: unknown): BranchSettings {
+  private readBranchSettings(
+    input: unknown,
+    scheduleFallbackInput?: unknown,
+  ): BranchSettings {
     const fallback: BranchSettings = {
       allowedOrderTypes: [OrderTypeEnum.DELIVERY, OrderTypeEnum.TAKEAWAY],
       allowedPaymentMethods: ['COD', 'CARD_ON_DELIVERY', 'PAYPAL', 'WALLET'],
@@ -4022,11 +4038,13 @@ export class OrdersService {
       tableCount: 0,
     };
 
-    if (!input || typeof input !== 'object') {
-      return fallback;
-    }
-
-    const raw = input as Partial<BranchSettings>;
+    const raw =
+      input && typeof input === 'object'
+        ? (input as Partial<BranchSettings>)
+        : ({} as Partial<BranchSettings>);
+    const scheduleFallback = this.readBranchScheduleFallback(
+      scheduleFallbackInput,
+    );
 
     return {
       allowedOrderTypes: raw.allowedOrderTypes ?? fallback.allowedOrderTypes,
@@ -4067,20 +4085,64 @@ export class OrdersService {
         value: raw.serviceCharge?.value ?? fallback.serviceCharge.value,
       },
       temporaryClosure: raw.temporaryClosure ?? fallback.temporaryClosure,
-      holidayOpeningHours:
-        raw.holidayOpeningHours ?? fallback.holidayOpeningHours,
-      openingHours: Array.isArray(raw.openingHours)
-        ? raw.openingHours
-        : fallback.openingHours,
-      deliveryHours: Array.isArray(raw.deliveryHours)
-        ? raw.deliveryHours
-        : fallback.deliveryHours,
+      holidayOpeningHours: Array.isArray(raw.holidayOpeningHours)
+        ? raw.holidayOpeningHours
+        : (scheduleFallback.holidayOpeningHours ??
+          fallback.holidayOpeningHours),
+      openingHours: this.resolveConfiguredScheduleHours(
+        raw.openingHours,
+        scheduleFallback.openingHours ?? fallback.openingHours,
+      ),
+      deliveryHours: this.resolveConfiguredScheduleHours(
+        raw.deliveryHours,
+        this.hasConfiguredScheduleHours(raw.openingHours)
+          ? fallback.deliveryHours
+          : (scheduleFallback.deliveryHours ?? fallback.deliveryHours),
+      ),
       tableReservationsEnabled:
         raw.tableReservationsEnabled ?? fallback.tableReservationsEnabled,
       tableReservationAutoAccept:
         raw.tableReservationAutoAccept ?? fallback.tableReservationAutoAccept,
       tableCount: raw.tableCount ?? fallback.tableCount,
     };
+  }
+
+  private readBranchScheduleFallback(input: unknown) {
+    if (!input || typeof input !== 'object') {
+      return {
+        openingHours: undefined,
+        deliveryHours: undefined,
+        holidayOpeningHours: undefined,
+      };
+    }
+
+    const raw = input as Partial<BranchSettings>;
+
+    return {
+      openingHours:
+        Array.isArray(raw.openingHours) && raw.openingHours.length
+          ? raw.openingHours
+          : undefined,
+      deliveryHours:
+        Array.isArray(raw.deliveryHours) && raw.deliveryHours.length
+          ? raw.deliveryHours
+          : undefined,
+      holidayOpeningHours:
+        Array.isArray(raw.holidayOpeningHours) && raw.holidayOpeningHours.length
+          ? raw.holidayOpeningHours
+          : undefined,
+    };
+  }
+
+  private resolveConfiguredScheduleHours(
+    primary: BranchDeliveryHour[] | undefined,
+    fallback: BranchDeliveryHour[],
+  ) {
+    return Array.isArray(primary) && primary.length ? primary : fallback;
+  }
+
+  private hasConfiguredScheduleHours(input: BranchDeliveryHour[] | undefined) {
+    return Array.isArray(input) && input.length > 0;
   }
 
   private async assertDineInTableCapacity(
