@@ -852,7 +852,7 @@ export class CartService {
       throw new BadRequestException('Cart is empty');
     }
 
-    const quote = await this.quoteCartClearingStaleOrderTime(
+    const quote = await this.quoteCartForDisplay(
       user,
       cart,
       requestedCustomerId,
@@ -1886,6 +1886,42 @@ export class CartService {
     });
 
     return allocations;
+  }
+
+  private async quoteCartForDisplay(
+    user: AuthUserContext,
+    cart: CartSnapshot,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    try {
+      return await this.quoteCartClearingStaleOrderTime(
+        user,
+        cart,
+        requestedCustomerId,
+        requestedRestaurantId,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof BadRequestException) ||
+        !this.isOrderTimeAvailabilityError(error)
+      ) {
+        throw error;
+      }
+
+      const quoteCart = cart.orderTime
+        ? await this.getExistingCartOrThrow(
+            user,
+            requestedCustomerId,
+            requestedRestaurantId,
+          )
+        : cart;
+
+      return this.ordersService.quoteForCouponValidation(
+        user,
+        await this.toQuotePayload(quoteCart),
+      );
+    }
   }
 
   private async quoteCartClearingStaleOrderTime(

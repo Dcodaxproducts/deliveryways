@@ -173,6 +173,7 @@ type BranchLocationContext = {
 type BuildQuoteOptions = {
   skipDeliveryAddressValidation?: boolean;
   enforceMinimumOrderAmount?: boolean;
+  skipOrderTimeAvailabilityValidation?: boolean;
 };
 
 @Injectable()
@@ -205,6 +206,7 @@ export class OrdersService {
     const quote = await this.buildQuote(user, dto, {
       skipDeliveryAddressValidation: true,
       enforceMinimumOrderAmount: false,
+      skipOrderTimeAvailabilityValidation: true,
     });
 
     return {
@@ -787,7 +789,9 @@ export class OrdersService {
       );
     }
 
-    this.assertDeliveryOrderWithinHours(settings, dto.orderType, orderTime);
+    if (!options.skipOrderTimeAvailabilityValidation) {
+      this.assertDeliveryOrderWithinHours(settings, dto.orderType, orderTime);
+    }
 
     const selectedMenu = dto.restaurantMenuId
       ? await this.resolveSelectedRestaurantMenu(

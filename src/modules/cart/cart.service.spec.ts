@@ -3947,6 +3947,85 @@ describe('CartService', () => {
     expect(result.data.discountAmount).toBe(301);
   });
 
+  it('falls back to display quote when cart quote fails only because delivery time is unavailable', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'burger-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    profilesRepository.findByUserId.mockResolvedValue({
+      metadata: { defaultAddressId: 'address-1' },
+    });
+    ordersService.quote.mockRejectedValue(
+      new BadRequestException(
+        'Delivery is not available at requested order time',
+      ),
+    );
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        subtotal: 1100,
+        chargeBreakdown: {
+          taxes: [{ code: 'STANDARD', label: 'Standard tax', amount: 209 }],
+        },
+        discountAmount: 301,
+        totalAmount: 799,
+        appliedPromotion: {
+          id: 'deal-1',
+          title: 'Burger Combo',
+        },
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {},
+    );
+
+    expect(ordersService.quote).toHaveBeenCalledTimes(1);
+    expect(ordersService.quoteForCouponValidation).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        branchId: 'branch-1',
+        deliveryAddressId: 'address-1',
+        items: [expect.objectContaining({ menuItemId: 'burger-1' })],
+      }),
+    );
+    expect(result.data.discountAmount).toBe(301);
+    expect(result.data.appliedPromotion).toEqual({
+      id: 'deal-1',
+      title: 'Burger Combo',
+    });
+    expect(result.data).not.toHaveProperty('chargeBreakdown');
+  });
+
   it('validates coupon before saving it to cart without requiring delivery coordinates', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();
