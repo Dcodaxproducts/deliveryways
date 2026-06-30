@@ -333,6 +333,94 @@ describe('OrdersService - delivery radius', () => {
     ]);
   });
 
+  it('falls back to restaurant schedule hours when branch hours only contain closed rows', () => {
+    const readBranchSettings = (
+      service as unknown as {
+        readBranchSettings: (
+          branchSettings: unknown,
+          restaurantSettings?: unknown,
+        ) => {
+          openingHours: Array<{
+            dayOfWeek: string;
+            isClosed: boolean;
+            openTime?: string | null;
+            closeTime?: string | null;
+          }>;
+          deliveryHours: Array<{
+            dayOfWeek: string;
+            isClosed: boolean;
+            openTime?: string | null;
+            closeTime?: string | null;
+          }>;
+        };
+      }
+    ).readBranchSettings;
+    const assertDeliveryOrderWithinHours = (
+      service as unknown as {
+        assertDeliveryOrderWithinHours: (
+          settings: {
+            openingHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+            deliveryHours: Array<{
+              dayOfWeek: string;
+              isClosed: boolean;
+              openTime?: string | null;
+              closeTime?: string | null;
+            }>;
+          },
+          orderType: OrderTypeEnum,
+          orderTime: string,
+        ) => void;
+      }
+    ).assertDeliveryOrderWithinHours;
+
+    const settings = readBranchSettings.call(
+      service,
+      {
+        openingHours: [
+          {
+            dayOfWeek: 'TUESDAY',
+            isClosed: true,
+            openTime: null,
+            closeTime: null,
+          },
+        ],
+        deliveryHours: [],
+      },
+      {
+        openingHours: [
+          {
+            dayOfWeek: 'TUESDAY',
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '12:00',
+          },
+        ],
+      },
+    );
+
+    expect(settings.openingHours).toEqual([
+      {
+        dayOfWeek: 'TUESDAY',
+        isClosed: false,
+        openTime: '09:00',
+        closeTime: '12:00',
+      },
+    ]);
+    expect(() =>
+      assertDeliveryOrderWithinHours.call(
+        service,
+        settings,
+        OrderTypeEnum.DELIVERY,
+        '2026-06-09T04:41:00.000Z',
+      ),
+    ).not.toThrow();
+  });
+
   it('falls back to restaurant schedule hours when branch hours are not configured', () => {
     const readBranchSettings = (
       service as unknown as {

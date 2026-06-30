@@ -4119,14 +4119,12 @@ export class OrdersService {
     const raw = input as Partial<BranchSettings>;
 
     return {
-      openingHours:
-        Array.isArray(raw.openingHours) && raw.openingHours.length
-          ? raw.openingHours
-          : undefined,
-      deliveryHours:
-        Array.isArray(raw.deliveryHours) && raw.deliveryHours.length
-          ? raw.deliveryHours
-          : undefined,
+      openingHours: this.hasUsableScheduleHours(raw.openingHours)
+        ? raw.openingHours
+        : undefined,
+      deliveryHours: this.hasUsableScheduleHours(raw.deliveryHours)
+        ? raw.deliveryHours
+        : undefined,
       holidayOpeningHours:
         Array.isArray(raw.holidayOpeningHours) && raw.holidayOpeningHours.length
           ? raw.holidayOpeningHours
@@ -4137,12 +4135,19 @@ export class OrdersService {
   private resolveConfiguredScheduleHours(
     primary: BranchDeliveryHour[] | undefined,
     fallback: BranchDeliveryHour[],
-  ) {
-    return Array.isArray(primary) && primary.length ? primary : fallback;
+  ): BranchDeliveryHour[] {
+    return this.hasUsableScheduleHours(primary) ? (primary ?? []) : fallback;
   }
 
   private hasConfiguredScheduleHours(input: BranchDeliveryHour[] | undefined) {
-    return Array.isArray(input) && input.length > 0;
+    return this.hasUsableScheduleHours(input);
+  }
+
+  private hasUsableScheduleHours(input: BranchDeliveryHour[] | undefined) {
+    return (
+      Array.isArray(input) &&
+      input.some((item) => !item.isClosed && item.openTime && item.closeTime)
+    );
   }
 
   private async assertDineInTableCapacity(
