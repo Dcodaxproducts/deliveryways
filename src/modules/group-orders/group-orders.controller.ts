@@ -24,6 +24,7 @@ import {
   JoinGroupOrderDto,
   ListGroupOrdersDto,
   UpdateGroupOrderItemDto,
+  UpdateGroupOrderParticipantStatusDto,
   UpdateGroupOrderSessionDto,
   UpdateGroupOrderStatusDto,
 } from './dto';
@@ -111,6 +112,16 @@ export class GroupOrdersController {
   @Post(':id/leave')
   leave(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.groupOrdersService.leave(user, id);
+  }
+
+  @Roles(RolesEnum.CUSTOMER)
+  @Patch(':id/participants/me/status')
+  updateMyParticipantStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateGroupOrderParticipantStatusDto,
+  ) {
+    return this.groupOrdersService.updateMyParticipantStatus(user, id, dto);
   }
 
   @Roles(RolesEnum.CUSTOMER)

@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { GroupOrderStatus, OrderType } from '@prisma/client';
+import {
+  GroupOrderParticipantStatus,
+  GroupOrderStatus,
+  OrderType,
+} from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -167,6 +171,17 @@ export class UpdateGroupOrderItemDto {
   @IsOptional()
   @IsString()
   note?: string | null;
+}
+
+export class UpdateGroupOrderParticipantStatusDto {
+  @ApiProperty({
+    enum: [
+      GroupOrderParticipantStatus.ACTIVE,
+      GroupOrderParticipantStatus.COMPLETED,
+    ],
+  })
+  @IsEnum(GroupOrderParticipantStatus)
+  status!: GroupOrderParticipantStatus;
 }
 
 export class UpdateGroupOrderStatusDto {

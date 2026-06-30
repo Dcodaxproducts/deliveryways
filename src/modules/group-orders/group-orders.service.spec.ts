@@ -36,12 +36,23 @@ describe('GroupOrdersService', () => {
       quoteForCouponValidation: jest.fn(),
     };
 
+    const notificationsService = {
+      notifyGroupOrderParticipantCompleted: jest.fn(),
+    };
+
     const service = new GroupOrdersService(
       groupOrdersRepository as never,
       ordersService as never,
+      undefined,
+      notificationsService as never,
     );
 
-    return { service, groupOrdersRepository, ordersService };
+    return {
+      service,
+      groupOrdersRepository,
+      ordersService,
+      notificationsService,
+    };
   };
 
   const customerUser = {
@@ -1808,5 +1819,182 @@ describe('GroupOrdersService', () => {
     ).toHaveBeenCalledWith('participant-1', expect.any(Date));
     expect(result.data.participants[0].items).toEqual([]);
     expect(result.data.itemCount).toBe(0);
+  });
+
+  const makeCompletionSession = (
+    participantStatus: GroupOrderParticipantStatus = GroupOrderParticipantStatus.ACTIVE,
+    otherParticipantStatus: GroupOrderParticipantStatus = GroupOrderParticipantStatus.ACTIVE,
+  ) => ({
+    id: 'session-1',
+    tenantId: 'tenant-1',
+    restaurantId: 'restaurant-1',
+    branchId: 'branch-1',
+    hostUserId: 'host-1',
+    restaurantMenuId: null,
+    orderType: 'TAKEAWAY',
+    deliveryAddressId: null,
+    couponCode: null,
+    orderTime: null,
+    hostNote: null,
+    inviteCode: 'INVITE123',
+    status: 'OPEN',
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    lockedAt: null,
+    checkedOutAt: null,
+    finalOrderId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    hostUser: {
+      id: 'host-1',
+      email: 'host@test.com',
+      isGuest: false,
+      profile: {
+        firstName: 'Host',
+        lastName: 'User',
+        phone: null,
+        avatarUrl: null,
+      },
+    },
+    branch: { id: 'branch-1', name: 'Main', logoUrl: null, coverImage: null },
+    restaurant: {
+      id: 'restaurant-1',
+      name: 'Restaurant',
+      slug: 'restaurant',
+      logoUrl: null,
+      coverImage: null,
+    },
+    deliveryAddress: null,
+    finalOrder: null,
+    participants: [
+      {
+        id: 'participant-host',
+        userId: 'host-1',
+        status: GroupOrderParticipantStatus.ACTIVE,
+        isHost: true,
+        joinedAt: new Date(),
+        leftAt: null,
+        user: {
+          id: 'host-1',
+          email: 'host@test.com',
+          isGuest: false,
+          profile: {
+            firstName: 'Host',
+            lastName: 'User',
+            phone: null,
+            avatarUrl: null,
+          },
+        },
+      },
+      {
+        id: 'participant-1',
+        userId: 'participant-1',
+        status: participantStatus,
+        isHost: false,
+        joinedAt: new Date(),
+        leftAt: null,
+        user: {
+          id: 'participant-1',
+          email: 'participant@test.com',
+          isGuest: false,
+          profile: {
+            firstName: 'Ali',
+            lastName: 'Khan',
+            phone: null,
+            avatarUrl: null,
+          },
+        },
+      },
+      {
+        id: 'participant-2',
+        userId: 'participant-2',
+        status: otherParticipantStatus,
+        isHost: false,
+        joinedAt: new Date(),
+        leftAt: null,
+        user: {
+          id: 'participant-2',
+          email: 'participant2@test.com',
+          isGuest: false,
+          profile: {
+            firstName: 'Sara',
+            lastName: 'Khan',
+            phone: null,
+            avatarUrl: null,
+          },
+        },
+      },
+    ],
+    items: [],
+  });
+
+  it('notifies host when a participant completes their group order selection', async () => {
+    const { service, groupOrdersRepository, notificationsService } =
+      makeService();
+    const session = makeCompletionSession();
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    groupOrdersRepository.updateParticipant.mockResolvedValue({
+      id: 'participant-1',
+    });
+
+    const result = await service.updateMyParticipantStatus(
+      {
+        uid: 'participant-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'session-1',
+      { status: GroupOrderParticipantStatus.COMPLETED },
+    );
+
+    expect(groupOrdersRepository.updateParticipant).toHaveBeenCalledWith(
+      'participant-1',
+      { status: GroupOrderParticipantStatus.COMPLETED },
+    );
+    expect(
+      notificationsService.notifyGroupOrderParticipantCompleted,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostUserId: 'host-1',
+        participantUserId: 'participant-1',
+        participantName: 'Ali Khan',
+        allParticipantsCompleted: false,
+      }),
+    );
+    expect(result.data.participants).toHaveLength(3);
+  });
+
+  it('notifies host when all non-host participants have completed', async () => {
+    const { service, groupOrdersRepository, notificationsService } =
+      makeService();
+    const session = makeCompletionSession(
+      GroupOrderParticipantStatus.ACTIVE,
+      GroupOrderParticipantStatus.COMPLETED,
+    );
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    groupOrdersRepository.updateParticipant.mockResolvedValue({
+      id: 'participant-1',
+    });
+
+    await service.updateMyParticipantStatus(
+      {
+        uid: 'participant-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      'session-1',
+      { status: GroupOrderParticipantStatus.COMPLETED },
+    );
+
+    expect(
+      notificationsService.notifyGroupOrderParticipantCompleted,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allParticipantsCompleted: true,
+      }),
+    );
   });
 });

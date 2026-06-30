@@ -28,6 +28,8 @@ const CUSTOMER_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.ORDER_PLACED,
   NotificationType.ORDER_STATUS_CHANGED,
   NotificationType.ORDER_CANCELLED,
+  NotificationType.GROUP_ORDER_PARTICIPANT_COMPLETED,
+  NotificationType.GROUP_ORDER_ALL_PARTICIPANTS_COMPLETED,
   NotificationType.TABLE_RESERVATION_CREATED,
   NotificationType.TABLE_RESERVATION_ACCEPTED,
   NotificationType.TABLE_RESERVATION_STATUS_CHANGED,
@@ -232,6 +234,49 @@ export class NotificationsService {
       },
       message: 'Push token removed successfully',
     };
+  }
+
+  async notifyGroupOrderParticipantCompleted(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    sessionId: string;
+    hostUserId: string;
+    participantUserId: string;
+    participantName: string;
+    allParticipantsCompleted: boolean;
+  }) {
+    await this.createCustomerInAppNotification({
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      branchId: input.branchId,
+      recipientUserId: input.hostUserId,
+      type: NotificationType.GROUP_ORDER_PARTICIPANT_COMPLETED,
+      subject: `${input.participantName} completed their group order`,
+      body: `${input.participantName} has completed their group order selection.`,
+      payload: {
+        groupOrderSessionId: input.sessionId,
+        participantUserId: input.participantUserId,
+        participantName: input.participantName,
+      },
+    });
+
+    if (!input.allParticipantsCompleted) {
+      return;
+    }
+
+    await this.createCustomerInAppNotification({
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      branchId: input.branchId,
+      recipientUserId: input.hostUserId,
+      type: NotificationType.GROUP_ORDER_ALL_PARTICIPANTS_COMPLETED,
+      subject: 'All group order participants are done',
+      body: 'All participants have completed their selections. You can now review and checkout the group order.',
+      payload: {
+        groupOrderSessionId: input.sessionId,
+      },
+    });
   }
 
   async notifyOrderPlaced(orderId: string): Promise<void> {

@@ -16,6 +16,7 @@ import {
   buildPaginationMeta,
   isRestaurantMenuAvailableAt,
 } from '../../common/utils';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -27,6 +28,7 @@ import {
   JoinGroupOrderDto,
   ListGroupOrdersDto,
   UpdateGroupOrderItemDto,
+  UpdateGroupOrderParticipantStatusDto,
   UpdateGroupOrderSessionDto,
   UpdateGroupOrderStatusDto,
 } from './dto';
@@ -38,6 +40,7 @@ export class GroupOrdersService {
     private readonly groupOrdersRepository: GroupOrdersRepository,
     private readonly ordersService: OrdersService,
     private readonly storageService?: StorageService,
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateGroupOrderSessionDto) {
@@ -478,6 +481,55 @@ export class GroupOrdersService {
     };
   }
 
+  async updateMyParticipantStatus(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateGroupOrderParticipantStatusDto,
+  ) {
+    const session = await this.getSessionForMemberOrThrow(user, id);
+    this.assertSessionOpenForContribution(session.status, session.expiresAt);
+
+    if (
+      dto.status !== GroupOrderParticipantStatus.ACTIVE &&
+      dto.status !== GroupOrderParticipantStatus.COMPLETED
+    ) {
+      throw new BadRequestException('Unsupported participant status');
+    }
+
+    const participant = this.getContributingParticipant(session, user.uid);
+    if (!participant) {
+      throw new ForbiddenException(
+        'Only active participants can update status',
+      );
+    }
+
+    if (participant.isHost) {
+      throw new BadRequestException('Host does not need to mark completion');
+    }
+
+    if (participant.status === dto.status) {
+      return {
+        data: await this.buildSessionResponse(user, session),
+        message: 'Group order participant status updated successfully',
+      };
+    }
+
+    await this.groupOrdersRepository.updateParticipant(participant.id, {
+      status: dto.status,
+    });
+
+    const updatedSession = await this.buildSessionResponseOrThrow(user, id);
+
+    if (dto.status === GroupOrderParticipantStatus.COMPLETED) {
+      await this.notifyHostParticipantCompleted(session, participant);
+    }
+
+    return {
+      data: updatedSession,
+      message: 'Group order participant status updated successfully',
+    };
+  }
+
   async updateStatus(
     user: AuthUserContext,
     id: string,
@@ -818,6 +870,52 @@ export class GroupOrdersService {
     }
   }
 
+  private async notifyHostParticipantCompleted(
+    session: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >,
+    participant: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >['participants'][number],
+  ) {
+    if (!this.notificationsService) return;
+
+    const activeNonHostParticipants = session.participants.filter(
+      (item) =>
+        !item.isHost && this.isContributingParticipantStatus(item.status),
+    );
+    const allParticipantsCompleted = activeNonHostParticipants.every((item) =>
+      item.id === participant.id
+        ? true
+        : item.status === GroupOrderParticipantStatus.COMPLETED,
+    );
+
+    await this.notificationsService.notifyGroupOrderParticipantCompleted({
+      tenantId: session.tenantId,
+      restaurantId: session.restaurantId,
+      branchId: session.branchId,
+      sessionId: session.id,
+      hostUserId: session.hostUserId,
+      participantUserId: participant.userId,
+      participantName: this.formatParticipantName(participant.user),
+      allParticipantsCompleted:
+        activeNonHostParticipants.length > 0 && allParticipantsCompleted,
+    });
+  }
+
+  private formatParticipantName(
+    user: NonNullable<
+      Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>
+    >['participants'][number]['user'],
+  ) {
+    const fullName = [user.profile?.firstName, user.profile?.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || user.email || 'A participant';
+  }
+
   private getActiveParticipant(
     session: Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>,
     userId: string,
@@ -826,6 +924,24 @@ export class GroupOrdersService {
       (participant) =>
         participant.userId === userId &&
         participant.status === GroupOrderParticipantStatus.ACTIVE,
+    );
+  }
+
+  private getContributingParticipant(
+    session: Awaited<ReturnType<GroupOrdersRepository['findSessionById']>>,
+    userId: string,
+  ) {
+    return session?.participants.find(
+      (participant) =>
+        participant.userId === userId &&
+        this.isContributingParticipantStatus(participant.status),
+    );
+  }
+
+  private isContributingParticipantStatus(status: GroupOrderParticipantStatus) {
+    return (
+      status === GroupOrderParticipantStatus.ACTIVE ||
+      status === GroupOrderParticipantStatus.COMPLETED
     );
   }
 
@@ -1018,9 +1134,8 @@ export class GroupOrdersService {
   ) {
     return new Set(
       session.participants
-        .filter(
-          (participant) =>
-            participant.status === GroupOrderParticipantStatus.ACTIVE,
+        .filter((participant) =>
+          this.isContributingParticipantStatus(participant.status),
         )
         .map((participant) => participant.id),
     );
