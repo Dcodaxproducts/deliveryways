@@ -76,7 +76,7 @@ export class InvoicePdfBuilder {
 
     lines.push(
       { text: `Invoice #: ${input.invoiceNumber}`, style: 'normal' },
-      { text: `Issued: ${input.issuedAt.toISOString()}`, style: 'normal' },
+      { text: `Issued: ${this.formatDate(input.issuedAt)}`, style: 'normal' },
     );
 
     if (input.meta?.length) {
@@ -169,6 +169,10 @@ export class InvoicePdfBuilder {
       default:
         return 10;
     }
+  }
+
+  private static formatDate(value: Date) {
+    return value.toISOString().slice(0, 10);
   }
 
   private static wrap(text: string) {

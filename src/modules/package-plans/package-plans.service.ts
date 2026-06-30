@@ -1080,12 +1080,15 @@ export class PackagePlansService {
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant?.name ?? invoice.tenant.name,
       meta: [
-        { label: 'Due Date', value: invoice.dueAt?.toISOString() ?? 'N/A' },
+        { label: 'Due Date', value: this.formatInvoiceDate(invoice.dueAt) },
         {
           label: 'Service From',
-          value: invoice.servicePeriod.from.toISOString(),
+          value: this.formatInvoiceDate(invoice.servicePeriod.from),
         },
-        { label: 'Service To', value: invoice.servicePeriod.to.toISOString() },
+        {
+          label: 'Service To',
+          value: this.formatInvoiceDate(invoice.servicePeriod.to),
+        },
         { label: 'Payment Status', value: invoice.paymentStatus },
         { label: 'Currency', value: invoice.totals.currency },
       ],
@@ -1104,7 +1107,11 @@ export class PackagePlansService {
             `Plan: ${invoice.packagePlan.name}`,
             `Billing Model: ${invoice.packagePlan.billingModel}`,
             `Billing Interval: ${invoice.packagePlan.billingInterval}`,
-            `Commission: ${invoice.packagePlan.commissionType} ${invoice.packagePlan.commissionPercentage}% / ${invoice.packagePlan.commissionFixedAmount}`,
+            `Commission: ${this.formatCommissionSummary(
+              invoice.packagePlan.commissionType,
+              invoice.packagePlan.commissionPercentage,
+              invoice.packagePlan.commissionFixedAmount,
+            )}`,
             `Payout Cycle: ${invoice.packagePlan.payoutCycle}`,
           ],
         },
@@ -1112,7 +1119,7 @@ export class PackagePlansService {
           title: 'Totals',
           rows: [
             `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
-            `Transaction Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
+            `Commission Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
             `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
             `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
             `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
@@ -1135,9 +1142,9 @@ export class PackagePlansService {
       `Please find attached DeliveryWays invoice ${invoice.invoiceNumber}.`,
       '',
       `Package: ${invoice.packagePlan.name}`,
-      `Service Period: ${invoice.servicePeriod.from.toISOString()} - ${invoice.servicePeriod.to.toISOString()}`,
+      `Service Period: ${this.formatInvoiceDate(invoice.servicePeriod.from)} - ${this.formatInvoiceDate(invoice.servicePeriod.to)}`,
       `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
-      `Transaction Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
+      `Commission Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
       `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
       '',
@@ -1157,8 +1164,14 @@ export class PackagePlansService {
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant.name,
       meta: [
-        { label: 'Payout From', value: invoice.period.from.toISOString() },
-        { label: 'Payout To', value: invoice.period.to.toISOString() },
+        {
+          label: 'Payout From',
+          value: this.formatInvoiceDate(invoice.period.from),
+        },
+        {
+          label: 'Payout To',
+          value: this.formatInvoiceDate(invoice.period.to),
+        },
         { label: 'Orders Count', value: invoice.totals.ordersCount },
         { label: 'Currency', value: invoice.totals.currency },
       ],
@@ -1194,7 +1207,7 @@ export class PackagePlansService {
       '',
       `Please find attached DeliveryWays payout invoice ${invoice.invoiceNumber}.`,
       '',
-      `Payout Period: ${invoice.period.from.toISOString()} - ${invoice.period.to.toISOString()}`,
+      `Payout Period: ${this.formatInvoiceDate(invoice.period.from)} - ${this.formatInvoiceDate(invoice.period.to)}`,
       `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
       `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
       `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
@@ -1425,8 +1438,34 @@ export class PackagePlansService {
       : null;
   }
 
-  private formatInvoiceMoney(value: number) {
-    return Number(value).toFixed(2);
+  private formatInvoiceMoney(value: number | string | null | undefined) {
+    return Number(value ?? 0).toFixed(2);
+  }
+
+  private formatInvoiceDate(value: Date | null | undefined) {
+    return value ? value.toISOString().slice(0, 10) : 'N/A';
+  }
+
+  private formatCommissionSummary(
+    commissionType: string,
+    commissionPercentage: number,
+    commissionFixedAmount: number,
+  ) {
+    if (commissionType === 'PERCENTAGE') {
+      return `${commissionPercentage}%`;
+    }
+
+    if (commissionType === 'FIXED') {
+      return this.formatInvoiceMoney(commissionFixedAmount);
+    }
+
+    const parts: string[] = [];
+    if (commissionPercentage > 0) parts.push(`${commissionPercentage}%`);
+    if (commissionFixedAmount > 0) {
+      parts.push(this.formatInvoiceMoney(commissionFixedAmount));
+    }
+
+    return parts.length ? parts.join(' + ') : '0.00';
   }
 
   private assertBillingModelAmounts(input: {

@@ -824,7 +824,7 @@ export class AdminReportsService {
   }
 
   private formatDate(value: Date | null) {
-    return value ? value.toISOString() : 'N/A';
+    return value ? value.toISOString().slice(0, 10) : 'N/A';
   }
 
   private formatMoney(value: number) {
