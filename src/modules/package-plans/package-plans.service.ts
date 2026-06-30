@@ -438,27 +438,7 @@ export class PackagePlansService {
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
-    const content = this.generateSubscriptionInvoicePdf(invoice);
-    await this.mailerService.sendEmail(
-      recipientEmail,
-      `DeliveryWays invoice ${invoice.invoiceNumber}`,
-      this.buildSubscriptionInvoiceEmailBody(invoice),
-      {
-        attachments: [
-          {
-            filename: fileName,
-            content,
-            contentType: 'application/pdf',
-          },
-        ],
-      },
-    );
-
-    await this.persistSubscriptionInvoice(user, invoice, {
-      eventType: GeneratedInvoiceEventType.EMAILED,
-      recipientEmail,
-      status: GeneratedInvoiceStatus.SENT,
-    });
+    await this.deliverSubscriptionInvoice(user, invoice, recipientEmail);
 
     return {
       data: {
@@ -526,27 +506,7 @@ export class PackagePlansService {
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
-    const content = this.generateWeeklyPayoutInvoicePdf(invoice);
-    await this.mailerService.sendEmail(
-      recipientEmail,
-      `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
-      this.buildWeeklyPayoutInvoiceEmailBody(invoice),
-      {
-        attachments: [
-          {
-            filename: fileName,
-            content,
-            contentType: 'application/pdf',
-          },
-        ],
-      },
-    );
-
-    await this.persistWeeklyPayoutInvoice(user, invoice, {
-      eventType: GeneratedInvoiceEventType.EMAILED,
-      recipientEmail,
-      status: GeneratedInvoiceStatus.SENT,
-    });
+    await this.deliverWeeklyPayoutInvoice(user, invoice, recipientEmail);
 
     return {
       data: {
@@ -558,6 +518,94 @@ export class PackagePlansService {
       },
       message: 'Weekly payout invoice generated and sent successfully',
     };
+  }
+
+  async emailDueSubscriptionInvoices(now = new Date()) {
+    this.ensureInvoiceAutomationConfigured();
+    const systemUser = this.systemInvoiceUser();
+    const subscriptions =
+      await this.packagePlansRepository.listDueSubscriptions(now);
+    const results = { sent: 0, skipped: 0 };
+
+    for (const subscription of subscriptions) {
+      const invoice = await this.buildSubscriptionInvoice(subscription.id);
+      const recipientEmail = invoice.restaurant?.billingEmail;
+      const sourceKey = this.buildSubscriptionInvoiceSourceKey(invoice);
+
+      if (
+        !recipientEmail ||
+        (await this.invoiceRecordsService?.hasEmailed(
+          GeneratedInvoiceKind.SUBSCRIPTION,
+          sourceKey,
+        ))
+      ) {
+        results.skipped += 1;
+        continue;
+      }
+
+      await this.deliverSubscriptionInvoice(
+        systemUser,
+        invoice,
+        recipientEmail,
+      );
+      await this.packagePlansRepository.updateSubscription(subscription.id, {
+        nextBillingAt: this.resolveNextBillingAt(
+          invoice.packagePlan.billingInterval,
+          (subscription.nextBillingAt ?? now).toISOString(),
+        ),
+      });
+      results.sent += 1;
+    }
+
+    return results;
+  }
+
+  async emailDuePayoutInvoices(now = new Date()) {
+    this.ensureInvoiceAutomationConfigured();
+    const systemUser = this.systemInvoiceUser();
+    const subscriptions =
+      await this.packagePlansRepository.listActiveRestaurantSubscriptionsForPayouts();
+    const results = { sent: 0, skipped: 0 };
+
+    for (const subscription of subscriptions) {
+      if (!subscription.restaurantId) {
+        results.skipped += 1;
+        continue;
+      }
+
+      const plan = this.resolveSubscriptionInvoicePlan(subscription);
+      const period = this.resolveLastCompletedPayoutPeriod(
+        plan.payoutCycle,
+        now,
+      );
+      const invoice = await this.buildWeeklyPayoutInvoice({
+        restaurantId: subscription.restaurantId,
+        fromDate: period.from.toISOString(),
+        toDate: period.to.toISOString(),
+      });
+      const recipientEmail = invoice.restaurant.billingEmail;
+      const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
+
+      if (
+        !recipientEmail ||
+        (await this.invoiceRecordsService?.hasEmailed(
+          GeneratedInvoiceKind.WEEKLY_PAYOUT,
+          sourceKey,
+        ))
+      ) {
+        results.skipped += 1;
+        continue;
+      }
+
+      await this.deliverWeeklyPayoutInvoice(
+        systemUser,
+        invoice,
+        recipientEmail,
+      );
+      results.sent += 1;
+    }
+
+    return results;
   }
 
   private async buildWeeklyPayoutInvoice(
@@ -876,7 +924,10 @@ export class PackagePlansService {
     }
 
     return {
-      invoiceNumber: this.buildSubscriptionInvoiceNumber(subscription.id),
+      invoiceNumber: this.buildSubscriptionInvoiceNumber(
+        subscription.id,
+        servicePeriod.to,
+      ),
       subscriptionId: subscription.id,
       tenant: subscription.tenant,
       restaurant: subscription.restaurant
@@ -1008,8 +1059,13 @@ export class PackagePlansService {
     );
   }
 
-  private buildSubscriptionInvoiceNumber(subscriptionId: string) {
-    return `SUB-INV-${subscriptionId.slice(-8).toUpperCase()}`;
+  private buildSubscriptionInvoiceNumber(
+    subscriptionId: string,
+    periodTo: Date,
+  ) {
+    const periodStamp = periodTo.toISOString().slice(0, 10).replace(/-/g, '');
+
+    return `SUB-INV-${subscriptionId.slice(-8).toUpperCase()}-${periodStamp}`;
   }
 
   private generateSubscriptionInvoicePdf(
@@ -1147,6 +1203,95 @@ export class PackagePlansService {
     ].join('\n');
   }
 
+  private async deliverSubscriptionInvoice(
+    user: AuthUserContext,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+    recipientEmail: string,
+  ) {
+    if (!this.mailerService) {
+      throw new InternalServerErrorException(
+        'Mailer service is not configured',
+      );
+    }
+
+    const fileName = `${invoice.invoiceNumber}.pdf`;
+    const content = this.generateSubscriptionInvoicePdf(invoice);
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `DeliveryWays invoice ${invoice.invoiceNumber}`,
+      this.buildSubscriptionInvoiceEmailBody(invoice),
+      {
+        attachments: [
+          {
+            filename: fileName,
+            content,
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    );
+
+    await this.persistSubscriptionInvoice(user, invoice, {
+      eventType: GeneratedInvoiceEventType.EMAILED,
+      recipientEmail,
+      status: GeneratedInvoiceStatus.SENT,
+    });
+  }
+
+  private async deliverWeeklyPayoutInvoice(
+    user: AuthUserContext,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+    recipientEmail: string,
+  ) {
+    if (!this.mailerService) {
+      throw new InternalServerErrorException(
+        'Mailer service is not configured',
+      );
+    }
+
+    const fileName = `${invoice.invoiceNumber}.pdf`;
+    const content = this.generateWeeklyPayoutInvoicePdf(invoice);
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
+      this.buildWeeklyPayoutInvoiceEmailBody(invoice),
+      {
+        attachments: [
+          {
+            filename: fileName,
+            content,
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    );
+
+    await this.persistWeeklyPayoutInvoice(user, invoice, {
+      eventType: GeneratedInvoiceEventType.EMAILED,
+      recipientEmail,
+      status: GeneratedInvoiceStatus.SENT,
+    });
+  }
+
+  private ensureInvoiceAutomationConfigured() {
+    if (!this.mailerService || !this.invoiceRecordsService) {
+      throw new InternalServerErrorException(
+        'Invoice automation is not configured',
+      );
+    }
+  }
+
+  private systemInvoiceUser() {
+    return {
+      uid: 'system:invoice-automation',
+      role: UserRoleEnum.SUPER_ADMIN,
+    } as AuthUserContext;
+  }
+
   private async persistSubscriptionInvoice(
     user: AuthUserContext,
     invoice: Awaited<
@@ -1164,7 +1309,7 @@ export class PackagePlansService {
       invoiceNumber: invoice.invoiceNumber,
       kind: GeneratedInvoiceKind.SUBSCRIPTION,
       status: options.status,
-      sourceKey: `${invoice.subscriptionId}:${invoice.servicePeriod.from.toISOString()}:${invoice.servicePeriod.to.toISOString()}`,
+      sourceKey: this.buildSubscriptionInvoiceSourceKey(invoice),
       tenantId: invoice.tenant.id,
       restaurantId: invoice.restaurant?.id,
       subscriptionId: invoice.subscriptionId,
@@ -1196,7 +1341,7 @@ export class PackagePlansService {
       invoiceNumber: invoice.invoiceNumber,
       kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
       status: options.status,
-      sourceKey: `${invoice.restaurant.id}:${invoice.period.from.toISOString()}:${invoice.period.to.toISOString()}`,
+      sourceKey: this.buildWeeklyPayoutInvoiceSourceKey(invoice),
       tenantId: invoice.tenant.id,
       restaurantId: invoice.restaurant.id,
       periodFrom: invoice.period.from,
@@ -1208,6 +1353,50 @@ export class PackagePlansService {
       eventType: options.eventType,
       recipientEmail: options.recipientEmail,
     });
+  }
+
+  private buildSubscriptionInvoiceSourceKey(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+  ) {
+    return `${invoice.subscriptionId}:${invoice.servicePeriod.from.toISOString()}:${invoice.servicePeriod.to.toISOString()}`;
+  }
+
+  private buildWeeklyPayoutInvoiceSourceKey(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    return `${invoice.restaurant.id}:${invoice.period.from.toISOString()}:${invoice.period.to.toISOString()}`;
+  }
+
+  private resolveLastCompletedPayoutPeriod(
+    payoutCycle: PackagePayoutCycle,
+    now: Date,
+  ) {
+    const to = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const from = new Date(to);
+
+    switch (payoutCycle) {
+      case PackagePayoutCycle.DAILY:
+        from.setUTCDate(from.getUTCDate() - 1);
+        break;
+      case PackagePayoutCycle.BIWEEKLY:
+        from.setUTCDate(from.getUTCDate() - 14);
+        break;
+      case PackagePayoutCycle.MONTHLY:
+        from.setUTCMonth(from.getUTCMonth() - 1);
+        break;
+      case PackagePayoutCycle.WEEKLY:
+      default:
+        from.setUTCDate(from.getUTCDate() - 7);
+        break;
+    }
+
+    return { from, to };
   }
 
   private asJsonObject(value: Prisma.JsonValue | null) {

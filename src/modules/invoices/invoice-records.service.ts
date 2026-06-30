@@ -32,6 +32,19 @@ export interface PersistInvoiceInput {
 export class InvoiceRecordsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async hasEmailed(kind: GeneratedInvoiceKind, sourceKey: string) {
+    const invoice = await this.prisma.generatedInvoice.findFirst({
+      where: {
+        kind,
+        sourceKey,
+        sentCount: { gt: 0 },
+      },
+      select: { id: true },
+    });
+
+    return Boolean(invoice);
+  }
+
   async persist(input: PersistInvoiceInput) {
     const status = input.status ?? GeneratedInvoiceStatus.ISSUED;
     const eventType = input.eventType ?? GeneratedInvoiceEventType.GENERATED;

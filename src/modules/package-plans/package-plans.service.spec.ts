@@ -324,7 +324,7 @@ describe('PackagePlansService', () => {
     );
 
     expect(result.data).toMatchObject({
-      invoiceNumber: 'SUB-INV-12345678',
+      invoiceNumber: 'SUB-INV-12345678-20260701',
       subscriptionId: 'subscription-12345678',
       restaurant: {
         id: 'restaurant-1',
@@ -367,12 +367,12 @@ describe('PackagePlansService', () => {
       'subscription-12345678',
     );
 
-    expect(result.fileName).toBe('SUB-INV-12345678.pdf');
+    expect(result.fileName).toBe('SUB-INV-12345678-20260701.pdf');
     expect(result.mimeType).toBe('application/pdf');
     expect(result.content.subarray(0, 8).toString('utf8')).toBe('%PDF-1.4');
     expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
       expect.objectContaining({
-        invoiceNumber: 'SUB-INV-12345678',
+        invoiceNumber: 'SUB-INV-12345678-20260701',
         subscriptionId: 'subscription-12345678',
         eventType: 'DOWNLOADED',
       }),
@@ -405,12 +405,12 @@ describe('PackagePlansService', () => {
 
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
-      'DeliveryWays invoice SUB-INV-12345678',
+      'DeliveryWays invoice SUB-INV-12345678-20260701',
       expect.stringContaining('Please find attached DeliveryWays invoice'),
       expect.objectContaining({
         attachments: [
           expect.objectContaining({
-            filename: 'SUB-INV-12345678.pdf',
+            filename: 'SUB-INV-12345678-20260701.pdf',
             contentType: 'application/pdf',
           }),
         ],
@@ -419,7 +419,7 @@ describe('PackagePlansService', () => {
     expect(result.data.sentTo).toBe('billing@pizza.test');
     expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
       expect.objectContaining({
-        invoiceNumber: 'SUB-INV-12345678',
+        invoiceNumber: 'SUB-INV-12345678-20260701',
         eventType: 'EMAILED',
         recipientEmail: 'billing@pizza.test',
         status: 'SENT',
@@ -504,5 +504,102 @@ describe('PackagePlansService', () => {
         currency: 'PKR',
       },
     });
+  });
+
+  it('auto-emails due subscription invoices once and advances next billing date', async () => {
+    const subscription = makeSubscription({
+      nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+    const repository = {
+      listDueSubscriptions: jest.fn().mockResolvedValue([subscription]),
+      findSubscriptionById: jest.fn().mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      updateSubscription: jest.fn().mockResolvedValue(subscription),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.emailDueSubscriptionInvoices(
+      new Date('2026-07-01T02:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ sent: 1, skipped: 0 });
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'billing@pizza.test',
+      'DeliveryWays invoice SUB-INV-12345678-20260701',
+      expect.any(String),
+      expect.any(Object),
+    );
+    expect(invoiceRecordsService.hasEmailed).toHaveBeenCalledWith(
+      'SUBSCRIPTION',
+      'subscription-12345678:2026-06-01T00:00:00.000Z:2026-07-01T00:00:00.000Z',
+    );
+    expect(repository.updateSubscription).toHaveBeenCalledWith(
+      'subscription-12345678',
+      { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
+    );
+  });
+
+  it('auto-emails weekly payout invoices once for the last completed payout period', async () => {
+    const subscription = makeSubscription();
+    const repository = {
+      listActiveRestaurantSubscriptionsForPayouts: jest
+        .fn()
+        .mockResolvedValue([subscription]),
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.emailDuePayoutInvoices(
+      new Date('2026-07-08T10:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ sent: 1, skipped: 0 });
+    expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      new Date('2026-07-01T00:00:00.000Z'),
+      new Date('2026-07-08T00:00:00.000Z'),
+    );
+    expect(invoiceRecordsService.hasEmailed).toHaveBeenCalledWith(
+      'WEEKLY_PAYOUT',
+      'restaurant-1:2026-07-01T00:00:00.000Z:2026-07-08T00:00:00.000Z',
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'billing@pizza.test',
+      expect.stringContaining('payout invoice'),
+      expect.any(String),
+      expect.any(Object),
+    );
   });
 });

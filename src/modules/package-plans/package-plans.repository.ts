@@ -173,6 +173,32 @@ export class PackagePlansRepository {
     });
   }
 
+  listDueSubscriptions(now: Date) {
+    return this.prisma.tenantSubscription.findMany({
+      where: {
+        nextBillingAt: { lte: now },
+        status: {
+          in: [SubscriptionStatus.TRIALING, SubscriptionStatus.ACTIVE],
+        },
+      },
+      include: this.subscriptionInclude,
+      orderBy: [{ nextBillingAt: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  listActiveRestaurantSubscriptionsForPayouts() {
+    return this.prisma.tenantSubscription.findMany({
+      where: {
+        restaurantId: { not: null },
+        status: {
+          in: [SubscriptionStatus.TRIALING, SubscriptionStatus.ACTIVE],
+        },
+      },
+      include: this.subscriptionInclude,
+      orderBy: [{ restaurantId: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
   findActiveRestaurantSubscription(restaurantId: string) {
     return this.prisma.tenantSubscription.findFirst({
       where: {
