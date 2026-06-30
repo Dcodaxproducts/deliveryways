@@ -4394,19 +4394,13 @@ export class OrdersService {
       orderTime,
     );
 
-    if (
-      closure?.isClosed &&
-      closure.closedUntil &&
-      new Date(closure.closedUntil).getTime() <= Date.now()
-    ) {
-      // Expired closures reopen automatically; keep checking holiday rules.
-    } else if (closure?.isClosed) {
+    if (this.isOrderTimeBlockedByTemporaryClosure(closure, orderTime)) {
       throw new BadRequestException({
-        message: closure.message ?? 'Branch is temporarily closed',
+        message: closure?.message ?? 'Branch is temporarily closed',
         error: 'BRANCH_TEMPORARILY_CLOSED',
         details: {
-          reason: closure.reason ?? null,
-          closedUntil: closure.closedUntil ?? null,
+          reason: closure?.reason ?? null,
+          closedUntil: closure?.closedUntil ?? null,
         },
       });
     }
@@ -4423,6 +4417,40 @@ export class OrdersService {
         },
       });
     }
+  }
+
+  private isOrderTimeBlockedByTemporaryClosure(
+    closure: BranchTemporaryClosure | null,
+    orderTime: string | null,
+  ) {
+    if (!closure?.isClosed) {
+      return false;
+    }
+
+    if (!closure.closedUntil) {
+      return true;
+    }
+
+    const closedUntil = new Date(closure.closedUntil).getTime();
+    if (!Number.isFinite(closedUntil)) {
+      return true;
+    }
+
+    const now = Date.now();
+    if (closedUntil <= now) {
+      return false;
+    }
+
+    if (!orderTime) {
+      return true;
+    }
+
+    const requestedAt = new Date(orderTime).getTime();
+    if (!Number.isFinite(requestedAt)) {
+      return true;
+    }
+
+    return requestedAt <= closedUntil;
   }
 
   private assertDeliveryOrderWithinHours(

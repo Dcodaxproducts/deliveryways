@@ -499,6 +499,47 @@ describe('OrdersService - delivery radius', () => {
     ).not.toThrow();
   });
 
+  it('allows future scheduled orders after a temporary branch closure ends', () => {
+    const assertBranchAcceptingOrders = (
+      service as unknown as {
+        assertBranchAcceptingOrders: (
+          settings: unknown,
+          orderTime: string | null,
+        ) => void;
+      }
+    ).assertBranchAcceptingOrders;
+    const closedUntil = new Date(Date.now() + 20 * 60 * 1000);
+    const afterClosure = new Date(closedUntil.getTime() + 10 * 60 * 1000);
+    const duringClosure = new Date(closedUntil.getTime() - 5 * 60 * 1000);
+    const settings = {
+      temporaryClosure: {
+        isClosed: true,
+        reason: 'maintenance',
+        closedUntil: closedUntil.toISOString(),
+        message: 'Branch temporarily closed',
+      },
+      holidayOpeningHours: [],
+    };
+
+    expect(() =>
+      assertBranchAcceptingOrders.call(service, settings, null),
+    ).toThrow('Branch temporarily closed');
+    expect(() =>
+      assertBranchAcceptingOrders.call(
+        service,
+        settings,
+        duringClosure.toISOString(),
+      ),
+    ).toThrow('Branch temporarily closed');
+    expect(() =>
+      assertBranchAcceptingOrders.call(
+        service,
+        settings,
+        afterClosure.toISOString(),
+      ),
+    ).not.toThrow();
+  });
+
   it('falls back to opening hours when delivery hours are not configured', () => {
     const assertDeliveryOrderWithinHours = (
       service as unknown as {
