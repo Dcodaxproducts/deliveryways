@@ -352,7 +352,15 @@ describe('PackagePlansService', () => {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
     };
-    const service = new PackagePlansService(repository as never);
+    const invoiceRecordsService = {
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      undefined,
+      invoiceRecordsService as never,
+    );
 
     const result = await service.downloadSubscriptionInvoicePdf(
       superAdmin,
@@ -362,6 +370,13 @@ describe('PackagePlansService', () => {
     expect(result.fileName).toBe('SUB-INV-12345678.pdf');
     expect(result.mimeType).toBe('application/pdf');
     expect(result.content.subarray(0, 8).toString('utf8')).toBe('%PDF-1.4');
+    expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceNumber: 'SUB-INV-12345678',
+        subscriptionId: 'subscription-12345678',
+        eventType: 'DOWNLOADED',
+      }),
+    );
   });
 
   it('sends restaurant subscription invoice to billing email', async () => {
@@ -372,9 +387,14 @@ describe('PackagePlansService', () => {
     const mailerService = {
       sendEmail: jest.fn().mockResolvedValue(undefined),
     };
+    const invoiceRecordsService = {
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
     const service = new PackagePlansService(
       repository as never,
       mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
     );
 
     const result = await service.sendSubscriptionInvoiceEmail(
@@ -397,6 +417,14 @@ describe('PackagePlansService', () => {
       }),
     );
     expect(result.data.sentTo).toBe('billing@pizza.test');
+    expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceNumber: 'SUB-INV-12345678',
+        eventType: 'EMAILED',
+        recipientEmail: 'billing@pizza.test',
+        status: 'SENT',
+      }),
+    );
   });
 
   it('requires a restaurant billing email before sending invoice', async () => {

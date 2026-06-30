@@ -10,6 +10,9 @@ import {
   PackageBillingModel,
   PackageCommissionType,
   PackagePayoutCycle,
+  GeneratedInvoiceEventType,
+  GeneratedInvoiceKind,
+  GeneratedInvoiceStatus,
   PaymentStatus,
   Prisma,
   SubscriptionStatus,
@@ -17,8 +20,10 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
+import { InvoicePdfBuilder } from '../../common/pdf/invoice-pdf.builder';
 import { MailerService } from '../mailer/mailer.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
+import { InvoiceRecordsService } from '../invoices/invoice-records.service';
 import {
   AssignTenantSubscriptionDto,
   CreatePackagePlanDto,
@@ -83,6 +88,7 @@ export class PackagePlansService {
     private readonly packagePlansRepository: PackagePlansRepository,
     private readonly mailerService?: MailerService,
     private readonly globalSettingsService?: GlobalSettingsService,
+    private readonly invoiceRecordsService?: InvoiceRecordsService,
   ) {}
 
   async createPlan(user: AuthUserContext, dto: CreatePackagePlanDto) {
@@ -387,6 +393,7 @@ export class PackagePlansService {
   async getSubscriptionInvoice(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildSubscriptionInvoice(id);
+    await this.persistSubscriptionInvoice(user, invoice);
 
     return {
       data: invoice,
@@ -397,11 +404,15 @@ export class PackagePlansService {
   async downloadSubscriptionInvoicePdf(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildSubscriptionInvoice(id);
+    const content = this.generateSubscriptionInvoicePdf(invoice);
+    await this.persistSubscriptionInvoice(user, invoice, {
+      eventType: GeneratedInvoiceEventType.DOWNLOADED,
+    });
 
     return {
       fileName: `${invoice.invoiceNumber}.pdf`,
       mimeType: 'application/pdf',
-      content: this.generateSubscriptionInvoicePdf(invoice),
+      content,
     };
   }
 
@@ -427,6 +438,7 @@ export class PackagePlansService {
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
+    const content = this.generateSubscriptionInvoicePdf(invoice);
     await this.mailerService.sendEmail(
       recipientEmail,
       `DeliveryWays invoice ${invoice.invoiceNumber}`,
@@ -435,12 +447,18 @@ export class PackagePlansService {
         attachments: [
           {
             filename: fileName,
-            content: this.generateSubscriptionInvoicePdf(invoice),
+            content,
             contentType: 'application/pdf',
           },
         ],
       },
     );
+
+    await this.persistSubscriptionInvoice(user, invoice, {
+      eventType: GeneratedInvoiceEventType.EMAILED,
+      recipientEmail,
+      status: GeneratedInvoiceStatus.SENT,
+    });
 
     return {
       data: {
@@ -461,6 +479,7 @@ export class PackagePlansService {
   ) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildWeeklyPayoutInvoice(query);
+    await this.persistWeeklyPayoutInvoice(user, invoice);
 
     return {
       data: invoice,
@@ -474,11 +493,15 @@ export class PackagePlansService {
   ) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildWeeklyPayoutInvoice(query);
+    const content = this.generateWeeklyPayoutInvoicePdf(invoice);
+    await this.persistWeeklyPayoutInvoice(user, invoice, {
+      eventType: GeneratedInvoiceEventType.DOWNLOADED,
+    });
 
     return {
       fileName: `${invoice.invoiceNumber}.pdf`,
       mimeType: 'application/pdf',
-      content: this.generateWeeklyPayoutInvoicePdf(invoice),
+      content,
     };
   }
 
@@ -503,6 +526,7 @@ export class PackagePlansService {
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
+    const content = this.generateWeeklyPayoutInvoicePdf(invoice);
     await this.mailerService.sendEmail(
       recipientEmail,
       `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
@@ -511,12 +535,18 @@ export class PackagePlansService {
         attachments: [
           {
             filename: fileName,
-            content: this.generateWeeklyPayoutInvoicePdf(invoice),
+            content,
             contentType: 'application/pdf',
           },
         ],
       },
     );
+
+    await this.persistWeeklyPayoutInvoice(user, invoice, {
+      eventType: GeneratedInvoiceEventType.EMAILED,
+      recipientEmail,
+      status: GeneratedInvoiceStatus.SENT,
+    });
 
     return {
       data: {
@@ -987,36 +1017,55 @@ export class PackagePlansService {
       ReturnType<PackagePlansService['buildSubscriptionInvoice']>
     >,
   ) {
-    const lines = [
-      `Invoice ${invoice.invoiceNumber}`,
-      `Invoice Date: ${invoice.issuedAt.toISOString()}`,
-      `Due Date: ${invoice.dueAt?.toISOString() ?? 'N/A'}`,
-      `Service Period: ${invoice.servicePeriod.from.toISOString()} - ${invoice.servicePeriod.to.toISOString()}`,
-      '',
-      'Billed To',
-      `Restaurant: ${invoice.restaurant?.name ?? 'N/A'}`,
-      `Tenant: ${invoice.tenant.name}`,
-      `Email: ${invoice.restaurant?.billingEmail ?? 'N/A'}`,
-      '',
-      'Package',
-      `Plan: ${invoice.packagePlan.name}`,
-      `Billing Model: ${invoice.packagePlan.billingModel}`,
-      `Billing Interval: ${invoice.packagePlan.billingInterval}`,
-      `Commission: ${invoice.packagePlan.commissionType} ${invoice.packagePlan.commissionPercentage}% / ${invoice.packagePlan.commissionFixedAmount}`,
-      `Payout Cycle: ${invoice.packagePlan.payoutCycle}`,
-      '',
-      `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
-      `Transaction Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
-      `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
-      `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
-      `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
-      `Payment Status: ${invoice.paymentStatus}`,
-      `Subscription Status: ${invoice.status}`,
-      '',
-      invoice.note ? `Note: ${invoice.note}` : '',
-    ];
-
-    return this.buildSimplePdf(lines);
+    return InvoicePdfBuilder.build({
+      title: `Subscription Invoice ${invoice.invoiceNumber}`,
+      subtitle: invoice.packagePlan.name,
+      invoiceNumber: invoice.invoiceNumber,
+      issuedAt: invoice.issuedAt,
+      brandName: invoice.restaurant?.name ?? invoice.tenant.name,
+      meta: [
+        { label: 'Due Date', value: invoice.dueAt?.toISOString() ?? 'N/A' },
+        {
+          label: 'Service From',
+          value: invoice.servicePeriod.from.toISOString(),
+        },
+        { label: 'Service To', value: invoice.servicePeriod.to.toISOString() },
+        { label: 'Payment Status', value: invoice.paymentStatus },
+        { label: 'Currency', value: invoice.totals.currency },
+      ],
+      sections: [
+        {
+          title: 'Billed To',
+          rows: [
+            `Restaurant: ${invoice.restaurant?.name ?? 'N/A'}`,
+            `Tenant: ${invoice.tenant.name}`,
+            `Email: ${invoice.restaurant?.billingEmail ?? 'N/A'}`,
+          ],
+        },
+        {
+          title: 'Package',
+          rows: [
+            `Plan: ${invoice.packagePlan.name}`,
+            `Billing Model: ${invoice.packagePlan.billingModel}`,
+            `Billing Interval: ${invoice.packagePlan.billingInterval}`,
+            `Commission: ${invoice.packagePlan.commissionType} ${invoice.packagePlan.commissionPercentage}% / ${invoice.packagePlan.commissionFixedAmount}`,
+            `Payout Cycle: ${invoice.packagePlan.payoutCycle}`,
+          ],
+        },
+        {
+          title: 'Totals',
+          rows: [
+            `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
+            `Transaction Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
+            `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
+            `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
+            `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
+            `Subscription Status: ${invoice.status}`,
+            invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
+          ],
+        },
+      ],
+    });
   }
 
   private buildSubscriptionInvoiceEmailBody(
@@ -1045,25 +1094,38 @@ export class PackagePlansService {
       ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
     >,
   ) {
-    const lines = [
-      `Payout Invoice ${invoice.invoiceNumber}`,
-      `Invoice Date: ${invoice.issuedAt.toISOString()}`,
-      `Payout Period: ${invoice.period.from.toISOString()} - ${invoice.period.to.toISOString()}`,
-      '',
-      'Restaurant',
-      `Restaurant: ${invoice.restaurant.name}`,
-      `Tenant: ${invoice.tenant.name}`,
-      `Email: ${invoice.restaurant.billingEmail ?? 'N/A'}`,
-      '',
-      `Orders Count: ${invoice.totals.ordersCount}`,
-      `Gross Collected By Super Admin: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
-      `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
-      `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
-      '',
-      invoice.note,
-    ];
-
-    return this.buildSimplePdf(lines);
+    return InvoicePdfBuilder.build({
+      title: `Weekly Payout Invoice ${invoice.invoiceNumber}`,
+      subtitle: invoice.restaurant.name,
+      invoiceNumber: invoice.invoiceNumber,
+      issuedAt: invoice.issuedAt,
+      brandName: invoice.restaurant.name,
+      meta: [
+        { label: 'Payout From', value: invoice.period.from.toISOString() },
+        { label: 'Payout To', value: invoice.period.to.toISOString() },
+        { label: 'Orders Count', value: invoice.totals.ordersCount },
+        { label: 'Currency', value: invoice.totals.currency },
+      ],
+      sections: [
+        {
+          title: 'Restaurant',
+          rows: [
+            `Restaurant: ${invoice.restaurant.name}`,
+            `Tenant: ${invoice.tenant.name}`,
+            `Email: ${invoice.restaurant.billingEmail ?? 'N/A'}`,
+          ],
+        },
+        {
+          title: 'Settlement',
+          rows: [
+            `Gross Collected By Super Admin: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
+            `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
+            `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
+            invoice.note,
+          ],
+        },
+      ],
+    });
   }
 
   private buildWeeklyPayoutInvoiceEmailBody(
@@ -1085,55 +1147,67 @@ export class PackagePlansService {
     ].join('\n');
   }
 
-  private buildSimplePdf(lines: string[]) {
-    const escapedLines = lines
-      .filter((line) => line.length > 0)
-      .slice(0, 52)
-      .flatMap((line) => this.wrapPdfLine(line))
-      .map((line) => `0 -14 Td (${this.escapePdfText(line)}) Tj`)
-      .join('\n');
-    const stream = `BT\n/F1 10 Tf\n50 800 Td\n${escapedLines}\nET`;
-    const objects = [
-      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
-      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n',
-      `5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj\n`,
-    ];
-    let pdf = '%PDF-1.4\n';
-    const offsets = [0];
+  private async persistSubscriptionInvoice(
+    user: AuthUserContext,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+    options: {
+      eventType?: GeneratedInvoiceEventType;
+      recipientEmail?: string;
+      status?: GeneratedInvoiceStatus;
+    } = {},
+  ) {
+    if (!this.invoiceRecordsService) return;
 
-    for (const object of objects) {
-      offsets.push(Buffer.byteLength(pdf, 'utf8'));
-      pdf += object;
-    }
-
-    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
-    pdf += `xref\n0 ${objects.length + 1}\n`;
-    pdf += '0000000000 65535 f \n';
-    for (const offset of offsets.slice(1)) {
-      pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`;
-    }
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-
-    return Buffer.from(pdf, 'utf8');
+    await this.invoiceRecordsService.persist({
+      invoiceNumber: invoice.invoiceNumber,
+      kind: GeneratedInvoiceKind.SUBSCRIPTION,
+      status: options.status,
+      sourceKey: `${invoice.subscriptionId}:${invoice.servicePeriod.from.toISOString()}:${invoice.servicePeriod.to.toISOString()}`,
+      tenantId: invoice.tenant.id,
+      restaurantId: invoice.restaurant?.id,
+      subscriptionId: invoice.subscriptionId,
+      periodFrom: invoice.servicePeriod.from,
+      periodTo: invoice.servicePeriod.to,
+      currency: invoice.totals.currency,
+      totalAmount: invoice.totals.totalAmount,
+      snapshot: invoice as unknown as Prisma.InputJsonValue,
+      actorId: user.uid,
+      eventType: options.eventType,
+      recipientEmail: options.recipientEmail,
+    });
   }
 
-  private wrapPdfLine(line: string) {
-    const chunks: string[] = [];
-    for (let index = 0; index < line.length; index += 78) {
-      chunks.push(line.slice(index, index + 78));
-    }
+  private async persistWeeklyPayoutInvoice(
+    user: AuthUserContext,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+    options: {
+      eventType?: GeneratedInvoiceEventType;
+      recipientEmail?: string;
+      status?: GeneratedInvoiceStatus;
+    } = {},
+  ) {
+    if (!this.invoiceRecordsService) return;
 
-    return chunks.length > 0 ? chunks : [''];
-  }
-
-  private escapePdfText(text: string) {
-    return text
-      .replace(/[^\x20-\x7E]/g, '?')
-      .replace(/\\/g, '\\\\')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)');
+    await this.invoiceRecordsService.persist({
+      invoiceNumber: invoice.invoiceNumber,
+      kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+      status: options.status,
+      sourceKey: `${invoice.restaurant.id}:${invoice.period.from.toISOString()}:${invoice.period.to.toISOString()}`,
+      tenantId: invoice.tenant.id,
+      restaurantId: invoice.restaurant.id,
+      periodFrom: invoice.period.from,
+      periodTo: invoice.period.to,
+      currency: invoice.totals.currency,
+      totalAmount: invoice.totals.restaurantPayoutAmount,
+      snapshot: invoice as unknown as Prisma.InputJsonValue,
+      actorId: user.uid,
+      eventType: options.eventType,
+      recipientEmail: options.recipientEmail,
+    });
   }
 
   private asJsonObject(value: Prisma.JsonValue | null) {

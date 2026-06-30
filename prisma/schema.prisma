@@ -118,6 +118,23 @@ enum PackagePayoutCycle {
   MONTHLY
 }
 
+enum GeneratedInvoiceKind {
+  ORDER
+  SUBSCRIPTION
+  WEEKLY_PAYOUT
+}
+
+enum GeneratedInvoiceStatus {
+  ISSUED
+  SENT
+}
+
+enum GeneratedInvoiceEventType {
+  GENERATED
+  DOWNLOADED
+  EMAILED
+}
+
 enum SubscriptionStatus {
   TRIALING
   ACTIVE
@@ -1875,6 +1892,55 @@ model GlobalSetting {
   updatedAt                   DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("global_settings")
+}
+
+model GeneratedInvoice {
+  id              String                 @id @default(cuid())
+  invoiceNumber   String                 @unique @map("invoice_number") @db.VarChar(100)
+  kind            GeneratedInvoiceKind
+  status          GeneratedInvoiceStatus @default(ISSUED)
+  tenantId        String?                @map("tenant_id")
+  restaurantId    String?                @map("restaurant_id")
+  branchId        String?                @map("branch_id")
+  customerId      String?                @map("customer_id")
+  orderId         String?                @map("order_id")
+  subscriptionId  String?                @map("subscription_id")
+  sourceKey       String                 @map("source_key") @db.VarChar(255)
+  periodFrom      DateTime?              @map("period_from") @db.Timestamptz
+  periodTo        DateTime?              @map("period_to") @db.Timestamptz
+  currency        String                 @default("PKR") @db.VarChar(10)
+  totalAmount     Decimal                @default(0) @map("total_amount") @db.Decimal(12, 2)
+  snapshot        Json
+  generatedById   String?                @map("generated_by_id")
+  sentCount       Int                    @default(0) @map("sent_count")
+  downloadedCount Int                    @default(0) @map("downloaded_count")
+  lastSentAt      DateTime?              @map("last_sent_at") @db.Timestamptz
+  lastSentTo      String?                @map("last_sent_to") @db.VarChar(320)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  events GeneratedInvoiceEvent[]
+
+  @@index([kind, sourceKey])
+  @@index([restaurantId, createdAt])
+  @@index([orderId])
+  @@index([subscriptionId])
+  @@map("generated_invoices")
+}
+
+model GeneratedInvoiceEvent {
+  id                 String                    @id @default(cuid())
+  generatedInvoiceId String                    @map("generated_invoice_id")
+  eventType          GeneratedInvoiceEventType @map("event_type")
+  actorId            String?                   @map("actor_id")
+  recipientEmail     String?                   @map("recipient_email") @db.VarChar(320)
+  metadata           Json?
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+
+  generatedInvoice GeneratedInvoice @relation(fields: [generatedInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([generatedInvoiceId, createdAt])
+  @@map("generated_invoice_events")
 }
 
 model Notification {

@@ -366,7 +366,15 @@ describe('AdminReportsService', () => {
         transactions: [],
       }),
     };
-    const service = new AdminReportsService(repository as never);
+    const invoiceRecordsService = {
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new AdminReportsService(
+      repository as never,
+      undefined,
+      undefined,
+      invoiceRecordsService as never,
+    );
 
     const result = await service.downloadInvoicePdf(
       {
@@ -382,7 +390,13 @@ describe('AdminReportsService', () => {
     expect(result.fileName).toBe('INV-12345678.pdf');
     expect(result.mimeType).toBe('application/pdf');
     expect(result.content.toString('utf8')).toContain('%PDF-1.4');
-    expect(result.content.toString('utf8')).toContain('Restaurant GmbH');
+    expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceNumber: 'INV-12345678',
+        orderId: 'order-12345678',
+        eventType: 'DOWNLOADED',
+      }),
+    );
   });
 
   it('generates report export CSV and sends it to email', async () => {

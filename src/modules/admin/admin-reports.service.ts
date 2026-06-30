@@ -5,10 +5,18 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  GeneratedInvoiceEventType,
+  GeneratedInvoiceKind,
+  GeneratedInvoiceStatus,
+  Prisma,
+} from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { MailerService } from '../mailer/mailer.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { UserRoleEnum } from '../../common/enums';
+import { InvoicePdfBuilder } from '../../common/pdf/invoice-pdf.builder';
+import { InvoiceRecordsService } from '../invoices/invoice-records.service';
 import {
   AdminReportsRepository,
   AdminReportsScope,
@@ -36,6 +44,7 @@ export class AdminReportsService {
     private readonly adminReportsRepository: AdminReportsRepository,
     private readonly mailerService?: MailerService,
     private readonly globalSettingsService?: GlobalSettingsService,
+    private readonly invoiceRecordsService?: InvoiceRecordsService,
   ) {}
 
   async exportMenuCsv(
@@ -404,8 +413,11 @@ export class AdminReportsService {
       throw new NotFoundException('Invoice not found');
     }
 
+    const details = await this.toInvoiceDetails(invoice);
+    await this.persistOrderInvoice(user, invoice, details);
+
     return {
-      data: await this.toInvoiceDetails(invoice),
+      data: details,
       message: 'Invoice fetched successfully',
     };
   }
@@ -419,10 +431,15 @@ export class AdminReportsService {
     const details = await this.toInvoiceDetails(invoice);
     const invoiceNumber = details.invoiceNumber;
 
+    const content = await this.generateInvoicePdf(invoice);
+    await this.persistOrderInvoice(user, invoice, details, {
+      eventType: GeneratedInvoiceEventType.DOWNLOADED,
+    });
+
     return {
       fileName: `${invoiceNumber}.pdf`,
       mimeType: 'application/pdf',
-      content: await this.generateInvoicePdf(invoice),
+      content,
     };
   }
 
@@ -639,55 +656,102 @@ export class AdminReportsService {
     const summary = await this.toInvoiceDetails(invoice);
     const business = summary.business;
     const customer = summary.customer;
-    const lines = [
-      `Invoice ${summary.invoiceNumber}`,
-      `Invoice Date: ${this.formatDate(summary.issuedAt)}`,
-      `Service Period: ${this.formatDate(summary.servicePeriod.from)} - ${this.formatDate(summary.servicePeriod.to)}`,
-      '',
-      'Seller',
-      `${business.name}`,
-      `Address: ${business.billingAddress.formatted ?? 'N/A'}`,
-      `Email: ${business.email ?? 'N/A'}`,
-      `Phone: ${business.phone ?? 'N/A'}`,
-      `Tax/VAT No: ${business.taxNumber ?? 'N/A'}`,
-      '',
-      'Customer',
-      `${customer.name}`,
-      `Email: ${customer.email}`,
-      `Phone: ${customer.phone ?? 'N/A'}`,
-      `Address: ${summary.customerBillingAddress.formatted ?? 'N/A'}`,
-      '',
-      `Order ID: ${summary.orderId}`,
-      `Restaurant: ${summary.restaurant.name}`,
-      `Branch: ${summary.branch.name}`,
-      `Paid At: ${this.formatDate(summary.paidAt)}`,
-      `Order Type: ${summary.orderType}`,
-      `Order Status: ${summary.orderStatus}`,
-      `Payment Status: ${summary.paymentStatus}`,
-      `Payment Method: ${summary.paymentMethod}`,
-      '',
-      'Items',
-      ...summary.items.flatMap((item) =>
-        this.wrapPdfLine(
-          `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)}${item.depositAmount > 0 ? ` + Pfand ${this.formatMoney(item.depositAmount)}` : ''} = ${this.formatMoney(item.lineTotal)}`,
-        ),
-      ),
-      '',
-      `Subtotal: ${this.formatMoney(summary.subtotal)}`,
-      `Tax: ${this.formatMoney(summary.taxAmount)}`,
-      `Delivery Fee: ${this.formatMoney(summary.deliveryFee)}`,
-      `Discount: ${this.formatMoney(summary.discountAmount)}`,
-      `Wallet Applied: ${this.formatMoney(summary.walletAppliedAmount)}`,
-      `Loyalty Discount: ${this.formatMoney(summary.loyaltyDiscountAmount)}`,
-      `Total: ${this.formatMoney(summary.totalAmount)}`,
-      '',
-      'Bank Details',
-      `Account Holder: ${business.bankDetails.accountHolder ?? 'N/A'}`,
-      `Bank Name: ${business.bankDetails.bankName ?? 'N/A'}`,
-      `IBAN/Account: ${business.bankDetails.iban ?? business.bankDetails.accountNumber ?? 'N/A'}`,
-    ];
 
-    return this.buildSimplePdf(lines);
+    return InvoicePdfBuilder.build({
+      title: `Order Invoice ${summary.invoiceNumber}`,
+      subtitle: `${summary.restaurant.name} · ${summary.branch.name}`,
+      invoiceNumber: summary.invoiceNumber,
+      issuedAt: summary.issuedAt,
+      brandName: business.name,
+      meta: [
+        { label: 'Order ID', value: summary.orderId },
+        { label: 'Paid At', value: this.formatDate(summary.paidAt) },
+        { label: 'Order Type', value: summary.orderType },
+        { label: 'Payment Status', value: summary.paymentStatus },
+        { label: 'Currency', value: summary.payment.currency },
+      ],
+      sections: [
+        {
+          title: 'Seller',
+          rows: [
+            business.name,
+            `Address: ${business.billingAddress.formatted ?? 'N/A'}`,
+            `Email: ${business.email ?? 'N/A'}`,
+            `Phone: ${business.phone ?? 'N/A'}`,
+            `Tax/VAT No: ${business.taxNumber ?? 'N/A'}`,
+          ],
+        },
+        {
+          title: 'Customer',
+          rows: [
+            customer.name,
+            `Email: ${customer.email}`,
+            `Phone: ${customer.phone ?? 'N/A'}`,
+            `Address: ${summary.customerBillingAddress.formatted ?? 'N/A'}`,
+          ],
+        },
+        {
+          title: 'Items',
+          rows: summary.items.map(
+            (item) =>
+              `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)}${item.depositAmount > 0 ? ` + Pfand ${this.formatMoney(item.depositAmount)}` : ''} = ${this.formatMoney(item.lineTotal)}`,
+          ),
+        },
+        {
+          title: 'Totals',
+          rows: [
+            `Subtotal: ${this.formatMoney(summary.subtotal)}`,
+            `Tax: ${this.formatMoney(summary.taxAmount)}`,
+            `Delivery Fee: ${this.formatMoney(summary.deliveryFee)}`,
+            `Discount: ${this.formatMoney(summary.discountAmount)}`,
+            `Wallet Applied: ${this.formatMoney(summary.walletAppliedAmount)}`,
+            `Loyalty Discount: ${this.formatMoney(summary.loyaltyDiscountAmount)}`,
+            `Total: ${this.formatMoney(summary.totalAmount)} ${summary.payment.currency}`,
+          ],
+        },
+        {
+          title: 'Bank Details',
+          rows: [
+            `Account Holder: ${business.bankDetails.accountHolder ?? 'N/A'}`,
+            `Bank Name: ${business.bankDetails.bankName ?? 'N/A'}`,
+            `IBAN/Account: ${business.bankDetails.iban ?? business.bankDetails.accountNumber ?? 'N/A'}`,
+          ],
+        },
+      ],
+    });
+  }
+
+  private async persistOrderInvoice(
+    user: AuthUserContext,
+    invoice: InvoiceOrder,
+    details: Awaited<ReturnType<AdminReportsService['toInvoiceDetails']>>,
+    options: {
+      eventType?: GeneratedInvoiceEventType;
+      recipientEmail?: string;
+      status?: GeneratedInvoiceStatus;
+    } = {},
+  ) {
+    if (!this.invoiceRecordsService) return;
+
+    await this.invoiceRecordsService.persist({
+      invoiceNumber: details.invoiceNumber,
+      kind: GeneratedInvoiceKind.ORDER,
+      status: options.status,
+      sourceKey: invoice.id,
+      tenantId: invoice.tenantId,
+      restaurantId: invoice.restaurantId,
+      branchId: invoice.branchId,
+      customerId: invoice.customer.id,
+      orderId: invoice.id,
+      periodFrom: details.servicePeriod.from,
+      periodTo: details.servicePeriod.to,
+      currency: details.payment.currency,
+      totalAmount: details.totalAmount,
+      snapshot: details as unknown as Prisma.InputJsonValue,
+      actorId: user.uid,
+      eventType: options.eventType,
+      recipientEmail: options.recipientEmail,
+    });
   }
 
   private buildInvoiceEmailBody(
