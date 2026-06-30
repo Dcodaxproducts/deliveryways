@@ -51,6 +51,12 @@ export class CartRepository {
     });
   }
 
+  async deleteExpiredBefore(cutoff: Date) {
+    return this.prisma.cart.deleteMany({
+      where: { updatedAt: { lt: cutoff } },
+    });
+  }
+
   async createItem(data: Prisma.CartItemCreateInput, tx?: PrismaTx) {
     return this.client(tx).cartItem.create({ data });
   }

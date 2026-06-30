@@ -23,6 +23,7 @@ import { StorageService } from '../storage/storage.service';
 import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   AddCartItemDto,
   CartItemModifierDto,
@@ -40,7 +41,8 @@ import {
 } from './dto';
 import { CartRepository } from './cart.repository';
 
-const CART_INACTIVITY_TTL_MS = 12 * 60 * 60 * 1000;
+const DEFAULT_CART_EXPIRY_MINUTES = 720;
+const MINUTE_IN_MS = 60 * 1000;
 
 interface CartSnapshotItem {
   id: string;
@@ -231,6 +233,7 @@ export class CartService {
     private readonly profilesRepository: ProfilesRepository,
     private readonly storageService?: StorageService,
     @Optional() private readonly couponsService?: CouponsService,
+    @Optional() private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
   async getCart(
@@ -917,12 +920,22 @@ export class CartService {
       return null;
     }
 
-    if (Date.now() - cart.updatedAt.getTime() <= CART_INACTIVITY_TTL_MS) {
+    const ttlMs = await this.getCartInactivityTtlMs();
+
+    if (Date.now() - cart.updatedAt.getTime() <= ttlMs) {
       return cart;
     }
 
     await this.cartRepository.deleteByCustomerId(customerId);
     return null;
+  }
+
+  private async getCartInactivityTtlMs() {
+    const minutes =
+      (await this.globalSettingsService?.getCartExpiryMinutes()) ??
+      DEFAULT_CART_EXPIRY_MINUTES;
+
+    return minutes * MINUTE_IN_MS;
   }
 
   private findCartItemsByDealId(cart: CartSnapshot, dealId: string) {

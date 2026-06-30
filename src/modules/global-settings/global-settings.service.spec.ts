@@ -191,6 +191,7 @@ describe('GlobalSettingsService', () => {
         defaultCurrency: 'usd',
         primaryColor: '#ff6b00',
         timezone: 'UTC',
+        cartExpiryMinutes: 90,
         globalTaxPercentage: 5,
         notificationSettings: {
           whatsappNumber: '+923009876543',
@@ -209,6 +210,7 @@ describe('GlobalSettingsService', () => {
       defaultCurrency: 'USD',
       primaryColor: '#FF6B00',
       timezone: 'UTC',
+      cartExpiryMinutes: 90,
       updatedBy: 'user-1',
     });
     expect(updateData.globalTaxPercentage).toBeInstanceOf(Prisma.Decimal);
@@ -233,7 +235,17 @@ describe('GlobalSettingsService', () => {
       defaultCurrency: 'USD',
       primaryColor: '#FF6B00',
       timezone: 'UTC',
+      cartExpiryMinutes: 90,
     });
+  });
+
+  it('returns configured cart expiry minutes', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      cartExpiryMinutes: 45,
+    });
+
+    await expect(service.getCartExpiryMinutes()).resolves.toBe(45);
   });
 
   it('returns platform payment methods with defaults and stored overrides', async () => {

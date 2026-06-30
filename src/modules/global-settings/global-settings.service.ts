@@ -63,6 +63,7 @@ interface NormalizedGlobalSettingsInput {
   primaryColor?: string | null;
   secondaryColor?: string | null;
   fontFamily?: string | null;
+  cartExpiryMinutes?: number;
   notificationSettings?: Prisma.InputJsonValue;
   paymentMethods?: Prisma.InputJsonValue;
   taxTypes?: Prisma.InputJsonValue;
@@ -95,6 +96,14 @@ export class GlobalSettingsService {
     );
 
     return data.defaultCurrency.trim().toUpperCase();
+  }
+
+  async getCartExpiryMinutes(): Promise<number> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return data.cartExpiryMinutes;
   }
 
   async updateSettings(user: AuthUserContext, dto: UpdateGlobalSettingsDto) {
@@ -216,6 +225,7 @@ export class GlobalSettingsService {
       primaryColor: null,
       secondaryColor: null,
       fontFamily: null,
+      cartExpiryMinutes: 720,
       notificationSettings: this.buildDefaultNotificationSettings(),
       paymentMethods: this.buildDefaultPaymentMethods(),
       taxTypes: this.buildDefaultTaxTypes(new Prisma.Decimal(0)),
@@ -277,6 +287,7 @@ export class GlobalSettingsService {
         dto.fontFamily !== undefined
           ? this.resolveOptionalString(dto.fontFamily)
           : undefined,
+      cartExpiryMinutes: dto.cartExpiryMinutes,
       notificationSettings:
         dto.notificationSettings !== undefined
           ? this.mergeNotificationSettings(

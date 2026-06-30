@@ -256,6 +256,20 @@ export class UpdateGlobalSettingsDto {
   @IsString()
   fontFamily?: string;
 
+  @ApiPropertyOptional({
+    minimum: 15,
+    maximum: 10080,
+    example: 720,
+    description:
+      'Minutes after which an inactive customer cart is automatically cleared.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber({ maxDecimalPlaces: 0 })
+  @Min(15)
+  @Max(10080)
+  cartExpiryMinutes?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

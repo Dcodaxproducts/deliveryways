@@ -32,6 +32,7 @@ describe('CartService', () => {
       deleteItem: jest.fn(),
       deleteItems: jest.fn(),
       deleteByCustomerId: jest.fn(),
+      deleteExpiredBefore: jest.fn(),
     };
 
     const ordersService = {
@@ -56,12 +57,17 @@ describe('CartService', () => {
       getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue(null),
     };
 
+    const globalSettingsService = {
+      getCartExpiryMinutes: jest.fn().mockResolvedValue(720),
+    };
+
     const service = new CartService(
       cartRepository as never,
       ordersService as never,
       profilesRepository as never,
       storageService as never,
       couponsService as never,
+      globalSettingsService as never,
     );
 
     return {
@@ -71,6 +77,7 @@ describe('CartService', () => {
       profilesRepository,
       storageService,
       couponsService,
+      globalSettingsService,
     };
   };
 
@@ -321,7 +328,13 @@ describe('CartService', () => {
   });
 
   it('clears stale carts before returning the customer cart', async () => {
-    const { service, cartRepository, profilesRepository } = makeService();
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      globalSettingsService,
+    } = makeService();
+    globalSettingsService.getCartExpiryMinutes.mockResolvedValue(30);
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
       tenantId: 'tenant-1',
@@ -336,8 +349,8 @@ describe('CartService', () => {
       orderTime: null,
       tipAmount: new Prisma.Decimal(0),
       customerNote: null,
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      createdAt: new Date(Date.now() - 31 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 31 * 60 * 1000),
       items: [],
     });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
@@ -350,6 +363,7 @@ describe('CartService', () => {
     });
 
     expect(cartRepository.deleteByCustomerId).toHaveBeenCalledWith('user-1');
+    expect(globalSettingsService.getCartExpiryMinutes).toHaveBeenCalled();
     expect(result.data.id).toBeNull();
     expect(result.data.items).toEqual([]);
   });
