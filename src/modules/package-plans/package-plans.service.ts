@@ -858,14 +858,13 @@ export class PackagePlansService {
     const subscription = await this.getSubscriptionOrThrow(id);
     const plan = this.resolveSubscriptionInvoicePlan(subscription);
     const servicePeriod = this.resolveSubscriptionInvoicePeriod(subscription);
-    const paidOrders =
-      subscription.restaurantId && this.isTransactionFeePlan(plan)
-        ? await this.packagePlansRepository.listPaidRestaurantOrders(
-            subscription.restaurantId,
-            servicePeriod.from,
-            servicePeriod.to,
-          )
-        : [];
+    const paidOrders = subscription.restaurantId
+      ? await this.packagePlansRepository.listPaidRestaurantOrders(
+          subscription.restaurantId,
+          servicePeriod.from,
+          servicePeriod.to,
+        )
+      : [];
 
     return this.toSubscriptionInvoice(
       subscription,
@@ -897,13 +896,27 @@ export class PackagePlansService {
       )
       .toDecimalPlaces(2)
       .toNumber();
+    const onlinePaymentCreditAmount = paidOrders
+      .reduce(
+        (sum, order) =>
+          sum.plus(new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2)),
+        new Prisma.Decimal(0),
+      )
+      .toDecimalPlaces(2)
+      .toNumber();
     const subtotal = Number(
       (subscriptionFeeAmount + transactionFeeAmount).toFixed(2),
     );
     const vatAmount = Number(
       ((subtotal * plan.vatPercentage) / 100).toFixed(2),
     );
-    const totalAmount = Number((subtotal + vatAmount).toFixed(2));
+    const totalFeesAmount = Number((subtotal + vatAmount).toFixed(2));
+    const settlementBalanceAmount = Number(
+      (totalFeesAmount - onlinePaymentCreditAmount).toFixed(2),
+    );
+    const amountDue = Math.max(settlementBalanceAmount, 0);
+    const creditAmount = Math.max(-settlementBalanceAmount, 0);
+    const documentType = creditAmount > 0 ? 'CREDIT_NOTE' : 'INVOICE';
     const issuedAt = new Date();
     const lineItems = [
       {
@@ -916,17 +929,28 @@ export class PackagePlansService {
 
     if (transactionFeeAmount > 0 || this.isTransactionFeePlan(plan)) {
       lineItems.push({
-        description: `Transaction fee for ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
+        description: `Commission fee for ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
         quantity: paidOrders.length,
         unitPrice: transactionFeeAmount,
         amount: transactionFeeAmount,
       });
     }
 
+    if (onlinePaymentCreditAmount > 0) {
+      lineItems.push({
+        description: `Online payment credit from ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
+        quantity: 1,
+        unitPrice: -onlinePaymentCreditAmount,
+        amount: -onlinePaymentCreditAmount,
+      });
+    }
+
     return {
+      documentType,
       invoiceNumber: this.buildSubscriptionInvoiceNumber(
         subscription.id,
         servicePeriod.to,
+        documentType,
       ),
       subscriptionId: subscription.id,
       tenant: subscription.tenant,
@@ -968,7 +992,12 @@ export class PackagePlansService {
         subtotal,
         vatPercentage: plan.vatPercentage,
         vatAmount,
-        totalAmount,
+        totalFeesAmount,
+        onlinePaymentCreditAmount,
+        settlementBalanceAmount,
+        amountDue,
+        creditAmount,
+        totalAmount: amountDue,
         currency: plan.currency,
       },
       note: subscription.note,
@@ -1062,10 +1091,12 @@ export class PackagePlansService {
   private buildSubscriptionInvoiceNumber(
     subscriptionId: string,
     periodTo: Date,
+    documentType: string,
   ) {
     const periodStamp = periodTo.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = documentType === 'CREDIT_NOTE' ? 'CRN' : 'SUB-INV';
 
-    return `SUB-INV-${subscriptionId.slice(-8).toUpperCase()}-${periodStamp}`;
+    return `${prefix}-${subscriptionId.slice(-8).toUpperCase()}-${periodStamp}`;
   }
 
   private generateSubscriptionInvoicePdf(
@@ -1074,7 +1105,7 @@ export class PackagePlansService {
     >,
   ) {
     return InvoicePdfBuilder.build({
-      title: `Subscription Invoice ${invoice.invoiceNumber}`,
+      title: `${this.formatSubscriptionDocumentType(invoice.documentType)} ${invoice.invoiceNumber}`,
       subtitle: invoice.packagePlan.name,
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
@@ -1122,7 +1153,11 @@ export class PackagePlansService {
             `Commission Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
             `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
             `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
-            `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
+            `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
+            `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
+            invoice.documentType === 'CREDIT_NOTE'
+              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency}`
+              : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
             `Subscription Status: ${invoice.status}`,
             invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
           ],
@@ -1139,13 +1174,17 @@ export class PackagePlansService {
     return [
       `Hi ${invoice.restaurant?.name ?? invoice.tenant.name},`,
       '',
-      `Please find attached DeliveryWays invoice ${invoice.invoiceNumber}.`,
+      `Please find attached DeliveryWays ${this.formatSubscriptionDocumentType(invoice.documentType).toLowerCase()} ${invoice.invoiceNumber}.`,
       '',
       `Package: ${invoice.packagePlan.name}`,
       `Service Period: ${this.formatInvoiceDate(invoice.servicePeriod.from)} - ${this.formatInvoiceDate(invoice.servicePeriod.to)}`,
       `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
       `Commission Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
-      `Total: ${this.formatInvoiceMoney(invoice.totals.totalAmount)} ${invoice.totals.currency}`,
+      `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
+      `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
+      invoice.documentType === 'CREDIT_NOTE'
+        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency}`
+        : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
       '',
       'DeliveryWays',
@@ -1233,7 +1272,9 @@ export class PackagePlansService {
     const content = this.generateSubscriptionInvoicePdf(invoice);
     await this.mailerService.sendEmail(
       recipientEmail,
-      `DeliveryWays invoice ${invoice.invoiceNumber}`,
+      `DeliveryWays ${this.formatSubscriptionDocumentType(
+        invoice.documentType,
+      ).toLowerCase()} ${invoice.invoiceNumber}`,
       this.buildSubscriptionInvoiceEmailBody(invoice),
       {
         attachments: [
@@ -1436,6 +1477,10 @@ export class PackagePlansService {
     return typeof current === 'string' && current.trim()
       ? current.trim()
       : null;
+  }
+
+  private formatSubscriptionDocumentType(documentType: string) {
+    return documentType === 'CREDIT_NOTE' ? 'Credit Note' : 'Invoice';
   }
 
   private formatInvoiceMoney(value: number | string | null | undefined) {

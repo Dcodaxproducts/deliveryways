@@ -336,7 +336,11 @@ describe('PackagePlansService', () => {
         subtotal: 5050,
         vatPercentage: 15,
         vatAmount: 757.5,
-        totalAmount: 5807.5,
+        totalFeesAmount: 5807.5,
+        onlinePaymentCreditAmount: 1000,
+        amountDue: 4807.5,
+        creditAmount: 0,
+        totalAmount: 4807.5,
         currency: 'PKR',
       },
     });
@@ -345,6 +349,35 @@ describe('PackagePlansService', () => {
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
     );
+  });
+
+  it('returns a credit note when online payment credit covers subscription fees', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest
+        .fn()
+        .mockResolvedValue([
+          makePaidOrder({ totalAmount: new Prisma.Decimal(7000) }),
+        ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data).toMatchObject({
+      documentType: 'CREDIT_NOTE',
+      invoiceNumber: 'CRN-12345678-20260701',
+      totals: {
+        totalFeesAmount: 6037.5,
+        onlinePaymentCreditAmount: 7000,
+        amountDue: 0,
+        creditAmount: 962.5,
+        totalAmount: 0,
+      },
+    });
   });
 
   it('generates restaurant subscription invoice PDF', async () => {
