@@ -2701,9 +2701,26 @@ describe('CartService', () => {
     expect(profilesRepository.findByUserId).not.toHaveBeenCalled();
   });
 
-  it('blocks add-item while branch is temporarily closed', async () => {
+  it('allows add-item while branch is temporarily closed so customer can schedule later', async () => {
     const { service, cartRepository } = makeService();
-    cartRepository.findByCustomerId.mockResolvedValue(null);
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'cart-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        orderType: 'DELIVERY',
+        deliveryAddressId: null,
+        couponCode: null,
+        paymentMethod: null,
+        orderTime: null,
+        customerNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        items: [],
+      });
     cartRepository.findActiveBranch.mockResolvedValue({
       id: 'branch-1',
       tenantId: 'tenant-1',
@@ -2716,6 +2733,31 @@ describe('CartService', () => {
         },
       },
     });
+    cartRepository.create.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    });
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
     await expect(
       service.addItem(
@@ -2731,10 +2773,16 @@ describe('CartService', () => {
           quantity: 1,
         },
       ),
-    ).rejects.toMatchObject({
-      response: {
-        error: 'BRANCH_TEMPORARILY_CLOSED',
-      },
+    ).resolves.toMatchObject({
+      message: 'Item added to cart successfully',
+    });
+    expect(cartRepository.createItem).toHaveBeenCalledWith({
+      cart: { connect: { id: 'cart-1' } },
+      menuItemId: 'menu-1',
+      variationId: undefined,
+      quantity: 1,
+      note: undefined,
+      modifiers: undefined,
     });
   });
 

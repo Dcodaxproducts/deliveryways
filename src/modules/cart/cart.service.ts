@@ -208,13 +208,6 @@ interface ScopedBranch {
   settings?: unknown;
 }
 
-interface CartBranchTemporaryClosure {
-  isClosed: boolean;
-  closedUntil?: string | null;
-  reason?: string | null;
-  message?: string | null;
-}
-
 interface CartBranchHolidayOpeningHour {
   date?: string;
   fromDate?: string;
@@ -1111,25 +1104,7 @@ export class CartService {
   }
 
   private assertBranchAcceptingCarts(settings: unknown) {
-    const temporaryClosure = this.readTemporaryClosure(settings);
     const holidayOpeningHour = this.readTodayHolidayOpeningHour(settings);
-
-    if (
-      temporaryClosure?.isClosed &&
-      temporaryClosure.closedUntil &&
-      new Date(temporaryClosure.closedUntil).getTime() <= Date.now()
-    ) {
-      // Expired closures reopen automatically; keep checking holiday rules.
-    } else if (temporaryClosure?.isClosed) {
-      throw new BadRequestException({
-        message: temporaryClosure.message ?? 'Branch is temporarily closed',
-        error: 'BRANCH_TEMPORARILY_CLOSED',
-        details: {
-          reason: temporaryClosure.reason ?? null,
-          closedUntil: temporaryClosure.closedUntil ?? null,
-        },
-      });
-    }
 
     if (holidayOpeningHour?.isClosed) {
       throw new BadRequestException({
@@ -1145,27 +1120,6 @@ export class CartService {
     }
 
     return;
-  }
-
-  private readTemporaryClosure(
-    settings: unknown,
-  ): CartBranchTemporaryClosure | null {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-      return null;
-    }
-
-    const temporaryClosure = (settings as { temporaryClosure?: unknown })
-      .temporaryClosure;
-
-    if (
-      !temporaryClosure ||
-      typeof temporaryClosure !== 'object' ||
-      Array.isArray(temporaryClosure)
-    ) {
-      return null;
-    }
-
-    return temporaryClosure as CartBranchTemporaryClosure;
   }
 
   private readTodayHolidayOpeningHour(
