@@ -1441,9 +1441,7 @@ export class OrdersService {
     }
 
     let totalBeforeBenefits = subtotal
-      .plus(taxAmount)
       .plus(deliveryFee)
-      .plus(serviceCharge.amount)
       .plus(tipAmount)
       .minus(discountAmount);
 

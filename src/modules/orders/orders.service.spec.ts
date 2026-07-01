@@ -2329,6 +2329,107 @@ describe('OrdersService - order reviews', () => {
 });
 
 describe('OrdersService - coupon quote validation', () => {
+  it('does not add inclusive tax and service charge on top of quote totals', async () => {
+    const calculateQuoteBenefits = jest.fn(
+      (input: { totalBeforeBenefits: Prisma.Decimal }) => ({
+        walletAppliedAmount: new Prisma.Decimal(0),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        loyaltyPointsRedeemed: 0,
+        totalAmount: input.totalBeforeBenefits,
+      }),
+    );
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['TAKEAWAY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: {
+              taxPercentage: 10,
+            },
+            serviceCharge: {
+              isEnabled: true,
+              type: 'PERCENTAGE',
+              value: 10,
+            },
+          },
+        }),
+      },
+      menuItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'menu-1',
+          name: 'Burger',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(1000),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-1' },
+          variations: [],
+          modifierLinks: [],
+          branchOverrides: [],
+        }),
+      },
+      address: {
+        findFirst: jest.fn(),
+      },
+      user: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { calculateQuoteBenefits } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            quantity: 1,
+          },
+        ],
+      },
+    );
+
+    expect(calculateQuoteBenefits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subtotal: new Prisma.Decimal(1000),
+        totalBeforeBenefits: new Prisma.Decimal(1000),
+      }),
+    );
+    expect(result.data.subtotal).toBe(1000);
+    expect(result.data.taxAmount).toBe(100);
+    expect(result.data.serviceChargeAmount).toBe(100);
+    expect(result.data.totalAmount).toBe(1000);
+    expect(result.data.payableAmount).toBe(1000);
+  });
+
   it('skips delivery address and branch availability checks when validating coupon application', async () => {
     const prisma = {
       branch: {
