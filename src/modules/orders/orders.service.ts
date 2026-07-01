@@ -779,7 +779,9 @@ export class OrdersService {
     const enforceMinimumOrderAmount = options.enforceMinimumOrderAmount ?? true;
     const scheduleTimeZone = await this.resolveScheduleTimeZone();
 
-    this.assertBranchAcceptingOrders(settings, orderTime, scheduleTimeZone);
+    if (!options.skipOrderTimeAvailabilityValidation) {
+      this.assertBranchAcceptingOrders(settings, orderTime, scheduleTimeZone);
+    }
     const customer = await this.resolveQuoteCustomer(
       user,
       branch,

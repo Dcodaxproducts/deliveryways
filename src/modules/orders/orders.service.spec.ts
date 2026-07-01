@@ -2329,7 +2329,7 @@ describe('OrdersService - order reviews', () => {
 });
 
 describe('OrdersService - coupon quote validation', () => {
-  it('skips delivery address checks when validating coupon application', async () => {
+  it('skips delivery address and branch availability checks when validating coupon application', async () => {
     const prisma = {
       branch: {
         findFirst: jest.fn().mockResolvedValue({
@@ -2348,6 +2348,12 @@ describe('OrdersService - coupon quote validation', () => {
             },
             taxation: {
               taxPercentage: 0,
+            },
+            temporaryClosure: {
+              isClosed: true,
+              reason: 'Busy kitchen',
+              message: 'Branch temporarily closed',
+              closedUntil: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
             },
           },
         }),
