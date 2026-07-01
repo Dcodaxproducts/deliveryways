@@ -1009,7 +1009,10 @@ export class OrdersService {
       }
 
       if (readyMadeDealId) {
-        this.assertNoDealCustomizations(requestedItem, menuItem.name);
+        this.assertNoDealCustomizations(requestedItem, menuItem.name, {
+          allowModifiers: true,
+          allowVariation: true,
+        });
       }
       const requestedModifiers =
         this.resolveRequestedOrderItemModifiers(requestedItem);
@@ -3925,7 +3928,7 @@ export class OrdersService {
       sections?: unknown[];
     },
     itemName?: string,
-    options: { allowModifiers?: boolean } = {},
+    options: { allowModifiers?: boolean; allowVariation?: boolean } = {},
   ) {
     const hasBlockedModifiers =
       !options.allowModifiers &&
@@ -3934,7 +3937,9 @@ export class OrdersService {
           selection.modifiers?.some((modifier) => (modifier.quantity ?? 1) > 0),
         ));
 
-    if (item.variationId || hasBlockedModifiers || item.sections?.length) {
+    const hasBlockedVariation = !options.allowVariation && !!item.variationId;
+
+    if (hasBlockedVariation || hasBlockedModifiers || item.sections?.length) {
       throw new BadRequestException(
         `${itemName ?? 'Deal item'} does not support customization selections`,
       );

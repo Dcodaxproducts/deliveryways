@@ -3398,29 +3398,42 @@ describe('OrdersService - coupon quote validation', () => {
       }),
     );
 
-    await expect(
-      service.quoteForCouponValidation(
-        {
-          uid: 'customer-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.CUSTOMER,
-        },
-        {
-          branchId: 'branch-1',
-          orderType: OrderTypeEnum.DELIVERY,
-          items: [
-            {
-              menuItemId: 'menu-1',
-              dealId: 'deal-1',
-              quantity: 1,
-              modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
-            },
-          ],
-          orderTime: '2026-03-24T19:30:00.000Z',
-        },
-      ),
-    ).rejects.toThrow('Burger Deal does not support customization selections');
+    const customizedResult = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            dealId: 'deal-1',
+            quantity: 1,
+            modifiers: [{ modifierId: 'modifier-cola', quantity: 1 }],
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(customizedResult.data.items[0]).toEqual(
+      expect.objectContaining({
+        dealId: 'deal-1',
+        unitPrice: 125,
+        lineTotal: 125,
+        snapshotModifiers: [
+          expect.objectContaining({
+            modifierId: 'modifier-cola',
+            quantity: 1,
+            unitPrice: 25,
+          }),
+        ],
+      }),
+    );
   });
 
   it('rejects order item quantity above item maxQuantity', async () => {
