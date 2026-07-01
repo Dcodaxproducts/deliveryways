@@ -1039,7 +1039,10 @@ export class CustomerAppService {
           restaurantContactInfo,
         )
       : null;
-    const currency = await this.resolveHomeCurrency(restaurant.settings);
+    const [currency, timezone] = await Promise.all([
+      this.resolveHomeCurrency(restaurant.settings),
+      this.resolveHomeTimezone(),
+    ]);
 
     return {
       data: {
@@ -1064,6 +1067,7 @@ export class CustomerAppService {
         },
         config: {
           currency,
+          timezone,
           branding: this.asObject(restaurant.branding),
         },
         branch: translatedBranch
@@ -1084,6 +1088,7 @@ export class CustomerAppService {
               address: this.mapPublicAddress(branchAddress, 'shopNumber'),
               isOpen: this.isBranchOpenNow(translatedBranch.settings),
               scheduleTimings: {
+                timezone,
                 openingHours: this.readBranchScheduleHours(
                   translatedBranch.settings,
                   'openingHours',
@@ -4328,6 +4333,15 @@ export class CustomerAppService {
       (await this.globalSettingsService?.getDefaultCurrencyCode()) ??
       this.readRestaurantCurrency(settings)
     );
+  }
+
+  private async resolveHomeTimezone(): Promise<string | null> {
+    const timezone = (await this.globalSettingsService?.getSettings())?.data
+      ?.timezone;
+
+    return typeof timezone === 'string' && timezone.trim().length
+      ? timezone.trim()
+      : null;
   }
 
   private extractLegalProfile(settings: unknown) {

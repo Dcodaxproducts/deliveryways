@@ -191,6 +191,9 @@ describe('CustomerAppService', () => {
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+      getSettings: jest.fn().mockResolvedValue({
+        data: { timezone: 'Europe/Berlin' },
+      }),
     };
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
@@ -1925,6 +1928,7 @@ describe('CustomerAppService', () => {
     });
     expect(result.data.config).toEqual({
       currency: 'PKR',
+      timezone: 'Europe/Berlin',
       branding: {
         primaryColor: '#FF0000',
         secondaryColor: '#000000',
@@ -1959,6 +1963,7 @@ describe('CustomerAppService', () => {
       },
       isOpen: false,
       scheduleTimings: {
+        timezone: 'Europe/Berlin',
         openingHours: [
           {
             dayOfWeek: 'MONDAY',
@@ -2308,7 +2313,53 @@ describe('CustomerAppService', () => {
       cuisineLimit: 12,
     });
 
-    expect(result.data.config).toEqual({ currency: 'PKR', branding: {} });
+    expect(result.data.config).toEqual({
+      currency: 'PKR',
+      timezone: 'Europe/Berlin',
+      branding: {},
+    });
+  });
+
+  it('includes schedule timezone on customer app home screen', async () => {
+    const { service, repository, globalSettingsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      branding: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: {
+        openingHours: [],
+        deliveryHours: [],
+      },
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    globalSettingsService.getSettings.mockResolvedValue({
+      data: { timezone: 'Europe/Berlin' },
+    });
+
+    const result = await service.getHomeScreen({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      promotionLimit: 8,
+      cuisineLimit: 12,
+    });
+
+    expect(result.data.config.timezone).toBe('Europe/Berlin');
+    expect(result.data.branch?.scheduleTimings.timezone).toBe('Europe/Berlin');
   });
 
   it('falls back to global default currency on home screen', async () => {
@@ -2336,7 +2387,11 @@ describe('CustomerAppService', () => {
       cuisineLimit: 12,
     });
 
-    expect(result.data.config).toEqual({ currency: 'AED', branding: {} });
+    expect(result.data.config).toEqual({
+      currency: 'AED',
+      timezone: 'Europe/Berlin',
+      branding: {},
+    });
   });
 
   it('returns public branch stats for customer web', async () => {
