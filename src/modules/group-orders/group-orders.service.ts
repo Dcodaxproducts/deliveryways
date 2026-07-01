@@ -468,7 +468,7 @@ export class GroupOrdersService {
     if (participant.isHost) {
       throw new BadRequestException('Host cannot leave the group order');
     }
-    this.assertSessionMutable(session.status, session.expiresAt);
+    this.assertParticipantCanLeave(session.status);
 
     await this.groupOrdersRepository.markParticipantLeftAndDeleteItems(
       participant.id,
@@ -831,6 +831,12 @@ export class GroupOrdersService {
 
   private assertSessionMutable(status: GroupOrderStatus, expiresAt: Date) {
     this.assertSessionAvailable(status, expiresAt);
+  }
+
+  private assertParticipantCanLeave(status: GroupOrderStatus) {
+    if (status === GroupOrderStatus.CHECKED_OUT) {
+      throw new BadRequestException('Checked out group order cannot be left');
+    }
   }
 
   private assertSessionHostCancellable(status: GroupOrderStatus) {

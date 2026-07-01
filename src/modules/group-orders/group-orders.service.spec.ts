@@ -1821,6 +1821,95 @@ describe('GroupOrdersService', () => {
     expect(result.data.itemCount).toBe(0);
   });
 
+  it('allows a participant to leave after the group order invite expires', async () => {
+    const { service, groupOrdersRepository } = makeService();
+    const expiredSession = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'host-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() - 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'host-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-1',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: false,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'customer@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    groupOrdersRepository.findSessionById
+      .mockResolvedValueOnce(expiredSession)
+      .mockResolvedValueOnce({
+        ...expiredSession,
+        participants: [
+          {
+            ...expiredSession.participants[0],
+            status: GroupOrderParticipantStatus.LEFT,
+            leftAt: new Date(),
+          },
+        ],
+      });
+    groupOrdersRepository.findMenuItemsForResponse.mockResolvedValue([]);
+
+    const result = await service.leave(customerUser, 'session-1');
+
+    expect(
+      groupOrdersRepository.markParticipantLeftAndDeleteItems,
+    ).toHaveBeenCalledWith('participant-1', expect.any(Date));
+    expect(result.message).toBe('Left group order successfully');
+  });
+
   const makeCompletionSession = (
     participantStatus: GroupOrderParticipantStatus = GroupOrderParticipantStatus.ACTIVE,
     otherParticipantStatus: GroupOrderParticipantStatus = GroupOrderParticipantStatus.ACTIVE,
