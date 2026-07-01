@@ -302,12 +302,17 @@ export class MenuItemService {
       restaurantId,
       query,
     );
-    const promotions = restaurantId
-      ? ((await this.couponsService?.getActiveAutoApplyPromotions(
-          restaurantId,
-          user.role === UserRoleEnum.BRANCH_ADMIN ? user.bid : undefined,
-        )) ?? [])
-      : [];
+    const branchId = this.resolvePricingBranchId(user, query.branchId);
+    const [promotions, happyHours] = restaurantId
+      ? await Promise.all([
+          this.couponsService?.getActiveAutoApplyPromotions(
+            restaurantId,
+            branchId,
+          ) ?? Promise.resolve([]),
+          this.couponsService?.getActiveHappyHours(restaurantId, branchId) ??
+            Promise.resolve([]),
+        ])
+      : [[], []];
 
     return {
       data: await this.resolveMediaResponse(
@@ -319,6 +324,7 @@ export class MenuItemService {
               ),
             ),
             promotions,
+            happyHours,
           ),
         ),
       ),
@@ -461,12 +467,22 @@ export class MenuItemService {
         [key: string]: unknown;
       }>;
     },
-  >(item: T, promotions: Array<Record<string, unknown>>) {
+  >(
+    item: T,
+    promotions: Array<Record<string, unknown>>,
+    happyHours: Array<Record<string, unknown>> = [],
+  ) {
     const itemPromotion = this.resolveBestScopedPromotion(
       item.id,
       this.promotionCategoryIds(item),
       item.basePrice ?? null,
       promotions,
+    );
+    const itemHappyHour = this.resolveBestScopedHappyHour(
+      item.id,
+      this.promotionCategoryIds(item),
+      item.basePrice ?? null,
+      happyHours,
     );
 
     const variations = (item.variations ?? []).map((variation) => {
@@ -476,11 +492,19 @@ export class MenuItemService {
         variation.price ?? null,
         promotions,
       );
+      const happyHour = this.resolveBestScopedHappyHour(
+        item.id,
+        this.promotionCategoryIds(item),
+        variation.price ?? null,
+        happyHours,
+      );
 
       return {
         ...variation,
         discountedPrice: promotion?.discountedAmount ?? null,
         promotion: promotion ?? null,
+        happyHourDiscountedPrice: happyHour?.discountedPrice ?? null,
+        happyHour: happyHour ?? null,
       };
     });
 
@@ -488,8 +512,73 @@ export class MenuItemService {
       ...item,
       discountedBasePrice: itemPromotion?.discountedAmount ?? null,
       promotion: itemPromotion ?? null,
+      happyHourDiscountedBasePrice: itemHappyHour?.discountedPrice ?? null,
+      happyHour: itemHappyHour ?? null,
       variations,
     };
+  }
+
+  private resolvePricingBranchId(user: AuthUserContext, requested?: string) {
+    if (requested) {
+      return requested;
+    }
+
+    return user.role === UserRoleEnum.BRANCH_ADMIN ||
+      user.role === UserRoleEnum.CUSTOMER
+      ? user.bid
+      : undefined;
+  }
+
+  private resolveBestScopedHappyHour(
+    menuItemId: string,
+    categoryIds: string[],
+    amount: Prisma.Decimal | number | null,
+    happyHours: Array<Record<string, unknown>>,
+  ): Record<string, unknown> | null {
+    const promotion = this.resolveBestScopedPromotion(
+      menuItemId,
+      categoryIds,
+      amount,
+      happyHours,
+    );
+
+    if (!promotion) {
+      return null;
+    }
+
+    const source = happyHours.find(
+      (happyHour) => happyHour.id === promotion.promotionId,
+    );
+
+    return {
+      id: promotion.promotionId,
+      promotionId: promotion.promotionId,
+      title: promotion.title,
+      description: promotion.description,
+      imageUrl: promotion.imageUrl,
+      thumbnailUrl: promotion.thumbnailUrl,
+      applyMode: promotion.applyMode,
+      discountType: promotion.discountType,
+      discountValue: promotion.discountValue,
+      maxDiscountAmount: promotion.maxDiscountAmount,
+      originalPrice: amount instanceof Prisma.Decimal ? Number(amount) : amount,
+      discountAmount: promotion.discountAmount,
+      discountedPrice: promotion.discountedAmount,
+      startsAt: source?.startsAt ?? null,
+      expiresAt: source?.expiresAt ?? null,
+      activeDays: this.readNumberArray(source?.activeDays),
+      dailyStartTime: source?.dailyStartTime ?? null,
+      dailyEndTime: source?.dailyEndTime ?? null,
+      isCurrentlyActive: true,
+    };
+  }
+
+  private readNumberArray(value: unknown): number[] {
+    return Array.isArray(value)
+      ? value
+          .map((entry) => Number(entry))
+          .filter((entry) => Number.isFinite(entry))
+      : [];
   }
 
   private resolveBestScopedPromotion(

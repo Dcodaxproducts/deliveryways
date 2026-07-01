@@ -112,6 +112,7 @@ describe('MenuItemService', () => {
     };
     const couponsService = {
       getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
+      getActiveHappyHours: jest.fn().mockResolvedValue([]),
     };
 
     const service = new MenuItemService(
@@ -548,6 +549,100 @@ describe('MenuItemService', () => {
     expect(
       (data[0].variations[0].promotion as { promotionId: string }).promotionId,
     ).toBe('promo-1');
+  });
+
+  it('attaches happy hour metadata on /menu/items responses when item has active happy hour', async () => {
+    const { service, itemRepository, couponsService, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    itemRepository.list.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 'item-1',
+          name: 'Vegan Burger',
+          basePrice: new Prisma.Decimal(800),
+          dietaryFlags: ['VEGAN'],
+          allergenFlags: [],
+          allergenPdfUrl: null,
+          restaurant: {
+            id: 'restaurant-1',
+            settings: {},
+            tenant: { settings: {} },
+          },
+          category: { id: 'category-1', items: [] },
+          variations: [
+            {
+              id: 'variation-1',
+              name: 'Large',
+              price: new Prisma.Decimal(900),
+            },
+          ],
+        },
+      ],
+    });
+    couponsService.getActiveHappyHours.mockResolvedValue([
+      {
+        id: 'happy-1',
+        title: 'Lunch happy hour',
+        description: '20% off',
+        imageUrl: 'happy.png',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(20),
+        maxDiscountAmount: null,
+        startsAt: new Date('2026-06-01T00:00:00.000Z'),
+        expiresAt: new Date('2026-06-30T23:59:59.000Z'),
+        activeDays: [1, 2, 3, 4, 5],
+        dailyStartTime: '12:00',
+        dailyEndTime: '14:00',
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.list(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        page: 1,
+        limit: 10,
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      } as never,
+    );
+
+    expect(couponsService.getActiveHappyHours).toHaveBeenCalledWith(
+      'restaurant-1',
+      'branch-1',
+    );
+    const data = result.data as Array<{
+      happyHourDiscountedBasePrice: number | null;
+      happyHour: Record<string, unknown> | null;
+      variations: Array<Record<string, unknown>>;
+    }>;
+    expect(data[0].happyHourDiscountedBasePrice).toBe(640);
+    expect(data[0].happyHour).toEqual(
+      expect.objectContaining({
+        id: 'happy-1',
+        title: 'Lunch happy hour',
+        originalPrice: 800,
+        discountedPrice: 640,
+        dailyStartTime: '12:00',
+        dailyEndTime: '14:00',
+        isCurrentlyActive: true,
+      }),
+    );
+    expect(data[0].variations[0].happyHourDiscountedPrice).toBe(720);
+    expect(data[0].variations[0].happyHour).toEqual(
+      expect.objectContaining({ id: 'happy-1', discountedPrice: 720 }),
+    );
   });
 
   it('returns label objects for product labels, allergens, and additives in item lists', async () => {

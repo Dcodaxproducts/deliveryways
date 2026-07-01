@@ -756,6 +756,13 @@ export class ListMenuItemsDto extends QueryDto {
   @IsString()
   categoryId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Optional branch scope for customer pricing and happy hours',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
   @ApiPropertyOptional({ description: 'Optional restaurant menu filter' })
   @IsOptional()
   @IsString()
