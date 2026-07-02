@@ -306,6 +306,10 @@ export class GroupOrdersService {
       await this.getSessionForMemberOrThrow(user, id),
     );
     this.assertSessionOpenForContribution(session.status, session.expiresAt);
+    await this.assertBranchOpenForGroupOrderItem(
+      session.branchId,
+      session.orderTime,
+    );
     const participant = this.getActiveParticipant(session, user.uid);
     if (!participant) {
       throw new ForbiddenException('Only active participants can add items');
@@ -1145,6 +1149,98 @@ export class GroupOrdersService {
         )
         .map((participant) => participant.id),
     );
+  }
+
+  private async assertBranchOpenForGroupOrderItem(
+    branchId: string,
+    orderTime: Date | string | null,
+  ) {
+    const branch = await this.groupOrdersRepository.findActiveBranch(branchId);
+    if (!branch) {
+      throw new BadRequestException('Branch not found for group order');
+    }
+
+    const closure = this.readTemporaryClosure(branch.settings);
+    if (!this.isTemporaryClosureActiveForOrderTime(closure, orderTime)) {
+      return;
+    }
+
+    const activeClosure = closure;
+    if (!activeClosure) {
+      return;
+    }
+
+    throw new BadRequestException({
+      message: activeClosure.message ?? 'Branch is temporarily closed',
+      error: 'BRANCH_TEMPORARILY_CLOSED',
+      details: {
+        reason: activeClosure.reason ?? null,
+        closedUntil: activeClosure.closedUntil ?? null,
+      },
+    });
+  }
+
+  private readTemporaryClosure(settings: unknown) {
+    if (!settings || typeof settings !== 'object') {
+      return null;
+    }
+
+    const temporaryClosure = (settings as { temporaryClosure?: unknown })
+      .temporaryClosure;
+    if (!temporaryClosure || typeof temporaryClosure !== 'object') {
+      return null;
+    }
+
+    const closure = temporaryClosure as {
+      isClosed?: unknown;
+      closedUntil?: unknown;
+      reason?: unknown;
+      message?: unknown;
+    };
+
+    return {
+      isClosed: closure.isClosed === true,
+      closedUntil:
+        typeof closure.closedUntil === 'string' ? closure.closedUntil : null,
+      reason: typeof closure.reason === 'string' ? closure.reason : null,
+      message: typeof closure.message === 'string' ? closure.message : null,
+    };
+  }
+
+  private isTemporaryClosureActiveForOrderTime(
+    closure: {
+      isClosed: boolean;
+      closedUntil: string | null;
+    } | null,
+    orderTime: Date | string | null,
+  ) {
+    if (!closure?.isClosed) {
+      return false;
+    }
+
+    if (!closure.closedUntil) {
+      return true;
+    }
+
+    const closedUntil = new Date(closure.closedUntil).getTime();
+    if (!Number.isFinite(closedUntil)) {
+      return true;
+    }
+
+    if (closedUntil <= Date.now()) {
+      return false;
+    }
+
+    if (!orderTime) {
+      return true;
+    }
+
+    const requestedAt = new Date(orderTime).getTime();
+    if (!Number.isFinite(requestedAt)) {
+      return true;
+    }
+
+    return requestedAt <= closedUntil;
   }
 
   private getActiveItems(

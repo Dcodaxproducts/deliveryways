@@ -6,7 +6,12 @@ import { GroupOrdersService } from './group-orders.service';
 describe('GroupOrdersService', () => {
   const makeService = () => {
     const groupOrdersRepository = {
-      findActiveBranch: jest.fn(),
+      findActiveBranch: jest.fn().mockResolvedValue({
+        id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        settings: {},
+      }),
       findActiveSessionByHost: jest.fn(),
       findRestaurantMenuById: jest.fn(),
       findOwnedAddress: jest.fn(),
@@ -1312,6 +1317,97 @@ describe('GroupOrdersService', () => {
         ],
       }),
     );
+    expect(groupOrdersRepository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('blocks adding group-order items while the branch is temporarily closed', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const closedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const session = {
+      id: 'session-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      hostUserId: 'customer-1',
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      orderTime: null,
+      hostNote: null,
+      inviteCode: 'INVITE123',
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      lockedAt: null,
+      checkedOutAt: null,
+      finalOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hostUser: {
+        id: 'customer-1',
+        email: 'host@test.com',
+        isGuest: false,
+        profile: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null },
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      deliveryAddress: null,
+      finalOrder: null,
+      participants: [
+        {
+          id: 'participant-host',
+          userId: 'customer-1',
+          status: GroupOrderParticipantStatus.ACTIVE,
+          isHost: true,
+          joinedAt: new Date(),
+          leftAt: null,
+          user: {
+            id: 'customer-1',
+            email: 'host@test.com',
+            isGuest: false,
+            profile: null,
+          },
+        },
+      ],
+      items: [],
+    };
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    groupOrdersRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: {
+        temporaryClosure: {
+          isClosed: true,
+          closedUntil,
+          reason: 'MAINTENANCE',
+          message: 'Kitchen maintenance',
+        },
+      },
+    });
+
+    try {
+      await service.addItem(customerUser, 'session-1', {
+        menuItemId: 'pizza-1',
+        quantity: 1,
+      });
+      throw new Error('Expected group-order item add to fail');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      const response = (error as BadRequestException).getResponse() as {
+        error?: string;
+        details?: { closedUntil?: string | null };
+      };
+      expect(response.error).toBe('BRANCH_TEMPORARILY_CLOSED');
+      expect(response.details?.closedUntil).toBe(closedUntil);
+    }
+
+    expect(ordersService.quoteForCouponValidation).not.toHaveBeenCalled();
     expect(groupOrdersRepository.createItem).not.toHaveBeenCalled();
   });
 

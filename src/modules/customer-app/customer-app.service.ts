@@ -3206,15 +3206,23 @@ export class CustomerAppService {
   }
 
   private async loadPromotionContext(restaurantId: string, branchId?: string) {
-    const [promotions, happyHours]: [AutoApplyPromotion[], ActiveHappyHour[]] =
-      await Promise.all([
-        this.couponsService?.getActiveAutoApplyPromotions(
-          restaurantId,
-          branchId,
-        ) ?? Promise.resolve([]),
-        this.couponsService?.getActiveHappyHours(restaurantId, branchId) ??
-          Promise.resolve([]),
-      ]);
+    const [rawPromotions, rawHappyHours]: [
+      AutoApplyPromotion[],
+      ActiveHappyHour[],
+    ] = await Promise.all([
+      this.couponsService?.getActiveAutoApplyPromotions(
+        restaurantId,
+        branchId,
+      ) ?? Promise.resolve([]),
+      this.couponsService?.getActiveHappyHours(restaurantId, branchId) ??
+        Promise.resolve([]),
+    ]);
+    const promotions = rawPromotions.filter(
+      (promotion) => !this.isPromotionUsageLimitReached(promotion),
+    );
+    const happyHours = rawHappyHours.filter(
+      (happyHour) => !this.isPromotionUsageLimitReached(happyHour),
+    );
     const menuItemIds = new Set<string>();
     const categoryIds = new Set<string>();
     let hasBroadHappyHour = false;
@@ -3252,6 +3260,17 @@ export class CustomerAppService {
       categoryIds: [...categoryIds],
       hasBroadHappyHour,
     };
+  }
+
+  private isPromotionUsageLimitReached(promotion: {
+    maxUses?: number | null;
+    usedCount?: number | null;
+  }) {
+    return (
+      promotion.maxUses !== null &&
+      promotion.maxUses !== undefined &&
+      (promotion.usedCount ?? 0) >= promotion.maxUses
+    );
   }
 
   private async mapPublicPromotion(

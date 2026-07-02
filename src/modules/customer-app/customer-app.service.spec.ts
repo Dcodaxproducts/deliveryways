@@ -901,6 +901,47 @@ describe('CustomerAppService', () => {
     expect('modifierGroups' in result.data[0]).toBe(false);
   });
 
+  it('omits exhausted auto-apply promotions from public item promotion payloads', async () => {
+    const { service, repository, couponsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: 'https://cdn.example.com/restaurant-cover.png',
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: 'Auto discount',
+        imageUrl: 'promo-thumb.jpg',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        maxUses: 10,
+        usedCount: 10,
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.listPromotionalItems({
+      restaurantId: 'restaurant-1',
+      limit: 10,
+    });
+
+    expect(result.data).toEqual([]);
+    expect(repository.listPromotionalItems).not.toHaveBeenCalled();
+  });
+
   it('lists active promotion campaigns for customer app', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
