@@ -2642,6 +2642,16 @@ export class CartService {
     item: CartModifierSource,
     modifierId: string,
   ): CartModifierPricingSource | undefined {
+    for (const link of this.getAvailableModifierLinks(item)) {
+      const modifier = link.modifierGroup.modifierLinks.find(
+        (modifierLink) => modifierLink.modifier.id === modifierId,
+      )?.modifier;
+
+      if (modifier) {
+        return modifier;
+      }
+    }
+
     const directModifier = item.modifierPriceOverrides?.find(
       (override) => override.modifier.id === modifierId,
     );
@@ -2654,16 +2664,6 @@ export class CartService {
           { menuItemId: item.id, priceDelta: directModifier.priceDelta },
         ],
       };
-    }
-
-    for (const link of this.getAvailableModifierLinks(item)) {
-      const modifier = link.modifierGroup.modifierLinks.find(
-        (modifierLink) => modifierLink.modifier.id === modifierId,
-      )?.modifier;
-
-      if (modifier) {
-        return modifier;
-      }
     }
 
     return undefined;

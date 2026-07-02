@@ -1921,6 +1921,115 @@ describe('CartService', () => {
     expect(firstItem.lineTotal).toBe(1500);
   });
 
+  it('prices selected group modifiers from modifier base price when direct item override also exists', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: [{ modifierId: 'modifier-gyros', quantity: 1 }],
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Pasta',
+        slug: 'pasta',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(10),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        depositAmount: new Prisma.Decimal(0),
+        category: {
+          id: 'category-1',
+          name: 'Pasta',
+          imageUrl: null,
+          items: [],
+          variations: [],
+          modifierLinks: [],
+        },
+        variations: [],
+        modifierLinks: [
+          {
+            sortOrder: 2,
+            modifierGroup: {
+              id: 'group-extras',
+              name: 'Extras (Pasta)',
+              minSelect: 0,
+              maxSelect: 3,
+              isRequired: false,
+              modifierLinks: [
+                {
+                  sortOrder: 0,
+                  modifier: {
+                    id: 'modifier-gyros',
+                    name: 'Gyros',
+                    priceDelta: new Prisma.Decimal(1.55),
+                    itemPriceOverrides: [],
+                    variationPriceOverrides: [],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        modifierPriceOverrides: [
+          {
+            modifierId: 'modifier-gyros',
+            priceDelta: new Prisma.Decimal(0),
+            isRequired: false,
+            modifier: {
+              id: 'modifier-gyros',
+              name: 'Gyros',
+              priceDelta: new Prisma.Decimal(1.55),
+              itemPriceOverrides: [],
+              variationPriceOverrides: [],
+            },
+          },
+        ],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const result = await service.getCart({
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const firstItem = result.data.items[0] as {
+      selectedModifiers: Array<{ unitPrice: number; total: number }>;
+      modifiersTotal: number;
+      unitPriceWithModifiers: number;
+    };
+    expect(firstItem.selectedModifiers[0].unitPrice).toBe(1.55);
+    expect(firstItem.selectedModifiers[0].total).toBe(1.55);
+    expect(firstItem.modifiersTotal).toBe(1.55);
+    expect(firstItem.unitPriceWithModifiers).toBe(11.55);
+  });
+
   it('prices selected category modifiers with variation overrides in cart response', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
