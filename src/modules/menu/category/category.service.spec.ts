@@ -107,6 +107,54 @@ describe('MenuCategoryService', () => {
     );
   });
 
+  it('requires restaurant scope for business admin category lists', async () => {
+    const { service, categoryRepository } = makeService();
+
+    await expect(
+      service.list(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          page: 1,
+          limit: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC',
+        },
+      ),
+    ).rejects.toThrow('restaurantId is required');
+
+    expect(categoryRepository.list).not.toHaveBeenCalled();
+  });
+
+  it('derives business admin category list restaurant scope from token when present', async () => {
+    const { service, categoryRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    categoryRepository.list.mockResolvedValue({ items: [], total: 0 });
+
+    await service.list(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(categoryRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.objectContaining({ page: 1 }),
+    );
+  });
+
   it('allows updating a category with its own slug', async () => {
     const { service, categoryRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

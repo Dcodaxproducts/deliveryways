@@ -327,11 +327,13 @@ export class MenuCategoryService {
         throw new ForbiddenException('Tenant context is required');
       }
 
-      if (requestedRestaurantId) {
-        await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
+      const restaurantId = requestedRestaurantId ?? user.rid;
+      if (!restaurantId) {
+        throw new BadRequestException('restaurantId is required');
       }
 
-      return requestedRestaurantId;
+      await this.assertRestaurantInTenant(user.tid, restaurantId);
+      return restaurantId;
     }
 
     if (
