@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  CouponDealSelectionMode,
   OrderStatus,
   OrderType,
   PaymentMethod,
@@ -5293,6 +5294,174 @@ describe('OrdersService - wallet payment', () => {
           }),
         ],
       }),
+    );
+  });
+
+  it('prices flexible category deal quote lines at the fixed deal price', async () => {
+    const calculateQuoteBenefits = jest
+      .fn()
+      .mockImplementation((summary: { subtotal: Prisma.Decimal }) =>
+        Promise.resolve({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: summary.subtotal,
+        }),
+      );
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(true),
+      getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue({
+        dealId: 'deal-1',
+        fixedPrice: new Prisma.Decimal(22.5),
+        menuItemIds: [],
+        selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        requiredQuantity: null,
+        categoryScopes: [
+          { menuCategoryId: 'cat-pasta', itemLimit: 2 },
+          { menuCategoryId: 'cat-drinks', itemLimit: 1 },
+        ],
+      }),
+    };
+    const menuItems = new Map([
+      [
+        'pasta-1',
+        {
+          id: 'pasta-1',
+          name: 'Spicy Tom',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(7.5),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-pasta', variations: [], modifierLinks: [] },
+          categoryLinks: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          variations: [],
+          branchOverrides: [],
+        },
+      ],
+      [
+        'pasta-2',
+        {
+          id: 'pasta-2',
+          name: 'Tuna',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(8.9),
+          depositAmount: new Prisma.Decimal(0),
+          category: { id: 'cat-pasta', variations: [], modifierLinks: [] },
+          categoryLinks: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          variations: [],
+          branchOverrides: [],
+        },
+      ],
+      [
+        'drink-1',
+        {
+          id: 'drink-1',
+          name: 'Fanta',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(0),
+          depositAmount: new Prisma.Decimal(0.08),
+          category: { id: 'cat-drinks', variations: [], modifierLinks: [] },
+          categoryLinks: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          variations: [],
+          branchOverrides: [],
+        },
+      ],
+    ]);
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              ordering: {
+                allowedOrderTypes: ['DELIVERY'],
+                allowedPaymentMethods: ['COD'],
+              },
+              deliveryConfig: {
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 0,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn(({ where }: { where: { id: string } }) =>
+            Promise.resolve(menuItems.get(where.id) ?? null),
+          ),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValue({
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { calculateQuoteBenefits } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          { menuItemId: 'pasta-1', dealId: 'deal-1', quantity: 1 },
+          { menuItemId: 'pasta-2', dealId: 'deal-1', quantity: 1 },
+          { menuItemId: 'drink-1', dealId: 'deal-1', quantity: 1 },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.subtotal).toBe(22.58);
+    expect(result.data.items).toEqual([
+      expect.objectContaining({
+        menuItemId: 'pasta-1',
+        dealId: 'deal-1',
+        unitPrice: 10.29,
+        lineTotal: 10.29,
+      }),
+      expect.objectContaining({
+        menuItemId: 'pasta-2',
+        dealId: 'deal-1',
+        unitPrice: 12.21,
+        lineTotal: 12.21,
+      }),
+      expect.objectContaining({
+        menuItemId: 'drink-1',
+        dealId: 'deal-1',
+        unitPrice: 0,
+        lineTotal: 0.08,
+      }),
+    ]);
+    expect(calculateQuoteBenefits).toHaveBeenCalledWith(
+      expect.objectContaining({ subtotal: new Prisma.Decimal(22.58) }),
     );
   });
 

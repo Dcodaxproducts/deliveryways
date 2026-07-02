@@ -14,6 +14,7 @@ import {
   PaymentTransactionType,
   Prisma,
   ServiceChargeType,
+  CouponDealSelectionMode,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -1524,35 +1525,22 @@ export class OrdersService {
         continue;
       }
 
-      const requiredItemIds = new Set(pricing.menuItemIds);
-      const dealLineIndexes = pricedLines.flatMap((line, index) =>
-        line.dealId === dealId && requiredItemIds.has(line.menuItemId)
-          ? [index]
-          : [],
+      const dealLineIndexes = this.findFixedDealQuoteLineIndexes(
+        pricedLines,
+        dealId,
+        pricing,
       );
-      const presentItemIds = new Set(
-        dealLineIndexes.map((index) => pricedLines[index].menuItemId),
+      const dealQuantity = this.resolveFixedDealQuoteQuantity(
+        pricedLines,
+        dealLineIndexes,
+        pricing,
       );
 
-      if (
-        pricing.menuItemIds.some(
-          (menuItemId) => !presentItemIds.has(menuItemId),
-        )
-      ) {
+      if (!dealLineIndexes.length || !dealQuantity) {
         continue;
       }
 
-      const firstQuantity = pricedLines[dealLineIndexes[0]]?.quantity;
-      if (
-        firstQuantity === undefined ||
-        dealLineIndexes.some(
-          (index) => pricedLines[index].quantity !== firstQuantity,
-        )
-      ) {
-        continue;
-      }
-
-      const fixedTotal = pricing.fixedPrice.mul(firstQuantity);
+      const fixedTotal = pricing.fixedPrice.mul(dealQuantity);
       const modifierTotals = dealLineIndexes.map((index) =>
         (pricedLines[index].snapshotModifiers ?? []).reduce(
           (sum, modifier) =>
@@ -1610,6 +1598,110 @@ export class OrdersService {
     }
 
     return pricedLines;
+  }
+
+  private findFixedDealQuoteLineIndexes(
+    lines: QuoteLine[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    if (pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      return lines.flatMap((line, index) =>
+        line.dealId === dealId && this.isFlexibleDealQuoteLine(line, pricing)
+          ? [index]
+          : [],
+      );
+    }
+
+    const requiredItemIds = new Set(pricing.menuItemIds);
+    return lines.flatMap((line, index) =>
+      line.dealId === dealId && requiredItemIds.has(line.menuItemId)
+        ? [index]
+        : [],
+    );
+  }
+
+  private resolveFixedDealQuoteQuantity(
+    lines: QuoteLine[],
+    dealLineIndexes: number[],
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    if (!dealLineIndexes.length) {
+      return 0;
+    }
+
+    if (pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      return this.resolveFlexibleDealQuoteQuantity(
+        dealLineIndexes.map((index) => lines[index]),
+        pricing,
+      );
+    }
+
+    const presentItemIds = new Set(
+      dealLineIndexes.map((index) => lines[index].menuItemId),
+    );
+    const isComplete = pricing.menuItemIds.every((menuItemId) =>
+      presentItemIds.has(menuItemId),
+    );
+    const firstQuantity = lines[dealLineIndexes[0]]?.quantity;
+    const hasSingleQuantity =
+      firstQuantity !== undefined &&
+      dealLineIndexes.every((index) => lines[index].quantity === firstQuantity);
+
+    return isComplete && hasSingleQuantity && firstQuantity ? firstQuantity : 0;
+  }
+
+  private resolveFlexibleDealQuoteQuantity(
+    lines: QuoteLine[],
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    const categoryScopes = pricing.categoryScopes.filter(
+      (scope) => scope.itemLimit && scope.itemLimit > 0,
+    );
+
+    if (categoryScopes.length) {
+      const quantities = categoryScopes.map((scope) => {
+        const selectedQuantity = lines
+          .filter((line) => line.categoryIds.includes(scope.menuCategoryId))
+          .reduce((sum, line) => sum + line.quantity, 0);
+
+        return Math.floor(selectedQuantity / (scope.itemLimit ?? 1));
+      });
+
+      return quantities.length ? Math.min(...quantities) : 0;
+    }
+
+    const requiredQuantity = pricing.requiredQuantity ?? 0;
+    if (requiredQuantity < 1) {
+      return 0;
+    }
+
+    const selectedQuantity = lines.reduce(
+      (sum, line) => sum + line.quantity,
+      0,
+    );
+
+    return Math.floor(selectedQuantity / requiredQuantity);
+  }
+
+  private isFlexibleDealQuoteLine(
+    line: QuoteLine,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    return (
+      pricing.menuItemIds.includes(line.menuItemId) ||
+      pricing.categoryScopes.some((scope) =>
+        line.categoryIds.includes(scope.menuCategoryId),
+      )
+    );
   }
 
   private resolveQuoteTaxAmount(
