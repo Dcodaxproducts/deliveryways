@@ -327,6 +327,8 @@ export class ListOrdersDto extends QueryDto {
   kind?: (typeof ORDER_LIST_KIND_VALUES)[number];
 }
 
+export const DELIVERY_FULFILLMENT_MODE_VALUES = ['IN_APP', 'EXTERNAL'] as const;
+
 export class UpdateOrderStatusDto {
   @ApiProperty({ enum: OrderStatus })
   @IsEnum(OrderStatus)
@@ -340,6 +342,15 @@ export class UpdateOrderStatusDto {
   @IsOptional()
   @IsDateString()
   orderTime?: string;
+
+  @ApiPropertyOptional({
+    enum: DELIVERY_FULFILLMENT_MODE_VALUES,
+    description:
+      'Use EXTERNAL when the branch sends a delivery order with an offline/outside rider instead of an in-app deliveryman.',
+  })
+  @IsOptional()
+  @IsIn(DELIVERY_FULFILLMENT_MODE_VALUES)
+  deliveryFulfillmentMode?: (typeof DELIVERY_FULFILLMENT_MODE_VALUES)[number];
 
   @ApiPropertyOptional({
     description:

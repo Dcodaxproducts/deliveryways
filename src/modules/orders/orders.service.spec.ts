@@ -2065,6 +2065,116 @@ describe('OrdersService - deliveryman order access', () => {
     expect(result.message).toBe('Order status updated successfully');
   });
 
+  it('allows branch admin to send confirmed delivery with external driver', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'CONFIRMED',
+    });
+    ordersRepository.updateStatus.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'OUT_FOR_DELIVERY',
+    });
+
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({
+        id: 'order-1',
+        status: 'OUT_FOR_DELIVERY',
+        deliverymanId: null,
+      }),
+    });
+
+    const result = await service.updateStatus(
+      {
+        uid: 'branch-admin-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      } as never,
+      'order-1',
+      {
+        status: 'OUT_FOR_DELIVERY',
+        deliveryFulfillmentMode: 'EXTERNAL',
+      } as never,
+    );
+
+    expect(ordersRepository.updateStatus).toHaveBeenCalledWith(
+      'order-1',
+      'OUT_FOR_DELIVERY',
+      undefined,
+    );
+    expect(chatService.ensureDeliveryThreadForOrder).not.toHaveBeenCalled();
+    expect(result.data).toEqual({
+      id: 'order-1',
+      status: 'OUT_FOR_DELIVERY',
+      deliverymanId: null,
+    });
+  });
+
+  it('keeps confirmed to out-for-delivery invalid without external driver mode', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      status: 'CONFIRMED',
+    });
+
+    await expect(
+      service.updateStatus(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        'order-1',
+        { status: 'OUT_FOR_DELIVERY' } as never,
+      ),
+    ).rejects.toThrow('Invalid order status transition');
+    expect(ordersRepository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('blocks external driver mode for pickup orders', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'TAKEAWAY',
+      status: 'CONFIRMED',
+    });
+
+    await expect(
+      service.updateStatus(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        'order-1',
+        {
+          status: 'OUT_FOR_DELIVERY',
+          deliveryFulfillmentMode: 'EXTERNAL',
+        } as never,
+      ),
+    ).rejects.toThrow('Invalid order status transition');
+    expect(ordersRepository.updateStatus).not.toHaveBeenCalled();
+  });
+
   it('blocks branch admin accepting another branch order', async () => {
     ordersRepository.findById.mockResolvedValue({
       id: 'order-1',

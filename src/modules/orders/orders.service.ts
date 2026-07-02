@@ -581,7 +581,13 @@ export class OrdersService {
       await this.ensureBranchAccess(user, order.restaurantId, order.branchId);
     }
 
+    const isExternalDeliveryDispatch = this.isExternalDeliveryDispatch(
+      order,
+      dto,
+    );
+
     if (
+      !isExternalDeliveryDispatch &&
       !this.isValidStatusTransition(order.orderType, order.status, dto.status)
     ) {
       throw new BadRequestException('Invalid order status transition');
@@ -3545,6 +3551,22 @@ export class OrdersService {
     };
 
     return (baseTransitions[current] ?? []).includes(next);
+  }
+
+  private isExternalDeliveryDispatch(
+    order: { orderType: OrderType; status: OrderStatus },
+    dto: UpdateOrderStatusDto,
+  ): boolean {
+    if (dto.deliveryFulfillmentMode !== 'EXTERNAL') {
+      return false;
+    }
+
+    return (
+      order.orderType === OrderType.DELIVERY &&
+      dto.status === OrderStatus.OUT_FOR_DELIVERY &&
+      (order.status === OrderStatus.CONFIRMED ||
+        order.status === OrderStatus.PREPARING)
+    );
   }
 
   private isValidDeliverymanStatusTransition(
