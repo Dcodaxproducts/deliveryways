@@ -3870,6 +3870,20 @@ export class OrdersService {
       );
     }
 
+    for (const link of this.getAvailableModifierLinks(item)) {
+      const found = link.modifierGroup.modifierLinks.find(
+        (modifierLink) => modifierLink.modifier.id === modifierId,
+      )?.modifier;
+
+      if (found) {
+        return this.resolveModifierPricing(
+          { ...found, itemPriceOverrides: [] },
+          menuItemId,
+          variationId,
+        );
+      }
+    }
+
     const directModifier = item.modifierPriceOverrides?.find(
       (override) => override.modifier.id === modifierId,
     );
@@ -3886,16 +3900,6 @@ export class OrdersService {
         menuItemId,
         variationId,
       );
-    }
-
-    for (const link of this.getAvailableModifierLinks(item)) {
-      const found = link.modifierGroup.modifierLinks.find(
-        (modifierLink) => modifierLink.modifier.id === modifierId,
-      )?.modifier;
-
-      if (found) {
-        return this.resolveModifierPricing(found, menuItemId, variationId);
-      }
     }
 
     return undefined;

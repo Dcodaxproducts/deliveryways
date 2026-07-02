@@ -1985,7 +1985,12 @@ describe('CartService', () => {
                     id: 'modifier-gyros',
                     name: 'Gyros',
                     priceDelta: new Prisma.Decimal(1.55),
-                    itemPriceOverrides: [],
+                    itemPriceOverrides: [
+                      {
+                        menuItemId: 'menu-1',
+                        priceDelta: new Prisma.Decimal(0),
+                      },
+                    ],
                     variationPriceOverrides: [],
                   },
                 },

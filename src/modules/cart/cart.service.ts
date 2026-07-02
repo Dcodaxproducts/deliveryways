@@ -2648,7 +2648,10 @@ export class CartService {
       )?.modifier;
 
       if (modifier) {
-        return modifier;
+        return {
+          ...modifier,
+          itemPriceOverrides: [],
+        };
       }
     }
 
@@ -2723,7 +2726,11 @@ export class CartService {
             name: modifier.name,
             sortOrder,
             priceDelta: Number(
-              this.resolveModifierPriceDelta(modifier, item.id, variationId),
+              this.resolveModifierPriceDelta(
+                { ...modifier, itemPriceOverrides: [] },
+                item.id,
+                variationId,
+              ),
             ),
           }),
         ),
