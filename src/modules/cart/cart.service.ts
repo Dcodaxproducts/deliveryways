@@ -146,6 +146,14 @@ interface ResolvedCartCustomerScope {
   restaurantId: string | null;
 }
 
+interface CartLineDiscountMetadata {
+  promotion: Record<string, unknown> | null;
+  happyHour: Record<string, unknown> | null;
+  promotionDiscountAmount: number;
+  discountedUnitPrice: number | null;
+  discountedLineTotal: number | null;
+}
+
 interface CartResponseDealLine {
   id: string;
   dealId: string | null;
@@ -159,6 +167,11 @@ interface CartResponseDealLine {
   modifiersTotal?: number;
   depositTotal: number;
   lineTotal: number | null;
+  promotion?: Record<string, unknown> | null;
+  happyHour?: Record<string, unknown> | null;
+  promotionDiscountAmount?: number;
+  discountedUnitPrice?: number | null;
+  discountedLineTotal?: number | null;
 }
 
 export interface CartResponseItem extends CartResponseDealLine {
@@ -1465,6 +1478,11 @@ export class CartService {
       : null;
 
     const cartQuote = quote ? this.toCartQuoteResponse(quote.data) : null;
+    const annotatedDisplayItems = await this.withCartLineDiscountMetadata(
+      displayItems,
+      cart,
+      cartQuote,
+    );
 
     return this.resolveMediaResponse({
       id: cart.id,
@@ -1480,12 +1498,316 @@ export class CartService {
       tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
       note: cart.customerNote,
-      items: displayItems,
+      items: annotatedDisplayItems,
       ...(cartQuote ? this.extractCartBillSummary(cartQuote) : {}),
       ...(cartQuote ? { quote: cartQuote } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
+  }
+
+  private async withCartLineDiscountMetadata<T extends CartDisplayItem>(
+    items: T[],
+    cart: CartSnapshot,
+    quoteData: unknown,
+  ): Promise<T[]> {
+    const appliedPromotion = this.readAppliedPromotion(quoteData);
+    if (!appliedPromotion || !this.couponsService) {
+      return items.map((item) => this.attachEmptyLineDiscountMetadata(item));
+    }
+
+    const campaign = await this.resolveAppliedCartCampaign(
+      cart.restaurantId,
+      cart.branchId,
+      appliedPromotion.id,
+    );
+
+    if (!campaign) {
+      return items.map((item) => this.attachEmptyLineDiscountMetadata(item));
+    }
+
+    return items.map((item) =>
+      this.attachCartLineDiscountMetadata(item, appliedPromotion, campaign),
+    );
+  }
+
+  private readAppliedPromotion(quoteData: unknown) {
+    if (!quoteData || typeof quoteData !== 'object') {
+      return null;
+    }
+
+    const appliedPromotion = (quoteData as { appliedPromotion?: unknown })
+      .appliedPromotion;
+    if (!appliedPromotion || typeof appliedPromotion !== 'object') {
+      return null;
+    }
+
+    const promotion = appliedPromotion as {
+      id?: unknown;
+      title?: unknown;
+      applyMode?: unknown;
+      discountType?: unknown;
+      discountValue?: unknown;
+      discountAmount?: unknown;
+    };
+
+    if (typeof promotion.id !== 'string') {
+      return null;
+    }
+
+    return {
+      id: promotion.id,
+      title: typeof promotion.title === 'string' ? promotion.title : null,
+      applyMode:
+        typeof promotion.applyMode === 'string' ? promotion.applyMode : null,
+      discountType:
+        typeof promotion.discountType === 'string'
+          ? promotion.discountType
+          : null,
+      discountValue: Number(promotion.discountValue ?? 0),
+      discountAmount: Number(promotion.discountAmount ?? 0),
+    };
+  }
+
+  private async resolveAppliedCartCampaign(
+    restaurantId: string,
+    branchId: string,
+    promotionId: string,
+  ) {
+    const [promotions, happyHours] = await Promise.all([
+      this.couponsService?.getActiveAutoApplyPromotions(
+        restaurantId,
+        branchId,
+      ) ?? Promise.resolve([]),
+      this.couponsService?.getActiveHappyHours(restaurantId, branchId) ??
+        Promise.resolve([]),
+    ]);
+    const happyHour = happyHours.find(
+      (campaign) => campaign.id === promotionId,
+    );
+    if (happyHour) {
+      return { campaign: happyHour, kind: 'happyHour' as const };
+    }
+
+    const promotion = promotions.find(
+      (campaign) => campaign.id === promotionId,
+    );
+    if (promotion) {
+      return { campaign: promotion, kind: 'promotion' as const };
+    }
+
+    return null;
+  }
+
+  private attachEmptyLineDiscountMetadata<T extends CartDisplayItem>(
+    item: T,
+  ): T {
+    const metadata: CartLineDiscountMetadata = {
+      promotion: null,
+      happyHour: null,
+      promotionDiscountAmount: 0,
+      discountedUnitPrice: null,
+      discountedLineTotal: null,
+    };
+
+    if (item.type === 'DEAL') {
+      return {
+        ...item,
+        ...metadata,
+        includedItems: item.includedItems.map((includedItem) => ({
+          ...includedItem,
+          ...metadata,
+        })),
+      } as T;
+    }
+
+    return { ...item, ...metadata };
+  }
+
+  private attachCartLineDiscountMetadata<T extends CartDisplayItem>(
+    item: T,
+    appliedPromotion: {
+      id: string;
+      title: string | null;
+      applyMode: string | null;
+      discountType: string | null;
+      discountValue: number;
+    },
+    campaign: {
+      campaign: Record<string, unknown>;
+      kind: 'promotion' | 'happyHour';
+    },
+  ): T {
+    if (item.type === 'DEAL') {
+      return {
+        ...item,
+        ...this.emptyLineDiscountMetadata(),
+        includedItems: item.includedItems.map((includedItem) =>
+          this.attachCartLineDiscountMetadata(
+            includedItem,
+            appliedPromotion,
+            campaign,
+          ),
+        ),
+      } as T;
+    }
+
+    const discountAmount = this.resolveCartLineDiscountAmount(
+      item,
+      appliedPromotion,
+      campaign.campaign,
+    );
+
+    if (discountAmount.lessThanOrEqualTo(0)) {
+      return { ...item, ...this.emptyLineDiscountMetadata() };
+    }
+
+    const lineTotal = new Prisma.Decimal(item.lineTotal ?? 0);
+    const discountedLineTotal = Prisma.Decimal.max(
+      lineTotal.minus(discountAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const quantity = Math.max(1, item.quantity ?? 1);
+    const discountedUnitPrice = discountedLineTotal
+      .div(quantity)
+      .toDecimalPlaces(2);
+    const payload = {
+      promotionId: appliedPromotion.id,
+      id: appliedPromotion.id,
+      title: appliedPromotion.title,
+      applyMode: appliedPromotion.applyMode,
+      discountType: appliedPromotion.discountType,
+      discountValue: appliedPromotion.discountValue,
+      discountAmount: Number(discountAmount.toDecimalPlaces(2)),
+      discountedLineTotal: Number(discountedLineTotal),
+    };
+
+    return {
+      ...item,
+      promotion: campaign.kind === 'promotion' ? payload : null,
+      happyHour: campaign.kind === 'happyHour' ? payload : null,
+      promotionDiscountAmount: Number(discountAmount.toDecimalPlaces(2)),
+      discountedUnitPrice: Number(discountedUnitPrice),
+      discountedLineTotal: Number(discountedLineTotal),
+    };
+  }
+
+  private emptyLineDiscountMetadata(): CartLineDiscountMetadata {
+    return {
+      promotion: null,
+      happyHour: null,
+      promotionDiscountAmount: 0,
+      discountedUnitPrice: null,
+      discountedLineTotal: null,
+    };
+  }
+
+  private resolveCartLineDiscountAmount(
+    item: CartResponseItem,
+    appliedPromotion: {
+      applyMode: string | null;
+      discountType: string | null;
+      discountValue: number;
+    },
+    campaign: Record<string, unknown>,
+  ) {
+    if (item.dealId || !this.cartLineMatchesCampaign(item, campaign)) {
+      return new Prisma.Decimal(0);
+    }
+
+    const lineTotal = new Prisma.Decimal(item.lineTotal ?? 0);
+    if (lineTotal.lessThanOrEqualTo(0)) {
+      return new Prisma.Decimal(0);
+    }
+
+    if (appliedPromotion.applyMode === 'ORDER_TOTAL') {
+      return this.resolveProportionalLineDiscount(lineTotal, appliedPromotion);
+    }
+
+    if (appliedPromotion.discountType === 'FLAT') {
+      return Prisma.Decimal.min(
+        lineTotal,
+        new Prisma.Decimal(appliedPromotion.discountValue).mul(
+          Math.max(1, item.quantity ?? 1),
+        ),
+      ).toDecimalPlaces(2);
+    }
+
+    return this.resolveProportionalLineDiscount(lineTotal, appliedPromotion);
+  }
+
+  private resolveProportionalLineDiscount(
+    lineTotal: Prisma.Decimal,
+    appliedPromotion: {
+      discountType: string | null;
+      discountValue: number;
+    },
+  ) {
+    if (appliedPromotion.discountType === 'PERCENTAGE') {
+      return Prisma.Decimal.min(
+        lineTotal,
+        lineTotal.mul(appliedPromotion.discountValue).div(100),
+      ).toDecimalPlaces(2);
+    }
+
+    return Prisma.Decimal.min(
+      lineTotal,
+      new Prisma.Decimal(appliedPromotion.discountValue),
+    ).toDecimalPlaces(2);
+  }
+
+  private cartLineMatchesCampaign(
+    item: CartResponseItem,
+    campaign: Record<string, unknown>,
+  ) {
+    const menuItemIds = this.collectCampaignMenuItemIds(campaign);
+    const categoryIds = this.collectCampaignCategoryIds(campaign);
+
+    if (!menuItemIds.length && !categoryIds.length) {
+      return true;
+    }
+
+    return (
+      menuItemIds.includes(item.menuItemId) ||
+      item.categoryIds.some((categoryId) => categoryIds.includes(categoryId))
+    );
+  }
+
+  private collectCampaignMenuItemIds(campaign: Record<string, unknown>) {
+    const primary = (campaign.scopeMenuItem as { id?: unknown } | null)?.id;
+    const extras = Array.isArray(campaign.scopeMenuItems)
+      ? campaign.scopeMenuItems
+          .map(
+            (entry) => (entry as { menuItem?: { id?: unknown } }).menuItem?.id,
+          )
+          .filter((id): id is string => typeof id === 'string')
+      : [];
+
+    return [
+      ...new Set([
+        ...(typeof primary === 'string' ? [primary] : []),
+        ...extras,
+      ]),
+    ];
+  }
+
+  private collectCampaignCategoryIds(campaign: Record<string, unknown>) {
+    const primary = (campaign.scopeCategory as { id?: unknown } | null)?.id;
+    const extras = Array.isArray(campaign.scopeCategories)
+      ? campaign.scopeCategories
+          .map(
+            (entry) =>
+              (entry as { menuCategory?: { id?: unknown } }).menuCategory?.id,
+          )
+          .filter((id): id is string => typeof id === 'string')
+      : [];
+
+    return [
+      ...new Set([
+        ...(typeof primary === 'string' ? [primary] : []),
+        ...extras,
+      ]),
+    ];
   }
 
   private toCartQuoteResponse<T>(quoteData: T): T {

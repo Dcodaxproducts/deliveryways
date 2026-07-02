@@ -55,6 +55,8 @@ describe('CartService', () => {
       isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(false),
       findActiveFixedPriceDealIdForItem: jest.fn().mockResolvedValue(null),
       getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue(null),
+      getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
+      getActiveHappyHours: jest.fn().mockResolvedValue([]),
     };
 
     const globalSettingsService = {
@@ -3760,6 +3762,148 @@ describe('CartService', () => {
     expect(quoteData.discountAmount).toBe(14);
     expect(quoteData.appliedPromotion?.id).toBe('promo-1');
     expect(responseData.discountAmount).toBe(14);
+  });
+
+  it('attaches per-cart-item happy hour metadata for matching applied promotion lines', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+        {
+          id: 'item-2',
+          menuItemId: 'menu-2',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Pizza Tuna',
+        slug: 'pizza-tuna',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(10),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        prepTimeMinutes: 0,
+        depositAmount: new Prisma.Decimal(0),
+        category: { id: 'cat-pizza', name: 'Pizza', imageUrl: null },
+        categoryLinks: [],
+        variations: [],
+        modifierLinks: [],
+        modifierPriceOverrides: [],
+        branchOverrides: [],
+      },
+      {
+        id: 'menu-2',
+        name: 'Pasta',
+        slug: 'pasta',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(8.9),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        prepTimeMinutes: 0,
+        depositAmount: new Prisma.Decimal(0),
+        category: { id: 'cat-pasta', name: 'Pasta', imageUrl: null },
+        categoryLinks: [],
+        variations: [],
+        modifierLinks: [],
+        modifierPriceOverrides: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 18.9,
+        taxAmount: 1.69,
+        deliveryFee: 2,
+        serviceChargeAmount: 0.39,
+        discountAmount: 3,
+        totalAmount: 17.9,
+        payableAmount: 17.9,
+        appliedPromotion: {
+          id: 'happy-1',
+          title: 'Happy hour',
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+          discountType: 'FLAT',
+          discountValue: 3,
+          discountAmount: 3,
+        },
+      },
+      message: 'Order quote generated successfully',
+    });
+    couponsService.getActiveHappyHours.mockResolvedValue([
+      {
+        id: 'happy-1',
+        title: 'Happy hour',
+        scopeMenuItem: { id: 'menu-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.getCart({
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const [discountedItem, regularItem] = result.data.items as Array<{
+      menuItemId: string;
+      happyHour: { promotionId?: string; discountAmount?: number } | null;
+      promotion: unknown;
+      promotionDiscountAmount: number;
+      discountedUnitPrice: number | null;
+      discountedLineTotal: number | null;
+    }>;
+    expect(discountedItem.menuItemId).toBe('menu-1');
+    expect(discountedItem.happyHour?.promotionId).toBe('happy-1');
+    expect(discountedItem.happyHour?.discountAmount).toBe(3);
+    expect(discountedItem.promotion).toBeNull();
+    expect(discountedItem.promotionDiscountAmount).toBe(3);
+    expect(discountedItem.discountedUnitPrice).toBe(7);
+    expect(discountedItem.discountedLineTotal).toBe(7);
+    expect(regularItem.menuItemId).toBe('menu-2');
+    expect(regularItem.happyHour).toBeNull();
+    expect(regularItem.promotionDiscountAmount).toBe(0);
+    expect(regularItem.discountedUnitPrice).toBeNull();
   });
 
   it('returns guest delivery cart without quote when address is not selected yet', async () => {
