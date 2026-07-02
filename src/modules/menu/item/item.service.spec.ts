@@ -551,6 +551,72 @@ describe('MenuItemService', () => {
     ).toBe('promo-1');
   });
 
+  it('does not attach exhausted promotion metadata on /menu/items responses', async () => {
+    const { service, itemRepository, couponsService, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    itemRepository.list.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 'item-1',
+          name: 'Vegan Burger',
+          basePrice: new Prisma.Decimal(800),
+          dietaryFlags: ['VEGAN'],
+          allergenFlags: [],
+          allergenPdfUrl: null,
+          restaurant: {
+            id: 'restaurant-1',
+            settings: {},
+            tenant: { settings: {} },
+          },
+          category: { id: 'category-1', items: [] },
+          variations: [
+            {
+              id: 'variation-1',
+              name: 'Large',
+              price: new Prisma.Decimal(900),
+            },
+          ],
+        },
+      ],
+    });
+    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+      {
+        id: 'promo-1',
+        title: 'Burger Deal',
+        description: '10% off',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(10),
+        maxDiscountAmount: new Prisma.Decimal(100),
+        maxUses: 5,
+        usedCount: 5,
+        scopeMenuItem: { id: 'item-1' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.list(
+      { uid: 'admin-1', tid: 'tenant-1', role: UserRoleEnum.BUSINESS_ADMIN },
+      { page: 1, limit: 10, restaurantId: 'restaurant-1' } as never,
+    );
+
+    const data = result.data as Array<{
+      discountedBasePrice: number | null;
+      promotion: Record<string, unknown> | null;
+      variations: Array<{
+        discountedPrice: number | null;
+        promotion: Record<string, unknown> | null;
+      }>;
+    }>;
+    expect(data[0].discountedBasePrice).toBeNull();
+    expect(data[0].promotion).toBeNull();
+    expect(data[0].variations[0].discountedPrice).toBeNull();
+    expect(data[0].variations[0].promotion).toBeNull();
+  });
+
   it('attaches happy hour metadata on /menu/items responses when item has active happy hour', async () => {
     const { service, itemRepository, couponsService, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

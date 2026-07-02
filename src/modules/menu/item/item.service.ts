@@ -303,7 +303,7 @@ export class MenuItemService {
       query,
     );
     const branchId = this.resolvePricingBranchId(user, query.branchId);
-    const [promotions, happyHours] = restaurantId
+    const [rawPromotions, rawHappyHours] = restaurantId
       ? await Promise.all([
           this.couponsService?.getActiveAutoApplyPromotions(
             restaurantId,
@@ -313,6 +313,12 @@ export class MenuItemService {
             Promise.resolve([]),
         ])
       : [[], []];
+    const promotions = rawPromotions.filter(
+      (promotion) => !this.isPromotionUsageLimitReached(promotion),
+    );
+    const happyHours = rawHappyHours.filter(
+      (happyHour) => !this.isPromotionUsageLimitReached(happyHour),
+    );
 
     return {
       data: await this.resolveMediaResponse(
@@ -516,6 +522,22 @@ export class MenuItemService {
       happyHour: itemHappyHour ?? null,
       variations,
     };
+  }
+
+  private isPromotionUsageLimitReached(promotion: Record<string, unknown>) {
+    const maxUses = promotion.maxUses;
+    const usedCount = promotion.usedCount;
+
+    if (maxUses === null || maxUses === undefined) {
+      return false;
+    }
+
+    const maxUsesNumber = Number(maxUses);
+    if (!Number.isFinite(maxUsesNumber)) {
+      return false;
+    }
+
+    return Number(usedCount ?? 0) >= maxUsesNumber;
   }
 
   private resolvePricingBranchId(user: AuthUserContext, requested?: string) {
