@@ -25,7 +25,7 @@ INSERT INTO menu_item_cuisines (
   updated_at
 )
 SELECT
-  'mic_' || md5(mic.menu_item_id || ':' || remap.survivor_id) AS id,
+  'mic_' || md5(mic.id || ':' || remap.survivor_id) AS id,
   mic.menu_item_id,
   remap.survivor_id,
   mic.sort_order,
