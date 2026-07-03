@@ -626,7 +626,9 @@ export class CustomerAppService {
       resolvedQuery.branchId,
     );
     const { items, total } =
-      await this.customerAppRepository.listCuisineCategories(resolvedQuery);
+      await this.customerAppRepository.listCuisineCategories(resolvedQuery, {
+        includeItems: false,
+      });
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
       resolvedQuery.locale,
@@ -740,6 +742,7 @@ export class CustomerAppService {
         categoryIds: promotionContext.hasBroadHappyHour
           ? []
           : promotionContext.categoryIds,
+        includeItems: false,
       });
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
@@ -2988,16 +2991,20 @@ export class CustomerAppService {
       imageUrl: await this.resolveMediaUrl(item.imageUrl),
       sortOrder: item.sortOrder,
       itemCount: item.items ? visibleItems.length : item._count.items,
-      items: await Promise.all(
-        visibleItems.map((menuItem) =>
-          this.mapMenuItem(
-            menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
-            promotions,
-            happyHours,
-            translationContext,
-          ),
-        ),
-      ),
+      ...(item.items
+        ? {
+            items: await Promise.all(
+              visibleItems.map((menuItem) =>
+                this.mapMenuItem(
+                  menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
+                  promotions,
+                  happyHours,
+                  translationContext,
+                ),
+              ),
+            ),
+          }
+        : {}),
       promotion: this.resolveBestCategoryPromotion(
         item.categoryIds ?? [],
         promotions,

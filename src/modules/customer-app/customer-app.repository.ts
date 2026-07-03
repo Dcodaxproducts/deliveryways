@@ -887,48 +887,45 @@ export class CustomerAppRepository {
   ) {
     const branchId = query.branchId;
     const categoryIds = scope?.categoryIds ?? [];
-    const includeItems = scope?.includeItems ?? true;
+    const includeItems = scope?.includeItems ?? false;
+    const itemVisibilityWhere: Prisma.MenuItemWhereInput = {
+      restaurantId: query.restaurantId,
+      deletedAt: null,
+      isActive: true,
+      ...(branchId
+        ? {
+            OR: [
+              { branchOverrides: { none: { branchId } } },
+              {
+                branchOverrides: {
+                  some: { branchId, isAvailable: true },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const scopedCategoryWhere: Prisma.MenuItemWhereInput | undefined =
+      categoryIds.length
+        ? {
+            OR: [
+              { categoryId: { in: categoryIds } },
+              {
+                categoryLinks: {
+                  some: { menuCategoryId: { in: categoryIds } },
+                },
+              },
+            ],
+          }
+        : undefined;
     const where: Prisma.CuisineWhereInput = {
       deletedAt: null,
       isActive: true,
-      ...(categoryIds.length
-        ? {
-            itemLinks: {
-              some: {
-                menuItem: {
-                  restaurantId: query.restaurantId,
-                  OR: [
-                    { categoryId: { in: categoryIds } },
-                    {
-                      categoryLinks: {
-                        some: { menuCategoryId: { in: categoryIds } },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          }
-        : {}),
       itemLinks: {
         some: {
-          menuItem: {
-            restaurantId: query.restaurantId,
-            deletedAt: null,
-            isActive: true,
-            ...(branchId
-              ? {
-                  OR: [
-                    { branchOverrides: { none: { branchId } } },
-                    {
-                      branchOverrides: {
-                        some: { branchId, isAvailable: true },
-                      },
-                    },
-                  ],
-                }
-              : {}),
-          },
+          menuItem: scopedCategoryWhere
+            ? { AND: [itemVisibilityWhere, scopedCategoryWhere] }
+            : itemVisibilityWhere,
         },
       },
     };
@@ -943,36 +940,12 @@ export class CustomerAppRepository {
           _count: {
             select: {
               itemLinks: {
-                where: {
-                  menuItem: {
-                    restaurantId: query.restaurantId,
-                    deletedAt: null,
-                    isActive: true,
-                  },
-                },
+                where: { menuItem: itemVisibilityWhere },
               },
             },
           },
           itemLinks: {
-            where: {
-              menuItem: {
-                restaurantId: query.restaurantId,
-                deletedAt: null,
-                isActive: true,
-                ...(branchId
-                  ? {
-                      OR: [
-                        { branchOverrides: { none: { branchId } } },
-                        {
-                          branchOverrides: {
-                            some: { branchId, isAvailable: true },
-                          },
-                        },
-                      ],
-                    }
-                  : {}),
-              },
-            },
+            where: { menuItem: itemVisibilityWhere },
             orderBy: [{ sortOrder: 'asc' }],
             include: {
               menuItem: {

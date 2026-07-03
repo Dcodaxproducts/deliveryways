@@ -1414,7 +1414,7 @@ describe('CustomerAppService', () => {
 
     expect(repository.listCuisineCategories).toHaveBeenLastCalledWith(
       expect.objectContaining({ restaurantId: 'restaurant-1' }),
-      { categoryIds: ['category-1'] },
+      { categoryIds: ['category-1'], includeItems: false },
     );
   });
 
@@ -1764,7 +1764,7 @@ describe('CustomerAppService', () => {
     expect(result.data.items[0].id).toBe('item-1');
   });
 
-  it('includes menu items on cuisine list with the public item response shape', async () => {
+  it('returns slim cuisine cards without embedded menu items', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -1787,7 +1787,6 @@ describe('CustomerAppService', () => {
           imageUrl: 'https://cdn.example.com/category.png',
           sortOrder: 1,
           _count: { items: 1 },
-          items: [itemFixture],
         },
       ],
       total: 1,
@@ -1807,27 +1806,11 @@ describe('CustomerAppService', () => {
         itemCount: 1,
       }),
     );
-    expect(result.data[0].items[0]).toEqual(
-      expect.objectContaining({
-        id: 'item-1',
-        name: 'Zinger Burger',
-        slug: 'zinger-burger',
-        dietaryFlags: ['NON_ALCOHOLIC', 'VEGAN'],
-        productLabels: [
-          { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
-          { value: 'VEGAN', label: 'Vegan' },
-        ],
-        modifierPriceOverrides: itemFixture.modifierPriceOverrides,
-        modifiers: [
-          expect.objectContaining({
-            id: 'modifier-1',
-            isRequired: true,
-          }),
-        ],
-      }),
+    expect(result.data[0]).not.toHaveProperty('items');
+    expect(repository.listCuisineCategories).toHaveBeenCalledWith(
+      expect.objectContaining({ restaurantId: 'restaurant-1' }),
+      { includeItems: false },
     );
-    expect('modifierLinks' in result.data[0].items[0]).toBe(false);
-    expect('modifierGroups' in result.data[0].items[0]).toBe(false);
   });
 
   it('fetches public item by slug without legacy modifier groups', async () => {
@@ -2110,9 +2093,9 @@ describe('CustomerAppService', () => {
       expect.objectContaining({
         id: 'category-1',
         itemCount: 3,
-        items: [],
       }),
     );
+    expect(result.data.cuisines[0]).not.toHaveProperty('items');
     expect(result.data.promotionalItems[0]).toEqual(
       expect.objectContaining({
         id: 'item-1',
