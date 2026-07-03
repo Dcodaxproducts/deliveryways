@@ -73,7 +73,9 @@ export class MenuItemService {
       dto.categoryId,
       dto.categoryIds,
     );
+    const cuisineIds = this.resolveCuisineIds(dto.cuisineIds);
     await this.validateCategories(restaurantId, categoryIds);
+    await this.validateCuisines(restaurantId, cuisineIds);
     await this.assertModifierOverridesBelongToRestaurant(
       restaurantId,
       modifiers,
@@ -103,6 +105,7 @@ export class MenuItemService {
       taxInput,
       modifiers,
       categoryIds,
+      cuisineIds,
     );
 
     return {
@@ -124,6 +127,7 @@ export class MenuItemService {
     taxInput: MenuItemTaxInput,
     modifiers: Array<{ modifierId: string; priceDelta: number }> | undefined,
     categoryIds: string[],
+    cuisineIds: string[],
   ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -176,6 +180,9 @@ export class MenuItemService {
           tx,
         );
         await this.syncCategoryLinks(created.id, categoryIds, tx);
+        if (cuisineIds.length) {
+          await this.syncCuisineLinks(created.id, cuisineIds, tx);
+        }
 
         return created;
       });
@@ -197,11 +204,16 @@ export class MenuItemService {
         restaurantId,
         this.resolveCategoryIds(item.categoryId, item.categoryIds),
       );
+      await this.validateCuisines(
+        restaurantId,
+        this.resolveCuisineIds(item.cuisineIds),
+      );
     }
 
     const usedSlugs = new Set<string>();
     const payload: Prisma.MenuItemCreateManyInput[] = [];
     const categoryLinks: Array<{ slug: string; categoryIds: string[] }> = [];
+    const cuisineLinks: Array<{ slug: string; cuisineIds: string[] }> = [];
 
     for (const item of dto.items) {
       const pricing = this.resolvePricingInput(item);
@@ -221,6 +233,10 @@ export class MenuItemService {
       categoryLinks.push({
         slug,
         categoryIds: this.resolveCategoryIds(item.categoryId, item.categoryIds),
+      });
+      cuisineLinks.push({
+        slug,
+        cuisineIds: this.resolveCuisineIds(item.cuisineIds),
       });
 
       payload.push({
@@ -284,6 +300,21 @@ export class MenuItemService {
         }),
         skipDuplicates: true,
       });
+      const menuItemCuisineRows = cuisineLinks.flatMap((link) => {
+        const menuItemId = itemIdsBySlug.get(link.slug);
+        if (!menuItemId) return [];
+        return link.cuisineIds.map((cuisineId, sortOrder) => ({
+          menuItemId,
+          cuisineId,
+          sortOrder,
+        }));
+      });
+      if (menuItemCuisineRows.length) {
+        await tx.menuItemCuisine.createMany({
+          data: menuItemCuisineRows,
+          skipDuplicates: true,
+        });
+      }
       return created;
     });
 
@@ -357,6 +388,13 @@ export class MenuItemService {
         : undefined;
     if (categoryIds) {
       await this.validateCategories(item.restaurantId, categoryIds);
+    }
+    const cuisineIds =
+      dto.cuisineIds !== undefined
+        ? this.resolveCuisineIds(dto.cuisineIds)
+        : undefined;
+    if (cuisineIds) {
+      await this.validateCuisines(item.restaurantId, cuisineIds);
     }
     await this.assertModifierOverridesBelongToRestaurant(
       item.restaurantId,
@@ -451,6 +489,10 @@ export class MenuItemService {
 
       if (categoryIds) {
         await this.syncCategoryLinks(id, categoryIds, tx);
+      }
+
+      if (cuisineIds) {
+        await this.syncCuisineLinks(id, cuisineIds, tx);
       }
 
       return updated;
@@ -1599,6 +1641,25 @@ export class MenuItemService {
     return [...new Set([primaryCategoryId, ...(categoryIds ?? [])])];
   }
 
+  private async validateCuisines(restaurantId: string, cuisineIds: string[]) {
+    if (!cuisineIds.length) {
+      return;
+    }
+
+    const cuisines = await this.prisma.cuisine.findMany({
+      where: { id: { in: cuisineIds }, restaurantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (cuisines.length !== cuisineIds.length) {
+      throw new BadRequestException('Cuisine not found in restaurant');
+    }
+  }
+
+  private resolveCuisineIds(cuisineIds?: string[]) {
+    return [...new Set(cuisineIds ?? [])];
+  }
+
   private async assertModifierOverridesBelongToRestaurant(
     restaurantId: string,
     overrides: Array<{ modifierId: string; priceDelta: number }> | undefined,
@@ -1681,6 +1742,27 @@ export class MenuItemService {
       data: categoryIds.map((menuCategoryId, sortOrder) => ({
         menuItemId,
         menuCategoryId,
+        sortOrder,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  private async syncCuisineLinks(
+    menuItemId: string,
+    cuisineIds: string[],
+    tx: Prisma.TransactionClient,
+  ) {
+    await tx.menuItemCuisine.deleteMany({ where: { menuItemId } });
+
+    if (!cuisineIds.length) {
+      return;
+    }
+
+    await tx.menuItemCuisine.createMany({
+      data: cuisineIds.map((cuisineId, sortOrder) => ({
+        menuItemId,
+        cuisineId,
         sortOrder,
       })),
       skipDuplicates: true,

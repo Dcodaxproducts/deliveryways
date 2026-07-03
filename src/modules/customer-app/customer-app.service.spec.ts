@@ -1365,6 +1365,7 @@ describe('CustomerAppService', () => {
           imageUrl: 'category.png',
           sortOrder: 0,
           _count: { items: 3 },
+          categoryIds: ['category-1'],
         },
       ],
       total: 1,
@@ -1621,9 +1622,14 @@ describe('CustomerAppService', () => {
     });
     localizationsService.findActiveTranslations.mockResolvedValue([
       {
-        entityType: 'MENU_CATEGORY',
+        entityType: 'CUISINE',
         entityId: 'category-1',
         fields: { name: 'Burger DE', description: 'Kategorie DE' },
+      },
+      {
+        entityType: 'MENU_CATEGORY',
+        entityId: 'category-1',
+        fields: { name: 'Kategorie DE' },
       },
       {
         entityType: 'MENU_ITEM',
@@ -1660,8 +1666,9 @@ describe('CustomerAppService', () => {
       'restaurant-1',
       'de',
       expect.arrayContaining([
-        { entityType: 'MENU_CATEGORY', entityId: 'category-1' },
+        { entityType: 'CUISINE', entityId: 'category-1' },
         { entityType: 'MENU_ITEM', entityId: 'item-1' },
+        { entityType: 'MENU_CATEGORY', entityId: 'category-1' },
         { entityType: 'RESTAURANT', entityId: 'restaurant-1' },
         { entityType: 'MENU_ITEM_VARIATION', entityId: 'variation-1' },
         { entityType: 'MODIFIER', entityId: 'modifier-1' },
@@ -1699,7 +1706,7 @@ describe('CustomerAppService', () => {
       }),
     );
     expect(translatedItem.restaurant?.name).toBe('Kueche DE');
-    expect(translatedItem.category?.name).toBe('Burger DE');
+    expect(translatedItem.category?.name).toBe('Kategorie DE');
   });
 
   it('hides cuisine items when their timed menu is not currently active', async () => {

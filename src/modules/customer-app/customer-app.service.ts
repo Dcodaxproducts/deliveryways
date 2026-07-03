@@ -680,7 +680,7 @@ export class CustomerAppService {
       resolvedQuery.restaurantId,
       resolvedQuery.locale,
       [
-        { entityType: 'MENU_CATEGORY', entityId: cuisine.id },
+        { entityType: 'CUISINE', entityId: cuisine.id },
         ...visibleItems.flatMap((item) =>
           this.collectMenuItemTranslationRefs(item),
         ),
@@ -691,7 +691,7 @@ export class CustomerAppService {
       data: {
         cuisine: await this.resolveCuisineMedia(
           this.applyEntityTranslation(
-            'MENU_CATEGORY',
+            'CUISINE',
             cuisine.id,
             cuisine,
             translationContext,
@@ -2003,7 +2003,7 @@ export class CustomerAppService {
     }>,
   ): EntityTranslationRef[] {
     return cuisines.flatMap((cuisine) => [
-      { entityType: 'MENU_CATEGORY', entityId: cuisine.id },
+      { entityType: 'CUISINE', entityId: cuisine.id },
       ...(
         (cuisine.items ?? []) as Array<
           Parameters<CustomerAppService['collectMenuItemTranslationRefs']>[0]
@@ -2964,13 +2964,14 @@ export class CustomerAppService {
       sortOrder?: number;
       _count: { items: number };
       items?: unknown[];
+      categoryIds?: string[];
     },
     promotions: Array<Record<string, unknown>> = [],
     happyHours: Array<Record<string, unknown>> = [],
     translationContext?: CustomerAppTranslationContext,
   ) {
     const translatedItem = this.applyEntityTranslation(
-      'MENU_CATEGORY',
+      'CUISINE',
       item.id,
       item,
       translationContext,
@@ -2997,15 +2998,22 @@ export class CustomerAppService {
           ),
         ),
       ),
-      promotion: this.resolveBestCategoryPromotion(item.id, promotions),
-      happyHour: this.resolveBestCategoryHappyHour(item.id, happyHours),
+      promotion: this.resolveBestCategoryPromotion(
+        item.categoryIds ?? [],
+        promotions,
+      ),
+      happyHour: this.resolveBestCategoryHappyHour(
+        item.categoryIds ?? [],
+        happyHours,
+      ),
     };
   }
 
   private resolveBestCategoryPromotion(
-    categoryId: string,
+    categoryIds: string[],
     promotions: Array<Record<string, unknown>>,
   ) {
+    const categoryIdSet = new Set(categoryIds);
     const matched = promotions.find((promotion) => {
       if ((promotion.applyMode as string) !== 'SCOPED_ITEMS') {
         return false;
@@ -3021,7 +3029,9 @@ export class CustomerAppService {
         ).map((entry) => entry.menuCategory.id),
       );
 
-      return scopedCategoryIds.includes(categoryId);
+      return scopedCategoryIds.some((categoryId) =>
+        categoryIdSet.has(categoryId),
+      );
     });
 
     if (!matched) {
@@ -3043,9 +3053,10 @@ export class CustomerAppService {
   }
 
   private resolveBestCategoryHappyHour(
-    categoryId: string,
+    categoryIds: string[],
     happyHours: Array<Record<string, unknown>>,
   ) {
+    const categoryIdSet = new Set(categoryIds);
     const matched = happyHours.find((happyHour) => {
       if ((happyHour.applyMode as string) !== 'SCOPED_ITEMS') {
         return false;
@@ -3062,7 +3073,8 @@ export class CustomerAppService {
       );
 
       return (
-        !scopedCategoryIds.length || scopedCategoryIds.includes(categoryId)
+        !scopedCategoryIds.length ||
+        scopedCategoryIds.some((categoryId) => categoryIdSet.has(categoryId))
       );
     });
 

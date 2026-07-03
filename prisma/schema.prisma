@@ -308,6 +308,7 @@ enum LocalizationEntityType {
   RESTAURANT
   BRANCH
   RESTAURANT_MENU
+  CUISINE
   MENU_CATEGORY
   MENU_ITEM
   MENU_ITEM_VARIATION
@@ -386,6 +387,7 @@ model Restaurant {
   staffRoles          StaffRole[]
   staffUsers          StaffUser[]
   restaurantMenus     RestaurantMenu[]
+  cuisines            Cuisine[]
   menuCategories      MenuCategory[]
   menuItems           MenuItem[]
   modifierCategories  ModifierCategory[]
@@ -623,6 +625,27 @@ model MenuCategory {
   @@map("menu_categories")
 }
 
+model Cuisine {
+  id           String    @id @default(cuid())
+  restaurantId String    @map("restaurant_id")
+  name         String
+  slug         String
+  description  String?
+  imageUrl     String?   @map("image_url")
+  sortOrder    Int       @default(0) @map("sort_order")
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  restaurant Restaurant        @relation(fields: [restaurantId], references: [id])
+  itemLinks  MenuItemCuisine[]
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId, isActive, sortOrder])
+  @@map("cuisines")
+}
+
 model MenuItem {
   id                      String              @id @default(cuid())
   restaurantId            String              @map("restaurant_id")
@@ -659,6 +682,7 @@ model MenuItem {
   restaurant                      Restaurant                           @relation(fields: [restaurantId], references: [id])
   category                        MenuCategory                         @relation(fields: [categoryId], references: [id])
   categoryLinks                   MenuItemCategory[]
+  cuisineLinks                    MenuItemCuisine[]
   menuLinks                       RestaurantMenuItem[]
   modifierLinks                   MenuItemModifierGroup[]
   modifierPriceOverrides          MenuItemModifierPriceOverride[]
@@ -673,6 +697,22 @@ model MenuItem {
   @@unique([restaurantId, slug])
   @@unique([restaurantId, sku])
   @@map("menu_items")
+}
+
+model MenuItemCuisine {
+  id         String   @id @default(cuid())
+  menuItemId String   @map("menu_item_id")
+  cuisineId  String   @map("cuisine_id")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  cuisine  Cuisine  @relation(fields: [cuisineId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, cuisineId])
+  @@index([cuisineId])
+  @@map("menu_item_cuisines")
 }
 
 model MenuItemCategory {

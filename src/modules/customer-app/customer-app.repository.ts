@@ -888,41 +888,52 @@ export class CustomerAppRepository {
     const branchId = query.branchId;
     const categoryIds = scope?.categoryIds ?? [];
     const includeItems = scope?.includeItems ?? true;
-    const where: Prisma.MenuCategoryWhereInput = {
+    const where: Prisma.CuisineWhereInput = {
       restaurantId: query.restaurantId,
       deletedAt: null,
       isActive: true,
-      ...(categoryIds.length ? { id: { in: categoryIds } } : {}),
-      ...(branchId
+      ...(categoryIds.length
         ? {
-            OR: [
-              { overrides: { none: { branchId } } },
-              { overrides: { some: { branchId, isVisible: true } } },
-            ],
+            itemLinks: {
+              some: {
+                menuItem: {
+                  OR: [
+                    { categoryId: { in: categoryIds } },
+                    {
+                      categoryLinks: {
+                        some: { menuCategoryId: { in: categoryIds } },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
           }
         : {}),
-      items: {
+      itemLinks: {
         some: {
-          deletedAt: null,
-          isActive: true,
-          ...(branchId
-            ? {
-                OR: [
-                  { branchOverrides: { none: { branchId } } },
-                  {
-                    branchOverrides: {
-                      some: { branchId, isAvailable: true },
+          menuItem: {
+            deletedAt: null,
+            isActive: true,
+            ...(branchId
+              ? {
+                  OR: [
+                    { branchOverrides: { none: { branchId } } },
+                    {
+                      branchOverrides: {
+                        some: { branchId, isAvailable: true },
+                      },
                     },
-                  },
-                ],
-              }
-            : {}),
+                  ],
+                }
+              : {}),
+          },
         },
       },
     };
 
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.menuCategory.findMany({
+      this.prisma.cuisine.findMany({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -930,44 +941,74 @@ export class CustomerAppRepository {
         include: {
           _count: {
             select: {
-              items: {
+              itemLinks: {
                 where: {
-                  deletedAt: null,
-                  isActive: true,
+                  menuItem: {
+                    deletedAt: null,
+                    isActive: true,
+                  },
                 },
               },
             },
           },
-          ...(includeItems
-            ? {
-                items: {
-                  where: {
-                    deletedAt: null,
-                    isActive: true,
-                    ...(branchId
-                      ? {
-                          OR: [
-                            { branchOverrides: { none: { branchId } } },
-                            {
-                              branchOverrides: {
-                                some: { branchId, isAvailable: true },
-                              },
-                            },
-                          ],
-                        }
-                      : {}),
-                  },
-                  orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-                  include: this.buildPublicMenuItemInclude(branchId),
-                },
-              }
-            : {}),
+          itemLinks: {
+            where: {
+              menuItem: {
+                deletedAt: null,
+                isActive: true,
+                ...(branchId
+                  ? {
+                      OR: [
+                        { branchOverrides: { none: { branchId } } },
+                        {
+                          branchOverrides: {
+                            some: { branchId, isAvailable: true },
+                          },
+                        },
+                      ],
+                    }
+                  : {}),
+              },
+            },
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              menuItem: {
+                include: includeItems
+                  ? this.buildPublicMenuItemInclude(branchId)
+                  : {
+                      categoryLinks: {
+                        select: { menuCategoryId: true },
+                      },
+                    },
+              },
+            },
+          },
         },
       }),
-      this.prisma.menuCategory.count({ where }),
+      this.prisma.cuisine.count({ where }),
     ]);
 
-    return { items, total };
+    return {
+      items: items.map((item) => {
+        const categoryIdsForCuisine = new Set<string>();
+        for (const link of item.itemLinks) {
+          categoryIdsForCuisine.add(link.menuItem.categoryId);
+          for (const categoryLink of link.menuItem.categoryLinks ?? []) {
+            categoryIdsForCuisine.add(categoryLink.menuCategoryId);
+          }
+        }
+
+        return {
+          ...item,
+          categoryIds: [...categoryIdsForCuisine],
+          _count: { items: item._count.itemLinks },
+          items: includeItems
+            ? item.itemLinks.map((link) => link.menuItem)
+            : undefined,
+        };
+      }),
+      total,
+    };
   }
 
   async findPublicCuisine(
@@ -975,7 +1016,7 @@ export class CustomerAppRepository {
     restaurantId: string,
     branchId?: string,
   ) {
-    return this.prisma.menuCategory.findFirst({
+    return this.prisma.cuisine.findFirst({
       where: {
         id: cuisineId,
         restaurantId,
@@ -983,10 +1024,22 @@ export class CustomerAppRepository {
         isActive: true,
         ...(branchId
           ? {
-              OR: [
-                { overrides: { none: { branchId } } },
-                { overrides: { some: { branchId, isVisible: true } } },
-              ],
+              itemLinks: {
+                some: {
+                  menuItem: {
+                    deletedAt: null,
+                    isActive: true,
+                    OR: [
+                      { branchOverrides: { none: { branchId } } },
+                      {
+                        branchOverrides: {
+                          some: { branchId, isAvailable: true },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
             }
           : {}),
       },
@@ -1009,14 +1062,7 @@ export class CustomerAppRepository {
       restaurantId: query.restaurantId,
       deletedAt: null,
       isActive: true,
-      AND: [
-        {
-          OR: [
-            { categoryId: cuisineId },
-            { categoryLinks: { some: { menuCategoryId: cuisineId } } },
-          ],
-        },
-      ],
+      cuisineLinks: { some: { cuisineId } },
       category: {
         deletedAt: null,
         isActive: true,

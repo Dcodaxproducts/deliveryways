@@ -226,6 +226,14 @@ export class MenuItemRepository {
               },
             },
           },
+          cuisineLinks: {
+            orderBy: [{ sortOrder: 'asc' }],
+            include: {
+              cuisine: {
+                select: { id: true, name: true, slug: true, imageUrl: true },
+              },
+            },
+          },
           menuLinks: {
             where: { ...(query.includeInactive ? {} : { isActive: true }) },
             orderBy: [{ sortOrder: 'asc' }],
@@ -324,6 +332,8 @@ export class MenuItemRepository {
           ...item,
           categories: item.categoryLinks.map((link) => link.menuCategory),
           categoryIds: item.categoryLinks.map((link) => link.menuCategoryId),
+          cuisines: item.cuisineLinks.map((link) => link.cuisine),
+          cuisineIds: item.cuisineLinks.map((link) => link.cuisineId),
           category: {
             ...item.category,
             variations,

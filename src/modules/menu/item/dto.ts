@@ -219,6 +219,13 @@ export class CreateMenuItemDto {
   @IsString({ each: true })
   categoryIds?: string[];
 
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  cuisineIds?: string[];
+
   @ApiProperty()
   @IsString()
   name!: string;
@@ -493,6 +500,13 @@ export class UpdateMenuItemDto {
   @ArrayUnique()
   @IsString({ each: true })
   categoryIds?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  cuisineIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

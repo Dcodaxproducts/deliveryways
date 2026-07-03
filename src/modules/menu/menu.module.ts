@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { MenuCategoryController } from './category/category.controller';
 import { MenuCategoryService } from './category/category.service';
 import { MenuCategoryRepository } from './category/category.repository';
+import { CuisineController } from './cuisine/cuisine.controller';
+import { CuisineService } from './cuisine/cuisine.service';
+import { CuisineRepository } from './cuisine/cuisine.repository';
 import { MenuItemController } from './item/item.controller';
 import { MenuItemService } from './item/item.service';
 import { MenuItemRepository } from './item/item.repository';
@@ -24,6 +27,7 @@ import { CouponsModule } from '../coupons/coupons.module';
   imports: [StorageModule, CouponsModule],
   controllers: [
     MenuCategoryController,
+    CuisineController,
     MenuItemController,
     MenuVariationController,
     ModifierController,
@@ -33,6 +37,8 @@ import { CouponsModule } from '../coupons/coupons.module';
   providers: [
     MenuCategoryService,
     MenuCategoryRepository,
+    CuisineService,
+    CuisineRepository,
     MenuItemService,
     MenuItemRepository,
     MenuVariationService,
@@ -46,6 +52,7 @@ import { CouponsModule } from '../coupons/coupons.module';
   ],
   exports: [
     MenuCategoryService,
+    CuisineService,
     MenuItemService,
     MenuVariationService,
     RestaurantMenuService,

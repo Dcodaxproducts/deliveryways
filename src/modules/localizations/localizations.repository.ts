@@ -42,6 +42,11 @@ export class LocalizationsRepository {
           where: { id: entityId, restaurantId, deletedAt: null },
           select: { id: true, restaurant: { select: { tenantId: true } } },
         });
+      case 'CUISINE':
+        return this.prisma.cuisine.findFirst({
+          where: { id: entityId, restaurantId, deletedAt: null },
+          select: { id: true, restaurant: { select: { tenantId: true } } },
+        });
       case 'MENU_CATEGORY':
         return this.prisma.menuCategory.findFirst({
           where: { id: entityId, restaurantId, deletedAt: null },
