@@ -294,7 +294,7 @@ describe('AdminReportsService', () => {
       'Customer Street 2, Berlin, BE, Germany',
     );
     expect(result.data.taxBreakdown).toEqual({
-      label: 'VAT/Tax',
+      label: 'VAT/Tax (inclusive)',
       taxableAmount: 500,
       taxAmount: 0,
       ratePercentage: 0,

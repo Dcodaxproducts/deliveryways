@@ -102,6 +102,30 @@ export class MenuItemRepository {
           { name: { contains: query.search, mode: 'insensitive' } },
           { slug: { contains: query.search, mode: 'insensitive' } },
           { sku: { contains: query.search, mode: 'insensitive' } },
+          {
+            category: {
+              OR: [
+                { name: { contains: query.search, mode: 'insensitive' } },
+                { slug: { contains: query.search, mode: 'insensitive' } },
+              ],
+            },
+          },
+          {
+            categoryLinks: {
+              some: {
+                menuCategory: {
+                  OR: [
+                    {
+                      name: { contains: query.search, mode: 'insensitive' },
+                    },
+                    {
+                      slug: { contains: query.search, mode: 'insensitive' },
+                    },
+                  ],
+                },
+              },
+            },
+          },
         ],
       });
     }

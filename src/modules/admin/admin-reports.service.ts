@@ -1003,7 +1003,7 @@ export class AdminReportsService {
     const taxAmount = Number(invoice.taxAmount);
 
     return {
-      label: 'VAT/Tax',
+      label: 'VAT/Tax (inclusive)',
       taxableAmount: subtotal,
       taxAmount,
       ratePercentage:
