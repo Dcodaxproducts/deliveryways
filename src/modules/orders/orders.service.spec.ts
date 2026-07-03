@@ -4744,6 +4744,138 @@ describe('OrdersService - wallet payment', () => {
     );
   });
 
+  it('keeps online card orders payment-pending until Stripe succeeds', async () => {
+    const paymentTransactionCreate = jest.fn();
+    const notifyOrderPlaced = jest.fn();
+    const ordersRepository = {
+      create: jest.fn().mockResolvedValue({
+        id: 'order-stripe-1',
+        tenantId: 'tenant-1',
+        status: OrderStatus.PAYMENT_PENDING,
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(0),
+        totalAmount: new Prisma.Decimal(500),
+      }),
+    };
+    const prisma = {
+      globalSetting: {
+        findUnique: jest.fn().mockResolvedValue({
+          paymentMethods: [
+            { code: PaymentMethod.STRIPE, label: 'Stripe', isActive: true },
+          ],
+        }),
+      },
+      restaurant: {
+        findUnique: jest.fn().mockResolvedValue({
+          settings: { currency: 'EUR' },
+        }),
+      },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        Promise.resolve(
+          callback({
+            paymentTransaction: {
+              create: paymentTransactionCreate,
+            },
+          }),
+        ),
+      ),
+    };
+    const loyaltyWalletService = {
+      applyOrderBenefits: jest.fn(),
+      awardPointsForPaidOrder: jest.fn(),
+    };
+    const service = new OrdersService(
+      prisma as never,
+      ordersRepository as never,
+      { registerUsage: jest.fn() } as never,
+      { notifyOrderPlaced } as never,
+      {} as never,
+      {
+        emitOrderCreated: jest.fn(),
+        emitOrderStatusChanged: jest.fn(),
+      } as never,
+      undefined,
+      loyaltyWalletService as never,
+      { getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR') } as never,
+    );
+
+    jest
+      .spyOn(
+        service as unknown as {
+          buildQuote: (user: unknown, dto: unknown) => Promise<unknown>;
+        },
+        'buildQuote',
+      )
+      .mockResolvedValue({
+        branch: {
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: { allowedPaymentMethods: ['STRIPE'] },
+        },
+        customer: { customerId: 'customer-1' },
+        lines: [
+          {
+            menuItemId: 'menu-1',
+            categoryId: 'cat-1',
+            menuItemName: 'Burger',
+            quantity: 1,
+            depositAmount: new Prisma.Decimal(0),
+            unitPrice: new Prisma.Decimal(500),
+            lineTotal: new Prisma.Decimal(500),
+          },
+        ],
+        subtotal: new Prisma.Decimal(500),
+        taxAmount: new Prisma.Decimal(0),
+        deliveryFee: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        walletAppliedAmount: new Prisma.Decimal(0),
+        loyaltyDiscountAmount: new Prisma.Decimal(0),
+        loyaltyPointsRedeemed: 0,
+        totalAmount: new Prisma.Decimal(500),
+        couponId: undefined,
+      });
+
+    await service.create(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        paymentMethod: PaymentMethodEnum.STRIPE,
+        items: [],
+      },
+    );
+
+    expect(ordersRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.STRIPE,
+        status: OrderStatus.PAYMENT_PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+      }),
+      expect.anything(),
+    );
+    const paymentTransactionCalls = paymentTransactionCreate.mock
+      .calls as Array<
+      [{ data: { paymentMethod: PaymentMethod; status: PaymentStatus } }]
+    >;
+    const paymentTransactionCall = paymentTransactionCalls[0][0];
+    expect(paymentTransactionCall.data.paymentMethod).toBe(
+      PaymentMethod.STRIPE,
+    );
+    expect(paymentTransactionCall.data.status).toBe(PaymentStatus.PENDING);
+    expect(notifyOrderPlaced).not.toHaveBeenCalled();
+    expect(loyaltyWalletService.awardPointsForPaidOrder).not.toHaveBeenCalled();
+  });
+
   it('marks wallet-only orders as paid and awards loyalty points', async () => {
     const paymentTransactionCreate = jest.fn();
     const ordersRepository = {

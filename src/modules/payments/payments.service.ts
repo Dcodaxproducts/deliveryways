@@ -1491,6 +1491,10 @@ export class PaymentsService {
     }
 
     const orderId = payment.orderId;
+    const shouldPlaceOrder = await this.prisma.order.findFirst({
+      where: { id: orderId, status: OrderStatus.PAYMENT_PENDING },
+      select: { id: true },
+    });
 
     await this.prisma.$transaction(async (tx) => {
       await this.paymentsRepository.updateStatus(
@@ -1508,6 +1512,14 @@ export class PaymentsService {
         PaymentStatus.PAID,
         tx,
       );
+
+      if (shouldPlaceOrder) {
+        await this.paymentsRepository.updateOrderState(
+          orderId,
+          { status: OrderStatus.PLACED },
+          tx,
+        );
+      }
     });
 
     await this.loyaltyWalletService!.awardPointsForPaidOrder(
@@ -1516,6 +1528,9 @@ export class PaymentsService {
       'stripe:webhook',
     );
     await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+    if (shouldPlaceOrder) {
+      await this.notificationsService.notifyOrderPlaced(orderId);
+    }
   }
 
   private async handleStripePaymentIntentFailed(

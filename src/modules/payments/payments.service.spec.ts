@@ -1,4 +1,9 @@
-import { PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { PaymentsService } from './payments.service';
 
@@ -60,6 +65,7 @@ describe('PaymentsService', () => {
     const prisma = {
       order: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       tenantSubscription: {
         findUnique: jest.fn(),
@@ -81,6 +87,7 @@ describe('PaymentsService', () => {
     const notificationsService = {
       notifyPaymentAttemptCreated: jest.fn(),
       notifyPaymentStatusChanged: jest.fn(),
+      notifyOrderPlaced: jest.fn(),
     };
 
     const stripePaymentsService = {
@@ -643,6 +650,47 @@ describe('PaymentsService', () => {
       notificationsService.notifyPaymentStatusChanged,
     ).toHaveBeenCalledWith('payment-1');
     expect(result.received).toBe(true);
+  });
+
+  it('moves payment-pending Stripe order to placed after webhook success', async () => {
+    const {
+      service,
+      prisma,
+      stripePaymentsService,
+      paymentsRepository,
+      notificationsService,
+    } = makeService();
+
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_pending_order_123',
+          metadata: { paymentTransactionId: 'payment-1' },
+        },
+      },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      status: PaymentStatus.PENDING,
+    });
+    prisma.order.findFirst.mockResolvedValue({ id: 'order-1' });
+
+    await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
+
+    expect(prisma.order.findFirst).toHaveBeenCalledWith({
+      where: { id: 'order-1', status: OrderStatus.PAYMENT_PENDING },
+      select: { id: true },
+    });
+    expect(paymentsRepository.updateOrderState).toHaveBeenCalledWith(
+      'order-1',
+      { status: OrderStatus.PLACED },
+      expect.anything(),
+    );
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
   });
 
   it('marks subscription paid from stripe webhook success', async () => {

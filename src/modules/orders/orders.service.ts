@@ -340,7 +340,7 @@ export class OrdersService {
           isScheduled: quote.orderTime
             ? this.isScheduledOrderTime(quote.orderTime)
             : false,
-          status: OrderStatus.PLACED,
+          status: this.resolveInitialOrderStatus(dto.paymentMethod),
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
           deliveryFee: quote.deliveryFee,
@@ -438,7 +438,7 @@ export class OrdersService {
         undefined,
         user.uid,
       );
-    } else {
+    } else if (data.status === OrderStatus.PLACED) {
       await this.loyaltyWalletService!.awardPointsForPaidOrder(
         data.id,
         undefined,
@@ -447,8 +447,10 @@ export class OrdersService {
       );
     }
 
-    await this.notificationsService.notifyOrderPlaced(data.id);
-    await this.emitTrackingUpdate(data.id);
+    if (data.status === OrderStatus.PLACED) {
+      await this.notificationsService.notifyOrderPlaced(data.id);
+      await this.emitTrackingUpdate(data.id);
+    }
 
     return {
       data: this.toOrderMutationResponse(data),
@@ -1867,6 +1869,12 @@ export class OrdersService {
     }
   }
 
+  private resolveInitialOrderStatus(paymentMethod: PaymentMethodEnum) {
+    return paymentMethod === PaymentMethodEnum.STRIPE
+      ? OrderStatus.PAYMENT_PENDING
+      : OrderStatus.PLACED;
+  }
+
   private resolveInitialPaymentStatus(
     paymentMethod: string,
     quote: Awaited<ReturnType<OrdersService['buildQuote']>>,
@@ -3072,6 +3080,7 @@ export class OrdersService {
 
   private toTrackingLabel(status: OrderStatus): string {
     const labels: Record<OrderStatus, string> = {
+      PAYMENT_PENDING: 'Payment pending',
       PLACED: 'Order placed',
       CONFIRMED: 'Order confirmed',
       PREPARING: 'Preparing order',
@@ -3529,6 +3538,7 @@ export class OrdersService {
     next: OrderStatus,
   ): boolean {
     const baseTransitions: Record<OrderStatus, OrderStatus[]> = {
+      PAYMENT_PENDING: [OrderStatus.CANCELLED],
       PLACED: [
         OrderStatus.CONFIRMED,
         OrderStatus.CANCELLED,
