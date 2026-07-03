@@ -3906,6 +3906,73 @@ describe('CartService', () => {
     expect(regularItem.discountedUnitPrice).toBeNull();
   });
 
+  it('does not show per-line fixed-price discount when quote discount is zero', () => {
+    const { service } = makeService();
+    type DiscountHarness = {
+      attachCartLineDiscountMetadata: (
+        item: {
+          type: 'ITEM';
+          menuItemId: string;
+          categoryId: string;
+          categoryIds: string[];
+          dealId: null;
+          quantity: number;
+          lineTotal: number;
+        },
+        appliedPromotion: {
+          id: string;
+          title: string;
+          applyMode: string;
+          discountType: string;
+          discountValue: number;
+          discountAmount: number;
+        },
+        campaign: { campaign: Record<string, unknown>; kind: 'promotion' },
+      ) => {
+        promotion: unknown;
+        promotionDiscountAmount: number;
+        discountedUnitPrice: number | null;
+        discountedLineTotal: number | null;
+      };
+    };
+
+    const result = (
+      service as unknown as DiscountHarness
+    ).attachCartLineDiscountMetadata(
+      {
+        type: 'ITEM',
+        menuItemId: 'menu-1',
+        categoryId: 'cat-1',
+        categoryIds: ['cat-1'],
+        dealId: null,
+        quantity: 1,
+        lineTotal: 10,
+      },
+      {
+        id: 'promo-1',
+        title: 'Single Angebot',
+        applyMode: 'SCOPED_ITEMS',
+        discountType: 'FIXED_PRICE',
+        discountValue: 13.9,
+        discountAmount: 0,
+      },
+      {
+        kind: 'promotion',
+        campaign: {
+          scopeMenuItem: { id: 'menu-1' },
+          scopeMenuItems: [],
+          scopeCategory: null,
+          scopeCategories: [],
+        },
+      },
+    );
+
+    expect(result.promotion).toBeNull();
+    expect(result.promotionDiscountAmount).toBe(0);
+    expect(result.discountedUnitPrice).toBeNull();
+    expect(result.discountedLineTotal).toBeNull();
+  });
+
   it('returns guest delivery cart without quote when address is not selected yet', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();

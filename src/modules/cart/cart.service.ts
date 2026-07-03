@@ -1632,12 +1632,17 @@ export class CartService {
       applyMode: string | null;
       discountType: string | null;
       discountValue: number;
+      discountAmount: number;
     },
     campaign: {
       campaign: Record<string, unknown>;
       kind: 'promotion' | 'happyHour';
     },
   ): T {
+    if (appliedPromotion.discountAmount <= 0) {
+      return { ...item, ...this.emptyLineDiscountMetadata() } as T;
+    }
+
     if (item.type === 'DEAL') {
       return {
         ...item,
@@ -1730,6 +1735,13 @@ export class CartService {
         new Prisma.Decimal(appliedPromotion.discountValue).mul(
           Math.max(1, item.quantity ?? 1),
         ),
+      ).toDecimalPlaces(2);
+    }
+
+    if (appliedPromotion.discountType === 'FIXED_PRICE') {
+      return Prisma.Decimal.max(
+        lineTotal.minus(appliedPromotion.discountValue),
+        new Prisma.Decimal(0),
       ).toDecimalPlaces(2);
     }
 
