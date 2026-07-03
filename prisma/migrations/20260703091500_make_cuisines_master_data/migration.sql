@@ -1,6 +1,24 @@
 -- Convert cuisines from restaurant-scoped rows to global master data managed by super admin.
--- Keep existing item links by merging duplicate cuisine slugs into one survivor.
+-- The previous migration backfilled menu categories into cuisines for compatibility, but
+-- cuisines are separate master data. Remove those generated category-derived rows and
+-- preserve only manually-created cuisine rows.
 
+DELETE FROM entity_translations et
+USING cuisines c
+WHERE et.entity_type = 'CUISINE'::"LocalizationEntityType"
+  AND et.entity_id = c.id
+  AND c.id LIKE 'cuisine_%';
+
+DELETE FROM menu_item_cuisines mic
+USING cuisines c
+WHERE mic.cuisine_id = c.id
+  AND c.id LIKE 'cuisine_%';
+
+DELETE FROM cuisines
+WHERE id LIKE 'cuisine_%';
+
+-- If any manually-created cuisine rows exist from the short restaurant-scoped window,
+-- merge duplicate slugs before making slug globally unique.
 CREATE TEMP TABLE cuisine_remap AS
 WITH ranked AS (
   SELECT
