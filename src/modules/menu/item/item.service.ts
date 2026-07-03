@@ -75,7 +75,7 @@ export class MenuItemService {
     );
     const cuisineIds = this.resolveCuisineIds(dto.cuisineIds);
     await this.validateCategories(restaurantId, categoryIds);
-    await this.validateCuisines(restaurantId, cuisineIds);
+    await this.validateCuisines(cuisineIds);
     await this.assertModifierOverridesBelongToRestaurant(
       restaurantId,
       modifiers,
@@ -204,10 +204,7 @@ export class MenuItemService {
         restaurantId,
         this.resolveCategoryIds(item.categoryId, item.categoryIds),
       );
-      await this.validateCuisines(
-        restaurantId,
-        this.resolveCuisineIds(item.cuisineIds),
-      );
+      await this.validateCuisines(this.resolveCuisineIds(item.cuisineIds));
     }
 
     const usedSlugs = new Set<string>();
@@ -394,7 +391,7 @@ export class MenuItemService {
         ? this.resolveCuisineIds(dto.cuisineIds)
         : undefined;
     if (cuisineIds) {
-      await this.validateCuisines(item.restaurantId, cuisineIds);
+      await this.validateCuisines(cuisineIds);
     }
     await this.assertModifierOverridesBelongToRestaurant(
       item.restaurantId,
@@ -1641,18 +1638,18 @@ export class MenuItemService {
     return [...new Set([primaryCategoryId, ...(categoryIds ?? [])])];
   }
 
-  private async validateCuisines(restaurantId: string, cuisineIds: string[]) {
+  private async validateCuisines(cuisineIds: string[]) {
     if (!cuisineIds.length) {
       return;
     }
 
     const cuisines = await this.prisma.cuisine.findMany({
-      where: { id: { in: cuisineIds }, restaurantId, deletedAt: null },
+      where: { id: { in: cuisineIds }, deletedAt: null },
       select: { id: true },
     });
 
     if (cuisines.length !== cuisineIds.length) {
-      throw new BadRequestException('Cuisine not found in restaurant');
+      throw new BadRequestException('Cuisine not found');
     }
   }
 

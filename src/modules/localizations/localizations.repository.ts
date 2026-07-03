@@ -21,7 +21,7 @@ export class LocalizationsRepository {
     });
   }
 
-  findEntityScope(
+  async findEntityScope(
     entityType: PrismaLocalizationEntityType,
     entityId: string,
     restaurantId: string,
@@ -42,11 +42,21 @@ export class LocalizationsRepository {
           where: { id: entityId, restaurantId, deletedAt: null },
           select: { id: true, restaurant: { select: { tenantId: true } } },
         });
-      case 'CUISINE':
-        return this.prisma.cuisine.findFirst({
-          where: { id: entityId, restaurantId, deletedAt: null },
-          select: { id: true, restaurant: { select: { tenantId: true } } },
-        });
+      case 'CUISINE': {
+        const [cuisine, restaurant] = await this.prisma.$transaction([
+          this.prisma.cuisine.findFirst({
+            where: { id: entityId, deletedAt: null },
+            select: { id: true },
+          }),
+          this.prisma.restaurant.findFirst({
+            where: { id: restaurantId, deletedAt: null },
+            select: { id: true, tenantId: true },
+          }),
+        ]);
+
+        if (!cuisine || !restaurant) return null;
+        return { id: cuisine.id, tenantId: restaurant.tenantId };
+      }
       case 'MENU_CATEGORY':
         return this.prisma.menuCategory.findFirst({
           where: { id: entityId, restaurantId, deletedAt: null },

@@ -28,12 +28,11 @@ export class CuisineService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateCuisineDto) {
-    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    this.assertSuperAdmin(user);
     const slug = this.normalizeRequiredString(dto.slug, 'slug');
-    await this.assertUniqueSlug(restaurantId, slug);
+    await this.assertUniqueSlug(slug);
 
     const data = await this.cuisineRepository.create({
-      restaurant: { connect: { id: restaurantId } },
       name: dto.name,
       slug,
       description: dto.description,
@@ -49,7 +48,7 @@ export class CuisineService {
   }
 
   async createBulk(user: AuthUserContext, dto: BulkCreateCuisinesDto) {
-    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    this.assertSuperAdmin(user);
 
     if (!dto.items.length) {
       throw new BadRequestException('At least one item is required');
@@ -64,9 +63,8 @@ export class CuisineService {
         throw new BadRequestException('Cuisine slugs must be unique');
       }
       seenSlugs.add(slug);
-      await this.assertUniqueSlug(restaurantId, slug);
+      await this.assertUniqueSlug(slug);
       payload.push({
-        restaurantId,
         name: item.name,
         slug,
         description: item.description,
@@ -85,14 +83,8 @@ export class CuisineService {
   }
 
   async list(user: AuthUserContext, query: ListCuisinesAdminDto) {
-    const restaurantId = await this.resolveRestaurantIdForList(
-      user,
-      query.restaurantId,
-    );
-    const { items, total } = await this.cuisineRepository.list(
-      restaurantId,
-      query,
-    );
+    this.assertAuthenticatedCuisineReader(user);
+    const { items, total } = await this.cuisineRepository.list(query);
 
     return {
       data: await this.resolveMediaResponse(items),
@@ -107,7 +99,7 @@ export class CuisineService {
       throw new NotFoundException('Cuisine not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, cuisine.restaurantId);
+    this.assertAuthenticatedCuisineReader(user);
 
     return {
       data: await this.resolveMediaResponse(cuisine),
@@ -121,14 +113,14 @@ export class CuisineService {
       throw new NotFoundException('Cuisine not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, cuisine.restaurantId);
+    this.assertSuperAdmin(user);
     const slug =
       dto.slug !== undefined
         ? this.normalizeRequiredString(dto.slug, 'slug')
         : undefined;
 
     if (slug) {
-      await this.assertUniqueSlug(cuisine.restaurantId, slug, id);
+      await this.assertUniqueSlug(slug, id);
     }
 
     const data = await this.cuisineRepository.update(id, {
@@ -156,25 +148,15 @@ export class CuisineService {
       throw new BadRequestException('Cuisine reorder ids must be unique');
     }
 
+    this.assertSuperAdmin(user);
     const cuisines = await this.prisma.cuisine.findMany({
       where: { id: { in: ids }, deletedAt: null },
-      select: { id: true, restaurantId: true },
+      select: { id: true },
     });
 
     if (cuisines.length !== ids.length) {
       throw new BadRequestException('One or more cuisines were not found');
     }
-
-    const restaurantIds = new Set(
-      cuisines.map((cuisine) => cuisine.restaurantId),
-    );
-    if (restaurantIds.size !== 1) {
-      throw new BadRequestException(
-        'All cuisines must belong to one restaurant',
-      );
-    }
-
-    await this.ensureCanAccessRestaurant(user, [...restaurantIds][0]);
 
     const sortOrderById = new Map(
       dto.items.map((item) => [item.id, item.sortOrder]),
@@ -200,7 +182,7 @@ export class CuisineService {
       throw new NotFoundException('Cuisine not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, cuisine.restaurantId);
+    this.assertSuperAdmin(user);
 
     const itemsCount = await this.cuisineRepository.countItems(id);
     if (itemsCount > 0) {
@@ -217,132 +199,26 @@ export class CuisineService {
     return { data, message: 'Cuisine deleted successfully' };
   }
 
-  private async resolveRestaurantId(
-    user: AuthUserContext,
-    requestedRestaurantId?: string,
-  ): Promise<string> {
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid) {
-        throw new ForbiddenException('Tenant context is required');
-      }
-
-      if (!requestedRestaurantId) {
-        throw new BadRequestException('restaurantId is required');
-      }
-
-      await this.assertRestaurantInTenant(user.tid, requestedRestaurantId);
-      return requestedRestaurantId;
-    }
-
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      if (!requestedRestaurantId) {
-        throw new BadRequestException('restaurantId is required');
-      }
-
-      return requestedRestaurantId;
-    }
-
-    throw new ForbiddenException('Insufficient permissions for cuisine write');
-  }
-
-  private async resolveRestaurantIdForList(
-    user: AuthUserContext,
-    requestedRestaurantId?: string,
-  ): Promise<string | undefined> {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return requestedRestaurantId;
-    }
-
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid) {
-        throw new ForbiddenException('Tenant context is required');
-      }
-
-      const restaurantId = requestedRestaurantId ?? user.rid;
-      if (!restaurantId) {
-        throw new BadRequestException('restaurantId is required');
-      }
-
-      await this.assertRestaurantInTenant(user.tid, restaurantId);
-      return restaurantId;
-    }
-
-    if (
-      user.role === UserRoleEnum.BRANCH_ADMIN ||
-      user.role === UserRoleEnum.CUSTOMER
-    ) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
-      }
-
-      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot access resources outside your restaurant',
-        );
-      }
-
-      return user.rid;
-    }
-
-    throw new ForbiddenException('Insufficient permissions for cuisines');
-  }
-
-  private async ensureCanAccessRestaurant(
-    user: AuthUserContext,
-    restaurantId: string,
-  ) {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      return;
-    }
-
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid) {
-        throw new ForbiddenException('Tenant context is required');
-      }
-
-      await this.assertRestaurantInTenant(user.tid, restaurantId);
-      return;
-    }
-
-    if (user.rid !== restaurantId) {
-      throw new ForbiddenException(
-        'You cannot access resources outside your restaurant',
-      );
+  private assertSuperAdmin(user: AuthUserContext) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can manage cuisines');
     }
   }
 
-  private async assertRestaurantInTenant(
-    tenantId: string,
-    restaurantId: string,
-  ) {
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: { id: restaurantId, tenantId, deletedAt: null },
-      select: { id: true },
-    });
-
-    if (!restaurant) {
-      throw new ForbiddenException(
-        'You cannot access resources outside your tenant restaurants',
-      );
+  private assertAuthenticatedCuisineReader(user: AuthUserContext) {
+    if (!user.role) {
+      throw new ForbiddenException('Authenticated user is required');
     }
   }
 
-  private async assertUniqueSlug(
-    restaurantId: string,
-    slug: string,
-    excludeId?: string,
-  ) {
-    const existing = await this.cuisineRepository.findByRestaurantAndSlug(
-      restaurantId,
-      slug,
-      excludeId,
-    );
+  private async assertUniqueSlug(slug: string, excludeId?: string) {
+    const existing = await this.cuisineRepository.findBySlug(slug, excludeId);
 
     if (existing) {
       throw new BadRequestException(
         existing.deletedAt
-          ? 'A cuisine with this slug already exists in this restaurant, including a deleted cuisine'
-          : 'A cuisine with this slug already exists in this restaurant',
+          ? 'A cuisine with this slug already exists, including a deleted cuisine'
+          : 'A cuisine with this slug already exists',
       );
     }
   }

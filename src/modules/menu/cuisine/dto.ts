@@ -13,11 +13,6 @@ import {
 import { QueryDto } from '../../../common/dto';
 
 export class CreateCuisineDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  restaurantId?: string;
-
   @ApiProperty()
   @IsString()
   @MaxLength(100)
@@ -52,11 +47,6 @@ export class CreateCuisineDto {
 }
 
 export class BulkCreateCuisinesDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  restaurantId?: string;
-
   @ApiProperty({ type: [CreateCuisineDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -99,11 +89,6 @@ export class UpdateCuisineDto {
 }
 
 export class ListCuisinesAdminDto extends QueryDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  restaurantId?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')

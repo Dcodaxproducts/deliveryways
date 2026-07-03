@@ -49,14 +49,9 @@ export class CuisineRepository {
     });
   }
 
-  async findByRestaurantAndSlug(
-    restaurantId: string,
-    slug: string,
-    excludeId?: string,
-  ) {
+  async findBySlug(slug: string, excludeId?: string) {
     return this.prisma.cuisine.findFirst({
       where: {
-        restaurantId,
         slug,
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
@@ -64,9 +59,8 @@ export class CuisineRepository {
     });
   }
 
-  async list(restaurantId: string | undefined, query: ListCuisinesAdminDto) {
+  async list(query: ListCuisinesAdminDto) {
     const where: Prisma.CuisineWhereInput = {
-      ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...this.resolveActiveFilter(query),
       ...(query.search

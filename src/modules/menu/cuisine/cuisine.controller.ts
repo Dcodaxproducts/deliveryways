@@ -34,7 +34,7 @@ export class CuisineController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateCuisineDto) {
     return this.cuisineService.create(user, dto);
@@ -42,7 +42,7 @@ export class CuisineController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Post('bulk')
   createBulk(
     @CurrentUser() user: AuthUserContext,
@@ -53,7 +53,7 @@ export class CuisineController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Patch('reorder')
   reorder(
     @CurrentUser() user: AuthUserContext,
@@ -93,7 +93,7 @@ export class CuisineController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Patch(':id')
   update(
     @CurrentUser() user: AuthUserContext,
@@ -105,7 +105,7 @@ export class CuisineController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.cuisineService.remove(user, id);

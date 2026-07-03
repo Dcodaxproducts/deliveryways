@@ -889,7 +889,6 @@ export class CustomerAppRepository {
     const categoryIds = scope?.categoryIds ?? [];
     const includeItems = scope?.includeItems ?? true;
     const where: Prisma.CuisineWhereInput = {
-      restaurantId: query.restaurantId,
       deletedAt: null,
       isActive: true,
       ...(categoryIds.length
@@ -897,6 +896,7 @@ export class CustomerAppRepository {
             itemLinks: {
               some: {
                 menuItem: {
+                  restaurantId: query.restaurantId,
                   OR: [
                     { categoryId: { in: categoryIds } },
                     {
@@ -913,6 +913,7 @@ export class CustomerAppRepository {
       itemLinks: {
         some: {
           menuItem: {
+            restaurantId: query.restaurantId,
             deletedAt: null,
             isActive: true,
             ...(branchId
@@ -944,6 +945,7 @@ export class CustomerAppRepository {
               itemLinks: {
                 where: {
                   menuItem: {
+                    restaurantId: query.restaurantId,
                     deletedAt: null,
                     isActive: true,
                   },
@@ -954,6 +956,7 @@ export class CustomerAppRepository {
           itemLinks: {
             where: {
               menuItem: {
+                restaurantId: query.restaurantId,
                 deletedAt: null,
                 isActive: true,
                 ...(branchId
@@ -1019,7 +1022,6 @@ export class CustomerAppRepository {
     return this.prisma.cuisine.findFirst({
       where: {
         id: cuisineId,
-        restaurantId,
         deletedAt: null,
         isActive: true,
         ...(branchId
@@ -1027,6 +1029,7 @@ export class CustomerAppRepository {
               itemLinks: {
                 some: {
                   menuItem: {
+                    restaurantId,
                     deletedAt: null,
                     isActive: true,
                     OR: [
