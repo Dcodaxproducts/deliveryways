@@ -243,6 +243,7 @@ export class PackagePlansRepository {
         branchId: true,
         orderType: true,
         paymentMethod: true,
+        paymentStatus: true,
         subtotal: true,
         taxAmount: true,
         deliveryFee: true,

@@ -13,6 +13,7 @@ import {
   GeneratedInvoiceEventType,
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
+  PaymentMethod,
   PaymentStatus,
   Prisma,
   SubscriptionStatus,
@@ -883,7 +884,13 @@ export class PackagePlansService {
     const subscriptionFeeAmount = new Prisma.Decimal(plan.planPrice)
       .toDecimalPlaces(2)
       .toNumber();
-    const transactionFeeAmount = paidOrders
+    const onlinePaidOrders = paidOrders.filter((order) =>
+      this.isOnlinePaymentOrder(order),
+    );
+    const offlinePaidOrders = paidOrders.filter(
+      (order) => !this.isOnlinePaymentOrder(order),
+    );
+    const transactionFeeAmount = onlinePaidOrders
       .reduce(
         (sum, order) =>
           sum.plus(
@@ -896,7 +903,7 @@ export class PackagePlansService {
       )
       .toDecimalPlaces(2)
       .toNumber();
-    const onlinePaymentCreditAmount = paidOrders
+    const onlinePaymentCreditAmount = onlinePaidOrders
       .reduce(
         (sum, order) =>
           sum.plus(new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2)),
@@ -929,8 +936,8 @@ export class PackagePlansService {
 
     if (transactionFeeAmount > 0 || this.isTransactionFeePlan(plan)) {
       lineItems.push({
-        description: `Commission fee for ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
-        quantity: paidOrders.length,
+        description: `Online payment processing fee for ${onlinePaidOrders.length} paid order${onlinePaidOrders.length === 1 ? '' : 's'}`,
+        quantity: onlinePaidOrders.length,
         unitPrice: transactionFeeAmount,
         amount: transactionFeeAmount,
       });
@@ -938,7 +945,7 @@ export class PackagePlansService {
 
     if (onlinePaymentCreditAmount > 0) {
       lineItems.push({
-        description: `Online payment credit from ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
+        description: `Online payment credit from ${onlinePaidOrders.length} paid order${onlinePaidOrders.length === 1 ? '' : 's'}`,
         quantity: 1,
         unitPrice: -onlinePaymentCreditAmount,
         amount: -onlinePaymentCreditAmount,
@@ -983,9 +990,15 @@ export class PackagePlansService {
       servicePeriod,
       lineItems,
       transactionFee: {
-        ordersCount: paidOrders.length,
+        ordersCount: onlinePaidOrders.length,
         amount: transactionFeeAmount,
       },
+      orderBreakdown: this.buildSubscriptionOrderBreakdown(
+        paidOrders,
+        onlinePaidOrders,
+        offlinePaidOrders,
+        plan.currency,
+      ),
       totals: {
         subscriptionFeeAmount,
         transactionFeeAmount,
@@ -1002,6 +1015,54 @@ export class PackagePlansService {
       },
       note: subscription.note,
     };
+  }
+
+  private buildSubscriptionOrderBreakdown(
+    paidOrders: RestaurantPayoutOrder[],
+    onlinePaidOrders: RestaurantPayoutOrder[],
+    offlinePaidOrders: RestaurantPayoutOrder[],
+    currency: string,
+  ) {
+    return {
+      currency,
+      orders: paidOrders.map((order) => ({
+        id: order.id,
+        date: order.paidAt ?? order.createdAt,
+        paidBy: order.paymentMethod,
+        status: order.paymentStatus ?? PaymentStatus.PAID,
+        total: new Prisma.Decimal(order.totalAmount)
+          .toDecimalPlaces(2)
+          .toNumber(),
+      })),
+      summary: {
+        offlineOrdersCount: offlinePaidOrders.length,
+        offlineTotalAmount: this.sumOrderTotals(offlinePaidOrders),
+        onlineOrdersCount: onlinePaidOrders.length,
+        onlineTotalAmount: this.sumOrderTotals(onlinePaidOrders),
+        totalOrdersCount: paidOrders.length,
+        totalOrdersAmount: this.sumOrderTotals(paidOrders),
+      },
+    };
+  }
+
+  private sumOrderTotals(orders: RestaurantPayoutOrder[]) {
+    return orders
+      .reduce(
+        (sum, order) =>
+          sum.plus(new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2)),
+        new Prisma.Decimal(0),
+      )
+      .toDecimalPlaces(2)
+      .toNumber();
+  }
+
+  private isOnlinePaymentOrder(order: RestaurantPayoutOrder) {
+    const offlinePaymentMethods = new Set<PaymentMethod>([
+      PaymentMethod.COD,
+      PaymentMethod.CARD_ON_DELIVERY,
+    ]);
+
+    return !offlinePaymentMethods.has(order.paymentMethod);
   }
 
   private resolveSubscriptionInvoicePeriod(
@@ -1162,8 +1223,47 @@ export class PackagePlansService {
             invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
           ],
         },
+        {
+          title: 'Order Payment Details',
+          rows: this.buildSubscriptionOrderBreakdownRows(invoice),
+        },
       ],
     });
+  }
+
+  private buildSubscriptionOrderBreakdownRows(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+  ) {
+    const { orderBreakdown } = invoice;
+    const rows = [
+      'Order ID | Date | Paid By | Status | Total',
+      ...orderBreakdown.orders.map((order) =>
+        [
+          order.id,
+          this.formatInvoiceDate(order.date),
+          order.paidBy,
+          order.status,
+          `${this.formatInvoiceMoney(order.total)} ${orderBreakdown.currency}`,
+        ].join(' | '),
+      ),
+      `Offline/Cash Orders: ${orderBreakdown.summary.offlineOrdersCount}`,
+      `Offline/Cash Total: ${this.formatInvoiceMoney(orderBreakdown.summary.offlineTotalAmount)} ${orderBreakdown.currency}`,
+      `Online Payment Orders: ${orderBreakdown.summary.onlineOrdersCount}`,
+      `Online Payment Total: ${this.formatInvoiceMoney(orderBreakdown.summary.onlineTotalAmount)} ${orderBreakdown.currency}`,
+      `Total Orders: ${orderBreakdown.summary.totalOrdersCount}`,
+      `Total Revenue: ${this.formatInvoiceMoney(orderBreakdown.summary.totalOrdersAmount)} ${orderBreakdown.currency}`,
+    ];
+
+    if (!orderBreakdown.orders.length) {
+      return [
+        'No paid orders found for this service period.',
+        ...rows.slice(1),
+      ];
+    }
+
+    return rows;
   }
 
   private buildSubscriptionInvoiceEmailBody(

@@ -4,6 +4,7 @@ import {
   PackageBillingModel,
   PackageCommissionType,
   PackagePayoutCycle,
+  PaymentMethod,
   PaymentStatus,
   Prisma,
   SubscriptionStatus,
@@ -88,7 +89,8 @@ describe('PackagePlansService', () => {
     id: 'order-1',
     branchId: 'branch-1',
     orderType: 'DELIVERY',
-    paymentMethod: 'CARD',
+    paymentMethod: PaymentMethod.STRIPE,
+    paymentStatus: PaymentStatus.PAID,
     subtotal: new Prisma.Decimal(1000),
     taxAmount: new Prisma.Decimal(0),
     deliveryFee: new Prisma.Decimal(0),
@@ -106,7 +108,7 @@ describe('PackagePlansService', () => {
         id: 'txn-1',
         amount: new Prisma.Decimal(1000),
         currency: 'PKR',
-        paymentMethod: 'CARD',
+        paymentMethod: PaymentMethod.STRIPE,
         providerRef: 'pi_123',
         processedAt: new Date('2026-06-09T10:00:00.000Z'),
       },
@@ -349,6 +351,50 @@ describe('PackagePlansService', () => {
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
     );
+  });
+
+  it('includes paid order breakdown and only applies online orders as credit', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({ totalAmount: new Prisma.Decimal(1000) }),
+        makePaidOrder({
+          id: 'order-cash-1',
+          paymentMethod: PaymentMethod.COD,
+          totalAmount: new Prisma.Decimal(500),
+          transactions: [],
+        }),
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.totals.onlinePaymentCreditAmount).toBe(1000);
+    expect(result.data.transactionFee.ordersCount).toBe(1);
+    expect(result.data.orderBreakdown).toMatchObject({
+      summary: {
+        offlineOrdersCount: 1,
+        offlineTotalAmount: 500,
+        onlineOrdersCount: 1,
+        onlineTotalAmount: 1000,
+        totalOrdersCount: 2,
+        totalOrdersAmount: 1500,
+      },
+      orders: [
+        expect.objectContaining({
+          id: 'order-1',
+          paidBy: PaymentMethod.STRIPE,
+        }),
+        expect.objectContaining({
+          id: 'order-cash-1',
+          paidBy: PaymentMethod.COD,
+        }),
+      ],
+    });
   });
 
   it('returns a credit note when online payment credit covers subscription fees', async () => {
