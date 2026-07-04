@@ -1847,6 +1847,12 @@ export class OrdersService {
       serviceChargeAmount: Number(serviceChargeAmount),
       tipAmount: Number(tipAmount),
       discountAmount: Number(amounts.discountAmount),
+      hasDiscount: amounts.discountAmount.greaterThan(0),
+      totalBeforeDiscount: Number(
+        amounts.payableAmount
+          .plus(walletAppliedAmount)
+          .plus(amounts.discountAmount),
+      ),
       loyaltyDiscountAmount: Number(loyaltyDiscountAmount),
       walletAppliedAmount: Number(walletAppliedAmount),
       totalAmount: Number(amounts.payableAmount.plus(walletAppliedAmount)),
@@ -4347,7 +4353,7 @@ export class OrdersService {
   }
 
   private withPlatformPaymentMethods(methods: string[]) {
-    return [...new Set([...methods, 'PAYPAL'])];
+    return [...new Set([...methods, 'COD', 'PAYPAL'])];
   }
 
   private resolveServiceCharge(

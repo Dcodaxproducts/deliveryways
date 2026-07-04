@@ -312,6 +312,52 @@ export class PaymentsRepository {
     });
   }
 
+  async updateChargePaymentMethod(
+    id: string,
+    payload: {
+      paymentMethod: Prisma.PaymentTransactionUpdateInput['paymentMethod'];
+      status: PaymentStatus;
+      amount: Prisma.Decimal;
+      currency: string;
+      note?: string;
+      providerRef?: string | null;
+      providerData?: Prisma.InputJsonValue | null;
+      processedAt?: Date | null;
+    },
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).paymentTransaction.update({
+      where: { id },
+      data: {
+        paymentMethod: payload.paymentMethod,
+        status: payload.status,
+        amount: payload.amount,
+        currency: payload.currency,
+        note: payload.note,
+        providerRef: payload.providerRef,
+        providerData:
+          payload.providerData === null
+            ? Prisma.JsonNull
+            : payload.providerData,
+        processedAt: payload.processedAt,
+      },
+      include: {
+        order: {
+          select: {
+            id: true,
+            customerId: true,
+            restaurantId: true,
+            branchId: true,
+            totalAmount: true,
+            paymentStatus: true,
+            paymentMethod: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+
   async updateOrderPaymentStatus(
     orderId: string,
     status: PaymentStatus,

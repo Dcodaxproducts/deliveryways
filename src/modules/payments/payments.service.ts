@@ -211,6 +211,17 @@ export class PaymentsService {
         totalAmount: true,
         paymentMethod: true,
         paymentStatus: true,
+        status: true,
+        branch: {
+          select: {
+            settings: true,
+          },
+        },
+        restaurant: {
+          select: {
+            settings: true,
+          },
+        },
       },
     });
 
@@ -225,6 +236,7 @@ export class PaymentsService {
     }
 
     const paymentMethod = dto.paymentMethod ?? order.paymentMethod;
+    await this.assertPaymentMethodAllowedForOrder(order, paymentMethod);
     const currency = await this.resolvePreferredCurrency(
       order.restaurantId,
       dto.currency,
@@ -233,11 +245,36 @@ export class PaymentsService {
     const existingPendingCharge =
       await this.paymentsRepository.findLatestPendingChargeByOrderId(order.id);
 
+    if (paymentMethod !== PaymentMethod.STRIPE) {
+      const data = await this.switchPendingOrderPaymentMethod(
+        user,
+        order,
+        paymentMethod,
+        currency,
+        dto.note,
+        existingPendingCharge,
+      );
+
+      await this.notificationsService.notifyPaymentAttemptCreated(data.id);
+
+      return {
+        data,
+        message: 'Order payment method updated successfully',
+      };
+    }
+
     const data = existingPendingCharge
-      ? await this.paymentsRepository.updateStatus(existingPendingCharge.id, {
-          status: PaymentStatus.PENDING,
-          note: dto.note,
-        })
+      ? await this.paymentsRepository.updateChargePaymentMethod(
+          existingPendingCharge.id,
+          {
+            paymentMethod,
+            status: PaymentStatus.PENDING,
+            amount: order.totalAmount,
+            currency,
+            note: dto.note,
+            processedAt: null,
+          },
+        )
       : await this.paymentsRepository.create({
           order: { connect: { id: order.id } },
           tenant: { connect: { id: order.tenantId } },
@@ -300,6 +337,138 @@ export class PaymentsService {
       data,
       message: 'Payment attempt created successfully',
     };
+  }
+
+  private async switchPendingOrderPaymentMethod(
+    user: AuthUserContext,
+    order: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      customerId: string;
+      totalAmount: Prisma.Decimal;
+      paymentMethod: PaymentMethod;
+      paymentStatus: PaymentStatus;
+      status: OrderStatus;
+    },
+    paymentMethod: PaymentMethod,
+    currency: string,
+    note: string | undefined,
+    existingPendingCharge: Awaited<
+      ReturnType<PaymentsRepository['findLatestPendingChargeByOrderId']>
+    > | null,
+  ) {
+    if (
+      paymentMethod !== order.paymentMethod &&
+      order.status !== OrderStatus.PAYMENT_PENDING
+    ) {
+      throw new BadRequestException(
+        'Payment method can only be changed while order payment is pending',
+      );
+    }
+
+    if (
+      existingPendingCharge?.paymentMethod === PaymentMethod.STRIPE &&
+      existingPendingCharge.providerRef
+    ) {
+      await this.stripePaymentsService.cancelPaymentIntent(
+        existingPendingCharge.providerRef,
+      );
+    }
+
+    const paidViaWallet = paymentMethod === PaymentMethod.WALLET;
+    const nextPaymentStatus = paidViaWallet
+      ? PaymentStatus.PAID
+      : PaymentStatus.PENDING;
+    const processedAt = paidViaWallet ? new Date() : null;
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const payment = existingPendingCharge
+        ? await this.paymentsRepository.updateChargePaymentMethod(
+            existingPendingCharge.id,
+            {
+              paymentMethod,
+              status: nextPaymentStatus,
+              amount: order.totalAmount,
+              currency,
+              note,
+              providerRef: null,
+              providerData: null,
+              processedAt,
+            },
+            tx,
+          )
+        : await this.paymentsRepository.create(
+            {
+              order: { connect: { id: order.id } },
+              tenant: { connect: { id: order.tenantId } },
+              restaurant: { connect: { id: order.restaurantId } },
+              branch: { connect: { id: order.branchId } },
+              paymentMethod,
+              type: PaymentTransactionType.CHARGE,
+              status: nextPaymentStatus,
+              amount: order.totalAmount,
+              currency,
+              processedAt,
+              note,
+            },
+            tx,
+          );
+
+      if (paidViaWallet) {
+        await this.loyaltyWalletService!.applyOrderBenefits(
+          tx,
+          {
+            customerId: order.customerId,
+            tenantId: order.tenantId,
+            restaurantId: order.restaurantId,
+            branchId: order.branchId,
+          },
+          {
+            id: order.id,
+            walletAppliedAmount: order.totalAmount,
+            loyaltyDiscountAmount: new Prisma.Decimal(0),
+            loyaltyPointsRedeemed: 0,
+          },
+          user.uid,
+        );
+      }
+
+      await this.paymentsRepository.updateOrderState(
+        order.id,
+        {
+          paymentMethod,
+          status: OrderStatus.PLACED,
+          paymentStatus: nextPaymentStatus,
+          paidAt: processedAt,
+          ...(paidViaWallet
+            ? {
+                walletAppliedAmount: { increment: order.totalAmount },
+                totalAmount: new Prisma.Decimal(0),
+              }
+            : {}),
+        },
+        tx,
+      );
+
+      return payment;
+    });
+
+    if (paidViaWallet) {
+      await this.loyaltyWalletService!.awardPointsForPaidOrder(
+        order.id,
+        data.id,
+        user.uid,
+      );
+      await this.notificationsService.notifyPaymentStatusChanged(data.id);
+    }
+
+    if (order.status === OrderStatus.PAYMENT_PENDING) {
+      await this.notificationsService.notifyOrderPlaced(order.id);
+    }
+
+    return data;
   }
 
   async createWalletTopUpAttempt(
@@ -1934,6 +2103,60 @@ export class PaymentsService {
         isActive: method.isActive,
       })) ?? []
     );
+  }
+
+  private async assertPaymentMethodAllowedForOrder(
+    order: {
+      branch: { settings: Prisma.JsonValue | null };
+      restaurant: { settings: Prisma.JsonValue | null };
+    },
+    paymentMethod: PaymentMethod,
+  ) {
+    const branchMethods = this.readBranchAllowedPaymentMethods(
+      order.branch.settings,
+    );
+    const restaurantMethods = this.readRestaurantPaymentMethodSettings(
+      order.restaurant.settings,
+    ).allowedPaymentMethods;
+    const globalMethods = await this.getGlobalPaymentMethods();
+    const activeGlobalMethods = globalMethods
+      .filter((method) => method.isActive)
+      .map((method) => method.code);
+
+    if (
+      paymentMethod === PaymentMethod.COD ||
+      paymentMethod === PaymentMethod.WALLET ||
+      paymentMethod === PaymentMethod.PAYPAL ||
+      branchMethods.includes(paymentMethod) ||
+      restaurantMethods.includes(paymentMethod) ||
+      activeGlobalMethods.includes(paymentMethod)
+    ) {
+      return;
+    }
+
+    throw new BadRequestException(
+      'Payment method is not allowed for this order',
+    );
+  }
+
+  private readBranchAllowedPaymentMethods(
+    settings: Prisma.JsonValue | null | undefined,
+  ) {
+    const root = this.asJsonObject(settings);
+    const methods = Array.isArray(root.allowedPaymentMethods)
+      ? root.allowedPaymentMethods.filter(
+          (method): method is PaymentMethod =>
+            typeof method === 'string' &&
+            Object.values(PaymentMethod).includes(method as PaymentMethod),
+        )
+      : [
+          PaymentMethod.COD,
+          PaymentMethod.CARD_ON_DELIVERY,
+          PaymentMethod.PAYPAL,
+          PaymentMethod.WALLET,
+        ];
+
+    return this.dedupePaymentMethods(methods);
   }
 
   private serializeRestaurantPaymentSummary(summary: {

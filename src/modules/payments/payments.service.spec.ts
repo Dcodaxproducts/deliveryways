@@ -44,6 +44,7 @@ describe('PaymentsService', () => {
       create: jest.fn(),
       createUnchecked: jest.fn(),
       updateStatus: jest.fn(),
+      updateChargePaymentMethod: jest.fn(),
       updateOrderPaymentStatus: jest.fn(),
       updateOrderState: jest.fn(),
       findByProviderRef: jest.fn(),
@@ -57,6 +58,9 @@ describe('PaymentsService', () => {
     };
 
     const transactionTx = {
+      order: {
+        update: jest.fn(),
+      },
       tenantSubscription: {
         update: jest.fn(),
       },
@@ -105,6 +109,7 @@ describe('PaymentsService', () => {
       awardPointsForPaidOrder: jest.fn(),
       restoreOrderBenefits: jest.fn(),
       applyWalletTopUp: jest.fn(),
+      applyOrderBenefits: jest.fn(),
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
@@ -156,11 +161,18 @@ describe('PaymentsService', () => {
       totalAmount: new Prisma.Decimal(1250),
       paymentMethod: PaymentMethod.STRIPE,
       paymentStatus: PaymentStatus.PENDING,
+      status: OrderStatus.PAYMENT_PENDING,
+      branch: { settings: { allowedPaymentMethods: [PaymentMethod.STRIPE] } },
+      restaurant: { settings: {} },
     });
     prisma.restaurant.findUnique.mockResolvedValue({
       settings: { currency: 'USD' },
     });
     paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+    });
+    paymentsRepository.updateChargePaymentMethod.mockResolvedValue({
       id: 'payment-1',
       orderId: 'order-1',
     });
@@ -205,6 +217,154 @@ describe('PaymentsService', () => {
       notificationsService.notifyPaymentAttemptCreated,
     ).toHaveBeenCalledWith('payment-1');
     expect(paymentsRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('switches a payment-pending Stripe order to COD', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      stripePaymentsService,
+      notificationsService,
+    } = makeService();
+
+    prisma.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      totalAmount: new Prisma.Decimal(1250),
+      paymentMethod: PaymentMethod.STRIPE,
+      paymentStatus: PaymentStatus.PENDING,
+      status: OrderStatus.PAYMENT_PENDING,
+      branch: { settings: { allowedPaymentMethods: [PaymentMethod.COD] } },
+      restaurant: { settings: {} },
+    });
+    prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
+    paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      providerRef: 'pi_123',
+    });
+    paymentsRepository.updateChargePaymentMethod.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.COD,
+      status: PaymentStatus.PENDING,
+    });
+
+    const result = await service.createAttempt(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      'order-1',
+      { paymentMethod: PaymentMethod.COD },
+    );
+
+    expect(stripePaymentsService.cancelPaymentIntent).toHaveBeenCalledWith(
+      'pi_123',
+    );
+    expect(paymentsRepository.updateChargePaymentMethod).toHaveBeenCalledWith(
+      'payment-1',
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.COD,
+        status: PaymentStatus.PENDING,
+        providerRef: null,
+        providerData: null,
+      }),
+      expect.anything(),
+    );
+    expect(paymentsRepository.updateOrderState).toHaveBeenCalledWith(
+      'order-1',
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.COD,
+        status: OrderStatus.PLACED,
+        paymentStatus: PaymentStatus.PENDING,
+      }),
+      expect.anything(),
+    );
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
+    expect(result.message).toBe('Order payment method updated successfully');
+  });
+
+  it('switches a payment-pending Stripe order to wallet when wallet covers total', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      loyaltyWalletService,
+      notificationsService,
+    } = makeService();
+
+    prisma.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      totalAmount: new Prisma.Decimal(1250),
+      paymentMethod: PaymentMethod.STRIPE,
+      paymentStatus: PaymentStatus.PENDING,
+      status: OrderStatus.PAYMENT_PENDING,
+      branch: { settings: { allowedPaymentMethods: [PaymentMethod.WALLET] } },
+      restaurant: { settings: {} },
+    });
+    prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
+    paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue(null);
+    paymentsRepository.create.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.WALLET,
+      status: PaymentStatus.PAID,
+    });
+
+    await service.createAttempt(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      'order-1',
+      { paymentMethod: PaymentMethod.WALLET },
+    );
+
+    expect(loyaltyWalletService.applyOrderBenefits).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ customerId: 'customer-1' }),
+      expect.objectContaining({
+        id: 'order-1',
+        walletAppliedAmount: new Prisma.Decimal(1250),
+      }),
+      'customer-1',
+    );
+    expect(paymentsRepository.updateOrderState).toHaveBeenCalledWith(
+      'order-1',
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.WALLET,
+        status: OrderStatus.PLACED,
+        paymentStatus: PaymentStatus.PAID,
+        walletAppliedAmount: { increment: new Prisma.Decimal(1250) },
+        totalAmount: new Prisma.Decimal(0),
+      }),
+      expect.anything(),
+    );
+    expect(loyaltyWalletService.awardPointsForPaidOrder).toHaveBeenCalledWith(
+      'order-1',
+      'payment-1',
+      'customer-1',
+    );
+    expect(
+      notificationsService.notifyPaymentStatusChanged,
+    ).toHaveBeenCalledWith('payment-1');
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
   });
 
   it('creates a Stripe payment intent for subscription payment attempts', async () => {
