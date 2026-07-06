@@ -22,6 +22,10 @@ import {
   DeleteStoredFileDto,
   StorageFolderEnum,
 } from './dto';
+import {
+  MAX_UPLOAD_FILE_SIZE_BYTES,
+  MAX_UPLOAD_FILE_SIZE_MB,
+} from './storage.constants';
 
 interface S3Config {
   accessKeyId?: string;
@@ -98,6 +102,16 @@ export class StorageService {
     user: AuthUserContext | undefined,
     dto: CreatePresignedUploadUrlDto,
   ) {
+    if (
+      !Number.isInteger(dto.fileSize) ||
+      dto.fileSize < 1 ||
+      dto.fileSize > MAX_UPLOAD_FILE_SIZE_BYTES
+    ) {
+      throw new BadRequestException(
+        `File size must be less than or equal to ${MAX_UPLOAD_FILE_SIZE_MB}MB`,
+      );
+    }
+
     const normalizedContentType = dto.contentType.toLowerCase();
     if (
       !normalizedContentType.startsWith('image/') &&

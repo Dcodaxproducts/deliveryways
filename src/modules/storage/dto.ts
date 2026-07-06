@@ -10,6 +10,10 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import {
+  MAX_UPLOAD_FILE_SIZE_BYTES,
+  MAX_UPLOAD_FILE_SIZE_MB,
+} from './storage.constants';
 
 export enum StorageFolderEnum {
   UPLOADS = 'uploads',
@@ -38,6 +42,18 @@ export class CreatePresignedUploadUrlDto {
   @IsNotEmpty()
   @MaxLength(100)
   contentType!: string;
+
+  @ApiProperty({
+    description: `Upload file size in bytes. Maximum supported size is ${MAX_UPLOAD_FILE_SIZE_MB} MB.`,
+    example: 1048576,
+    minimum: 1,
+    maximum: MAX_UPLOAD_FILE_SIZE_BYTES,
+  })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(MAX_UPLOAD_FILE_SIZE_BYTES)
+  fileSize!: number;
 }
 
 export class CreatePresignedViewUrlDto {

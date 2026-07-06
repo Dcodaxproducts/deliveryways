@@ -75,6 +75,7 @@ describe('StorageService', () => {
       {
         fileName: 'burger.png',
         contentType: 'image/png',
+        fileSize: 1024,
       },
     );
 
@@ -91,6 +92,7 @@ describe('StorageService', () => {
     const result = await service.createPresignedUploadUrl(undefined, {
       fileName: 'business-logo.png',
       contentType: 'image/png',
+      fileSize: 1024,
     });
 
     expect(result.method).toBe('PUT');
@@ -114,6 +116,7 @@ describe('StorageService', () => {
       {
         fileName: 'allergens.pdf',
         contentType: 'application/pdf',
+        fileSize: 1024,
       },
     );
 
@@ -133,6 +136,7 @@ describe('StorageService', () => {
       {
         fileName: 'avatar.png',
         contentType: 'image/png',
+        fileSize: 1024,
       },
     );
 
@@ -155,9 +159,29 @@ describe('StorageService', () => {
         {
           fileName: 'menu.txt',
           contentType: 'text/plain',
+          fileSize: 1024,
         },
       ),
     ).rejects.toThrow('Only image and PDF uploads are supported');
+  });
+
+  it('rejects uploads larger than 20MB', async () => {
+    await expect(
+      service.createPresignedUploadUrl(
+        {
+          uid: 'user-2',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          fileName: 'large.png',
+          contentType: 'image/png',
+          fileSize: 20 * 1024 * 1024 + 1,
+        },
+      ),
+    ).rejects.toThrow('File size must be less than or equal to 20MB');
   });
 
   it('creates presigned view URL from fileUrl for customer upload', async () => {
