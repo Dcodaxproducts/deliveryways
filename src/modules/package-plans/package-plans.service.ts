@@ -21,7 +21,10 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
-import { InvoicePdfBuilder } from '../../common/pdf/invoice-pdf.builder';
+import {
+  InvoicePdfBuilder,
+  type InvoicePdfSection,
+} from '../../common/pdf/invoice-pdf.builder';
 import { MailerService } from '../mailer/mailer.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { InvoiceRecordsService } from '../invoices/invoice-records.service';
@@ -1217,37 +1220,24 @@ export class PackagePlansService {
             `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
             `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
             invoice.documentType === 'CREDIT_NOTE'
-              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency}`
+              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
               : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
             `Subscription Status: ${invoice.status}`,
             invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
           ],
         },
-        {
-          title: 'Order Payment Details',
-          rows: this.buildSubscriptionOrderBreakdownRows(invoice),
-        },
+        this.buildSubscriptionOrderBreakdownSection(invoice),
       ],
     });
   }
 
-  private buildSubscriptionOrderBreakdownRows(
+  private buildSubscriptionOrderBreakdownSection(
     invoice: Awaited<
       ReturnType<PackagePlansService['buildSubscriptionInvoice']>
     >,
-  ) {
+  ): InvoicePdfSection {
     const { orderBreakdown } = invoice;
     const rows = [
-      'Order ID | Date | Paid By | Status | Total',
-      ...orderBreakdown.orders.map((order) =>
-        [
-          order.id,
-          this.formatInvoiceDate(order.date),
-          order.paidBy,
-          order.status,
-          `${this.formatInvoiceMoney(order.total)} ${orderBreakdown.currency}`,
-        ].join(' | '),
-      ),
       `Offline/Cash Orders: ${orderBreakdown.summary.offlineOrdersCount}`,
       `Offline/Cash Total: ${this.formatInvoiceMoney(orderBreakdown.summary.offlineTotalAmount)} ${orderBreakdown.currency}`,
       `Online Payment Orders: ${orderBreakdown.summary.onlineOrdersCount}`,
@@ -1257,13 +1247,34 @@ export class PackagePlansService {
     ];
 
     if (!orderBreakdown.orders.length) {
-      return [
-        'No paid orders found for this service period.',
-        ...rows.slice(1),
-      ];
+      return {
+        title: 'Order Payment Details',
+        rows: ['No paid orders found for this service period.', ...rows],
+      };
     }
 
-    return rows;
+    return {
+      title: 'Order Payment Details',
+      tables: [
+        {
+          columns: [
+            { header: 'Order ID', width: 150 },
+            { header: 'Date', width: 82 },
+            { header: 'Paid By', width: 82 },
+            { header: 'Status', width: 82 },
+            { header: `Total (${orderBreakdown.currency})`, width: 103 },
+          ],
+          rows: orderBreakdown.orders.map((order) => [
+            order.id,
+            this.formatInvoiceDate(order.date),
+            order.paidBy,
+            order.status,
+            this.formatInvoiceMoney(order.total),
+          ]),
+        },
+      ],
+      rows,
+    };
   }
 
   private buildSubscriptionInvoiceEmailBody(
@@ -1283,7 +1294,7 @@ export class PackagePlansService {
       `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
       `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
       invoice.documentType === 'CREDIT_NOTE'
-        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency}`
+        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
         : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
       '',

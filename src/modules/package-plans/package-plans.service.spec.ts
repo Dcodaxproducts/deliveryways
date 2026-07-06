@@ -426,6 +426,32 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('renders credit note PDF wording and order payments as table columns', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          id: 'order-card-1',
+          totalAmount: new Prisma.Decimal(7000),
+        }),
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.downloadSubscriptionInvoicePdf(
+      superAdmin,
+      'subscription-12345678',
+    );
+    const pdfText = result.content.toString('utf8');
+
+    expect(result.fileName).toBe('CRN-12345678-20260701.pdf');
+    expect(pdfText).toContain('remaining credit owed to the restaurant');
+    expect(pdfText).toContain('Order ID');
+    expect(pdfText).toContain('Paid By');
+    expect(pdfText).toContain('order-card-1');
+    expect(pdfText).not.toContain('Order ID | Date | Paid By');
+  });
+
   it('generates restaurant subscription invoice PDF', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),

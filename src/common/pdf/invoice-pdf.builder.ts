@@ -1,8 +1,27 @@
 type PdfTextStyle = 'heading' | 'subheading' | 'normal' | 'small';
 
+interface PdfTextLine {
+  text: string;
+  style: PdfTextStyle;
+}
+
+interface PdfTableLine {
+  cells: string[];
+  widths: number[];
+  style: 'tableHeader' | 'tableCell';
+}
+
+type PdfLine = PdfTextLine | PdfTableLine;
+
+export interface InvoicePdfTable {
+  columns: Array<{ header: string; width?: number }>;
+  rows: string[][];
+}
+
 export interface InvoicePdfSection {
   title?: string;
-  rows: string[];
+  rows?: string[];
+  tables?: InvoicePdfTable[];
 }
 
 export interface InvoicePdfInput {
@@ -22,6 +41,7 @@ const TOP = 790;
 const LINE_HEIGHT = 14;
 const BOTTOM = 54;
 const MAX_CHARS = 92;
+const TABLE_WIDTH = PAGE_WIDTH - LEFT * 2;
 
 export class InvoicePdfBuilder {
   static build(input: InvoicePdfInput) {
@@ -66,7 +86,7 @@ export class InvoicePdfBuilder {
   }
 
   private static toLines(input: InvoicePdfInput) {
-    const lines: Array<{ text: string; style: PdfTextStyle }> = [
+    const lines: PdfLine[] = [
       { text: input.title, style: 'heading' },
     ];
 
@@ -94,7 +114,18 @@ export class InvoicePdfBuilder {
       if (section.title) {
         lines.push({ text: section.title, style: 'subheading' });
       }
-      for (const row of section.rows) {
+      for (const table of section.tables ?? []) {
+        const widths = this.normalizeTableWidths(table.columns);
+        lines.push({
+          cells: table.columns.map((column) => column.header),
+          widths,
+          style: 'tableHeader',
+        });
+        for (const row of table.rows) {
+          lines.push({ cells: row, widths, style: 'tableCell' });
+        }
+      }
+      for (const row of section.rows ?? []) {
         for (const wrapped of this.wrap(row)) {
           lines.push({ text: wrapped, style: 'normal' });
         }
@@ -104,8 +135,8 @@ export class InvoicePdfBuilder {
     return lines;
   }
 
-  private static paginate(lines: Array<{ text: string; style: PdfTextStyle }>) {
-    const pages: Array<Array<{ text: string; style: PdfTextStyle }>> = [[]];
+  private static paginate(lines: PdfLine[]) {
+    const pages: PdfLine[][] = [[]];
     let y = TOP - 88;
 
     for (const line of lines) {
@@ -114,7 +145,7 @@ export class InvoicePdfBuilder {
         y = TOP - 88;
       }
       pages[pages.length - 1].push(line);
-      y -= this.lineHeight(line.style);
+      y -= this.lineHeight(line);
     }
 
     return pages;
@@ -122,7 +153,7 @@ export class InvoicePdfBuilder {
 
   private static buildPageStream(
     input: InvoicePdfInput,
-    lines: Array<{ text: string; style: PdfTextStyle }>,
+    lines: PdfLine[],
     pageNumber: number,
     totalPages: number,
   ) {
@@ -137,13 +168,17 @@ export class InvoicePdfBuilder {
     let y = TOP - 88;
 
     for (const line of lines) {
-      const font =
-        line.style === 'heading' || line.style === 'subheading' ? 'F2' : 'F1';
-      const size = this.fontSize(line.style);
-      commands.push(
-        `BT /${font} ${size} Tf ${LEFT} ${y} Td (${this.escape(line.text)}) Tj ET`,
-      );
-      y -= this.lineHeight(line.style);
+      if ('cells' in line) {
+        this.pushTableRow(commands, line, y);
+      } else {
+        const font =
+          line.style === 'heading' || line.style === 'subheading' ? 'F2' : 'F1';
+        const size = this.fontSize(line.style);
+        commands.push(
+          `BT /${font} ${size} Tf ${LEFT} ${y} Td (${this.escape(line.text)}) Tj ET`,
+        );
+      }
+      y -= this.lineHeight(line);
     }
 
     commands.push(
@@ -154,7 +189,9 @@ export class InvoicePdfBuilder {
     return commands.join('\n');
   }
 
-  private static lineHeight(style: PdfTextStyle) {
+  private static lineHeight(line: PdfLine) {
+    if ('cells' in line) return 16;
+    const { style } = line;
     return style === 'heading' ? 22 : style === 'subheading' ? 18 : LINE_HEIGHT;
   }
 
@@ -169,6 +206,46 @@ export class InvoicePdfBuilder {
       default:
         return 10;
     }
+  }
+
+  private static normalizeTableWidths(
+    columns: Array<{ header: string; width?: number }>,
+  ) {
+    const explicitTotal = columns.reduce(
+      (total, column) => total + (column.width ?? 0),
+      0,
+    );
+    const unspecifiedCount = columns.filter(
+      (column) => column.width === undefined,
+    ).length;
+    const fallbackWidth =
+      unspecifiedCount > 0
+        ? Math.max((TABLE_WIDTH - explicitTotal) / unspecifiedCount, 40)
+        : TABLE_WIDTH / Math.max(columns.length, 1);
+
+    return columns.map((column) => column.width ?? fallbackWidth);
+  }
+
+  private static pushTableRow(commands: string[], line: PdfTableLine, y: number) {
+    let x = LEFT;
+    const font = line.style === 'tableHeader' ? 'F2' : 'F1';
+    const size = line.style === 'tableHeader' ? 8.5 : 8;
+
+    for (const [index, cell] of line.cells.entries()) {
+      const width = line.widths[index] ?? 60;
+      commands.push(
+        `BT /${font} ${size} Tf ${x} ${y} Td (${this.escape(
+          this.truncateForWidth(cell, width),
+        )}) Tj ET`,
+      );
+      x += width;
+    }
+  }
+
+  private static truncateForWidth(text: string, width: number) {
+    const maxChars = Math.max(Math.floor(width / 4.8), 4);
+    if (text.length <= maxChars) return text;
+    return `${text.slice(0, maxChars - 3)}...`;
   }
 
   private static formatDate(value: Date) {
