@@ -27,6 +27,8 @@ describe('StorageService', () => {
   };
 
   beforeEach(() => {
+    jest.clearAllMocks();
+
     configService = {
       get: jest.fn(getConfig),
     } as unknown as ConfigService;
@@ -62,7 +64,7 @@ describe('StorageService', () => {
     expect(getSignedUrl).toHaveBeenCalled();
   });
 
-  it('creates upload URL with only file name and content type', async () => {
+  it('targets WebP object uploads for image content types', async () => {
     const result = await service.createPresignedUploadUrl(
       {
         uid: 'user-1',
@@ -79,12 +81,13 @@ describe('StorageService', () => {
     expect(result.method).toBe('PUT');
     expect(result.uploadUrl).toBe('https://signed-url.example');
     expect(result.key).toMatch(
-      /^uploads\/tenant-1\/restaurant-1\/user-1\/\d{4}-\d{2}-\d{2}\//,
+      /^uploads\/tenant-1\/restaurant-1\/user-1\/\d{4}-\d{2}-\d{2}\/.*-burger\.webp$/,
     );
     expect(result.fileUrl).toContain(result.key);
+    expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
   });
 
-  it('creates public upload URL for unauthenticated business registration', async () => {
+  it('targets WebP public uploads for unauthenticated business registration images', async () => {
     const result = await service.createPresignedUploadUrl(undefined, {
       fileName: 'business-logo.png',
       contentType: 'image/png',
@@ -93,9 +96,10 @@ describe('StorageService', () => {
     expect(result.method).toBe('PUT');
     expect(result.uploadUrl).toBe('https://signed-url.example');
     expect(result.key).toMatch(
-      /^uploads\/public\/tenant-registration\/\d{4}-\d{2}-\d{2}\//,
+      /^uploads\/public\/tenant-registration\/\d{4}-\d{2}-\d{2}\/.*-business-logo\.webp$/,
     );
     expect(result.fileUrl).toContain(result.key);
+    expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
   });
 
   it('allows PDF upload content types', async () => {

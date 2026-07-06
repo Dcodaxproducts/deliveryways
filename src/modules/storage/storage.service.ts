@@ -107,6 +107,10 @@ export class StorageService {
     }
 
     const folder = StorageFolderEnum.UPLOADS;
+    const uploadTarget = this.resolveUploadTarget(
+      dto.fileName,
+      normalizedContentType,
+    );
 
     if (user) {
       this.ensureFolderAccess(user, folder);
@@ -122,14 +126,14 @@ export class StorageService {
     }
 
     const key = user
-      ? this.buildObjectKey(user, dto.fileName, folder)
-      : this.buildPublicRegistrationObjectKey(dto.fileName, folder);
+      ? this.buildObjectKey(user, uploadTarget.fileName, folder)
+      : this.buildPublicRegistrationObjectKey(uploadTarget.fileName, folder);
     const client = this.createS3Client(s3Config);
 
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      ContentType: dto.contentType,
+      ContentType: uploadTarget.contentType,
     });
 
     const uploadUrl = await getSignedUrl(client, command, {
@@ -143,7 +147,7 @@ export class StorageService {
       fileUrl: this.buildFileUrl(bucket, s3Config.region, key),
       expiresIn: s3Config.presignedUploadExpirySeconds,
       headers: {
-        'Content-Type': dto.contentType,
+        'Content-Type': uploadTarget.contentType,
       },
     };
   }
@@ -242,6 +246,23 @@ export class StorageService {
         secretAccessKey: config.secretAccessKey,
       },
     });
+  }
+
+  private resolveUploadTarget(fileName: string, contentType: string) {
+    if (!contentType.startsWith('image/')) {
+      return { fileName, contentType };
+    }
+
+    const safeFileName = this.sanitizeFileName(fileName);
+    const extension = extname(safeFileName);
+    const baseName = extension
+      ? safeFileName.slice(0, safeFileName.length - extension.length)
+      : safeFileName;
+
+    return {
+      fileName: `${baseName || 'file'}.webp`,
+      contentType: 'image/webp',
+    };
   }
 
   private buildObjectKey(

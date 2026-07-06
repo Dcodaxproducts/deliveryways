@@ -30,7 +30,8 @@ export class CreatePresignedUploadUrlDto {
   fileName!: string;
 
   @ApiProperty({
-    description: 'MIME type that frontend will upload',
+    description:
+      'MIME type requested by frontend. Image presigned targets are returned as WebP uploads.',
     example: 'image/png',
   })
   @IsString()

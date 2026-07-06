@@ -86,9 +86,7 @@ export class InvoicePdfBuilder {
   }
 
   private static toLines(input: InvoicePdfInput) {
-    const lines: PdfLine[] = [
-      { text: input.title, style: 'heading' },
-    ];
+    const lines: PdfLine[] = [{ text: input.title, style: 'heading' }];
 
     if (input.subtitle) {
       lines.push({ text: input.subtitle, style: 'subheading' });
@@ -226,7 +224,11 @@ export class InvoicePdfBuilder {
     return columns.map((column) => column.width ?? fallbackWidth);
   }
 
-  private static pushTableRow(commands: string[], line: PdfTableLine, y: number) {
+  private static pushTableRow(
+    commands: string[],
+    line: PdfTableLine,
+    y: number,
+  ) {
     let x = LEFT;
     const font = line.style === 'tableHeader' ? 'F2' : 'F1';
     const size = line.style === 'tableHeader' ? 8.5 : 8;
