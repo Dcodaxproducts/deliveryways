@@ -15,6 +15,7 @@ import {
   Prisma,
   ServiceChargeType,
   CouponDealSelectionMode,
+  CouponCampaignKind,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -149,6 +150,21 @@ type QuoteLine = {
     menuItemName: string;
     unitPrice: number;
   }[];
+};
+
+type AppliedPromotionQuoteMetadata = {
+  id: string;
+  title: string;
+  applyMode: string;
+  autoApply: boolean;
+  discountType: string;
+  discountValue: number;
+  discountAmount: number;
+  kind?: string;
+  scopeMenuItemId?: string | null;
+  scopeCategoryId?: string | null;
+  scopeMenuItems?: Array<{ menuItem?: { id?: string } }>;
+  scopeCategories?: Array<{ menuCategory?: { id?: string } }>;
 };
 
 type QuoteCustomerContext = {
@@ -1386,17 +1402,7 @@ export class OrdersService {
     let discountAmount = new Prisma.Decimal(0);
     let couponId: string | undefined;
     let appliedCouponCode: string | undefined;
-    let appliedPromotion:
-      | {
-          id: string;
-          title: string;
-          applyMode: string;
-          autoApply: boolean;
-          discountType: string;
-          discountValue: number;
-          discountAmount: number;
-        }
-      | undefined;
+    let appliedPromotion: AppliedPromotionQuoteMetadata | undefined;
 
     const promotionInput = {
       restaurantId: branch.restaurantId,
@@ -1435,6 +1441,11 @@ export class OrdersService {
         discountType: couponValidation.coupon.discountType,
         discountValue: Number(couponValidation.coupon.discountValue),
         discountAmount: Number(discountAmount.toDecimalPlaces(2)),
+        kind: couponValidation.coupon.kind,
+        scopeMenuItemId: couponValidation.coupon.scopeMenuItemId,
+        scopeCategoryId: couponValidation.coupon.scopeCategoryId,
+        scopeMenuItems: couponValidation.coupon.scopeMenuItems,
+        scopeCategories: couponValidation.coupon.scopeCategories,
       };
     } else {
       const autoPromotion =
@@ -1453,6 +1464,11 @@ export class OrdersService {
           discountType: autoPromotion.coupon.discountType,
           discountValue: Number(autoPromotion.coupon.discountValue),
           discountAmount: Number(discountAmount.toDecimalPlaces(2)),
+          kind: autoPromotion.coupon.kind,
+          scopeMenuItemId: autoPromotion.coupon.scopeMenuItemId,
+          scopeCategoryId: autoPromotion.coupon.scopeCategoryId,
+          scopeMenuItems: autoPromotion.coupon.scopeMenuItems,
+          scopeCategories: autoPromotion.coupon.scopeCategories,
         };
       }
     }
@@ -1955,7 +1971,9 @@ export class OrdersService {
       totalAmount: amountSummary.totalAmount,
       payableAmount: amountSummary.payableAmount,
       couponCode: quote.appliedCouponCode,
-      appliedPromotion: quote.appliedPromotion ?? null,
+      appliedPromotion: quote.appliedPromotion
+        ? this.toAppliedPromotionQuoteResponse(quote.appliedPromotion)
+        : null,
       restaurantMenuId: dto.restaurantMenuId ?? null,
       items: quote.lines.map((line) => ({
         menuItemId: line.menuItemId,
@@ -1972,8 +1990,169 @@ export class OrdersService {
         note: line.note,
         snapshotModifiers: line.snapshotModifiers,
         snapshotSections: line.snapshotSections,
+        ...this.resolveQuoteLineDiscountMetadata(line, quote.appliedPromotion),
       })),
     };
+  }
+
+  private toAppliedPromotionQuoteResponse(
+    promotion: AppliedPromotionQuoteMetadata,
+  ) {
+    return {
+      id: promotion.id,
+      title: promotion.title,
+      applyMode: promotion.applyMode,
+      autoApply: promotion.autoApply,
+      discountType: promotion.discountType,
+      discountValue: promotion.discountValue,
+      discountAmount: promotion.discountAmount,
+    };
+  }
+
+  private resolveQuoteLineDiscountMetadata(
+    line: QuoteLine,
+    promotion: AppliedPromotionQuoteMetadata | undefined,
+  ) {
+    const empty = {
+      promotion: null,
+      happyHour: null,
+      promotionDiscountAmount: 0,
+      discountedUnitPrice: null,
+      discountedLineTotal: null,
+    };
+
+    if (
+      !promotion ||
+      promotion.discountAmount <= 0 ||
+      !this.quoteLineMatchesPromotion(line, promotion)
+    ) {
+      return empty;
+    }
+
+    const discountAmount = this.resolveQuoteLineDiscountAmount(line, promotion);
+
+    if (discountAmount.lessThanOrEqualTo(0)) {
+      return empty;
+    }
+
+    const discountedLineTotal = Prisma.Decimal.max(
+      line.lineTotal.minus(discountAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const discountedUnitPrice = discountedLineTotal
+      .div(Math.max(1, line.quantity))
+      .toDecimalPlaces(2);
+    const payload = {
+      promotionId: promotion.id,
+      id: promotion.id,
+      title: promotion.title,
+      applyMode: promotion.applyMode,
+      discountType: promotion.discountType,
+      discountValue: promotion.discountValue,
+      discountAmount: Number(discountAmount.toDecimalPlaces(2)),
+      discountedLineTotal: Number(discountedLineTotal),
+    };
+
+    return {
+      promotion:
+        promotion.kind === CouponCampaignKind.HAPPY_HOUR ? null : payload,
+      happyHour:
+        promotion.kind === CouponCampaignKind.HAPPY_HOUR ? payload : null,
+      promotionDiscountAmount: Number(discountAmount.toDecimalPlaces(2)),
+      discountedUnitPrice: Number(discountedUnitPrice),
+      discountedLineTotal: Number(discountedLineTotal),
+    };
+  }
+
+  private quoteLineMatchesPromotion(
+    line: QuoteLine,
+    promotion: AppliedPromotionQuoteMetadata,
+  ) {
+    const menuItemIds = this.collectPromotionMenuItemIds(promotion);
+    const categoryIds = this.collectPromotionCategoryIds(promotion);
+
+    if (!menuItemIds.length && !categoryIds.length) {
+      return true;
+    }
+
+    return (
+      menuItemIds.includes(line.menuItemId) ||
+      line.categoryIds.some((categoryId) => categoryIds.includes(categoryId))
+    );
+  }
+
+  private collectPromotionMenuItemIds(
+    promotion: AppliedPromotionQuoteMetadata,
+  ) {
+    return [
+      ...new Set([
+        ...(promotion.scopeMenuItemId ? [promotion.scopeMenuItemId] : []),
+        ...(promotion.scopeMenuItems ?? [])
+          .map((entry) => entry.menuItem?.id)
+          .filter((id): id is string => typeof id === 'string'),
+      ]),
+    ];
+  }
+
+  private collectPromotionCategoryIds(
+    promotion: AppliedPromotionQuoteMetadata,
+  ) {
+    return [
+      ...new Set([
+        ...(promotion.scopeCategoryId ? [promotion.scopeCategoryId] : []),
+        ...(promotion.scopeCategories ?? [])
+          .map((entry) => entry.menuCategory?.id)
+          .filter((id): id is string => typeof id === 'string'),
+      ]),
+    ];
+  }
+
+  private resolveQuoteLineDiscountAmount(
+    line: QuoteLine,
+    promotion: AppliedPromotionQuoteMetadata,
+  ) {
+    if (line.dealId) {
+      return new Prisma.Decimal(0);
+    }
+
+    if (promotion.applyMode === 'ORDER_TOTAL') {
+      return this.resolveProportionalQuoteLineDiscount(line, promotion);
+    }
+
+    if (promotion.discountType === 'FLAT') {
+      return Prisma.Decimal.min(
+        line.lineTotal,
+        new Prisma.Decimal(promotion.discountValue).mul(
+          Math.max(1, line.quantity),
+        ),
+      ).toDecimalPlaces(2);
+    }
+
+    if (promotion.discountType === 'FIXED_PRICE') {
+      return Prisma.Decimal.max(
+        line.lineTotal.minus(promotion.discountValue),
+        new Prisma.Decimal(0),
+      ).toDecimalPlaces(2);
+    }
+
+    return this.resolveProportionalQuoteLineDiscount(line, promotion);
+  }
+
+  private resolveProportionalQuoteLineDiscount(
+    line: QuoteLine,
+    promotion: AppliedPromotionQuoteMetadata,
+  ) {
+    if (promotion.discountType === 'PERCENTAGE') {
+      return Prisma.Decimal.min(
+        line.lineTotal,
+        line.lineTotal.mul(promotion.discountValue).div(100),
+      ).toDecimalPlaces(2);
+    }
+
+    return Prisma.Decimal.min(
+      line.lineTotal,
+      new Prisma.Decimal(promotion.discountValue),
+    ).toDecimalPlaces(2);
   }
 
   private resolveOrderItemBasePrice(

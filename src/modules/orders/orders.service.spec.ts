@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  CouponCampaignKind,
   CouponDealSelectionMode,
   OrderStatus,
   OrderType,
@@ -5256,6 +5257,140 @@ describe('OrdersService - wallet payment', () => {
       discountValue: 400,
       discountAmount: 100,
     });
+  });
+
+  it('exposes happy hour discount metadata on eligible quote items', async () => {
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue({
+        coupon: {
+          id: 'happy-variation',
+          code: null,
+          title: 'Happy hour',
+          kind: CouponCampaignKind.HAPPY_HOUR,
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+          discountType: 'PERCENTAGE',
+          discountValue: new Prisma.Decimal(10),
+          scopeMenuItemId: 'pizza-tuna',
+          scopeCategoryId: null,
+          scopeMenuItems: [],
+          scopeCategories: [],
+        },
+        discountAmount: new Prisma.Decimal(2),
+        eligibleSubtotal: new Prisma.Decimal(20),
+      }),
+    };
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              ordering: {
+                allowedOrderTypes: ['DELIVERY'],
+                allowedPaymentMethods: ['COD'],
+              },
+              deliveryConfig: {
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 0,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'pizza-tuna',
+            name: 'Pizza Tuna',
+            restaurantId: 'restaurant-1',
+            basePrice: new Prisma.Decimal(8),
+            depositAmount: new Prisma.Decimal(0),
+            category: {
+              id: 'cat-pizza',
+              variations: [
+                {
+                  id: 'medium',
+                  name: 'Medium',
+                  price: new Prisma.Decimal(10),
+                  itemPriceOverrides: [],
+                  modifierPriceOverrides: [],
+                },
+              ],
+              variationLinks: [],
+              modifierLinks: [],
+            },
+            modifierLinks: [],
+            variationPriceOverrides: [],
+            branchOverrides: [],
+            categoryLinks: [],
+          }),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValue({
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(18),
+        }),
+      } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          { menuItemId: 'pizza-tuna', variationId: 'medium', quantity: 2 },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    const [item] = result.data.items as Array<{
+      unitPrice: number;
+      lineTotal: number;
+      happyHour: { promotionId?: string; discountAmount?: number } | null;
+      promotion: unknown;
+      promotionDiscountAmount: number;
+      discountedUnitPrice: number | null;
+      discountedLineTotal: number | null;
+    }>;
+    expect(result.data.discountAmount).toBe(2);
+    expect(item.unitPrice).toBe(10);
+    expect(item.lineTotal).toBe(20);
+    expect(item.happyHour?.promotionId).toBe('happy-variation');
+    expect(item.happyHour?.discountAmount).toBe(2);
+    expect(item.promotion).toBeNull();
+    expect(item.promotionDiscountAmount).toBe(2);
+    expect(item.discountedUnitPrice).toBe(9);
+    expect(item.discountedLineTotal).toBe(18);
   });
 
   it('passes selected deal items into auto-apply order quote flow', async () => {

@@ -47,7 +47,10 @@ export interface CouponValidationInput {
 }
 
 export interface CouponValidationResult {
-  coupon: Coupon;
+  coupon: Coupon & {
+    scopeMenuItems?: Array<{ menuItem: { id: string } }>;
+    scopeCategories?: Array<{ menuCategory: { id: string } }>;
+  };
   discountAmount: Prisma.Decimal;
   eligibleSubtotal: Prisma.Decimal;
 }
