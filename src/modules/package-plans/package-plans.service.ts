@@ -16,6 +16,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  SubscriptionDeductionType,
   SubscriptionStatus,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
@@ -30,12 +31,16 @@ import { GlobalSettingsService } from '../global-settings/global-settings.servic
 import { InvoiceRecordsService } from '../invoices/invoice-records.service';
 import {
   AssignTenantSubscriptionDto,
+  CreateSubscriptionDeductionDto,
   CreatePackagePlanDto,
   ListPackagePlansDto,
+  ListSubscriptionDeductionsDto,
   ListTenantSubscriptionsDto,
+  MonthlyInvoiceDatevExportQueryDto,
   SendTenantSubscriptionInvoiceDto,
   SendWeeklyRestaurantPayoutInvoiceDto,
   UpdatePackagePlanDto,
+  UpdateSubscriptionDeductionDto,
   UpdateTenantSubscriptionDto,
   WeeklyRestaurantPayoutInvoiceQueryDto,
 } from './dto';
@@ -49,6 +54,9 @@ type RestaurantPayoutScope = NonNullable<
 >;
 type RestaurantPayoutOrder = Awaited<
   ReturnType<PackagePlansRepository['listPaidRestaurantOrders']>
+>[number];
+type SubscriptionDeduction = Awaited<
+  ReturnType<PackagePlansRepository['listApplicableDeductions']>
 >[number];
 
 interface SubscriptionPlanSnapshot {
@@ -394,6 +402,115 @@ export class PackagePlansService {
     };
   }
 
+  async listDeductions(
+    user: AuthUserContext,
+    query: ListSubscriptionDeductionsDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const { items, total } =
+      await this.packagePlansRepository.listDeductions(query);
+
+    return {
+      data: items,
+      message: 'Subscription deductions fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async createDeduction(
+    user: AuthUserContext,
+    dto: CreateSubscriptionDeductionDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    await this.assertTenantAndRestaurant(dto.tenantId, dto.restaurantId);
+    if (dto.subscriptionId) {
+      const subscription = await this.getSubscriptionOrThrow(
+        dto.subscriptionId,
+      );
+      if (
+        subscription.tenantId !== dto.tenantId ||
+        (dto.restaurantId && subscription.restaurantId !== dto.restaurantId)
+      ) {
+        throw new BadRequestException(
+          'Deduction subscription must belong to the selected tenant/restaurant',
+        );
+      }
+    }
+
+    const data = await this.packagePlansRepository.createDeduction({
+      tenant: { connect: { id: dto.tenantId } },
+      restaurant: dto.restaurantId
+        ? { connect: { id: dto.restaurantId } }
+        : undefined,
+      subscription: dto.subscriptionId
+        ? { connect: { id: dto.subscriptionId } }
+        : undefined,
+      type: dto.type ?? SubscriptionDeductionType.ONE_TIME,
+      title: dto.title.trim(),
+      description: dto.description?.trim() || null,
+      amount: new Prisma.Decimal(dto.amount).toDecimalPlaces(2),
+      currency: dto.currency?.trim().toUpperCase() ?? 'PKR',
+      appliesFrom: dto.appliesFrom ? new Date(dto.appliesFrom) : undefined,
+      createdBy: user.uid,
+      updatedBy: user.uid,
+    });
+
+    return {
+      data,
+      message: 'Subscription deduction created successfully',
+    };
+  }
+
+  async updateDeduction(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateSubscriptionDeductionDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const existing = await this.packagePlansRepository.findDeductionById(id);
+    if (!existing) {
+      throw new NotFoundException('Subscription deduction not found');
+    }
+
+    const data = await this.packagePlansRepository.updateDeduction(id, {
+      status: dto.status,
+      title: dto.title?.trim(),
+      description:
+        dto.description !== undefined
+          ? dto.description.trim() || null
+          : undefined,
+      amount:
+        dto.amount !== undefined
+          ? new Prisma.Decimal(dto.amount).toDecimalPlaces(2)
+          : undefined,
+      currency: dto.currency?.trim().toUpperCase(),
+      appliesFrom: dto.appliesFrom ? new Date(dto.appliesFrom) : undefined,
+      updatedBy: user.uid,
+    });
+
+    return {
+      data,
+      message: 'Subscription deduction updated successfully',
+    };
+  }
+
+  async exportMonthlyInvoicesDatevCsv(
+    user: AuthUserContext,
+    query: MonthlyInvoiceDatevExportQueryDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const invoices =
+      await this.packagePlansRepository.listMonthlyGeneratedInvoices(query);
+    const content = this.buildDatevCsv(invoices, query);
+    const month = String(query.month).padStart(2, '0');
+
+    return {
+      fileName: `datev-invoices-${query.year}-${month}.csv`,
+      mimeType: 'text/csv; charset=utf-8',
+      content: Buffer.from(content, 'utf8'),
+    };
+  }
+
   async getSubscriptionInvoice(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildSubscriptionInvoice(id);
@@ -558,6 +675,14 @@ export class PackagePlansService {
           (subscription.nextBillingAt ?? now).toISOString(),
         ),
       });
+      if (this.packagePlansRepository.markOneTimeDeductionsApplied) {
+        await this.packagePlansRepository.markOneTimeDeductionsApplied(
+          invoice.deductions
+            .filter((item) => item.type === SubscriptionDeductionType.ONE_TIME)
+            .map((item) => item.id),
+          now,
+        );
+      }
       results.sent += 1;
     }
 
@@ -667,6 +792,8 @@ export class PackagePlansService {
         name: restaurant.name,
         slug: restaurant.slug,
         billingEmail: this.resolveRestaurantPayoutEmail(restaurant),
+        address: this.resolveRestaurantPayoutAddress(restaurant),
+        taxNumber: this.resolveRestaurantPayoutTaxNumber(restaurant),
       },
       tenant: restaurant.tenant,
       subscription: subscription
@@ -869,12 +996,23 @@ export class PackagePlansService {
           servicePeriod.to,
         )
       : [];
+    const deductions = this.packagePlansRepository.listApplicableDeductions
+      ? await this.packagePlansRepository.listApplicableDeductions(
+          {
+            id: subscription.id,
+            tenantId: subscription.tenantId,
+            restaurantId: subscription.restaurantId,
+          },
+          servicePeriod.to,
+        )
+      : [];
 
     return this.toSubscriptionInvoice(
       subscription,
       plan,
       servicePeriod,
       paidOrders,
+      deductions,
     );
   }
 
@@ -883,6 +1021,7 @@ export class PackagePlansService {
     plan: ReturnType<PackagePlansService['resolveSubscriptionInvoicePlan']>,
     servicePeriod: { from: Date; to: Date },
     paidOrders: RestaurantPayoutOrder[],
+    deductions: SubscriptionDeduction[],
   ) {
     const subscriptionFeeAmount = new Prisma.Decimal(plan.planPrice)
       .toDecimalPlaces(2)
@@ -914,8 +1053,18 @@ export class PackagePlansService {
       )
       .toDecimalPlaces(2)
       .toNumber();
+    const deductibleItems = this.toInvoiceDeductionItems(
+      deductions,
+      plan.currency,
+    );
+    const deductionAmount = deductibleItems
+      .reduce((sum, item) => sum.plus(item.amount), new Prisma.Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
     const subtotal = Number(
-      (subscriptionFeeAmount + transactionFeeAmount).toFixed(2),
+      (subscriptionFeeAmount + transactionFeeAmount - deductionAmount).toFixed(
+        2,
+      ),
     );
     const vatAmount = Number(
       ((subtotal * plan.vatPercentage) / 100).toFixed(2),
@@ -955,6 +1104,15 @@ export class PackagePlansService {
       });
     }
 
+    for (const item of deductibleItems) {
+      lineItems.push({
+        description: `${item.title} (${item.type === SubscriptionDeductionType.RECURRING ? 'recurring deduction' : 'one-time deduction'})`,
+        quantity: 1,
+        unitPrice: -item.amount,
+        amount: -item.amount,
+      });
+    }
+
     return {
       documentType,
       invoiceNumber: this.buildSubscriptionInvoiceNumber(
@@ -970,6 +1128,8 @@ export class PackagePlansService {
             name: subscription.restaurant.name,
             slug: subscription.restaurant.slug,
             billingEmail: this.resolveRestaurantBillingEmail(subscription),
+            address: this.resolveRestaurantBillingAddress(subscription),
+            taxNumber: this.resolveRestaurantTaxNumber(subscription),
           }
         : null,
       packagePlan: {
@@ -996,6 +1156,7 @@ export class PackagePlansService {
         ordersCount: onlinePaidOrders.length,
         amount: transactionFeeAmount,
       },
+      deductions: deductibleItems,
       orderBreakdown: this.buildSubscriptionOrderBreakdown(
         paidOrders,
         onlinePaidOrders,
@@ -1005,6 +1166,7 @@ export class PackagePlansService {
       totals: {
         subscriptionFeeAmount,
         transactionFeeAmount,
+        deductionAmount,
         subtotal,
         vatPercentage: plan.vatPercentage,
         vatAmount,
@@ -1152,6 +1314,143 @@ export class PackagePlansService {
     );
   }
 
+  private resolveRestaurantBillingAddress(
+    subscription: TenantSubscriptionDetails,
+  ) {
+    if (!subscription.restaurant) return null;
+    return this.resolveRestaurantAddressFromSettings(
+      subscription.restaurant.settings,
+    );
+  }
+
+  private resolveRestaurantTaxNumber(subscription: TenantSubscriptionDetails) {
+    if (!subscription.restaurant) return null;
+    return this.resolveRestaurantTaxNumberFromSettings(
+      subscription.restaurant.settings,
+    );
+  }
+
+  private resolveRestaurantPayoutAddress(restaurant: RestaurantPayoutScope) {
+    return this.resolveRestaurantAddressFromSettings(restaurant.settings);
+  }
+
+  private resolveRestaurantPayoutTaxNumber(restaurant: RestaurantPayoutScope) {
+    return this.resolveRestaurantTaxNumberFromSettings(restaurant.settings);
+  }
+
+  private resolveRestaurantAddressFromSettings(
+    settings: Prisma.JsonValue | null,
+  ) {
+    const root = this.asJsonObject(settings);
+    const address = this.asJsonObject(
+      this.readFirstPath(root, [
+        ['legalProfile', 'businessAddress'],
+        ['invoice', 'businessAddress'],
+        ['invoice', 'billingAddress'],
+        ['billing', 'businessAddress'],
+        ['billing', 'address'],
+        ['businessAddress'],
+        ['address'],
+      ]),
+    );
+    const parts = [
+      address.street,
+      address.area,
+      address.postalCode,
+      address.city,
+      address.state,
+      address.country,
+    ]
+      .map((value) => this.readStringValue(value))
+      .filter((value): value is string => Boolean(value));
+
+    return parts.length ? parts.join(', ') : null;
+  }
+
+  private resolveRestaurantTaxNumberFromSettings(
+    settings: Prisma.JsonValue | null,
+  ) {
+    const root = this.asJsonObject(settings);
+
+    return this.readSettingsString(
+      [root],
+      [
+        ['legalProfile', 'taxNumber'],
+        ['billing', 'taxNumber'],
+        ['billing', 'vatNumber'],
+        ['invoice', 'taxNumber'],
+        ['invoice', 'vatNumber'],
+        ['taxNumber'],
+        ['vatNumber'],
+      ],
+    );
+  }
+
+  private toInvoiceDeductionItems(
+    deductions: SubscriptionDeduction[],
+    invoiceCurrency: string,
+  ) {
+    return deductions
+      .filter((item) => item.currency === invoiceCurrency)
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        type: item.type,
+        amount: new Prisma.Decimal(item.amount).toDecimalPlaces(2).toNumber(),
+        currency: item.currency,
+      }));
+  }
+
+  private buildSubscriptionSettlementRows(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+  ) {
+    const rows = [
+      [
+        'Subscription Fee',
+        this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount),
+      ],
+      [
+        'Commission Fee',
+        this.formatInvoiceMoney(invoice.totals.transactionFeeAmount),
+      ],
+    ];
+
+    for (const item of invoice.deductions) {
+      rows.push([
+        `Deduction: ${item.title}`,
+        `-${this.formatInvoiceMoney(item.amount)}`,
+      ]);
+    }
+
+    rows.push(
+      ['Subtotal', this.formatInvoiceMoney(invoice.totals.subtotal)],
+      [
+        `VAT (${invoice.totals.vatPercentage}%)`,
+        this.formatInvoiceMoney(invoice.totals.vatAmount),
+      ],
+      ['Fees Total', this.formatInvoiceMoney(invoice.totals.totalFeesAmount)],
+      [
+        'Online Payment Credit',
+        `-${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)}`,
+      ],
+      [
+        invoice.documentType === 'CREDIT_NOTE'
+          ? 'Credit Note Amount'
+          : 'Invoice Amount Due',
+        this.formatInvoiceMoney(
+          invoice.documentType === 'CREDIT_NOTE'
+            ? invoice.totals.creditAmount
+            : invoice.totals.amountDue,
+        ),
+      ],
+    );
+
+    return rows;
+  }
+
   private buildSubscriptionInvoiceNumber(
     subscriptionId: string,
     periodTo: Date,
@@ -1174,6 +1473,7 @@ export class PackagePlansService {
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant?.name ?? invoice.tenant.name,
+      headerLines: this.deliveryWaysCompanyHeaderLines(),
       meta: [
         { label: 'Due Date', value: this.formatInvoiceDate(invoice.dueAt) },
         {
@@ -1194,31 +1494,22 @@ export class PackagePlansService {
             `Restaurant: ${invoice.restaurant?.name ?? 'N/A'}`,
             `Tenant: ${invoice.tenant.name}`,
             `Email: ${invoice.restaurant?.billingEmail ?? 'N/A'}`,
+            `Address: ${invoice.restaurant?.address ?? 'N/A'}`,
+            `Tax ID: ${invoice.restaurant?.taxNumber ?? 'N/A'}`,
           ],
         },
         {
-          title: 'Package',
-          rows: [
-            `Plan: ${invoice.packagePlan.name}`,
-            `Billing Model: ${invoice.packagePlan.billingModel}`,
-            `Billing Interval: ${invoice.packagePlan.billingInterval}`,
-            `Commission: ${this.formatCommissionSummary(
-              invoice.packagePlan.commissionType,
-              invoice.packagePlan.commissionPercentage,
-              invoice.packagePlan.commissionFixedAmount,
-            )}`,
-            `Payout Cycle: ${invoice.packagePlan.payoutCycle}`,
+          title: 'Settlement',
+          tables: [
+            {
+              columns: [
+                { header: 'Description', width: 320 },
+                { header: `Amount (${invoice.totals.currency})`, width: 140 },
+              ],
+              rows: this.buildSubscriptionSettlementRows(invoice),
+            },
           ],
-        },
-        {
-          title: 'Totals',
           rows: [
-            `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
-            `Commission Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
-            `Subtotal: ${this.formatInvoiceMoney(invoice.totals.subtotal)} ${invoice.totals.currency}`,
-            `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
-            `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
-            `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
             invoice.documentType === 'CREDIT_NOTE'
               ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
               : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
@@ -1249,12 +1540,14 @@ export class PackagePlansService {
     if (!orderBreakdown.orders.length) {
       return {
         title: 'Order Payment Details',
+        pageBreakBefore: true,
         rows: ['No paid orders found for this service period.', ...rows],
       };
     }
 
     return {
       title: 'Order Payment Details',
+      pageBreakBefore: true,
       tables: [
         {
           columns: [
@@ -1313,6 +1606,7 @@ export class PackagePlansService {
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant.name,
+      headerLines: this.deliveryWaysCompanyHeaderLines(),
       meta: [
         {
           label: 'Payout From',
@@ -1332,16 +1626,39 @@ export class PackagePlansService {
             `Restaurant: ${invoice.restaurant.name}`,
             `Tenant: ${invoice.tenant.name}`,
             `Email: ${invoice.restaurant.billingEmail ?? 'N/A'}`,
+            `Address: ${invoice.restaurant.address ?? 'N/A'}`,
+            `Tax ID: ${invoice.restaurant.taxNumber ?? 'N/A'}`,
           ],
         },
         {
           title: 'Settlement',
-          rows: [
-            `Gross Collected By Super Admin: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
-            `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
-            `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
-            invoice.note,
+          tables: [
+            {
+              columns: [
+                { header: 'Description', width: 320 },
+                { header: `Amount (${invoice.totals.currency})`, width: 140 },
+              ],
+              rows: [
+                [
+                  'Gross Collected By Super Admin',
+                  this.formatInvoiceMoney(invoice.totals.grossAmount),
+                ],
+                [
+                  'Platform Commission',
+                  this.formatInvoiceMoney(
+                    invoice.totals.platformCommissionAmount,
+                  ),
+                ],
+                [
+                  'Restaurant Payout Due',
+                  this.formatInvoiceMoney(
+                    invoice.totals.restaurantPayoutAmount,
+                  ),
+                ],
+              ],
+            },
           ],
+          rows: [invoice.note],
         },
       ],
     });
@@ -1588,6 +1905,132 @@ export class PackagePlansService {
     return typeof current === 'string' && current.trim()
       ? current.trim()
       : null;
+  }
+
+  private readFirstPath(
+    object: Record<string, Prisma.JsonValue>,
+    paths: string[][],
+  ) {
+    for (const path of paths) {
+      let current: Prisma.JsonValue | undefined = object;
+      for (const key of path) {
+        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+          current = undefined;
+          break;
+        }
+        current = (current as Record<string, Prisma.JsonValue>)[key];
+      }
+      if (current !== undefined && current !== null) {
+        return current;
+      }
+    }
+
+    return null;
+  }
+
+  private readStringValue(value: unknown) {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private readSettingsString(
+    sources: Record<string, Prisma.JsonValue>[],
+    paths: string[][],
+  ) {
+    for (const source of sources) {
+      const value = this.readFirstPath(source, paths);
+      const text = this.readStringValue(value);
+      if (text) return text;
+    }
+
+    return null;
+  }
+
+  private deliveryWaysCompanyHeaderLines() {
+    return [
+      'DeliveryWays company address: configure legal address',
+      'DATEV account mapping: revenue/debtor/tax placeholders',
+    ];
+  }
+
+  private buildDatevCsv(
+    invoices: Awaited<
+      ReturnType<PackagePlansRepository['listMonthlyGeneratedInvoices']>
+    >,
+    query: MonthlyInvoiceDatevExportQueryDto,
+  ) {
+    const revenueAccount = query.revenueAccount ?? 'TODO_REVENUE_ACCOUNT';
+    const debtorAccount = query.debtorAccount ?? 'TODO_DEBTOR_ACCOUNT';
+    const taxAccount = query.taxAccount ?? 'TODO_TAX_ACCOUNT';
+    const header = [
+      'Belegdatum',
+      'Belegnummer',
+      'Dokumenttyp',
+      'Rechnungstyp',
+      'Soll/Haben',
+      'Betrag',
+      'Waehrung',
+      'Debitorenkonto',
+      'Erloeskonto',
+      'Steuerkonto',
+      'BU-Schluessel',
+      'RestaurantId',
+      'SubscriptionId',
+      'OrderId',
+      'Buchungstext',
+      'MappingHinweis',
+    ];
+    const rows = invoices.map((invoice) => {
+      const snapshot = this.asJsonObject(invoice.snapshot);
+      const documentType =
+        this.readStringValue(snapshot.documentType) ??
+        (invoice.invoiceNumber.startsWith('CRN-') ? 'CREDIT_NOTE' : 'INVOICE');
+      const amount = new Prisma.Decimal(invoice.totalAmount)
+        .toDecimalPlaces(2)
+        .toNumber();
+      const isCreditNote = documentType === 'CREDIT_NOTE';
+
+      return [
+        this.formatInvoiceDate(invoice.createdAt),
+        invoice.invoiceNumber,
+        invoice.kind,
+        documentType,
+        isCreditNote ? 'H' : 'S',
+        this.formatInvoiceMoney(amount),
+        invoice.currency,
+        debtorAccount,
+        revenueAccount,
+        taxAccount,
+        'TODO_BU_KEY',
+        invoice.restaurantId ?? '',
+        invoice.subscriptionId ?? '',
+        invoice.orderId ?? '',
+        this.buildDatevBookingText(snapshot, invoice.invoiceNumber),
+        'DATEV account numbers are placeholders; configure debtor/revenue/tax/BU mapping with accountant before import.',
+      ];
+    });
+
+    return [header, ...rows]
+      .map((row) => row.map((value) => this.csvEscape(String(value))).join(','))
+      .join('\n');
+  }
+
+  private buildDatevBookingText(
+    snapshot: Record<string, Prisma.JsonValue>,
+    invoiceNumber: string,
+  ) {
+    const restaurant = this.asJsonObject(snapshot.restaurant ?? null);
+    const restaurantName = this.readStringValue(restaurant.name);
+    return restaurantName
+      ? `DeliveryWays ${invoiceNumber} ${restaurantName}`
+      : `DeliveryWays ${invoiceNumber}`;
+  }
+
+  private csvEscape(value: string) {
+    if (/[",\n\r]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+
+    return value;
   }
 
   private formatSubscriptionDocumentType(documentType: string) {

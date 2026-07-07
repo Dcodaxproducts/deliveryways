@@ -5,6 +5,8 @@ import {
   PackageCommissionType,
   PackagePayoutCycle,
   PaymentStatus,
+  SubscriptionDeductionStatus,
+  SubscriptionDeductionType,
   SubscriptionStatus,
 } from '@prisma/client';
 import { Transform } from 'class-transformer';
@@ -400,4 +402,152 @@ export class SendWeeklyRestaurantPayoutInvoiceDto extends WeeklyRestaurantPayout
   @IsOptional()
   @IsEmail()
   email?: string;
+}
+
+export class ListSubscriptionDeductionsDto extends AdminListQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subscriptionId?: string;
+
+  @ApiPropertyOptional({ enum: SubscriptionDeductionType })
+  @IsOptional()
+  @IsEnum(SubscriptionDeductionType)
+  type?: SubscriptionDeductionType;
+
+  @ApiPropertyOptional({ enum: SubscriptionDeductionStatus })
+  @IsOptional()
+  @IsEnum(SubscriptionDeductionStatus)
+  status?: SubscriptionDeductionStatus;
+}
+
+export class CreateSubscriptionDeductionDto {
+  @ApiProperty()
+  @IsString()
+  tenantId!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subscriptionId?: string;
+
+  @ApiPropertyOptional({ enum: SubscriptionDeductionType })
+  @IsOptional()
+  @IsEnum(SubscriptionDeductionType)
+  type?: SubscriptionDeductionType;
+
+  @ApiProperty({ example: 'Manual adjustment' })
+  @IsString()
+  @MaxLength(160)
+  title!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @ApiProperty({ minimum: 0.01 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0.01)
+  amount!: number;
+
+  @ApiPropertyOptional({ default: 'PKR' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  currency?: string;
+
+  @ApiPropertyOptional({ description: 'Earliest billing run date to apply' })
+  @IsOptional()
+  @IsDateString()
+  appliesFrom?: string;
+}
+
+export class UpdateSubscriptionDeductionDto {
+  @ApiPropertyOptional({ enum: SubscriptionDeductionStatus })
+  @IsOptional()
+  @IsEnum(SubscriptionDeductionStatus)
+  status?: SubscriptionDeductionStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @ApiPropertyOptional({ minimum: 0.01 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @Min(0.01)
+  amount?: number;
+
+  @ApiPropertyOptional({ default: 'PKR' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  appliesFrom?: string;
+}
+
+export class MonthlyInvoiceDatevExportQueryDto {
+  @ApiProperty({ example: 2026 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(2000)
+  year!: number;
+
+  @ApiProperty({ example: 7, minimum: 1, maximum: 12 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional({ description: 'DATEV revenue account placeholder' })
+  @IsOptional()
+  @IsString()
+  revenueAccount?: string;
+
+  @ApiPropertyOptional({ description: 'DATEV debtor account placeholder' })
+  @IsOptional()
+  @IsString()
+  debtorAccount?: string;
+
+  @ApiPropertyOptional({ description: 'DATEV tax account placeholder' })
+  @IsOptional()
+  @IsString()
+  taxAccount?: string;
 }

@@ -136,6 +136,17 @@ enum GeneratedInvoiceEventType {
   EMAILED
 }
 
+enum SubscriptionDeductionType {
+  ONE_TIME
+  RECURRING
+}
+
+enum SubscriptionDeductionStatus {
+  ACTIVE
+  APPLIED
+  CANCELLED
+}
+
 enum SubscriptionStatus {
   TRIALING
   ACTIVE
@@ -333,32 +344,33 @@ model Tenant {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  owner               User?                @relation("TenantOwner", fields: [ownerId], references: [id])
-  restaurants         Restaurant[]
-  branches            Branch[]
-  users               User[]               @relation("TenantUsers")
-  staffRoles          StaffRole[]
-  staffUsers          StaffUser[]
-  coupons             Coupon[]
-  carts               Cart[]
-  orders              Order[]
-  transactions        PaymentTransaction[]
-  walletAccounts      WalletAccount[]
-  walletTransactions  WalletTransaction[]
-  loyaltyPrograms     LoyaltyProgram[]
-  loyaltyAccounts     LoyaltyAccount[]
-  loyaltyTransactions LoyaltyTransaction[]
-  notifications       Notification[]
-  pushDeviceTokens    PushDeviceToken[]
-  deliverymen         Deliveryman[]
-  chatThreads         ChatThread[]
-  groupOrders         GroupOrderSession[]
-  posOrderDrafts      PosOrderDraft[]
-  packagePlans        PackagePlan[]
-  tenantSubscriptions TenantSubscription[]
-  orderReviews        OrderReview[]
-  entityTranslations  EntityTranslation[]
-  contactSubmissions  ContactSubmission[]
+  owner                  User?                   @relation("TenantOwner", fields: [ownerId], references: [id])
+  restaurants            Restaurant[]
+  branches               Branch[]
+  users                  User[]                  @relation("TenantUsers")
+  staffRoles             StaffRole[]
+  staffUsers             StaffUser[]
+  coupons                Coupon[]
+  carts                  Cart[]
+  orders                 Order[]
+  transactions           PaymentTransaction[]
+  walletAccounts         WalletAccount[]
+  walletTransactions     WalletTransaction[]
+  loyaltyPrograms        LoyaltyProgram[]
+  loyaltyAccounts        LoyaltyAccount[]
+  loyaltyTransactions    LoyaltyTransaction[]
+  notifications          Notification[]
+  pushDeviceTokens       PushDeviceToken[]
+  deliverymen            Deliveryman[]
+  chatThreads            ChatThread[]
+  groupOrders            GroupOrderSession[]
+  posOrderDrafts         PosOrderDraft[]
+  packagePlans           PackagePlan[]
+  tenantSubscriptions    TenantSubscription[]
+  subscriptionDeductions SubscriptionDeduction[]
+  orderReviews           OrderReview[]
+  entityTranslations     EntityTranslation[]
+  contactSubmissions     ContactSubmission[]
 
   @@map("tenants")
 }
@@ -382,39 +394,40 @@ model Restaurant {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  branches            Branch[]
-  users               User[]               @relation("RestaurantUsers")
-  staffRoles          StaffRole[]
-  staffUsers          StaffUser[]
-  restaurantMenus     RestaurantMenu[]
-  menuCategories      MenuCategory[]
-  menuItems           MenuItem[]
-  modifierCategories  ModifierCategory[]
-  modifierGroups      ModifierGroup[]
-  modifiers           Modifier[]
-  menuItemVariations  MenuItemVariation[]
-  inventoryCategories InventoryCategory[]
-  inventoryItems      InventoryItem[]
-  coupons             Coupon[]
-  carts               Cart[]
-  orders              Order[]
-  transactions        PaymentTransaction[]
-  walletAccounts      WalletAccount[]
-  walletTransactions  WalletTransaction[]
-  loyaltyPrograms     LoyaltyProgram[]
-  loyaltyAccounts     LoyaltyAccount[]
-  loyaltyTransactions LoyaltyTransaction[]
-  notifications       Notification[]
-  pushDeviceTokens    PushDeviceToken[]
-  deliverymen         Deliveryman[]
-  chatThreads         ChatThread[]
-  groupOrders         GroupOrderSession[]
-  posOrderDrafts      PosOrderDraft[]
-  tenantSubscriptions TenantSubscription[]
-  orderReviews        OrderReview[]
-  entityTranslations  EntityTranslation[]
-  contactSubmissions  ContactSubmission[]
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id])
+  branches               Branch[]
+  users                  User[]                  @relation("RestaurantUsers")
+  staffRoles             StaffRole[]
+  staffUsers             StaffUser[]
+  restaurantMenus        RestaurantMenu[]
+  menuCategories         MenuCategory[]
+  menuItems              MenuItem[]
+  modifierCategories     ModifierCategory[]
+  modifierGroups         ModifierGroup[]
+  modifiers              Modifier[]
+  menuItemVariations     MenuItemVariation[]
+  inventoryCategories    InventoryCategory[]
+  inventoryItems         InventoryItem[]
+  coupons                Coupon[]
+  carts                  Cart[]
+  orders                 Order[]
+  transactions           PaymentTransaction[]
+  walletAccounts         WalletAccount[]
+  walletTransactions     WalletTransaction[]
+  loyaltyPrograms        LoyaltyProgram[]
+  loyaltyAccounts        LoyaltyAccount[]
+  loyaltyTransactions    LoyaltyTransaction[]
+  notifications          Notification[]
+  pushDeviceTokens       PushDeviceToken[]
+  deliverymen            Deliveryman[]
+  chatThreads            ChatThread[]
+  groupOrders            GroupOrderSession[]
+  posOrderDrafts         PosOrderDraft[]
+  tenantSubscriptions    TenantSubscription[]
+  subscriptionDeductions SubscriptionDeduction[]
+  orderReviews           OrderReview[]
+  entityTranslations     EntityTranslation[]
+  contactSubmissions     ContactSubmission[]
 
   @@map("restaurants")
 }
@@ -1222,20 +1235,20 @@ model EntityTranslation {
 }
 
 model StaffRole {
-  id           String         @id @default(cuid())
-  ownerUserId  String         @map("owner_user_id")
-  panelType    StaffPanelType @map("panel_type")
-  tenantId     String?        @map("tenant_id")
-  restaurantId String?        @map("restaurant_id")
-  branchId     String?        @map("branch_id")
-  name         String
-  description  String?
+  id               String         @id @default(cuid())
+  ownerUserId      String         @map("owner_user_id")
+  panelType        StaffPanelType @map("panel_type")
+  tenantId         String?        @map("tenant_id")
+  restaurantId     String?        @map("restaurant_id")
+  branchId         String?        @map("branch_id")
+  name             String
+  description      String?
   permissions      Json
-  restaurantAccess Json?         @map("restaurant_access")
-  isActive         Boolean       @default(true) @map("is_active")
-  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz
-  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  restaurantAccess Json?          @map("restaurant_access")
+  isActive         Boolean        @default(true) @map("is_active")
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
   ownerUser  User        @relation("StaffRoleOwner", fields: [ownerUserId], references: [id])
   tenant     Tenant?     @relation(fields: [tenantId], references: [id])
@@ -1894,14 +1907,43 @@ model TenantSubscription {
   createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  restaurant  Restaurant? @relation(fields: [restaurantId], references: [id])
-  packagePlan PackagePlan @relation(fields: [packagePlanId], references: [id])
+  tenant      Tenant                  @relation(fields: [tenantId], references: [id])
+  restaurant  Restaurant?             @relation(fields: [restaurantId], references: [id])
+  packagePlan PackagePlan             @relation(fields: [packagePlanId], references: [id])
+  deductions  SubscriptionDeduction[]
 
   @@index([tenantId, status])
   @@index([restaurantId, status])
   @@index([packagePlanId, status])
   @@map("tenant_subscriptions")
+}
+
+model SubscriptionDeduction {
+  id             String                      @id @default(cuid())
+  tenantId       String                      @map("tenant_id")
+  restaurantId   String?                     @map("restaurant_id")
+  subscriptionId String?                     @map("subscription_id")
+  type           SubscriptionDeductionType   @default(ONE_TIME)
+  status         SubscriptionDeductionStatus @default(ACTIVE)
+  title          String                      @db.VarChar(160)
+  description    String?
+  amount         Decimal                     @db.Decimal(10, 2)
+  currency       String                      @default("PKR") @db.VarChar(10)
+  appliesFrom    DateTime?                   @map("applies_from") @db.Timestamptz
+  appliedAt      DateTime?                   @map("applied_at") @db.Timestamptz
+  createdBy      String?                     @map("created_by")
+  updatedBy      String?                     @map("updated_by")
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime                    @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  restaurant   Restaurant?         @relation(fields: [restaurantId], references: [id])
+  subscription TenantSubscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([restaurantId, status])
+  @@index([subscriptionId, status])
+  @@map("subscription_deductions")
 }
 
 model GlobalSetting {

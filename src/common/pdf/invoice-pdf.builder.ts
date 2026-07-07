@@ -11,7 +11,11 @@ interface PdfTableLine {
   style: 'tableHeader' | 'tableCell';
 }
 
-type PdfLine = PdfTextLine | PdfTableLine;
+interface PdfPageBreakLine {
+  pageBreak: true;
+}
+
+type PdfLine = PdfTextLine | PdfTableLine | PdfPageBreakLine;
 
 export interface InvoicePdfTable {
   columns: Array<{ header: string; width?: number }>;
@@ -22,6 +26,7 @@ export interface InvoicePdfSection {
   title?: string;
   rows?: string[];
   tables?: InvoicePdfTable[];
+  pageBreakBefore?: boolean;
 }
 
 export interface InvoicePdfInput {
@@ -30,6 +35,7 @@ export interface InvoicePdfInput {
   invoiceNumber: string;
   issuedAt: Date;
   brandName?: string;
+  headerLines?: string[];
   meta?: Array<{ label: string; value: string | number | null | undefined }>;
   sections: InvoicePdfSection[];
 }
@@ -108,6 +114,9 @@ export class InvoicePdfBuilder {
     }
 
     for (const section of input.sections) {
+      if (section.pageBreakBefore) {
+        lines.push({ pageBreak: true });
+      }
       lines.push({ text: '', style: 'normal' });
       if (section.title) {
         lines.push({ text: section.title, style: 'subheading' });
@@ -138,6 +147,13 @@ export class InvoicePdfBuilder {
     let y = TOP - 88;
 
     for (const line of lines) {
+      if ('pageBreak' in line) {
+        if (pages[pages.length - 1].length > 0) {
+          pages.push([]);
+        }
+        y = TOP - 88;
+        continue;
+      }
       if (y < BOTTOM) {
         pages.push([]);
         y = TOP - 88;
@@ -163,9 +179,19 @@ export class InvoicePdfBuilder {
       `BT /F1 10 Tf 48 774 Td (${this.escape(input.brandName ?? 'Restaurant Commerce Platform')}) Tj ET`,
       '0.12 0.12 0.12 rg',
     ];
+    for (const [index, line] of (input.headerLines ?? [])
+      .slice(0, 3)
+      .entries()) {
+      commands.push(
+        `BT /F1 8 Tf 330 ${792 - index * 12} Td (${this.escape(line)}) Tj ET`,
+      );
+    }
     let y = TOP - 88;
 
     for (const line of lines) {
+      if ('pageBreak' in line) {
+        continue;
+      }
       if ('cells' in line) {
         this.pushTableRow(commands, line, y);
       } else {
@@ -188,6 +214,7 @@ export class InvoicePdfBuilder {
   }
 
   private static lineHeight(line: PdfLine) {
+    if ('pageBreak' in line) return 0;
     if ('cells' in line) return 16;
     const { style } = line;
     return style === 'heading' ? 22 : style === 'subheading' ? 18 : LINE_HEIGHT;

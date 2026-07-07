@@ -7,6 +7,8 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  SubscriptionDeductionStatus,
+  SubscriptionDeductionType,
   SubscriptionStatus,
 } from '@prisma/client';
 import { PackagePlansService } from './package-plans.service';
@@ -652,6 +654,81 @@ describe('PackagePlansService', () => {
       'subscription-12345678',
       { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
     );
+  });
+
+  it('applies recurring and one-time subscription deductions on invoices', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      listApplicableDeductions: jest.fn().mockResolvedValue([
+        {
+          id: 'deduction-recurring-1',
+          title: 'Marketing credit',
+          description: null,
+          type: SubscriptionDeductionType.RECURRING,
+          status: SubscriptionDeductionStatus.ACTIVE,
+          amount: new Prisma.Decimal(300),
+          currency: 'PKR',
+        },
+        {
+          id: 'deduction-one-time-1',
+          title: 'Service outage credit',
+          description: null,
+          type: SubscriptionDeductionType.ONE_TIME,
+          status: SubscriptionDeductionStatus.ACTIVE,
+          amount: new Prisma.Decimal(200),
+          currency: 'PKR',
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.deductions).toHaveLength(2);
+    expect(result.data.totals).toMatchObject({
+      deductionAmount: 500,
+      subtotal: 4500,
+      vatAmount: 675,
+      totalFeesAmount: 5175,
+    });
+  });
+
+  it('exports monthly invoice records as DATEV placeholder CSV', async () => {
+    const repository = {
+      listMonthlyGeneratedInvoices: jest.fn().mockResolvedValue([
+        {
+          invoiceNumber: 'CRN-12345678-20260701',
+          kind: 'SUBSCRIPTION',
+          restaurantId: 'restaurant-1',
+          subscriptionId: 'subscription-12345678',
+          orderId: null,
+          currency: 'PKR',
+          totalAmount: new Prisma.Decimal(0),
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+          snapshot: {
+            documentType: 'CREDIT_NOTE',
+            restaurant: { name: 'Pizza House' },
+          },
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.exportMonthlyInvoicesDatevCsv(superAdmin, {
+      year: 2026,
+      month: 7,
+    });
+    const csv = result.content.toString('utf8');
+
+    expect(result.fileName).toBe('datev-invoices-2026-07.csv');
+    expect(csv).toContain('TODO_REVENUE_ACCOUNT');
+    expect(csv).toContain('CRN-12345678-20260701');
+    expect(csv).toContain('CREDIT_NOTE');
+    expect(csv).toContain('DATEV account numbers are placeholders');
   });
 
   it('auto-emails weekly payout invoices once for the last completed payout period', async () => {

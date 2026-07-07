@@ -27,12 +27,16 @@ import {
 } from '../../common/guards';
 import {
   AssignTenantSubscriptionDto,
+  CreateSubscriptionDeductionDto,
   CreatePackagePlanDto,
   ListPackagePlansDto,
+  ListSubscriptionDeductionsDto,
   ListTenantSubscriptionsDto,
+  MonthlyInvoiceDatevExportQueryDto,
   SendTenantSubscriptionInvoiceDto,
   SendWeeklyRestaurantPayoutInvoiceDto,
   UpdatePackagePlanDto,
+  UpdateSubscriptionDeductionDto,
   UpdateTenantSubscriptionDto,
   WeeklyRestaurantPayoutInvoiceQueryDto,
 } from './dto';
@@ -173,6 +177,54 @@ export class PackagePlansController {
     @Body() dto: SendWeeklyRestaurantPayoutInvoiceDto,
   ) {
     return this.packagePlansService.sendWeeklyPayoutInvoiceEmail(user, dto);
+  }
+
+  @Get('deductions')
+  @ApiOperation({ summary: 'List subscription deductible items' })
+  listDeductions(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListSubscriptionDeductionsDto,
+  ) {
+    return this.packagePlansService.listDeductions(user, query);
+  }
+
+  @Post('deductions')
+  @ApiOperation({ summary: 'Create subscription deductible item' })
+  createDeduction(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateSubscriptionDeductionDto,
+  ) {
+    return this.packagePlansService.createDeduction(user, dto);
+  }
+
+  @Patch('deductions/:id')
+  @ApiOperation({ summary: 'Update subscription deductible item' })
+  updateDeduction(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateSubscriptionDeductionDto,
+  ) {
+    return this.packagePlansService.updateDeduction(user, id, dto);
+  }
+
+  @Get('invoices/datev-export')
+  @ApiOperation({ summary: 'Export monthly invoice DATEV CSV' })
+  async exportMonthlyInvoicesDatevCsv(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: MonthlyInvoiceDatevExportQueryDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.packagePlansService.exportMonthlyInvoicesDatevCsv(
+      user,
+      query,
+    );
+
+    response.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `attachment; filename="${file.fileName}"`,
+    });
+
+    return new StreamableFile(file.content);
   }
 
   @Get(':id')

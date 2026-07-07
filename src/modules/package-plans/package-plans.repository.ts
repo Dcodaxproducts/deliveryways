@@ -1,7 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentStatus, Prisma, SubscriptionStatus } from '@prisma/client';
+import {
+  GeneratedInvoiceKind,
+  PaymentStatus,
+  Prisma,
+  SubscriptionDeductionStatus,
+  SubscriptionDeductionType,
+  SubscriptionStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../database';
-import { ListPackagePlansDto, ListTenantSubscriptionsDto } from './dto';
+import {
+  ListPackagePlansDto,
+  ListSubscriptionDeductionsDto,
+  ListTenantSubscriptionsDto,
+  MonthlyInvoiceDatevExportQueryDto,
+} from './dto';
 
 @Injectable()
 export class PackagePlansRepository {
@@ -134,6 +146,131 @@ export class PackagePlansRepository {
     return this.prisma.restaurant.findFirst({
       where: { id, tenantId, deletedAt: null },
       select: { id: true },
+    });
+  }
+
+  createDeduction(data: Prisma.SubscriptionDeductionCreateInput) {
+    return this.prisma.subscriptionDeduction.create({ data });
+  }
+
+  updateDeduction(id: string, data: Prisma.SubscriptionDeductionUpdateInput) {
+    return this.prisma.subscriptionDeduction.update({ where: { id }, data });
+  }
+
+  findDeductionById(id: string) {
+    return this.prisma.subscriptionDeduction.findUnique({ where: { id } });
+  }
+
+  async listDeductions(query: ListSubscriptionDeductionsDto) {
+    const where: Prisma.SubscriptionDeductionWhereInput = {
+      ...(query.tenantId ? { tenantId: query.tenantId } : {}),
+      ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
+      ...(query.subscriptionId ? { subscriptionId: query.subscriptionId } : {}),
+      ...(query.type ? { type: query.type } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              {
+                description: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.subscriptionDeduction.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: {
+          [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+        },
+      }),
+      this.prisma.subscriptionDeduction.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  listApplicableDeductions(
+    subscription: {
+      id: string;
+      tenantId: string;
+      restaurantId: string | null;
+    },
+    periodTo: Date,
+  ) {
+    return this.prisma.subscriptionDeduction.findMany({
+      where: {
+        tenantId: subscription.tenantId,
+        status: SubscriptionDeductionStatus.ACTIVE,
+        OR: [
+          { subscriptionId: subscription.id },
+          {
+            subscriptionId: null,
+            restaurantId: subscription.restaurantId,
+          },
+          {
+            subscriptionId: null,
+            restaurantId: null,
+          },
+        ],
+        AND: [
+          {
+            OR: [{ appliesFrom: null }, { appliesFrom: { lte: periodTo } }],
+          },
+          {
+            OR: [
+              { type: SubscriptionDeductionType.RECURRING },
+              {
+                type: SubscriptionDeductionType.ONE_TIME,
+                appliedAt: null,
+              },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ createdAt: 'asc' }],
+    });
+  }
+
+  markOneTimeDeductionsApplied(ids: string[], appliedAt: Date) {
+    if (!ids.length) {
+      return Promise.resolve({ count: 0 });
+    }
+
+    return this.prisma.subscriptionDeduction.updateMany({
+      where: {
+        id: { in: ids },
+        type: SubscriptionDeductionType.ONE_TIME,
+        status: SubscriptionDeductionStatus.ACTIVE,
+      },
+      data: {
+        status: SubscriptionDeductionStatus.APPLIED,
+        appliedAt,
+      },
+    });
+  }
+
+  listMonthlyGeneratedInvoices(query: MonthlyInvoiceDatevExportQueryDto) {
+    const from = new Date(Date.UTC(query.year, query.month - 1, 1));
+    const to = new Date(Date.UTC(query.year, query.month, 1));
+
+    return this.prisma.generatedInvoice.findMany({
+      where: {
+        createdAt: { gte: from, lt: to },
+        kind: {
+          in: [GeneratedInvoiceKind.ORDER, GeneratedInvoiceKind.SUBSCRIPTION],
+        },
+        ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { invoiceNumber: 'asc' }],
     });
   }
 
