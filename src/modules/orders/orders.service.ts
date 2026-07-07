@@ -30,7 +30,10 @@ import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
-import { GlobalSettingsService } from '../global-settings/global-settings.service';
+import {
+  GlobalSettingsService,
+  ServiceChargeSettingsShape,
+} from '../global-settings/global-settings.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -1372,8 +1375,10 @@ export class OrdersService {
       pricedLines,
       settings.taxation.taxPercentage,
     );
+    const platformServiceChargeConfig =
+      await this.resolvePlatformServiceChargeConfig(settings.serviceCharge);
     const serviceCharge = this.resolveServiceCharge(
-      settings.serviceCharge,
+      platformServiceChargeConfig,
       subtotal,
     );
     const tipAmount = this.resolveTipAmount(dto.tipAmount);
@@ -4354,6 +4359,60 @@ export class OrdersService {
 
   private withPlatformPaymentMethods(methods: string[]) {
     return [...new Set([...methods, 'COD', 'PAYPAL'])];
+  }
+
+  private async resolvePlatformServiceChargeConfig(
+    fallback: BranchSettings['serviceCharge'],
+  ): Promise<ServiceChargeSettingsShape> {
+    if (this.globalSettingsService) {
+      return this.globalSettingsService.getServiceChargeConfig();
+    }
+
+    const globalSettingDelegate = (
+      this.prisma as unknown as {
+        globalSetting?: {
+          findUnique: (args: {
+            where: { scopeKey: string };
+            select: {
+              serviceChargeEnabled: boolean;
+              serviceChargeType: boolean;
+              serviceChargeValue: boolean;
+            };
+          }) => Promise<{
+            serviceChargeEnabled: boolean;
+            serviceChargeType: ServiceChargeType;
+            serviceChargeValue: Prisma.Decimal;
+          } | null>;
+        };
+      }
+    ).globalSetting;
+
+    if (!globalSettingDelegate) {
+      return fallback;
+    }
+
+    const settings = await globalSettingDelegate.findUnique({
+      where: { scopeKey: 'GLOBAL' },
+      select: {
+        serviceChargeEnabled: true,
+        serviceChargeType: true,
+        serviceChargeValue: true,
+      },
+    });
+
+    if (!settings) {
+      return {
+        isEnabled: false,
+        type: ServiceChargeType.PERCENTAGE,
+        value: 0,
+      };
+    }
+
+    return {
+      isEnabled: settings.serviceChargeEnabled,
+      type: settings.serviceChargeType,
+      value: Number(settings.serviceChargeValue),
+    };
   }
 
   private resolveServiceCharge(

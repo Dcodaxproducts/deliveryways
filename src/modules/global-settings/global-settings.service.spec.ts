@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { PaymentMethod, Prisma } from '@prisma/client';
+import { PaymentMethod, Prisma, ServiceChargeType } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { GlobalSettingsRepository } from './global-settings.repository';
 import {
@@ -110,6 +110,11 @@ describe('GlobalSettingsService', () => {
             isActive: true,
           },
         ],
+        serviceCharge: {
+          isEnabled: false,
+          type: ServiceChargeType.PERCENTAGE,
+          value: 0,
+        },
         notificationSettings: {
           emailAddress: null,
           phoneNumber: null,
@@ -193,6 +198,9 @@ describe('GlobalSettingsService', () => {
         timezone: 'UTC',
         cartExpiryMinutes: 90,
         globalTaxPercentage: 5,
+        serviceChargeEnabled: true,
+        serviceChargeType: ServiceChargeType.PERCENTAGE,
+        serviceChargeValue: 8.5,
         notificationSettings: {
           whatsappNumber: '+923009876543',
           notificationTypes: {
@@ -211,9 +219,12 @@ describe('GlobalSettingsService', () => {
       primaryColor: '#FF6B00',
       timezone: 'UTC',
       cartExpiryMinutes: 90,
+      serviceChargeEnabled: true,
+      serviceChargeType: ServiceChargeType.PERCENTAGE,
       updatedBy: 'user-1',
     });
     expect(updateData.globalTaxPercentage).toBeInstanceOf(Prisma.Decimal);
+    expect(updateData.serviceChargeValue).toEqual(new Prisma.Decimal(8.5));
     expect(updateData).toMatchObject({
       notificationSettings: {
         emailAddress: 'old@example.com',
@@ -236,7 +247,10 @@ describe('GlobalSettingsService', () => {
       primaryColor: '#FF6B00',
       timezone: 'UTC',
       cartExpiryMinutes: 90,
+      serviceChargeEnabled: true,
+      serviceChargeType: ServiceChargeType.PERCENTAGE,
     });
+    expect(createData.serviceChargeValue).toEqual(new Prisma.Decimal(8.5));
   });
 
   it('returns configured cart expiry minutes', async () => {
@@ -246,6 +260,21 @@ describe('GlobalSettingsService', () => {
     });
 
     await expect(service.getCartExpiryMinutes()).resolves.toBe(45);
+  });
+
+  it('returns platform service charge config', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      serviceChargeEnabled: true,
+      serviceChargeType: ServiceChargeType.PERCENTAGE,
+      serviceChargeValue: new Prisma.Decimal(7.5),
+    });
+
+    await expect(service.getServiceChargeConfig()).resolves.toEqual({
+      isEnabled: true,
+      type: ServiceChargeType.PERCENTAGE,
+      value: 7.5,
+    });
   });
 
   it('returns platform payment methods with defaults and stored overrides', async () => {
@@ -412,6 +441,26 @@ describe('GlobalSettingsService', () => {
         },
       ),
     ).rejects.toThrow('Duplicate tax type code');
+  });
+
+  it('rejects percentage service charge values above 100', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      notificationSettings: null,
+    });
+
+    await expect(
+      service.updateSettings(
+        { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+        {
+          serviceChargeEnabled: true,
+          serviceChargeType: ServiceChargeType.PERCENTAGE,
+          serviceChargeValue: 101,
+        },
+      ),
+    ).rejects.toThrow(
+      'serviceChargeValue cannot exceed 100 for percentage service charges',
+    );
   });
 
   it('rejects notification channels without required contact values', async () => {

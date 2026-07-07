@@ -4,6 +4,7 @@ import {
   PaymentMethod,
   PlatformDateFormat,
   Prisma,
+  ServiceChargeType,
   VatHandlingRule,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
@@ -50,6 +51,12 @@ export interface TaxTypeSettingsShape {
   isDefault: boolean;
 }
 
+export interface ServiceChargeSettingsShape {
+  isEnabled: boolean;
+  type: ServiceChargeType;
+  value: number;
+}
+
 interface NormalizedGlobalSettingsInput {
   globalTaxPercentage?: Prisma.Decimal;
   vatHandlingRule?: VatHandlingRule;
@@ -64,6 +71,9 @@ interface NormalizedGlobalSettingsInput {
   secondaryColor?: string | null;
   fontFamily?: string | null;
   cartExpiryMinutes?: number;
+  serviceChargeEnabled?: boolean;
+  serviceChargeType?: ServiceChargeType;
+  serviceChargeValue?: Prisma.Decimal;
   notificationSettings?: Prisma.InputJsonValue;
   paymentMethods?: Prisma.InputJsonValue;
   taxTypes?: Prisma.InputJsonValue;
@@ -106,10 +116,19 @@ export class GlobalSettingsService {
     return data.cartExpiryMinutes;
   }
 
+  async getServiceChargeConfig(): Promise<ServiceChargeSettingsShape> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return this.extractServiceChargeSettings(data);
+  }
+
   async updateSettings(user: AuthUserContext, dto: UpdateGlobalSettingsDto) {
     const current = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),
     );
+    this.assertValidServiceCharge(dto, current.serviceChargeType);
     const normalized = this.normalizeUpdateDto(
       dto,
       current.notificationSettings,
@@ -225,6 +244,9 @@ export class GlobalSettingsService {
       primaryColor: null,
       secondaryColor: null,
       fontFamily: null,
+      serviceChargeEnabled: false,
+      serviceChargeType: ServiceChargeType.PERCENTAGE,
+      serviceChargeValue: new Prisma.Decimal(0),
       cartExpiryMinutes: 720,
       notificationSettings: this.buildDefaultNotificationSettings(),
       paymentMethods: this.buildDefaultPaymentMethods(),
@@ -288,6 +310,12 @@ export class GlobalSettingsService {
           ? this.resolveOptionalString(dto.fontFamily)
           : undefined,
       cartExpiryMinutes: dto.cartExpiryMinutes,
+      serviceChargeEnabled: dto.serviceChargeEnabled,
+      serviceChargeType: dto.serviceChargeType,
+      serviceChargeValue:
+        dto.serviceChargeValue !== undefined
+          ? new Prisma.Decimal(dto.serviceChargeValue)
+          : undefined,
       notificationSettings:
         dto.notificationSettings !== undefined
           ? this.mergeNotificationSettings(
@@ -349,6 +377,9 @@ export class GlobalSettingsService {
       notificationSettings?: Prisma.JsonValue | null;
       paymentMethods?: Prisma.JsonValue | null;
       taxTypes?: Prisma.JsonValue | null;
+      serviceChargeEnabled?: boolean | null;
+      serviceChargeType?: ServiceChargeType | null;
+      serviceChargeValue?: Prisma.Decimal | number | string | null;
     },
   >(settings: T) {
     return {
@@ -361,6 +392,19 @@ export class GlobalSettingsService {
         settings.taxTypes,
         settings.globalTaxPercentage,
       ),
+      serviceCharge: this.extractServiceChargeSettings(settings),
+    };
+  }
+
+  private extractServiceChargeSettings(settings: {
+    serviceChargeEnabled?: boolean | null;
+    serviceChargeType?: ServiceChargeType | null;
+    serviceChargeValue?: Prisma.Decimal | number | string | null;
+  }): ServiceChargeSettingsShape {
+    return {
+      isEnabled: Boolean(settings.serviceChargeEnabled),
+      type: settings.serviceChargeType ?? ServiceChargeType.PERCENTAGE,
+      value: this.toNumber(settings.serviceChargeValue ?? 0),
     };
   }
 
@@ -854,6 +898,23 @@ export class GlobalSettingsService {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private assertValidServiceCharge(
+    dto: UpdateGlobalSettingsDto,
+    currentType?: ServiceChargeType | null,
+  ) {
+    const nextType =
+      dto.serviceChargeType ?? currentType ?? ServiceChargeType.PERCENTAGE;
+    if (
+      nextType === ServiceChargeType.PERCENTAGE &&
+      dto.serviceChargeValue !== undefined &&
+      dto.serviceChargeValue > 100
+    ) {
+      throw new BadRequestException(
+        'serviceChargeValue cannot exceed 100 for percentage service charges',
+      );
+    }
   }
 
   private assertValidTimeZone(value: string) {

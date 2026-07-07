@@ -3,6 +3,7 @@ import {
   CurrencyDisplayFormat,
   PaymentMethod,
   PlatformDateFormat,
+  ServiceChargeType,
   VatHandlingRule,
 } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
@@ -269,6 +270,32 @@ export class UpdateGlobalSettingsDto {
   @Min(15)
   @Max(10080)
   cartExpiryMinutes?: number;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Enables the platform-managed service charge shown on quotes/orders.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  serviceChargeEnabled?: boolean;
+
+  @ApiPropertyOptional({ enum: ServiceChargeType })
+  @IsOptional()
+  @IsEnum(ServiceChargeType)
+  serviceChargeType?: ServiceChargeType;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    example: 5,
+    description:
+      'Service charge value. Percentage values must be 0-100; amount values may be any non-negative amount.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  serviceChargeValue?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

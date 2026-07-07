@@ -2469,9 +2469,9 @@ describe('OrdersService - coupon quote validation', () => {
               taxPercentage: 10,
             },
             serviceCharge: {
-              isEnabled: true,
+              isEnabled: false,
               type: 'PERCENTAGE',
-              value: 10,
+              value: 0,
             },
           },
         }),
@@ -2507,6 +2507,13 @@ describe('OrdersService - coupon quote validation', () => {
       {} as never,
       {} as never,
       { calculateQuoteBenefits } as never,
+      {
+        getServiceChargeConfig: jest.fn().mockResolvedValue({
+          isEnabled: true,
+          type: 'PERCENTAGE',
+          value: 10,
+        }),
+      } as never,
     );
 
     const result = await service.quote(
