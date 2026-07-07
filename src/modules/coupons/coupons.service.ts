@@ -575,6 +575,10 @@ export class CouponsService {
           code: promotion.code,
         });
 
+        if (result.discountAmount.lessThanOrEqualTo(0)) {
+          continue;
+        }
+
         if (
           !best ||
           result.discountAmount.greaterThan(best.discountAmount) ||

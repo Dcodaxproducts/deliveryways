@@ -930,6 +930,47 @@ describe('CouponsService', () => {
     expect(Number(result?.discountAmount)).toBe(25);
   });
 
+  it('ignores zero-discount auto fixed-price promotions', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([
+      makeCoupon({
+        id: 'promotion-1',
+        code: 'SINGLE1390',
+        title: '222. Single Angebot',
+        autoApply: true,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(13.9),
+        minOrderAmount: new Prisma.Decimal(0),
+        maxDiscountAmount: null,
+        scopeMenuItems: [{ menuItem: { id: 'mi-1' } }],
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 1,
+      }),
+    ]);
+    repository.findActiveHappyHours!.mockResolvedValue([]);
+
+    const result = await service.findBestAutoApplyPromotion({
+      restaurantId: baseInput.restaurantId,
+      branchId: baseInput.branchId,
+      customerId: baseInput.customerId,
+      subtotal: 10,
+      menuItemIds: ['mi-1'],
+      categoryIds: ['cat-1'],
+      lineItems: [
+        {
+          menuItemId: 'mi-1',
+          categoryId: 'cat-1',
+          categoryIds: ['cat-1'],
+          quantity: 1,
+          unitPrice: 10,
+          lineTotal: 10,
+        },
+      ],
+    });
+
+    expect(result).toBeNull();
+  });
+
   it('returns only currently scheduled active happy hours', async () => {
     const originalDate = global.Date;
 
