@@ -2440,7 +2440,7 @@ describe('OrdersService - order reviews', () => {
 });
 
 describe('OrdersService - coupon quote validation', () => {
-  it('does not add inclusive tax and service charge on top of quote totals', async () => {
+  it('adds service charge but not inclusive tax to quote totals', async () => {
     const calculateQuoteBenefits = jest.fn(
       (input: { totalBeforeBenefits: Prisma.Decimal }) => ({
         walletAppliedAmount: new Prisma.Decimal(0),
@@ -2538,14 +2538,14 @@ describe('OrdersService - coupon quote validation', () => {
     expect(calculateQuoteBenefits).toHaveBeenCalledWith(
       expect.objectContaining({
         subtotal: new Prisma.Decimal(1000),
-        totalBeforeBenefits: new Prisma.Decimal(1000),
+        totalBeforeBenefits: new Prisma.Decimal(1100),
       }),
     );
     expect(result.data.subtotal).toBe(1000);
     expect(result.data.taxAmount).toBe(100);
     expect(result.data.serviceChargeAmount).toBe(100);
-    expect(result.data.totalAmount).toBe(1000);
-    expect(result.data.payableAmount).toBe(1000);
+    expect(result.data.totalAmount).toBe(1100);
+    expect(result.data.payableAmount).toBe(1100);
   });
 
   it('skips delivery address and branch availability checks when validating coupon application', async () => {
