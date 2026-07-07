@@ -57,12 +57,31 @@ describe('PosService', () => {
     };
 
     const ordersService = {
-      quote: jest.fn(),
+      quote: jest.fn().mockResolvedValue({
+        data: {
+          subtotal: 0,
+          taxAmount: 0,
+          deliveryFee: 0,
+          serviceChargeType: null,
+          serviceChargeValue: null,
+          serviceChargeAmount: 0,
+          chargeBreakdown: [],
+          tipAmount: 0,
+          discountAmount: 0,
+          walletAppliedAmount: 0,
+          loyaltyDiscountAmount: 0,
+          loyaltyPointsRedeemed: 0,
+          totalAmount: 0,
+          payableAmount: 0,
+          appliedPromotion: null,
+          items: [],
+        },
+      }),
       create: jest.fn(),
     };
 
     const usersService = {
-      create: jest.fn(),
+      create: jest.fn().mockResolvedValue({ id: 'guest-customer-1' }),
     };
 
     const service = new PosService(
@@ -372,6 +391,168 @@ describe('PosService', () => {
         ],
       }),
     );
+  });
+
+  it('quotes walk-in POS grouped modifiers and exposes Flutter selection fields', async () => {
+    const { service, posRepository, ordersService, usersService } =
+      makeService();
+    posRepository.findDraftById.mockResolvedValue(
+      makeDraft({
+        items: [
+          {
+            id: 'item-1',
+            menuItemId: 'menu-1',
+            variationId: null,
+            quantity: 1,
+            note: null,
+            modifiers: {
+              modifiers: [
+                { modifierId: 'tagliatelle', quantity: 1 },
+                { modifierId: 'parmesan', quantity: 2 },
+              ],
+              modifierSelections: [
+                {
+                  modifierGroupId: 'pasta-group',
+                  modifiers: [{ modifierId: 'tagliatelle', quantity: 1 }],
+                },
+                {
+                  modifierGroupId: 'extras-group',
+                  modifiers: [{ modifierId: 'parmesan', quantity: 2 }],
+                },
+              ],
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      }),
+    );
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 18.1,
+        taxAmount: 0,
+        deliveryFee: 0,
+        serviceChargeType: null,
+        serviceChargeValue: null,
+        serviceChargeAmount: 0,
+        chargeBreakdown: [],
+        tipAmount: 0,
+        discountAmount: 0,
+        walletAppliedAmount: 0,
+        loyaltyDiscountAmount: 0,
+        loyaltyPointsRedeemed: 0,
+        totalAmount: 18.1,
+        payableAmount: 18.1,
+        appliedPromotion: null,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            menuItemName: 'Pasta',
+            variationId: null,
+            variationName: null,
+            quantity: 1,
+            unitPrice: 18.1,
+            depositAmount: 0,
+            lineTotal: 18.1,
+            taxTypeCode: null,
+            taxPercentage: null,
+            snapshotModifiers: [
+              {
+                modifierId: 'tagliatelle',
+                modifierGroupId: 'pasta-group',
+                quantity: 1,
+                unitPrice: 1,
+                total: 1,
+              },
+              {
+                modifierId: 'parmesan',
+                modifierGroupId: 'extras-group',
+                quantity: 2,
+                unitPrice: 4,
+                total: 8,
+              },
+            ],
+            snapshotSections: [],
+          },
+        ],
+      },
+    });
+
+    const result = await service.details(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      'draft-1',
+    );
+
+    expect(usersService.create).toHaveBeenCalled();
+    expect(posRepository.updateDraft).toHaveBeenCalledWith('draft-1', {
+      customer: { connect: { id: 'guest-customer-1' } },
+    });
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        customerId: 'guest-customer-1',
+        items: [
+          expect.objectContaining({
+            modifiers: [
+              { modifierId: 'tagliatelle', quantity: 1 },
+              { modifierId: 'parmesan', quantity: 2 },
+            ],
+            modifierSelections: [
+              {
+                modifierGroupId: 'pasta-group',
+                modifiers: [{ modifierId: 'tagliatelle', quantity: 1 }],
+              },
+              {
+                modifierGroupId: 'extras-group',
+                modifiers: [{ modifierId: 'parmesan', quantity: 2 }],
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(result.data).toMatchObject({
+      customerId: 'guest-customer-1',
+      pricingStatus: 'QUOTED',
+      subtotal: 18.1,
+      totalAmount: 18.1,
+      payableAmount: 18.1,
+    });
+    expect(result.data.items[0]).toMatchObject({
+      lineTotal: 18.1,
+      modifierSelections: [
+        {
+          modifierGroupId: 'pasta-group',
+          modifiers: [{ modifierId: 'tagliatelle', quantity: 1 }],
+        },
+        {
+          modifierGroupId: 'extras-group',
+          modifiers: [{ modifierId: 'parmesan', quantity: 2 }],
+        },
+      ],
+      selectedModifiers: [
+        expect.objectContaining({ modifierId: 'tagliatelle', total: 1 }),
+        expect.objectContaining({
+          modifierId: 'parmesan',
+          quantity: 2,
+          total: 8,
+        }),
+      ],
+      snapshotModifiers: [
+        expect.objectContaining({ modifierId: 'tagliatelle', total: 1 }),
+        expect.objectContaining({
+          modifierId: 'parmesan',
+          quantity: 2,
+          total: 8,
+        }),
+      ],
+    });
   });
 
   it('includes menu item details in POS draft item responses', async () => {

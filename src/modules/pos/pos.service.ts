@@ -36,8 +36,13 @@ interface DraftResponseOptions {
 }
 
 interface PosDraftQuoteSource {
+  id: string;
+  tenantId: string;
+  restaurantId: string;
   branchId: string;
   customerId: string | null;
+  guestName: string | null;
+  guestPhone: string | null;
   orderType: OrderType;
   couponCode: string | null;
   items: Array<{
@@ -1038,14 +1043,17 @@ export class PosService {
     user: AuthUserContext,
     draft: PosDraftQuoteSource,
   ) {
-    if (!draft.customerId || !draft.items.length) {
+    if (!draft.items.length) {
       return null;
     }
+
+    const customerId =
+      draft.customerId ?? (await this.ensureDraftCheckoutCustomer(draft));
 
     try {
       const result = await this.ordersService.quote(user, {
         branchId: draft.branchId,
-        customerId: draft.customerId,
+        customerId,
         orderType: draft.orderType as never,
         items: draft.items.map((item) => ({
           menuItemId: item.menuItemId,
@@ -1059,7 +1067,7 @@ export class PosService {
         orderTime: new Date().toISOString(),
       });
 
-      return result.data;
+      return { customerId, data: result.data };
     } catch (error) {
       if (this.isModifierSelectionError(error)) {
         return null;
@@ -1180,10 +1188,12 @@ export class PosService {
     const variationsById = new Map(
       itemDetails.variations.map((variation) => [variation.id, variation]),
     );
-    const quoteData =
+    const quoteResult =
       options.includeQuote && options.user
         ? await this.buildDraftQuoteResponse(options.user, draft)
         : null;
+    const quoteData = quoteResult?.data ?? null;
+    const effectiveCustomerId = quoteResult?.customerId ?? draft.customerId;
     const fallbackItems = quoteData
       ? []
       : draft.items.map((item) => {
@@ -1247,7 +1257,7 @@ export class PosService {
         actorId: draft.createdByActorId,
         actorType: draft.createdByActorType,
       },
-      customerId: draft.customerId,
+      customerId: effectiveCustomerId,
       orderType: draft.orderType,
       paymentMethod: draft.paymentMethod,
       guestName: draft.guestName,
@@ -1324,6 +1334,9 @@ export class PosService {
           taxPercentage: pricedItem?.taxPercentage ?? null,
           note: item.note,
           modifiers: item.modifiers,
+          modifierSelections:
+            this.toOrderModifierSelections(item.modifiers) ?? [],
+          selectedModifiers: pricedItem?.snapshotModifiers ?? [],
           snapshotModifiers: pricedItem?.snapshotModifiers ?? null,
           snapshotSections: pricedItem?.snapshotSections ?? null,
           menuItem: menuItem
