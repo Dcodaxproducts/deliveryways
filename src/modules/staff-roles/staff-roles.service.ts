@@ -24,6 +24,11 @@ interface ResolvedStaffScope {
   branchId: string | null;
 }
 
+interface StaffRestaurantAccessScope {
+  restaurantIds: string[];
+  branchIds: string[];
+}
+
 @Injectable()
 export class StaffRolesService {
   constructor(private readonly staffRolesRepository: StaffRolesRepository) {}
@@ -38,6 +43,7 @@ export class StaffRolesService {
       name: dto.name.trim(),
       description: this.resolveOptionalString(dto.description),
       permissions: this.normalizePermissions(dto.permissions),
+      restaurantAccess: await this.resolveRestaurantAccess(scope, dto),
       tenant: scope.tenantId ? { connect: { id: scope.tenantId } } : undefined,
       restaurant: scope.restaurantId
         ? { connect: { id: scope.restaurantId } }
@@ -98,6 +104,19 @@ export class StaffRolesService {
       permissions:
         dto.permissions !== undefined
           ? this.normalizePermissions(dto.permissions)
+          : undefined,
+      restaurantAccess:
+        dto.restaurantIds !== undefined || dto.branchIds !== undefined
+          ? await this.resolveRestaurantAccess(
+              {
+                ownerUserId: role.ownerUserId,
+                panelType: role.panelType,
+                tenantId: role.tenantId,
+                restaurantId: role.restaurantId,
+                branchId: role.branchId,
+              },
+              dto,
+            )
           : undefined,
     });
 
@@ -271,6 +290,72 @@ export class StaffRolesService {
     }));
 
     return normalized as Prisma.InputJsonValue;
+  }
+
+  private async resolveRestaurantAccess(
+    scope: ResolvedStaffScope,
+    dto: { restaurantIds?: string[]; branchIds?: string[] },
+  ): Promise<Prisma.InputJsonValue | undefined> {
+    if (dto.restaurantIds === undefined && dto.branchIds === undefined) {
+      return undefined;
+    }
+
+    const restaurantIds = this.uniqueCleanIds(dto.restaurantIds ?? []);
+    const branchIds = this.uniqueCleanIds(dto.branchIds ?? []);
+
+    if (
+      scope.restaurantId &&
+      restaurantIds.some((id) => id !== scope.restaurantId)
+    ) {
+      throw new ForbiddenException(
+        'Staff role restaurant access must stay within your admin restaurant scope',
+      );
+    }
+
+    if (scope.branchId && branchIds.some((id) => id !== scope.branchId)) {
+      throw new ForbiddenException(
+        'Staff role branch access must stay within your admin branch scope',
+      );
+    }
+
+    if (restaurantIds.length) {
+      const count =
+        await this.staffRolesRepository.countRestaurants(restaurantIds);
+      if (count !== restaurantIds.length) {
+        throw new BadRequestException('One or more restaurants were not found');
+      }
+    }
+
+    if (branchIds.length) {
+      const branches = await this.staffRolesRepository.findBranches(branchIds);
+      if (branches.length !== branchIds.length) {
+        throw new BadRequestException('One or more branches were not found');
+      }
+
+      const branchRestaurantIds = branches.map((branch) => branch.restaurantId);
+      for (const restaurantId of branchRestaurantIds) {
+        if (scope.restaurantId && restaurantId !== scope.restaurantId) {
+          throw new ForbiddenException(
+            'Staff role branch access must stay within your admin restaurant scope',
+          );
+        }
+      }
+
+      restaurantIds.push(
+        ...branchRestaurantIds.filter(
+          (restaurantId) => !restaurantIds.includes(restaurantId),
+        ),
+      );
+    }
+
+    return {
+      restaurantIds,
+      branchIds,
+    } satisfies StaffRestaurantAccessScope;
+  }
+
+  private uniqueCleanIds(ids: string[]) {
+    return [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
   }
 
   private resolveOptionalString(value: string | undefined) {

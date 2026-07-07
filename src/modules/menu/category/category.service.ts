@@ -10,6 +10,7 @@ import { UserRoleEnum } from '../../../common/enums';
 import { buildPaginationMeta } from '../../../common/utils';
 import { PrismaService } from '../../../database';
 import { StorageService } from '../../storage/storage.service';
+import { StaffMenuAccessService } from '../staff-menu-access.service';
 import {
   BulkCreateMenuCategoriesDto,
   CreateMenuCategoryDto,
@@ -25,6 +26,7 @@ export class MenuCategoryService {
     private readonly categoryRepository: MenuCategoryRepository,
     private readonly prisma: PrismaService,
     private readonly storageService?: StorageService,
+    private readonly staffMenuAccessService?: StaffMenuAccessService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuCategoryDto) {
@@ -123,7 +125,7 @@ export class MenuCategoryService {
       throw new NotFoundException('Menu category not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, category.restaurantId);
+    await this.ensureCanAccessRestaurant(user, category.restaurantId, 'write');
     await this.validateParentCategory(
       category.restaurantId,
       dto.parentCategoryId,
@@ -178,7 +180,7 @@ export class MenuCategoryService {
         throw new NotFoundException('Restaurant menu not found');
       }
 
-      await this.ensureCanAccessRestaurant(user, menu.restaurantId);
+      await this.ensureCanAccessRestaurant(user, menu.restaurantId, 'write');
 
       const links = await this.prisma.restaurantMenuCategory.findMany({
         where: { restaurantMenuId: dto.menuId, menuCategoryId: { in: ids } },
@@ -224,7 +226,11 @@ export class MenuCategoryService {
         );
       }
 
-      await this.ensureCanAccessRestaurant(user, [...restaurantIds][0]);
+      await this.ensureCanAccessRestaurant(
+        user,
+        [...restaurantIds][0],
+        'write',
+      );
 
       const sortOrderById = new Map(
         dto.items.map((item) => [item.id, item.sortOrder]),
@@ -251,7 +257,7 @@ export class MenuCategoryService {
       throw new NotFoundException('Menu category not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, category.restaurantId);
+    await this.ensureCanAccessRestaurant(user, category.restaurantId, 'write');
 
     const [childrenCount, itemsCount] = await Promise.all([
       this.categoryRepository.countChildren(id),
@@ -288,6 +294,16 @@ export class MenuCategoryService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForWrite(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');
@@ -318,6 +334,16 @@ export class MenuCategoryService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string | undefined> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForRead(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
@@ -361,7 +387,20 @@ export class MenuCategoryService {
   private async ensureCanAccessRestaurant(
     user: AuthUserContext,
     restaurantId: string,
+    operation: 'read' | 'write' = 'read',
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        operation,
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

@@ -12,6 +12,7 @@ import {
   UpsertBranchCategoryOverrideDto,
   UpsertBranchMenuItemOverrideDto,
 } from './dto';
+import { StaffMenuAccessService } from '../staff-menu-access.service';
 import { BranchOverrideRepository } from './branch-override.repository';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class BranchOverrideService {
   constructor(
     private readonly branchOverrideRepository: BranchOverrideRepository,
     private readonly prisma: PrismaService,
+    private readonly staffMenuAccessService: StaffMenuAccessService,
   ) {}
 
   async upsertItemOverride(
@@ -85,6 +87,38 @@ export class BranchOverrideService {
     requestedBranchId: string | undefined,
     restaurantId: string,
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      if (!requestedBranchId && !user.bid) {
+        throw new BadRequestException('branchId is required');
+      }
+
+      const branchId = requestedBranchId ?? user.bid!;
+      const branch = await this.prisma.branch.findUnique({
+        where: { id: branchId },
+      });
+      if (!branch || branch.deletedAt) {
+        throw new NotFoundException('Branch not found');
+      }
+
+      if (branch.restaurantId !== restaurantId) {
+        throw new BadRequestException(
+          'Branch does not belong to item/category restaurant',
+        );
+      }
+
+      await this.staffMenuAccessService.assertCanAccessBranch(
+        user,
+        branch.id,
+        restaurantId,
+        'write',
+      );
+
+      return branch.id;
+    }
+
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
       if (!user.bid) {
         throw new ForbiddenException('Branch context is required');

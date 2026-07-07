@@ -54,9 +54,14 @@ describe('ModifierService', () => {
       ),
     };
 
+    const staffMenuAccessService = {
+      isStaff: jest.fn().mockReturnValue(false),
+    };
+
     const service = new ModifierService(
       modifierRepository as never,
       prisma as never,
+      staffMenuAccessService as never,
     );
 
     return { service, modifierRepository, prisma };

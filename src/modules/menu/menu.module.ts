@@ -22,6 +22,7 @@ import { RestaurantMenuService } from './restaurant-menu/restaurant-menu.service
 import { RestaurantMenuRepository } from './restaurant-menu/restaurant-menu.repository';
 import { StorageModule } from '../storage/storage.module';
 import { CouponsModule } from '../coupons/coupons.module';
+import { StaffMenuAccessService } from './staff-menu-access.service';
 
 @Module({
   imports: [StorageModule, CouponsModule],
@@ -49,6 +50,7 @@ import { CouponsModule } from '../coupons/coupons.module';
     BranchOverrideRepository,
     RestaurantMenuService,
     RestaurantMenuRepository,
+    StaffMenuAccessService,
   ],
   exports: [
     MenuCategoryService,

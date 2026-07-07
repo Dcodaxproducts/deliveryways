@@ -1230,8 +1230,9 @@ model StaffRole {
   branchId     String?        @map("branch_id")
   name         String
   description  String?
-  permissions  Json
-  isActive     Boolean        @default(true) @map("is_active")
+  permissions      Json
+  restaurantAccess Json?         @map("restaurant_access")
+  isActive         Boolean       @default(true) @map("is_active")
   deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
@@ -1260,6 +1261,7 @@ model StaffUser {
   avatarUrl        String?        @map("avatar_url")
   bio              String?
   refreshTokenHash String?        @map("refresh_token_hash")
+  restaurantAccess Json?          @map("restaurant_access")
   tenantId         String?        @map("tenant_id")
   restaurantId     String?        @map("restaurant_id")
   branchId         String?        @map("branch_id")

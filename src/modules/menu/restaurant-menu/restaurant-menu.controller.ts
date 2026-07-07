@@ -35,7 +35,7 @@ export class RestaurantMenuController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post()
   create(
     @CurrentUser() user: AuthUserContext,
@@ -50,6 +50,7 @@ export class RestaurantMenuController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get()
@@ -66,6 +67,7 @@ export class RestaurantMenuController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get(':id')
@@ -75,7 +77,7 @@ export class RestaurantMenuController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch(':id')
   update(
     @CurrentUser() user: AuthUserContext,
@@ -87,7 +89,7 @@ export class RestaurantMenuController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.restaurantMenuService.remove(user, id);
@@ -95,7 +97,7 @@ export class RestaurantMenuController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post(':id/items')
   attachItem(
     @CurrentUser() user: AuthUserContext,
@@ -111,6 +113,7 @@ export class RestaurantMenuController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get(':id/items')
@@ -124,7 +127,7 @@ export class RestaurantMenuController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch(':id/items/:linkId')
   updateItem(
     @CurrentUser() user: AuthUserContext,
@@ -137,7 +140,7 @@ export class RestaurantMenuController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete(':id/items/:linkId')
   removeItem(
     @CurrentUser() user: AuthUserContext,

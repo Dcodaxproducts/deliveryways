@@ -43,7 +43,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('modifier-categories')
   createCategory(
     @CurrentUser() user: AuthUserContext,
@@ -58,6 +58,7 @@ export class ModifierController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('modifier-categories')
@@ -70,7 +71,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('modifier-categories/:id')
   updateCategory(
     @CurrentUser() user: AuthUserContext,
@@ -82,7 +83,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('modifier-categories/:id')
   removeCategory(
     @CurrentUser() user: AuthUserContext,
@@ -93,7 +94,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('modifier-groups')
   createGroup(
     @CurrentUser() user: AuthUserContext,
@@ -108,6 +109,7 @@ export class ModifierController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('modifier-groups')
@@ -124,6 +126,7 @@ export class ModifierController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('modifier-groups/:groupId/categories')
@@ -136,7 +139,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('modifier-groups/:id')
   updateGroup(
     @CurrentUser() user: AuthUserContext,
@@ -148,7 +151,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('modifier-groups/:id')
   removeGroup(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.modifierService.removeGroup(user, id);
@@ -156,7 +159,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Put('modifier-groups/:groupId/categories')
   syncModifierGroupCategories(
     @CurrentUser() user: AuthUserContext,
@@ -172,6 +175,7 @@ export class ModifierController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('modifiers')
@@ -184,7 +188,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('modifiers')
   createModifier(
     @CurrentUser() user: AuthUserContext,
@@ -195,7 +199,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('modifiers/:id/duplicate')
   @ApiOperation({ summary: 'Duplicate a modifier by id' })
   @ApiBody({ required: false, type: DuplicateModifierDto })
@@ -209,7 +213,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('modifiers/:id')
   updateModifier(
     @CurrentUser() user: AuthUserContext,
@@ -221,7 +225,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('modifiers/:id')
   removeModifier(
     @CurrentUser() user: AuthUserContext,
@@ -232,7 +236,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('modifier-groups/:groupId/modifiers/:modifierId')
   attachModifierToGroup(
     @CurrentUser() user: AuthUserContext,
@@ -250,7 +254,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('modifier-groups/:groupId/modifiers/:modifierId')
   detachModifierFromGroup(
     @CurrentUser() user: AuthUserContext,
@@ -266,7 +270,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('items/:itemId/modifier-groups/:groupId')
   attachModifierGroupToItem(
     @CurrentUser() user: AuthUserContext,
@@ -279,7 +283,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('items/:itemId/modifier-groups/:groupId')
   detachModifierGroupFromItem(
     @CurrentUser() user: AuthUserContext,
@@ -295,6 +299,7 @@ export class ModifierController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('categories/:categoryId/modifier-groups')
@@ -307,7 +312,7 @@ export class ModifierController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('categories/:categoryId/modifier-groups/:groupId')
   attachModifierGroupToCategory(
     @CurrentUser() user: AuthUserContext,

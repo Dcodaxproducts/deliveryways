@@ -43,9 +43,14 @@ describe('MenuVariationService', () => {
       ),
     };
 
+    const staffMenuAccessService = {
+      isStaff: jest.fn().mockReturnValue(false),
+    };
+
     const service = new MenuVariationService(
       variationRepository as never,
       prisma as never,
+      staffMenuAccessService as never,
     );
 
     return { service, variationRepository, prisma };

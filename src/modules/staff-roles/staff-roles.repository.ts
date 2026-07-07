@@ -87,6 +87,19 @@ export class StaffRolesRepository {
     });
   }
 
+  async countRestaurants(ids: string[]) {
+    return this.prisma.restaurant.count({
+      where: { id: { in: ids }, deletedAt: null },
+    });
+  }
+
+  async findBranches(ids: string[]) {
+    return this.prisma.branch.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, restaurantId: true },
+    });
+  }
+
   private readonly includeConfig = {
     ownerUser: {
       select: {

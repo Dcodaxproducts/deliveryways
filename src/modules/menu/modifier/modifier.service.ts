@@ -24,6 +24,7 @@ import {
   UpdateModifierDto,
   UpdateModifierGroupDto,
 } from './dto';
+import { StaffMenuAccessService } from '../staff-menu-access.service';
 import { ModifierRepository } from './modifier.repository';
 
 @Injectable()
@@ -31,6 +32,7 @@ export class ModifierService {
   constructor(
     private readonly modifierRepository: ModifierRepository,
     private readonly prisma: PrismaService,
+    private readonly staffMenuAccessService: StaffMenuAccessService,
   ) {}
 
   async createCategory(user: AuthUserContext, dto: CreateModifierCategoryDto) {
@@ -897,6 +899,16 @@ export class ModifierService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForWrite(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');
@@ -926,6 +938,16 @@ export class ModifierService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string | undefined> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForRead(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
@@ -963,6 +985,18 @@ export class ModifierService {
   }
 
   private async ensureWriteAccess(user: AuthUserContext, restaurantId: string) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        'write',
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
@@ -980,6 +1014,18 @@ export class ModifierService {
   }
 
   private async ensureReadAccess(user: AuthUserContext, restaurantId: string) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        'read',
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

@@ -38,6 +38,18 @@ export class CreateStaffRoleDto {
   @ValidateNested({ each: true })
   @Type(() => StaffRolePermissionDto)
   permissions!: StaffRolePermissionDto[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  restaurantIds?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  branchIds?: string[];
 }
 
 export class UpdateStaffRoleDto {
@@ -63,6 +75,18 @@ export class UpdateStaffRoleDto {
   @ValidateNested({ each: true })
   @Type(() => StaffRolePermissionDto)
   permissions?: StaffRolePermissionDto[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  restaurantIds?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  branchIds?: string[];
 }
 
 export class ListStaffRolesDto extends QueryDto {

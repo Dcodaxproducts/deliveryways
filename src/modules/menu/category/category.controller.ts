@@ -34,7 +34,7 @@ export class MenuCategoryController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post()
   create(
     @CurrentUser() user: AuthUserContext,
@@ -45,7 +45,7 @@ export class MenuCategoryController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('bulk')
   createBulk(
     @CurrentUser() user: AuthUserContext,
@@ -56,7 +56,7 @@ export class MenuCategoryController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('reorder')
   reorder(
     @CurrentUser() user: AuthUserContext,
@@ -71,6 +71,7 @@ export class MenuCategoryController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get()
@@ -87,6 +88,7 @@ export class MenuCategoryController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get(':id')
@@ -96,7 +98,7 @@ export class MenuCategoryController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch(':id')
   update(
     @CurrentUser() user: AuthUserContext,
@@ -108,7 +110,7 @@ export class MenuCategoryController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.menuCategoryService.remove(user, id);

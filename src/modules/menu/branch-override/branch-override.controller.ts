@@ -25,6 +25,7 @@ export class BranchOverrideController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @Post('items')
   upsertItemOverride(
@@ -40,6 +41,7 @@ export class BranchOverrideController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @Post('categories')
   upsertCategoryOverride(

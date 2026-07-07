@@ -30,6 +30,19 @@ export class StaffManagementRepository {
     });
   }
 
+  async countRestaurants(ids: string[]) {
+    return this.prisma.restaurant.count({
+      where: { id: { in: ids }, deletedAt: null },
+    });
+  }
+
+  async findBranches(ids: string[]) {
+    return this.prisma.branch.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, restaurantId: true },
+    });
+  }
+
   async list(where: Prisma.StaffUserWhereInput, query: ListStaffDto) {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.staffUser.findMany({
@@ -103,6 +116,7 @@ export class StaffManagementRepository {
         name: true,
         description: true,
         permissions: true,
+        restaurantAccess: true,
         isActive: true,
         deletedAt: true,
         createdAt: true,

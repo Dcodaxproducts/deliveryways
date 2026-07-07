@@ -41,7 +41,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post()
   create(@CurrentUser() user: AuthUserContext, @Body() dto: CreateMenuItemDto) {
     return this.menuItemService.create(user, dto);
@@ -49,7 +49,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('bulk')
   createBulk(
     @CurrentUser() user: AuthUserContext,
@@ -60,7 +60,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('reorder')
   reorder(
     @CurrentUser() user: AuthUserContext,
@@ -75,6 +75,7 @@ export class MenuItemController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('labels')
@@ -87,7 +88,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Get('tax-types')
   taxTypes() {
     return this.menuItemService.getTaxTypes();
@@ -95,7 +96,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('labels')
   createLabel(
     @CurrentUser() user: AuthUserContext,
@@ -107,7 +108,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('labels/:value')
   updateLabel(
     @CurrentUser() user: AuthUserContext,
@@ -120,7 +121,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('labels/:value')
   deleteLabel(
     @CurrentUser() user: AuthUserContext,
@@ -136,6 +137,7 @@ export class MenuItemController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('allergen-additive-templates')
@@ -151,7 +153,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('allergen-additive-templates')
   updateAllergenAdditiveTemplates(
     @CurrentUser() user: AuthUserContext,
@@ -162,7 +164,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('allergen-additive-templates/:type')
   createAllergenAdditiveTemplateEntry(
     @CurrentUser() user: AuthUserContext,
@@ -180,7 +182,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('allergen-additive-templates/:type/:code')
   updateAllergenAdditiveTemplateEntry(
     @CurrentUser() user: AuthUserContext,
@@ -200,7 +202,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('allergen-additive-templates/:type/:code')
   deleteAllergenAdditiveTemplateEntry(
     @CurrentUser() user: AuthUserContext,
@@ -218,7 +220,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post(':id/duplicate')
   duplicate(
     @CurrentUser() user: AuthUserContext,
@@ -230,7 +232,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch(':id/reorder')
   reorderOne(
     @CurrentUser() user: AuthUserContext,
@@ -246,6 +248,7 @@ export class MenuItemController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get()
@@ -255,7 +258,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch(':id')
   update(
     @CurrentUser() user: AuthUserContext,
@@ -267,7 +270,7 @@ export class MenuItemController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.menuItemService.remove(user, id);

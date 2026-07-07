@@ -32,7 +32,7 @@ export class MenuVariationController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('variations')
   create(
     @CurrentUser() user: AuthUserContext,
@@ -43,7 +43,7 @@ export class MenuVariationController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Post('items/:itemId/variations')
   createForItem(
     @CurrentUser() user: AuthUserContext,
@@ -59,6 +59,7 @@ export class MenuVariationController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get('variations')
@@ -71,7 +72,7 @@ export class MenuVariationController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Patch('variations/:id')
   update(
     @CurrentUser() user: AuthUserContext,
@@ -83,7 +84,7 @@ export class MenuVariationController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   @Delete('variations/:id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.menuVariationService.remove(user, id);

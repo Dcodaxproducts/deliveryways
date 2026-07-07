@@ -14,6 +14,7 @@ import {
   CouponsService,
   PromotionPreview,
 } from '../../coupons/coupons.service';
+import { StaffMenuAccessService } from '../staff-menu-access.service';
 import {
   AllergenAdditiveTemplateEntryDto,
   BulkCreateMenuItemsDto,
@@ -64,6 +65,7 @@ export class MenuItemService {
     private readonly prisma: PrismaService,
     private readonly storageService?: StorageService,
     private readonly couponsService?: CouponsService,
+    private readonly staffMenuAccessService?: StaffMenuAccessService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
@@ -373,7 +375,7 @@ export class MenuItemService {
       throw new NotFoundException('Menu item not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, item.restaurantId);
+    await this.ensureCanAccessRestaurant(user, item.restaurantId, 'write');
     const modifiers = this.resolveDirectModifiers(dto);
 
     const categoryIds =
@@ -1099,7 +1101,7 @@ export class MenuItemService {
       throw new NotFoundException('Menu item not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, item.restaurantId);
+    await this.ensureCanAccessRestaurant(user, item.restaurantId, 'write');
 
     const name = dto.name?.trim() || `${item.name} Copy`;
     const slug = await this.resolveUniqueSlug(
@@ -1207,7 +1209,7 @@ export class MenuItemService {
         throw new NotFoundException('Restaurant menu not found');
       }
 
-      await this.ensureCanAccessRestaurant(user, menu.restaurantId);
+      await this.ensureCanAccessRestaurant(user, menu.restaurantId, 'write');
 
       const links = await this.prisma.restaurantMenuItem.findMany({
         where: { restaurantMenuId: dto.menuId, menuItemId: { in: ids } },
@@ -1247,7 +1249,11 @@ export class MenuItemService {
         );
       }
 
-      await this.ensureCanAccessRestaurant(user, [...restaurantIds][0]);
+      await this.ensureCanAccessRestaurant(
+        user,
+        [...restaurantIds][0],
+        'write',
+      );
 
       const sortOrderById = new Map(
         dto.items.map((item) => [item.id, item.sortOrder]),
@@ -1279,7 +1285,7 @@ export class MenuItemService {
         throw new NotFoundException('Restaurant menu not found');
       }
 
-      await this.ensureCanAccessRestaurant(user, menu.restaurantId);
+      await this.ensureCanAccessRestaurant(user, menu.restaurantId, 'write');
 
       const link = await this.prisma.restaurantMenuItem.findUnique({
         where: {
@@ -1316,7 +1322,7 @@ export class MenuItemService {
       throw new NotFoundException('Menu item not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, item.restaurantId);
+    await this.ensureCanAccessRestaurant(user, item.restaurantId, 'write');
 
     const data = await this.prisma.menuItem.update({
       where: { id },
@@ -1336,7 +1342,7 @@ export class MenuItemService {
       throw new NotFoundException('Menu item not found');
     }
 
-    await this.ensureCanAccessRestaurant(user, item.restaurantId);
+    await this.ensureCanAccessRestaurant(user, item.restaurantId, 'write');
 
     const orderItemsCount = await this.itemRepository.countOrderItems(id);
 
@@ -1380,6 +1386,16 @@ export class MenuItemService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForWrite(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');
@@ -1410,6 +1426,16 @@ export class MenuItemService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string | undefined> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForRead(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
@@ -1449,7 +1475,20 @@ export class MenuItemService {
   private async ensureCanAccessRestaurant(
     user: AuthUserContext,
     restaurantId: string,
+    operation: 'read' | 'write' = 'read',
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        operation,
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

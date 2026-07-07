@@ -14,6 +14,7 @@ import {
   ListMenuVariationsDto,
   UpdateMenuVariationDto,
 } from './dto';
+import { StaffMenuAccessService } from '../staff-menu-access.service';
 import { MenuVariationRepository } from './variation.repository';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class MenuVariationService {
   constructor(
     private readonly variationRepository: MenuVariationRepository,
     private readonly prisma: PrismaService,
+    private readonly staffMenuAccessService: StaffMenuAccessService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateMenuVariationDto) {
@@ -222,6 +224,16 @@ export class MenuVariationService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForWrite(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');
@@ -254,6 +266,16 @@ export class MenuVariationService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string | undefined> {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForRead(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
@@ -288,6 +310,18 @@ export class MenuVariationService {
     user: AuthUserContext,
     restaurantId: string,
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        'write',
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
@@ -310,6 +344,18 @@ export class MenuVariationService {
     user: AuthUserContext,
     restaurantId: string,
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        'read',
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

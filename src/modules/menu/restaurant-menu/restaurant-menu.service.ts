@@ -19,6 +19,7 @@ import {
   UpdateRestaurantMenuDto,
   UpdateRestaurantMenuItemDto,
 } from './dto';
+import { StaffMenuAccessService } from '../staff-menu-access.service';
 import { RestaurantMenuRepository } from './restaurant-menu.repository';
 
 type RestaurantMenuScheduleCarrier = {
@@ -33,10 +34,18 @@ export class RestaurantMenuService {
   constructor(
     private readonly restaurantMenuRepository: RestaurantMenuRepository,
     private readonly storageService?: StorageService,
+    private readonly staffMenuAccessService?: StaffMenuAccessService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateRestaurantMenuDto) {
-    const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    const restaurantId =
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+        ? await this.staffMenuAccessService.resolveRestaurantIdForWrite(
+            user,
+            dto.restaurantId,
+          )
+        : await this.resolveRestaurantId(user, dto.restaurantId);
     if (!restaurantId) {
       throw new BadRequestException('restaurantId is required');
     }
@@ -510,6 +519,16 @@ export class RestaurantMenuService {
     requestedRestaurantId?: string,
     allowReadFromToken = false,
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      return this.staffMenuAccessService.resolveRestaurantIdForRead(
+        user,
+        requestedRestaurantId,
+      );
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return requestedRestaurantId;
     }
@@ -558,6 +577,18 @@ export class RestaurantMenuService {
     user: AuthUserContext,
     restaurantId: string,
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        'read',
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
@@ -582,6 +613,18 @@ export class RestaurantMenuService {
     user: AuthUserContext,
     restaurantId: string,
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      await this.staffMenuAccessService.assertCanAccessRestaurant(
+        user,
+        restaurantId,
+        'write',
+      );
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }
