@@ -3906,6 +3906,138 @@ describe('CartService', () => {
     expect(regularItem.discountedUnitPrice).toBeNull();
   });
 
+  it('attaches happy hour metadata to discounted variation cart totals', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      restaurantMenuId: null,
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      tipAmount: new Prisma.Decimal(0),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'pizza-tuna',
+          variationId: 'medium',
+          quantity: 2,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'pizza-tuna',
+        name: 'Pizza Tuna',
+        slug: 'pizza-tuna',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(8),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        prepTimeMinutes: 0,
+        depositAmount: new Prisma.Decimal(0),
+        category: { id: 'cat-pizza', name: 'Pizza', imageUrl: null },
+        categoryLinks: [],
+        variations: [
+          {
+            id: 'medium',
+            name: 'Medium',
+            description: null,
+            price: new Prisma.Decimal(10),
+            pickupPrice: null,
+            itemPriceOverrides: [],
+            modifierPriceOverrides: [],
+          },
+        ],
+        modifierLinks: [],
+        modifierPriceOverrides: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 20,
+        discountAmount: 2,
+        totalAmount: 18,
+        payableAmount: 18,
+        appliedPromotion: {
+          id: 'happy-variation',
+          title: 'Happy hour',
+          applyMode: 'SCOPED_ITEMS',
+          autoApply: true,
+          discountType: 'PERCENTAGE',
+          discountValue: 10,
+          discountAmount: 2,
+        },
+      },
+      message: 'Order quote generated successfully',
+    });
+    couponsService.getActiveHappyHours.mockResolvedValue([
+      {
+        id: 'happy-variation',
+        title: 'Happy hour',
+        scopeMenuItem: { id: 'pizza-tuna' },
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
+
+    const result = await service.getCart({
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+
+    const cartData = result.data as typeof result.data & {
+      discountAmount: number;
+      totalAmount: number;
+    };
+    const [item] = cartData.items as Array<{
+      menuItemId: string;
+      variationId: string | null;
+      quantity: number;
+      unitPrice: number;
+      lineTotal: number;
+      happyHour: { promotionId?: string; discountAmount?: number } | null;
+      promotionDiscountAmount: number;
+      discountedUnitPrice: number | null;
+      discountedLineTotal: number | null;
+    }>;
+    expect(item.menuItemId).toBe('pizza-tuna');
+    expect(item.variationId).toBe('medium');
+    expect(item.quantity).toBe(2);
+    expect(item.unitPrice).toBe(10);
+    expect(item.lineTotal).toBe(20);
+    expect(item.happyHour?.promotionId).toBe('happy-variation');
+    expect(item.happyHour?.discountAmount).toBe(2);
+    expect(item.promotionDiscountAmount).toBe(2);
+    expect(item.discountedUnitPrice).toBe(9);
+    expect(item.discountedLineTotal).toBe(18);
+    expect(cartData.discountAmount).toBe(2);
+    expect(cartData.totalAmount).toBe(18);
+  });
+
   it('does not show per-line fixed-price discount when quote discount is zero', () => {
     const { service } = makeService();
     type DiscountHarness = {
