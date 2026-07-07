@@ -44,6 +44,7 @@ export interface CouponValidationInput {
   menuItemIds: string[];
   categoryIds: string[];
   lineItems?: CouponValidationLineInput[];
+  ignoreMinOrderAmount?: boolean;
 }
 
 export interface CouponValidationResult {
@@ -576,6 +577,8 @@ export class CouponsService {
         const result = await this.validateResolvedCoupon(promotion, {
           ...input,
           code: promotion.code,
+          ignoreMinOrderAmount:
+            this.shouldMatchItemPreviewEligibility(promotion),
         });
 
         if (result.discountAmount.lessThanOrEqualTo(0)) {
@@ -694,6 +697,7 @@ export class CouponsService {
 
     const subtotalDecimal = new Prisma.Decimal(input.subtotal);
     if (
+      !input.ignoreMinOrderAmount &&
       coupon.minOrderAmount &&
       subtotalDecimal.lessThan(coupon.minOrderAmount)
     ) {
@@ -889,6 +893,13 @@ export class CouponsService {
 
     throw new BadRequestException(
       'Coupon is not applicable to selected categories',
+    );
+  }
+
+  private shouldMatchItemPreviewEligibility(coupon: Coupon) {
+    return (
+      coupon.kind === CouponCampaignKind.HAPPY_HOUR &&
+      coupon.applyMode === CouponApplyMode.SCOPED_ITEMS
     );
   }
 

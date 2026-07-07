@@ -930,6 +930,47 @@ describe('CouponsService', () => {
     expect(Number(result?.discountAmount)).toBe(25);
   });
 
+  it('auto-applies category happy hours below min order to match item previews', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([]);
+    repository.findActiveHappyHours!.mockResolvedValue([
+      makeCoupon({
+        id: 'happy-category-1',
+        code: 'HAPPYPIZZA10',
+        kind: CouponCampaignKind.HAPPY_HOUR,
+        autoApply: true,
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.PERCENTAGE,
+        discountValue: new Prisma.Decimal(10),
+        minOrderAmount: new Prisma.Decimal(50),
+        maxDiscountAmount: null,
+        scopeCategoryId: 'cat-pizza',
+      }),
+    ]);
+
+    const result = await service.findBestAutoApplyPromotion({
+      restaurantId: baseInput.restaurantId,
+      branchId: baseInput.branchId,
+      customerId: baseInput.customerId,
+      subtotal: 10,
+      menuItemIds: ['cmq857knc005xl6ilp5grymkz'],
+      categoryIds: ['cat-pizza'],
+      lineItems: [
+        {
+          menuItemId: 'cmq857knc005xl6ilp5grymkz',
+          categoryId: 'cat-pizza',
+          categoryIds: ['cat-pizza'],
+          quantity: 1,
+          unitPrice: 10,
+          lineTotal: 10,
+        },
+      ],
+    });
+
+    expect(result?.coupon.id).toBe('happy-category-1');
+    expect(Number(result?.discountAmount)).toBe(1);
+    expect(Number(result?.eligibleSubtotal)).toBe(10);
+  });
+
   it('ignores zero-discount auto fixed-price promotions', async () => {
     repository.findAutoApplyPromotions!.mockResolvedValue([
       makeCoupon({
