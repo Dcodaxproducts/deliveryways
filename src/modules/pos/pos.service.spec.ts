@@ -248,6 +248,132 @@ describe('PosService', () => {
     expect(result.message).toBe('POS draft item added successfully');
   });
 
+  it('stores grouped modifier selections for POS draft items', async () => {
+    const { service, posRepository, ordersService } = makeService();
+    posRepository.findDraftById
+      .mockResolvedValueOnce(makeDraft())
+      .mockResolvedValueOnce(
+        makeDraft({
+          customerId: 'customer-1',
+          items: [
+            {
+              id: 'item-1',
+              menuItemId: 'menu-1',
+              variationId: null,
+              quantity: 1,
+              note: null,
+              modifiers: {
+                modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+                modifierSelections: [
+                  {
+                    modifierGroupId: 'group-1',
+                    modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+                  },
+                ],
+              },
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
+        }),
+      );
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 12,
+        taxAmount: 0,
+        deliveryFee: 0,
+        serviceChargeType: null,
+        serviceChargeValue: null,
+        serviceChargeAmount: 0,
+        chargeBreakdown: [],
+        tipAmount: 0,
+        discountAmount: 0,
+        walletAppliedAmount: 0,
+        loyaltyDiscountAmount: 0,
+        loyaltyPointsRedeemed: 0,
+        totalAmount: 12,
+        payableAmount: 12,
+        appliedPromotion: null,
+        items: [
+          {
+            menuItemId: 'menu-1',
+            menuItemName: 'Menu item',
+            variationId: null,
+            variationName: null,
+            quantity: 1,
+            unitPrice: 10,
+            depositAmount: 0,
+            lineTotal: 12,
+            taxTypeCode: null,
+            taxPercentage: null,
+            snapshotModifiers: [
+              {
+                modifierId: 'modifier-1',
+                modifierGroupId: 'group-1',
+                quantity: 2,
+                unitPrice: 1,
+                total: 2,
+              },
+            ],
+            snapshotSections: [],
+          },
+        ],
+      },
+    });
+
+    await service.addItem(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      'draft-1',
+      {
+        menuItemId: 'menu-1',
+        quantity: 1,
+        modifierSelections: [
+          {
+            modifierGroupId: 'group-1',
+            modifierId: 'modifier-1',
+            quantity: 2,
+          },
+        ],
+      },
+    );
+
+    expect(posRepository.createDraftItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modifiers: {
+          modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+          modifierSelections: [
+            {
+              modifierGroupId: 'group-1',
+              modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-1',
+                modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
   it('includes menu item details in POS draft item responses', async () => {
     const { service, posRepository, ordersService } = makeService();
     posRepository.findDraftById.mockResolvedValue(

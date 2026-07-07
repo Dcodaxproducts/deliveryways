@@ -310,7 +310,10 @@ export class PosService {
       variationId: dto.variationId,
       quantity: dto.quantity,
       note: this.resolveOptionalString(dto.note),
-      modifiers: this.normalizeModifiers(dto.modifiers),
+      modifiers: this.normalizeModifierPayload(
+        dto.modifiers,
+        dto.modifierSelections,
+      ),
     });
 
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
@@ -348,9 +351,9 @@ export class PosService {
             ? { set: null }
             : dto.note,
       modifiers:
-        dto.modifiers === undefined
-          ? undefined
-          : this.normalizeModifiers(dto.modifiers),
+        dto.modifiers !== undefined || dto.modifierSelections !== undefined
+          ? this.normalizeModifierPayload(dto.modifiers, dto.modifierSelections)
+          : undefined,
     });
 
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
@@ -403,6 +406,7 @@ export class PosService {
         variationId: item.variationId ?? undefined,
         quantity: item.quantity,
         modifiers: this.toOrderModifiers(item.modifiers),
+        modifierSelections: this.toOrderModifierSelections(item.modifiers),
         note: item.note ?? undefined,
       })),
       couponCode: draft.couponCode ?? undefined,
@@ -432,6 +436,7 @@ export class PosService {
         variationId: item.variationId ?? undefined,
         quantity: item.quantity,
         modifiers: this.toOrderModifiers(item.modifiers),
+        modifierSelections: this.toOrderModifierSelections(item.modifiers),
         note: item.note ?? undefined,
       })),
       couponCode: draft.couponCode ?? undefined,
@@ -639,9 +644,34 @@ export class PosService {
     }
   }
 
+  private normalizeModifierPayload(
+    modifiers: Array<{ modifierId: string; quantity?: number }> | undefined,
+    modifierSelections:
+      | Array<{
+          modifierGroupId: string;
+          modifierId?: string;
+          quantity?: number;
+          modifiers?: Array<{ modifierId: string; quantity?: number }>;
+        }>
+      | undefined,
+  ): Prisma.InputJsonValue | undefined {
+    const normalizedSelections =
+      this.normalizeModifierSelections(modifierSelections);
+    if (modifierSelections !== undefined) {
+      return normalizedSelections?.length
+        ? ({
+            modifiers: this.flattenModifierSelections(normalizedSelections),
+            modifierSelections: normalizedSelections,
+          } as Prisma.InputJsonValue)
+        : [];
+    }
+
+    return this.normalizeModifiers(modifiers) as Prisma.InputJsonValue;
+  }
+
   private normalizeModifiers(
     modifiers: Array<{ modifierId: string; quantity?: number }> | undefined,
-  ): Prisma.InputJsonValue | undefined {
+  ) {
     if (!modifiers) {
       return undefined;
     }
@@ -649,17 +679,80 @@ export class PosService {
     return modifiers.map((modifier) => ({
       modifierId: modifier.modifierId,
       quantity: modifier.quantity ?? 1,
-    })) as Prisma.InputJsonValue;
+    }));
+  }
+
+  private normalizeModifierSelections(
+    modifierSelections:
+      | Array<{
+          modifierGroupId: string;
+          modifierId?: string;
+          quantity?: number;
+          modifiers?: Array<{ modifierId: string; quantity?: number }>;
+        }>
+      | undefined,
+  ) {
+    if (!modifierSelections?.length) {
+      return undefined;
+    }
+
+    const selectionsByGroup = new Map<
+      string,
+      Array<{ modifierId: string; quantity: number }>
+    >();
+
+    for (const selection of modifierSelections) {
+      const selectedModifiers = selection.modifiers?.length
+        ? this.normalizeModifiers(selection.modifiers)
+        : selection.modifierId
+          ? [
+              {
+                modifierId: selection.modifierId,
+                quantity: selection.quantity ?? 1,
+              },
+            ]
+          : [];
+
+      if (!selectedModifiers?.length) {
+        continue;
+      }
+
+      const existing = selectionsByGroup.get(selection.modifierGroupId) ?? [];
+      existing.push(...selectedModifiers);
+      selectionsByGroup.set(selection.modifierGroupId, existing);
+    }
+
+    const selections = Array.from(selectionsByGroup.entries()).map(
+      ([modifierGroupId, selectedModifiers]) => ({
+        modifierGroupId,
+        modifiers: selectedModifiers,
+      }),
+    );
+
+    return selections.length ? selections : undefined;
+  }
+
+  private flattenModifierSelections(
+    modifierSelections: Array<{
+      modifierGroupId: string;
+      modifiers: Array<{ modifierId: string; quantity: number }>;
+    }>,
+  ) {
+    return modifierSelections.flatMap((selection) => selection.modifiers);
   }
 
   private toOrderModifiers(
     modifiers: Prisma.JsonValue | null,
   ): Array<{ modifierId: string; quantity?: number }> | undefined {
-    if (!Array.isArray(modifiers)) {
+    const rawModifiers = Array.isArray(modifiers)
+      ? modifiers
+      : this.readJsonArrayProperty(modifiers, 'modifiers');
+
+    if (!rawModifiers) {
       return undefined;
     }
 
-    return modifiers
+    const selectedModifiers = rawModifiers
       .filter(
         (modifier): modifier is Prisma.JsonObject =>
           typeof modifier === 'object' &&
@@ -676,6 +769,62 @@ export class PosService {
         };
       })
       .filter((modifier) => modifier.modifierId.length > 0);
+
+    return selectedModifiers.length ? selectedModifiers : undefined;
+  }
+
+  private toOrderModifierSelections(modifiers: Prisma.JsonValue | null):
+    | Array<{
+        modifierGroupId: string;
+        modifiers: Array<{ modifierId: string; quantity?: number }>;
+      }>
+    | undefined {
+    const rawSelections = this.readJsonArrayProperty(
+      modifiers,
+      'modifierSelections',
+    );
+    if (!rawSelections) {
+      return undefined;
+    }
+
+    const selections = rawSelections
+      .filter(
+        (selection): selection is Prisma.JsonObject =>
+          typeof selection === 'object' &&
+          selection !== null &&
+          !Array.isArray(selection),
+      )
+      .map((selection) => {
+        const modifierGroupId = selection['modifierGroupId'];
+        const selectedModifiers = this.toOrderModifiers(
+          selection['modifiers'] as Prisma.JsonValue | null,
+        );
+
+        return {
+          modifierGroupId:
+            typeof modifierGroupId === 'string' ? modifierGroupId : '',
+          modifiers: selectedModifiers ?? [],
+        };
+      })
+      .filter(
+        (selection) =>
+          selection.modifierGroupId.length > 0 &&
+          selection.modifiers.length > 0,
+      );
+
+    return selections.length ? selections : undefined;
+  }
+
+  private readJsonArrayProperty(
+    input: Prisma.JsonValue | null,
+    property: string,
+  ): Prisma.JsonArray | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const value = input[property];
+    return Array.isArray(value) ? value : undefined;
   }
 
   private assertBranchAccess(
@@ -903,6 +1052,7 @@ export class PosService {
           variationId: item.variationId ?? undefined,
           quantity: item.quantity,
           modifiers: this.toOrderModifiers(item.modifiers),
+          modifierSelections: this.toOrderModifierSelections(item.modifiers),
           note: item.note ?? undefined,
         })),
         couponCode: draft.couponCode ?? undefined,

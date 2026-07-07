@@ -27,6 +27,34 @@ export class PosDraftItemModifierDto {
   quantity?: number;
 }
 
+export class PosDraftItemModifierSelectionDto {
+  @ApiProperty()
+  @IsString()
+  modifierGroupId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Selected modifier id. POS also accepts the cart-style nested modifiers array for compatibility.',
+  })
+  @IsOptional()
+  @IsString()
+  modifierId?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  quantity?: number;
+
+  @ApiPropertyOptional({ type: [PosDraftItemModifierDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosDraftItemModifierDto)
+  modifiers?: PosDraftItemModifierDto[];
+}
+
 export class CreatePosDraftItemDto {
   @ApiProperty()
   @IsString()
@@ -50,6 +78,13 @@ export class CreatePosDraftItemDto {
   @Type(() => PosDraftItemModifierDto)
   modifiers?: PosDraftItemModifierDto[];
 
+  @ApiPropertyOptional({ type: [PosDraftItemModifierSelectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosDraftItemModifierSelectionDto)
+  modifierSelections?: PosDraftItemModifierSelectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -70,6 +105,13 @@ export class UpdatePosDraftItemDto {
   @ValidateNested({ each: true })
   @Type(() => PosDraftItemModifierDto)
   modifiers?: PosDraftItemModifierDto[];
+
+  @ApiPropertyOptional({ type: [PosDraftItemModifierSelectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosDraftItemModifierSelectionDto)
+  modifierSelections?: PosDraftItemModifierSelectionDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
