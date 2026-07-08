@@ -43,7 +43,9 @@ export interface InvoicePdfInput {
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const LEFT = 48;
-const TOP = 790;
+const HEADER_HEIGHT = 92;
+const HEADER_BOTTOM = PAGE_HEIGHT - HEADER_HEIGHT;
+const CONTENT_TOP = HEADER_BOTTOM - 32;
 const LINE_HEIGHT = 14;
 const BOTTOM = 54;
 const MAX_CHARS = 92;
@@ -144,19 +146,19 @@ export class InvoicePdfBuilder {
 
   private static paginate(lines: PdfLine[]) {
     const pages: PdfLine[][] = [[]];
-    let y = TOP - 88;
+    let y = CONTENT_TOP;
 
     for (const line of lines) {
       if ('pageBreak' in line) {
         if (pages[pages.length - 1].length > 0) {
           pages.push([]);
         }
-        y = TOP - 88;
+        y = CONTENT_TOP;
         continue;
       }
       if (y < BOTTOM) {
         pages.push([]);
-        y = TOP - 88;
+        y = CONTENT_TOP;
       }
       pages[pages.length - 1].push(line);
       y -= this.lineHeight(line);
@@ -173,25 +175,25 @@ export class InvoicePdfBuilder {
   ) {
     const commands: string[] = [
       '0.95 0.22 0.09 rg',
-      `0 ${PAGE_HEIGHT - 72} ${PAGE_WIDTH} 72 re f`,
+      `0 ${HEADER_BOTTOM} ${PAGE_WIDTH} ${HEADER_HEIGHT} re f`,
       '1 1 1 rg',
-      'BT /F2 22 Tf 48 792 Td (DeliveryWays) Tj ET',
-      `BT /F1 10 Tf 48 774 Td (${this.escape(input.brandName ?? 'Restaurant Commerce Platform')}) Tj ET`,
+      `BT /F2 23 Tf ${LEFT} ${PAGE_HEIGHT - 38} Td (DeliveryWays) Tj ET`,
+      `BT /F1 10 Tf ${LEFT} ${PAGE_HEIGHT - 58} Td (${this.escape(input.brandName ?? 'Restaurant Commerce Platform')}) Tj ET`,
     ];
     for (const [index, line] of (input.headerLines ?? [])
       .slice(0, 3)
       .entries()) {
-      const size = 8;
+      const size = 8.5;
       const x = Math.max(
-        LEFT + 270,
+        LEFT + 280,
         PAGE_WIDTH - LEFT - this.estimateTextWidth(line, size),
       );
       commands.push(
-        `BT /F1 ${size} Tf ${x} ${792 - index * 12} Td (${this.escape(line)}) Tj ET`,
+        `BT /F1 ${size} Tf ${x} ${PAGE_HEIGHT - 38 - index * 14} Td (${this.escape(line)}) Tj ET`,
       );
     }
     commands.push('0.12 0.12 0.12 rg');
-    let y = TOP - 88;
+    let y = CONTENT_TOP;
 
     for (const line of lines) {
       if ('pageBreak' in line) {

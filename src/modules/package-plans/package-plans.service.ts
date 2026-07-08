@@ -1594,7 +1594,11 @@ export class PackagePlansService {
           label: 'Service To',
           value: this.formatInvoiceDate(invoice.servicePeriod.to),
         },
-        { label: 'Payment Status', value: invoice.paymentStatus },
+        {
+          label: 'Billing Cycle',
+          value: this.formatInvoiceLabel(invoice.packagePlan.billingInterval),
+        },
+        { label: 'Invoice Payment Status', value: invoice.paymentStatus },
         { label: 'Currency', value: invoice.totals.currency },
       ],
       sections: [
@@ -1760,13 +1764,19 @@ export class PackagePlansService {
     >,
   ) {
     return InvoicePdfBuilder.build({
-      title: `Payout Invoice ${invoice.invoiceNumber}`,
+      title: `${this.formatInvoiceLabel(invoice.subscription?.payoutCycle ?? PackagePayoutCycle.WEEKLY)} Payout Invoice ${invoice.invoiceNumber}`,
       subtitle: invoice.restaurant.name,
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant.name,
       headerLines: this.deliveryWaysCompanyHeaderLines(),
       meta: [
+        {
+          label: 'Payout Cycle',
+          value: this.formatInvoiceLabel(
+            invoice.subscription?.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+          ),
+        },
         {
           label: 'Payout From',
           value: this.formatInvoiceDate(invoice.period.from),
@@ -2199,6 +2209,14 @@ export class PackagePlansService {
 
   private formatInvoiceMoney(value: number | string | null | undefined) {
     return Number(value ?? 0).toFixed(2);
+  }
+
+  private formatInvoiceLabel(value: string) {
+    return value
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 
   private formatInvoiceDate(value: Date | null | undefined) {
