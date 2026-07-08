@@ -3,6 +3,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
+  RestaurantPayoutRequestStatus,
 } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
@@ -241,4 +242,91 @@ export class CreateRestaurantStripeTransferDto {
   @IsString()
   @MaxLength(191)
   idempotencyKey?: string;
+}
+
+export class RestaurantPayoutBankDetailsDto {
+  @ApiPropertyOptional({ example: 'HBL' })
+  @IsString()
+  @MaxLength(120)
+  bankName!: string;
+
+  @ApiPropertyOptional({ example: 'Restaurant Owner' })
+  @IsString()
+  @MaxLength(160)
+  accountTitle!: string;
+
+  @ApiPropertyOptional({ example: '1234567890' })
+  @IsString()
+  @MaxLength(80)
+  accountNumber!: string;
+
+  @ApiPropertyOptional({ example: 'PK36SCBL0000001123456702' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  iban?: string;
+
+  @ApiPropertyOptional({ example: '03410000000' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+}
+
+export class ListRestaurantPayoutRequestsDto extends QueryDto {
+  @ApiPropertyOptional({ enum: RestaurantPayoutRequestStatus })
+  @IsOptional()
+  @IsEnum(RestaurantPayoutRequestStatus)
+  status?: RestaurantPayoutRequestStatus;
+}
+
+export class CreateRestaurantPayoutRequestDto {
+  @ApiPropertyOptional({ minimum: 0.01 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @ApiPropertyOptional({ maxLength: 10 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  currency?: string;
+
+  @ApiPropertyOptional({ type: RestaurantPayoutBankDetailsDto })
+  bankDetails!: RestaurantPayoutBankDetailsDto;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class ReviewRestaurantPayoutRequestDto {
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class MarkRestaurantPayoutPaidDto {
+  @ApiPropertyOptional({ maxLength: 191 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  paymentReference?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

@@ -3,6 +3,8 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  RestaurantPayoutRequestStatus,
+  RestaurantWalletTransactionType,
 } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { PaymentsService } from './payments.service';
@@ -83,9 +85,31 @@ describe('PaymentsService', () => {
         findFirst: jest.fn(),
         update: jest.fn(),
       },
-      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-        Promise.resolve(callback(transactionTx)),
-      ),
+      restaurantWalletAccount: {
+        upsert: jest.fn(),
+        update: jest.fn(),
+      },
+      restaurantWalletTransaction: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
+      restaurantPayoutRequest: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
+        update: jest.fn(),
+        findUnique: jest.fn(),
+      },
+      $transaction: jest.fn((input: unknown) => {
+        if (Array.isArray(input)) {
+          return Promise.all(input);
+        }
+
+        return Promise.resolve(
+          (input as (tx: unknown) => unknown)(transactionTx),
+        );
+      }),
     };
 
     const notificationsService = {
@@ -650,6 +674,15 @@ describe('PaymentsService', () => {
       accountCount: 3,
       totalBalance: new Prisma.Decimal(250),
     });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'restaurant-wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      balance: new Prisma.Decimal(900),
+      currency: 'PKR',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     paymentsRepository.listRestaurantTransactions.mockResolvedValue({
       items: [{ id: 'payment-1' }],
       total: 1,
@@ -676,9 +709,13 @@ describe('PaymentsService', () => {
       }),
     );
     expect(result.data.payments.wallet).toEqual({
-      type: 'CUSTOMER_WALLET_EXPOSURE',
-      accountCount: 3,
-      totalBalance: 250,
+      type: 'RESTAURANT_WALLET',
+      balance: 900,
+      currency: 'PKR',
+      customerWalletExposure: {
+        accountCount: 3,
+        totalBalance: 250,
+      },
     });
     expect(result.data.payments.methods.activePlatformMethods).toEqual([
       PaymentMethod.COD,
@@ -1155,5 +1192,196 @@ describe('PaymentsService', () => {
       notificationsService.notifyPaymentStatusChanged,
     ).toHaveBeenCalledWith('payment-wallet-1');
     expect(result.message).toBe('Payment marked as paid successfully');
+  });
+
+  it('creates a restaurant payout request against wallet balance', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {},
+    });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      balance: new Prisma.Decimal(1000),
+      currency: 'PKR',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    prisma.restaurantPayoutRequest.create.mockResolvedValue({
+      id: 'request-1',
+      walletAccountId: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      requestedBy: 'admin-1',
+      reviewedBy: null,
+      paidBy: null,
+      status: RestaurantPayoutRequestStatus.REQUESTED,
+      amount: new Prisma.Decimal(500),
+      currency: 'PKR',
+      bankDetails: { bankName: 'HBL' },
+      note: 'Need payout',
+      rejectionReason: null,
+      approvalNote: null,
+      paymentReference: null,
+      paidNote: null,
+      approvedAt: null,
+      rejectedAt: null,
+      paidAt: null,
+      walletTransactionId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await service.createRestaurantPayoutRequest(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      } as never,
+      'restaurant-1',
+      {
+        amount: 500,
+        bankDetails: {
+          bankName: ' HBL ',
+          accountTitle: ' Pizza House ',
+          accountNumber: ' 123456 ',
+        },
+        note: 'Need payout',
+      },
+    );
+
+    const payoutCreateCalls = prisma.restaurantPayoutRequest.create.mock
+      .calls as Array<
+      [{ data: { amount: Prisma.Decimal; bankDetails: unknown } }]
+    >;
+    const payoutCreateArgs = payoutCreateCalls[0][0];
+    expect(payoutCreateArgs.data.amount).toEqual(new Prisma.Decimal(500));
+    expect(payoutCreateArgs.data.bankDetails).toEqual({
+      bankName: 'HBL',
+      accountTitle: 'Pizza House',
+      accountNumber: '123456',
+    });
+    expect(result.message).toBe(
+      'Restaurant payout request created successfully',
+    );
+  });
+
+  it('rejects restaurant payout request above wallet balance', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {},
+    });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      balance: new Prisma.Decimal(100),
+      currency: 'PKR',
+    });
+
+    await expect(
+      service.createRestaurantPayoutRequest(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'restaurant-1',
+        {
+          amount: 500,
+          bankDetails: {
+            bankName: 'HBL',
+            accountTitle: 'Pizza House',
+            accountNumber: '123456',
+          },
+        },
+      ),
+    ).rejects.toThrow('Requested amount exceeds wallet balance');
+  });
+
+  it('deducts restaurant wallet only when approved payout is marked paid', async () => {
+    const { service, prisma, transactionTx } = makeService();
+    Object.assign(transactionTx, {
+      restaurantPayoutRequest: prisma.restaurantPayoutRequest,
+      restaurantWalletAccount: prisma.restaurantWalletAccount,
+      restaurantWalletTransaction: prisma.restaurantWalletTransaction,
+    });
+    prisma.restaurantPayoutRequest.findUnique.mockResolvedValue({
+      id: 'request-1',
+      walletAccountId: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      status: RestaurantPayoutRequestStatus.APPROVED,
+      amount: new Prisma.Decimal(500),
+      currency: 'PKR',
+      walletAccount: {
+        id: 'wallet-1',
+        balance: new Prisma.Decimal(1000),
+      },
+    });
+    prisma.restaurantWalletTransaction.create.mockResolvedValue({
+      id: 'wallet-tx-1',
+    });
+    prisma.restaurantPayoutRequest.update.mockResolvedValue({
+      id: 'request-1',
+      walletAccountId: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      requestedBy: 'admin-2',
+      reviewedBy: 'super-1',
+      paidBy: 'super-1',
+      status: RestaurantPayoutRequestStatus.PAID,
+      amount: new Prisma.Decimal(500),
+      currency: 'PKR',
+      bankDetails: { bankName: 'HBL' },
+      note: null,
+      rejectionReason: null,
+      approvalNote: null,
+      paymentReference: 'BANK-123',
+      paidNote: 'sent',
+      approvedAt: new Date(),
+      rejectedAt: null,
+      paidAt: new Date(),
+      walletTransactionId: 'wallet-tx-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await service.markRestaurantPayoutPaid(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'request-1',
+      { paymentReference: 'BANK-123', note: 'sent' },
+    );
+
+    expect(prisma.restaurantWalletAccount.update).toHaveBeenCalledWith({
+      where: { id: 'wallet-1' },
+      data: { balance: new Prisma.Decimal(500) },
+    });
+    const walletTransactionCreateCalls = prisma.restaurantWalletTransaction
+      .create.mock.calls as Array<
+      [
+        {
+          data: {
+            type: RestaurantWalletTransactionType;
+            amount: Prisma.Decimal;
+            balanceAfter: Prisma.Decimal;
+          };
+        },
+      ]
+    >;
+    const walletTransactionCreateArgs = walletTransactionCreateCalls[0][0];
+    expect(walletTransactionCreateArgs.data).toMatchObject({
+      type: RestaurantWalletTransactionType.PAYOUT_DEBIT,
+      amount: new Prisma.Decimal(-500),
+      balanceAfter: new Prisma.Decimal(500),
+    });
   });
 });

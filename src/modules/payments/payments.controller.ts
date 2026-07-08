@@ -26,12 +26,16 @@ import {
 } from '../../common/guards';
 import {
   AdminUpdatePaymentStatusDto,
+  CreateRestaurantPayoutRequestDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   CreateSubscriptionPaymentAttemptDto,
   ListPaymentsDto,
+  ListRestaurantPayoutRequestsDto,
+  MarkRestaurantPayoutPaidDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
+  ReviewRestaurantPayoutRequestDto,
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
@@ -139,6 +143,96 @@ export class PaymentsController {
       restaurantId,
       dto,
     );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Get('restaurants/:restaurantId/wallet')
+  @ApiOperation({ summary: 'Get restaurant wallet balance and recent ledger' })
+  getRestaurantWallet(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+  ) {
+    return this.paymentsService.getRestaurantWallet(user, restaurantId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Get('restaurants/:restaurantId/payout-requests')
+  @ApiOperation({ summary: 'List restaurant payout requests' })
+  listRestaurantPayoutRequests(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Query() query: ListRestaurantPayoutRequestsDto,
+  ) {
+    return this.paymentsService.listRestaurantPayoutRequests(
+      user,
+      restaurantId,
+      query,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+  @Post('restaurants/:restaurantId/payout-requests')
+  @ApiOperation({ summary: 'Request manual restaurant wallet payout' })
+  createRestaurantPayoutRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: CreateRestaurantPayoutRequestDto,
+  ) {
+    return this.paymentsService.createRestaurantPayoutRequest(
+      user,
+      restaurantId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurant-payout-requests/:id/approve')
+  approveRestaurantPayoutRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: ReviewRestaurantPayoutRequestDto,
+  ) {
+    return this.paymentsService.approveRestaurantPayoutRequest(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurant-payout-requests/:id/reject')
+  rejectRestaurantPayoutRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: ReviewRestaurantPayoutRequestDto,
+  ) {
+    return this.paymentsService.rejectRestaurantPayoutRequest(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurant-payout-requests/:id/mark-paid')
+  markRestaurantPayoutPaid(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: MarkRestaurantPayoutPaidDto,
+  ) {
+    return this.paymentsService.markRestaurantPayoutPaid(user, id, dto);
   }
 
   @ApiBearerAuth()

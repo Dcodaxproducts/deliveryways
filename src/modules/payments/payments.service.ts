@@ -10,6 +10,8 @@ import {
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
+  RestaurantPayoutRequestStatus,
+  RestaurantWalletTransactionType,
   SubscriptionStatus,
 } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -19,12 +21,16 @@ import { buildPaginationMeta } from '../../common/utils';
 import { PrismaService } from '../../database';
 import {
   AdminUpdatePaymentStatusDto,
+  CreateRestaurantPayoutRequestDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   CreateSubscriptionPaymentAttemptDto,
+  ListRestaurantPayoutRequestsDto,
+  MarkRestaurantPayoutPaidDto,
   ListPaymentsDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
+  ReviewRestaurantPayoutRequestDto,
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
@@ -968,6 +974,226 @@ export class PaymentsService {
     };
   }
 
+  async getRestaurantWallet(user: AuthUserContext, restaurantId: string) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const wallet = await this.ensureRestaurantWalletAccount(
+      restaurant.tenantId,
+      restaurant.id,
+      await this.resolvePreferredCurrency(restaurant.id),
+    );
+    const transactions = await this.prisma.restaurantWalletTransaction.findMany(
+      {
+        where: { walletAccountId: wallet.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      },
+    );
+
+    return {
+      data: {
+        ...wallet,
+        balance: Number(wallet.balance),
+        transactions: transactions.map((item) => ({
+          ...item,
+          amount: Number(item.amount),
+          balanceAfter: Number(item.balanceAfter),
+        })),
+      },
+      message: 'Restaurant wallet fetched successfully',
+    };
+  }
+
+  async listRestaurantPayoutRequests(
+    user: AuthUserContext,
+    restaurantId: string,
+    query: ListRestaurantPayoutRequestsDto,
+  ) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const where: Prisma.RestaurantPayoutRequestWhereInput = {
+      restaurantId: restaurant.id,
+      ...(query.status ? { status: query.status } : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.restaurantPayoutRequest.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.restaurantPayoutRequest.count({ where }),
+    ]);
+
+    return {
+      data: items.map((item) => this.serializeRestaurantPayoutRequest(item)),
+      message: 'Restaurant payout requests fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async createRestaurantPayoutRequest(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: CreateRestaurantPayoutRequestDto,
+  ) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const wallet = await this.ensureRestaurantWalletAccount(
+      restaurant.tenantId,
+      restaurant.id,
+      dto.currency ?? (await this.resolvePreferredCurrency(restaurant.id)),
+    );
+    const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
+
+    if (amount.greaterThan(wallet.balance)) {
+      throw new BadRequestException('Requested amount exceeds wallet balance');
+    }
+
+    const data = await this.prisma.restaurantPayoutRequest.create({
+      data: {
+        walletAccountId: wallet.id,
+        tenantId: restaurant.tenantId,
+        restaurantId: restaurant.id,
+        branchId: user.bid ?? null,
+        requestedBy: user.uid,
+        amount,
+        currency: (dto.currency ?? wallet.currency).trim().toUpperCase(),
+        bankDetails: this.normalizePayoutBankDetails(
+          dto.bankDetails,
+        ) as Prisma.InputJsonValue,
+        note: this.resolveOptionalString(dto.note),
+      },
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutRequest(data),
+      message: 'Restaurant payout request created successfully',
+    };
+  }
+
+  async approveRestaurantPayoutRequest(
+    user: AuthUserContext,
+    id: string,
+    dto: ReviewRestaurantPayoutRequestDto,
+  ) {
+    const data = await this.prisma.restaurantPayoutRequest.update({
+      where: { id, status: RestaurantPayoutRequestStatus.REQUESTED },
+      data: {
+        status: RestaurantPayoutRequestStatus.APPROVED,
+        reviewedBy: user.uid,
+        approvalNote: this.resolveOptionalString(dto.note),
+        approvedAt: new Date(),
+      },
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutRequest(data),
+      message: 'Restaurant payout request approved successfully',
+    };
+  }
+
+  async rejectRestaurantPayoutRequest(
+    user: AuthUserContext,
+    id: string,
+    dto: ReviewRestaurantPayoutRequestDto,
+  ) {
+    const data = await this.prisma.restaurantPayoutRequest.update({
+      where: { id, status: RestaurantPayoutRequestStatus.REQUESTED },
+      data: {
+        status: RestaurantPayoutRequestStatus.REJECTED,
+        reviewedBy: user.uid,
+        rejectionReason:
+          this.resolveOptionalString(dto.reason) ??
+          this.resolveOptionalString(dto.note),
+        rejectedAt: new Date(),
+      },
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutRequest(data),
+      message: 'Restaurant payout request rejected successfully',
+    };
+  }
+
+  async markRestaurantPayoutPaid(
+    user: AuthUserContext,
+    id: string,
+    dto: MarkRestaurantPayoutPaidDto,
+  ) {
+    const data = await this.prisma.$transaction(async (tx) => {
+      const request = await tx.restaurantPayoutRequest.findUnique({
+        where: { id },
+        include: { walletAccount: true },
+      });
+
+      if (!request) {
+        throw new NotFoundException('Restaurant payout request not found');
+      }
+
+      if (request.status !== RestaurantPayoutRequestStatus.APPROVED) {
+        throw new BadRequestException(
+          'Only approved payout requests can be marked paid',
+        );
+      }
+
+      if (request.amount.greaterThan(request.walletAccount.balance)) {
+        throw new BadRequestException(
+          'Requested amount exceeds wallet balance',
+        );
+      }
+
+      const nextBalance = request.walletAccount.balance.minus(request.amount);
+      await tx.restaurantWalletAccount.update({
+        where: { id: request.walletAccountId },
+        data: { balance: nextBalance },
+      });
+      const walletTransaction = await tx.restaurantWalletTransaction.create({
+        data: {
+          walletAccountId: request.walletAccountId,
+          tenantId: request.tenantId,
+          restaurantId: request.restaurantId,
+          branchId: request.branchId,
+          payoutRequestId: request.id,
+          type: RestaurantWalletTransactionType.PAYOUT_DEBIT,
+          amount: request.amount.negated(),
+          balanceAfter: nextBalance,
+          currency: request.currency,
+          note:
+            this.resolveOptionalString(dto.note) ??
+            'Manual bank payout completed by super admin',
+          metadata: {
+            paymentReference: dto.paymentReference ?? null,
+          } as Prisma.InputJsonValue,
+          createdBy: user.uid,
+        },
+      });
+
+      return tx.restaurantPayoutRequest.update({
+        where: { id: request.id },
+        data: {
+          status: RestaurantPayoutRequestStatus.PAID,
+          paidBy: user.uid,
+          paidAt: new Date(),
+          paymentReference: this.resolveOptionalString(dto.paymentReference),
+          paidNote: this.resolveOptionalString(dto.note),
+          walletTransactionId: walletTransaction.id,
+        },
+      });
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutRequest(data),
+      message: 'Restaurant payout marked paid successfully',
+    };
+  }
+
   async getRestaurantPaymentManagement(
     user: AuthUserContext,
     restaurantId: string,
@@ -977,19 +1203,29 @@ export class PaymentsService {
       user,
       restaurantId,
     );
-    const [transactionSummary, walletSummary, transactions, globalMethods] =
-      await Promise.all([
-        this.paymentsRepository.summarizeRestaurantTransactions(
-          restaurant.id,
-          query.branchId,
-        ),
-        this.paymentsRepository.summarizeRestaurantWallets(restaurant.id),
-        this.paymentsRepository.listRestaurantTransactions(restaurant.id, {
-          ...query,
-          restaurantId: restaurant.id,
-        }),
-        this.getGlobalPaymentMethods(),
-      ]);
+    const [
+      transactionSummary,
+      walletSummary,
+      restaurantWallet,
+      transactions,
+      globalMethods,
+    ] = await Promise.all([
+      this.paymentsRepository.summarizeRestaurantTransactions(
+        restaurant.id,
+        query.branchId,
+      ),
+      this.paymentsRepository.summarizeRestaurantWallets(restaurant.id),
+      this.ensureRestaurantWalletAccount(
+        restaurant.tenantId,
+        restaurant.id,
+        await this.resolvePreferredCurrency(restaurant.id),
+      ),
+      this.paymentsRepository.listRestaurantTransactions(restaurant.id, {
+        ...query,
+        restaurantId: restaurant.id,
+      }),
+      this.getGlobalPaymentMethods(),
+    ]);
     const stripe = this.readRestaurantStripeSettings(restaurant.settings);
     const paymentMethods = this.readRestaurantPaymentMethodSettings(
       restaurant.settings,
@@ -1018,9 +1254,13 @@ export class PaymentsService {
             lastTransfer: stripe.lastTransfer ?? null,
           },
           wallet: {
-            type: 'CUSTOMER_WALLET_EXPOSURE',
-            accountCount: walletSummary.accountCount,
-            totalBalance: Number(walletSummary.totalBalance),
+            type: 'RESTAURANT_WALLET',
+            balance: Number(restaurantWallet.balance),
+            currency: restaurantWallet.currency,
+            customerWalletExposure: {
+              accountCount: walletSummary.accountCount,
+              totalBalance: Number(walletSummary.totalBalance),
+            },
           },
           summary: this.serializeRestaurantPaymentSummary(transactionSummary),
         },
@@ -1223,6 +1463,7 @@ export class PaymentsService {
       return updatedPayment;
     });
 
+    await this.creditRestaurantWalletForPayment(data, user.uid);
     await this.loyaltyWalletService!.awardPointsForPaidOrder(
       orderId,
       data.id,
@@ -1691,6 +1932,10 @@ export class PaymentsService {
       }
     });
 
+    await this.creditRestaurantWalletForPayment(
+      { ...payment, status: PaymentStatus.PAID },
+      'stripe:webhook',
+    );
     await this.loyaltyWalletService!.awardPointsForPaidOrder(
       orderId,
       payment.id,
@@ -2369,6 +2614,138 @@ export class PaymentsService {
 
     const normalized = value.trim();
     return normalized.length ? normalized : undefined;
+  }
+
+  private async ensureRestaurantWalletAccount(
+    tenantId: string,
+    restaurantId: string,
+    currency = 'PKR',
+  ) {
+    return this.prisma.restaurantWalletAccount.upsert({
+      where: { restaurantId },
+      create: {
+        tenantId,
+        restaurantId,
+        currency: currency.trim().toUpperCase(),
+      },
+      update: {},
+    });
+  }
+
+  private normalizePayoutBankDetails(
+    bankDetails: CreateRestaurantPayoutRequestDto['bankDetails'],
+  ): Prisma.JsonObject {
+    return {
+      bankName: bankDetails.bankName.trim(),
+      accountTitle: bankDetails.accountTitle.trim(),
+      accountNumber: bankDetails.accountNumber.trim(),
+      ...(bankDetails.iban?.trim() ? { iban: bankDetails.iban.trim() } : {}),
+      ...(bankDetails.phone?.trim() ? { phone: bankDetails.phone.trim() } : {}),
+    };
+  }
+
+  private serializeRestaurantPayoutRequest(request: {
+    id: string;
+    walletAccountId: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId: string | null;
+    requestedBy: string | null;
+    reviewedBy: string | null;
+    paidBy: string | null;
+    status: RestaurantPayoutRequestStatus;
+    amount: Prisma.Decimal;
+    currency: string;
+    bankDetails: Prisma.JsonValue;
+    note: string | null;
+    rejectionReason: string | null;
+    approvalNote: string | null;
+    paymentReference: string | null;
+    paidNote: string | null;
+    approvedAt: Date | null;
+    rejectedAt: Date | null;
+    paidAt: Date | null;
+    walletTransactionId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      ...request,
+      amount: Number(request.amount),
+    };
+  }
+
+  private async creditRestaurantWalletForPayment(
+    payment: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      orderId: string | null;
+      paymentMethod: PaymentMethod;
+      type: PaymentTransactionType;
+      status: PaymentStatus;
+      amount: Prisma.Decimal;
+      currency: string;
+    },
+    actorId?: string,
+  ) {
+    if (
+      payment.status !== PaymentStatus.PAID ||
+      payment.type !== PaymentTransactionType.CHARGE ||
+      !payment.orderId ||
+      (
+        [
+          PaymentMethod.COD,
+          PaymentMethod.CARD_ON_DELIVERY,
+          PaymentMethod.WALLET,
+        ] as PaymentMethod[]
+      ).includes(payment.paymentMethod)
+    ) {
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.restaurantWalletAccount.upsert({
+        where: { restaurantId: payment.restaurantId },
+        create: {
+          tenantId: payment.tenantId,
+          restaurantId: payment.restaurantId,
+          currency: payment.currency,
+        },
+        update: {},
+      });
+      const existing = await tx.restaurantWalletTransaction.findUnique({
+        where: { paymentTransactionId: payment.id },
+        select: { id: true },
+      });
+
+      if (existing) {
+        return;
+      }
+
+      const nextBalance = wallet.balance.plus(payment.amount);
+      await tx.restaurantWalletAccount.update({
+        where: { id: wallet.id },
+        data: { balance: nextBalance },
+      });
+      await tx.restaurantWalletTransaction.create({
+        data: {
+          walletAccountId: wallet.id,
+          tenantId: payment.tenantId,
+          restaurantId: payment.restaurantId,
+          branchId: payment.branchId,
+          orderId: payment.orderId,
+          paymentTransactionId: payment.id,
+          type: RestaurantWalletTransactionType.ORDER_CREDIT,
+          amount: payment.amount,
+          balanceAfter: nextBalance,
+          currency: payment.currency,
+          note: 'Paid platform-collected order credited to restaurant wallet',
+          createdBy: actorId,
+        },
+      });
+    });
   }
 
   private async resolveRestaurantId(
