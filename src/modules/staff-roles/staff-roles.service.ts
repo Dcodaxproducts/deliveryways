@@ -14,6 +14,7 @@ import {
   StaffRolePermissionDto,
   UpdateStaffRoleDto,
 } from './dto';
+import { PermissionModulesService } from '../permission-modules/permission-modules.service';
 import { StaffRolesRepository } from './staff-roles.repository';
 
 interface ResolvedStaffScope {
@@ -31,7 +32,10 @@ interface StaffRestaurantAccessScope {
 
 @Injectable()
 export class StaffRolesService {
-  constructor(private readonly staffRolesRepository: StaffRolesRepository) {}
+  constructor(
+    private readonly staffRolesRepository: StaffRolesRepository,
+    private readonly permissionModulesService?: PermissionModulesService,
+  ) {}
 
   async create(user: AuthUserContext, dto: CreateStaffRoleDto) {
     const scope = this.resolveScopeForUser(user);
@@ -42,7 +46,7 @@ export class StaffRolesService {
       panelType: scope.panelType,
       name: dto.name.trim(),
       description: this.resolveOptionalString(dto.description),
-      permissions: this.normalizePermissions(dto.permissions),
+      permissions: await this.normalizePermissions(dto.permissions),
       restaurantAccess: await this.resolveRestaurantAccess(scope, dto),
       tenant: scope.tenantId ? { connect: { id: scope.tenantId } } : undefined,
       restaurant: scope.restaurantId
@@ -103,7 +107,7 @@ export class StaffRolesService {
       isActive: dto.isActive,
       permissions:
         dto.permissions !== undefined
-          ? this.normalizePermissions(dto.permissions)
+          ? await this.normalizePermissions(dto.permissions)
           : undefined,
       restaurantAccess:
         dto.restaurantIds !== undefined || dto.branchIds !== undefined
@@ -281,15 +285,35 @@ export class StaffRolesService {
     }
   }
 
-  private normalizePermissions(permissions: StaffRolePermissionDto[]) {
+  private async normalizePermissions(permissions: StaffRolePermissionDto[]) {
     const normalized = permissions.map((permission) => ({
-      access: permission.access.trim(),
+      access: this.normalizeAccessKey(permission.access),
       operations: [
-        ...new Set(permission.operations.map((operation) => operation.trim())),
+        ...new Set(
+          permission.operations
+            .map((operation) => operation.trim().toLowerCase())
+            .filter(Boolean),
+        ),
       ],
     }));
 
+    if (normalized.some((permission) => !permission.operations.length)) {
+      throw new BadRequestException(
+        'Each permission must define at least one operation',
+      );
+    }
+
+    await this.permissionModulesService?.validateActivePermissions(normalized);
+
     return normalized as Prisma.InputJsonValue;
+  }
+
+  private normalizeAccessKey(value: string) {
+    const access = value.trim().toLowerCase();
+    if (!access) {
+      throw new BadRequestException('Permission access is required');
+    }
+    return access;
   }
 
   private async resolveRestaurantAccess(

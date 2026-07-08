@@ -33,6 +33,7 @@ import { CartModule } from './modules/cart/cart.module';
 import { CustomerAppModule } from './modules/customer-app/customer-app.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { StaffRolesModule } from './modules/staff-roles/staff-roles.module';
+import { PermissionModulesModule } from './modules/permission-modules/permission-modules.module';
 import { StaffManagementModule } from './modules/staff-management/staff-management.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
@@ -101,6 +102,7 @@ import { AppController } from './app.controller';
     CartModule,
     CustomerAppModule,
     AdminModule,
+    PermissionModulesModule,
     StaffRolesModule,
     StaffManagementModule,
     ChatModule,
