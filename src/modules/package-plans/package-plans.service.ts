@@ -1632,6 +1632,53 @@ export class PackagePlansService {
     });
   }
 
+  private buildWeeklyPayoutOrderBreakdownSection(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    if (!invoice.lineItems.length) {
+      return {
+        title: 'Order Payout Details',
+        pageBreakBefore: true,
+        rows: ['No paid orders found for this payout period.'],
+      };
+    }
+
+    return {
+      title: 'Order Payout Details',
+      pageBreakBefore: true,
+      tables: [
+        {
+          columns: [
+            { header: 'Order ID', width: 106 },
+            { header: 'Paid At', width: 70 },
+            { header: 'Branch', width: 78 },
+            { header: 'Payment', width: 62 },
+            { header: `Gross (${invoice.totals.currency})`, width: 58 },
+            { header: 'Fee', width: 48 },
+            { header: 'Net', width: 58 },
+          ],
+          rows: invoice.lineItems.map((item) => [
+            item.orderId,
+            this.formatInvoiceDate(item.paidAt),
+            item.branch?.name ?? 'N/A',
+            item.paymentMethod ?? 'N/A',
+            this.formatInvoiceMoney(item.grossAmount),
+            this.formatInvoiceMoney(item.platformCommissionAmount),
+            this.formatInvoiceMoney(item.restaurantPayoutAmount),
+          ]),
+        },
+      ],
+      rows: [
+        `Total Orders: ${invoice.totals.ordersCount}`,
+        `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
+        `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
+        `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
+      ],
+    };
+  }
+
   private buildSubscriptionOrderBreakdownSection(
     invoice: Awaited<
       ReturnType<PackagePlansService['buildSubscriptionInvoice']>
@@ -1772,6 +1819,7 @@ export class PackagePlansService {
           ],
           rows: [invoice.note],
         },
+        this.buildWeeklyPayoutOrderBreakdownSection(invoice),
       ],
     });
   }

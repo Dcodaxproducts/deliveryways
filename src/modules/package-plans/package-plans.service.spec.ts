@@ -616,6 +616,38 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('renders payout invoice PDF with order-level reconciliation rows', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.downloadWeeklyPayoutInvoicePdf(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-04T00:00:00.000Z',
+      toDate: '2026-06-11T00:00:00.000Z',
+    });
+    const pdfText = result.content.toString('utf8');
+
+    expect(pdfText).toContain('Order Payout Details');
+    expect(pdfText).toContain('Order ID');
+    expect(pdfText).toContain('order-1');
+    expect(pdfText).toContain('Gross');
+    expect(pdfText).toContain('Net');
+  });
+
   it('auto-emails due subscription invoices once and advances next billing date', async () => {
     const subscription = makeSubscription({
       nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),

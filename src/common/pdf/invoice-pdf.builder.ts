@@ -177,15 +177,20 @@ export class InvoicePdfBuilder {
       '1 1 1 rg',
       'BT /F2 22 Tf 48 792 Td (DeliveryWays) Tj ET',
       `BT /F1 10 Tf 48 774 Td (${this.escape(input.brandName ?? 'Restaurant Commerce Platform')}) Tj ET`,
-      '0.12 0.12 0.12 rg',
     ];
     for (const [index, line] of (input.headerLines ?? [])
       .slice(0, 3)
       .entries()) {
+      const size = 8;
+      const x = Math.max(
+        LEFT + 270,
+        PAGE_WIDTH - LEFT - this.estimateTextWidth(line, size),
+      );
       commands.push(
-        `BT /F1 8 Tf 330 ${792 - index * 12} Td (${this.escape(line)}) Tj ET`,
+        `BT /F1 ${size} Tf ${x} ${792 - index * 12} Td (${this.escape(line)}) Tj ET`,
       );
     }
+    commands.push('0.12 0.12 0.12 rg');
     let y = TOP - 88;
 
     for (const line of lines) {
@@ -211,6 +216,10 @@ export class InvoicePdfBuilder {
     );
 
     return commands.join('\n');
+  }
+
+  private static estimateTextWidth(text: string, fontSize: number) {
+    return text.length * fontSize * 0.48;
   }
 
   private static lineHeight(line: PdfLine) {
