@@ -11,11 +11,16 @@ interface PdfTableLine {
   style: 'tableHeader' | 'tableCell';
 }
 
+interface PdfKeyValueLine {
+  label: string;
+  value: string;
+}
+
 interface PdfPageBreakLine {
   pageBreak: true;
 }
 
-type PdfLine = PdfTextLine | PdfTableLine | PdfPageBreakLine;
+type PdfLine = PdfTextLine | PdfTableLine | PdfKeyValueLine | PdfPageBreakLine;
 
 export interface InvoicePdfTable {
   columns: Array<{ header: string; width?: number }>;
@@ -108,10 +113,7 @@ export class InvoicePdfBuilder {
     if (input.meta?.length) {
       lines.push({ text: '', style: 'normal' });
       for (const item of input.meta) {
-        lines.push({
-          text: `${item.label}: ${item.value ?? 'N/A'}`,
-          style: 'normal',
-        });
+        lines.push({ label: item.label, value: String(item.value ?? 'N/A') });
       }
     }
 
@@ -135,6 +137,12 @@ export class InvoicePdfBuilder {
         }
       }
       for (const row of section.rows ?? []) {
+        const keyValue = this.toKeyValue(row);
+        if (keyValue) {
+          lines.push(keyValue);
+          continue;
+        }
+
         for (const wrapped of this.wrap(row)) {
           lines.push({ text: wrapped, style: 'normal' });
         }
@@ -201,6 +209,8 @@ export class InvoicePdfBuilder {
       }
       if ('cells' in line) {
         this.pushTableRow(commands, line, y);
+      } else if ('label' in line) {
+        this.pushKeyValue(commands, line, y);
       } else {
         const font =
           line.style === 'heading' || line.style === 'subheading' ? 'F2' : 'F1';
@@ -227,6 +237,7 @@ export class InvoicePdfBuilder {
   private static lineHeight(line: PdfLine) {
     if ('pageBreak' in line) return 0;
     if ('cells' in line) return 16;
+    if ('label' in line) return 15;
     const { style } = line;
     return style === 'heading' ? 22 : style === 'subheading' ? 18 : LINE_HEIGHT;
   }
@@ -280,6 +291,40 @@ export class InvoicePdfBuilder {
       );
       x += width;
     }
+  }
+
+  private static pushKeyValue(
+    commands: string[],
+    line: PdfKeyValueLine,
+    y: number,
+  ) {
+    const labelWidth = 145;
+    const valueX = LEFT + labelWidth;
+    const valueWidth = TABLE_WIDTH - labelWidth;
+
+    commands.push(
+      `BT /F2 9.5 Tf ${LEFT} ${y} Td (${this.escape(
+        this.truncateForWidth(`${line.label}:`, labelWidth - 12),
+      )}) Tj ET`,
+      `BT /F1 9.5 Tf ${valueX} ${y} Td (${this.escape(
+        this.truncateForWidth(line.value, valueWidth),
+      )}) Tj ET`,
+    );
+  }
+
+  private static toKeyValue(text: string): PdfKeyValueLine | null {
+    const separator = text.indexOf(':');
+    if (separator <= 0 || separator > 42) {
+      return null;
+    }
+
+    const label = text.slice(0, separator).trim();
+    const value = text.slice(separator + 1).trim();
+    if (!label || !value || label.split(' ').length > 5) {
+      return null;
+    }
+
+    return { label, value };
   }
 
   private static truncateForWidth(text: string, width: number) {
