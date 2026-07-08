@@ -22,6 +22,7 @@ INSERT INTO "permission_modules" ("id", "access_key", "name", "description", "de
   ('perm_menu', 'menu', 'Menu', 'General menu access alias', '["read","write","create","update","delete","manage"]', 40),
   ('perm_menu_management', 'menu-management', 'Menu Management', 'Menu management access alias', '["read","write","create","update","delete","manage"]', 50),
   ('perm_restaurant_menus', 'restaurant-menus', 'Restaurant Menus', 'Restaurant menu schedules and availability', '["read","write","create","update","delete","manage"]', 60),
+  ('perm_branch_management', 'branch_management', 'Branch Management', 'Restaurant branch list and branch management access', '["read","write","create","update","delete","manage"]', 65),
   ('perm_menu_categories', 'menu-categories', 'Menu Categories', 'Menu/category management', '["read","write","create","update","delete","manage"]', 70),
   ('perm_menu_items', 'menu-items', 'Menu Items', 'Menu item management', '["read","write","create","update","delete","manage"]', 80),
   ('perm_modifiers', 'modifiers', 'Modifiers', 'Modifier catalog management', '["read","write","create","update","delete","manage"]', 90),

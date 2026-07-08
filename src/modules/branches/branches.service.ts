@@ -72,6 +72,11 @@ interface BranchSettingsLike {
   [key: string]: unknown;
 }
 
+interface StaffBranchAccessScope {
+  restaurantIds: string[];
+  branchIds: string[];
+}
+
 interface BranchAdminUpdateTarget {
   id: string;
   tenantId: string;
@@ -289,6 +294,57 @@ export class BranchesService {
   async list(user: AuthUserContext, query: ListBranchesDto) {
     const nearestOrigin = this.resolveNearestOrigin(query);
 
+    if (this.isStaff(user)) {
+      const staffAccess = await this.resolveStaffBranchAccess(user, 'read');
+      const effectiveRestaurantId = this.resolveStaffRestaurantId(
+        staffAccess,
+        query.restaurantId,
+      );
+      const effectiveTenantId =
+        await this.branchesRepository.findTenantIdByRestaurant(
+          effectiveRestaurantId,
+        );
+
+      if (!effectiveTenantId) {
+        throw new ForbiddenException('Restaurant context is invalid');
+      }
+
+      const scopedQuery = { ...query, restaurantId: effectiveRestaurantId };
+      const { items } = await this.branchesRepository.listByRestaurant(
+        effectiveTenantId,
+        effectiveRestaurantId,
+        scopedQuery,
+        false,
+        false,
+        false,
+      );
+      const scopedItems = staffAccess.branchIds.length
+        ? items.filter((item) => staffAccess.branchIds.includes(item.id))
+        : items;
+      const data = nearestOrigin
+        ? await this.attachDistanceAndPaginate(
+            scopedItems,
+            { page: query.page, limit: query.limit },
+            nearestOrigin,
+          )
+        : {
+            items: await this.attachBranchAddresses(scopedItems, null),
+            total: scopedItems.length,
+          };
+
+      return {
+        data: await Promise.all(
+          data.items.map((item) =>
+            this.withBranchDeletionState(
+              this.withVisibleBranchSettings(user, item),
+            ),
+          ),
+        ),
+        message: 'Branches fetched successfully',
+        meta: buildPaginationMeta(query, data.total),
+      };
+    }
+
     if (user.role === UserRoleEnum.BRANCH_ADMIN && user.bid) {
       const items = await this.branchesRepository.listByBranchId(user.bid);
       const data = await this.attachDistanceAndPaginate(
@@ -409,6 +465,173 @@ export class BranchesService {
       message: 'Branches fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
+  }
+
+  private isStaff(user: AuthUserContext) {
+    return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
+  }
+
+  private async resolveStaffBranchAccess(
+    user: AuthUserContext,
+    operation: 'read' | 'write' | 'create' | 'update' | 'delete',
+  ): Promise<StaffBranchAccessScope> {
+    if (!user.uid) {
+      throw new ForbiddenException('Staff authentication is required');
+    }
+
+    const staff = await this.prisma.staffUser.findUnique({
+      where: { id: user.uid },
+      select: {
+        restaurantId: true,
+        branchId: true,
+        restaurantAccess: true,
+        isActive: true,
+        deletedAt: true,
+        staffRole: {
+          select: {
+            permissions: true,
+            restaurantAccess: true,
+            isActive: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !staff ||
+      staff.deletedAt ||
+      !staff.isActive ||
+      !staff.staffRole ||
+      staff.staffRole.deletedAt ||
+      !staff.staffRole.isActive
+    ) {
+      throw new ForbiddenException('Staff account is inactive');
+    }
+
+    this.assertStaffBranchPermission(staff.staffRole.permissions, operation);
+
+    return this.resolveStaffAccessScope(
+      staff.restaurantAccess,
+      staff.staffRole.restaurantAccess,
+      staff.restaurantId,
+      staff.branchId,
+    );
+  }
+
+  private assertStaffBranchPermission(
+    permissions: Prisma.JsonValue,
+    operation: 'read' | 'write' | 'create' | 'update' | 'delete',
+  ) {
+    if (!Array.isArray(permissions)) {
+      throw new ForbiddenException('Staff role does not allow branch access');
+    }
+
+    const requiredOperations =
+      operation === 'read'
+        ? ['read', 'list', 'view', '*']
+        : [operation, 'write', 'manage', '*'];
+    const allowedAccesses = new Set([
+      '*',
+      'branches',
+      'branch-management',
+      'branch_management',
+    ]);
+    const canAccess = permissions.some((permission) => {
+      if (
+        !permission ||
+        typeof permission !== 'object' ||
+        Array.isArray(permission)
+      ) {
+        return false;
+      }
+
+      const access = (permission as { access?: unknown }).access;
+      const operations = (permission as { operations?: unknown }).operations;
+      if (typeof access !== 'string' || !Array.isArray(operations)) {
+        return false;
+      }
+
+      const normalizedAccess = access.trim().toLowerCase();
+      const normalizedOperations = operations
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim().toLowerCase());
+
+      return (
+        allowedAccesses.has(normalizedAccess) &&
+        requiredOperations.some((required) =>
+          normalizedOperations.includes(required),
+        )
+      );
+    });
+
+    if (!canAccess) {
+      throw new ForbiddenException('Staff role does not allow branch access');
+    }
+  }
+
+  private resolveStaffAccessScope(
+    staffAccess: Prisma.JsonValue | null,
+    roleAccess: Prisma.JsonValue | null,
+    restaurantId?: string | null,
+    branchId?: string | null,
+  ): StaffBranchAccessScope {
+    const parsedStaffAccess = this.normalizeStaffAccess(staffAccess);
+    const parsedRoleAccess = this.normalizeStaffAccess(roleAccess);
+    const restaurantIds = parsedStaffAccess.restaurantIds.length
+      ? parsedStaffAccess.restaurantIds
+      : parsedRoleAccess.restaurantIds;
+    const branchIds = parsedStaffAccess.branchIds.length
+      ? parsedStaffAccess.branchIds
+      : parsedRoleAccess.branchIds;
+
+    return {
+      restaurantIds: restaurantIds.length
+        ? restaurantIds
+        : restaurantId
+          ? [restaurantId]
+          : [],
+      branchIds: branchIds.length ? branchIds : branchId ? [branchId] : [],
+    };
+  }
+
+  private normalizeStaffAccess(value: Prisma.JsonValue | null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { restaurantIds: [], branchIds: [] };
+    }
+
+    const raw = value as { restaurantIds?: unknown; branchIds?: unknown };
+    return {
+      restaurantIds: Array.isArray(raw.restaurantIds)
+        ? raw.restaurantIds.filter(
+            (item): item is string => typeof item === 'string',
+          )
+        : [],
+      branchIds: Array.isArray(raw.branchIds)
+        ? raw.branchIds.filter(
+            (item): item is string => typeof item === 'string',
+          )
+        : [],
+    };
+  }
+
+  private resolveStaffRestaurantId(
+    access: StaffBranchAccessScope,
+    requestedRestaurantId?: string,
+  ) {
+    const restaurantId = requestedRestaurantId ?? access.restaurantIds[0];
+
+    if (!restaurantId) {
+      throw new ForbiddenException('Staff restaurant access is required');
+    }
+
+    if (!access.restaurantIds.includes(restaurantId)) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this restaurant',
+      );
+    }
+
+    return restaurantId;
   }
 
   async listPublic(query: ListPublicBranchesDto) {

@@ -88,6 +88,7 @@ export class BranchesController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.STAFF,
   )
   @ApiQuery({
     name: 'restaurantId',

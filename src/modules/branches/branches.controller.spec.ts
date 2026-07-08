@@ -20,4 +20,8 @@ describe('BranchesController branch admin permissions', () => {
   it('allows branch admins to update their assigned branch images', () => {
     expect(getRouteRoles('updateImages')).toContain(RolesEnum.BRANCH_ADMIN);
   });
+
+  it('allows staff to list branches through staff-role permission checks', () => {
+    expect(getRouteRoles('list')).toContain(RolesEnum.STAFF);
+  });
 });

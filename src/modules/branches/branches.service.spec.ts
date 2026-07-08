@@ -35,6 +35,7 @@ describe('BranchesService', () => {
     const prisma = {
       $transaction: jest.fn(),
       branch: { findUnique: jest.fn() },
+      staffUser: { findUnique: jest.fn() },
     };
 
     const storageService = {
@@ -886,6 +887,195 @@ describe('BranchesService', () => {
         },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows staff with branch management read permission to list assigned restaurant branches', async () => {
+    const { service, repository, prisma } = makeService();
+    prisma.staffUser.findUnique.mockResolvedValue({
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: { restaurantIds: ['restaurant-1'], branchIds: [] },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [
+          {
+            access: 'branch_management',
+            operations: ['read', 'write', 'create', 'update', 'delete'],
+          },
+        ],
+        restaurantAccess: { restaurantIds: ['restaurant-1'], branchIds: [] },
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    repository.findTenantIdByRestaurant.mockResolvedValue('tenant-1');
+    repository.listByRestaurant.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          name: 'Main',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          logoUrl: null,
+          coverImage: null,
+          description: null,
+          settings: null,
+          isMain: false,
+          isActive: true,
+          deletedAt: null,
+          managerId: null,
+        },
+      ],
+      total: 1,
+    });
+    repository.listBranchAddresses.mockResolvedValue([]);
+
+    const result = await service.list(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        ownerUserId: 'owner-1',
+        staffRoleId: 'role-1',
+        panelType: 'SUPER_ADMIN',
+      },
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'ASC',
+        restaurantId: 'restaurant-1',
+      },
+    );
+
+    expect(repository.findTenantIdByRestaurant).toHaveBeenCalledWith(
+      'restaurant-1',
+    );
+    expect(repository.listByRestaurant).toHaveBeenCalledWith(
+      'tenant-1',
+      'restaurant-1',
+      expect.objectContaining({ restaurantId: 'restaurant-1' }),
+      false,
+      false,
+      false,
+    );
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('filters staff branch list by assigned branch ids', async () => {
+    const { service, repository, prisma } = makeService();
+    prisma.staffUser.findUnique.mockResolvedValue({
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-2'],
+      },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [{ access: 'branches', operations: ['read'] }],
+        restaurantAccess: null,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    repository.findTenantIdByRestaurant.mockResolvedValue('tenant-1');
+    repository.listByRestaurant.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          name: 'Main',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          logoUrl: null,
+          coverImage: null,
+          description: null,
+          settings: null,
+          isMain: false,
+          isActive: true,
+          deletedAt: null,
+          managerId: null,
+        },
+        {
+          id: 'branch-2',
+          name: 'Downtown',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          logoUrl: null,
+          coverImage: null,
+          description: null,
+          settings: null,
+          isMain: false,
+          isActive: true,
+          deletedAt: null,
+          managerId: null,
+        },
+      ],
+      total: 2,
+    });
+    repository.listBranchAddresses.mockResolvedValue([]);
+
+    const result = await service.list(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+      },
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'ASC',
+        restaurantId: 'restaurant-1',
+      },
+    );
+
+    expect(result.data).toEqual([
+      expect.objectContaining({ id: 'branch-2', name: 'Downtown' }),
+    ]);
+    expect(result.meta.total).toBe(1);
+  });
+
+  it('rejects staff branch list without branch management read permission', async () => {
+    const { service, prisma } = makeService();
+    prisma.staffUser.findUnique.mockResolvedValue({
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: { restaurantIds: ['restaurant-1'], branchIds: [] },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [{ access: 'orders', operations: ['read'] }],
+        restaurantAccess: null,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    await expect(
+      service.list(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+        },
+        {
+          page: 1,
+          limit: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'ASC',
+          restaurantId: 'restaurant-1',
+        },
+      ),
+    ).rejects.toThrow('Staff role does not allow branch access');
   });
 
   it('sorts branches by nearest distance using provided lat/lng', async () => {
