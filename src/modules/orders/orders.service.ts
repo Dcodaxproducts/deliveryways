@@ -152,6 +152,37 @@ type QuoteLine = {
   }[];
 };
 
+type OrderDisplayItemSource = {
+  id: string;
+  menuItemId: string;
+  menuItemName: string;
+  variationId: string | null;
+  variationName: string | null;
+  unitPrice: Prisma.Decimal;
+  depositAmount: Prisma.Decimal;
+  quantity: number;
+  lineTotal: Prisma.Decimal;
+  note: string | null;
+  snapshotModifiers: Prisma.JsonValue | null;
+  menuItem?: { imageUrl: string | null } | null;
+};
+
+type OrderDisplayItemResponse = {
+  id: string;
+  menuItemId: string;
+  menuItemName: string;
+  imageUrl: string | null;
+  variationId: string | null;
+  variationName: string | null;
+  quantity: number;
+  unitPrice: number;
+  depositAmount: number;
+  lineTotal: number;
+  note: string | null;
+  snapshotModifiers: unknown[];
+  snapshotSections: unknown[];
+};
+
 type AppliedPromotionQuoteMetadata = {
   id: string;
   title: string;
@@ -393,6 +424,7 @@ export class OrdersService {
               snapshotModifiers: this.packOrderSelections(
                 line.snapshotModifiers,
                 line.snapshotSections,
+                line.dealId,
               ) as unknown as Prisma.InputJsonValue,
             })),
           },
@@ -2539,9 +2571,14 @@ export class OrdersService {
         depositAmount: Number(item.depositAmount),
         lineTotal: Number(item.lineTotal),
         note: item.note,
+        dealId: this.readSnapshotDealId(item.snapshotModifiers),
+        itemType: this.readSnapshotDealId(item.snapshotModifiers)
+          ? 'DEAL'
+          : 'ITEM',
         snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
         snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
       })),
+      displayItems: this.buildOrderDisplayItems(order.items),
     };
   }
 
@@ -2777,9 +2814,14 @@ export class OrdersService {
         depositAmount: Number(item.depositAmount),
         lineTotal: Number(item.lineTotal),
         note: item.note,
+        dealId: this.readSnapshotDealId(item.snapshotModifiers),
+        itemType: this.readSnapshotDealId(item.snapshotModifiers)
+          ? 'DEAL'
+          : 'ITEM',
         snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
         snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
       })),
+      displayItems: this.buildOrderDisplayItems(order.items),
       deliveryAddress: order.deliveryAddress
         ? this.toCustomerAddressResponse(order.deliveryAddress)
         : null,
@@ -2799,6 +2841,10 @@ export class OrdersService {
         quantity: item.quantity,
         lineTotal: Number(item.lineTotal),
         note: item.note,
+        dealId: this.readSnapshotDealId(item.snapshotModifiers),
+        itemType: this.readSnapshotDealId(item.snapshotModifiers)
+          ? 'DEAL'
+          : 'ITEM',
         snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
         snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
         menuItem: item.menuItem,
@@ -4299,14 +4345,93 @@ export class OrdersService {
   private packOrderSelections(
     modifiers?: QuoteLine['snapshotModifiers'],
     sections?: QuoteLine['snapshotSections'],
+    dealId?: string,
   ) {
-    if (!sections?.length) {
+    if (!sections?.length && !dealId) {
       return modifiers?.length ? modifiers : [];
     }
 
     return {
+      ...(dealId ? { dealId } : {}),
       modifiers: modifiers?.length ? modifiers : [],
-      sections,
+      ...(sections?.length ? { sections } : {}),
+    };
+  }
+
+  private readSnapshotDealId(input: Prisma.JsonValue | null) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return null;
+    }
+
+    const dealId = (input as { dealId?: unknown }).dealId;
+    return typeof dealId === 'string' && dealId.trim() ? dealId : null;
+  }
+
+  private buildOrderDisplayItems(items: OrderDisplayItemSource[]) {
+    const displayItems: Array<
+      | {
+          type: 'DEAL';
+          dealId: string;
+          quantity: number;
+          lineTotal: number;
+          items: OrderDisplayItemResponse[];
+        }
+      | ({ type: 'ITEM'; dealId: null } & OrderDisplayItemResponse)
+    > = [];
+    const dealIndexes = new Map<string, number>();
+
+    for (const item of items) {
+      const dealId = this.readSnapshotDealId(item.snapshotModifiers);
+      const displayItem = this.toOrderDisplayItem(item);
+
+      if (!dealId) {
+        displayItems.push({ type: 'ITEM', dealId: null, ...displayItem });
+        continue;
+      }
+
+      const existingIndex = dealIndexes.get(dealId);
+      if (existingIndex !== undefined) {
+        const existing = displayItems[existingIndex];
+        if (existing.type === 'DEAL') {
+          existing.items.push(displayItem);
+          existing.quantity += displayItem.quantity;
+          existing.lineTotal = Number(
+            (existing.lineTotal + displayItem.lineTotal).toFixed(2),
+          );
+        }
+        continue;
+      }
+
+      dealIndexes.set(dealId, displayItems.length);
+      displayItems.push({
+        type: 'DEAL',
+        dealId,
+        quantity: displayItem.quantity,
+        lineTotal: displayItem.lineTotal,
+        items: [displayItem],
+      });
+    }
+
+    return displayItems;
+  }
+
+  private toOrderDisplayItem(
+    item: OrderDisplayItemSource,
+  ): OrderDisplayItemResponse {
+    return {
+      id: item.id,
+      menuItemId: item.menuItemId,
+      menuItemName: item.menuItemName,
+      imageUrl: item.menuItem?.imageUrl ?? null,
+      variationId: item.variationId,
+      variationName: item.variationName,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      depositAmount: Number(item.depositAmount),
+      lineTotal: Number(item.lineTotal),
+      note: item.note,
+      snapshotModifiers: this.readSnapshotModifiers(item.snapshotModifiers),
+      snapshotSections: this.readSnapshotSections(item.snapshotModifiers),
     };
   }
 

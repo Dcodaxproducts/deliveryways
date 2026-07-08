@@ -142,6 +142,7 @@ describe('CartService', () => {
             note: 'Less spicy',
             snapshotModifiers: {
               dealId: 'deal-1',
+              modifiers: [{ modifierId: 'modifier-addon-1', quantity: 1 }],
               modifierSelections: [
                 {
                   modifierGroupId: 'group-1',
@@ -173,7 +174,7 @@ describe('CartService', () => {
         variationId: 'variation-1',
         quantity: 2,
         note: 'Less spicy',
-        modifiers: undefined,
+        modifiers: [{ modifierId: 'modifier-addon-1', quantity: 1 }],
         modifierSelections: [
           {
             modifierGroupId: 'group-1',

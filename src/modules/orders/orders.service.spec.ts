@@ -108,6 +108,53 @@ describe('OrdersService - delivery radius', () => {
     ).not.toThrow();
   });
 
+  it('persists deal id together with order item modifiers in snapshots', () => {
+    const packOrderSelections = (
+      service as unknown as {
+        packOrderSelections: (
+          modifiers?: Array<{
+            modifierId: string;
+            name: string;
+            quantity: number;
+            unitPrice: number;
+          }>,
+          sections?: Array<{
+            slot: 'LEFT' | 'RIGHT';
+            menuItemId: string;
+            menuItemName: string;
+            unitPrice: number;
+          }>,
+          dealId?: string,
+        ) => unknown;
+      }
+    ).packOrderSelections;
+
+    expect(
+      packOrderSelections(
+        [
+          {
+            modifierId: 'modifier-cola',
+            name: 'Large Cola',
+            quantity: 1,
+            unitPrice: 100,
+          },
+        ],
+        undefined,
+        'deal-1',
+      ),
+    ).toEqual({
+      dealId: 'deal-1',
+      modifiers: [
+        {
+          modifierId: 'modifier-cola',
+          name: 'Large Cola',
+          quantity: 1,
+          unitPrice: 100,
+        },
+      ],
+    });
+  });
+
   it('calculates correct distance between two Lahore points', () => {
     const distFn = (
       service as unknown as {
@@ -4166,9 +4213,162 @@ describe('OrdersService - response mapping', () => {
         depositAmount: 0,
         lineTotal: 500,
         note: null,
+        dealId: null,
+        itemType: 'ITEM',
         snapshotModifiers: [],
         snapshotSections: [],
       },
+    ]);
+    expect(result.displayItems).toEqual([
+      expect.objectContaining({
+        type: 'ITEM',
+        dealId: null,
+        menuItemId: 'menu-1',
+      }),
+    ]);
+  });
+
+  it('groups deal rows separately from standalone items in order details', async () => {
+    const result = await (
+      service as unknown as {
+        toOrderDetailsResponse: (
+          order: Record<string, unknown>,
+        ) => Promise<Record<string, unknown>>;
+      }
+    ).toOrderDetailsResponse({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      couponId: null,
+      deliveryAddressId: null,
+      deliverymanId: null,
+      orderType: 'TAKEAWAY',
+      paymentMethod: 'COD',
+      orderTime: null,
+      isScheduled: false,
+      status: 'PLACED',
+      paymentStatus: 'PENDING',
+      subtotal: new Prisma.Decimal(1200),
+      taxAmount: new Prisma.Decimal(0),
+      deliveryFee: new Prisma.Decimal(0),
+      serviceChargeAmount: new Prisma.Decimal(0),
+      tipAmount: new Prisma.Decimal(0),
+      discountAmount: new Prisma.Decimal(0),
+      walletAppliedAmount: new Prisma.Decimal(0),
+      loyaltyDiscountAmount: new Prisma.Decimal(0),
+      totalAmount: new Prisma.Decimal(1200),
+      customerNote: null,
+      assignedAt: null,
+      deliveredAt: null,
+      paidAt: null,
+      cancelledAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Restaurant',
+        slug: 'restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+      branch: { id: 'branch-1', name: 'Main', coverImage: null, settings: {} },
+      coupon: null,
+      customer: {
+        id: 'customer-1',
+        email: 'customer@test.com',
+        profile: null,
+      },
+      deliveryAddress: null,
+      deliveryman: null,
+      transactions: [],
+      sourceGroupOrder: null,
+      items: [
+        {
+          id: 'deal-item-1',
+          menuItemId: 'menu-deal-1',
+          menuItemName: 'Burger Deal',
+          variationId: null,
+          variationName: null,
+          unitPrice: new Prisma.Decimal(800),
+          depositAmount: new Prisma.Decimal(0),
+          quantity: 1,
+          lineTotal: new Prisma.Decimal(800),
+          note: null,
+          snapshotModifiers: {
+            dealId: 'deal-1',
+            modifiers: [
+              {
+                modifierId: 'modifier-cola',
+                name: 'Large Cola',
+                quantity: 1,
+                unitPrice: 100,
+              },
+            ],
+          },
+          menuItem: {
+            id: 'menu-deal-1',
+            slug: 'burger-deal',
+            imageUrl: null,
+            category: { id: 'cat-1', name: 'Deals', imageUrl: null },
+          },
+        },
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          menuItemName: 'Fries',
+          variationId: null,
+          variationName: null,
+          unitPrice: new Prisma.Decimal(400),
+          depositAmount: new Prisma.Decimal(0),
+          quantity: 1,
+          lineTotal: new Prisma.Decimal(400),
+          note: null,
+          snapshotModifiers: [],
+          menuItem: {
+            id: 'menu-1',
+            slug: 'fries',
+            imageUrl: null,
+            category: { id: 'cat-2', name: 'Sides', imageUrl: null },
+          },
+        },
+      ],
+    });
+
+    expect(result.itemsPreview).toEqual([
+      expect.objectContaining({
+        id: 'deal-item-1',
+        dealId: 'deal-1',
+        itemType: 'DEAL',
+        snapshotModifiers: [
+          {
+            modifierId: 'modifier-cola',
+            name: 'Large Cola',
+            quantity: 1,
+            unitPrice: 100,
+          },
+        ],
+      }),
+      expect.objectContaining({
+        id: 'item-1',
+        dealId: null,
+        itemType: 'ITEM',
+      }),
+    ]);
+    expect(result.displayItems).toEqual([
+      expect.objectContaining({
+        type: 'DEAL',
+        dealId: 'deal-1',
+        quantity: 1,
+        lineTotal: 800,
+        items: [expect.objectContaining({ id: 'deal-item-1' })],
+      }),
+      expect.objectContaining({
+        type: 'ITEM',
+        dealId: null,
+        id: 'item-1',
+      }),
     ]);
   });
 
