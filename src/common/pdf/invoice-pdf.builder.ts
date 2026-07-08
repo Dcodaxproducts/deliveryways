@@ -52,6 +52,7 @@ const HEADER_HEIGHT = 92;
 const HEADER_BOTTOM = PAGE_HEIGHT - HEADER_HEIGHT;
 const CONTENT_TOP = HEADER_BOTTOM - 32;
 const LINE_HEIGHT = 14;
+const TABLE_ROW_HEIGHT = 18;
 const BOTTOM = 54;
 const MAX_CHARS = 92;
 const TABLE_WIDTH = PAGE_WIDTH - LEFT * 2;
@@ -236,7 +237,7 @@ export class InvoicePdfBuilder {
 
   private static lineHeight(line: PdfLine) {
     if ('pageBreak' in line) return 0;
-    if ('cells' in line) return 16;
+    if ('cells' in line) return TABLE_ROW_HEIGHT;
     if ('label' in line) return 15;
     const { style } = line;
     return style === 'heading' ? 22 : style === 'subheading' ? 18 : LINE_HEIGHT;
@@ -281,12 +282,18 @@ export class InvoicePdfBuilder {
     let x = LEFT;
     const font = line.style === 'tableHeader' ? 'F2' : 'F1';
     const size = line.style === 'tableHeader' ? 8.5 : 8;
+    const rowBottom = y - 5;
+    const fill = line.style === 'tableHeader' ? '0.93 0.94 0.96' : '1 1 1';
 
     for (const [index, cell] of line.cells.entries()) {
       const width = line.widths[index] ?? 60;
       commands.push(
-        `BT /${font} ${size} Tf ${x} ${y} Td (${this.escape(
-          this.truncateForWidth(cell, width),
+        '0.78 0.78 0.78 RG',
+        `${fill} rg`,
+        `0.5 w ${x} ${rowBottom} ${width} ${TABLE_ROW_HEIGHT} re B`,
+        '0.12 0.12 0.12 rg',
+        `BT /${font} ${size} Tf ${x + 4} ${y} Td (${this.escape(
+          this.truncateForWidth(cell, width - 8),
         )}) Tj ET`,
       );
       x += width;
