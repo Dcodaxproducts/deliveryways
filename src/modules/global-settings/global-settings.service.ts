@@ -128,7 +128,6 @@ export class GlobalSettingsService {
     const current = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),
     );
-    this.assertValidServiceCharge(dto, current.serviceChargeType);
     const normalized = this.normalizeUpdateDto(
       dto,
       current.notificationSettings,
@@ -310,12 +309,6 @@ export class GlobalSettingsService {
           ? this.resolveOptionalString(dto.fontFamily)
           : undefined,
       cartExpiryMinutes: dto.cartExpiryMinutes,
-      serviceChargeEnabled: dto.serviceChargeEnabled,
-      serviceChargeType: dto.serviceChargeType,
-      serviceChargeValue:
-        dto.serviceChargeValue !== undefined
-          ? new Prisma.Decimal(dto.serviceChargeValue)
-          : undefined,
       notificationSettings:
         dto.notificationSettings !== undefined
           ? this.mergeNotificationSettings(
@@ -393,6 +386,10 @@ export class GlobalSettingsService {
         settings.globalTaxPercentage,
       ),
       serviceCharge: this.extractServiceChargeSettings(settings),
+      transactionFee: {
+        configScope: 'RESTAURANT',
+        message: 'Transaction fee is configured per restaurant by super admin.',
+      },
     };
   }
 

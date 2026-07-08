@@ -274,13 +274,17 @@ export class UpdateGlobalSettingsDto {
   @ApiPropertyOptional({
     example: true,
     description:
-      'Enables the platform-managed service charge shown on quotes/orders.',
+      'Deprecated. Transaction fee is now configured per restaurant by super admin.',
   })
   @IsOptional()
   @IsBoolean()
   serviceChargeEnabled?: boolean;
 
-  @ApiPropertyOptional({ enum: ServiceChargeType })
+  @ApiPropertyOptional({
+    enum: ServiceChargeType,
+    description:
+      'Deprecated. Transaction fee type is now configured per restaurant.',
+  })
   @IsOptional()
   @IsEnum(ServiceChargeType)
   serviceChargeType?: ServiceChargeType;
@@ -289,7 +293,7 @@ export class UpdateGlobalSettingsDto {
     minimum: 0,
     example: 5,
     description:
-      'Service charge value. Percentage values must be 0-100; amount values may be any non-negative amount.',
+      'Deprecated. Transaction fee value is now configured per restaurant.',
   })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))

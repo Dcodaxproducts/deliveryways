@@ -115,6 +115,11 @@ describe('GlobalSettingsService', () => {
           type: ServiceChargeType.PERCENTAGE,
           value: 0,
         },
+        transactionFee: {
+          configScope: 'RESTAURANT',
+          message:
+            'Transaction fee is configured per restaurant by super admin.',
+        },
         notificationSettings: {
           emailAddress: null,
           phoneNumber: null,
@@ -219,12 +224,12 @@ describe('GlobalSettingsService', () => {
       primaryColor: '#FF6B00',
       timezone: 'UTC',
       cartExpiryMinutes: 90,
-      serviceChargeEnabled: true,
-      serviceChargeType: ServiceChargeType.PERCENTAGE,
       updatedBy: 'user-1',
     });
     expect(updateData.globalTaxPercentage).toBeInstanceOf(Prisma.Decimal);
-    expect(updateData.serviceChargeValue).toEqual(new Prisma.Decimal(8.5));
+    expect(updateData).not.toHaveProperty('serviceChargeEnabled');
+    expect(updateData).not.toHaveProperty('serviceChargeType');
+    expect(updateData).not.toHaveProperty('serviceChargeValue');
     expect(updateData).toMatchObject({
       notificationSettings: {
         emailAddress: 'old@example.com',
@@ -247,10 +252,12 @@ describe('GlobalSettingsService', () => {
       primaryColor: '#FF6B00',
       timezone: 'UTC',
       cartExpiryMinutes: 90,
-      serviceChargeEnabled: true,
+    });
+    expect(createData).toMatchObject({
+      serviceChargeEnabled: false,
       serviceChargeType: ServiceChargeType.PERCENTAGE,
     });
-    expect(createData.serviceChargeValue).toEqual(new Prisma.Decimal(8.5));
+    expect(createData.serviceChargeValue).toEqual(new Prisma.Decimal(0));
   });
 
   it('returns configured cart expiry minutes', async () => {
@@ -262,7 +269,7 @@ describe('GlobalSettingsService', () => {
     await expect(service.getCartExpiryMinutes()).resolves.toBe(45);
   });
 
-  it('returns platform service charge config', async () => {
+  it('keeps deprecated platform service charge config available for fallback reads', async () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',
       serviceChargeEnabled: true,
@@ -443,24 +450,26 @@ describe('GlobalSettingsService', () => {
     ).rejects.toThrow('Duplicate tax type code');
   });
 
-  it('rejects percentage service charge values above 100', async () => {
+  it('ignores deprecated global service charge update fields', async () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',
       notificationSettings: null,
     });
+    updateSingletonSpy.mockResolvedValue({ scopeKey: 'GLOBAL' });
 
-    await expect(
-      service.updateSettings(
-        { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
-        {
-          serviceChargeEnabled: true,
-          serviceChargeType: ServiceChargeType.PERCENTAGE,
-          serviceChargeValue: 101,
-        },
-      ),
-    ).rejects.toThrow(
-      'serviceChargeValue cannot exceed 100 for percentage service charges',
+    await service.updateSettings(
+      { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        serviceChargeEnabled: true,
+        serviceChargeType: ServiceChargeType.PERCENTAGE,
+        serviceChargeValue: 101,
+      },
     );
+
+    const [updateData] = updateSingletonSpy.mock.calls[0];
+    expect(updateData).not.toHaveProperty('serviceChargeEnabled');
+    expect(updateData).not.toHaveProperty('serviceChargeType');
+    expect(updateData).not.toHaveProperty('serviceChargeValue');
   });
 
   it('rejects notification channels without required contact values', async () => {

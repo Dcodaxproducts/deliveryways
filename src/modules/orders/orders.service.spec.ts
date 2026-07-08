@@ -2488,7 +2488,7 @@ describe('OrdersService - order reviews', () => {
 });
 
 describe('OrdersService - coupon quote validation', () => {
-  it('adds service charge but not inclusive tax to quote totals', async () => {
+  it('adds restaurant transaction fee but not inclusive tax to quote totals', async () => {
     const calculateQuoteBenefits = jest.fn(
       (input: { totalBeforeBenefits: Prisma.Decimal }) => ({
         walletAppliedAmount: new Prisma.Decimal(0),
@@ -2520,6 +2520,15 @@ describe('OrdersService - coupon quote validation', () => {
               isEnabled: false,
               type: 'PERCENTAGE',
               value: 0,
+            },
+          },
+          restaurant: {
+            settings: {
+              transactionFee: {
+                isEnabled: true,
+                type: 'PERCENTAGE',
+                value: 10,
+              },
             },
           },
         }),
@@ -2555,13 +2564,6 @@ describe('OrdersService - coupon quote validation', () => {
       {} as never,
       {} as never,
       { calculateQuoteBenefits } as never,
-      {
-        getServiceChargeConfig: jest.fn().mockResolvedValue({
-          isEnabled: true,
-          type: 'PERCENTAGE',
-          value: 10,
-        }),
-      } as never,
     );
 
     const result = await service.quote(
@@ -2592,6 +2594,10 @@ describe('OrdersService - coupon quote validation', () => {
     expect(result.data.subtotal).toBe(1000);
     expect(result.data.taxAmount).toBe(100);
     expect(result.data.serviceChargeAmount).toBe(100);
+    expect(result.data.transactionFeeAmount).toBe(100);
+    expect(result.data.chargeBreakdown.transactionFees).toEqual([
+      expect.objectContaining({ label: 'Transaction fee', amount: 100 }),
+    ]);
     expect(result.data.totalAmount).toBe(1100);
     expect(result.data.payableAmount).toBe(1100);
   });

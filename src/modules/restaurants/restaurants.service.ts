@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ServiceChargeType } from '@prisma/client';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -29,6 +29,7 @@ import {
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
+  UpdateRestaurantTransactionFeeDto,
 } from './dto';
 import { randomUUID } from 'crypto';
 
@@ -57,7 +58,14 @@ export class RestaurantsService {
         supportContact: dto.supportContact as Prisma.InputJsonValue,
         branding: dto.branding as Prisma.InputJsonValue,
         socialMedia: dto.socialMedia as Prisma.InputJsonValue,
-        settings: dto.settings as Prisma.InputJsonValue,
+        settings:
+          dto.settings !== undefined
+            ? (this.mergeRestaurantSettingsForUpdate(
+                { role: UserRoleEnum.SUPER_ADMIN } as AuthUserContext,
+                undefined,
+                dto.settings,
+              ) as Prisma.InputJsonValue)
+            : undefined,
       },
       tx,
     );
@@ -152,6 +160,11 @@ export class RestaurantsService {
   ) {
     await this.ensureRestaurantWriteAccess(user, id);
 
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
     const data = await this.restaurantsRepository.update(
       id,
       {
@@ -171,7 +184,14 @@ export class RestaurantsService {
         supportContact: dto.supportContact as Prisma.InputJsonValue,
         branding: dto.branding as Prisma.InputJsonValue,
         socialMedia: dto.socialMedia as Prisma.InputJsonValue,
-        settings: dto.settings as Prisma.InputJsonValue,
+        settings:
+          dto.settings !== undefined
+            ? (this.mergeRestaurantSettingsForUpdate(
+                user,
+                restaurant.settings,
+                dto.settings,
+              ) as Prisma.InputJsonValue)
+            : undefined,
       },
       tx,
     );
@@ -179,6 +199,44 @@ export class RestaurantsService {
     return {
       data: await this.resolveRestaurantMedia(data),
       message: 'Restaurant updated successfully',
+    };
+  }
+
+  async updateTransactionFee(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantTransactionFeeDto,
+    tx?: PrismaTx,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can manage restaurant transaction fee',
+      );
+    }
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const transactionFee = this.normalizeTransactionFee(
+      dto,
+      this.extractRestaurantTransactionFee(restaurant.settings),
+    );
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        settings: this.writeRestaurantTransactionFee(
+          restaurant.settings,
+          transactionFee,
+        ) as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: await this.withDeletionState(data),
+      message: 'Restaurant transaction fee updated successfully',
     };
   }
 
@@ -595,10 +653,13 @@ export class RestaurantsService {
       isActive?: boolean;
       logoUrl?: string | null;
       coverImage?: string | null;
+      settings?: Prisma.JsonValue | null;
     },
   >(entity: T) {
     return {
-      ...(await this.resolveRestaurantMedia(entity)),
+      ...this.withRestaurantTransactionFee(
+        await this.resolveRestaurantMedia(entity),
+      ),
       deletionState: {
         isDeleted: !!entity.deletedAt,
         deletionScheduled: false,
@@ -606,6 +667,130 @@ export class RestaurantsService {
         deleteAfter: null,
         isActive: entity.isActive ?? true,
       },
+    };
+  }
+
+  private withRestaurantTransactionFee<
+    T extends { settings?: Prisma.JsonValue | null },
+  >(entity: T) {
+    const transactionFee = this.extractRestaurantTransactionFee(
+      entity.settings ?? null,
+    );
+
+    return {
+      ...entity,
+      transactionFee,
+      serviceCharge: transactionFee,
+    };
+  }
+
+  private extractRestaurantTransactionFee(settings: Prisma.JsonValue | null) {
+    const transactionFee = this.asObject(
+      this.readPath(settings, ['transactionFee']),
+    );
+    const legacyServiceCharge = this.asObject(
+      this.readPath(settings, ['serviceCharge']),
+    );
+    const source = Object.keys(transactionFee).length
+      ? transactionFee
+      : legacyServiceCharge;
+
+    return {
+      isEnabled: Boolean(source.isEnabled),
+      type:
+        source.type === ServiceChargeType.AMOUNT
+          ? ServiceChargeType.AMOUNT
+          : ServiceChargeType.PERCENTAGE,
+      value: this.toNumber(source.value ?? 0),
+    };
+  }
+
+  private normalizeTransactionFee(
+    dto: UpdateRestaurantTransactionFeeDto,
+    current: { isEnabled: boolean; type: ServiceChargeType; value: number },
+  ) {
+    const next = {
+      isEnabled: dto.isEnabled ?? current.isEnabled,
+      type: dto.type ?? current.type,
+      value: dto.value ?? current.value,
+    };
+
+    if (next.type === ServiceChargeType.PERCENTAGE && next.value > 100) {
+      throw new BadRequestException(
+        'transactionFee.value cannot exceed 100 for percentage transaction fees',
+      );
+    }
+
+    return next;
+  }
+
+  private writeRestaurantTransactionFee(
+    settings: Prisma.JsonValue | null,
+    transactionFee: {
+      isEnabled: boolean;
+      type: ServiceChargeType;
+      value: number;
+    },
+  ) {
+    const root = this.asObject(settings);
+    return {
+      ...root,
+      transactionFee,
+      serviceCharge: transactionFee,
+    };
+  }
+
+  private mergeRestaurantSettingsForUpdate(
+    user: AuthUserContext,
+    currentSettings: Prisma.JsonValue | undefined,
+    nextSettings: Record<string, unknown>,
+  ) {
+    const current = this.asObject(currentSettings);
+    const next = this.asObject(nextSettings);
+    const protectedTransactionFee = this.extractRestaurantTransactionFee(
+      currentSettings ?? null,
+    );
+
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      const rawFee = this.asObject(
+        next.transactionFee ?? next.serviceCharge ?? protectedTransactionFee,
+      );
+      const transactionFee = this.normalizeTransactionFee(
+        {
+          isEnabled:
+            typeof rawFee.isEnabled === 'boolean'
+              ? rawFee.isEnabled
+              : undefined,
+          type:
+            rawFee.type === ServiceChargeType.AMOUNT ||
+            rawFee.type === ServiceChargeType.PERCENTAGE
+              ? rawFee.type
+              : undefined,
+          value:
+            rawFee.value !== undefined
+              ? this.toNumber(rawFee.value)
+              : undefined,
+        },
+        protectedTransactionFee,
+      );
+
+      return {
+        ...current,
+        ...next,
+        transactionFee,
+        serviceCharge: transactionFee,
+      };
+    }
+
+    const rest = { ...next };
+    delete rest.transactionFee;
+    delete rest.serviceCharge;
+
+    return {
+      ...current,
+      ...rest,
+      transactionFee: protectedTransactionFee,
+      serviceCharge: protectedTransactionFee,
     };
   }
 
@@ -1146,6 +1331,15 @@ export class RestaurantsService {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private toNumber(value: unknown) {
+    if (value instanceof Prisma.Decimal) {
+      return value.toNumber();
+    }
+
+    const numberValue = Number(value ?? 0);
+    return Number.isFinite(numberValue) ? numberValue : 0;
   }
 
   private async getRestaurantForNotificationSettings(user: AuthUserContext) {

@@ -897,4 +897,114 @@ describe('RestaurantsService notification settings', () => {
       } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('allows super admin to update restaurant transaction fee', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: {
+        transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 7.5 },
+        serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 7.5 },
+      },
+    });
+
+    const result = await service.updateTransactionFee(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+      { isEnabled: true, type: 'PERCENTAGE', value: 7.5 },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'restaurant-1',
+      {
+        settings: {
+          transactionFee: {
+            isEnabled: true,
+            type: 'PERCENTAGE',
+            value: 7.5,
+          },
+          serviceCharge: {
+            isEnabled: true,
+            type: 'PERCENTAGE',
+            value: 7.5,
+          },
+        },
+      },
+      undefined,
+    );
+    expect(result.data.transactionFee).toEqual({
+      isEnabled: true,
+      type: 'PERCENTAGE',
+      value: 7.5,
+    });
+  });
+
+  it('prevents business admin from overwriting restaurant transaction fee through generic settings update', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: {
+        transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: {
+        branding: { theme: 'dark' },
+        transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+        serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+      },
+    });
+
+    await service.update(
+      {
+        uid: 'business-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      'restaurant-1',
+      {
+        settings: {
+          branding: { theme: 'dark' },
+          transactionFee: { isEnabled: false, type: 'AMOUNT', value: 0 },
+        },
+      },
+    );
+
+    const [, updateData, tx] = repository.update.mock.calls[0] as [
+      string,
+      { settings: Record<string, unknown> },
+      undefined,
+    ];
+
+    expect(updateData.settings).toMatchObject({
+      branding: { theme: 'dark' },
+      transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+      serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+    });
+    expect(tx).toBeUndefined();
+  });
 });
