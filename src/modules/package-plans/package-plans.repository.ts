@@ -167,6 +167,11 @@ export class PackagePlansRepository {
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
       ...(query.subscriptionId ? { subscriptionId: query.subscriptionId } : {}),
       ...(query.type ? { type: query.type } : {}),
+      ...(query.direction ? { direction: query.direction } : {}),
+      ...(query.source ? { source: query.source } : {}),
+      ...(query.moduleCode
+        ? { moduleCode: query.moduleCode.trim().toUpperCase() }
+        : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {

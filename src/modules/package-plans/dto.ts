@@ -5,6 +5,8 @@ import {
   PackageCommissionType,
   PackagePayoutCycle,
   PaymentStatus,
+  SubscriptionAdjustmentDirection,
+  SubscriptionAdjustmentSource,
   SubscriptionDeductionStatus,
   SubscriptionDeductionType,
   SubscriptionStatus,
@@ -295,6 +297,15 @@ export class AssignTenantSubscriptionDto {
   paymentStatus?: PaymentStatus;
 
   @ApiPropertyOptional({
+    enum: PackagePayoutCycle,
+    description:
+      'Restaurant-specific payout cycle override. Empty uses package plan payout cycle.',
+  })
+  @IsOptional()
+  @IsEnum(PackagePayoutCycle)
+  payoutCycleOverride?: PackagePayoutCycle | null;
+
+  @ApiPropertyOptional({
     enum: SubscriptionStatus,
     default: SubscriptionStatus.ACTIVE,
   })
@@ -339,6 +350,15 @@ export class UpdateTenantSubscriptionDto {
   @IsOptional()
   @IsEnum(PaymentStatus)
   paymentStatus?: PaymentStatus;
+
+  @ApiPropertyOptional({
+    enum: PackagePayoutCycle,
+    description:
+      'Restaurant-specific payout cycle override. Empty uses package plan payout cycle.',
+  })
+  @IsOptional()
+  @IsEnum(PackagePayoutCycle)
+  payoutCycleOverride?: PackagePayoutCycle | null;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -425,6 +445,22 @@ export class ListSubscriptionDeductionsDto extends AdminListQueryDto {
   @IsEnum(SubscriptionDeductionType)
   type?: SubscriptionDeductionType;
 
+  @ApiPropertyOptional({ enum: SubscriptionAdjustmentDirection })
+  @IsOptional()
+  @IsEnum(SubscriptionAdjustmentDirection)
+  direction?: SubscriptionAdjustmentDirection;
+
+  @ApiPropertyOptional({ enum: SubscriptionAdjustmentSource })
+  @IsOptional()
+  @IsEnum(SubscriptionAdjustmentSource)
+  source?: SubscriptionAdjustmentSource;
+
+  @ApiPropertyOptional({ example: 'POS' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  moduleCode?: string;
+
   @ApiPropertyOptional({ enum: SubscriptionDeductionStatus })
   @IsOptional()
   @IsEnum(SubscriptionDeductionStatus)
@@ -450,6 +486,35 @@ export class CreateSubscriptionDeductionDto {
   @IsOptional()
   @IsEnum(SubscriptionDeductionType)
   type?: SubscriptionDeductionType;
+
+  @ApiPropertyOptional({
+    enum: SubscriptionAdjustmentDirection,
+    default: SubscriptionAdjustmentDirection.CREDIT,
+    description:
+      'CHARGE increases the subscription invoice. CREDIT reduces it.',
+  })
+  @IsOptional()
+  @IsEnum(SubscriptionAdjustmentDirection)
+  direction?: SubscriptionAdjustmentDirection;
+
+  @ApiPropertyOptional({
+    enum: SubscriptionAdjustmentSource,
+    default: SubscriptionAdjustmentSource.CUSTOM,
+    description:
+      'MODULE is for fixed restaurant-specific module fees such as POS.',
+  })
+  @IsOptional()
+  @IsEnum(SubscriptionAdjustmentSource)
+  source?: SubscriptionAdjustmentSource;
+
+  @ApiPropertyOptional({
+    example: 'POS',
+    description: 'Required for MODULE charges. Stored uppercase.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  moduleCode?: string;
 
   @ApiProperty({ example: 'Manual adjustment' })
   @IsString()
@@ -485,6 +550,22 @@ export class UpdateSubscriptionDeductionDto {
   @IsOptional()
   @IsEnum(SubscriptionDeductionStatus)
   status?: SubscriptionDeductionStatus;
+
+  @ApiPropertyOptional({ enum: SubscriptionAdjustmentDirection })
+  @IsOptional()
+  @IsEnum(SubscriptionAdjustmentDirection)
+  direction?: SubscriptionAdjustmentDirection;
+
+  @ApiPropertyOptional({ enum: SubscriptionAdjustmentSource })
+  @IsOptional()
+  @IsEnum(SubscriptionAdjustmentSource)
+  source?: SubscriptionAdjustmentSource;
+
+  @ApiPropertyOptional({ example: 'POS' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  moduleCode?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

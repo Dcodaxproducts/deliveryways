@@ -147,6 +147,16 @@ enum SubscriptionDeductionStatus {
   CANCELLED
 }
 
+enum SubscriptionAdjustmentDirection {
+  CHARGE
+  CREDIT
+}
+
+enum SubscriptionAdjustmentSource {
+  CUSTOM
+  MODULE
+}
+
 enum SubscriptionStatus {
   TRIALING
   ACTIVE
@@ -1891,21 +1901,22 @@ model PackagePlan {
 }
 
 model TenantSubscription {
-  id            String             @id @default(cuid())
-  tenantId      String             @map("tenant_id")
-  restaurantId  String?            @map("restaurant_id")
-  packagePlanId String             @map("package_plan_id")
-  status        SubscriptionStatus @default(ACTIVE)
-  paymentStatus PaymentStatus      @default(PENDING) @map("payment_status")
-  startsAt      DateTime           @default(now()) @map("starts_at") @db.Timestamptz
-  endsAt        DateTime?          @map("ends_at") @db.Timestamptz
-  nextBillingAt DateTime?          @map("next_billing_at") @db.Timestamptz
-  planSnapshot  Json?              @map("plan_snapshot")
-  note          String?
-  createdBy     String?            @map("created_by")
-  updatedBy     String?            @map("updated_by")
-  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  id                  String              @id @default(cuid())
+  tenantId            String              @map("tenant_id")
+  restaurantId        String?             @map("restaurant_id")
+  packagePlanId       String              @map("package_plan_id")
+  status              SubscriptionStatus  @default(ACTIVE)
+  paymentStatus       PaymentStatus       @default(PENDING) @map("payment_status")
+  payoutCycleOverride PackagePayoutCycle? @map("payout_cycle_override")
+  startsAt            DateTime            @default(now()) @map("starts_at") @db.Timestamptz
+  endsAt              DateTime?           @map("ends_at") @db.Timestamptz
+  nextBillingAt       DateTime?           @map("next_billing_at") @db.Timestamptz
+  planSnapshot        Json?               @map("plan_snapshot")
+  note                String?
+  createdBy           String?             @map("created_by")
+  updatedBy           String?             @map("updated_by")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant      Tenant                  @relation(fields: [tenantId], references: [id])
   restaurant  Restaurant?             @relation(fields: [restaurantId], references: [id])
@@ -1919,22 +1930,25 @@ model TenantSubscription {
 }
 
 model SubscriptionDeduction {
-  id             String                      @id @default(cuid())
-  tenantId       String                      @map("tenant_id")
-  restaurantId   String?                     @map("restaurant_id")
-  subscriptionId String?                     @map("subscription_id")
-  type           SubscriptionDeductionType   @default(ONE_TIME)
-  status         SubscriptionDeductionStatus @default(ACTIVE)
-  title          String                      @db.VarChar(160)
+  id             String                          @id @default(cuid())
+  tenantId       String                          @map("tenant_id")
+  restaurantId   String?                         @map("restaurant_id")
+  subscriptionId String?                         @map("subscription_id")
+  type           SubscriptionDeductionType       @default(ONE_TIME)
+  status         SubscriptionDeductionStatus     @default(ACTIVE)
+  direction      SubscriptionAdjustmentDirection @default(CREDIT)
+  source         SubscriptionAdjustmentSource    @default(CUSTOM)
+  moduleCode     String?                         @map("module_code") @db.VarChar(80)
+  title          String                          @db.VarChar(160)
   description    String?
-  amount         Decimal                     @db.Decimal(10, 2)
-  currency       String                      @default("PKR") @db.VarChar(10)
-  appliesFrom    DateTime?                   @map("applies_from") @db.Timestamptz
-  appliedAt      DateTime?                   @map("applied_at") @db.Timestamptz
-  createdBy      String?                     @map("created_by")
-  updatedBy      String?                     @map("updated_by")
-  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime                    @updatedAt @map("updated_at") @db.Timestamptz
+  amount         Decimal                         @db.Decimal(10, 2)
+  currency       String                          @default("PKR") @db.VarChar(10)
+  appliesFrom    DateTime?                       @map("applies_from") @db.Timestamptz
+  appliedAt      DateTime?                       @map("applied_at") @db.Timestamptz
+  createdBy      String?                         @map("created_by")
+  updatedBy      String?                         @map("updated_by")
+  createdAt      DateTime                        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime                        @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant       Tenant              @relation(fields: [tenantId], references: [id])
   restaurant   Restaurant?         @relation(fields: [restaurantId], references: [id])
@@ -1943,6 +1957,7 @@ model SubscriptionDeduction {
   @@index([tenantId, status])
   @@index([restaurantId, status])
   @@index([subscriptionId, status])
+  @@index([restaurantId, moduleCode, status])
   @@map("subscription_deductions")
 }
 

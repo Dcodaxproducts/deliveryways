@@ -16,6 +16,8 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  SubscriptionAdjustmentDirection,
+  SubscriptionAdjustmentSource,
   SubscriptionDeductionType,
   SubscriptionStatus,
 } from '@prisma/client';
@@ -71,6 +73,7 @@ interface SubscriptionPlanSnapshot {
   commissionCapAmount?: number | null;
   vatPercentage?: number;
   payoutCycle?: PackagePayoutCycle;
+  payoutCycleOverride?: PackagePayoutCycle | null;
   currency?: string;
 }
 
@@ -324,6 +327,7 @@ export class PackagePlansService {
       packagePlan: { connect: { id: dto.packagePlanId } },
       status: dto.status ?? SubscriptionStatus.ACTIVE,
       paymentStatus: dto.paymentStatus ?? PaymentStatus.PENDING,
+      payoutCycleOverride: dto.payoutCycleOverride,
       startsAt: dto.startsAt ? new Date(dto.startsAt) : new Date(),
       endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
       nextBillingAt: dto.nextBillingAt
@@ -387,6 +391,7 @@ export class PackagePlansService {
         : undefined,
       status: dto.status,
       paymentStatus: dto.paymentStatus,
+      payoutCycleOverride: dto.payoutCycleOverride,
       startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
       endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
       nextBillingAt: dto.nextBillingAt
@@ -423,6 +428,7 @@ export class PackagePlansService {
   ) {
     this.ensureSuperAdmin(user);
     await this.assertTenantAndRestaurant(dto.tenantId, dto.restaurantId);
+    const adjustment = this.normalizeAdjustmentMetadata(dto);
     if (dto.subscriptionId) {
       const subscription = await this.getSubscriptionOrThrow(
         dto.subscriptionId,
@@ -446,6 +452,9 @@ export class PackagePlansService {
         ? { connect: { id: dto.subscriptionId } }
         : undefined,
       type: dto.type ?? SubscriptionDeductionType.ONE_TIME,
+      direction: adjustment.direction,
+      source: adjustment.source,
+      moduleCode: adjustment.moduleCode,
       title: dto.title.trim(),
       description: dto.description?.trim() || null,
       amount: new Prisma.Decimal(dto.amount).toDecimalPlaces(2),
@@ -471,9 +480,13 @@ export class PackagePlansService {
     if (!existing) {
       throw new NotFoundException('Subscription deduction not found');
     }
+    const adjustment = this.normalizeAdjustmentMetadata(dto, existing);
 
     const data = await this.packagePlansRepository.updateDeduction(id, {
       status: dto.status,
+      direction: adjustment.direction,
+      source: adjustment.source,
+      moduleCode: adjustment.moduleCode,
       title: dto.title?.trim(),
       description:
         dto.description !== undefined
@@ -584,7 +597,7 @@ export class PackagePlansService {
 
     return {
       data: invoice,
-      message: 'Weekly payout invoice fetched successfully',
+      message: 'Payout invoice fetched successfully',
     };
   }
 
@@ -637,7 +650,7 @@ export class PackagePlansService {
         fileName,
         mimeType: 'application/pdf',
       },
-      message: 'Weekly payout invoice generated and sent successfully',
+      message: 'Payout invoice generated and sent successfully',
     };
   }
 
@@ -740,7 +753,6 @@ export class PackagePlansService {
   private async buildWeeklyPayoutInvoice(
     query: WeeklyRestaurantPayoutInvoiceQueryDto,
   ) {
-    const period = this.resolveWeeklyPayoutPeriod(query);
     const restaurant =
       await this.packagePlansRepository.findRestaurantPayoutScope(
         query.restaurantId,
@@ -750,19 +762,19 @@ export class PackagePlansService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const [subscription, orders] = await Promise.all([
-      this.packagePlansRepository.findActiveRestaurantSubscription(
+    const subscription =
+      await this.packagePlansRepository.findActiveRestaurantSubscription(
         restaurant.id,
-      ),
-      this.packagePlansRepository.listPaidRestaurantOrders(
-        restaurant.id,
-        period.from,
-        period.to,
-      ),
-    ]);
+      );
     const plan = subscription
       ? this.resolveSubscriptionInvoicePlan(subscription)
       : null;
+    const period = this.resolvePayoutInvoicePeriod(query, plan?.payoutCycle);
+    const orders = await this.packagePlansRepository.listPaidRestaurantOrders(
+      restaurant.id,
+      period.from,
+      period.to,
+    );
     const defaultCurrency = await this.resolveDefaultCurrency();
     const lineItems = orders.map((order) =>
       this.toWeeklyPayoutOrderLine(order, plan, defaultCurrency),
@@ -882,13 +894,14 @@ export class PackagePlansService {
     return Prisma.Decimal.min(commission, grossAmount).toDecimalPlaces(2);
   }
 
-  private resolveWeeklyPayoutPeriod(
+  private resolvePayoutInvoicePeriod(
     query: WeeklyRestaurantPayoutInvoiceQueryDto,
+    payoutCycle: PackagePayoutCycle = PackagePayoutCycle.WEEKLY,
   ) {
     const to = query.toDate ? new Date(query.toDate) : new Date();
     const from = query.fromDate
       ? new Date(query.fromDate)
-      : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+      : this.resolveLastCompletedPayoutPeriod(payoutCycle, to).from;
 
     if (from >= to) {
       throw new BadRequestException('toDate must be after fromDate');
@@ -985,6 +998,48 @@ export class PackagePlansService {
     return subscription;
   }
 
+  private normalizeAdjustmentMetadata(
+    dto: Pick<
+      CreateSubscriptionDeductionDto | UpdateSubscriptionDeductionDto,
+      'direction' | 'source' | 'moduleCode'
+    >,
+    existing?: {
+      direction?: SubscriptionAdjustmentDirection | null;
+      source?: SubscriptionAdjustmentSource | null;
+      moduleCode?: string | null;
+    },
+  ) {
+    const direction =
+      dto.direction ??
+      existing?.direction ??
+      SubscriptionAdjustmentDirection.CREDIT;
+    const source =
+      dto.source ?? existing?.source ?? SubscriptionAdjustmentSource.CUSTOM;
+    const moduleCode =
+      dto.moduleCode !== undefined
+        ? dto.moduleCode.trim().toUpperCase() || null
+        : source === SubscriptionAdjustmentSource.MODULE
+          ? (existing?.moduleCode ?? null)
+          : null;
+
+    if (source === SubscriptionAdjustmentSource.MODULE) {
+      if (!moduleCode) {
+        throw new BadRequestException('moduleCode is required for module fees');
+      }
+      if (direction !== SubscriptionAdjustmentDirection.CHARGE) {
+        throw new BadRequestException('Module fees must be charges');
+      }
+    }
+
+    if (source === SubscriptionAdjustmentSource.CUSTOM && moduleCode) {
+      throw new BadRequestException(
+        'moduleCode is only allowed for module fees',
+      );
+    }
+
+    return { direction, source, moduleCode };
+  }
+
   private async buildSubscriptionInvoice(id: string) {
     const subscription = await this.getSubscriptionOrThrow(id);
     const plan = this.resolveSubscriptionInvoicePlan(subscription);
@@ -1053,18 +1108,31 @@ export class PackagePlansService {
       )
       .toDecimalPlaces(2)
       .toNumber();
-    const deductibleItems = this.toInvoiceDeductionItems(
+    const adjustmentItems = this.toInvoiceDeductionItems(
       deductions,
       plan.currency,
     );
-    const deductionAmount = deductibleItems
+    const additionalChargeAmount = adjustmentItems
+      .filter(
+        (item) => item.direction === SubscriptionAdjustmentDirection.CHARGE,
+      )
+      .reduce((sum, item) => sum.plus(item.amount), new Prisma.Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
+    const deductionAmount = adjustmentItems
+      .filter(
+        (item) => item.direction === SubscriptionAdjustmentDirection.CREDIT,
+      )
       .reduce((sum, item) => sum.plus(item.amount), new Prisma.Decimal(0))
       .toDecimalPlaces(2)
       .toNumber();
     const subtotal = Number(
-      (subscriptionFeeAmount + transactionFeeAmount - deductionAmount).toFixed(
-        2,
-      ),
+      (
+        subscriptionFeeAmount +
+        transactionFeeAmount +
+        additionalChargeAmount -
+        deductionAmount
+      ).toFixed(2),
     );
     const vatAmount = Number(
       ((subtotal * plan.vatPercentage) / 100).toFixed(2),
@@ -1104,12 +1172,14 @@ export class PackagePlansService {
       });
     }
 
-    for (const item of deductibleItems) {
+    for (const item of adjustmentItems) {
+      const isCharge =
+        item.direction === SubscriptionAdjustmentDirection.CHARGE;
       lineItems.push({
-        description: `${item.title} (${item.type === SubscriptionDeductionType.RECURRING ? 'recurring deduction' : 'one-time deduction'})`,
+        description: this.formatAdjustmentLineDescription(item),
         quantity: 1,
-        unitPrice: -item.amount,
-        amount: -item.amount,
+        unitPrice: isCharge ? item.amount : -item.amount,
+        amount: isCharge ? item.amount : -item.amount,
       });
     }
 
@@ -1144,6 +1214,7 @@ export class PackagePlansService {
         commissionCapAmount: plan.commissionCapAmount,
         vatPercentage: plan.vatPercentage,
         payoutCycle: plan.payoutCycle,
+        payoutCycleOverride: plan.payoutCycleOverride,
         currency: plan.currency,
       },
       status: subscription.status,
@@ -1156,7 +1227,13 @@ export class PackagePlansService {
         ordersCount: onlinePaidOrders.length,
         amount: transactionFeeAmount,
       },
-      deductions: deductibleItems,
+      adjustments: adjustmentItems,
+      additionalCharges: adjustmentItems.filter(
+        (item) => item.direction === SubscriptionAdjustmentDirection.CHARGE,
+      ),
+      deductions: adjustmentItems.filter(
+        (item) => item.direction === SubscriptionAdjustmentDirection.CREDIT,
+      ),
       orderBreakdown: this.buildSubscriptionOrderBreakdown(
         paidOrders,
         onlinePaidOrders,
@@ -1166,6 +1243,7 @@ export class PackagePlansService {
       totals: {
         subscriptionFeeAmount,
         transactionFeeAmount,
+        additionalChargeAmount,
         deductionAmount,
         subtotal,
         vatPercentage: plan.vatPercentage,
@@ -1277,9 +1355,11 @@ export class PackagePlansService {
       vatPercentage:
         snapshot.vatPercentage ?? packagePlan.vatPercentage.toNumber(),
       payoutCycle:
+        subscription.payoutCycleOverride ??
         snapshot.payoutCycle ??
         packagePlan.payoutCycle ??
         PackagePayoutCycle.WEEKLY,
+      payoutCycleOverride: subscription.payoutCycleOverride ?? null,
       currency: packagePlan.currency,
     };
   }
@@ -1397,9 +1477,30 @@ export class PackagePlansService {
         title: item.title,
         description: item.description,
         type: item.type,
+        direction: item.direction ?? SubscriptionAdjustmentDirection.CREDIT,
+        source: item.source ?? SubscriptionAdjustmentSource.CUSTOM,
+        moduleCode: item.moduleCode,
         amount: new Prisma.Decimal(item.amount).toDecimalPlaces(2).toNumber(),
         currency: item.currency,
       }));
+  }
+
+  private formatAdjustmentLineDescription(item: {
+    title: string;
+    type: SubscriptionDeductionType;
+    direction: SubscriptionAdjustmentDirection;
+    source: SubscriptionAdjustmentSource;
+    moduleCode: string | null;
+  }) {
+    const cadence =
+      item.type === SubscriptionDeductionType.RECURRING
+        ? 'recurring'
+        : 'one-time';
+    if (item.source === SubscriptionAdjustmentSource.MODULE) {
+      return `${item.title} (${item.moduleCode ?? 'module'} module fee, ${cadence})`;
+    }
+
+    return `${item.title} (${cadence} ${item.direction === SubscriptionAdjustmentDirection.CHARGE ? 'charge' : 'credit'})`;
   }
 
   private buildSubscriptionSettlementRows(
@@ -1418,9 +1519,18 @@ export class PackagePlansService {
       ],
     ];
 
+    for (const item of invoice.additionalCharges) {
+      rows.push([
+        item.source === SubscriptionAdjustmentSource.MODULE
+          ? `Module Fee: ${item.title}`
+          : `Additional Charge: ${item.title}`,
+        this.formatInvoiceMoney(item.amount),
+      ]);
+    }
+
     for (const item of invoice.deductions) {
       rows.push([
-        `Deduction: ${item.title}`,
+        `Credit: ${item.title}`,
         `-${this.formatInvoiceMoney(item.amount)}`,
       ]);
     }
@@ -1584,6 +1694,8 @@ export class PackagePlansService {
       `Service Period: ${this.formatInvoiceDate(invoice.servicePeriod.from)} - ${this.formatInvoiceDate(invoice.servicePeriod.to)}`,
       `Subscription Fee: ${this.formatInvoiceMoney(invoice.totals.subscriptionFeeAmount)} ${invoice.totals.currency}`,
       `Commission Fee: ${this.formatInvoiceMoney(invoice.totals.transactionFeeAmount)} ${invoice.totals.currency}`,
+      `Additional Charges: ${this.formatInvoiceMoney(invoice.totals.additionalChargeAmount)} ${invoice.totals.currency}`,
+      `Credits: -${this.formatInvoiceMoney(invoice.totals.deductionAmount)} ${invoice.totals.currency}`,
       `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
       `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
       invoice.documentType === 'CREDIT_NOTE'
@@ -1601,7 +1713,7 @@ export class PackagePlansService {
     >,
   ) {
     return InvoicePdfBuilder.build({
-      title: `Weekly Payout Invoice ${invoice.invoiceNumber}`,
+      title: `Payout Invoice ${invoice.invoiceNumber}`,
       subtitle: invoice.restaurant.name,
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,

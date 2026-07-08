@@ -7,6 +7,8 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  SubscriptionAdjustmentDirection,
+  SubscriptionAdjustmentSource,
   SubscriptionDeductionStatus,
   SubscriptionDeductionType,
   SubscriptionStatus,
@@ -49,6 +51,7 @@ describe('PackagePlansService', () => {
     packagePlanId: 'plan-1',
     status: SubscriptionStatus.ACTIVE,
     paymentStatus: PaymentStatus.PENDING,
+    payoutCycleOverride: null,
     startsAt: new Date('2026-06-01T00:00:00.000Z'),
     endsAt: null,
     nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -697,6 +700,100 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('adds module fees and custom charges while keeping credits separate on subscription invoices', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      listApplicableDeductions: jest.fn().mockResolvedValue([
+        {
+          id: 'pos-module-fee-1',
+          title: 'POS Module',
+          description: null,
+          type: SubscriptionDeductionType.RECURRING,
+          status: SubscriptionDeductionStatus.ACTIVE,
+          direction: SubscriptionAdjustmentDirection.CHARGE,
+          source: SubscriptionAdjustmentSource.MODULE,
+          moduleCode: 'POS',
+          amount: new Prisma.Decimal(600),
+          currency: 'PKR',
+        },
+        {
+          id: 'custom-charge-1',
+          title: 'Hardware setup',
+          description: null,
+          type: SubscriptionDeductionType.ONE_TIME,
+          status: SubscriptionDeductionStatus.ACTIVE,
+          direction: SubscriptionAdjustmentDirection.CHARGE,
+          source: SubscriptionAdjustmentSource.CUSTOM,
+          moduleCode: null,
+          amount: new Prisma.Decimal(100),
+          currency: 'PKR',
+        },
+        {
+          id: 'credit-1',
+          title: 'Service credit',
+          description: null,
+          type: SubscriptionDeductionType.ONE_TIME,
+          status: SubscriptionDeductionStatus.ACTIVE,
+          direction: SubscriptionAdjustmentDirection.CREDIT,
+          source: SubscriptionAdjustmentSource.CUSTOM,
+          moduleCode: null,
+          amount: new Prisma.Decimal(200),
+          currency: 'PKR',
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.additionalCharges).toHaveLength(2);
+    expect(result.data.deductions).toHaveLength(1);
+    expect(
+      result.data.lineItems.some((item) => item.description.includes('POS')),
+    ).toBe(true);
+    expect(
+      result.data.lineItems.some((item) =>
+        item.description.includes('Hardware setup'),
+      ),
+    ).toBe(true);
+    expect(
+      result.data.lineItems.some((item) =>
+        item.description.includes('Service credit'),
+      ),
+    ).toBe(true);
+    expect(result.data.totals).toMatchObject({
+      additionalChargeAmount: 700,
+      deductionAmount: 200,
+      subtotal: 5500,
+      vatAmount: 825,
+      totalFeesAmount: 6325,
+    });
+  });
+
+  it('rejects module fee adjustments without charge direction and module code', async () => {
+    const repository = {
+      findTenantById: jest.fn().mockResolvedValue({ id: 'tenant-1' }),
+      findRestaurantById: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await expect(
+      service.createDeduction(superAdmin, {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        type: SubscriptionDeductionType.RECURRING,
+        direction: SubscriptionAdjustmentDirection.CREDIT,
+        source: SubscriptionAdjustmentSource.MODULE,
+        title: 'POS Module',
+        amount: 600,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('exports monthly invoice records as DATEV placeholder CSV', async () => {
     const repository = {
       listMonthlyGeneratedInvoices: jest.fn().mockResolvedValue([
@@ -782,6 +879,53 @@ describe('PackagePlansService', () => {
       expect.stringContaining('payout invoice'),
       expect.any(String),
       expect.any(Object),
+    );
+  });
+
+  it('uses restaurant subscription payout cycle override for automated payout periods', async () => {
+    const subscription = makeSubscription({
+      payoutCycleOverride: PackagePayoutCycle.MONTHLY,
+      planSnapshot: {
+        ...makeSubscription().planSnapshot,
+        payoutCycle: PackagePayoutCycle.WEEKLY,
+      },
+    });
+    const repository = {
+      listActiveRestaurantSubscriptionsForPayouts: jest
+        .fn()
+        .mockResolvedValue([subscription]),
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    await service.emailDuePayoutInvoices(new Date('2026-07-08T10:00:00.000Z'));
+
+    expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      new Date('2026-06-08T00:00:00.000Z'),
+      new Date('2026-07-08T00:00:00.000Z'),
     );
   });
 });

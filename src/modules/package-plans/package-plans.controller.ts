@@ -150,6 +150,15 @@ export class PackagePlansController {
     return this.packagePlansService.getWeeklyPayoutInvoice(user, query);
   }
 
+  @Get('payouts/invoice')
+  @ApiOperation({ summary: 'Get restaurant payout invoice details' })
+  getPayoutInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: WeeklyRestaurantPayoutInvoiceQueryDto,
+  ) {
+    return this.packagePlansService.getWeeklyPayoutInvoice(user, query);
+  }
+
   @Get('payouts/weekly-invoice/pdf')
   @ApiOperation({ summary: 'Download weekly restaurant payout invoice PDF' })
   async downloadWeeklyPayoutInvoicePdf(
@@ -170,9 +179,38 @@ export class PackagePlansController {
     return new StreamableFile(file.content);
   }
 
+  @Get('payouts/invoice/pdf')
+  @ApiOperation({ summary: 'Download restaurant payout invoice PDF' })
+  async downloadPayoutInvoicePdf(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: WeeklyRestaurantPayoutInvoiceQueryDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.packagePlansService.downloadWeeklyPayoutInvoicePdf(
+      user,
+      query,
+    );
+
+    response.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `attachment; filename="${file.fileName}"`,
+    });
+
+    return new StreamableFile(file.content);
+  }
+
   @Post('payouts/weekly-invoice/send-email')
   @ApiOperation({ summary: 'Send weekly restaurant payout invoice by email' })
   sendWeeklyPayoutInvoiceEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: SendWeeklyRestaurantPayoutInvoiceDto,
+  ) {
+    return this.packagePlansService.sendWeeklyPayoutInvoiceEmail(user, dto);
+  }
+
+  @Post('payouts/invoice/send-email')
+  @ApiOperation({ summary: 'Send restaurant payout invoice by email' })
+  sendPayoutInvoiceEmail(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: SendWeeklyRestaurantPayoutInvoiceDto,
   ) {
@@ -200,6 +238,34 @@ export class PackagePlansController {
   @Patch('deductions/:id')
   @ApiOperation({ summary: 'Update subscription deductible item' })
   updateDeduction(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateSubscriptionDeductionDto,
+  ) {
+    return this.packagePlansService.updateDeduction(user, id, dto);
+  }
+
+  @Get('charges')
+  @ApiOperation({ summary: 'List subscription charges and credits' })
+  listCharges(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListSubscriptionDeductionsDto,
+  ) {
+    return this.packagePlansService.listDeductions(user, query);
+  }
+
+  @Post('charges')
+  @ApiOperation({ summary: 'Create subscription charge or credit' })
+  createCharge(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateSubscriptionDeductionDto,
+  ) {
+    return this.packagePlansService.createDeduction(user, dto);
+  }
+
+  @Patch('charges/:id')
+  @ApiOperation({ summary: 'Update subscription charge or credit' })
+  updateCharge(
     @CurrentUser() user: AuthUserContext,
     @Param('id') id: string,
     @Body() dto: UpdateSubscriptionDeductionDto,
