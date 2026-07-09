@@ -29,6 +29,7 @@ interface ResolvedStaffManagementScope {
 interface StaffRestaurantAccessScope {
   restaurantIds: string[];
   branchIds: string[];
+  allRestaurants: boolean;
 }
 
 @Injectable()
@@ -160,6 +161,8 @@ export class StaffManagementService {
       restaurantAccess:
         dto.restaurantIds !== undefined ||
         dto.branchIds !== undefined ||
+        dto.allRestaurants !== undefined ||
+        dto.hasAllRestaurantsAccess !== undefined ||
         dto.staffRoleId !== undefined
           ? await this.resolveRestaurantAccessForStaff(nextRole, dto)
           : undefined,
@@ -356,9 +359,19 @@ export class StaffManagementService {
       restaurantId?: string | null;
       branchId?: string | null;
     },
-    dto: { restaurantIds?: string[]; branchIds?: string[] },
+    dto: {
+      restaurantIds?: string[];
+      branchIds?: string[];
+      allRestaurants?: boolean;
+      hasAllRestaurantsAccess?: boolean;
+    },
   ): Promise<Prisma.InputJsonValue | undefined> {
-    if (dto.restaurantIds === undefined && dto.branchIds === undefined) {
+    if (
+      dto.restaurantIds === undefined &&
+      dto.branchIds === undefined &&
+      dto.allRestaurants === undefined &&
+      dto.hasAllRestaurantsAccess === undefined
+    ) {
       return this.normalizeExistingRestaurantAccess(
         role.restaurantAccess,
       ) as unknown as Prisma.InputJsonValue;
@@ -377,6 +390,23 @@ export class StaffManagementService {
     ]);
     const restaurantIds = this.uniqueCleanIds(dto.restaurantIds ?? []);
     const branchIds = this.uniqueCleanIds(dto.branchIds ?? []);
+    const allRestaurants =
+      dto.allRestaurants === true || dto.hasAllRestaurantsAccess === true;
+
+    if (allRestaurants) {
+      if (roleRestaurantIds.size > 0 || roleBranchIds.size > 0) {
+        throw new ForbiddenException(
+          'Staff account all-restaurants access must stay within the assigned role access',
+        );
+      }
+
+      return {
+        restaurantIds: [],
+        branchIds: [],
+        allRestaurants: true,
+        hasAllRestaurantsAccess: true,
+      } as Prisma.InputJsonValue;
+    }
 
     if (
       roleRestaurantIds.size > 0 &&
@@ -430,18 +460,30 @@ export class StaffManagementService {
       );
     }
 
-    return { restaurantIds, branchIds } as Prisma.InputJsonValue;
+    return {
+      restaurantIds,
+      branchIds,
+      allRestaurants: false,
+      hasAllRestaurantsAccess: false,
+    } as Prisma.InputJsonValue;
   }
 
   private normalizeExistingRestaurantAccess(
     access: Prisma.JsonValue | null | undefined,
   ): StaffRestaurantAccessScope {
     if (!access || typeof access !== 'object' || Array.isArray(access)) {
-      return { restaurantIds: [], branchIds: [] };
+      return { restaurantIds: [], branchIds: [], allRestaurants: false };
     }
 
-    const value = access as { restaurantIds?: unknown; branchIds?: unknown };
+    const value = access as {
+      restaurantIds?: unknown;
+      branchIds?: unknown;
+      allRestaurants?: unknown;
+      hasAllRestaurantsAccess?: unknown;
+    };
     return {
+      allRestaurants:
+        value.allRestaurants === true || value.hasAllRestaurantsAccess === true,
       restaurantIds: Array.isArray(value.restaurantIds)
         ? this.uniqueCleanIds(
             value.restaurantIds.filter(

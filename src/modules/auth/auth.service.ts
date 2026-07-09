@@ -1864,6 +1864,10 @@ export class AuthService {
             tenantId: staff.tenantId,
             restaurantId: staff.restaurantId,
             branchId: staff.branchId,
+            restaurantAccess:
+              staff.restaurantAccess ??
+              staff.staffRole.restaurantAccess ??
+              null,
             isVerified: staff.isVerified,
             isApproved: staff.isApproved,
             isGuest: false,

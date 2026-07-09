@@ -84,4 +84,29 @@ describe('StaffMenuAccessService', () => {
       service.assertCanAccessRestaurant(user, 'restaurant-2', 'read'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('allows staff menu access to any restaurant with all-restaurants scope', async () => {
+    const { service } = makeService({
+      id: 'staff-1',
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: {
+        restaurantIds: [],
+        branchIds: [],
+        allRestaurants: true,
+      },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [{ access: 'menu', operations: ['read'] }],
+        restaurantAccess: null,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    await expect(
+      service.assertCanAccessRestaurant(user, 'future-restaurant', 'read'),
+    ).resolves.toBeUndefined();
+  });
 });

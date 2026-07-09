@@ -75,6 +75,7 @@ interface BranchSettingsLike {
 interface StaffBranchAccessScope {
   restaurantIds: string[];
   branchIds: string[];
+  allRestaurants: boolean;
 }
 
 interface BranchAdminUpdateTarget {
@@ -578,6 +579,8 @@ export class BranchesService {
   ): StaffBranchAccessScope {
     const parsedStaffAccess = this.normalizeStaffAccess(staffAccess);
     const parsedRoleAccess = this.normalizeStaffAccess(roleAccess);
+    const allRestaurants =
+      parsedStaffAccess.allRestaurants || parsedRoleAccess.allRestaurants;
     const restaurantIds = parsedStaffAccess.restaurantIds.length
       ? parsedStaffAccess.restaurantIds
       : parsedRoleAccess.restaurantIds;
@@ -586,6 +589,7 @@ export class BranchesService {
       : parsedRoleAccess.branchIds;
 
     return {
+      allRestaurants,
       restaurantIds: restaurantIds.length
         ? restaurantIds
         : restaurantId
@@ -597,11 +601,18 @@ export class BranchesService {
 
   private normalizeStaffAccess(value: Prisma.JsonValue | null) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return { restaurantIds: [], branchIds: [] };
+      return { restaurantIds: [], branchIds: [], allRestaurants: false };
     }
 
-    const raw = value as { restaurantIds?: unknown; branchIds?: unknown };
+    const raw = value as {
+      restaurantIds?: unknown;
+      branchIds?: unknown;
+      allRestaurants?: unknown;
+      hasAllRestaurantsAccess?: unknown;
+    };
     return {
+      allRestaurants:
+        raw.allRestaurants === true || raw.hasAllRestaurantsAccess === true,
       restaurantIds: Array.isArray(raw.restaurantIds)
         ? raw.restaurantIds.filter(
             (item): item is string => typeof item === 'string',
@@ -625,7 +636,10 @@ export class BranchesService {
       throw new ForbiddenException('Staff restaurant access is required');
     }
 
-    if (!access.restaurantIds.includes(restaurantId)) {
+    if (
+      !access.allRestaurants &&
+      !access.restaurantIds.includes(restaurantId)
+    ) {
       throw new ForbiddenException(
         'Staff account is not assigned to this restaurant',
       );

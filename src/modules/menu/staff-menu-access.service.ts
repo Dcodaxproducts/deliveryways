@@ -9,6 +9,7 @@ type StaffMenuOperation = 'read' | 'create' | 'update' | 'delete' | 'write';
 interface StaffRestaurantAccessScope {
   restaurantIds: string[];
   branchIds: string[];
+  allRestaurants: boolean;
 }
 
 @Injectable()
@@ -74,7 +75,10 @@ export class StaffMenuAccessService {
       staff.staffRole.restaurantAccess,
       user,
     );
-    if (!access.restaurantIds.includes(restaurantId)) {
+    if (
+      !access.allRestaurants &&
+      !access.restaurantIds.includes(restaurantId)
+    ) {
       throw new ForbiddenException(
         'Staff account is not assigned to this restaurant',
       );
@@ -95,7 +99,11 @@ export class StaffMenuAccessService {
       user,
     );
 
-    if (access.branchIds.length && !access.branchIds.includes(branchId)) {
+    if (
+      !access.allRestaurants &&
+      access.branchIds.length &&
+      !access.branchIds.includes(branchId)
+    ) {
       throw new ForbiddenException(
         'Staff account is not assigned to this branch',
       );
@@ -212,6 +220,8 @@ export class StaffMenuAccessService {
   ): StaffRestaurantAccessScope {
     const parsedStaffAccess = this.normalizeAccess(staffAccess);
     const parsedRoleAccess = this.normalizeAccess(roleAccess);
+    const allRestaurants =
+      parsedStaffAccess.allRestaurants || parsedRoleAccess.allRestaurants;
     const restaurantIds = parsedStaffAccess.restaurantIds.length
       ? parsedStaffAccess.restaurantIds
       : parsedRoleAccess.restaurantIds;
@@ -220,6 +230,7 @@ export class StaffMenuAccessService {
       : parsedRoleAccess.branchIds;
 
     return {
+      allRestaurants,
       restaurantIds: restaurantIds.length
         ? restaurantIds
         : user.rid
@@ -233,11 +244,19 @@ export class StaffMenuAccessService {
     value: Prisma.JsonValue | null | undefined,
   ): StaffRestaurantAccessScope {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return { restaurantIds: [], branchIds: [] };
+      return { restaurantIds: [], branchIds: [], allRestaurants: false };
     }
 
-    const access = value as { restaurantIds?: unknown; branchIds?: unknown };
+    const access = value as {
+      restaurantIds?: unknown;
+      branchIds?: unknown;
+      allRestaurants?: unknown;
+      hasAllRestaurantsAccess?: unknown;
+    };
     return {
+      allRestaurants:
+        access.allRestaurants === true ||
+        access.hasAllRestaurantsAccess === true,
       restaurantIds: Array.isArray(access.restaurantIds)
         ? this.uniqueStrings(access.restaurantIds)
         : [],

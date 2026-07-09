@@ -500,6 +500,11 @@ describe('AuthService login', () => {
       tenantId: 'tenant-1',
       restaurantId: null,
       branchId: null,
+      restaurantAccess: {
+        allRestaurants: true,
+        restaurantIds: [],
+        branchIds: [],
+      },
       isVerified: true,
       isApproved: true,
       isActive: true,
@@ -514,6 +519,7 @@ describe('AuthService login', () => {
         isActive: true,
         deletedAt: null,
         permissions: [{ access: 'orders', operations: ['read'] }],
+        restaurantAccess: null,
       },
     });
 
@@ -526,6 +532,9 @@ describe('AuthService login', () => {
       'staff@example.com',
     );
     expect(result.data.user.actorType).toBe('STAFF');
+    expect(result.data.user.restaurantAccess).toEqual(
+      expect.objectContaining({ allRestaurants: true }),
+    );
     expect(staffManagementRepository.update).toHaveBeenCalledWith('staff-1', {
       refreshTokenHash: 'hashed-refresh',
     });

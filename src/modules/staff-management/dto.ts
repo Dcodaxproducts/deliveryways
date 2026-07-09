@@ -63,6 +63,16 @@ export class CreateStaffDto {
   @IsArray()
   @IsString({ each: true })
   branchIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allRestaurants?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hasAllRestaurantsAccess?: boolean;
 }
 
 export class UpdateStaffDto {
@@ -123,6 +133,16 @@ export class UpdateStaffDto {
   @IsArray()
   @IsString({ each: true })
   branchIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allRestaurants?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hasAllRestaurantsAccess?: boolean;
 }
 
 export class UpdateStaffStatusDto {

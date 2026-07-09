@@ -18,6 +18,8 @@ describe('StaffManagementService', () => {
       list: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
+      countRestaurants: jest.fn(),
+      findBranches: jest.fn(),
     } as unknown as jest.Mocked<StaffManagementRepository>;
 
     service = new StaffManagementService(repository, {} as StaffRolesService);
@@ -185,5 +187,78 @@ describe('StaffManagementService', () => {
         isActive: true,
       }),
     ]);
+  });
+
+  it('stores all-restaurants staff access without expanding restaurant ids', async () => {
+    const staffRolesService = {
+      getManageableRoleOrThrow: jest.fn().mockResolvedValue({
+        id: 'role-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        restaurantAccess: null,
+      }),
+    };
+    service = new StaffManagementService(
+      repository,
+      staffRolesService as unknown as StaffRolesService,
+    );
+    repository.findByEmail.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      id: 'staff-1',
+      email: 'employee@example.com',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: {
+        restaurantIds: [],
+        branchIds: [],
+        allRestaurants: true,
+        hasAllRestaurantsAccess: true,
+      },
+      deletedAt: null,
+      password: 'hashed-password',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
+
+    const result = await service.create(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      {
+        staffRoleId: 'role-1',
+        email: 'Employee@Example.com',
+        password: 'Employee@123',
+        firstName: 'New',
+        lastName: 'Employee',
+        allRestaurants: true,
+      },
+    );
+
+    expect(repository.countRestaurants.mock.calls).toHaveLength(0);
+    expect(repository.create.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        restaurantAccess: {
+          restaurantIds: [],
+          branchIds: [],
+          allRestaurants: true,
+          hasAllRestaurantsAccess: true,
+        },
+      }),
+    );
+    const resultData = result.data as { restaurantAccess?: unknown };
+    expect(resultData.restaurantAccess).toEqual(
+      expect.objectContaining({ allRestaurants: true }),
+    );
   });
 });
