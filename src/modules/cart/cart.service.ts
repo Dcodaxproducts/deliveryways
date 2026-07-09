@@ -532,7 +532,9 @@ export class CartService {
       }
 
       const snapshotModifiers = this.asCartJsonValue(item.snapshotModifiers);
+      const itemModifiers = this.asCartJsonValue(item.modifiers);
       const snapshotSections = this.asCartJsonValue(item.snapshotSections);
+      const selectedSections = this.asCartJsonValue(item.selectedSections);
       const payload: AddCartItemDto = {
         branchId,
         orderType,
@@ -540,14 +542,17 @@ export class CartService {
         variationId: this.readString(item.variationId) ?? undefined,
         quantity: this.readPositiveInt(item.quantity),
         note: this.readString(item.note) ?? undefined,
-        modifiers: this.readModifiers(snapshotModifiers),
+        modifiers:
+          this.readModifiers(snapshotModifiers) ??
+          this.readModifiers(itemModifiers),
         modifierSelections: this.resolveReorderModifierSelections(
           item,
           snapshotModifiers,
         ),
         sections:
           this.readSections(snapshotModifiers) ??
-          this.readSections(snapshotSections),
+          this.readSections(snapshotSections) ??
+          this.readSections(selectedSections),
         dealId:
           this.readString(item.dealId) ?? this.readDealId(snapshotModifiers),
       };
@@ -2533,22 +2538,45 @@ export class CartService {
 
   private resolveReorderItems(order: Record<string, unknown>): unknown[] {
     if (Array.isArray(order.items)) {
-      return (order.items as unknown[]).slice();
+      return (order.items as unknown[]).flatMap((entry) =>
+        this.expandReorderEntry(entry),
+      );
     }
 
     if (Array.isArray(order.itemsPreview)) {
-      return (order.itemsPreview as unknown[]).slice();
+      return (order.itemsPreview as unknown[]).flatMap((entry) =>
+        this.expandReorderEntry(entry),
+      );
     }
 
     if (!Array.isArray(order.displayItems)) {
       return [];
     }
 
-    return (order.displayItems as unknown[]).flatMap((entry): unknown[] => {
-      const displayItem = this.asObject(entry);
-      return Array.isArray(displayItem.items)
-        ? (displayItem.items as unknown[]).slice()
-        : [entry];
+    return (order.displayItems as unknown[]).flatMap((entry) =>
+      this.expandReorderEntry(entry),
+    );
+  }
+
+  private expandReorderEntry(entry: unknown): unknown[] {
+    const displayItem = this.asObject(entry);
+    const children = Array.isArray(displayItem.includedItems)
+      ? (displayItem.includedItems as unknown[])
+      : Array.isArray(displayItem.items)
+        ? (displayItem.items as unknown[])
+        : null;
+
+    if (!children) {
+      return [entry];
+    }
+
+    const parentDealId = this.readString(displayItem.dealId);
+
+    return children.map((child) => {
+      const childItem = this.asObject(child);
+      const dealId = this.readString(childItem.dealId) ?? parentDealId;
+
+      return dealId ? { ...childItem, dealId } : child;
     });
   }
 
