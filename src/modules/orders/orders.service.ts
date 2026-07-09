@@ -1423,12 +1423,12 @@ export class OrdersService {
       pricedLines,
       settings.taxation.taxPercentage,
     );
-    const platformServiceChargeConfig = this.resolveRestaurantTransactionFee(
+    const restaurantServiceChargeConfig = this.resolveRestaurantServiceCharge(
       branch.restaurant?.settings,
       settings.serviceCharge,
     );
     const serviceCharge = this.resolveServiceCharge(
-      platformServiceChargeConfig,
+      restaurantServiceChargeConfig,
       subtotal,
     );
     const tipAmount = this.resolveTipAmount(dto.tipAmount);
@@ -1901,7 +1901,7 @@ export class OrdersService {
       taxAmount: Number(amounts.taxAmount),
       deliveryFee: Number(amounts.deliveryFee),
       serviceChargeAmount: Number(serviceChargeAmount),
-      transactionFeeAmount: Number(serviceChargeAmount),
+      transactionFeeAmount: 0,
       tipAmount: Number(tipAmount),
       discountAmount: Number(amounts.discountAmount),
       hasDiscount: amounts.discountAmount.greaterThan(0),
@@ -1997,11 +1997,9 @@ export class OrdersService {
         ? Number(quote.serviceChargeValue)
         : null,
       serviceChargeAmount: amountSummary.serviceChargeAmount,
-      transactionFeeType: quote.serviceChargeType,
-      transactionFeeValue: quote.serviceChargeValue
-        ? Number(quote.serviceChargeValue)
-        : null,
-      transactionFeeAmount: amountSummary.serviceChargeAmount,
+      transactionFeeType: null,
+      transactionFeeValue: null,
+      transactionFeeAmount: 0,
       chargeBreakdown: quote.chargeBreakdown,
       tipAmount: amountSummary.tipAmount,
       discountAmount: amountSummary.discountAmount,
@@ -2550,10 +2548,8 @@ export class OrdersService {
       serviceChargeValue: order.serviceChargeValue
         ? Number(order.serviceChargeValue)
         : null,
-      transactionFeeType: order.serviceChargeType ?? null,
-      transactionFeeValue: order.serviceChargeValue
-        ? Number(order.serviceChargeValue)
-        : null,
+      transactionFeeType: null,
+      transactionFeeValue: null,
       customerNote: order.customerNote,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -2792,10 +2788,8 @@ export class OrdersService {
       serviceChargeValue: order.serviceChargeValue
         ? Number(order.serviceChargeValue)
         : null,
-      transactionFeeType: order.serviceChargeType ?? null,
-      transactionFeeValue: order.serviceChargeValue
-        ? Number(order.serviceChargeValue)
-        : null,
+      transactionFeeType: null,
+      transactionFeeValue: null,
       customerNote: order.customerNote,
       assignedAt: order.assignedAt,
       deliveredAt: order.deliveredAt,
@@ -4736,20 +4730,15 @@ export class OrdersService {
     };
   }
 
-  private resolveRestaurantTransactionFee(
+  private resolveRestaurantServiceCharge(
     restaurantSettingsInput: unknown,
     legacyBranchFallback: BranchSettings['serviceCharge'],
   ): ServiceChargeSettingsShape {
     const restaurantSettings = this.asRecord(restaurantSettingsInput);
-    const transactionFee = this.asRecord(restaurantSettings.transactionFee);
-    const legacyRestaurantServiceCharge = this.asRecord(
-      restaurantSettings.serviceCharge,
-    );
-    const source = Object.keys(transactionFee).length
-      ? transactionFee
-      : Object.keys(legacyRestaurantServiceCharge).length
-        ? legacyRestaurantServiceCharge
-        : legacyBranchFallback;
+    const serviceCharge = this.asRecord(restaurantSettings.serviceCharge);
+    const source = Object.keys(serviceCharge).length
+      ? serviceCharge
+      : legacyBranchFallback;
 
     return {
       isEnabled: Boolean(source.isEnabled),
@@ -4851,8 +4840,8 @@ export class OrdersService {
       serviceCharges: serviceCharge.amount.greaterThan(0)
         ? [
             {
-              code: 'TRANSACTION_FEE',
-              label: 'Transaction fee',
+              code: 'SERVICE_CHARGE',
+              label: 'Service charge',
               type: serviceCharge.type,
               value: serviceCharge.value ? Number(serviceCharge.value) : null,
               amount: Number(serviceCharge.amount.toDecimalPlaces(2)),
@@ -4860,20 +4849,8 @@ export class OrdersService {
           ]
         : [],
       totalServiceChargeAmount: Number(serviceCharge.amount.toDecimalPlaces(2)),
-      transactionFees: serviceCharge.amount.greaterThan(0)
-        ? [
-            {
-              code: 'TRANSACTION_FEE',
-              label: 'Transaction fee',
-              type: serviceCharge.type,
-              value: serviceCharge.value ? Number(serviceCharge.value) : null,
-              amount: Number(serviceCharge.amount.toDecimalPlaces(2)),
-            },
-          ]
-        : [],
-      totalTransactionFeeAmount: Number(
-        serviceCharge.amount.toDecimalPlaces(2),
-      ),
+      transactionFees: [],
+      totalTransactionFeeAmount: 0,
     };
   }
 

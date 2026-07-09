@@ -385,10 +385,13 @@ export class GlobalSettingsService {
         settings.taxTypes,
         settings.globalTaxPercentage,
       ),
-      serviceCharge: this.extractServiceChargeSettings(settings),
-      transactionFee: {
+      serviceCharge: {
         configScope: 'RESTAURANT',
-        message: 'Transaction fee is configured per restaurant by super admin.',
+        message: 'Service charge is configured per restaurant by super admin.',
+      },
+      transactionFee: {
+        configScope: 'GLOBAL',
+        message: 'Transaction fee is configured at platform/global level.',
       },
     };
   }

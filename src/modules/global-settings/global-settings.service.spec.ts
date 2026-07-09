@@ -111,14 +111,12 @@ describe('GlobalSettingsService', () => {
           },
         ],
         serviceCharge: {
-          isEnabled: false,
-          type: ServiceChargeType.PERCENTAGE,
-          value: 0,
+          configScope: 'RESTAURANT',
+          message: 'Service charge is configured per restaurant by super admin.',
         },
         transactionFee: {
-          configScope: 'RESTAURANT',
-          message:
-            'Transaction fee is configured per restaurant by super admin.',
+          configScope: 'GLOBAL',
+          message: 'Transaction fee is configured at platform/global level.',
         },
         notificationSettings: {
           emailAddress: null,

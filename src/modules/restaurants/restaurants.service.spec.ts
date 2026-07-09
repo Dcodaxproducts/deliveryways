@@ -898,7 +898,7 @@ describe('RestaurantsService notification settings', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('allows super admin to update restaurant transaction fee', async () => {
+  it('allows super admin to update restaurant service charge', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -916,12 +916,11 @@ describe('RestaurantsService notification settings', () => {
       coverImage: null,
       isActive: true,
       settings: {
-        transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 7.5 },
         serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 7.5 },
       },
     });
 
-    const result = await service.updateTransactionFee(
+    const result = await service.updateServiceCharge(
       { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
       'restaurant-1',
       { isEnabled: true, type: 'PERCENTAGE', value: 7.5 },
@@ -931,11 +930,6 @@ describe('RestaurantsService notification settings', () => {
       'restaurant-1',
       {
         settings: {
-          transactionFee: {
-            isEnabled: true,
-            type: 'PERCENTAGE',
-            value: 7.5,
-          },
           serviceCharge: {
             isEnabled: true,
             type: 'PERCENTAGE',
@@ -945,14 +939,14 @@ describe('RestaurantsService notification settings', () => {
       },
       undefined,
     );
-    expect(result.data.transactionFee).toEqual({
+    expect(result.data.serviceCharge).toEqual({
       isEnabled: true,
       type: 'PERCENTAGE',
       value: 7.5,
     });
   });
 
-  it('prevents business admin from overwriting restaurant transaction fee through generic settings update', async () => {
+  it('prevents business admin from overwriting restaurant service charge through generic settings update', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -961,7 +955,7 @@ describe('RestaurantsService notification settings', () => {
       coverImage: null,
       isActive: true,
       settings: {
-        transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
+        serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
       },
     });
     repository.update.mockResolvedValue({
@@ -973,7 +967,6 @@ describe('RestaurantsService notification settings', () => {
       isActive: true,
       settings: {
         branding: { theme: 'dark' },
-        transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
         serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
       },
     });
@@ -989,7 +982,7 @@ describe('RestaurantsService notification settings', () => {
       {
         settings: {
           branding: { theme: 'dark' },
-          transactionFee: { isEnabled: false, type: 'AMOUNT', value: 0 },
+          serviceCharge: { isEnabled: false, type: 'AMOUNT', value: 0 },
         },
       },
     );
@@ -1002,9 +995,9 @@ describe('RestaurantsService notification settings', () => {
 
     expect(updateData.settings).toMatchObject({
       branding: { theme: 'dark' },
-      transactionFee: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
       serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
     });
+    expect(updateData.settings).not.toHaveProperty('transactionFee');
     expect(tx).toBeUndefined();
   });
 });

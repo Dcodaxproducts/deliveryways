@@ -274,7 +274,7 @@ export class UpdateGlobalSettingsDto {
   @ApiPropertyOptional({
     example: true,
     description:
-      'Deprecated. Transaction fee is now configured per restaurant by super admin.',
+      'Deprecated. Service charge is configured per restaurant by super admin.',
   })
   @IsOptional()
   @IsBoolean()
@@ -283,7 +283,7 @@ export class UpdateGlobalSettingsDto {
   @ApiPropertyOptional({
     enum: ServiceChargeType,
     description:
-      'Deprecated. Transaction fee type is now configured per restaurant.',
+      'Deprecated. Service charge type is configured per restaurant.',
   })
   @IsOptional()
   @IsEnum(ServiceChargeType)
@@ -293,7 +293,7 @@ export class UpdateGlobalSettingsDto {
     minimum: 0,
     example: 5,
     description:
-      'Deprecated. Transaction fee value is now configured per restaurant.',
+      'Deprecated. Service charge value is configured per restaurant.',
   })
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))

@@ -29,7 +29,7 @@ import {
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
-  UpdateRestaurantTransactionFeeDto,
+  UpdateRestaurantServiceChargeDto,
 } from './dto';
 import { randomUUID } from 'crypto';
 
@@ -202,15 +202,15 @@ export class RestaurantsService {
     };
   }
 
-  async updateTransactionFee(
+  async updateServiceCharge(
     user: AuthUserContext,
     id: string,
-    dto: UpdateRestaurantTransactionFeeDto,
+    dto: UpdateRestaurantServiceChargeDto,
     tx?: PrismaTx,
   ) {
     if (user.role !== UserRoleEnum.SUPER_ADMIN) {
       throw new ForbiddenException(
-        'Only super admin can manage restaurant transaction fee',
+        'Only super admin can manage restaurant service charge',
       );
     }
 
@@ -219,16 +219,16 @@ export class RestaurantsService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const transactionFee = this.normalizeTransactionFee(
+    const serviceCharge = this.normalizeServiceCharge(
       dto,
-      this.extractRestaurantTransactionFee(restaurant.settings),
+      this.extractRestaurantServiceCharge(restaurant.settings),
     );
     const data = await this.restaurantsRepository.update(
       id,
       {
-        settings: this.writeRestaurantTransactionFee(
+        settings: this.writeRestaurantServiceCharge(
           restaurant.settings,
-          transactionFee,
+          serviceCharge,
         ) as Prisma.InputJsonValue,
       },
       tx,
@@ -236,7 +236,7 @@ export class RestaurantsService {
 
     return {
       data: await this.withDeletionState(data),
-      message: 'Restaurant transaction fee updated successfully',
+      message: 'Restaurant service charge updated successfully',
     };
   }
 
@@ -657,7 +657,7 @@ export class RestaurantsService {
     },
   >(entity: T) {
     return {
-      ...this.withRestaurantTransactionFee(
+      ...this.withRestaurantServiceCharge(
         await this.resolveRestaurantMedia(entity),
       ),
       deletionState: {
@@ -670,43 +670,36 @@ export class RestaurantsService {
     };
   }
 
-  private withRestaurantTransactionFee<
+  private withRestaurantServiceCharge<
     T extends { settings?: Prisma.JsonValue | null },
   >(entity: T) {
-    const transactionFee = this.extractRestaurantTransactionFee(
+    const serviceCharge = this.extractRestaurantServiceCharge(
       entity.settings ?? null,
     );
 
     return {
       ...entity,
-      transactionFee,
-      serviceCharge: transactionFee,
+      serviceCharge,
     };
   }
 
-  private extractRestaurantTransactionFee(settings: Prisma.JsonValue | null) {
-    const transactionFee = this.asObject(
-      this.readPath(settings, ['transactionFee']),
-    );
-    const legacyServiceCharge = this.asObject(
+  private extractRestaurantServiceCharge(settings: Prisma.JsonValue | null) {
+    const serviceCharge = this.asObject(
       this.readPath(settings, ['serviceCharge']),
     );
-    const source = Object.keys(transactionFee).length
-      ? transactionFee
-      : legacyServiceCharge;
 
     return {
-      isEnabled: Boolean(source.isEnabled),
+      isEnabled: Boolean(serviceCharge.isEnabled),
       type:
-        source.type === ServiceChargeType.AMOUNT
+        serviceCharge.type === ServiceChargeType.AMOUNT
           ? ServiceChargeType.AMOUNT
           : ServiceChargeType.PERCENTAGE,
-      value: this.toNumber(source.value ?? 0),
+      value: this.toNumber(serviceCharge.value ?? 0),
     };
   }
 
-  private normalizeTransactionFee(
-    dto: UpdateRestaurantTransactionFeeDto,
+  private normalizeServiceCharge(
+    dto: UpdateRestaurantServiceChargeDto,
     current: { isEnabled: boolean; type: ServiceChargeType; value: number },
   ) {
     const next = {
@@ -717,26 +710,27 @@ export class RestaurantsService {
 
     if (next.type === ServiceChargeType.PERCENTAGE && next.value > 100) {
       throw new BadRequestException(
-        'transactionFee.value cannot exceed 100 for percentage transaction fees',
+        'serviceCharge.value cannot exceed 100 for percentage service charges',
       );
     }
 
     return next;
   }
 
-  private writeRestaurantTransactionFee(
+  private writeRestaurantServiceCharge(
     settings: Prisma.JsonValue | null,
-    transactionFee: {
+    serviceCharge: {
       isEnabled: boolean;
       type: ServiceChargeType;
       value: number;
     },
   ) {
-    const root = this.asObject(settings);
+    const root = { ...this.asObject(settings) };
+    delete root.transactionFee;
+
     return {
       ...root,
-      transactionFee,
-      serviceCharge: transactionFee,
+      serviceCharge,
     };
   }
 
@@ -747,38 +741,39 @@ export class RestaurantsService {
   ) {
     const current = this.asObject(currentSettings);
     const next = this.asObject(nextSettings);
-    const protectedTransactionFee = this.extractRestaurantTransactionFee(
+    const protectedServiceCharge = this.extractRestaurantServiceCharge(
       currentSettings ?? null,
     );
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
-      const rawFee = this.asObject(
-        next.transactionFee ?? next.serviceCharge ?? protectedTransactionFee,
+      const rawServiceCharge = this.asObject(
+        next.serviceCharge ?? protectedServiceCharge,
       );
-      const transactionFee = this.normalizeTransactionFee(
+      const serviceCharge = this.normalizeServiceCharge(
         {
           isEnabled:
-            typeof rawFee.isEnabled === 'boolean'
-              ? rawFee.isEnabled
+            typeof rawServiceCharge.isEnabled === 'boolean'
+              ? rawServiceCharge.isEnabled
               : undefined,
           type:
-            rawFee.type === ServiceChargeType.AMOUNT ||
-            rawFee.type === ServiceChargeType.PERCENTAGE
-              ? rawFee.type
+            rawServiceCharge.type === ServiceChargeType.AMOUNT ||
+            rawServiceCharge.type === ServiceChargeType.PERCENTAGE
+              ? rawServiceCharge.type
               : undefined,
           value:
-            rawFee.value !== undefined
-              ? this.toNumber(rawFee.value)
+            rawServiceCharge.value !== undefined
+              ? this.toNumber(rawServiceCharge.value)
               : undefined,
         },
-        protectedTransactionFee,
+        protectedServiceCharge,
       );
+      const restNext = { ...next };
+      delete restNext.transactionFee;
 
       return {
         ...current,
-        ...next,
-        transactionFee,
-        serviceCharge: transactionFee,
+        ...restNext,
+        serviceCharge,
       };
     }
 
@@ -789,8 +784,7 @@ export class RestaurantsService {
     return {
       ...current,
       ...rest,
-      transactionFee: protectedTransactionFee,
-      serviceCharge: protectedTransactionFee,
+      serviceCharge: protectedServiceCharge,
     };
   }
 

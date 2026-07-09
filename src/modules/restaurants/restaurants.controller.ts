@@ -28,7 +28,7 @@ import {
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
-  UpdateRestaurantTransactionFeeDto,
+  UpdateRestaurantServiceChargeDto,
 } from './dto';
 
 @ApiTags('Restaurants')
@@ -112,13 +112,13 @@ export class RestaurantsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN)
-  @Patch(':id/transaction-fee')
-  updateTransactionFee(
+  @Patch(':id/service-charge')
+  updateServiceCharge(
     @CurrentUser() user: AuthUserContext,
     @Param('id') id: string,
-    @Body() dto: UpdateRestaurantTransactionFeeDto,
+    @Body() dto: UpdateRestaurantServiceChargeDto,
   ) {
-    return this.restaurantsService.updateTransactionFee(user, id, dto);
+    return this.restaurantsService.updateServiceCharge(user, id, dto);
   }
 
   @ApiBearerAuth()

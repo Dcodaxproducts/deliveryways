@@ -3,7 +3,7 @@ import { ServiceChargeType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEnum, IsNumber, IsOptional, Min } from 'class-validator';
 
-export class UpdateRestaurantTransactionFeeDto {
+export class UpdateRestaurantServiceChargeDto {
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
