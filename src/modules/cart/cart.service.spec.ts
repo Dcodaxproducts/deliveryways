@@ -2613,6 +2613,10 @@ describe('CartService', () => {
       branchOverrides: [],
     });
     couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.findSplitSectionItems.mockResolvedValue([
+      { id: 'section-left', name: 'Left Pizza', branchOverrides: [] },
+      { id: 'section-right', name: 'Right Pizza', branchOverrides: [] },
+    ]);
     cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
     jest
       .spyOn(service as never, 'buildCartResponse' as never)
@@ -2709,6 +2713,10 @@ describe('CartService', () => {
       },
     });
     couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.findSplitSectionItems.mockResolvedValue([
+      { id: 'section-left', name: 'Left Pizza', branchOverrides: [] },
+      { id: 'section-right', name: 'Right Pizza', branchOverrides: [] },
+    ]);
     cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
     jest
       .spyOn(service as never, 'buildCartResponse' as never)
@@ -2753,9 +2761,392 @@ describe('CartService', () => {
               modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
             },
           ],
+          sections: [
+            { slot: 'LEFT', menuItemId: 'section-left' },
+            { slot: 'RIGHT', menuItemId: 'section-right' },
+          ],
         },
       }),
     );
+  });
+
+  it('creates a separate ready-made deal line when modifier selections differ', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: {
+            dealId: 'deal-1',
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-toppings',
+                modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    cartRepository.findByCustomerId.mockResolvedValue(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Deal Pizza',
+      variations: [],
+      modifierLinks: [
+        {
+          sortOrder: 0,
+          selectionType: 'SINGLE',
+          minSelect: 0,
+          maxSelect: 1,
+          modifierGroup: {
+            id: 'group-toppings',
+            name: 'Toppings',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              {
+                sortOrder: 0,
+                modifier: {
+                  id: 'modifier-cheese',
+                  name: 'Extra Cheese',
+                  priceDelta: new Prisma.Decimal(0),
+                },
+              },
+              {
+                sortOrder: 1,
+                modifier: {
+                  id: 'modifier-mushroom',
+                  name: 'Mushroom',
+                  priceDelta: new Prisma.Decimal(0),
+                },
+              },
+            ],
+          },
+        },
+      ],
+      branchOverrides: [],
+    });
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.createItem.mockResolvedValue({ id: 'cart-item-2' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        modifierSelections: [
+          {
+            modifierGroupId: 'group-toppings',
+            modifiers: [{ modifierId: 'modifier-mushroom', quantity: 1 }],
+          },
+        ],
+        quantity: 1,
+      },
+    );
+
+    expect(cartRepository.updateItem).not.toHaveBeenCalled();
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        modifiers: {
+          dealId: 'deal-1',
+          modifiers: [{ modifierId: 'modifier-mushroom', quantity: 1 }],
+          modifierSelections: [
+            {
+              modifierGroupId: 'group-toppings',
+              modifiers: [{ modifierId: 'modifier-mushroom', quantity: 1 }],
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('still merges an identical ready-made deal selection', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: {
+            dealId: 'deal-1',
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-toppings',
+                modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    cartRepository.findByCustomerId.mockResolvedValue(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Deal Pizza',
+      variations: [],
+      modifierLinks: [
+        {
+          sortOrder: 0,
+          selectionType: 'SINGLE',
+          minSelect: 0,
+          maxSelect: 1,
+          modifierGroup: {
+            id: 'group-toppings',
+            name: 'Toppings',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              {
+                sortOrder: 0,
+                modifier: {
+                  id: 'modifier-cheese',
+                  name: 'Extra Cheese',
+                  priceDelta: new Prisma.Decimal(0),
+                },
+              },
+            ],
+          },
+        },
+      ],
+      branchOverrides: [],
+    });
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        modifierSelections: [
+          {
+            modifierGroupId: 'group-toppings',
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+          },
+        ],
+        quantity: 1,
+      },
+    );
+
+    expect(cartRepository.updateItem).toHaveBeenCalledWith('cart-item-1', {
+      quantity: 2,
+    });
+    expect(cartRepository.createItem).not.toHaveBeenCalled();
+  });
+
+  it('creates a separate ready-made deal line when split sections differ', async () => {
+    const { service, cartRepository, couponsService } = makeService();
+    const existingCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: {
+            dealId: 'deal-1',
+            modifiers: [],
+            sections: [
+              { slot: 'LEFT', menuItemId: 'section-left' },
+              { slot: 'RIGHT', menuItemId: 'section-right' },
+            ],
+          },
+        },
+      ],
+    };
+
+    cartRepository.findByCustomerId.mockResolvedValue(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Split Deal Pizza',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+      dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+      category: {
+        items: [
+          { id: 'section-left', name: 'Left Pizza', slug: 'left-pizza' },
+          { id: 'section-right', name: 'Right Pizza', slug: 'right-pizza' },
+          { id: 'section-veggie', name: 'Veggie Pizza', slug: 'veggie-pizza' },
+        ],
+      },
+    });
+    cartRepository.findSplitSectionItems.mockResolvedValue([
+      { id: 'section-left', name: 'Left Pizza', branchOverrides: [] },
+      { id: 'section-veggie', name: 'Veggie Pizza', branchOverrides: [] },
+    ]);
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.createItem.mockResolvedValue({ id: 'cart-item-2' });
+    jest
+      .spyOn(service as never, 'buildCartResponse' as never)
+      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
+
+    await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        sections: [
+          { slot: 'LEFT', menuItemId: 'section-left' },
+          { slot: 'RIGHT', menuItemId: 'section-veggie' },
+        ],
+        quantity: 1,
+      },
+    );
+
+    expect(cartRepository.updateItem).not.toHaveBeenCalled();
+    expect(cartRepository.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modifiers: {
+          dealId: 'deal-1',
+          modifiers: [],
+          sections: [
+            { slot: 'LEFT', menuItemId: 'section-left' },
+            { slot: 'RIGHT', menuItemId: 'section-veggie' },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('renders duplicate deal selections as separate cart deal entries', async () => {
+    const { service, couponsService } = makeService();
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-1',
+      code: 'COMBO',
+      title: 'Combo Deal',
+      description: null,
+      imageUrl: null,
+      fixedPrice: new Prisma.Decimal(10),
+      menuItemIds: ['menu-1'],
+      categoryScopes: [],
+      requiredQuantity: 1,
+      selectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+    });
+
+    const grouped = await (
+      service as unknown as {
+        groupDealItemsForCartResponse: (
+          items: unknown[],
+          cart: { restaurantId: string; branchId: string },
+        ) => Promise<
+          Array<{ id: string; type: string; cartItemIds: string[] }>
+        >;
+      }
+    ).groupDealItemsForCartResponse(
+      [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-1',
+          dealId: 'deal-1',
+          quantity: 1,
+          unitPrice: 10,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 10,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 10,
+        },
+        {
+          id: 'cart-item-2',
+          menuItemId: 'menu-1',
+          dealId: 'deal-1',
+          quantity: 1,
+          unitPrice: 10,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 10,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 10,
+        },
+      ],
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+    );
+
+    expect(grouped).toHaveLength(2);
+    expect(grouped.map((item) => item.cartItemIds)).toEqual([
+      ['cart-item-1'],
+      ['cart-item-2'],
+    ]);
   });
 
   it('adds ready-made deal items while ignoring attached required modifier groups', async () => {

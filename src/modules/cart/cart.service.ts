@@ -1898,41 +1898,38 @@ export class CartService {
         continue;
       }
 
-      const dealItemIndexes = this.findDealItemIndexes(
+      const dealGroups = this.findDealItemIndexGroups(
         pricedItems,
         dealId,
         pricing,
       );
-      const dealQuantity = this.resolveDealGroupQuantity(
-        pricedItems,
-        dealItemIndexes,
-        pricing,
-      );
 
-      if (!dealItemIndexes.length || !dealQuantity) {
+      if (!dealGroups.length) {
         continue;
       }
 
-      const fixedTotal = pricing.fixedPrice.mul(dealQuantity);
-      const modifierTotals = dealItemIndexes.map(
-        (index) => new Prisma.Decimal(pricedItems[index].modifiersTotal ?? 0),
-      );
-      const merchandiseTotals = dealItemIndexes.map((index, offset) => {
-        const item = pricedItems[index];
-        return new Prisma.Decimal(item.lineTotal ?? 0)
-          .minus(item.depositTotal)
-          .minus(modifierTotals[offset].mul(item.quantity));
-      });
-      const allocations = this.allocateFixedDealTotal(
-        merchandiseTotals,
-        fixedTotal,
-      );
-      const allocationByIndex = new Map(
-        dealItemIndexes.map((itemIndex, allocationIndex) => [
-          itemIndex,
-          allocations[allocationIndex],
-        ]),
-      );
+      const allocationByIndex = new Map<number, Prisma.Decimal>();
+
+      for (const dealGroup of dealGroups) {
+        const fixedTotal = pricing.fixedPrice.mul(dealGroup.quantity);
+        const modifierTotals = dealGroup.indexes.map(
+          (index) => new Prisma.Decimal(pricedItems[index].modifiersTotal ?? 0),
+        );
+        const merchandiseTotals = dealGroup.indexes.map((index, offset) => {
+          const item = pricedItems[index];
+          return new Prisma.Decimal(item.lineTotal ?? 0)
+            .minus(item.depositTotal)
+            .minus(modifierTotals[offset].mul(item.quantity));
+        });
+        const allocations = this.allocateFixedDealTotal(
+          merchandiseTotals,
+          fixedTotal,
+        );
+
+        dealGroup.indexes.forEach((itemIndex, allocationIndex) => {
+          allocationByIndex.set(itemIndex, allocations[allocationIndex]);
+        });
+      }
 
       pricedItems = pricedItems.map((item, index) => {
         const allocatedMerchandiseTotal = allocationByIndex.get(index);
@@ -1992,59 +1989,55 @@ export class CartService {
         continue;
       }
 
-      const dealItemIndexes = this.findDealItemIndexes(items, dealId, pricing);
-      const dealQuantity = this.resolveDealGroupQuantity(
-        items,
-        dealItemIndexes,
-        pricing,
-      );
+      const dealGroups = this.findDealItemIndexGroups(items, dealId, pricing);
 
-      if (!dealItemIndexes.length || !dealQuantity) {
-        continue;
-      }
+      for (const dealGroup of dealGroups) {
+        const includedItems = dealGroup.indexes.map((index) => items[index]);
+        const depositTotal = includedItems.reduce(
+          (sum, item) => sum.plus(item.depositTotal),
+          new Prisma.Decimal(0),
+        );
+        const lineTotal = includedItems.reduce(
+          (sum, item) => sum.plus(item.lineTotal ?? 0),
+          new Prisma.Decimal(0),
+        );
+        const firstIndex = dealGroup.indexes[0];
 
-      const includedItems = dealItemIndexes.map((index) => items[index]);
-      const depositTotal = includedItems.reduce(
-        (sum, item) => sum.plus(item.depositTotal),
-        new Prisma.Decimal(0),
-      );
-      const lineTotal = includedItems.reduce(
-        (sum, item) => sum.plus(item.lineTotal ?? 0),
-        new Prisma.Decimal(0),
-      );
-      const firstIndex = dealItemIndexes[0];
-
-      dealItemIndexes.forEach((index) => groupedIndexes.add(index));
-      groupedByFirstIndex.set(firstIndex, {
-        id: `deal:${dealId}`,
-        type: 'DEAL',
-        dealId,
-        cartItemIds: includedItems.map((item) => item.id),
-        menuItemIds: includedItems.map((item) => item.menuItemId),
-        quantity: dealQuantity,
-        unitPrice: Number(pricing.fixedPrice),
-        modifiersTotal: Number(
-          includedItems.reduce(
-            (sum, item) => sum.plus(item.modifiersTotal),
-            new Prisma.Decimal(0),
+        dealGroup.indexes.forEach((index) => groupedIndexes.add(index));
+        groupedByFirstIndex.set(firstIndex, {
+          id:
+            dealGroups.length === 1
+              ? `deal:${dealId}`
+              : `deal:${dealId}:${firstIndex}`,
+          type: 'DEAL',
+          dealId,
+          cartItemIds: includedItems.map((item) => item.id),
+          menuItemIds: includedItems.map((item) => item.menuItemId),
+          quantity: dealGroup.quantity,
+          unitPrice: Number(pricing.fixedPrice),
+          modifiersTotal: Number(
+            includedItems.reduce(
+              (sum, item) => sum.plus(item.modifiersTotal),
+              new Prisma.Decimal(0),
+            ),
           ),
-        ),
-        unitPriceWithModifiers: Number(
-          lineTotal.minus(depositTotal).div(dealQuantity),
-        ),
-        depositAmount: Number(depositTotal.div(dealQuantity)),
-        depositTotal: Number(depositTotal),
-        lineTotal: Number(lineTotal),
-        deal: {
-          id: pricing.dealId,
-          code: pricing.code,
-          title: pricing.title,
-          description: pricing.description,
-          imageUrl: pricing.imageUrl,
-          fixedPrice: Number(pricing.fixedPrice),
-        },
-        includedItems,
-      });
+          unitPriceWithModifiers: Number(
+            lineTotal.minus(depositTotal).div(dealGroup.quantity),
+          ),
+          depositAmount: Number(depositTotal.div(dealGroup.quantity)),
+          depositTotal: Number(depositTotal),
+          lineTotal: Number(lineTotal),
+          deal: {
+            id: pricing.dealId,
+            code: pricing.code,
+            title: pricing.title,
+            description: pricing.description,
+            imageUrl: pricing.imageUrl,
+            fixedPrice: Number(pricing.fixedPrice),
+          },
+          includedItems,
+        });
+      }
     }
 
     return items.flatMap((item, index): CartDisplayItem[] => {
@@ -2057,64 +2050,76 @@ export class CartService {
     });
   }
 
-  private findDealItemIndexes<T extends CartResponseDealLine>(
+  private findDealItemIndexGroups<T extends CartResponseDealLine>(
     items: T[],
     dealId: string,
     pricing: Awaited<
       ReturnType<CouponsService['getActiveFixedPriceDealPricing']>
     >,
-  ) {
+  ): Array<{ indexes: number[]; quantity: number }> {
     if (!pricing) {
       return [];
     }
 
     if (pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
-      return items.flatMap((item, index) =>
+      const indexes = items.flatMap((item, index) =>
         item.dealId === dealId && this.isFlexibleDealEligibleItem(item, pricing)
           ? [index]
           : [],
       );
-    }
-
-    const requiredItemIds = new Set(pricing.menuItemIds);
-
-    return items.flatMap((item, index) =>
-      item.dealId === dealId && requiredItemIds.has(item.menuItemId)
-        ? [index]
-        : [],
-    );
-  }
-
-  private resolveDealGroupQuantity<T extends CartResponseDealLine>(
-    items: T[],
-    dealItemIndexes: number[],
-    pricing: Awaited<
-      ReturnType<CouponsService['getActiveFixedPriceDealPricing']>
-    >,
-  ) {
-    if (!pricing || !dealItemIndexes.length) {
-      return 0;
-    }
-
-    if (pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS) {
-      return this.resolveFlexibleDealGroupQuantity(
-        dealItemIndexes.map((index) => items[index]),
+      const quantity = this.resolveFlexibleDealGroupQuantity(
+        indexes.map((index) => items[index]),
         pricing,
       );
+
+      return indexes.length && quantity ? [{ indexes, quantity }] : [];
     }
 
-    const presentItemIds = new Set(
-      dealItemIndexes.map((index) => items[index].menuItemId),
-    );
-    const isComplete = pricing.menuItemIds.every((menuItemId) =>
-      presentItemIds.has(menuItemId),
-    );
-    const firstQuantity = items[dealItemIndexes[0]]?.quantity;
-    const hasSingleQuantity =
-      firstQuantity !== undefined &&
-      dealItemIndexes.every((index) => items[index].quantity === firstQuantity);
+    const requiredItemIds = pricing.menuItemIds;
+    const indexesByItemId = new Map<string, number[]>();
 
-    return isComplete && hasSingleQuantity && firstQuantity ? firstQuantity : 0;
+    requiredItemIds.forEach((menuItemId) =>
+      indexesByItemId.set(menuItemId, []),
+    );
+    items.forEach((item, index) => {
+      if (item.dealId !== dealId || !indexesByItemId.has(item.menuItemId)) {
+        return;
+      }
+
+      indexesByItemId.get(item.menuItemId)?.push(index);
+    });
+
+    if (
+      requiredItemIds.some(
+        (menuItemId) => !indexesByItemId.get(menuItemId)?.length,
+      )
+    ) {
+      return [];
+    }
+
+    const groupCount = Math.min(
+      ...requiredItemIds.map(
+        (menuItemId) => indexesByItemId.get(menuItemId)?.length ?? 0,
+      ),
+    );
+
+    return Array.from({ length: groupCount }, (_, groupIndex) => {
+      const indexes = requiredItemIds.map(
+        (menuItemId) => indexesByItemId.get(menuItemId)?.[groupIndex] ?? -1,
+      );
+      const firstQuantity = items[indexes[0]]?.quantity;
+      const hasSingleQuantity =
+        firstQuantity !== undefined &&
+        indexes.every((index) => items[index]?.quantity === firstQuantity);
+
+      return {
+        indexes,
+        quantity: hasSingleQuantity && firstQuantity ? firstQuantity : 0,
+      };
+    }).filter(
+      (group) =>
+        group.quantity > 0 && group.indexes.every((index) => index >= 0),
+    );
   }
 
   private resolveFlexibleDealGroupQuantity<T extends CartResponseDealLine>(
@@ -2684,7 +2689,6 @@ export class CartService {
           ...dto,
           dealId: inferredDealId,
           variationId: explicitDealOptions?.forcedVariationId ?? undefined,
-          sections: undefined,
         }
       : dto;
 
