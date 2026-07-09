@@ -514,11 +514,7 @@ export class CartService {
     const branchId =
       this.readString(order.branchId) ?? this.readString(branch.id);
     const orderType = this.readOrderType(order.orderType);
-    const items = Array.isArray(order.items)
-      ? order.items
-      : Array.isArray(order.itemsPreview)
-        ? order.itemsPreview
-        : [];
+    const items = this.resolveReorderItems(order);
 
     if (!branchId) {
       throw new BadRequestException('Order branch is required for reorder');
@@ -536,6 +532,7 @@ export class CartService {
       }
 
       const snapshotModifiers = this.asCartJsonValue(item.snapshotModifiers);
+      const snapshotSections = this.asCartJsonValue(item.snapshotSections);
       const payload: AddCartItemDto = {
         branchId,
         orderType,
@@ -544,9 +541,15 @@ export class CartService {
         quantity: this.readPositiveInt(item.quantity),
         note: this.readString(item.note) ?? undefined,
         modifiers: this.readModifiers(snapshotModifiers),
-        modifierSelections: this.readModifierSelections(snapshotModifiers),
-        sections: this.readSections(snapshotModifiers),
-        dealId: this.readDealId(snapshotModifiers),
+        modifierSelections: this.resolveReorderModifierSelections(
+          item,
+          snapshotModifiers,
+        ),
+        sections:
+          this.readSections(snapshotModifiers) ??
+          this.readSections(snapshotSections),
+        dealId:
+          this.readString(item.dealId) ?? this.readDealId(snapshotModifiers),
       };
 
       updatedCart = await this.addItem(
@@ -2528,6 +2531,41 @@ export class CartService {
       : undefined;
   }
 
+  private resolveReorderItems(order: Record<string, unknown>): unknown[] {
+    if (Array.isArray(order.items)) {
+      return (order.items as unknown[]).slice();
+    }
+
+    if (Array.isArray(order.itemsPreview)) {
+      return (order.itemsPreview as unknown[]).slice();
+    }
+
+    if (!Array.isArray(order.displayItems)) {
+      return [];
+    }
+
+    return (order.displayItems as unknown[]).flatMap((entry): unknown[] => {
+      const displayItem = this.asObject(entry);
+      return Array.isArray(displayItem.items)
+        ? (displayItem.items as unknown[]).slice()
+        : [entry];
+    });
+  }
+
+  private resolveReorderModifierSelections(
+    item: Record<string, unknown>,
+    snapshotModifiers: Prisma.JsonValue | null,
+  ) {
+    const snapshotSelections = this.readModifierSelections(snapshotModifiers);
+    if (snapshotSelections?.length) {
+      return snapshotSelections;
+    }
+
+    return this.readModifierSelections(
+      this.asCartJsonValue(item.modifierSelections),
+    );
+  }
+
   private toOrderTypeEnum(orderType: OrderType): OrderTypeEnum {
     switch (orderType) {
       case OrderType.DELIVERY:
@@ -3132,12 +3170,11 @@ export class CartService {
   private readModifierSelections(
     input: Prisma.JsonValue | null,
   ): CartItemModifierSelectionDto[] | undefined {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) {
-      return undefined;
-    }
-
-    const rawSelections = (input as { modifierSelections?: unknown })
-      .modifierSelections;
+    const rawSelections = Array.isArray(input)
+      ? input
+      : input && typeof input === 'object'
+        ? (input as { modifierSelections?: unknown }).modifierSelections
+        : undefined;
     if (!Array.isArray(rawSelections)) {
       return undefined;
     }
@@ -3173,11 +3210,11 @@ export class CartService {
   private readSections(
     input: Prisma.JsonValue | null,
   ): CartItemSectionDto[] | undefined {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) {
-      return undefined;
-    }
-
-    const rawSections = (input as { sections?: unknown }).sections;
+    const rawSections = Array.isArray(input)
+      ? input
+      : input && typeof input === 'object'
+        ? (input as { sections?: unknown }).sections
+        : undefined;
     if (!Array.isArray(rawSections)) {
       return undefined;
     }

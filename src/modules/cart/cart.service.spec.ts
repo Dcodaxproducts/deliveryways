@@ -190,6 +190,157 @@ describe('CartService', () => {
     expect(result.message).toBe('Order added to cart successfully');
   });
 
+  it('reorders deal items from order details preview fields', async () => {
+    const { service, ordersService } = makeService();
+    const user = {
+      id: 'customer-user',
+      role: UserRoleEnum.CUSTOMER,
+      tenantId: 'tenant-1',
+    };
+    const cartResponse = {
+      data: { id: 'cart-1', items: [] },
+      message: 'Item added to cart successfully',
+    };
+
+    ordersService.details.mockResolvedValue({
+      data: {
+        id: 'order-1',
+        branch: { id: 'branch-1' },
+        orderType: OrderTypeEnum.TAKEAWAY,
+        itemsPreview: [
+          {
+            id: 'order-item-1',
+            menuItemId: 'pizza-1',
+            variationId: 'large',
+            quantity: 1,
+            note: null,
+            dealId: 'deal-combo-1',
+            snapshotModifiers: [
+              { modifierId: 'extra-cheese', quantity: 1, name: 'Cheese' },
+            ],
+          },
+          {
+            id: 'order-item-2',
+            menuItemId: 'half-pizza-1',
+            variationId: 'large',
+            quantity: 2,
+            note: 'well done',
+            dealId: null,
+            snapshotModifiers: [],
+            snapshotSections: [
+              { slot: 'LEFT', menuItemId: 'margherita' },
+              { slot: 'RIGHT', menuItemId: 'pepperoni' },
+            ],
+          },
+        ],
+      },
+    });
+    const addItemSpy = jest
+      .spyOn(service, 'addItem')
+      .mockResolvedValue(cartResponse as never);
+
+    await service.reorder(user as never, { orderId: 'order-1' });
+
+    expect(addItemSpy).toHaveBeenNthCalledWith(
+      1,
+      user,
+      expect.objectContaining({
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        menuItemId: 'pizza-1',
+        variationId: 'large',
+        quantity: 1,
+        modifiers: [{ modifierId: 'extra-cheese', quantity: 1 }],
+        dealId: 'deal-combo-1',
+      }),
+      undefined,
+      undefined,
+    );
+    expect(addItemSpy).toHaveBeenNthCalledWith(
+      2,
+      user,
+      expect.objectContaining({
+        menuItemId: 'half-pizza-1',
+        variationId: 'large',
+        quantity: 2,
+        note: 'well done',
+        sections: [
+          { slot: 'LEFT', menuItemId: 'margherita' },
+          { slot: 'RIGHT', menuItemId: 'pepperoni' },
+        ],
+        dealId: undefined,
+      }),
+      undefined,
+      undefined,
+    );
+  });
+
+  it('reorders deal items from grouped order display items when previews are absent', async () => {
+    const { service, ordersService } = makeService();
+    const user = {
+      id: 'customer-user',
+      role: UserRoleEnum.CUSTOMER,
+      tenantId: 'tenant-1',
+    };
+    const cartResponse = {
+      data: { id: 'cart-1', items: [] },
+      message: 'Item added to cart successfully',
+    };
+
+    ordersService.details.mockResolvedValue({
+      data: {
+        id: 'order-1',
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        displayItems: [
+          {
+            type: 'DEAL',
+            dealId: 'deal-1',
+            items: [
+              {
+                id: 'order-item-1',
+                menuItemId: 'burger-1',
+                variationId: null,
+                quantity: 1,
+                dealId: 'deal-1',
+                snapshotModifiers: [],
+              },
+              {
+                id: 'order-item-2',
+                menuItemId: 'drink-1',
+                variationId: null,
+                quantity: 1,
+                dealId: 'deal-1',
+                snapshotModifiers: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const addItemSpy = jest
+      .spyOn(service, 'addItem')
+      .mockResolvedValue(cartResponse as never);
+
+    await service.reorder(user as never, { orderId: 'order-1' });
+
+    expect(addItemSpy).toHaveBeenCalledTimes(2);
+    expect(addItemSpy).toHaveBeenNthCalledWith(
+      1,
+      user,
+      expect.objectContaining({ menuItemId: 'burger-1', dealId: 'deal-1' }),
+      undefined,
+      undefined,
+    );
+    expect(addItemSpy).toHaveBeenNthCalledWith(
+      2,
+      user,
+      expect.objectContaining({ menuItemId: 'drink-1', dealId: 'deal-1' }),
+      undefined,
+      undefined,
+    );
+  });
+
   it('requires only item-attached modifiers marked as required', () => {
     const { service } = makeService();
     const menuItem = {
