@@ -5,17 +5,19 @@ import {
   PaymentTransactionType,
   RestaurantPayoutRequestStatus,
 } from '@prisma/client';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsBoolean,
   IsArray,
+  IsDefined,
   IsEnum,
   IsNumber,
   IsOptional,
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 
@@ -294,6 +296,9 @@ export class CreateRestaurantPayoutRequestDto {
   currency?: string;
 
   @ApiPropertyOptional({ type: RestaurantPayoutBankDetailsDto })
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => RestaurantPayoutBankDetailsDto)
   bankDetails!: RestaurantPayoutBankDetailsDto;
 
   @ApiPropertyOptional({ maxLength: 500 })
