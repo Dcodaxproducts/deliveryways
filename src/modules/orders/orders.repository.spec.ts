@@ -1,7 +1,13 @@
+import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { OrdersRepository } from './orders.repository';
 
 type OrderSearchWhere = {
   restaurantId?: string;
+  NOT?: {
+    paymentMethod: PaymentMethod;
+    status: OrderStatus;
+    paymentStatus: PaymentStatus;
+  };
   OR?: Array<{
     id?: { contains: string; mode: string };
     customer?: {
@@ -192,6 +198,78 @@ describe('OrdersRepository', () => {
         ],
       }),
     );
+  });
+
+  it('excludes unpaid Stripe pending orders when requested', async () => {
+    const prisma = {
+      $transaction: jest.fn().mockResolvedValue([[], 0]),
+      order: {
+        findMany: jest.fn(),
+        count: jest.fn(),
+      },
+    };
+    prisma.order.findMany.mockReturnValue('findManyResult');
+    prisma.order.count.mockReturnValue('countResult');
+
+    const repository = new OrdersRepository(prisma as never);
+
+    await repository.list(
+      'restaurant-1',
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      } as never,
+      undefined,
+      undefined,
+      true,
+    );
+
+    const findManyCalls = prisma.order.findMany.mock.calls as Array<
+      [OrderFindManyArgs]
+    >;
+    const countCalls = prisma.order.count.mock.calls as Array<[OrderCountArgs]>;
+
+    expect(findManyCalls[0][0].where?.NOT).toEqual({
+      paymentMethod: PaymentMethod.STRIPE,
+      status: OrderStatus.PAYMENT_PENDING,
+      paymentStatus: PaymentStatus.PENDING,
+    });
+    expect(countCalls[0][0].where?.NOT).toEqual({
+      paymentMethod: PaymentMethod.STRIPE,
+      status: OrderStatus.PAYMENT_PENDING,
+      paymentStatus: PaymentStatus.PENDING,
+    });
+  });
+
+  it('keeps unpaid Stripe pending orders visible by default', async () => {
+    const prisma = {
+      $transaction: jest.fn().mockResolvedValue([[], 0]),
+      order: {
+        findMany: jest.fn(),
+        count: jest.fn(),
+      },
+    };
+    prisma.order.findMany.mockReturnValue('findManyResult');
+    prisma.order.count.mockReturnValue('countResult');
+
+    const repository = new OrdersRepository(prisma as never);
+
+    await repository.list('restaurant-1', {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    } as never);
+
+    const findManyCalls = prisma.order.findMany.mock.calls as Array<
+      [OrderFindManyArgs]
+    >;
+    const countCalls = prisma.order.count.mock.calls as Array<[OrderCountArgs]>;
+
+    expect(findManyCalls[0][0].where?.NOT).toBeUndefined();
+    expect(countCalls[0][0].where?.NOT).toBeUndefined();
   });
 
   it('persists branch-provided order time when updating status', async () => {

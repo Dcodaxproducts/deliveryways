@@ -1971,8 +1971,59 @@ describe('OrdersService - deliveryman order access', () => {
       query,
       undefined,
       'dm-1',
+      false,
     );
     expect(result.message).toBe('Orders fetched successfully');
+  });
+
+  it('excludes unpaid Stripe pending orders from business admin lists', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    };
+    const businessAdminUser = {
+      uid: 'owner-1',
+      role: 'BUSINESS_ADMIN' as const,
+      actorType: 'USER' as const,
+      tid: 'tenant-1',
+    };
+
+    await service.list(businessAdminUser as never, query as never);
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      undefined,
+      query,
+      undefined,
+      undefined,
+      true,
+    );
+  });
+
+  it('excludes unpaid Stripe pending orders from branch admin lists', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    };
+    const branchAdminUser = {
+      uid: 'branch-admin-1',
+      role: 'BRANCH_ADMIN' as const,
+      actorType: 'USER' as const,
+      rid: 'restaurant-1',
+    };
+
+    await service.list(branchAdminUser as never, query as never);
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      query,
+      undefined,
+      undefined,
+      true,
+    );
   });
 
   it('allows deliveryman to fetch details of assigned orders', async () => {

@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus, Prisma, PrismaClient } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 import { ListOrdersDto } from './dto';
@@ -311,6 +317,7 @@ export class OrdersRepository {
     query: ListOrdersDto,
     customerId?: string,
     deliverymanId?: string,
+    excludeUnpaidStripePending = false,
   ) {
     const where: Prisma.OrderWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
@@ -319,6 +326,15 @@ export class OrdersRepository {
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(customerId ? { customerId } : {}),
       ...(deliverymanId ? { deliverymanId } : {}),
+      ...(excludeUnpaidStripePending
+        ? {
+            NOT: {
+              paymentMethod: PaymentMethod.STRIPE,
+              status: OrderStatus.PAYMENT_PENDING,
+              paymentStatus: PaymentStatus.PENDING,
+            },
+          }
+        : {}),
       ...this.buildSearchFilter(query.search),
       ...(query.kind === 'group-orders'
         ? { sourceGroupOrder: { isNot: null } }
