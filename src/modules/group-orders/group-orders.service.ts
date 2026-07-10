@@ -11,13 +11,18 @@ import {
   Prisma,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
-import { OrderTypeEnum, UserRoleEnum } from '../../common/enums';
+import {
+  OrderTypeEnum,
+  PaymentMethodEnum,
+  UserRoleEnum,
+} from '../../common/enums';
 import {
   buildPaginationMeta,
   isRestaurantMenuAvailableAt,
 } from '../../common/utils';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
+import { PaymentsService } from '../payments/payments.service';
 import { StorageService } from '../storage/storage.service';
 import {
   AddGroupOrderItemDto,
@@ -41,6 +46,7 @@ export class GroupOrdersService {
     private readonly ordersService: OrdersService,
     private readonly storageService?: StorageService,
     private readonly notificationsService?: NotificationsService,
+    private readonly paymentsService?: PaymentsService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateGroupOrderSessionDto) {
@@ -620,13 +626,38 @@ export class GroupOrdersService {
       finalOrder: { connect: { id: order.data.id } },
     });
 
+    const paymentAttempt =
+      dto.paymentMethod === PaymentMethodEnum.STRIPE
+        ? await this.createStripePaymentAttempt(user, order.data.id)
+        : undefined;
+
     return {
       data: {
         order: order.data,
         session: await this.buildSessionResponseOrThrow(user, id),
+        ...(paymentAttempt?.paymentSession
+          ? { paymentSession: paymentAttempt.paymentSession }
+          : {}),
+        ...(paymentAttempt?.data ? { payment: paymentAttempt.data } : {}),
       },
+      ...(paymentAttempt?.paymentSession
+        ? { paymentSession: paymentAttempt.paymentSession }
+        : {}),
       message: 'Group order checked out successfully',
     };
+  }
+
+  private async createStripePaymentAttempt(
+    user: AuthUserContext,
+    orderId: string,
+  ) {
+    if (!this.paymentsService) {
+      throw new BadRequestException('Payments service is not available');
+    }
+
+    return this.paymentsService.createAttempt(user, orderId, {
+      paymentMethod: PaymentMethodEnum.STRIPE,
+    });
   }
 
   private async getSessionForMemberOrThrow(user: AuthUserContext, id: string) {
