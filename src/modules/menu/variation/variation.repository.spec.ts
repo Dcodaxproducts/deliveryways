@@ -31,7 +31,7 @@ describe('MenuVariationRepository', () => {
     },
   );
 
-  it('matches categoryId against direct category, category links, and item category links', async () => {
+  it('matches categoryId against direct, child, link, and item-linked categories', async () => {
     const findMany = jest.fn<Promise<unknown[]>, [{ where?: unknown }]>();
     const count = jest.fn<Promise<number>, [{ where?: unknown }]>();
     const transaction = jest.fn(async (ops: Promise<unknown>[]) =>
@@ -68,7 +68,13 @@ describe('MenuVariationRepository', () => {
 
     expect(findManyArgs.where?.OR).toEqual([
       { categoryId: 'category-1' },
+      { category: { parentCategoryId: 'category-1' } },
       { categoryLinks: { some: { categoryId: 'category-1' } } },
+      {
+        categoryLinks: {
+          some: { category: { parentCategoryId: 'category-1' } },
+        },
+      },
       {
         itemPriceOverrides: {
           some: {
@@ -77,9 +83,17 @@ describe('MenuVariationRepository', () => {
               isActive: true,
               OR: [
                 { categoryId: 'category-1' },
+                { category: { parentCategoryId: 'category-1' } },
                 {
                   categoryLinks: {
                     some: { menuCategoryId: 'category-1' },
+                  },
+                },
+                {
+                  categoryLinks: {
+                    some: {
+                      menuCategory: { parentCategoryId: 'category-1' },
+                    },
                   },
                 },
               ],

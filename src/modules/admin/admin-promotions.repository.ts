@@ -81,7 +81,42 @@ export class AdminPromotionsRepository {
         isActive: true,
         OR: [
           { categoryId },
+          { category: { parentCategoryId: categoryId } },
           { categoryLinks: { some: { categoryId, isActive: true } } },
+          {
+            categoryLinks: {
+              some: {
+                isActive: true,
+                category: { parentCategoryId: categoryId },
+              },
+            },
+          },
+          {
+            itemPriceOverrides: {
+              some: {
+                menuItem: {
+                  deletedAt: null,
+                  isActive: true,
+                  OR: [
+                    { categoryId },
+                    { category: { parentCategoryId: categoryId } },
+                    {
+                      categoryLinks: {
+                        some: { menuCategoryId: categoryId },
+                      },
+                    },
+                    {
+                      categoryLinks: {
+                        some: {
+                          menuCategory: { parentCategoryId: categoryId },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
         ],
       },
       select: { id: true },

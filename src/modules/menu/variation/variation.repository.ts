@@ -54,32 +54,7 @@ export class MenuVariationRepository {
       ...(restaurantId ? { restaurantId } : {}),
       deletedAt: null,
       ...this.resolveActiveFilter(query),
-      ...(query.categoryId
-        ? {
-            OR: [
-              { categoryId: query.categoryId },
-              { categoryLinks: { some: { categoryId: query.categoryId } } },
-              {
-                itemPriceOverrides: {
-                  some: {
-                    menuItem: {
-                      deletedAt: null,
-                      isActive: true,
-                      OR: [
-                        { categoryId: query.categoryId },
-                        {
-                          categoryLinks: {
-                            some: { menuCategoryId: query.categoryId },
-                          },
-                        },
-                      ],
-                    },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
+      ...(query.categoryId ? this.resolveCategoryFilter(query.categoryId) : {}),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' } }
         : {}),
@@ -111,6 +86,45 @@ export class MenuVariationRepository {
     }
 
     return { isActive: true };
+  }
+
+  private resolveCategoryFilter(
+    categoryId: string,
+  ): Prisma.MenuItemVariationWhereInput {
+    const itemCategoryFilter: Prisma.MenuItemWhereInput[] = [
+      { categoryId },
+      { category: { parentCategoryId: categoryId } },
+      { categoryLinks: { some: { menuCategoryId: categoryId } } },
+      {
+        categoryLinks: {
+          some: { menuCategory: { parentCategoryId: categoryId } },
+        },
+      },
+    ];
+
+    return {
+      OR: [
+        { categoryId },
+        { category: { parentCategoryId: categoryId } },
+        { categoryLinks: { some: { categoryId } } },
+        {
+          categoryLinks: {
+            some: { category: { parentCategoryId: categoryId } },
+          },
+        },
+        {
+          itemPriceOverrides: {
+            some: {
+              menuItem: {
+                deletedAt: null,
+                isActive: true,
+                OR: itemCategoryFilter,
+              },
+            },
+          },
+        },
+      ],
+    };
   }
 
   private resolveOrderBy(

@@ -14,6 +14,72 @@ interface RepositoryWithBuildWhere {
 }
 
 describe('AdminPromotionsRepository', () => {
+  it('validates category variations through category links and item price overrides', async () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: 'variation-1' });
+    const repository = new AdminPromotionsRepository({
+      menuItemVariation: { findFirst },
+    } as never);
+
+    await repository.findActiveCategoryVariation(
+      'restaurant-1',
+      'category-1',
+      'variation-1',
+    );
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'variation-1',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          { categoryId: 'category-1' },
+          { category: { parentCategoryId: 'category-1' } },
+          {
+            categoryLinks: {
+              some: { categoryId: 'category-1', isActive: true },
+            },
+          },
+          {
+            categoryLinks: {
+              some: {
+                isActive: true,
+                category: { parentCategoryId: 'category-1' },
+              },
+            },
+          },
+          {
+            itemPriceOverrides: {
+              some: {
+                menuItem: {
+                  deletedAt: null,
+                  isActive: true,
+                  OR: [
+                    { categoryId: 'category-1' },
+                    { category: { parentCategoryId: 'category-1' } },
+                    {
+                      categoryLinks: {
+                        some: { menuCategoryId: 'category-1' },
+                      },
+                    },
+                    {
+                      categoryLinks: {
+                        some: {
+                          menuCategory: { parentCategoryId: 'category-1' },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+  });
+
   it('includes restaurant-wide gift cards when filtering by branch', () => {
     const repository = new AdminPromotionsRepository(
       {} as never,
