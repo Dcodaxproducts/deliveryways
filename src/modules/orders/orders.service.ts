@@ -44,6 +44,7 @@ import {
   GuestOrderDeliveryAddressDto,
   ListOrdersDto,
   OrderItemModifierDto,
+  OrderItemModifierSelectionDto,
   QuoteOrderDto,
   SubmitOrderReviewDto,
   UpdateOrderStatusDto,
@@ -1145,8 +1146,12 @@ export class OrdersService {
         }
       }
 
-      if (!readyMadeDealId) {
-        this.assertModifierSelectionLimits(menuItem, requestedModifiers);
+      if (!readyMadeDealId || requestedModifiers.length) {
+        this.assertModifierSelectionLimits(
+          menuItem,
+          requestedModifiers,
+          requestedItem.modifierSelections ?? [],
+        );
       }
       this.assertItemQuantityLimits(menuItem, requestedItem.quantity);
 
@@ -4257,7 +4262,16 @@ export class OrdersService {
   private assertModifierSelectionLimits(
     menuItem: OrderModifierSource,
     modifiers: OrderItemModifierDto[],
+    modifierSelections: OrderItemModifierSelectionDto[] = [],
   ) {
+    if (
+      this.getAvailableModifierLinks(menuItem).length &&
+      modifierSelections.length
+    ) {
+      this.assertGroupedModifierSelectionLimits(menuItem, modifierSelections);
+      return;
+    }
+
     if (menuItem.modifierPriceOverrides?.length) {
       const selectedModifierIds = new Set(
         modifiers
@@ -4370,6 +4384,87 @@ export class OrdersService {
           (selection) => selection.modifiers ?? [],
         )
       : (item.modifiers ?? []);
+  }
+
+  private assertGroupedModifierSelectionLimits(
+    menuItem: OrderModifierSource,
+    modifierSelections: OrderItemModifierSelectionDto[],
+  ) {
+    const availableLinks = this.getAvailableModifierLinks(menuItem);
+    const linksByGroupId = new Map(
+      availableLinks.map((link) => [link.modifierGroup.id, link]),
+    );
+    const selectionsByGroupId = new Map<
+      string,
+      OrderItemModifierSelectionDto
+    >();
+
+    for (const selection of modifierSelections) {
+      if (selectionsByGroupId.has(selection.modifierGroupId)) {
+        throw new BadRequestException(
+          'Modifier selections must contain unique modifierGroupIds',
+        );
+      }
+
+      const link = linksByGroupId.get(selection.modifierGroupId);
+      if (!link) {
+        throw new BadRequestException(
+          `Modifier group not found for item: ${menuItem.name ?? 'Menu item'}`,
+        );
+      }
+
+      selectionsByGroupId.set(selection.modifierGroupId, selection);
+      const modifierIds = new Set(
+        link.modifierGroup.modifierLinks.map(
+          (modifierLink) => modifierLink.modifier.id,
+        ),
+      );
+      const selectedIds = selection.modifiers.map(
+        (modifier) => modifier.modifierId,
+      );
+
+      if (new Set(selectedIds).size !== selectedIds.length) {
+        throw new BadRequestException(
+          'Modifier group selections must contain unique modifierIds',
+        );
+      }
+
+      if (selectedIds.some((modifierId) => !modifierIds.has(modifierId))) {
+        throw new BadRequestException(
+          `Modifier selection contains invalid option for group: ${link.modifierGroup.name}`,
+        );
+      }
+
+      const totalSelected = selection.modifiers.reduce(
+        (sum, modifier) => sum + (modifier.quantity ?? 1),
+        0,
+      );
+      const minSelect = link.modifierGroup.minSelect;
+      const maxSelect = link.modifierGroup.maxSelect;
+
+      if (totalSelected < minSelect) {
+        throw new BadRequestException(
+          `${link.modifierGroup.name} requires at least ${minSelect} modifier selection(s)`,
+        );
+      }
+
+      if (totalSelected > maxSelect) {
+        throw new BadRequestException(
+          `${link.modifierGroup.name} allows at most ${maxSelect} modifier selection(s)`,
+        );
+      }
+    }
+
+    for (const link of availableLinks) {
+      const minSelect = link.modifierGroup.minSelect;
+      if (minSelect < 1 || selectionsByGroupId.has(link.modifierGroup.id)) {
+        continue;
+      }
+
+      throw new BadRequestException(
+        `${link.modifierGroup.name} requires at least ${minSelect} modifier selection(s)`,
+      );
+    }
   }
 
   private assertItemQuantityLimits(

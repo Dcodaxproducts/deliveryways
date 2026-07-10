@@ -69,7 +69,7 @@ describe('OrdersService - delivery radius', () => {
           modifiers: Array<{ modifierId: string; quantity?: number }>,
         ) => void;
       }
-    ).assertModifierSelectionLimits;
+    ).assertModifierSelectionLimits.bind(service);
     const menuItem = {
       id: 'menu-1',
       name: 'Basic Pizza Copy',
@@ -3353,6 +3353,244 @@ describe('OrdersService - coupon quote validation', () => {
     ]);
     expect(result.data.items[0].unitPrice).toBe(150);
     expect(result.data.subtotal).toBe(150);
+  });
+
+  it('scopes grouped modifier limits per cart line when standalone and deal rows share the same item', async () => {
+    const crabItem = {
+      id: 'item-crab',
+      name: '40. CRAB',
+      restaurantId: 'restaurant-1',
+      isRequired: false,
+      minSelect: 0,
+      maxSelect: 1,
+      pricingMode: 'SINGLE',
+      basePrice: new Prisma.Decimal(10),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      depositAmount: new Prisma.Decimal(0),
+      category: { id: 'cat-1', variations: [], modifierLinks: [] },
+      variations: [],
+      modifierLinks: [
+        {
+          modifierGroup: {
+            id: 'group-crab-addons',
+            name: 'CRAB Add-ons',
+            minSelect: 0,
+            maxSelect: 2,
+            isRequired: false,
+            modifierLinks: [
+              {
+                modifier: {
+                  id: 'modifier-mayo',
+                  name: 'Mayo',
+                  priceDelta: new Prisma.Decimal(1),
+                  itemPriceOverrides: [],
+                  variationPriceOverrides: [],
+                },
+              },
+              {
+                modifier: {
+                  id: 'modifier-garlic',
+                  name: 'Garlic',
+                  priceDelta: new Prisma.Decimal(1),
+                  itemPriceOverrides: [],
+                  variationPriceOverrides: [],
+                },
+              },
+              {
+                modifier: {
+                  id: 'modifier-default',
+                  name: 'Default sauce',
+                  priceDelta: new Prisma.Decimal(0),
+                  itemPriceOverrides: [],
+                  variationPriceOverrides: [],
+                },
+              },
+            ],
+          },
+        },
+      ],
+      modifierPriceOverrides: [],
+      branchOverrides: [],
+    };
+    const prisma = {
+      branch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          settings: {
+            allowedOrderTypes: ['DELIVERY'],
+            allowedPaymentMethods: ['COD'],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+              freeDeliveryThreshold: 0,
+            },
+            taxation: { taxPercentage: 0 },
+          },
+        }),
+      },
+      menuItem: { findFirst: jest.fn().mockResolvedValue(crabItem) },
+      address: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {
+        validateForCheckout: jest.fn().mockResolvedValue({
+          coupon: null,
+          discountAmount: new Prisma.Decimal(0),
+          eligibleSubtotal: new Prisma.Decimal(23),
+        }),
+        findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+        isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(true),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        calculateQuoteBenefits: jest.fn().mockResolvedValue({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: new Prisma.Decimal(23),
+        }),
+      } as never,
+    );
+
+    const result = await service.quoteForCouponValidation(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        items: [
+          {
+            menuItemId: 'item-crab',
+            quantity: 1,
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-crab-addons',
+                modifiers: [
+                  { modifierId: 'modifier-mayo', quantity: 1 },
+                  { modifierId: 'modifier-garlic', quantity: 1 },
+                ],
+              },
+            ],
+          },
+          {
+            menuItemId: 'item-crab',
+            dealId: 'angebot-2',
+            quantity: 1,
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-crab-addons',
+                modifiers: [{ modifierId: 'modifier-default', quantity: 1 }],
+              },
+            ],
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.items).toHaveLength(2);
+    expect(result.data.items[0].snapshotModifiers).toHaveLength(2);
+    expect(result.data.items[1]).toEqual(
+      expect.objectContaining({
+        dealId: 'angebot-2',
+        snapshotModifiers: [
+          expect.objectContaining({ modifierId: 'modifier-default' }),
+        ],
+      }),
+    );
+  });
+
+  it('rejects a single grouped modifier line above its group maxSelect', () => {
+    const assertionService = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const assertModifierSelectionLimits = (
+      assertionService as unknown as {
+        assertModifierSelectionLimits: (
+          item: {
+            id: string;
+            name?: string;
+            modifierLinks: Array<{
+              modifierGroup: {
+                id: string;
+                name: string;
+                minSelect: number;
+                maxSelect: number;
+                isRequired: boolean;
+                modifierLinks: Array<{ modifier: { id: string } }>;
+              };
+            }>;
+            modifierPriceOverrides?: Array<never>;
+          },
+          modifiers: Array<{ modifierId: string; quantity?: number }>,
+          modifierSelections: Array<{
+            modifierGroupId: string;
+            modifiers: Array<{ modifierId: string; quantity?: number }>;
+          }>,
+        ) => void;
+      }
+    ).assertModifierSelectionLimits.bind(assertionService);
+
+    expect(() =>
+      assertModifierSelectionLimits(
+        {
+          id: 'item-crab',
+          name: '40. CRAB',
+          modifierLinks: [
+            {
+              modifierGroup: {
+                id: 'group-crab-addons',
+                name: 'CRAB Add-ons',
+                minSelect: 0,
+                maxSelect: 2,
+                isRequired: false,
+                modifierLinks: [
+                  { modifier: { id: 'modifier-mayo' } },
+                  { modifier: { id: 'modifier-garlic' } },
+                  { modifier: { id: 'modifier-default' } },
+                ],
+              },
+            },
+          ],
+          modifierPriceOverrides: [],
+        },
+        [
+          { modifierId: 'modifier-mayo', quantity: 1 },
+          { modifierId: 'modifier-garlic', quantity: 1 },
+          { modifierId: 'modifier-default', quantity: 1 },
+        ],
+        [
+          {
+            modifierGroupId: 'group-crab-addons',
+            modifiers: [
+              { modifierId: 'modifier-mayo', quantity: 1 },
+              { modifierId: 'modifier-garlic', quantity: 1 },
+              { modifierId: 'modifier-default', quantity: 1 },
+            ],
+          },
+        ],
+      ),
+    ).toThrow('CRAB Add-ons allows at most 2 modifier selection(s)');
   });
 
   it('rejects free order item modifier selections above one', async () => {
