@@ -14,6 +14,21 @@ describe('MenuCategoryService', () => {
       update: jest.fn(),
       countChildren: jest.fn(),
       countItems: jest.fn(),
+      findActiveItemIdsForCategory: jest.fn(),
+      deleteCartItemsForMenuItems: jest.fn(),
+      deleteGroupOrderItemsForMenuItems: jest.fn(),
+      deletePosDraftItemsForMenuItems: jest.fn(),
+      deleteMenuItemLinks: jest.fn(),
+      deleteMenuItemCategoryLinks: jest.fn(),
+      deleteMenuItemModifierLinks: jest.fn(),
+      deleteMenuItemModifierPriceOverrides: jest.fn(),
+      deleteMenuItemVariationPriceOverrides: jest.fn(),
+      deleteMenuItemVariationModifierPriceOverrides: jest.fn(),
+      deleteMenuItemBranchOverrides: jest.fn(),
+      deleteMenuItemRecipes: jest.fn(),
+      clearMenuItemCouponScopes: jest.fn(),
+      deleteMenuItemCouponScopeLinks: jest.fn(),
+      softDeleteMenuItems: jest.fn(),
       clearCouponScopes: jest.fn(),
       deleteBranchOverrides: jest.fn(),
       deleteMenuLinks: jest.fn(),
@@ -21,6 +36,7 @@ describe('MenuCategoryService', () => {
       deleteCouponScopeLinks: jest.fn(),
       deleteVariations: jest.fn(),
       clearDirectVariationCategory: jest.fn(),
+      softDelete: jest.fn(),
       hardDelete: jest.fn(),
     };
 
@@ -244,7 +260,7 @@ describe('MenuCategoryService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('hard deletes category after clearing simple references', async () => {
+  it('soft deletes category after clearing simple references', async () => {
     const { service, categoryRepository } = makeService();
     categoryRepository.findById.mockResolvedValue({
       id: 'category-1',
@@ -252,8 +268,8 @@ describe('MenuCategoryService', () => {
       deletedAt: null,
     });
     categoryRepository.countChildren.mockResolvedValue(0);
-    categoryRepository.countItems.mockResolvedValue(0);
-    categoryRepository.hardDelete.mockResolvedValue({ id: 'category-1' });
+    categoryRepository.findActiveItemIdsForCategory.mockResolvedValue([]);
+    categoryRepository.softDelete.mockResolvedValue({ id: 'category-1' });
 
     const result = await service.remove(
       {
@@ -291,14 +307,15 @@ describe('MenuCategoryService', () => {
     expect(
       categoryRepository.clearDirectVariationCategory,
     ).toHaveBeenCalledWith('category-1', expect.anything());
-    expect(categoryRepository.hardDelete).toHaveBeenCalledWith(
+    expect(categoryRepository.softDelete).toHaveBeenCalledWith(
       'category-1',
       expect.anything(),
     );
+    expect(categoryRepository.hardDelete).not.toHaveBeenCalled();
     expect(result.message).toBe('Menu category deleted successfully');
   });
 
-  it('blocks permanent category delete when items exist', async () => {
+  it('soft deletes category items and clears item references before deleting category', async () => {
     const { service, categoryRepository } = makeService();
     categoryRepository.findById.mockResolvedValue({
       id: 'category-1',
@@ -306,20 +323,76 @@ describe('MenuCategoryService', () => {
       deletedAt: null,
     });
     categoryRepository.countChildren.mockResolvedValue(0);
-    categoryRepository.countItems.mockResolvedValue(2);
+    categoryRepository.findActiveItemIdsForCategory.mockResolvedValue([
+      'item-primary',
+      'item-secondary',
+    ]);
+    categoryRepository.softDelete.mockResolvedValue({ id: 'category-1' });
 
-    await expect(
-      service.remove(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          role: UserRoleEnum.SUPER_ADMIN,
-        },
-        'category-1',
-      ),
-    ).rejects.toThrow(
-      'Menu category cannot be permanently deleted while menu items exist',
+    await service.remove(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'category-1',
     );
+
+    const expectedItemIds = ['item-primary', 'item-secondary'];
+    expect(categoryRepository.deleteCartItemsForMenuItems).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(
+      categoryRepository.deleteGroupOrderItemsForMenuItems,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(
+      categoryRepository.deletePosDraftItemsForMenuItems,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(categoryRepository.deleteMenuItemLinks).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(categoryRepository.deleteMenuItemCategoryLinks).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(categoryRepository.deleteMenuItemModifierLinks).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(
+      categoryRepository.deleteMenuItemModifierPriceOverrides,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(
+      categoryRepository.deleteMenuItemVariationPriceOverrides,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(
+      categoryRepository.deleteMenuItemVariationModifierPriceOverrides,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(
+      categoryRepository.deleteMenuItemBranchOverrides,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(categoryRepository.deleteMenuItemRecipes).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(categoryRepository.clearMenuItemCouponScopes).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(
+      categoryRepository.deleteMenuItemCouponScopeLinks,
+    ).toHaveBeenCalledWith(expectedItemIds, expect.anything());
+    expect(categoryRepository.softDeleteMenuItems).toHaveBeenCalledWith(
+      expectedItemIds,
+      expect.anything(),
+    );
+    expect(categoryRepository.softDelete).toHaveBeenCalledWith(
+      'category-1',
+      expect.anything(),
+    );
+    expect(categoryRepository.hardDelete).not.toHaveBeenCalled();
   });
 
   it('includes category-level modifier groups in list responses', async () => {

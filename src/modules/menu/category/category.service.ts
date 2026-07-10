@@ -259,10 +259,7 @@ export class MenuCategoryService {
 
     await this.ensureCanAccessRestaurant(user, category.restaurantId, 'write');
 
-    const [childrenCount, itemsCount] = await Promise.all([
-      this.categoryRepository.countChildren(id),
-      this.categoryRepository.countItems(id),
-    ]);
+    const childrenCount = await this.categoryRepository.countChildren(id);
 
     if (childrenCount > 0) {
       throw new BadRequestException(
@@ -270,13 +267,15 @@ export class MenuCategoryService {
       );
     }
 
-    if (itemsCount > 0) {
-      throw new BadRequestException(
-        'Menu category cannot be permanently deleted while menu items exist',
-      );
-    }
-
     const data = await this.prisma.$transaction(async (tx) => {
+      const menuItemIds =
+        await this.categoryRepository.findActiveItemIdsForCategory(id, tx);
+
+      if (menuItemIds.length) {
+        await this.cleanupCategoryMenuItems(menuItemIds, tx);
+        await this.categoryRepository.softDeleteMenuItems(menuItemIds, tx);
+      }
+
       await this.categoryRepository.clearCouponScopes(id, tx);
       await this.categoryRepository.deleteBranchOverrides(id, tx);
       await this.categoryRepository.deleteMenuLinks(id, tx);
@@ -284,10 +283,50 @@ export class MenuCategoryService {
       await this.categoryRepository.deleteCouponScopeLinks(id, tx);
       await this.categoryRepository.deleteVariations(id, tx);
       await this.categoryRepository.clearDirectVariationCategory(id, tx);
-      return this.categoryRepository.hardDelete(id, tx);
+      return this.categoryRepository.softDelete(id, tx);
     });
 
     return { data, message: 'Menu category deleted successfully' };
+  }
+
+  private async cleanupCategoryMenuItems(
+    menuItemIds: string[],
+    tx: Prisma.TransactionClient,
+  ) {
+    await this.categoryRepository.deleteCartItemsForMenuItems(menuItemIds, tx);
+    await this.categoryRepository.deleteGroupOrderItemsForMenuItems(
+      menuItemIds,
+      tx,
+    );
+    await this.categoryRepository.deletePosDraftItemsForMenuItems(
+      menuItemIds,
+      tx,
+    );
+    await this.categoryRepository.deleteMenuItemLinks(menuItemIds, tx);
+    await this.categoryRepository.deleteMenuItemCategoryLinks(menuItemIds, tx);
+    await this.categoryRepository.deleteMenuItemModifierLinks(menuItemIds, tx);
+    await this.categoryRepository.deleteMenuItemModifierPriceOverrides(
+      menuItemIds,
+      tx,
+    );
+    await this.categoryRepository.deleteMenuItemVariationPriceOverrides(
+      menuItemIds,
+      tx,
+    );
+    await this.categoryRepository.deleteMenuItemVariationModifierPriceOverrides(
+      menuItemIds,
+      tx,
+    );
+    await this.categoryRepository.deleteMenuItemBranchOverrides(
+      menuItemIds,
+      tx,
+    );
+    await this.categoryRepository.deleteMenuItemRecipes(menuItemIds, tx);
+    await this.categoryRepository.clearMenuItemCouponScopes(menuItemIds, tx);
+    await this.categoryRepository.deleteMenuItemCouponScopeLinks(
+      menuItemIds,
+      tx,
+    );
   }
 
   private async resolveRestaurantId(

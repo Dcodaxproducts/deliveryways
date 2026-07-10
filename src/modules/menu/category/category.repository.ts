@@ -265,6 +265,110 @@ export class MenuCategoryRepository {
     });
   }
 
+  async findActiveItemIdsForCategory(categoryId: string, tx?: PrismaTx) {
+    const items = await this.client(tx).menuItem.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { categoryId },
+          { categoryLinks: { some: { menuCategoryId: categoryId } } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return items.map((item) => item.id);
+  }
+
+  deleteCartItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).cartItem.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteGroupOrderItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).groupOrderItem.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deletePosDraftItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).posOrderDraftItem.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemLinks(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).restaurantMenuItem.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemCategoryLinks(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).menuItemCategory.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemModifierLinks(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).menuItemModifierGroup.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemModifierPriceOverrides(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).menuItemModifierPriceOverride.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemVariationPriceOverrides(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).menuItemVariationPriceOverride.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemVariationModifierPriceOverrides(
+    menuItemIds: string[],
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).menuVariationModifierPriceOverride.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemBranchOverrides(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).branchMenuItemOverride.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  deleteMenuItemRecipes(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).menuItemRecipe.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  clearMenuItemCouponScopes(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).coupon.updateMany({
+      where: { scopeMenuItemId: { in: menuItemIds } },
+      data: { scopeMenuItemId: null },
+    });
+  }
+
+  deleteMenuItemCouponScopeLinks(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).couponScopeMenuItem.deleteMany({
+      where: { menuItemId: { in: menuItemIds } },
+    });
+  }
+
+  softDeleteMenuItems(menuItemIds: string[], tx?: PrismaTx) {
+    return this.client(tx).menuItem.updateMany({
+      where: { id: { in: menuItemIds }, deletedAt: null },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+  }
+
   clearCouponScopes(categoryId: string, tx?: PrismaTx) {
     return this.client(tx).coupon.updateMany({
       where: { scopeCategoryId: categoryId },
