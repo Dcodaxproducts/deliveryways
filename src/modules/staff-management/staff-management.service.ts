@@ -233,13 +233,14 @@ export class StaffManagementService {
       throw new NotFoundException('Staff account not found');
     }
 
-    if (staff.ownerUserId !== user.uid) {
+    const scope = this.resolveScopeForUser(user);
+
+    if (staff.ownerUserId !== scope.ownerUserId) {
       throw new ForbiddenException(
         'You cannot access staff accounts created by another admin',
       );
     }
 
-    const scope = this.resolveScopeForUser(user);
     if (staff.panelType !== scope.panelType) {
       throw new ForbiddenException(
         'You cannot access staff accounts outside your admin scope',

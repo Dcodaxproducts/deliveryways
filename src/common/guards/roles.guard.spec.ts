@@ -165,6 +165,100 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
+  it.each([
+    ['create', RequestMethod.POST, 'create'],
+    ['update', RequestMethod.PATCH, 'update'],
+    ['delete', RequestMethod.DELETE, 'delete'],
+  ])(
+    'allows STAFF to %s staff-management with matching employees permission',
+    async (_label, method, operation) => {
+      const prisma: PrismaMock = {
+        staffUser: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(
+              activeStaffRole([
+                { access: 'employees', operations: [operation] },
+              ]),
+            ),
+        },
+      };
+      const guard = createGuard({
+        roles: [
+          RolesEnum.SUPER_ADMIN,
+          RolesEnum.BUSINESS_ADMIN,
+          RolesEnum.BRANCH_ADMIN,
+        ],
+        controllerPath: 'staff-management',
+        handlerPath: method === RequestMethod.POST ? '' : ':id',
+        method,
+        prisma,
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+        ),
+      ).resolves.toBe(true);
+    },
+  );
+
+  it('rejects STAFF staff-management writes when only read permission is assigned', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'employees', operations: ['read'] }]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'staff-management',
+      method: RequestMethod.POST,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).rejects.toThrow('Your role does not have access to this action');
+  });
+
+  it('allows STAFF to read staff-roles with employees permission', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'employees', operations: ['read'] }]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'staff-roles',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it('allows STAFF to read restaurants with dashboard permission for dashboard data dependencies', async () => {
     const prisma: PrismaMock = {
       staffUser: {

@@ -88,6 +88,147 @@ describe('StaffManagementService', () => {
     );
   });
 
+  it('allows staff actors to fetch staff-management records under their owner scope', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'managed-staff-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+
+    const result = await service.details(
+      {
+        uid: 'staff-actor-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      'managed-staff-1',
+    );
+
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: 'managed-staff-1',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+      }),
+    );
+  });
+
+  it('allows staff actors to update staff-management records under their owner scope', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'managed-staff-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+      },
+    } as never);
+    repository.update.mockResolvedValue({
+      id: 'managed-staff-1',
+      firstName: 'Updated',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+
+    await service.update(
+      {
+        uid: 'staff-actor-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      'managed-staff-1',
+      { firstName: ' Updated ' },
+    );
+
+    expect(repository.update.mock.calls[0]?.[0]).toBe('managed-staff-1');
+    expect(repository.update.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ firstName: 'Updated' }),
+    );
+  });
+
+  it('allows staff actors to delete staff-management records under their owner scope', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'managed-staff-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+    repository.softDelete.mockResolvedValue({
+      id: 'managed-staff-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: new Date('2026-07-10T00:00:00.000Z'),
+      password: 'hashed',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+
+    await service.remove(
+      {
+        uid: 'staff-actor-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      'managed-staff-1',
+    );
+
+    expect(repository.softDelete.mock.calls[0]).toEqual(['managed-staff-1']);
+  });
+
   it('allows business admin to access business-scope staff even if token carries restaurant and branch ids', async () => {
     repository.findById.mockResolvedValue({
       id: 'staff-1',
