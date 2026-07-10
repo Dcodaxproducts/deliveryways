@@ -2067,12 +2067,8 @@ export class CartService {
           ? [index]
           : [],
       );
-      const quantity = this.resolveFlexibleDealGroupQuantity(
-        indexes.map((index) => items[index]),
-        pricing,
-      );
 
-      return indexes.length && quantity ? [{ indexes, quantity }] : [];
+      return this.findFlexibleDealItemIndexGroups(items, indexes, pricing);
     }
 
     const requiredItemIds = pricing.menuItemIds;
@@ -2122,39 +2118,84 @@ export class CartService {
     );
   }
 
-  private resolveFlexibleDealGroupQuantity<T extends CartResponseDealLine>(
+  private findFlexibleDealItemIndexGroups<T extends CartResponseDealLine>(
     items: T[],
+    indexes: number[],
     pricing: NonNullable<
       Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
     >,
-  ) {
+  ): Array<{ indexes: number[]; quantity: number }> {
+    if (!indexes.length) {
+      return [];
+    }
+
     const categoryScopes = pricing.categoryScopes.filter(
       (scope) => scope.itemLimit && scope.itemLimit > 0,
     );
 
     if (categoryScopes.length) {
-      const quantities = categoryScopes.map((scope) => {
-        const selectedQuantity = items
-          .filter((item) => item.categoryIds.includes(scope.menuCategoryId))
-          .reduce((sum, item) => sum + item.quantity, 0);
+      const indexesByScope = categoryScopes.map((scope) =>
+        indexes.filter((index) =>
+          items[index].categoryIds.includes(scope.menuCategoryId),
+        ),
+      );
 
-        return Math.floor(selectedQuantity / (scope.itemLimit ?? 1));
-      });
+      if (indexesByScope.some((scopeIndexes) => !scopeIndexes.length)) {
+        return [];
+      }
 
-      return quantities.length ? Math.min(...quantities) : 0;
+      const groupCount = Math.min(
+        ...indexesByScope.map((scopeIndexes, scopeIndex) =>
+          Math.floor(
+            scopeIndexes.length / (categoryScopes[scopeIndex].itemLimit ?? 1),
+          ),
+        ),
+      );
+
+      return Array.from({ length: groupCount }, (_, groupIndex) => {
+        const groupIndexes = indexesByScope.flatMap(
+          (scopeIndexes, scopeIndex) => {
+            const itemLimit = categoryScopes[scopeIndex].itemLimit ?? 1;
+            const start = groupIndex * itemLimit;
+            return scopeIndexes.slice(start, start + itemLimit);
+          },
+        );
+        const firstQuantity = items[groupIndexes[0]]?.quantity;
+        const hasSingleQuantity =
+          firstQuantity !== undefined &&
+          groupIndexes.every(
+            (index) => items[index]?.quantity === firstQuantity,
+          );
+
+        return {
+          indexes: groupIndexes.sort((left, right) => left - right),
+          quantity: hasSingleQuantity && firstQuantity ? firstQuantity : 0,
+        };
+      }).filter((group) => group.quantity > 0);
     }
 
     const requiredQuantity = pricing.requiredQuantity ?? 0;
     if (requiredQuantity < 1) {
-      return 0;
+      return [];
     }
 
-    const selectedQuantity = items.reduce(
-      (sum, item) => sum + item.quantity,
-      0,
-    );
+    const groupCount = Math.floor(indexes.length / requiredQuantity);
 
-    return Math.floor(selectedQuantity / requiredQuantity);
+    return Array.from({ length: groupCount }, (_, groupIndex) => {
+      const groupIndexes = indexes.slice(
+        groupIndex * requiredQuantity,
+        groupIndex * requiredQuantity + requiredQuantity,
+      );
+      const firstQuantity = items[groupIndexes[0]]?.quantity;
+      const hasSingleQuantity =
+        firstQuantity !== undefined &&
+        groupIndexes.every((index) => items[index]?.quantity === firstQuantity);
+
+      return {
+        indexes: groupIndexes,
+        quantity: hasSingleQuantity && firstQuantity ? firstQuantity : 0,
+      };
+    }).filter((group) => group.quantity > 0);
   }
 
   private isFlexibleDealEligibleItem<T extends CartResponseDealLine>(

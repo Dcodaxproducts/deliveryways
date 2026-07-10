@@ -1119,6 +1119,170 @@ describe('CartService', () => {
     });
   });
 
+  it('renders different flexible deal selections as separate cart deal entries', async () => {
+    const { service, couponsService } = makeService();
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-flex',
+      code: 'FLEX',
+      title: 'Pizza + Drink',
+      description: null,
+      imageUrl: null,
+      fixedPrice: new Prisma.Decimal(20),
+      menuItemIds: [],
+      categoryScopes: [
+        { menuCategoryId: 'cat-pizza', itemLimit: 1, forcedVariationId: null },
+        { menuCategoryId: 'cat-drink', itemLimit: 1, forcedVariationId: null },
+      ],
+      requiredQuantity: 2,
+      selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+    });
+
+    const grouped = await (
+      service as unknown as {
+        groupDealItemsForCartResponse: (
+          items: unknown[],
+          cart: { restaurantId: string; branchId: string },
+        ) => Promise<
+          Array<{ id: string; type: string; cartItemIds: string[] }>
+        >;
+      }
+    ).groupDealItemsForCartResponse(
+      [
+        {
+          id: 'pizza-line-1',
+          menuItemId: 'pizza-1',
+          categoryId: 'cat-pizza',
+          categoryIds: ['cat-pizza'],
+          dealId: 'deal-flex',
+          quantity: 1,
+          unitPrice: 12,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 12,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 12,
+        },
+        {
+          id: 'drink-line-1',
+          menuItemId: 'drink-1',
+          categoryId: 'cat-drink',
+          categoryIds: ['cat-drink'],
+          dealId: 'deal-flex',
+          quantity: 1,
+          unitPrice: 5,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 5,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 5,
+        },
+        {
+          id: 'pizza-line-2',
+          menuItemId: 'pizza-2',
+          categoryId: 'cat-pizza',
+          categoryIds: ['cat-pizza'],
+          dealId: 'deal-flex',
+          quantity: 1,
+          unitPrice: 13,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 13,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 13,
+        },
+        {
+          id: 'drink-line-2',
+          menuItemId: 'drink-2',
+          categoryId: 'cat-drink',
+          categoryIds: ['cat-drink'],
+          dealId: 'deal-flex',
+          quantity: 1,
+          unitPrice: 6,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 6,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 6,
+        },
+      ],
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+    );
+
+    expect(grouped).toHaveLength(2);
+    expect(grouped.map((item) => item.cartItemIds)).toEqual([
+      ['pizza-line-1', 'drink-line-1'],
+      ['pizza-line-2', 'drink-line-2'],
+    ]);
+  });
+
+  it('keeps identical flexible deal selections as one quantity group', async () => {
+    const { service, couponsService } = makeService();
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-flex',
+      code: 'FLEX',
+      title: 'Pizza + Drink',
+      description: null,
+      imageUrl: null,
+      fixedPrice: new Prisma.Decimal(20),
+      menuItemIds: [],
+      categoryScopes: [
+        { menuCategoryId: 'cat-pizza', itemLimit: 1, forcedVariationId: null },
+        { menuCategoryId: 'cat-drink', itemLimit: 1, forcedVariationId: null },
+      ],
+      requiredQuantity: 2,
+      selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+    });
+
+    const grouped = await (
+      service as unknown as {
+        groupDealItemsForCartResponse: (
+          items: unknown[],
+          cart: { restaurantId: string; branchId: string },
+        ) => Promise<
+          Array<{ quantity: number; cartItemIds: string[]; lineTotal: number }>
+        >;
+      }
+    ).groupDealItemsForCartResponse(
+      [
+        {
+          id: 'pizza-line-1',
+          menuItemId: 'pizza-1',
+          categoryId: 'cat-pizza',
+          categoryIds: ['cat-pizza'],
+          dealId: 'deal-flex',
+          quantity: 2,
+          unitPrice: 12,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 12,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 24,
+        },
+        {
+          id: 'drink-line-1',
+          menuItemId: 'drink-1',
+          categoryId: 'cat-drink',
+          categoryIds: ['cat-drink'],
+          dealId: 'deal-flex',
+          quantity: 2,
+          unitPrice: 5,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 5,
+          depositAmount: 0,
+          depositTotal: new Prisma.Decimal(0),
+          lineTotal: 10,
+        },
+      ],
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+    );
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({
+      quantity: 2,
+      cartItemIds: ['pizza-line-1', 'drink-line-1'],
+    });
+  });
+
   it('updates a fixed combo deal quantity as one cart group', async () => {
     const {
       service,
