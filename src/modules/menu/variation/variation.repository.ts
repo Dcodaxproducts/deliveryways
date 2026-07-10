@@ -59,6 +59,24 @@ export class MenuVariationRepository {
             OR: [
               { categoryId: query.categoryId },
               { categoryLinks: { some: { categoryId: query.categoryId } } },
+              {
+                itemPriceOverrides: {
+                  some: {
+                    menuItem: {
+                      deletedAt: null,
+                      isActive: true,
+                      OR: [
+                        { categoryId: query.categoryId },
+                        {
+                          categoryLinks: {
+                            some: { menuCategoryId: query.categoryId },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
             ],
           }
         : {}),
