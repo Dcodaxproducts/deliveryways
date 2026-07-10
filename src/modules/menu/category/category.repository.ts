@@ -12,6 +12,21 @@ export class MenuCategoryRepository {
     return tx ?? this.prisma;
   }
 
+  private resolveListOrderBy(
+    query: ListMenuCategoriesDto,
+  ): Prisma.MenuCategoryOrderByWithRelationInput[] {
+    const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+
+    if (query.sortBy === 'sortOrder') {
+      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+    }
+
+    return [
+      { sortOrder: 'asc' },
+      { [query.sortBy]: direction },
+    ] as Prisma.MenuCategoryOrderByWithRelationInput[];
+  }
+
   async create(data: Prisma.MenuCategoryCreateInput, tx?: PrismaTx) {
     return this.client(tx).menuCategory.create({ data });
   }
@@ -164,10 +179,7 @@ export class MenuCategoryRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [
-          { sortOrder: 'asc' },
-          { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
-        ],
+        orderBy: this.resolveListOrderBy(query),
         include: {
           parent: { select: { id: true, name: true } },
           menuLinks: {

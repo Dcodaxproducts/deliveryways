@@ -12,6 +12,21 @@ export class CuisineRepository {
     return tx ?? this.prisma;
   }
 
+  private resolveListOrderBy(
+    query: ListCuisinesAdminDto,
+  ): Prisma.CuisineOrderByWithRelationInput[] {
+    const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+
+    if (query.sortBy === 'sortOrder') {
+      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+    }
+
+    return [
+      { sortOrder: 'asc' },
+      { [query.sortBy]: direction },
+    ] as Prisma.CuisineOrderByWithRelationInput[];
+  }
+
   async create(data: Prisma.CuisineCreateInput, tx?: PrismaTx) {
     return this.client(tx).cuisine.create({ data });
   }
@@ -78,10 +93,7 @@ export class CuisineRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [
-          { sortOrder: 'asc' },
-          { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
-        ],
+        orderBy: this.resolveListOrderBy(query),
         include: { _count: { select: { itemLinks: true } } },
       }),
       this.prisma.cuisine.count({ where }),

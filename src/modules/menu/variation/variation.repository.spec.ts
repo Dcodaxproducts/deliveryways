@@ -1,6 +1,36 @@
 import { MenuVariationRepository } from './variation.repository';
 
 describe('MenuVariationRepository', () => {
+  it.each([
+    ['ASC', [{ sortOrder: 'asc' }, { createdAt: 'desc' }]],
+    ['DESC', [{ sortOrder: 'desc' }, { createdAt: 'desc' }]],
+  ] as const)(
+    'orders menu variations by sortOrder %s',
+    async (sortOrder, orderBy) => {
+      const findMany = jest.fn().mockResolvedValue([]);
+      const count = jest.fn().mockResolvedValue(0);
+      const transaction = jest.fn(async (ops: Promise<unknown>[]) =>
+        Promise.all(ops),
+      );
+
+      const repository = new MenuVariationRepository({
+        menuItemVariation: { findMany, count },
+        $transaction: transaction,
+      } as never);
+
+      await repository.list('restaurant-1', {
+        page: 1,
+        limit: 10,
+        sortBy: 'sortOrder',
+        sortOrder,
+      } as never);
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy }),
+      );
+    },
+  );
+
   it('matches categoryId against direct legacy category and category links', async () => {
     const findMany = jest.fn<Promise<unknown[]>, [{ where?: unknown }]>();
     const count = jest.fn<Promise<number>, [{ where?: unknown }]>();

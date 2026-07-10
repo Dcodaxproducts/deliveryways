@@ -16,6 +16,51 @@ export class ModifierRepository {
     return tx ?? this.prisma;
   }
 
+  private resolveModifierCategoryOrderBy(
+    query: ListModifierCategoriesDto,
+  ): Prisma.ModifierCategoryOrderByWithRelationInput[] {
+    const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+
+    if (query.sortBy === 'sortOrder') {
+      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+    }
+
+    return [
+      { sortOrder: 'asc' },
+      { [query.sortBy]: direction },
+    ] as Prisma.ModifierCategoryOrderByWithRelationInput[];
+  }
+
+  private resolveModifierGroupOrderBy(
+    query: ListModifierGroupsDto,
+  ): Prisma.ModifierGroupOrderByWithRelationInput[] {
+    const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+
+    if (query.sortBy === 'sortOrder') {
+      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+    }
+
+    return [
+      { sortOrder: 'asc' },
+      { [query.sortBy]: direction },
+    ] as Prisma.ModifierGroupOrderByWithRelationInput[];
+  }
+
+  private resolveModifierOrderBy(
+    query: ListModifiersDto,
+  ): Prisma.ModifierOrderByWithRelationInput[] {
+    const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
+
+    if (query.sortBy === 'sortOrder') {
+      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+    }
+
+    return [
+      { sortOrder: 'asc' },
+      { [query.sortBy]: direction },
+    ] as Prisma.ModifierOrderByWithRelationInput[];
+  }
+
   async createCategory(
     data: Prisma.ModifierCategoryCreateInput,
     tx?: PrismaTx,
@@ -46,7 +91,7 @@ export class ModifierRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        orderBy: this.resolveModifierCategoryOrderBy(query),
       }),
       this.prisma.modifierCategory.count({ where }),
     ]);
@@ -111,7 +156,7 @@ export class ModifierRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        orderBy: this.resolveModifierGroupOrderBy(query),
         include: this.groupInclude(query.includeInactive),
       }),
       this.prisma.modifierGroup.count({ where }),
@@ -148,7 +193,7 @@ export class ModifierRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        orderBy: this.resolveModifierOrderBy(query),
         include: {
           category: true,
           groupLinks: {
