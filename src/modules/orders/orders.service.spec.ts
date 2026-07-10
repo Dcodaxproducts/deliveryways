@@ -2026,6 +2026,61 @@ describe('OrdersService - deliveryman order access', () => {
     );
   });
 
+  it('allows STAFF to list orders for an assigned restaurant from restaurantAccess', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      restaurantId: 'restaurant-1',
+    };
+    const staffUser = {
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      actorType: 'STAFF' as const,
+      rid: null,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: [],
+      },
+    };
+
+    await service.list(staffUser as never, query as never);
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      'restaurant-1',
+      query,
+      undefined,
+      undefined,
+      false,
+    );
+  });
+
+  it('blocks STAFF order lists outside assigned restaurants', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      restaurantId: 'restaurant-2',
+    };
+    const staffUser = {
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      actorType: 'STAFF' as const,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: [],
+      },
+    };
+
+    await expect(
+      service.list(staffUser as never, query as never),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned restaurants',
+    );
+  });
+
   it('allows deliveryman to fetch details of assigned orders', async () => {
     ordersRepository.findById.mockResolvedValue({
       id: 'order-1',

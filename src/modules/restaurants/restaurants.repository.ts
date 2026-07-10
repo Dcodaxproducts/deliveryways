@@ -29,9 +29,11 @@ export class RestaurantsRepository {
     publicView = false,
     withDeleted = false,
     includeInactive = false,
+    restaurantIds?: string[],
   ) {
     const where: Prisma.RestaurantWhereInput = {
       ...(tenantId ? { tenantId } : {}),
+      ...(restaurantIds?.length ? { id: { in: restaurantIds } } : {}),
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(publicView ? { isActive: true, deletedAt: null } : {}),
       ...(!publicView && !includeInactive ? { isActive: true } : {}),

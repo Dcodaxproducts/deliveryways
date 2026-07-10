@@ -16,6 +16,7 @@ describe('RestaurantsService notification settings', () => {
   let repository: {
     findById: jest.Mock;
     findFirstByTenantId: jest.Mock;
+    listByTenant: jest.Mock;
     update: jest.Mock;
   };
 
@@ -23,6 +24,7 @@ describe('RestaurantsService notification settings', () => {
     repository = {
       findById: jest.fn(),
       findFirstByTenantId: jest.fn(),
+      listByTenant: jest.fn(),
       update: jest.fn(),
     };
 
@@ -58,6 +60,103 @@ describe('RestaurantsService notification settings', () => {
     }).compile();
 
     service = moduleRef.get(RestaurantsService);
+  });
+
+  it('filters STAFF restaurant lists to assigned restaurantAccess ids', async () => {
+    repository.listByTenant.mockResolvedValue({
+      items: [
+        {
+          id: 'restaurant-1',
+          tenantId: 'tenant-1',
+          deletedAt: null,
+          isActive: true,
+          settings: null,
+        },
+      ],
+      total: 1,
+    });
+
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    };
+
+    const result = await service.list(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        tid: null,
+        rid: null,
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          branchIds: [],
+        },
+      } as never,
+      query as never,
+    );
+
+    expect(repository.listByTenant).toHaveBeenCalledWith(
+      undefined,
+      query,
+      false,
+      false,
+      false,
+      ['restaurant-1'],
+    );
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('allows STAFF restaurant details only for assigned restaurants', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      isActive: true,
+      settings: null,
+    });
+
+    await expect(
+      service.details(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            branchIds: [],
+          },
+        } as never,
+        'restaurant-1',
+      ),
+    ).resolves.toMatchObject({ message: 'Restaurant fetched successfully' });
+
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-2',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      isActive: true,
+      settings: null,
+    });
+
+    await expect(
+      service.details(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            branchIds: [],
+          },
+        } as never,
+        'restaurant-2',
+      ),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned restaurants',
+    );
   });
 
   it('returns populated restaurant details in customer app content', async () => {

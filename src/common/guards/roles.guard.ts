@@ -73,13 +73,13 @@ export class RolesGuard implements CanActivate {
         restaurantAccess?: StaffRestaurantAccess | null;
       };
     }>();
-    const userRole = request.user?.role;
-
-    if (userRole && requiredRoles.includes(userRole as RolesEnum)) {
+    if (await this.canStaffUseRolePermission(context, request.user)) {
       return true;
     }
 
-    if (await this.canStaffUseRolePermission(context, request.user)) {
+    const userRole = request.user?.role;
+
+    if (userRole && requiredRoles.includes(userRole as RolesEnum)) {
       return true;
     }
 
@@ -112,11 +112,6 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    const accessKeys = this.resolveRouteAccessKeys(context);
-    if (!accessKeys.length) {
-      return false;
-    }
-
     const staff = await this.prisma.staffUser.findUnique({
       where: { id: user.uid },
       select: {
@@ -144,17 +139,38 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
+    this.attachStaffScopeToRequestUser(user, staff);
+
+    const accessKeys = this.resolveRouteAccessKeys(context);
+    if (!accessKeys.length) {
+      return false;
+    }
+
+    if (this.isEssentialStaffRead(context)) {
+      return true;
+    }
+
     const canUsePermission = this.hasPermission(
       staff.staffRole.permissions,
       accessKeys,
       this.resolveRequiredOperation(context),
     );
 
-    if (canUsePermission) {
-      this.attachStaffScopeToRequestUser(user, staff);
+    return canUsePermission;
+  }
+
+  private isEssentialStaffRead(context: ExecutionContext): boolean {
+    if (this.resolveRequiredOperation(context) !== 'read') {
+      return false;
     }
 
-    return canUsePermission;
+    const normalizedPath = this.resolveNormalizedRoutePath(context);
+    return (
+      normalizedPath === 'admin/global-settings' ||
+      normalizedPath.startsWith('admin/global-settings/') ||
+      normalizedPath === 'restaurants' ||
+      normalizedPath.startsWith('restaurants/')
+    );
   }
 
   private attachStaffScopeToRequestUser(
@@ -307,17 +323,7 @@ export class RolesGuard implements CanActivate {
   }
 
   private resolveRouteAccessKeys(context: ExecutionContext): string[] {
-    const controllerPath = this.pathToString(
-      this.reflector.get<string | string[]>(PATH_METADATA, context.getClass()),
-    );
-    const handlerPath = this.pathToString(
-      this.reflector.get<string | string[]>(
-        PATH_METADATA,
-        context.getHandler(),
-      ),
-    );
-    const routePath = [controllerPath, handlerPath].filter(Boolean).join('/');
-    const normalizedPath = routePath.replace(/^\/+|\/+$/g, '').toLowerCase();
+    const normalizedPath = this.resolveNormalizedRoutePath(context);
     const candidates = new Set<string>();
 
     this.addMappedAccessKeys(normalizedPath, candidates);
@@ -331,6 +337,20 @@ export class RolesGuard implements CanActivate {
       });
 
     return [...candidates].filter(Boolean);
+  }
+
+  private resolveNormalizedRoutePath(context: ExecutionContext): string {
+    const controllerPath = this.pathToString(
+      this.reflector.get<string | string[]>(PATH_METADATA, context.getClass()),
+    );
+    const handlerPath = this.pathToString(
+      this.reflector.get<string | string[]>(
+        PATH_METADATA,
+        context.getHandler(),
+      ),
+    );
+    const routePath = [controllerPath, handlerPath].filter(Boolean).join('/');
+    return routePath.replace(/^\/+|\/+$/g, '').toLowerCase();
   }
 
   private addMappedAccessKeys(path: string, candidates: Set<string>): void {

@@ -86,7 +86,13 @@ export class RestaurantsService {
   }
 
   async list(user: AuthUserContext, query: AdminListQueryDto) {
-    if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
+    const staffRestaurantIds = this.resolveStaffAssignedRestaurantIds(user);
+
+    if (
+      user.role !== UserRoleEnum.SUPER_ADMIN &&
+      !this.isStaffActor(user) &&
+      !user.tid
+    ) {
       throw new ForbiddenException('Tenant context is required');
     }
 
@@ -102,7 +108,7 @@ export class RestaurantsService {
         ? undefined
         : user.role === UserRoleEnum.CUSTOMER && user.rid
           ? await this.resolveTenantByRestaurant(user.rid)
-          : user.tid;
+          : (user.tid ?? undefined);
 
     const { items, total } = await this.restaurantsRepository.listByTenant(
       tenantId,
@@ -110,6 +116,7 @@ export class RestaurantsService {
       false,
       allowedWithDeleted,
       includeInactive,
+      staffRestaurantIds,
     );
 
     return {
@@ -283,11 +290,15 @@ export class RestaurantsService {
   }
 
   async customerAppContentFromContext(user: AuthUserContext) {
-    if (!user.rid) {
+    const restaurantId = this.isStaffActor(user)
+      ? this.resolveStaffAssignedRestaurantIds(user)?.[0]
+      : user.rid;
+
+    if (!restaurantId) {
       throw new ForbiddenException('Restaurant context is required');
     }
 
-    const restaurant = await this.restaurantsRepository.findById(user.rid);
+    const restaurant = await this.restaurantsRepository.findById(restaurantId);
 
     if (!restaurant || restaurant.deletedAt) {
       throw new NotFoundException('Restaurant not found');
@@ -1406,6 +1417,11 @@ export class RestaurantsService {
       return;
     }
 
+    if (this.isStaffActor(user)) {
+      this.assertStaffRestaurantReadAccess(user, restaurantId);
+      return;
+    }
+
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
@@ -1447,6 +1463,63 @@ export class RestaurantsService {
     restaurantId: string,
   ) {
     await this.ensureRestaurantReadAccess(user, restaurantId);
+  }
+
+  private resolveStaffAssignedRestaurantIds(
+    user: AuthUserContext,
+  ): string[] | undefined {
+    if (!this.isStaffActor(user)) {
+      return undefined;
+    }
+
+    if (
+      user.restaurantAccess?.allRestaurants ||
+      user.restaurantAccess?.hasAllRestaurantsAccess
+    ) {
+      return undefined;
+    }
+
+    const restaurantIds = new Set<string>();
+    if (user.rid) {
+      restaurantIds.add(user.rid);
+    }
+    (user.restaurantAccess?.restaurantIds ?? []).forEach((id) => {
+      if (id) {
+        restaurantIds.add(id);
+      }
+    });
+
+    if (!restaurantIds.size) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    return [...restaurantIds];
+  }
+
+  private assertStaffRestaurantReadAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ): void {
+    if (
+      user.restaurantAccess?.allRestaurants ||
+      user.restaurantAccess?.hasAllRestaurantsAccess
+    ) {
+      return;
+    }
+
+    const allowedRestaurantIds = new Set(
+      this.resolveStaffAssignedRestaurantIds(user) ?? [],
+    );
+
+    if (!allowedRestaurantIds.has(restaurantId)) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your assigned restaurants',
+      );
+    }
+  }
+
+  private isStaffActor(user: AuthUserContext): boolean {
+    return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
   }
 
   private async ensureUniqueSlug(

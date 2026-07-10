@@ -140,13 +140,13 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
-  it('allows STAFF to read global settings with settings permission', async () => {
+  it('allows STAFF to read global settings as an essential app dependency', async () => {
     const prisma: PrismaMock = {
       staffUser: {
         findUnique: jest
           .fn()
           .mockResolvedValue(
-            activeStaffRole([{ access: 'settings', operations: ['read'] }]),
+            activeStaffRole([{ access: 'orders', operations: ['read'] }]),
           ),
       },
     };
@@ -162,6 +162,30 @@ describe('RolesGuard staff role permissions', () => {
         createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
       ),
     ).resolves.toBe(true);
+  });
+
+  it('keeps STAFF global settings writes permission-protected', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'orders', operations: ['read'] }]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.SUPER_ADMIN],
+      controllerPath: 'admin/global-settings',
+      method: RequestMethod.PATCH,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).rejects.toThrow('Your role does not have access to this action');
   });
 
   it('allows STAFF actor tokens with underscore access and list operation aliases', async () => {
@@ -193,16 +217,10 @@ describe('RolesGuard staff role permissions', () => {
     };
 
     await expect(guard.canActivate(createContext(user))).resolves.toBe(true);
-    expect(user).toEqual(
-      expect.objectContaining({
-        ownerUserId: 'owner-1',
-        staffRoleId: 'role-1',
-        panelType: 'SUPER_ADMIN',
-        restaurantAccess: expect.objectContaining({
-          restaurantIds: ['restaurant-1'],
-        }),
-      }),
-    );
+    expect(user.ownerUserId).toBe('owner-1');
+    expect(user.staffRoleId).toBe('role-1');
+    expect(user.panelType).toBe('SUPER_ADMIN');
+    expect(user.restaurantAccess?.restaurantIds).toEqual(['restaurant-1']);
   });
 
   it.each([
@@ -400,7 +418,7 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
-  it('rejects STAFF when assigned role lacks the mapped route permission', async () => {
+  it('allows STAFF restaurant reads as essential app dependencies', async () => {
     const prisma: PrismaMock = {
       staffUser: {
         findUnique: jest
@@ -411,9 +429,33 @@ describe('RolesGuard staff role permissions', () => {
       },
     };
     const guard = createGuard({
-      roles: [RolesEnum.SUPER_ADMIN],
-      controllerPath: 'admin/global-settings',
+      roles: [RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN],
+      controllerPath: 'restaurants',
+      handlerPath: ':id',
       method: RequestMethod.GET,
+      prisma,
+    });
+    const user: TestUser = { uid: 'staff-1', role: RolesEnum.STAFF };
+
+    await expect(guard.canActivate(createContext(user))).resolves.toBe(true);
+    expect(user.restaurantAccess?.restaurantIds).toEqual(['restaurant-1']);
+  });
+
+  it('keeps STAFF restaurant writes permission-protected', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'orders', operations: ['read'] }]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN],
+      controllerPath: 'restaurants',
+      handlerPath: ':id',
+      method: RequestMethod.PATCH,
       prisma,
     });
 
