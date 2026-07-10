@@ -631,7 +631,7 @@ export class GroupOrdersService {
         ? await this.createStripePaymentAttempt(user, order.data.id)
         : undefined;
 
-    return {
+    return this.resolveMediaResponse({
       data: {
         order: order.data,
         session: await this.buildSessionResponseOrThrow(user, id),
@@ -644,7 +644,7 @@ export class GroupOrdersService {
         ? { paymentSession: paymentAttempt.paymentSession }
         : {}),
       message: 'Group order checked out successfully',
-    };
+    });
   }
 
   private async createStripePaymentAttempt(
