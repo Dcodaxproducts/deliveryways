@@ -56,6 +56,38 @@ describe('StaffManagementService', () => {
     );
   });
 
+  it('lists staff-management records under the owner scope for staff actors', async () => {
+    repository.list.mockResolvedValue({ items: [], total: 0 });
+
+    await service.list(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(repository.list.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        deletedAt: null,
+      }),
+    );
+  });
+
   it('allows business admin to access business-scope staff even if token carries restaurant and branch ids', async () => {
     repository.findById.mockResolvedValue({
       id: 'staff-1',

@@ -239,7 +239,29 @@ export class StaffRolesService {
       };
     }
 
+    if (user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF) {
+      if (!user.ownerUserId || !user.panelType) {
+        throw new ForbiddenException('Staff admin scope is required');
+      }
+
+      return {
+        ownerUserId: user.ownerUserId,
+        panelType: this.resolveStaffPanelType(user.panelType),
+        tenantId: user.tid ?? null,
+        restaurantId: user.rid ?? null,
+        branchId: user.bid ?? null,
+      };
+    }
+
     throw new ForbiddenException('You do not have access to staff roles');
+  }
+
+  private resolveStaffPanelType(panelType: string): StaffPanelType {
+    if (Object.values(StaffPanelType).includes(panelType as StaffPanelType)) {
+      return panelType as StaffPanelType;
+    }
+
+    throw new ForbiddenException('Staff panel scope is invalid');
   }
 
   private assertRoleMatchesScope(

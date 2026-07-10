@@ -44,9 +44,9 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<{ user?: { uid?: string; role?: string; actorType?: string } }>();
+    const request = context.switchToHttp().getRequest<{
+      user?: { uid?: string; role?: string; actorType?: string };
+    }>();
     const userRole = request.user?.role;
 
     if (userRole && requiredRoles.includes(userRole as RolesEnum)) {
@@ -71,7 +71,7 @@ export class RolesGuard implements CanActivate {
     context: ExecutionContext,
     user?: { uid?: string; role?: string; actorType?: string },
   ): Promise<boolean> {
-    if (!user?.uid || user.role !== RolesEnum.STAFF) {
+    if (!user?.uid || !this.isStaffActor(user)) {
       return false;
     }
 
@@ -128,7 +128,9 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    const allowedAccessKeys = new Set(accessKeys.map((key) => this.normalize(key)));
+    const allowedAccessKeys = new Set(
+      accessKeys.map((key) => this.normalizeAccess(key)),
+    );
     const allowedOperations = this.compatibleOperations(operation);
 
     return permissions.some((permission) => {
@@ -141,9 +143,9 @@ export class RolesGuard implements CanActivate {
       }
 
       const entry = permission as PermissionEntry;
-      const access = this.normalize(entry.access);
+      const access = this.normalizeAccess(entry.access);
       const operations = Array.isArray(entry.operations)
-        ? entry.operations.map((item) => this.normalize(item))
+        ? entry.operations.map((item) => this.normalizeOperation(item))
         : [];
 
       return (
@@ -154,14 +156,29 @@ export class RolesGuard implements CanActivate {
   }
 
   private compatibleOperations(operation: string): Set<string> {
-    const operations = new Set([operation, 'manage', '*']);
-    if (operation === 'read') {
+    const normalizedOperation = this.normalizeOperation(operation);
+    const operations = new Set([normalizedOperation, 'manage', '*', 'all']);
+    if (normalizedOperation === 'read') {
+      operations.add('view');
+      operations.add('list');
+      operations.add('get');
       operations.add('write');
       operations.add('create');
       operations.add('update');
+      operations.add('edit');
     }
-    if (operation === 'create' || operation === 'update' || operation === 'delete') {
+    if (
+      normalizedOperation === 'create' ||
+      normalizedOperation === 'update' ||
+      normalizedOperation === 'delete'
+    ) {
       operations.add('write');
+    }
+    if (normalizedOperation === 'update') {
+      operations.add('edit');
+    }
+    if (normalizedOperation === 'delete') {
+      operations.add('remove');
     }
     return operations;
   }
@@ -190,7 +207,10 @@ export class RolesGuard implements CanActivate {
       this.reflector.get<string | string[]>(PATH_METADATA, context.getClass()),
     );
     const handlerPath = this.pathToString(
-      this.reflector.get<string | string[]>(PATH_METADATA, context.getHandler()),
+      this.reflector.get<string | string[]>(
+        PATH_METADATA,
+        context.getHandler(),
+      ),
     );
     const routePath = [controllerPath, handlerPath].filter(Boolean).join('/');
     const normalizedPath = routePath.replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -214,8 +234,17 @@ export class RolesGuard implements CanActivate {
       ['admin/dashboard', ['dashboard', 'reports']],
       ['admin/global-settings', ['settings']],
       ['restaurants', ['restaurants', 'dashboard']],
-      ['staff-management', ['staff-management']],
-      ['staff-roles', ['staff-roles']],
+      [
+        'staff-management',
+        [
+          'staff-management',
+          'staff',
+          'staffs',
+          'employees',
+          'employee-management',
+        ],
+      ],
+      ['staff-roles', ['staff-roles', 'roles', 'role-management']],
       ['permission-modules', ['staff-roles', 'settings']],
       ['admin/promotions', ['promotions']],
       ['admin/deals', ['coupons', 'promotions']],
@@ -244,7 +273,27 @@ export class RolesGuard implements CanActivate {
     return path ?? '';
   }
 
-  private normalize(value: unknown): string {
-    return String(value ?? '').trim().toLowerCase();
+  private isStaffActor(user: { role?: string; actorType?: string }): boolean {
+    return user.role === RolesEnum.STAFF || user.actorType === RolesEnum.STAFF;
+  }
+
+  private normalizeAccess(value: unknown): string {
+    return this.normalizeText(value).replace(/[\s_]+/g, '-');
+  }
+
+  private normalizeOperation(value: unknown): string {
+    return this.normalizeText(value);
+  }
+
+  private normalizeText(value: unknown): string {
+    if (typeof value === 'string') {
+      return value.trim().toLowerCase();
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value).trim().toLowerCase();
+    }
+
+    return '';
   }
 }

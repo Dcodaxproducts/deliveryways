@@ -20,6 +20,7 @@ import {
 } from './dto';
 
 interface ResolvedStaffManagementScope {
+  ownerUserId: string;
   panelType: StaffPanelType;
   tenantId: string | null;
   restaurantId: string | null;
@@ -68,7 +69,7 @@ export class StaffManagementService {
       isApproved: true,
       isActive: dto.isActive ?? true,
       panelType: staffRole.panelType,
-      ownerUser: { connect: { id: user.uid } },
+      ownerUser: { connect: { id: staffRole.ownerUserId } },
       staffRole: { connect: { id: staffRole.id } },
       tenant: staffRole.tenantId
         ? { connect: { id: staffRole.tenantId } }
@@ -265,7 +266,7 @@ export class StaffManagementService {
     const scope = this.resolveScopeForUser(user);
 
     return {
-      ownerUserId: user.uid,
+      ownerUserId: scope.ownerUserId,
       panelType: scope.panelType,
       tenantId: scope.tenantId,
       restaurantId: scope.restaurantId,
@@ -308,6 +309,7 @@ export class StaffManagementService {
   ): ResolvedStaffManagementScope {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return {
+        ownerUserId: user.uid,
         panelType: StaffPanelType.SUPER_ADMIN,
         tenantId: null,
         restaurantId: null,
@@ -321,6 +323,7 @@ export class StaffManagementService {
       }
 
       return {
+        ownerUserId: user.uid,
         panelType: StaffPanelType.BUSINESS_ADMIN,
         tenantId: user.tid,
         restaurantId: null,
@@ -334,6 +337,7 @@ export class StaffManagementService {
       }
 
       return {
+        ownerUserId: user.uid,
         panelType: StaffPanelType.BRANCH_ADMIN,
         tenantId: user.tid,
         restaurantId: user.rid,
@@ -341,7 +345,29 @@ export class StaffManagementService {
       };
     }
 
+    if (user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF) {
+      if (!user.ownerUserId || !user.panelType) {
+        throw new ForbiddenException('Staff admin scope is required');
+      }
+
+      return {
+        ownerUserId: user.ownerUserId,
+        panelType: this.resolveStaffPanelType(user.panelType),
+        tenantId: user.tid ?? null,
+        restaurantId: user.rid ?? null,
+        branchId: user.bid ?? null,
+      };
+    }
+
     throw new ForbiddenException('You do not have access to staff accounts');
+  }
+
+  private resolveStaffPanelType(panelType: string): StaffPanelType {
+    if (Object.values(StaffPanelType).includes(panelType as StaffPanelType)) {
+      return panelType as StaffPanelType;
+    }
+
+    throw new ForbiddenException('Staff panel scope is invalid');
   }
 
   private resolveOptionalString(value: string | undefined) {

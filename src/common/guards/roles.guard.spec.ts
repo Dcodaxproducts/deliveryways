@@ -31,7 +31,7 @@ describe('RolesGuard staff role permissions', () => {
   }) => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue(roles),
-      get: jest.fn((key: string, target: Function) => {
+      get: jest.fn((key: string, target: (...args: never[]) => unknown) => {
         if (key === PATH_METADATA && target === controller) {
           return controllerPath;
         }
@@ -57,7 +57,9 @@ describe('RolesGuard staff role permissions', () => {
       }),
     }) as unknown as ExecutionContext;
 
-  const activeStaffRole = (permissions: Array<{ access: string; operations: string[] }>) => ({
+  const activeStaffRole = (
+    permissions: Array<{ access: string; operations: string[] }>,
+  ) => ({
     isActive: true,
     deletedAt: null,
     staffRole: {
@@ -77,7 +79,9 @@ describe('RolesGuard staff role permissions', () => {
     });
 
     await expect(
-      guard.canActivate(createContext({ uid: 'business-1', role: RolesEnum.BUSINESS_ADMIN })),
+      guard.canActivate(
+        createContext({ uid: 'business-1', role: RolesEnum.BUSINESS_ADMIN }),
+      ),
     ).resolves.toBe(true);
     expect(prisma.staffUser.findUnique).not.toHaveBeenCalled();
   });
@@ -85,9 +89,11 @@ describe('RolesGuard staff role permissions', () => {
   it('allows STAFF to read dashboard stats with dashboard permission', async () => {
     const prisma: PrismaMock = {
       staffUser: {
-        findUnique: jest.fn().mockResolvedValue(
-          activeStaffRole([{ access: 'dashboard', operations: ['read'] }]),
-        ),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'dashboard', operations: ['read'] }]),
+          ),
       },
     };
     const guard = createGuard({
@@ -99,16 +105,20 @@ describe('RolesGuard staff role permissions', () => {
     });
 
     await expect(
-      guard.canActivate(createContext({ uid: 'staff-1', role: RolesEnum.STAFF })),
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
     ).resolves.toBe(true);
   });
 
   it('allows STAFF to read global settings with settings permission', async () => {
     const prisma: PrismaMock = {
       staffUser: {
-        findUnique: jest.fn().mockResolvedValue(
-          activeStaffRole([{ access: 'settings', operations: ['read'] }]),
-        ),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'settings', operations: ['read'] }]),
+          ),
       },
     };
     const guard = createGuard({
@@ -119,16 +129,50 @@ describe('RolesGuard staff role permissions', () => {
     });
 
     await expect(
-      guard.canActivate(createContext({ uid: 'staff-1', role: RolesEnum.STAFF })),
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('allows STAFF actor tokens with underscore access and list operation aliases', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'staff_management', operations: ['list'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'staff-management',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: 'CUSTOMER', actorType: 'STAFF' }),
+      ),
     ).resolves.toBe(true);
   });
 
   it('allows STAFF to read restaurants with dashboard permission for dashboard data dependencies', async () => {
     const prisma: PrismaMock = {
       staffUser: {
-        findUnique: jest.fn().mockResolvedValue(
-          activeStaffRole([{ access: 'dashboard', operations: ['read'] }]),
-        ),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'dashboard', operations: ['read'] }]),
+          ),
       },
     };
     const guard = createGuard({
@@ -139,16 +183,20 @@ describe('RolesGuard staff role permissions', () => {
     });
 
     await expect(
-      guard.canActivate(createContext({ uid: 'staff-1', role: RolesEnum.STAFF })),
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
     ).resolves.toBe(true);
   });
 
   it('rejects STAFF when assigned role lacks the mapped route permission', async () => {
     const prisma: PrismaMock = {
       staffUser: {
-        findUnique: jest.fn().mockResolvedValue(
-          activeStaffRole([{ access: 'orders', operations: ['read'] }]),
-        ),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'orders', operations: ['read'] }]),
+          ),
       },
     };
     const guard = createGuard({
@@ -159,7 +207,9 @@ describe('RolesGuard staff role permissions', () => {
     });
 
     await expect(
-      guard.canActivate(createContext({ uid: 'staff-1', role: RolesEnum.STAFF })),
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
     ).rejects.toThrow('Your role does not have access to this action');
   });
 });
