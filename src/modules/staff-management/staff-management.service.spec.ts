@@ -94,6 +94,76 @@ describe('StaffManagementService', () => {
     );
   });
 
+  it('returns stored client-visible staff password fields when present', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'staff-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: '$2b$10$storedHashShouldStayHidden',
+      plainPassword: 'Employee@123',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+
+    const result = await service.details(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      },
+      'staff-1',
+    );
+
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: 'staff-1',
+        password: 'Employee@123',
+        plainPassword: 'Employee@123',
+      }),
+    );
+  });
+
+  it('does not expose stored staff password hashes when no client-visible password exists', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'staff-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: '$2b$10$storedHashShouldStayHidden',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+
+    const result = await service.details(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      },
+      'staff-1',
+    );
+
+    expect(result.data).not.toHaveProperty('password');
+    expect(result.data).not.toHaveProperty('plainPassword');
+  });
+
   it('still blocks cross-scope business-admin access', async () => {
     repository.findById.mockResolvedValue({
       id: 'staff-1',

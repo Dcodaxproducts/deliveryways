@@ -508,15 +508,28 @@ export class StaffManagementService {
   private toStaffResponse(
     staff: {
       password?: string;
+      plainPassword?: unknown;
+      temporaryPassword?: unknown;
+      generatedPassword?: unknown;
       deletedAt?: Date | null;
       isActive?: boolean;
     } & Record<string, unknown>,
   ) {
+    const clientVisiblePassword = this.resolveClientVisiblePassword(staff);
     const rest = { ...staff };
     delete rest.password;
+    delete rest.plainPassword;
+    delete rest.temporaryPassword;
+    delete rest.generatedPassword;
 
     return {
       ...rest,
+      ...(clientVisiblePassword
+        ? {
+            password: clientVisiblePassword,
+            plainPassword: clientVisiblePassword,
+          }
+        : {}),
       deletionState: {
         isDeleted: !!staff.deletedAt,
         deletionScheduled: false,
@@ -525,5 +538,26 @@ export class StaffManagementService {
         isActive: staff.isActive ?? true,
       },
     };
+  }
+
+  private resolveClientVisiblePassword(staff: {
+    plainPassword?: unknown;
+    temporaryPassword?: unknown;
+    generatedPassword?: unknown;
+  }) {
+    return (
+      this.normalizeClientVisiblePassword(staff.plainPassword) ??
+      this.normalizeClientVisiblePassword(staff.temporaryPassword) ??
+      this.normalizeClientVisiblePassword(staff.generatedPassword)
+    );
+  }
+
+  private normalizeClientVisiblePassword(value: unknown) {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : undefined;
   }
 }
