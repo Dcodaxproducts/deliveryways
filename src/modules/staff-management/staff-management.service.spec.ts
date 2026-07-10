@@ -425,6 +425,7 @@ describe('StaffManagementService', () => {
       expect.objectContaining({
         email: 'employee@example.com',
         password: 'hashed-password',
+        plainPassword: 'Employee@123',
         deletedAt: null,
         refreshTokenHash: null,
         isActive: true,
@@ -491,6 +492,7 @@ describe('StaffManagementService', () => {
     expect(repository.countRestaurants.mock.calls).toHaveLength(0);
     expect(repository.create.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
+        plainPassword: 'Employee@123',
         restaurantAccess: {
           restaurantIds: [],
           branchIds: [],

@@ -1307,6 +1307,7 @@ model StaffUser {
   panelType        StaffPanelType @map("panel_type")
   email            String
   password         String
+  plainPassword    String?        @map("plain_password")
   firstName        String         @map("first_name")
   lastName         String         @map("last_name")
   phone            String?

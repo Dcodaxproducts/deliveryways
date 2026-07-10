@@ -56,6 +56,7 @@ export class StaffManagementService {
     const staffPayload = {
       email,
       password: await bcrypt.hash(dto.password, 10),
+      plainPassword: dto.password,
       firstName: dto.firstName.trim(),
       lastName: dto.lastName.trim(),
       phone: this.resolveOptionalString(dto.phone),
@@ -145,6 +146,7 @@ export class StaffManagementService {
     const data = await this.staffManagementRepository.update(id, {
       email: dto.email?.trim().toLowerCase(),
       password: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
+      plainPassword: dto.password,
       firstName: dto.firstName?.trim(),
       lastName: dto.lastName?.trim(),
       phone:
