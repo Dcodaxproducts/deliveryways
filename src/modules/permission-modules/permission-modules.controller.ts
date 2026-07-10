@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -55,5 +56,11 @@ export class PermissionModulesController {
   @Roles(RolesEnum.SUPER_ADMIN)
   update(@Param('id') id: string, @Body() dto: UpdatePermissionModuleDto) {
     return this.permissionModulesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  delete(@Param('id') id: string) {
+    return this.permissionModulesService.delete(id);
   }
 }

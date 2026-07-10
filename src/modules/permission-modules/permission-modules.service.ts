@@ -12,6 +12,42 @@ import {
 } from './dto';
 import { PermissionModulesRepository } from './permission-modules.repository';
 
+const ACCESS_KEY_ALIASES: Record<string, string> = {
+  menu: 'menu-management',
+  menus: 'menu-management',
+  'restaurant-menus': 'menu-management',
+  'menu-categories': 'menu-management',
+  'menu-items': 'menu-management',
+  modifiers: 'menu-management',
+  'modifier-categories': 'menu-management',
+  'modifier-groups': 'menu-management',
+  variations: 'menu-management',
+  'branch-overrides': 'menu-management',
+  cuisines: 'menu-management',
+  orders: 'order-management',
+  pos: 'pos-management',
+  customers: 'customer-management',
+  'admin-loyalty': 'loyalty-program',
+  loyalty: 'loyalty-program',
+  coupons: 'promotion-management',
+  promotions: 'promotion-management',
+  deals: 'promotion-management',
+  'staff-management': 'employees',
+  'staff-roles': 'employees',
+  staffs: 'employees',
+  staff: 'employees',
+  roles: 'employees',
+  'role-management': 'employees',
+  'employee-management': 'employees',
+  deliverymen: 'deliveryman',
+  'admin-printing': 'auto-printing-pos',
+  printing: 'auto-printing-pos',
+  reports: 'reports-payouts',
+  payments: 'payment-settings',
+  settings: 'storefront-settings',
+  chat: 'notifications',
+};
+
 @Injectable()
 export class PermissionModulesService {
   constructor(
@@ -89,9 +125,20 @@ export class PermissionModulesService {
     return { data, message: 'Permission module updated successfully' };
   }
 
+  async delete(id: string) {
+    await this.details(id);
+    const data = await this.permissionModulesRepository.deactivate(id);
+
+    return { data, message: 'Permission module deleted successfully' };
+  }
+
   async validateActiveAccessKeys(accessKeys: string[]) {
     const normalized = [
-      ...new Set(accessKeys.map((key) => this.normalizeAccessKey(key))),
+      ...new Set(
+        accessKeys.map((key) =>
+          this.canonicalAccessKey(this.normalizeAccessKey(key)),
+        ),
+      ),
     ];
     if (!normalized.length) {
       return;
@@ -118,7 +165,13 @@ export class PermissionModulesService {
   async validateActivePermissions(
     permissions: Array<{ access: string; operations: string[] }>,
   ) {
-    const accessKeys = [...new Set(permissions.map((item) => item.access))];
+    const requestedPermissions = permissions.map((item) => ({
+      ...item,
+      canonicalAccess: this.canonicalAccessKey(item.access),
+    }));
+    const accessKeys = [
+      ...new Set(requestedPermissions.map((item) => item.canonicalAccess)),
+    ];
     if (!accessKeys.length) {
       return;
     }
@@ -131,7 +184,9 @@ export class PermissionModulesService {
         new Set(this.readActions(item.defaultActions)),
       ]),
     );
-    const missing = accessKeys.filter((key) => !activeModulesByKey.has(key));
+    const missing = requestedPermissions
+      .filter((item) => !activeModulesByKey.has(item.canonicalAccess))
+      .map((item) => item.access);
 
     if (missing.length) {
       throw new BadRequestException(
@@ -139,9 +194,9 @@ export class PermissionModulesService {
       );
     }
 
-    const invalidOperations = permissions.flatMap((permission) => {
+    const invalidOperations = requestedPermissions.flatMap((permission) => {
       const allowed =
-        activeModulesByKey.get(permission.access) ?? new Set<string>();
+        activeModulesByKey.get(permission.canonicalAccess) ?? new Set<string>();
       return permission.operations
         .filter((operation) => operation !== '*' && !allowed.has(operation))
         .map((operation) => `${permission.access}:${operation}`);
@@ -172,6 +227,11 @@ export class PermissionModulesService {
       );
     }
     return accessKey;
+  }
+
+  private canonicalAccessKey(accessKey: string) {
+    const normalized = accessKey.replace(/_/g, '-');
+    return ACCESS_KEY_ALIASES[normalized] ?? normalized;
   }
 
   private normalizeActions(actions?: string[]) {

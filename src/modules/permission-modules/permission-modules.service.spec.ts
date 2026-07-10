@@ -10,6 +10,7 @@ describe('PermissionModulesService', () => {
     list: jest.fn(),
     listActiveByAccessKeys: jest.fn(),
     update: jest.fn(),
+    deactivate: jest.fn(),
   });
 
   it('normalizes created permission modules for FE catalog use', async () => {
@@ -58,7 +59,7 @@ describe('PermissionModulesService', () => {
   it('rejects role permission actions outside module defaults', async () => {
     const repository = makeRepository();
     repository.listActiveByAccessKeys.mockResolvedValue([
-      { accessKey: 'reports', defaultActions: ['read'] },
+      { accessKey: 'reports-payouts', defaultActions: ['read'] },
     ]);
     const service = new PermissionModulesService(repository as never);
 
@@ -67,5 +68,41 @@ describe('PermissionModulesService', () => {
         { access: 'reports', operations: ['write'] },
       ]),
     ).rejects.toThrow('Unsupported permission operation(s): reports:write');
+  });
+
+  it('accepts old submodule aliases against the canonical main module catalog', async () => {
+    const repository = makeRepository();
+    repository.listActiveByAccessKeys.mockResolvedValue([
+      {
+        accessKey: 'menu-management',
+        defaultActions: ['read', 'update'],
+      },
+    ]);
+    const service = new PermissionModulesService(repository as never);
+
+    await expect(
+      service.validateActivePermissions([
+        { access: 'menu-items', operations: ['update'] },
+      ]),
+    ).resolves.toBeUndefined();
+    expect(repository.listActiveByAccessKeys).toHaveBeenCalledWith([
+      'menu-management',
+    ]);
+  });
+
+  it('soft deletes permission modules by deactivating them', async () => {
+    const repository = makeRepository();
+    repository.findById.mockResolvedValue({ id: 'permission-module-1' });
+    repository.deactivate.mockResolvedValue({
+      id: 'permission-module-1',
+      isActive: false,
+    });
+    const service = new PermissionModulesService(repository as never);
+
+    await expect(service.delete('permission-module-1')).resolves.toEqual({
+      data: { id: 'permission-module-1', isActive: false },
+      message: 'Permission module deleted successfully',
+    });
+    expect(repository.deactivate).toHaveBeenCalledWith('permission-module-1');
   });
 });

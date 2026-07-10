@@ -46,4 +46,11 @@ export class PermissionModulesRepository {
   async update(id: string, data: Prisma.PermissionModuleUpdateInput) {
     return this.prisma.permissionModule.update({ where: { id }, data });
   }
+
+  async deactivate(id: string) {
+    return this.prisma.permissionModule.update({
+      where: { id },
+      data: { isActive: false },
+    });
+  }
 }
