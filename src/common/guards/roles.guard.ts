@@ -17,13 +17,28 @@ type PermissionEntry = {
   operations?: unknown;
 };
 
+type StaffRestaurantAccess = {
+  restaurantIds?: string[];
+  branchIds?: string[];
+  allRestaurants?: boolean;
+  hasAllRestaurantsAccess?: boolean;
+};
+
 type StaffPermissionRecord = {
+  ownerUserId: string;
+  staffRoleId: string;
+  panelType: string;
+  tenantId: string | null;
+  restaurantId: string | null;
+  branchId: string | null;
+  restaurantAccess: Prisma.JsonValue;
   isActive: boolean;
   deletedAt: Date | null;
   staffRole: {
     isActive: boolean;
     deletedAt: Date | null;
     permissions: Prisma.JsonValue;
+    restaurantAccess: Prisma.JsonValue;
   } | null;
 };
 
@@ -45,7 +60,18 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<{
-      user?: { uid?: string; role?: string; actorType?: string };
+      user?: {
+        uid?: string;
+        role?: string;
+        actorType?: string;
+        ownerUserId?: string;
+        staffRoleId?: string;
+        panelType?: string;
+        tid?: string | null;
+        rid?: string | null;
+        bid?: string | null;
+        restaurantAccess?: StaffRestaurantAccess | null;
+      };
     }>();
     const userRole = request.user?.role;
 
@@ -69,7 +95,18 @@ export class RolesGuard implements CanActivate {
 
   private async canStaffUseRolePermission(
     context: ExecutionContext,
-    user?: { uid?: string; role?: string; actorType?: string },
+    user?: {
+      uid?: string;
+      role?: string;
+      actorType?: string;
+      ownerUserId?: string;
+      staffRoleId?: string;
+      panelType?: string;
+      tid?: string | null;
+      rid?: string | null;
+      bid?: string | null;
+      restaurantAccess?: StaffRestaurantAccess | null;
+    },
   ): Promise<boolean> {
     if (!user?.uid || !this.isStaffActor(user)) {
       return false;
@@ -83,6 +120,13 @@ export class RolesGuard implements CanActivate {
     const staff = await this.prisma.staffUser.findUnique({
       where: { id: user.uid },
       select: {
+        ownerUserId: true,
+        staffRoleId: true,
+        panelType: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        restaurantAccess: true,
         isActive: true,
         deletedAt: true,
         staffRole: {
@@ -90,6 +134,7 @@ export class RolesGuard implements CanActivate {
             isActive: true,
             deletedAt: true,
             permissions: true,
+            restaurantAccess: true,
           },
         },
       },
@@ -99,11 +144,70 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    return this.hasPermission(
+    const canUsePermission = this.hasPermission(
       staff.staffRole.permissions,
       accessKeys,
       this.resolveRequiredOperation(context),
     );
+
+    if (canUsePermission) {
+      this.attachStaffScopeToRequestUser(user, staff);
+    }
+
+    return canUsePermission;
+  }
+
+  private attachStaffScopeToRequestUser(
+    user: {
+      ownerUserId?: string;
+      staffRoleId?: string;
+      panelType?: string;
+      tid?: string | null;
+      rid?: string | null;
+      bid?: string | null;
+      restaurantAccess?: StaffRestaurantAccess | null;
+    },
+    staff: StaffPermissionRecord & {
+      staffRole: NonNullable<StaffPermissionRecord['staffRole']>;
+    },
+  ): void {
+    user.ownerUserId = staff.ownerUserId;
+    user.staffRoleId = staff.staffRoleId;
+    user.panelType = staff.panelType;
+    user.tid = staff.tenantId;
+    user.rid = staff.restaurantId;
+    user.bid = staff.branchId;
+    user.restaurantAccess =
+      this.normalizeStaffRestaurantAccess(staff.restaurantAccess) ??
+      this.normalizeStaffRestaurantAccess(staff.staffRole.restaurantAccess);
+  }
+
+  private normalizeStaffRestaurantAccess(
+    value: Prisma.JsonValue,
+  ): StaffRestaurantAccess | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    return {
+      restaurantIds: Array.isArray(record.restaurantIds)
+        ? record.restaurantIds.filter(
+            (item): item is string => typeof item === 'string' && !!item,
+          )
+        : [],
+      branchIds: Array.isArray(record.branchIds)
+        ? record.branchIds.filter(
+            (item): item is string => typeof item === 'string' && !!item,
+          )
+        : [],
+      allRestaurants:
+        record.allRestaurants === true ||
+        record.hasAllRestaurantsAccess === true,
+      hasAllRestaurantsAccess:
+        record.hasAllRestaurantsAccess === true ||
+        record.allRestaurants === true,
+    };
   }
 
   private isActiveStaffWithRole(

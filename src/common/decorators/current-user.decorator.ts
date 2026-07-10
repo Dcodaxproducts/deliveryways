@@ -13,6 +13,12 @@ export interface AuthUserContext {
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;
+  restaurantAccess?: {
+    restaurantIds?: string[];
+    branchIds?: string[];
+    allRestaurants?: boolean;
+    hasAllRestaurantsAccess?: boolean;
+  } | null;
   isGuest?: boolean;
 }
 

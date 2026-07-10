@@ -3398,6 +3398,10 @@ export class OrdersService {
       return requestedRestaurantId;
     }
 
+    if (this.isStaffActor(user)) {
+      return this.resolveStaffRestaurantId(user, requestedRestaurantId);
+    }
+
     if (!user.rid) {
       throw new ForbiddenException('Restaurant context is required');
     }
@@ -3409,6 +3413,38 @@ export class OrdersService {
     }
 
     return user.rid;
+  }
+
+  private resolveStaffRestaurantId(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ): string | undefined {
+    if (user.restaurantAccess?.allRestaurants) {
+      return requestedRestaurantId ?? user.rid;
+    }
+
+    const allowedRestaurantIds = user.restaurantAccess?.restaurantIds ?? [];
+    const fallbackRestaurantId = user.rid ?? allowedRestaurantIds[0];
+    const restaurantId = requestedRestaurantId ?? fallbackRestaurantId;
+
+    if (!restaurantId) {
+      throw new ForbiddenException('Restaurant context is required');
+    }
+
+    if (
+      !allowedRestaurantIds.includes(restaurantId) &&
+      user.rid !== restaurantId
+    ) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your assigned restaurants',
+      );
+    }
+
+    return restaurantId;
+  }
+
+  private isStaffActor(user: AuthUserContext): boolean {
+    return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
   }
 
   private async resolveQuoteCustomer(

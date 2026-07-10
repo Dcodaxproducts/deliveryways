@@ -349,6 +349,14 @@ export class AdminDashboardService {
       return {};
     }
 
+    if (this.isStaffActor(user)) {
+      return this.resolveStaffDashboardScope(
+        user,
+        requestedRestaurantId,
+        requestedBranchId,
+      );
+    }
+
     if (!user.tid) {
       throw new ForbiddenException('Tenant context is required');
     }
@@ -441,5 +449,110 @@ export class AdminDashboardService {
     return {
       tenantId: user.tid,
     };
+  }
+
+  private async resolveStaffDashboardScope(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+    requestedBranchId?: string,
+  ): Promise<AdminDashboardScope> {
+    if (requestedBranchId) {
+      const branch = await this.adminDashboardRepository.findBranchScope(
+        requestedBranchId,
+        user.tid,
+      );
+
+      if (!branch) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      if (
+        requestedRestaurantId &&
+        requestedRestaurantId !== branch.restaurantId
+      ) {
+        throw new BadRequestException(
+          'branchId does not belong to the provided restaurantId',
+        );
+      }
+
+      if (!this.canStaffAccessRestaurant(user, branch.restaurantId)) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      return {
+        tenantId: branch.tenantId,
+        restaurantId: branch.restaurantId,
+        branchId: branch.id,
+      };
+    }
+
+    const restaurantId = this.resolveStaffRestaurantId(
+      user,
+      requestedRestaurantId,
+    );
+
+    if (!restaurantId) {
+      return {};
+    }
+
+    const restaurant = await this.adminDashboardRepository.findRestaurantScope(
+      restaurantId,
+      user.tid,
+    );
+
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your assigned restaurants',
+      );
+    }
+
+    return {
+      tenantId: restaurant.tenantId,
+      restaurantId: restaurant.id,
+    };
+  }
+
+  private resolveStaffRestaurantId(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+  ): string | undefined {
+    if (user.restaurantAccess?.allRestaurants) {
+      return requestedRestaurantId ?? user.rid;
+    }
+
+    const allowedRestaurantIds = user.restaurantAccess?.restaurantIds ?? [];
+    const restaurantId =
+      requestedRestaurantId ?? user.rid ?? allowedRestaurantIds[0];
+
+    if (!restaurantId) {
+      return undefined;
+    }
+
+    if (!this.canStaffAccessRestaurant(user, restaurantId)) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your assigned restaurants',
+      );
+    }
+
+    return restaurantId;
+  }
+
+  private canStaffAccessRestaurant(
+    user: AuthUserContext,
+    restaurantId: string,
+  ): boolean {
+    return !!(
+      user.restaurantAccess?.allRestaurants ||
+      user.rid === restaurantId ||
+      user.restaurantAccess?.restaurantIds?.includes(restaurantId)
+    );
+  }
+
+  private isStaffActor(user: AuthUserContext): boolean {
+    return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
   }
 }

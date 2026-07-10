@@ -4,7 +4,23 @@ import { Reflector } from '@nestjs/core';
 import { RolesEnum } from '../enums';
 import { RolesGuard } from './roles.guard';
 
-type TestUser = { uid?: string; role?: string; actorType?: string };
+type TestUser = {
+  uid?: string;
+  role?: string;
+  actorType?: string;
+  ownerUserId?: string;
+  staffRoleId?: string;
+  panelType?: string;
+  tid?: string | null;
+  rid?: string | null;
+  bid?: string | null;
+  restaurantAccess?: {
+    restaurantIds?: string[];
+    branchIds?: string[];
+    allRestaurants?: boolean;
+    hasAllRestaurantsAccess?: boolean;
+  } | null;
+};
 
 type PrismaMock = {
   staffUser: {
@@ -60,12 +76,25 @@ describe('RolesGuard staff role permissions', () => {
   const activeStaffRole = (
     permissions: Array<{ access: string; operations: string[] }>,
   ) => ({
+    ownerUserId: 'owner-1',
+    staffRoleId: 'role-1',
+    panelType: 'SUPER_ADMIN',
+    tenantId: null,
+    restaurantId: null,
+    branchId: null,
+    restaurantAccess: {
+      restaurantIds: ['restaurant-1'],
+      branchIds: [],
+      allRestaurants: false,
+      hasAllRestaurantsAccess: false,
+    },
     isActive: true,
     deletedAt: null,
     staffRole: {
       isActive: true,
       deletedAt: null,
       permissions,
+      restaurantAccess: null,
     },
   });
 
@@ -157,12 +186,23 @@ describe('RolesGuard staff role permissions', () => {
       method: RequestMethod.GET,
       prisma,
     });
+    const user: TestUser = {
+      uid: 'staff-1',
+      role: 'CUSTOMER',
+      actorType: 'STAFF',
+    };
 
-    await expect(
-      guard.canActivate(
-        createContext({ uid: 'staff-1', role: 'CUSTOMER', actorType: 'STAFF' }),
-      ),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(createContext(user))).resolves.toBe(true);
+    expect(user).toEqual(
+      expect.objectContaining({
+        ownerUserId: 'owner-1',
+        staffRoleId: 'role-1',
+        panelType: 'SUPER_ADMIN',
+        restaurantAccess: expect.objectContaining({
+          restaurantIds: ['restaurant-1'],
+        }),
+      }),
+    );
   });
 
   it.each([
