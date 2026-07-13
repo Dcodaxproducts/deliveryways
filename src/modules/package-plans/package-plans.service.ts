@@ -1378,7 +1378,7 @@ export class PackagePlansService {
     subscription: TenantSubscriptionDetails,
   ) {
     if (!subscription.restaurant) {
-      return null;
+      return subscription.tenant.owner?.email?.trim() || null;
     }
 
     const settings = this.asJsonObject(subscription.restaurant.settings);
@@ -1390,7 +1390,9 @@ export class PackagePlansService {
       this.readNestedString(settings, ['invoice', 'email']) ??
       this.readNestedString(settings, ['billing', 'email']) ??
       this.readNestedString(settings, ['email']) ??
-      this.readNestedString(supportContact, ['email'])
+      this.readNestedString(supportContact, ['email']) ??
+      subscription.tenant.owner?.email?.trim() ??
+      null
     );
   }
 

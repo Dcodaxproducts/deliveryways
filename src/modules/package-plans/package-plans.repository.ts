@@ -364,7 +364,14 @@ export class PackagePlansRepository {
         slug: true,
         supportContact: true,
         settings: true,
-        tenant: { select: { id: true, name: true, slug: true } },
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            owner: { select: { email: true } },
+          },
+        },
       },
     });
   }
@@ -470,7 +477,14 @@ export class PackagePlansRepository {
   }
 
   private readonly subscriptionInclude = {
-    tenant: { select: { id: true, name: true, slug: true } },
+    tenant: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        owner: { select: { email: true } },
+      },
+    },
     restaurant: {
       select: {
         id: true,
