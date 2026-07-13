@@ -6,14 +6,17 @@ import {
 } from '@nestjs/common';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
+import { PaymentStatus, Prisma, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
+import { PaymentsService } from '../payments/payments.service';
 import {
   AdminCustomerDetailsQueryDto,
   AdminForceDeleteUsersDto,
   AdminListCustomersDto,
   UpdateAdminCustomerDto,
   UpdateAdminCustomerStatusDto,
+  RejectBusinessAdminDto,
 } from './dto';
 
 @Injectable()
@@ -21,6 +24,7 @@ export class AdminUsersService {
   constructor(
     private readonly usersService: UsersService,
     private readonly prisma: PrismaService,
+    private readonly paymentsService?: PaymentsService,
   ) {}
 
   async listCustomers(user: AuthUserContext, query: AdminListCustomersDto) {
@@ -234,6 +238,14 @@ export class AdminUsersService {
       };
     }
 
+    const blockingSubscription =
+      await this.findBlockingUnpaidSubscription(dbUser);
+    if (blockingSubscription) {
+      throw new BadRequestException(
+        'Package payment must be completed before business admin approval',
+      );
+    }
+
     const updated = await this.usersService.setApprovalStatus(
       targetUserId,
       true,
@@ -247,6 +259,109 @@ export class AdminUsersService {
       },
       message: 'Business admin approved successfully',
     };
+  }
+
+  async rejectBusinessAdmin(
+    user: AuthUserContext,
+    targetUserId: string,
+    dto: RejectBusinessAdminDto,
+  ) {
+    const dbUser = await this.usersService.findById(targetUserId);
+
+    if (!dbUser || dbUser.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dbUser.role !== 'BUSINESS_ADMIN') {
+      throw new BadRequestException(
+        'Only business admin accounts can be rejected',
+      );
+    }
+
+    const subscription = await this.findLatestRegistrationSubscription(dbUser);
+    const refund =
+      subscription && this.paymentsService
+        ? await this.paymentsService.refundTenantSubscriptionForRejection({
+            actorId: user.uid,
+            subscriptionId: subscription.id,
+            reason: dto.reason,
+          })
+        : undefined;
+
+    const updated = await this.usersService.setActiveStatus(
+      targetUserId,
+      false,
+    );
+
+    return {
+      data: {
+        id: updated.id,
+        isApproved: updated.isApproved,
+        isVerified: updated.isVerified,
+        isActive: updated.isActive,
+        refund,
+      },
+      message: refund?.refunded
+        ? 'Business admin rejected and subscription payment refunded successfully'
+        : 'Business admin rejected successfully',
+    };
+  }
+
+  private async findBlockingUnpaidSubscription(dbUser: {
+    tenantId?: string | null;
+  }) {
+    const subscription = await this.findLatestRegistrationSubscription(dbUser);
+
+    if (!subscription || subscription.paymentStatus === PaymentStatus.PAID) {
+      return null;
+    }
+
+    if (!this.isPackagePlanPaymentRequiredNow(subscription.packagePlan)) {
+      return null;
+    }
+
+    return subscription;
+  }
+
+  private async findLatestRegistrationSubscription(dbUser: {
+    tenantId?: string | null;
+  }) {
+    if (!dbUser.tenantId) {
+      return null;
+    }
+
+    return this.prisma.tenantSubscription.findFirst({
+      where: {
+        tenantId: dbUser.tenantId,
+        restaurantId: { not: null },
+        status: { not: SubscriptionStatus.CANCELLED },
+      },
+      include: {
+        packagePlan: {
+          select: {
+            billingModel: true,
+            planPrice: true,
+            trialDays: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private isPackagePlanPaymentRequiredNow(packagePlan: {
+    billingModel: string;
+    planPrice: Prisma.Decimal;
+    trialDays: number;
+  }): boolean {
+    if (packagePlan.trialDays > 0) {
+      return false;
+    }
+
+    return (
+      packagePlan.billingModel !== 'COMMISSION' &&
+      packagePlan.planPrice.greaterThan(0)
+    );
   }
 
   private withDeletionState<

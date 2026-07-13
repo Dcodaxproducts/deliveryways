@@ -91,6 +91,17 @@ export class UpdateAdminCustomerStatusDto {
   isActive!: boolean;
 }
 
+export class RejectBusinessAdminDto {
+  @ApiPropertyOptional({
+    description: 'Reason stored on subscription refund/cancellation records',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class AdminForceDeleteUsersDto {
   @ApiProperty({
     type: [String],

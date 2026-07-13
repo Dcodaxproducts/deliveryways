@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { PaymentStatus, SubscriptionStatus } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { AdminUsersService } from './admin-users.service';
 
@@ -410,6 +411,7 @@ describe('AdminUsersService', () => {
           isApproved: false,
           isVerified: false,
           deletedAt: null,
+          tenantId: 'tenant-1',
         }),
         setApprovalStatus: jest.fn().mockResolvedValue({
           id: 'business-admin-1',
@@ -417,8 +419,24 @@ describe('AdminUsersService', () => {
           isVerified: true,
         }),
       };
+      const prisma = {
+        tenantSubscription: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'subscription-1',
+            paymentStatus: PaymentStatus.PAID,
+            packagePlan: {
+              billingModel: 'PLAN',
+              planPrice: { greaterThan: () => true },
+              trialDays: 0,
+            },
+          }),
+        },
+      };
 
-      const service = new AdminUsersService(usersService as never, {} as never);
+      const service = new AdminUsersService(
+        usersService as never,
+        prisma as never,
+      );
 
       const result = await service.approveBusinessAdmin(
         {
@@ -471,6 +489,179 @@ describe('AdminUsersService', () => {
       expect(usersService.setApprovalStatus).toHaveBeenCalledWith(
         'business-admin-1',
         true,
+      );
+    });
+
+    it('blocks approval until a paid package subscription is paid', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          isApproved: false,
+          isVerified: true,
+          deletedAt: null,
+          tenantId: 'tenant-1',
+        }),
+        setApprovalStatus: jest.fn(),
+      };
+      const prisma = {
+        tenantSubscription: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'subscription-1',
+            paymentStatus: PaymentStatus.PENDING,
+            packagePlan: {
+              billingModel: 'PLAN',
+              planPrice: { greaterThan: () => true },
+              trialDays: 0,
+            },
+          }),
+        },
+      };
+
+      const service = new AdminUsersService(
+        usersService as never,
+        prisma as never,
+      );
+
+      await expect(
+        service.approveBusinessAdmin(
+          {
+            uid: 'super-admin-1',
+            role: UserRoleEnum.SUPER_ADMIN,
+          } as never,
+          'business-admin-1',
+        ),
+      ).rejects.toThrow(
+        'Package payment must be completed before business admin approval',
+      );
+      expect(usersService.setApprovalStatus).not.toHaveBeenCalled();
+    });
+
+    it('allows unpaid approval when selected package has a trial', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          isApproved: false,
+          isVerified: true,
+          deletedAt: null,
+          tenantId: 'tenant-1',
+        }),
+        setApprovalStatus: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          isApproved: true,
+          isVerified: true,
+        }),
+      };
+      const prisma = {
+        tenantSubscription: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'subscription-1',
+            paymentStatus: PaymentStatus.PENDING,
+            packagePlan: {
+              billingModel: 'PLAN',
+              planPrice: { greaterThan: () => true },
+              trialDays: 14,
+            },
+          }),
+        },
+      };
+
+      const service = new AdminUsersService(
+        usersService as never,
+        prisma as never,
+      );
+
+      await service.approveBusinessAdmin(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'business-admin-1',
+      );
+
+      expect(usersService.setApprovalStatus).toHaveBeenCalledWith(
+        'business-admin-1',
+        true,
+      );
+    });
+
+    it('rejects a business admin and refunds paid subscription charges', async () => {
+      const usersService = {
+        findById: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          isApproved: false,
+          isVerified: true,
+          isActive: true,
+          deletedAt: null,
+          tenantId: 'tenant-1',
+        }),
+        setActiveStatus: jest.fn().mockResolvedValue({
+          id: 'business-admin-1',
+          isApproved: false,
+          isVerified: true,
+          isActive: false,
+        }),
+      };
+      const prisma = {
+        tenantSubscription: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'subscription-1',
+            paymentStatus: PaymentStatus.PAID,
+            status: SubscriptionStatus.ACTIVE,
+            packagePlan: {
+              billingModel: 'PLAN',
+              planPrice: { greaterThan: () => true },
+              trialDays: 0,
+            },
+          }),
+        },
+      };
+      const paymentsService = {
+        refundTenantSubscriptionForRejection: jest.fn().mockResolvedValue({
+          subscriptionId: 'subscription-1',
+          refunded: true,
+          refunds: [
+            {
+              sourcePaymentTransactionId: 'payment-1',
+              refundTransactionId: 'refund-1',
+              amount: 1200,
+              currency: 'PKR',
+            },
+          ],
+          refundedAmount: 1200,
+        }),
+      };
+
+      const service = new AdminUsersService(
+        usersService as never,
+        prisma as never,
+        paymentsService as never,
+      );
+
+      const result = await service.rejectBusinessAdmin(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'business-admin-1',
+        { reason: 'Documents rejected' },
+      );
+
+      expect(
+        paymentsService.refundTenantSubscriptionForRejection,
+      ).toHaveBeenCalledWith({
+        actorId: 'super-admin-1',
+        subscriptionId: 'subscription-1',
+        reason: 'Documents rejected',
+      });
+      expect(usersService.setActiveStatus).toHaveBeenCalledWith(
+        'business-admin-1',
+        false,
+      );
+      expect(result.message).toBe(
+        'Business admin rejected and subscription payment refunded successfully',
       );
     });
   });

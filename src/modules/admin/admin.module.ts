@@ -9,6 +9,7 @@ import { DeliverymenModule } from '../deliverymen/deliverymen.module';
 import { MenuModule } from '../menu/menu.module';
 import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 import { InvoicesModule } from '../invoices/invoices.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { AdminDealsController } from './admin-deals.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminPromotionsRepository } from './admin-promotions.repository';
@@ -41,6 +42,7 @@ import { AdminImportsService } from './admin-imports.service';
     MenuModule,
     GlobalSettingsModule,
     InvoicesModule,
+    PaymentsModule,
   ],
   controllers: [
     AdminUsersController,

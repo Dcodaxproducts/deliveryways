@@ -23,6 +23,7 @@ import {
   AdminListCustomersDto,
   UpdateAdminCustomerDto,
   UpdateAdminCustomerStatusDto,
+  RejectBusinessAdminDto,
 } from './dto';
 import { AdminUsersService } from './admin-users.service';
 
@@ -123,5 +124,18 @@ export class AdminUsersController {
     @Param('id') id: string,
   ) {
     return this.adminUsersService.approveBusinessAdmin(user, id);
+  }
+
+  @Patch('business-admins/:id/reject')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Reject a pending business admin account and refund paid package',
+  })
+  rejectBusinessAdmin(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: RejectBusinessAdminDto,
+  ) {
+    return this.adminUsersService.rejectBusinessAdmin(user, id, dto);
   }
 }

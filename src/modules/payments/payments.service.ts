@@ -201,6 +201,159 @@ export class PaymentsService {
     };
   }
 
+  async refundTenantSubscriptionForRejection(input: {
+    actorId: string;
+    subscriptionId: string;
+    reason?: string;
+  }) {
+    const subscription = await this.prisma.tenantSubscription.findUnique({
+      where: { id: input.subscriptionId },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        paymentStatus: true,
+        status: true,
+      },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Tenant subscription not found');
+    }
+
+    if (!subscription.restaurantId) {
+      throw new BadRequestException(
+        'Subscription restaurant context is required for refund',
+      );
+    }
+
+    const candidateCharges = await this.prisma.paymentTransaction.findMany({
+      where: {
+        tenantId: subscription.tenantId,
+        restaurantId: subscription.restaurantId,
+        orderId: null,
+        type: PaymentTransactionType.CHARGE,
+        status: PaymentStatus.PAID,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const subscriptionCharges = candidateCharges.filter((payment) => {
+      const data = this.asJsonObject(payment.providerData);
+      return (
+        data.target === 'TENANT_SUBSCRIPTION' &&
+        data.subscriptionId === subscription.id
+      );
+    });
+    const existingRefunds = await this.prisma.paymentTransaction.findMany({
+      where: {
+        tenantId: subscription.tenantId,
+        restaurantId: subscription.restaurantId,
+        orderId: null,
+        type: PaymentTransactionType.REFUND,
+        status: PaymentStatus.REFUNDED,
+      },
+    });
+    const refundedSourceIds = new Set(
+      existingRefunds
+        .map((refund) => {
+          const data = this.asJsonObject(refund.providerData);
+          return typeof data.sourcePaymentTransactionId === 'string'
+            ? data.sourcePaymentTransactionId
+            : null;
+        })
+        .filter((id): id is string => id !== null),
+    );
+    const refundCandidates = subscriptionCharges.filter(
+      (charge) => !refundedSourceIds.has(charge.id),
+    );
+
+    const refundResults: Array<{
+      sourcePaymentTransactionId: string;
+      refundTransactionId: string;
+      amount: number;
+      currency: string;
+    }> = [];
+
+    for (const charge of refundCandidates) {
+      let stripeRefund: Record<string, unknown> | undefined;
+      if (charge.paymentMethod === PaymentMethod.STRIPE && charge.providerRef) {
+        stripeRefund = (await this.stripePaymentsService.refundPaymentIntent(
+          charge.providerRef,
+          Number(charge.amount),
+        )) as unknown as Record<string, unknown>;
+      }
+
+      const refundTransaction = await this.prisma.$transaction(async (tx) => {
+        const created = await this.paymentsRepository.create(
+          {
+            tenant: { connect: { id: charge.tenantId } },
+            restaurant: { connect: { id: charge.restaurantId } },
+            branch: { connect: { id: charge.branchId } },
+            paymentMethod: charge.paymentMethod,
+            type: PaymentTransactionType.REFUND,
+            status: PaymentStatus.REFUNDED,
+            amount: charge.amount,
+            currency: charge.currency,
+            providerRef: charge.providerRef,
+            providerData: {
+              target: 'TENANT_SUBSCRIPTION_REFUND',
+              subscriptionId: subscription.id,
+              sourcePaymentTransactionId: charge.id,
+              stripeRefund,
+            } as Prisma.InputJsonValue,
+            note:
+              input.reason?.trim() ||
+              'Business admin registration rejected by super admin',
+            processedAt: new Date(),
+          },
+          tx,
+        );
+
+        await this.paymentsRepository.updateStatus(
+          charge.id,
+          {
+            status: PaymentStatus.REFUNDED,
+            processedAt: new Date(),
+            note: input.reason,
+          },
+          tx,
+        );
+
+        return created;
+      });
+
+      refundResults.push({
+        sourcePaymentTransactionId: charge.id,
+        refundTransactionId: refundTransaction.id,
+        amount: Number(charge.amount),
+        currency: charge.currency,
+      });
+    }
+
+    await this.prisma.tenantSubscription.update({
+      where: { id: subscription.id },
+      data: {
+        status: SubscriptionStatus.CANCELLED,
+        paymentStatus:
+          refundResults.length > 0
+            ? PaymentStatus.REFUNDED
+            : subscription.paymentStatus,
+        endsAt: new Date(),
+        updatedBy: input.actorId,
+        note:
+          input.reason?.trim() ||
+          'Business admin registration rejected by super admin',
+      },
+    });
+
+    return {
+      subscriptionId: subscription.id,
+      refunded: refundResults.length > 0,
+      refunds: refundResults,
+      refundedAmount: refundResults.reduce((sum, item) => sum + item.amount, 0),
+    };
+  }
+
   async createAttempt(
     user: AuthUserContext,
     orderId: string,
