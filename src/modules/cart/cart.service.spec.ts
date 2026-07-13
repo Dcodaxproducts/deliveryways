@@ -1337,6 +1337,89 @@ describe('CartService', () => {
     );
   });
 
+  it('does not group forced-variation category deal items excluded by eligibility', async () => {
+    const { service, couponsService } = makeService();
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-flex',
+      code: 'FLEX',
+      title: 'Pizza + Drink',
+      description: null,
+      imageUrl: null,
+      fixedPrice: new Prisma.Decimal(20),
+      menuItemIds: [],
+      categoryScopes: [
+        {
+          menuCategoryId: 'cat-pizza',
+          itemLimit: 1,
+          forcedVariationId: 'large',
+          menuItemIds: ['pizza-large'],
+          excludedMenuItemIds: ['pizza-small-only'],
+        },
+        {
+          menuCategoryId: 'cat-drink',
+          itemLimit: 1,
+          forcedVariationId: null,
+          menuItemIds: ['drink-1'],
+          excludedMenuItemIds: [],
+        },
+      ],
+      requiredQuantity: 2,
+      selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+    });
+
+    const grouped = await (
+      service as unknown as {
+        groupDealItemsForCartResponse: (
+          items: unknown[],
+          cart: { restaurantId: string; branchId: string },
+        ) => Promise<
+          Array<{ type: string; menuItemId?: string; dealId?: string }>
+        >;
+      }
+    ).groupDealItemsForCartResponse(
+      [
+        {
+          id: 'pizza-line-1',
+          menuItemId: 'pizza-small-only',
+          categoryId: 'cat-pizza',
+          categoryIds: ['cat-pizza'],
+          dealId: 'deal-flex',
+          quantity: 1,
+          unitPrice: 12,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 12,
+          depositAmount: 0,
+          depositTotal: 0,
+          lineTotal: 12,
+        },
+        {
+          id: 'drink-line-1',
+          menuItemId: 'drink-1',
+          categoryId: 'cat-drink',
+          categoryIds: ['cat-drink'],
+          dealId: 'deal-flex',
+          quantity: 1,
+          unitPrice: 5,
+          modifiersTotal: 0,
+          unitPriceWithModifiers: 5,
+          depositAmount: 0,
+          depositTotal: 0,
+          lineTotal: 5,
+        },
+      ],
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+    );
+
+    expect(grouped).toHaveLength(2);
+    expect(grouped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ menuItemId: 'pizza-small-only' }),
+        expect.objectContaining({ menuItemId: 'drink-1' }),
+      ]),
+    );
+    expect(grouped.some((item) => item.type === 'DEAL')).toBe(false);
+  });
+
   it('keeps identical flexible deal selections as one quantity group', async () => {
     const { service, couponsService } = makeService();
     couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({

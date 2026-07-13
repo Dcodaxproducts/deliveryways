@@ -1193,6 +1193,27 @@ describe('CustomerAppService', () => {
             },
           },
         ],
+        scopeCategories: [
+          {
+            itemLimit: 1,
+            forcedVariationId: 'var-large',
+            forcedVariation: { id: 'var-large', name: 'Large' },
+            menuCategory: {
+              id: 'cat-pizza',
+              name: 'Pizza',
+              imageUrl: null,
+              variations: [],
+              variationLinks: [],
+              items: [
+                {
+                  id: 'item-large',
+                  variationPriceOverrides: [{ variationId: 'var-large' }],
+                },
+                { id: 'item-small', variationPriceOverrides: [] },
+              ],
+            },
+          },
+        ],
       },
     ]);
     repository.listPublicDealScopeMenuItems.mockResolvedValue([
@@ -1221,6 +1242,14 @@ describe('CustomerAppService', () => {
         discountType: 'FIXED_PRICE',
         discountValue: 999,
         dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        scopeCategoryRules: [
+          expect.objectContaining({
+            menuCategoryId: 'cat-pizza',
+            variationId: 'var-large',
+            eligibleMenuItemIds: ['item-large'],
+            excludedMenuItemIds: ['item-small'],
+          }),
+        ],
         scopeMenuItems: [
           expect.objectContaining({
             id: 'item-1',

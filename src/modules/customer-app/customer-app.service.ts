@@ -3357,12 +3357,68 @@ export class CustomerAppService {
         ),
       ),
       scopeCategoryRules:
-        promotion.scopeCategories?.map((entry) => ({
-          menuCategoryId: entry.menuCategory.id,
-          itemLimit: entry.itemLimit ?? null,
-          variationId: entry.forcedVariationId ?? null,
-          variation: entry.forcedVariation ?? null,
-        })) ?? [],
+        promotion.scopeCategories?.map((entry) => {
+          const eligibility = this.resolvePromotionCategoryRuleEligibility(
+            entry.menuCategory,
+            entry.forcedVariationId ?? null,
+          );
+
+          return {
+            menuCategoryId: entry.menuCategory.id,
+            itemLimit: entry.itemLimit ?? null,
+            variationId: entry.forcedVariationId ?? null,
+            variation: entry.forcedVariation ?? null,
+            eligibleMenuItemIds: eligibility.eligibleMenuItemIds,
+            excludedMenuItemIds: eligibility.excludedMenuItemIds,
+          };
+        }) ?? [],
+    };
+  }
+
+  private resolvePromotionCategoryRuleEligibility(
+    menuCategory: {
+      id: string;
+      variations?: Array<{ id: string }>;
+      variationLinks?: Array<{ variationId: string }>;
+      items?: Array<{
+        id: string;
+        variationPriceOverrides?: Array<{ variationId: string }>;
+      }>;
+    },
+    forcedVariationId: string | null,
+  ) {
+    const allMenuItemIds = menuCategory.items?.map((item) => item.id) ?? [];
+
+    if (!forcedVariationId) {
+      return { eligibleMenuItemIds: allMenuItemIds, excludedMenuItemIds: [] };
+    }
+
+    const hasCategoryWideVariation =
+      menuCategory.variations?.some(
+        (variation) => variation.id === forcedVariationId,
+      ) ||
+      menuCategory.variationLinks?.some(
+        (link) => link.variationId === forcedVariationId,
+      );
+
+    if (hasCategoryWideVariation) {
+      return { eligibleMenuItemIds: allMenuItemIds, excludedMenuItemIds: [] };
+    }
+
+    const eligibleMenuItemIds =
+      menuCategory.items
+        ?.filter((item) =>
+          item.variationPriceOverrides?.some(
+            (override) => override.variationId === forcedVariationId,
+          ),
+        )
+        .map((item) => item.id) ?? [];
+
+    return {
+      eligibleMenuItemIds,
+      excludedMenuItemIds: allMenuItemIds.filter(
+        (menuItemId) => !eligibleMenuItemIds.includes(menuItemId),
+      ),
     };
   }
 

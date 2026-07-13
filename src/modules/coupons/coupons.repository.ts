@@ -342,9 +342,20 @@ export class CouponsRepository {
             id: true,
             name: true,
             imageUrl: true,
-            items: {
+            variations: {
               where: { deletedAt: null, isActive: true },
               select: { id: true },
+            },
+            variationLinks: {
+              where: { isActive: true },
+              select: { variationId: true },
+            },
+            items: {
+              where: { deletedAt: null, isActive: true },
+              select: {
+                id: true,
+                variationPriceOverrides: { select: { variationId: true } },
+              },
             },
           },
         },

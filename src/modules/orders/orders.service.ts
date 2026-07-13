@@ -1741,7 +1741,7 @@ export class OrdersService {
     if (categoryScopes.length) {
       const quantities = categoryScopes.map((scope) => {
         const selectedQuantity = lines
-          .filter((line) => line.categoryIds.includes(scope.menuCategoryId))
+          .filter((line) => this.quoteLineMatchesDealCategoryScope(line, scope))
           .reduce((sum, line) => sum + line.quantity, 0);
 
         return Math.floor(selectedQuantity / (scope.itemLimit ?? 1));
@@ -1763,6 +1763,22 @@ export class OrdersService {
     return Math.floor(selectedQuantity / requiredQuantity);
   }
 
+  private quoteLineMatchesDealCategoryScope(
+    line: QuoteLine,
+    scope: {
+      menuCategoryId: string;
+      menuItemIds?: string[];
+    },
+  ) {
+    if (!line.categoryIds.includes(scope.menuCategoryId)) {
+      return false;
+    }
+
+    return (
+      !scope.menuItemIds?.length || scope.menuItemIds.includes(line.menuItemId)
+    );
+  }
+
   private isFlexibleDealQuoteLine(
     line: QuoteLine,
     pricing: NonNullable<
@@ -1772,7 +1788,7 @@ export class OrdersService {
     return (
       pricing.menuItemIds.includes(line.menuItemId) ||
       pricing.categoryScopes.some((scope) =>
-        line.categoryIds.includes(scope.menuCategoryId),
+        this.quoteLineMatchesDealCategoryScope(line, scope),
       )
     );
   }

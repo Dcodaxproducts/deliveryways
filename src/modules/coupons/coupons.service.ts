@@ -84,6 +84,8 @@ export interface FixedPriceDealPricing {
     menuCategoryId: string;
     itemLimit: number | null;
     forcedVariationId: string | null;
+    menuItemIds: string[];
+    excludedMenuItemIds: string[];
   }>;
 }
 
@@ -520,17 +522,33 @@ export class CouponsService {
       scopeCategories?: Array<{
         itemLimit?: number | null;
         forcedVariationId?: string | null;
-        menuCategory: { id: string; items?: Array<{ id: string }> };
+        menuCategory: {
+          id: string;
+          variations?: Array<{ id: string }>;
+          variationLinks?: Array<{ variationId: string }>;
+          items?: Array<{
+            id: string;
+            variationPriceOverrides?: Array<{ variationId: string }>;
+          }>;
+        };
       }>;
     },
   ) {
     return [
-      ...(coupon.scopeCategories ?? []).map((entry) => ({
-        menuCategoryId: entry.menuCategory.id,
-        itemLimit: entry.itemLimit ?? null,
-        forcedVariationId: entry.forcedVariationId ?? null,
-        menuItemIds: entry.menuCategory.items?.map((item) => item.id) ?? [],
-      })),
+      ...(coupon.scopeCategories ?? []).map((entry) => {
+        const eligibility = this.resolveForcedVariationCategoryEligibility(
+          entry.menuCategory,
+          entry.forcedVariationId ?? null,
+        );
+
+        return {
+          menuCategoryId: entry.menuCategory.id,
+          itemLimit: entry.itemLimit ?? null,
+          forcedVariationId: entry.forcedVariationId ?? null,
+          menuItemIds: eligibility.eligibleMenuItemIds,
+          excludedMenuItemIds: eligibility.excludedMenuItemIds,
+        };
+      }),
       ...((coupon.scopeCategory?.id ?? coupon.scopeCategoryId)
         ? [
             {
@@ -539,6 +557,7 @@ export class CouponsService {
               itemLimit: null,
               forcedVariationId: null,
               menuItemIds: [] as string[],
+              excludedMenuItemIds: [] as string[],
             },
           ]
         : []),
@@ -548,6 +567,53 @@ export class CouponsService {
           (candidate) => candidate.menuCategoryId === entry.menuCategoryId,
         ) === index,
     );
+  }
+
+  private resolveForcedVariationCategoryEligibility(
+    menuCategory: {
+      id: string;
+      variations?: Array<{ id: string }>;
+      variationLinks?: Array<{ variationId: string }>;
+      items?: Array<{
+        id: string;
+        variationPriceOverrides?: Array<{ variationId: string }>;
+      }>;
+    },
+    forcedVariationId: string | null,
+  ) {
+    const allMenuItemIds = menuCategory.items?.map((item) => item.id) ?? [];
+
+    if (!forcedVariationId) {
+      return { eligibleMenuItemIds: allMenuItemIds, excludedMenuItemIds: [] };
+    }
+
+    const hasCategoryWideVariation =
+      menuCategory.variations?.some(
+        (variation) => variation.id === forcedVariationId,
+      ) ||
+      menuCategory.variationLinks?.some(
+        (link) => link.variationId === forcedVariationId,
+      );
+
+    if (hasCategoryWideVariation) {
+      return { eligibleMenuItemIds: allMenuItemIds, excludedMenuItemIds: [] };
+    }
+
+    const eligibleMenuItemIds =
+      menuCategory.items
+        ?.filter((item) =>
+          item.variationPriceOverrides?.some(
+            (override) => override.variationId === forcedVariationId,
+          ),
+        )
+        .map((item) => item.id) ?? [];
+
+    return {
+      eligibleMenuItemIds,
+      excludedMenuItemIds: allMenuItemIds.filter(
+        (menuItemId) => !eligibleMenuItemIds.includes(menuItemId),
+      ),
+    };
   }
 
   private resolveReadyMadeDealMenuItemId(

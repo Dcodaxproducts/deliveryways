@@ -2148,7 +2148,7 @@ export class CartService {
       const unitsByScope = categoryScopes.map((scope) =>
         unitsForIndexes(
           eligibleIndexes.filter((index) =>
-            items[index].categoryIds.includes(scope.menuCategoryId),
+            this.cartLineMatchesDealCategoryScope(items[index], scope),
           ),
         ),
       );
@@ -2368,6 +2368,22 @@ export class CartService {
     }).filter((group) => group.quantity > 0);
   }
 
+  private cartLineMatchesDealCategoryScope(
+    item: CartResponseDealLine,
+    scope: {
+      menuCategoryId: string;
+      menuItemIds?: string[];
+    },
+  ) {
+    if (!item.categoryIds.includes(scope.menuCategoryId)) {
+      return false;
+    }
+
+    return (
+      !scope.menuItemIds?.length || scope.menuItemIds.includes(item.menuItemId)
+    );
+  }
+
   private isFlexibleDealEligibleItem<T extends CartResponseDealLine>(
     item: T,
     pricing: NonNullable<
@@ -2377,7 +2393,7 @@ export class CartService {
     return (
       pricing.menuItemIds.includes(item.menuItemId) ||
       pricing.categoryScopes.some((scope) =>
-        item.categoryIds.includes(scope.menuCategoryId),
+        this.cartLineMatchesDealCategoryScope(item, scope),
       )
     );
   }

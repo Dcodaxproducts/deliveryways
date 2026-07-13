@@ -592,6 +592,7 @@ describe('CouponsService', () => {
             forcedVariationId: 'var-large',
             menuCategory: {
               id: 'cat-1',
+              variations: [{ id: 'var-large' }],
               items: [{ id: 'mi-1' }],
             },
           },
@@ -610,6 +611,43 @@ describe('CouponsService', () => {
       dealId: 'deal-1',
       forcedVariationId: 'var-large',
     });
+  });
+
+  it('does not treat category deal item as eligible when forced variation is unavailable', async () => {
+    repository.findActivePromotionById!.mockResolvedValue(
+      makeCoupon({
+        id: 'deal-1',
+        applyMode: CouponApplyMode.SCOPED_ITEMS,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        discountValue: new Prisma.Decimal(999),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        dealRequiredQuantity: 1,
+        scopeCategories: [
+          {
+            itemLimit: 1,
+            forcedVariationId: 'var-large',
+            menuCategory: {
+              id: 'cat-1',
+              items: [{ id: 'mi-1', variationPriceOverrides: [] }],
+            },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      service.getActiveFixedPriceDealItemOptions(
+        'rid-1',
+        'bid-1',
+        'deal-1',
+        'mi-1',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      service.isActiveFixedPriceDealItem('rid-1', 'bid-1', 'deal-1', 'mi-1'),
+    ).resolves.toBe(false);
   });
 
   it('infers non-auto-applied single-item ready-made fixed deals', async () => {
