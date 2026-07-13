@@ -1975,8 +1975,8 @@ export class CartService {
       return items;
     }
 
-    const groupedIndexes = new Set<number>();
-    const groupedByFirstIndex = new Map<number, CartResponseDealItem>();
+    const groupedQuantitiesByIndex = new Map<number, number>();
+    const groupedByFirstIndex = new Map<number, CartResponseDealItem[]>();
 
     for (const dealId of dealIds) {
       const pricing = await this.couponsService.getActiveFixedPriceDealPricing(
@@ -1989,10 +1989,19 @@ export class CartService {
         continue;
       }
 
-      const dealGroups = this.findDealItemIndexGroups(items, dealId, pricing);
+      const dealGroups = this.findCartResponseDealDisplayGroups(
+        items,
+        dealId,
+        pricing,
+      );
 
       for (const dealGroup of dealGroups) {
-        const includedItems = dealGroup.indexes.map((index) => items[index]);
+        const includedItems = dealGroup.entries.map((entry) =>
+          this.cloneCartResponseItemQuantity(
+            items[entry.index],
+            entry.quantity,
+          ),
+        );
         const depositTotal = includedItems.reduce(
           (sum, item) => sum.plus(item.depositTotal),
           new Prisma.Decimal(0),
@@ -2001,17 +2010,23 @@ export class CartService {
           (sum, item) => sum.plus(item.lineTotal ?? 0),
           new Prisma.Decimal(0),
         );
-        const firstIndex = dealGroup.indexes[0];
+        const firstIndex = dealGroup.entries[0]?.index ?? -1;
 
-        dealGroup.indexes.forEach((index) => groupedIndexes.add(index));
-        groupedByFirstIndex.set(firstIndex, {
+        dealGroup.entries.forEach((entry) => {
+          groupedQuantitiesByIndex.set(
+            entry.index,
+            (groupedQuantitiesByIndex.get(entry.index) ?? 0) + entry.quantity,
+          );
+        });
+        const groupedItems = groupedByFirstIndex.get(firstIndex) ?? [];
+        groupedItems.push({
           id:
             dealGroups.length === 1
               ? `deal:${dealId}`
-              : `deal:${dealId}:${firstIndex}`,
+              : `deal:${dealId}:${firstIndex}:${groupedItems.length}`,
           type: 'DEAL',
           dealId,
-          cartItemIds: includedItems.map((item) => item.id),
+          cartItemIds: dealGroup.entries.map((entry) => items[entry.index].id),
           menuItemIds: includedItems.map((item) => item.menuItemId),
           quantity: dealGroup.quantity,
           unitPrice: Number(pricing.fixedPrice),
@@ -2037,17 +2052,172 @@ export class CartService {
           },
           includedItems,
         });
+        groupedByFirstIndex.set(firstIndex, groupedItems);
       }
     }
 
     return items.flatMap((item, index): CartDisplayItem[] => {
-      const groupedItem = groupedByFirstIndex.get(index);
-      if (groupedItem) {
-        return [groupedItem];
+      const groupedItems = groupedByFirstIndex.get(index) ?? [];
+      const groupedQuantity = groupedQuantitiesByIndex.get(index) ?? 0;
+
+      if (groupedQuantity >= item.quantity) {
+        return groupedItems;
       }
 
-      return groupedIndexes.has(index) ? [] : [item];
+      if (groupedQuantity > 0) {
+        return [
+          ...groupedItems,
+          this.cloneCartResponseItemQuantity(
+            item,
+            item.quantity - groupedQuantity,
+          ),
+        ];
+      }
+
+      return groupedItems.length ? [...groupedItems, item] : [item];
     });
+  }
+
+  private findCartResponseDealDisplayGroups(
+    items: CartResponseItem[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ): Array<{
+    entries: Array<{ index: number; quantity: number }>;
+    quantity: number;
+  }> {
+    const directGroups = this.findDealItemIndexGroups(items, dealId, pricing);
+    if (directGroups.length) {
+      return directGroups.map((group) => ({
+        entries: group.indexes.map((index) => ({
+          index,
+          quantity: items[index].quantity,
+        })),
+        quantity: group.quantity,
+      }));
+    }
+
+    if (pricing.selectionMode !== CouponDealSelectionMode.FLEXIBLE_ITEMS) {
+      return [];
+    }
+
+    return this.findFlexibleDealDisplayGroups(items, dealId, pricing);
+  }
+
+  private findFlexibleDealDisplayGroups(
+    items: CartResponseItem[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ): Array<{
+    entries: Array<{ index: number; quantity: number }>;
+    quantity: number;
+  }> {
+    const eligibleIndexes = items.flatMap((item, index) =>
+      item.dealId === dealId && this.isFlexibleDealEligibleItem(item, pricing)
+        ? [index]
+        : [],
+    );
+
+    if (!eligibleIndexes.length) {
+      return [];
+    }
+
+    const categoryScopes = pricing.categoryScopes.filter(
+      (scope) => scope.itemLimit && scope.itemLimit > 0,
+    );
+    const unitsForIndexes = (indexes: number[]) =>
+      indexes.flatMap((index) =>
+        Array.from({ length: items[index].quantity }, () => index),
+      );
+    const compactEntries = (indexes: number[]) => {
+      const counts = new Map<number, number>();
+      indexes.forEach((index) =>
+        counts.set(index, (counts.get(index) ?? 0) + 1),
+      );
+
+      return [...counts.entries()]
+        .map(([index, quantity]) => ({ index, quantity }))
+        .sort((left, right) => left.index - right.index);
+    };
+
+    if (categoryScopes.length) {
+      const unitsByScope = categoryScopes.map((scope) =>
+        unitsForIndexes(
+          eligibleIndexes.filter((index) =>
+            items[index].categoryIds.includes(scope.menuCategoryId),
+          ),
+        ),
+      );
+
+      if (unitsByScope.some((scopeUnits) => !scopeUnits.length)) {
+        return [];
+      }
+
+      const groupCount = Math.min(
+        ...unitsByScope.map((scopeUnits, scopeIndex) =>
+          Math.floor(
+            scopeUnits.length / (categoryScopes[scopeIndex].itemLimit ?? 1),
+          ),
+        ),
+      );
+
+      return Array.from({ length: groupCount }, (_, groupIndex) => {
+        const groupUnits = unitsByScope.flatMap((scopeUnits, scopeIndex) => {
+          const itemLimit = categoryScopes[scopeIndex].itemLimit ?? 1;
+          const start = groupIndex * itemLimit;
+          return scopeUnits.slice(start, start + itemLimit);
+        });
+
+        return {
+          entries: compactEntries(groupUnits),
+          quantity: 1,
+        };
+      }).filter((group) => group.entries.length > 0);
+    }
+
+    const requiredQuantity = pricing.requiredQuantity ?? 0;
+    if (requiredQuantity < 1) {
+      return [];
+    }
+
+    const units = unitsForIndexes(eligibleIndexes);
+    const groupCount = Math.floor(units.length / requiredQuantity);
+
+    return Array.from({ length: groupCount }, (_, groupIndex) => {
+      const start = groupIndex * requiredQuantity;
+      return {
+        entries: compactEntries(units.slice(start, start + requiredQuantity)),
+        quantity: 1,
+      };
+    }).filter((group) => group.entries.length > 0);
+  }
+
+  private cloneCartResponseItemQuantity(
+    item: CartResponseItem,
+    quantity: number,
+  ): CartResponseItem {
+    if (item.quantity === quantity) {
+      return item;
+    }
+
+    const currentQuantity = item.quantity || 1;
+    const ratio = new Prisma.Decimal(quantity).div(currentQuantity);
+    const lineTotal = new Prisma.Decimal(item.lineTotal ?? 0)
+      .mul(ratio)
+      .toDecimalPlaces(2);
+
+    return {
+      ...item,
+      quantity,
+      depositTotal: Number(
+        new Prisma.Decimal(item.depositAmount).mul(quantity),
+      ),
+      lineTotal: Number(lineTotal),
+    };
   }
 
   private findDealItemIndexGroups<T extends CartResponseDealLine>(
