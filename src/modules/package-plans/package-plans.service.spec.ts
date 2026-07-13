@@ -461,6 +461,7 @@ describe('PackagePlansService', () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      updateSubscription: jest.fn().mockResolvedValue(makeSubscription()),
     };
     const invoiceRecordsService = {
       persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
@@ -493,6 +494,7 @@ describe('PackagePlansService', () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      updateSubscription: jest.fn().mockResolvedValue(makeSubscription()),
     };
     const mailerService = {
       sendEmail: jest.fn().mockResolvedValue(undefined),
@@ -534,6 +536,10 @@ describe('PackagePlansService', () => {
         recipientEmail: 'billing@pizza.test',
         status: 'SENT',
       }),
+    );
+    expect(repository.updateSubscription).toHaveBeenCalledWith(
+      'subscription-12345678',
+      { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
     );
   });
 

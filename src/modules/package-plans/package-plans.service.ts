@@ -573,6 +573,7 @@ export class PackagePlansService {
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
     await this.deliverSubscriptionInvoice(user, invoice, recipientEmail);
+    await this.advanceSubscriptionBillingCursor(invoice);
 
     return {
       data: {
@@ -682,12 +683,7 @@ export class PackagePlansService {
         invoice,
         recipientEmail,
       );
-      await this.packagePlansRepository.updateSubscription(subscription.id, {
-        nextBillingAt: this.resolveNextBillingAt(
-          invoice.packagePlan.billingInterval,
-          (subscription.nextBillingAt ?? now).toISOString(),
-        ),
-      });
+      await this.advanceSubscriptionBillingCursor(invoice);
       if (this.packagePlansRepository.markOneTimeDeductionsApplied) {
         await this.packagePlansRepository.markOneTimeDeductionsApplied(
           invoice.deductions
@@ -1853,6 +1849,22 @@ export class PackagePlansService {
       '',
       'DeliveryWays',
     ].join('\n');
+  }
+
+  private async advanceSubscriptionBillingCursor(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+  ) {
+    await this.packagePlansRepository.updateSubscription(
+      invoice.subscriptionId,
+      {
+        nextBillingAt: this.resolveNextBillingAt(
+          invoice.packagePlan.billingInterval,
+          invoice.servicePeriod.to.toISOString(),
+        ),
+      },
+    );
   }
 
   private async deliverSubscriptionInvoice(
