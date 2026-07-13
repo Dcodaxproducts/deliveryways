@@ -23,6 +23,8 @@ import {
   CouponDiscountType,
   CouponStatus,
   DeliverymanStatus,
+  GeneratedInvoiceKind,
+  GeneratedInvoiceStatus,
   OrderStatus,
   PaymentStatus,
 } from '@prisma/client';
@@ -448,6 +450,38 @@ export class AdminEmailReportExportDto extends AdminReportsScopedQueryDto {
 export class AdminOrdersReportQueryDto extends AdminExportOrdersCsvQueryDto {}
 
 export class AdminFinancialReportQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
+export class AdminGeneratedInvoicesQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional({ enum: GeneratedInvoiceKind })
+  @IsOptional()
+  @IsEnum(GeneratedInvoiceKind)
+  kind?: GeneratedInvoiceKind;
+
+  @ApiPropertyOptional({ enum: GeneratedInvoiceStatus })
+  @IsOptional()
+  @IsEnum(GeneratedInvoiceStatus)
+  status?: GeneratedInvoiceStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subscriptionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()

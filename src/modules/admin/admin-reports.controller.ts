@@ -27,6 +27,7 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
   AdminReportsScopedQueryDto,
@@ -159,6 +160,20 @@ export class AdminReportsController {
     @Body() dto: AdminEmailReportExportDto,
   ) {
     return this.adminReportsService.sendExportEmail(user, dto);
+  }
+
+  @Get('generated-invoices')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'List generated invoice history for admin finance' })
+  listGeneratedInvoices(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminGeneratedInvoicesQueryDto,
+  ) {
+    return this.adminReportsService.listGeneratedInvoices(user, query);
   }
 
   @Get('invoices')

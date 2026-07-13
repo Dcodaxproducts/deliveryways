@@ -15,6 +15,7 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
 } from './dto';
@@ -370,6 +371,57 @@ export class AdminReportsRepository {
         scopeCategories: {
           select: { menuCategory: { select: { id: true, name: true } } },
         },
+      },
+    });
+  }
+
+  async listGeneratedInvoices(
+    scope: AdminReportsScope,
+    query: AdminGeneratedInvoicesQueryDto,
+  ) {
+    return this.prisma.generatedInvoice.findMany({
+      where: {
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(query.kind ? { kind: query.kind } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.subscriptionId
+          ? { subscriptionId: query.subscriptionId }
+          : {}),
+        ...(query.orderId ? { orderId: query.orderId } : {}),
+        ...(query.fromDate || query.toDate
+          ? {
+              createdAt: {
+                ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+                ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        invoiceNumber: true,
+        kind: true,
+        status: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        customerId: true,
+        orderId: true,
+        subscriptionId: true,
+        periodFrom: true,
+        periodTo: true,
+        currency: true,
+        totalAmount: true,
+        sentCount: true,
+        downloadedCount: true,
+        lastSentAt: true,
+        lastSentTo: true,
+        createdAt: true,
+        updatedAt: true,
+        snapshot: true,
       },
     });
   }

@@ -29,6 +29,7 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
   AdminReportsScopedQueryDto,
@@ -369,6 +370,30 @@ export class AdminReportsService {
         rowCount,
       },
       message: 'Report export generated and sent successfully',
+    };
+  }
+
+  async listGeneratedInvoices(
+    user: AuthUserContext,
+    query: AdminGeneratedInvoicesQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const invoices = await this.adminReportsRepository.listGeneratedInvoices(
+      scope,
+      {
+        ...query,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+    );
+
+    return {
+      data: invoices.map((invoice) => this.toGeneratedInvoiceSummary(invoice)),
+      message: 'Generated invoices fetched successfully',
     };
   }
 
@@ -829,6 +854,51 @@ export class AdminReportsService {
 
   private formatMoney(value: number) {
     return Number(value).toFixed(2);
+  }
+
+  private toGeneratedInvoiceSummary(
+    invoice: Awaited<
+      ReturnType<AdminReportsRepository['listGeneratedInvoices']>
+    >[number],
+  ) {
+    const snapshot = this.asObject(invoice.snapshot);
+    const restaurant = this.asObject(snapshot.restaurant);
+    const tenant = this.asObject(snapshot.tenant);
+
+    return {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      kind: invoice.kind,
+      status: invoice.status,
+      tenantId: invoice.tenantId,
+      restaurantId: invoice.restaurantId,
+      branchId: invoice.branchId,
+      customerId: invoice.customerId,
+      orderId: invoice.orderId,
+      subscriptionId: invoice.subscriptionId,
+      periodFrom: invoice.periodFrom,
+      periodTo: invoice.periodTo,
+      currency: invoice.currency,
+      totalAmount: Number(invoice.totalAmount),
+      sentCount: invoice.sentCount,
+      downloadedCount: invoice.downloadedCount,
+      lastSentAt: invoice.lastSentAt,
+      lastSentTo: invoice.lastSentTo,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.updatedAt,
+      documentType:
+        typeof snapshot.documentType === 'string'
+          ? snapshot.documentType
+          : null,
+      restaurant:
+        invoice.restaurantId && typeof restaurant.name === 'string'
+          ? { id: invoice.restaurantId, name: restaurant.name }
+          : null,
+      tenant:
+        invoice.tenantId && typeof tenant.name === 'string'
+          ? { id: invoice.tenantId, name: tenant.name }
+          : null,
+    };
   }
 
   private toInvoiceSummary(

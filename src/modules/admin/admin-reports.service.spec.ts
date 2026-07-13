@@ -177,6 +177,70 @@ describe('AdminReportsService', () => {
     );
   });
 
+  it('lists persisted generated invoice history for business admin scope', async () => {
+    const repository = {
+      listGeneratedInvoices: jest.fn().mockResolvedValue([
+        {
+          id: 'generated-1',
+          invoiceNumber: 'SUB-INV-12345678-20260701',
+          kind: 'SUBSCRIPTION',
+          status: 'SENT',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: null,
+          customerId: null,
+          orderId: null,
+          subscriptionId: 'subscription-1',
+          periodFrom: new Date('2026-06-01T00:00:00.000Z'),
+          periodTo: new Date('2026-07-01T00:00:00.000Z'),
+          currency: 'PKR',
+          totalAmount: 1250,
+          sentCount: 1,
+          downloadedCount: 0,
+          lastSentAt: new Date('2026-07-01T01:00:00.000Z'),
+          lastSentTo: 'billing@restaurant.test',
+          createdAt: new Date('2026-07-01T00:30:00.000Z'),
+          updatedAt: new Date('2026-07-01T01:00:00.000Z'),
+          snapshot: {
+            documentType: 'INVOICE',
+            tenant: { name: 'Tenant One' },
+            restaurant: { name: 'Pizza House' },
+          },
+        },
+      ]),
+    };
+
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.listGeneratedInvoices(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      { kind: 'SUBSCRIPTION' } as never,
+    );
+
+    expect(repository.listGeneratedInvoices).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        kind: 'SUBSCRIPTION',
+      }),
+    );
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        invoiceNumber: 'SUB-INV-12345678-20260701',
+        kind: 'SUBSCRIPTION',
+        totalAmount: 1250,
+        documentType: 'INVOICE',
+        restaurant: { id: 'restaurant-1', name: 'Pizza House' },
+        tenant: { id: 'tenant-1', name: 'Tenant One' },
+      }),
+    );
+  });
+
   it('returns generated invoice details for branch admin scope', async () => {
     const repository = {
       findInvoiceOrder: jest.fn().mockResolvedValue({
