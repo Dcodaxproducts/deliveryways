@@ -393,6 +393,79 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
     });
   });
+
+  it('creates a verified approved owner for super-admin tenant registration without exposing OTP', async () => {
+    const originalEmailEnabled = process.env.EMAIL_ENABLED;
+    process.env.EMAIL_ENABLED = 'false';
+
+    try {
+      const result = await service.registerTenantBySuperAdmin(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        {
+          packagePlanId: 'plan-1',
+          user: {
+            email: ' Owner@Example.COM ',
+            password: 'Owner@12345',
+            firstName: 'Owner',
+            lastName: 'User',
+          },
+          tenant: {
+            name: 'Tenant',
+            slug: 'tenant',
+          },
+          restaurant: {
+            name: 'Restaurant',
+            slug: 'restaurant',
+          },
+          branch: {
+            name: 'Main',
+            street: 'Street',
+            city: 'City',
+            state: 'State',
+            country: 'PK',
+            lat: '33.6844',
+            lng: '73.0479',
+          },
+        },
+      );
+
+      expect(usersService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'owner@example.com',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          isVerified: true,
+          isApproved: true,
+          verificationOtp: undefined,
+          verificationOtpExpiresAt: undefined,
+        }),
+        tx,
+      );
+      const subscriptionCreateArg =
+        tx.tenantSubscription.create.mock.calls[0][0];
+      expect(subscriptionCreateArg.data).toMatchObject({
+        paymentStatus: PaymentStatus.PENDING,
+        createdBy: 'super-admin-1',
+        updatedBy: 'super-admin-1',
+        note:
+          'Created by super admin. Payment required to activate selected package plan.',
+      });
+      expect(result.data.user).toMatchObject({
+        isVerified: true,
+        isApproved: true,
+      });
+      expect(result.data.verificationOtp).toBeUndefined();
+      expect(result.data.subscription).toMatchObject({
+        paymentStatus: PaymentStatus.PENDING,
+        paymentRequiredNow: true,
+      });
+      expect(result.message).toBe('Tenant account created by super admin.');
+    } finally {
+      process.env.EMAIL_ENABLED = originalEmailEnabled;
+    }
+  });
 });
 
 describe('AuthService listCustomers and customerDetails', () => {

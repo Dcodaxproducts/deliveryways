@@ -39,9 +39,11 @@ import {
   AllowUnverified,
   CurrentUser,
   Public,
+  Roles,
 } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
-import { JwtAuthGuard } from '../../common/guards';
+import { JwtAuthGuard, RolesGuard } from '../../common/guards';
+import { RolesEnum } from '../../common/enums';
 
 const getGuestRegistrationTracker = (req: Record<string, unknown>): string => {
   const ipAddress =
@@ -76,6 +78,17 @@ export class AuthController {
   @Post('register-tenant')
   registerTenant(@Body() dto: RegisterTenantDto) {
     return this.authService.registerTenant(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('admin/register-tenant')
+  registerTenantBySuperAdmin(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: RegisterTenantDto,
+  ) {
+    return this.authService.registerTenantBySuperAdmin(user, dto);
   }
 
   @Public()

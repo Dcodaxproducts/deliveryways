@@ -127,6 +127,39 @@ export class AuthService {
   }
 
   async registerTenant(dto: RegisterTenantDto) {
+    return this.registerTenantInternal(dto, {
+      autoApproveOwner: false,
+      skipEmailVerification: false,
+    });
+  }
+
+  async registerTenantBySuperAdmin(
+    user: AuthUserContext,
+    dto: RegisterTenantDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can create tenant accounts',
+      );
+    }
+
+    return this.registerTenantInternal(dto, {
+      autoApproveOwner: true,
+      skipEmailVerification: true,
+      createdBy: user.uid,
+      successMessage: 'Tenant account created by super admin.',
+    });
+  }
+
+  private async registerTenantInternal(
+    dto: RegisterTenantDto,
+    options: {
+      autoApproveOwner: boolean;
+      skipEmailVerification: boolean;
+      createdBy?: string;
+      successMessage?: string;
+    },
+  ) {
     const ownerEmail = dto.user.email.trim().toLowerCase();
     const branchAdminInput = dto.branchAdmin;
     const branchAdminEmail = branchAdminInput?.email.trim().toLowerCase();
@@ -160,14 +193,16 @@ export class AuthService {
     }
 
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-    const shouldAutoVerifyUser = this.shouldAutoVerifyUser(emailEnabled);
+    const shouldAutoVerifyUser = options.skipEmailVerification
+      ? true
+      : this.shouldAutoVerifyUser(emailEnabled);
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
     const verificationOtp = shouldAutoVerifyUser ? null : this.generateOtp();
     const verificationOtpExpiresAt = shouldAutoVerifyUser
       ? null
       : this.generateOtpExpiry();
 
-    if (emailEnabled && verificationOtp) {
+    if (!options.skipEmailVerification && emailEnabled && verificationOtp) {
       await this.ensureVerificationEmailCanBeSent(ownerEmail);
     }
 
@@ -279,7 +314,7 @@ export class AuthService {
             : undefined,
           verificationOtpAttempts: 0,
           isVerified: shouldAutoVerifyUser,
-          isApproved: false,
+          isApproved: options.autoApproveOwner,
           profile: {
             firstName: dto.user.firstName,
             lastName: dto.user.lastName,
@@ -353,10 +388,14 @@ export class AuthService {
           ),
           planSnapshot: this.buildPackagePlanSnapshot(packagePlan),
           note: subscriptionPaymentRequired
-            ? 'Payment required to activate selected package plan.'
-            : 'Selected during business owner registration.',
-          createdBy: user.id,
-          updatedBy: user.id,
+            ? options.autoApproveOwner
+              ? 'Created by super admin. Payment required to activate selected package plan.'
+              : 'Payment required to activate selected package plan.'
+            : options.autoApproveOwner
+              ? 'Created by super admin.'
+              : 'Selected during business owner registration.',
+          createdBy: options.createdBy ?? user.id,
+          updatedBy: options.createdBy ?? user.id,
         },
         select: {
           id: true,
@@ -386,7 +425,7 @@ export class AuthService {
       };
     });
 
-    if (emailEnabled && verificationOtp) {
+    if (!options.skipEmailVerification && emailEnabled && verificationOtp) {
       await this.mailerService.sendVerificationEmail(
         ownerEmail,
         verificationOtp,
@@ -422,7 +461,7 @@ export class AuthService {
           restaurantId: null,
           branchId: null,
           isVerified: shouldAutoVerifyUser,
-          isApproved: false,
+          isApproved: options.autoApproveOwner,
           isGuest: false,
         },
         subscription: {
@@ -443,11 +482,16 @@ export class AuthService {
             trialDays: packagePlan.trialDays,
           },
         },
-        verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
+        verificationOtp:
+          shouldExposeDevToken && !options.skipEmailVerification
+            ? verificationOtp
+            : undefined,
       },
-      message: shouldAutoVerifyUser
-        ? 'Tenant registration completed. Email verification is disabled.'
-        : 'Tenant registration completed. Verify email with OTP.',
+      message:
+        options.successMessage ??
+        (shouldAutoVerifyUser
+          ? 'Tenant registration completed. Email verification is disabled.'
+          : 'Tenant registration completed. Verify email with OTP.'),
     };
   }
 

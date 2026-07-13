@@ -65,3 +65,31 @@ describe('AuthController checkEmailRole', () => {
     });
   });
 });
+
+describe('AuthController registerTenantBySuperAdmin', () => {
+  it('delegates super-admin tenant registration to the auth service', () => {
+    const authService = {
+      registerTenantBySuperAdmin: jest.fn().mockReturnValue({
+        data: { ownerId: 'owner-1' },
+        message: 'Tenant account created by super admin.',
+      }),
+    };
+    const controller = new AuthController(authService as never);
+    const user = { uid: 'super-admin-1', role: 'SUPER_ADMIN' } as never;
+    const dto = {
+      packagePlanId: 'plan-1',
+      user: { email: 'owner@example.com' },
+    } as never;
+
+    const result = controller.registerTenantBySuperAdmin(user, dto);
+
+    expect(authService.registerTenantBySuperAdmin).toHaveBeenCalledWith(
+      user,
+      dto,
+    );
+    expect(result).toEqual({
+      data: { ownerId: 'owner-1' },
+      message: 'Tenant account created by super admin.',
+    });
+  });
+});
