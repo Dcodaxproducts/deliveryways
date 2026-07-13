@@ -53,10 +53,12 @@ export class RegisterTenantInfoDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Optional unique slug, auto-generated if missing or taken',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  slug!: string;
+  slug?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

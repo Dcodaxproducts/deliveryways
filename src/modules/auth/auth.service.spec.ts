@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -124,7 +123,9 @@ describe('AuthService registerTenant duplicate email checks', () => {
     tenantsService.findBySlug.mockReset();
 
     service = new AuthService(
-      {} as never,
+      {
+        packagePlan: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as never,
       {} as never,
       tenantsService as never,
       {} as never,
@@ -150,12 +151,14 @@ describe('AuthService registerTenant duplicate email checks', () => {
     expect(tenantsService.findBySlug).not.toHaveBeenCalled();
   });
 
-  it('does not block tenant registration just because the email exists for another role', async () => {
+  it('does not block tenant registration when requested slug already exists', async () => {
     usersService.existsByEmailAndRole!.mockResolvedValue(false);
-    tenantsService.findBySlug.mockResolvedValue({ id: 'tenant-1' });
+    tenantsService.findBySlug
+      .mockResolvedValueOnce({ id: 'tenant-1' })
+      .mockResolvedValueOnce(null);
 
     await expect(service.registerTenant(registerTenantDto)).rejects.toThrow(
-      ConflictException,
+      BadRequestException,
     );
 
     expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
@@ -163,7 +166,8 @@ describe('AuthService registerTenant duplicate email checks', () => {
       role: UserRoleEnum.BUSINESS_ADMIN,
     });
     expect(usersService.findByEmail).not.toHaveBeenCalled();
-    expect(tenantsService.findBySlug).toHaveBeenCalledWith('tenant');
+    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(1, 'tenant');
+    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(2, 'tenant-1');
   });
 });
 
@@ -292,6 +296,80 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       usersService as unknown as UsersService,
       {} as never,
       {} as never,
+    );
+  });
+
+  it('creates tenant with a suffixed slug when requested slug is taken', async () => {
+    tenantsService.findBySlug
+      .mockResolvedValueOnce({ id: 'existing-tenant', slug: 'tenant' })
+      .mockResolvedValueOnce(null);
+
+    await service.registerTenant({
+      packagePlanId: 'plan-1',
+      user: {
+        email: ' Owner@Example.COM ',
+        password: 'Owner@12345',
+        firstName: 'Owner',
+        lastName: 'User',
+      },
+      tenant: {
+        name: 'Tenant',
+        slug: 'tenant',
+      },
+      restaurant: {
+        name: 'Restaurant',
+        slug: 'restaurant',
+      },
+      branch: {
+        name: 'Main',
+        street: 'Street',
+        city: 'City',
+        state: 'State',
+        country: 'PK',
+        lat: '33.6844',
+        lng: '73.0479',
+      },
+    });
+
+    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(1, 'tenant');
+    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(2, 'tenant-1');
+    expect(tenantsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'tenant-1' }),
+      tx,
+    );
+  });
+
+  it('creates tenant slug from name when slug is omitted', async () => {
+    await service.registerTenant({
+      packagePlanId: 'plan-1',
+      user: {
+        email: ' Owner@Example.COM ',
+        password: 'Owner@12345',
+        firstName: 'Owner',
+        lastName: 'User',
+      },
+      tenant: {
+        name: 'Tenant Name!',
+      },
+      restaurant: {
+        name: 'Restaurant',
+        slug: 'restaurant',
+      },
+      branch: {
+        name: 'Main',
+        street: 'Street',
+        city: 'City',
+        state: 'State',
+        country: 'PK',
+        lat: '33.6844',
+        lng: '73.0479',
+      },
+    });
+
+    expect(tenantsService.findBySlug).toHaveBeenCalledWith('tenant-name');
+    expect(tenantsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'tenant-name' }),
+      tx,
     );
   });
 
