@@ -449,8 +449,7 @@ describe('AuthService registerTenant branch admin onboarding', () => {
         paymentStatus: PaymentStatus.PENDING,
         createdBy: 'super-admin-1',
         updatedBy: 'super-admin-1',
-        note:
-          'Created by super admin. Payment required to activate selected package plan.',
+        note: 'Created by super admin. Payment required to activate selected package plan.',
       });
       expect(result.data.user).toMatchObject({
         isVerified: true,
