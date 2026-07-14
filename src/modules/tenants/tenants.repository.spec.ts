@@ -2,7 +2,9 @@ import { TenantsRepository } from './tenants.repository';
 
 describe('TenantsRepository', () => {
   const makePrisma = () => {
-    const transaction = jest.fn((queries: unknown[]) => Promise.resolve(queries));
+    const transaction = jest.fn((queries: unknown[]) =>
+      Promise.resolve(queries),
+    );
     const prisma = {
       $transaction: transaction,
       tenant: {
@@ -72,9 +74,23 @@ describe('TenantsRepository', () => {
       },
     };
 
-    expect(prisma.tenant.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expectedWhere }),
-    );
+    const [findManyArgs] = prisma.tenant.findMany.mock.calls[0] as [
+      {
+        where: typeof expectedWhere;
+        include: {
+          tenantSubscriptions: {
+            orderBy: { createdAt: 'desc' };
+            take: 1;
+          };
+        };
+      },
+    ];
+
+    expect(findManyArgs.where).toEqual(expectedWhere);
+    expect(findManyArgs.include.tenantSubscriptions.orderBy).toEqual({
+      createdAt: 'desc',
+    });
+    expect(findManyArgs.include.tenantSubscriptions.take).toBe(1);
     expect(prisma.tenant.count).toHaveBeenCalledWith({ where: expectedWhere });
     expect(transaction).toHaveBeenCalledTimes(1);
   });
@@ -121,8 +137,24 @@ describe('TenantsRepository', () => {
     expect(
       modelMocks.get('entityTranslation')?.deleteMany,
     ).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
+    expect(
+      modelMocks.get('generatedInvoiceEvent')?.deleteMany,
+    ).toHaveBeenCalledWith({
+      where: { generatedInvoice: { tenantId: 'tenant-1' } },
+    });
     expect(modelMocks.get('generatedInvoice')?.deleteMany).toHaveBeenCalledWith(
       { where: { tenantId: 'tenant-1' } },
+    );
+    expect(
+      modelMocks.get('paymentTransaction')?.deleteMany,
+    ).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
+    expect(modelMocks.get('orderReview')?.deleteMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-1' },
+    });
+    expect(modelMocks.get('modifierCategory')?.deleteMany).toHaveBeenCalledWith(
+      {
+        where: { restaurant: { tenantId: 'tenant-1' } },
+      },
     );
     expect(
       modelMocks.get('subscriptionDeduction')?.deleteMany,
@@ -135,6 +167,15 @@ describe('TenantsRepository', () => {
       calls.indexOf('user.deleteMany'),
     );
     expect(calls.indexOf('entityTranslation.deleteMany')).toBeLessThan(
+      calls.indexOf('restaurant.deleteMany'),
+    );
+    expect(calls.indexOf('paymentTransaction.deleteMany')).toBeLessThan(
+      calls.indexOf('order.deleteMany'),
+    );
+    expect(calls.indexOf('orderReview.deleteMany')).toBeLessThan(
+      calls.indexOf('user.deleteMany'),
+    );
+    expect(calls.indexOf('modifierCategory.deleteMany')).toBeLessThan(
       calls.indexOf('restaurant.deleteMany'),
     );
     expect(calls.indexOf('subscriptionDeduction.deleteMany')).toBeLessThan(

@@ -71,6 +71,22 @@ export class TenantsRepository {
           owner: {
             select: { isApproved: true, isVerified: true },
           },
+          tenantSubscriptions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              status: true,
+              paymentStatus: true,
+              createdAt: true,
+              packagePlan: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -148,6 +164,9 @@ export class TenantsRepository {
     await tx.pushDeviceToken.deleteMany({ where: { tenantId } });
     await tx.contactSubmission.deleteMany({ where: { tenantId } });
     await tx.entityTranslation.deleteMany({ where: { tenantId } });
+    await tx.generatedInvoiceEvent.deleteMany({
+      where: { generatedInvoice: { tenantId } },
+    });
     await tx.generatedInvoice.deleteMany({ where: { tenantId } });
     await tx.notification.deleteMany({ where: { tenantId } });
     await tx.chatMessage.deleteMany({ where: { thread: { tenantId } } });
@@ -181,9 +200,10 @@ export class TenantsRepository {
 
     await tx.walletTransaction.deleteMany({ where: { tenantId } });
     await tx.loyaltyTransaction.deleteMany({ where: { tenantId } });
+    await tx.paymentTransaction.deleteMany({ where: { tenantId } });
+    await tx.orderReview.deleteMany({ where: { tenantId } });
     await tx.orderItem.deleteMany({ where: { order: { tenantId } } });
     await tx.order.deleteMany({ where: { tenantId } });
-    await tx.paymentTransaction.deleteMany({ where: { tenantId } });
 
     await tx.walletAccount.deleteMany({ where: { tenantId } });
     await tx.restaurantPayoutRequest.deleteMany({ where: { tenantId } });
@@ -256,6 +276,9 @@ export class TenantsRepository {
       where: { restaurant: { tenantId } },
     });
     await tx.modifier.deleteMany({ where: { restaurant: { tenantId } } });
+    await tx.modifierCategory.deleteMany({
+      where: { restaurant: { tenantId } },
+    });
     await tx.modifierGroup.deleteMany({
       where: { restaurant: { tenantId } },
     });

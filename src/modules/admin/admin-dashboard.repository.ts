@@ -431,6 +431,13 @@ export class AdminDashboardRepository {
   async getBusinessOwnersStats(): Promise<AdminDashboardBusinessOwnersStats> {
     const where: Prisma.TenantWhereInput = {
       deletedAt: null,
+      owner: {
+        role: UserRole.BUSINESS_ADMIN,
+        deletedAt: null,
+      },
+    };
+    const activeWhere: Prisma.TenantWhereInput = {
+      ...where,
       isActive: true,
       owner: {
         role: UserRole.BUSINESS_ADMIN,
@@ -438,12 +445,16 @@ export class AdminDashboardRepository {
         isActive: true,
       },
     };
-    const totalBusinessOwners = await this.prisma.tenant.count({ where });
+    const [totalBusinessOwners, activeBusinessOwners] =
+      await this.prisma.$transaction([
+        this.prisma.tenant.count({ where }),
+        this.prisma.tenant.count({ where: activeWhere }),
+      ]);
 
     return {
       totalBusinessOwners,
-      activeBusinessOwners: totalBusinessOwners,
-      inactiveBusinessOwners: 0,
+      activeBusinessOwners,
+      inactiveBusinessOwners: totalBusinessOwners - activeBusinessOwners,
     };
   }
 
