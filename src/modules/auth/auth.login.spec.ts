@@ -18,6 +18,7 @@ describe('AuthService login', () => {
   >;
   let prismaService: {
     branch: { findFirst: jest.Mock };
+    tenantSubscription: { findFirst: jest.Mock };
     deliveryman: {
       findFirst: jest.Mock;
       findUnique: jest.Mock;
@@ -43,6 +44,9 @@ describe('AuthService login', () => {
     prismaService = {
       branch: {
         findFirst: jest.fn(),
+      },
+      tenantSubscription: {
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       deliveryman: {
         findFirst: jest.fn(),
