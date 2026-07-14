@@ -6400,6 +6400,100 @@ describe('OrdersService - wallet payment', () => {
     );
   });
 
+  it('prices flexible fixed deal quote quantities when one line spans deal groups', async () => {
+    const couponsService = {
+      getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue({
+        dealId: 'deal-1',
+        fixedPrice: new Prisma.Decimal(20),
+        menuItemIds: [],
+        selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+        requiredQuantity: 2,
+        categoryScopes: [
+          { menuCategoryId: 'cat-pizza', itemLimit: 1 },
+          { menuCategoryId: 'cat-drinks', itemLimit: 1 },
+        ],
+      }),
+    };
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const priced = await (
+      service as unknown as {
+        applyFixedDealPricingToQuoteLines: (
+          lines: Array<{
+            menuItemId: string;
+            categoryId: string;
+            categoryIds: string[];
+            menuItemName: string;
+            dealId: string;
+            quantity: number;
+            depositAmount: Prisma.Decimal;
+            unitPrice: Prisma.Decimal;
+            lineTotal: Prisma.Decimal;
+            snapshotModifiers: [];
+          }>,
+          restaurantId: string,
+          branchId: string,
+        ) => Promise<Array<{ lineTotal: Prisma.Decimal }>>;
+      }
+    ).applyFixedDealPricingToQuoteLines(
+      [
+        {
+          menuItemId: 'pizza-1',
+          categoryId: 'cat-pizza',
+          categoryIds: ['cat-pizza'],
+          menuItemName: 'Pizza',
+          dealId: 'deal-1',
+          quantity: 2,
+          depositAmount: new Prisma.Decimal(0),
+          unitPrice: new Prisma.Decimal(12),
+          lineTotal: new Prisma.Decimal(24),
+          snapshotModifiers: [],
+        },
+        {
+          menuItemId: 'drink-1',
+          categoryId: 'cat-drinks',
+          categoryIds: ['cat-drinks'],
+          menuItemName: 'Drink 1',
+          dealId: 'deal-1',
+          quantity: 1,
+          depositAmount: new Prisma.Decimal(0),
+          unitPrice: new Prisma.Decimal(5),
+          lineTotal: new Prisma.Decimal(5),
+          snapshotModifiers: [],
+        },
+        {
+          menuItemId: 'drink-2',
+          categoryId: 'cat-drinks',
+          categoryIds: ['cat-drinks'],
+          menuItemName: 'Drink 2',
+          dealId: 'deal-1',
+          quantity: 1,
+          depositAmount: new Prisma.Decimal(0),
+          unitPrice: new Prisma.Decimal(6),
+          lineTotal: new Prisma.Decimal(6),
+          snapshotModifiers: [],
+        },
+      ],
+      'restaurant-1',
+      'branch-1',
+    );
+
+    expect(
+      priced.reduce(
+        (sum, line) => sum.plus(line.lineTotal),
+        new Prisma.Decimal(0),
+      ),
+    ).toEqual(new Prisma.Decimal(40));
+  });
+
   it('allows quoted coupon validation without delivery coordinates on the main quote path', async () => {
     const prisma = {
       branch: {

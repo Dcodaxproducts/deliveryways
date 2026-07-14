@@ -1598,79 +1598,232 @@ export class OrdersService {
         continue;
       }
 
-      const dealLineIndexes = this.findFixedDealQuoteLineIndexes(
+      pricedLines = this.applyFixedDealPricingForDeal(
         pricedLines,
         dealId,
         pricing,
       );
-      const dealQuantity = this.resolveFixedDealQuoteQuantity(
-        pricedLines,
-        dealLineIndexes,
-        pricing,
-      );
+    }
 
-      if (!dealLineIndexes.length || !dealQuantity) {
-        continue;
-      }
+    return pricedLines;
+  }
 
-      const fixedTotal = pricing.fixedPrice.mul(dealQuantity);
-      const modifierTotals = dealLineIndexes.map((index) =>
-        (pricedLines[index].snapshotModifiers ?? []).reduce(
-          (sum, modifier) =>
-            sum.plus(
-              new Prisma.Decimal(modifier.unitPrice).mul(modifier.quantity),
-            ),
-          new Prisma.Decimal(0),
-        ),
-      );
-      const merchandiseTotals = dealLineIndexes.map((index, offset) => {
-        const line = pricedLines[index];
-        return line.lineTotal
+  private applyFixedDealPricingForDeal(
+    lines: QuoteLine[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ) {
+    const dealGroups =
+      pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS
+        ? this.findFlexibleDealQuoteGroups(lines, dealId, pricing)
+        : this.findFixedDealQuoteLineGroups(lines, dealId, pricing);
+
+    if (!dealGroups.length) {
+      return lines;
+    }
+
+    const groupedQuantityByIndex = new Map<number, number>();
+    const allocatedMerchandiseByIndex = new Map<number, Prisma.Decimal>();
+
+    for (const dealGroup of dealGroups) {
+      const fixedTotal = pricing.fixedPrice.mul(dealGroup.quantity);
+      const merchandiseTotals = dealGroup.entries.map((entry) => {
+        const line = lines[entry.index];
+        const modifierTotal = this.sumQuoteLineModifierUnitTotal(line);
+        const merchandiseUnitTotal = line.lineTotal
           .minus(line.depositAmount.mul(line.quantity))
-          .minus(modifierTotals[offset].mul(line.quantity));
+          .minus(modifierTotal.mul(line.quantity))
+          .div(line.quantity);
+
+        return merchandiseUnitTotal.mul(entry.quantity);
       });
       const allocations = this.allocateFixedDealTotal(
         merchandiseTotals,
         fixedTotal,
       );
-      const allocationByIndex = new Map(
-        dealLineIndexes.map((lineIndex, allocationIndex) => [
-          lineIndex,
-          allocations[allocationIndex],
-        ]),
-      );
 
-      pricedLines = pricedLines.map((line, index) => {
-        const allocatedMerchandiseTotal = allocationByIndex.get(index);
-        if (!allocatedMerchandiseTotal) {
-          return line;
-        }
-
-        const modifierTotal = (line.snapshotModifiers ?? []).reduce(
-          (sum, modifier) =>
-            sum.plus(
-              new Prisma.Decimal(modifier.unitPrice).mul(modifier.quantity),
-            ),
-          new Prisma.Decimal(0),
+      dealGroup.entries.forEach((entry, allocationIndex) => {
+        groupedQuantityByIndex.set(
+          entry.index,
+          (groupedQuantityByIndex.get(entry.index) ?? 0) + entry.quantity,
         );
-        const unitPrice = allocatedMerchandiseTotal
-          .div(line.quantity)
-          .plus(modifierTotal)
-          .toDecimalPlaces(2);
-        const lineTotal = allocatedMerchandiseTotal
-          .plus(modifierTotal.mul(line.quantity))
-          .plus(line.depositAmount.mul(line.quantity))
-          .toDecimalPlaces(2);
-
-        return {
-          ...line,
-          unitPrice,
-          lineTotal,
-        };
+        allocatedMerchandiseByIndex.set(
+          entry.index,
+          (
+            allocatedMerchandiseByIndex.get(entry.index) ??
+            new Prisma.Decimal(0)
+          ).plus(allocations[allocationIndex]),
+        );
       });
     }
 
-    return pricedLines;
+    return lines.map((line, index) => {
+      const groupedQuantity = groupedQuantityByIndex.get(index) ?? 0;
+      const allocatedMerchandiseTotal = allocatedMerchandiseByIndex.get(index);
+      if (!groupedQuantity || !allocatedMerchandiseTotal) {
+        return line;
+      }
+
+      const modifierTotal = this.sumQuoteLineModifierUnitTotal(line);
+      const rawMerchandiseTotal = line.lineTotal
+        .minus(line.depositAmount.mul(line.quantity))
+        .minus(modifierTotal.mul(line.quantity));
+      const rawMerchandiseUnitTotal = rawMerchandiseTotal.div(line.quantity);
+      const ungroupedQuantity = Math.max(line.quantity - groupedQuantity, 0);
+      const merchandiseTotal = allocatedMerchandiseTotal.plus(
+        rawMerchandiseUnitTotal.mul(ungroupedQuantity),
+      );
+      const lineTotal = merchandiseTotal
+        .plus(modifierTotal.mul(line.quantity))
+        .plus(line.depositAmount.mul(line.quantity))
+        .toDecimalPlaces(2);
+      const unitPrice = lineTotal
+        .minus(line.depositAmount.mul(line.quantity))
+        .div(line.quantity)
+        .toDecimalPlaces(2);
+
+      return {
+        ...line,
+        unitPrice,
+        lineTotal,
+      };
+    });
+  }
+
+  private sumQuoteLineModifierUnitTotal(line: QuoteLine) {
+    return (line.snapshotModifiers ?? []).reduce(
+      (sum, modifier) =>
+        sum.plus(new Prisma.Decimal(modifier.unitPrice).mul(modifier.quantity)),
+      new Prisma.Decimal(0),
+    );
+  }
+
+  private findFixedDealQuoteLineGroups(
+    lines: QuoteLine[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ): Array<{
+    entries: Array<{ index: number; quantity: number }>;
+    quantity: number;
+  }> {
+    const dealLineIndexes = this.findFixedDealQuoteLineIndexes(
+      lines,
+      dealId,
+      pricing,
+    );
+    const dealQuantity = this.resolveFixedDealQuoteQuantity(
+      lines,
+      dealLineIndexes,
+      pricing,
+    );
+
+    if (!dealLineIndexes.length || !dealQuantity) {
+      return [];
+    }
+
+    return [
+      {
+        entries: dealLineIndexes.map((index) => ({
+          index,
+          quantity: lines[index].quantity,
+        })),
+        quantity: dealQuantity,
+      },
+    ];
+  }
+
+  private findFlexibleDealQuoteGroups(
+    lines: QuoteLine[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ): Array<{
+    entries: Array<{ index: number; quantity: number }>;
+    quantity: number;
+  }> {
+    const eligibleIndexes = lines.flatMap((line, index) =>
+      line.dealId === dealId && this.isFlexibleDealQuoteLine(line, pricing)
+        ? [index]
+        : [],
+    );
+
+    if (!eligibleIndexes.length) {
+      return [];
+    }
+
+    const compactEntries = (indexes: number[]) => {
+      const counts = new Map<number, number>();
+      indexes.forEach((index) =>
+        counts.set(index, (counts.get(index) ?? 0) + 1),
+      );
+
+      return [...counts.entries()]
+        .map(([index, quantity]) => ({ index, quantity }))
+        .sort((left, right) => left.index - right.index);
+    };
+    const unitsForIndexes = (indexes: number[]) =>
+      indexes.flatMap((index) =>
+        Array.from({ length: lines[index].quantity }, () => index),
+      );
+    const categoryScopes = pricing.categoryScopes.filter(
+      (scope) => scope.itemLimit && scope.itemLimit > 0,
+    );
+
+    if (categoryScopes.length) {
+      const unitsByScope = categoryScopes.map((scope) =>
+        unitsForIndexes(
+          eligibleIndexes.filter((index) =>
+            this.quoteLineMatchesDealCategoryScope(lines[index], scope),
+          ),
+        ),
+      );
+
+      if (unitsByScope.some((scopeUnits) => !scopeUnits.length)) {
+        return [];
+      }
+
+      const groupCount = Math.min(
+        ...unitsByScope.map((scopeUnits, scopeIndex) =>
+          Math.floor(
+            scopeUnits.length / (categoryScopes[scopeIndex].itemLimit ?? 1),
+          ),
+        ),
+      );
+
+      return Array.from({ length: groupCount }, (_, groupIndex) => {
+        const groupUnits = unitsByScope.flatMap((scopeUnits, scopeIndex) => {
+          const itemLimit = categoryScopes[scopeIndex].itemLimit ?? 1;
+          const start = groupIndex * itemLimit;
+          return scopeUnits.slice(start, start + itemLimit);
+        });
+
+        return {
+          entries: compactEntries(groupUnits),
+          quantity: 1,
+        };
+      }).filter((group) => group.entries.length > 0);
+    }
+
+    const requiredQuantity = pricing.requiredQuantity ?? 0;
+    if (requiredQuantity < 1) {
+      return [];
+    }
+
+    const units = unitsForIndexes(eligibleIndexes);
+    const groupCount = Math.floor(units.length / requiredQuantity);
+
+    return Array.from({ length: groupCount }, (_, groupIndex) => {
+      const start = groupIndex * requiredQuantity;
+      return {
+        entries: compactEntries(units.slice(start, start + requiredQuantity)),
+        quantity: 1,
+      };
+    }).filter((group) => group.entries.length > 0);
   }
 
   private findFixedDealQuoteLineIndexes(

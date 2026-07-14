@@ -1582,6 +1582,90 @@ describe('CartService', () => {
     ]);
   });
 
+  it('prices flexible deal display totals when a child row quantity spans deal groups', async () => {
+    const { service, couponsService } = makeService();
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-flex',
+      code: 'FLEX',
+      title: 'Pizza + Drink',
+      description: null,
+      imageUrl: null,
+      fixedPrice: new Prisma.Decimal(20),
+      menuItemIds: [],
+      categoryScopes: [
+        { menuCategoryId: 'cat-pizza', itemLimit: 1, forcedVariationId: null },
+        { menuCategoryId: 'cat-drink', itemLimit: 1, forcedVariationId: null },
+      ],
+      requiredQuantity: 2,
+      selectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+    });
+    const cart = { restaurantId: 'restaurant-1', branchId: 'branch-1' };
+    const items = [
+      {
+        id: 'pizza-line-1',
+        menuItemId: 'pizza-1',
+        categoryId: 'cat-pizza',
+        categoryIds: ['cat-pizza'],
+        dealId: 'deal-flex',
+        quantity: 2,
+        unitPrice: 12,
+        modifiersTotal: 0,
+        unitPriceWithModifiers: 12,
+        depositAmount: 0,
+        depositTotal: new Prisma.Decimal(0),
+        lineTotal: 24,
+      },
+      {
+        id: 'drink-line-1',
+        menuItemId: 'drink-1',
+        categoryId: 'cat-drink',
+        categoryIds: ['cat-drink'],
+        dealId: 'deal-flex',
+        quantity: 1,
+        unitPrice: 5,
+        modifiersTotal: 0,
+        unitPriceWithModifiers: 5,
+        depositAmount: 0,
+        depositTotal: new Prisma.Decimal(0),
+        lineTotal: 5,
+      },
+      {
+        id: 'drink-line-2',
+        menuItemId: 'drink-2',
+        categoryId: 'cat-drink',
+        categoryIds: ['cat-drink'],
+        dealId: 'deal-flex',
+        quantity: 1,
+        unitPrice: 6,
+        modifiersTotal: 0,
+        unitPriceWithModifiers: 6,
+        depositAmount: 0,
+        depositTotal: new Prisma.Decimal(0),
+        lineTotal: 6,
+      },
+    ];
+
+    const priced = await (
+      service as unknown as {
+        applyFixedDealPricingToCartItems: (
+          items: unknown[],
+          cart: { restaurantId: string; branchId: string },
+        ) => Promise<unknown[]>;
+      }
+    ).applyFixedDealPricingToCartItems(items, cart);
+    const grouped = await (
+      service as unknown as {
+        groupDealItemsForCartResponse: (
+          items: unknown[],
+          cart: { restaurantId: string; branchId: string },
+        ) => Promise<Array<{ lineTotal: number }>>;
+      }
+    ).groupDealItemsForCartResponse(priced, cart);
+
+    expect(grouped).toHaveLength(2);
+    expect(grouped.reduce((sum, item) => sum + item.lineTotal, 0)).toBe(40);
+  });
+
   it('rejects direct item quantity updates for deal child rows', async () => {
     const { service, cartRepository } = makeService();
     cartRepository.findItemByIdForCustomer.mockResolvedValue({

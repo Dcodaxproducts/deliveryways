@@ -1904,65 +1904,105 @@ export class CartService {
         continue;
       }
 
-      const dealGroups = this.findDealItemIndexGroups(
+      pricedItems = this.applyFixedDealPricingForDeal(
         pricedItems,
         dealId,
         pricing,
       );
-
-      if (!dealGroups.length) {
-        continue;
-      }
-
-      const allocationByIndex = new Map<number, Prisma.Decimal>();
-
-      for (const dealGroup of dealGroups) {
-        const fixedTotal = pricing.fixedPrice.mul(dealGroup.quantity);
-        const modifierTotals = dealGroup.indexes.map(
-          (index) => new Prisma.Decimal(pricedItems[index].modifiersTotal ?? 0),
-        );
-        const merchandiseTotals = dealGroup.indexes.map((index, offset) => {
-          const item = pricedItems[index];
-          return new Prisma.Decimal(item.lineTotal ?? 0)
-            .minus(item.depositTotal)
-            .minus(modifierTotals[offset].mul(item.quantity));
-        });
-        const allocations = this.allocateFixedDealTotal(
-          merchandiseTotals,
-          fixedTotal,
-        );
-
-        dealGroup.indexes.forEach((itemIndex, allocationIndex) => {
-          allocationByIndex.set(itemIndex, allocations[allocationIndex]);
-        });
-      }
-
-      pricedItems = pricedItems.map((item, index) => {
-        const allocatedMerchandiseTotal = allocationByIndex.get(index);
-        if (!allocatedMerchandiseTotal) {
-          return item;
-        }
-
-        const modifierTotal = new Prisma.Decimal(item.modifiersTotal ?? 0);
-        const unitPrice = allocatedMerchandiseTotal
-          .div(item.quantity)
-          .plus(modifierTotal)
-          .toDecimalPlaces(2);
-        const lineTotal = allocatedMerchandiseTotal
-          .plus(modifierTotal.mul(item.quantity))
-          .plus(item.depositTotal)
-          .toDecimalPlaces(2);
-
-        return {
-          ...item,
-          unitPrice: Number(unitPrice),
-          unitPriceWithModifiers: Number(unitPrice),
-          lineTotal: Number(lineTotal),
-        };
-      });
     }
 
     return pricedItems;
+  }
+
+  private applyFixedDealPricingForDeal<T extends CartResponseDealLine>(
+    items: T[],
+    dealId: string,
+    pricing: NonNullable<
+      Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
+    >,
+  ): T[] {
+    const dealGroups =
+      pricing.selectionMode === CouponDealSelectionMode.FLEXIBLE_ITEMS
+        ? this.findFlexibleDealDisplayGroups(items, dealId, pricing)
+        : this.findDealItemIndexGroups(items, dealId, pricing).map((group) => ({
+            entries: group.indexes.map((index) => ({
+              index,
+              quantity: items[index].quantity,
+            })),
+            quantity: group.quantity,
+          }));
+
+    if (!dealGroups.length) {
+      return items;
+    }
+
+    const groupedQuantityByIndex = new Map<number, number>();
+    const allocatedMerchandiseByIndex = new Map<number, Prisma.Decimal>();
+
+    for (const dealGroup of dealGroups) {
+      const fixedTotal = pricing.fixedPrice.mul(dealGroup.quantity);
+      const merchandiseTotals = dealGroup.entries.map((entry) => {
+        const item = items[entry.index];
+        const modifierTotal = new Prisma.Decimal(item.modifiersTotal ?? 0);
+        const merchandiseUnitTotal = new Prisma.Decimal(item.lineTotal ?? 0)
+          .minus(item.depositTotal)
+          .minus(modifierTotal.mul(item.quantity))
+          .div(item.quantity);
+
+        return merchandiseUnitTotal.mul(entry.quantity);
+      });
+      const allocations = this.allocateFixedDealTotal(
+        merchandiseTotals,
+        fixedTotal,
+      );
+
+      dealGroup.entries.forEach((entry, allocationIndex) => {
+        groupedQuantityByIndex.set(
+          entry.index,
+          (groupedQuantityByIndex.get(entry.index) ?? 0) + entry.quantity,
+        );
+        allocatedMerchandiseByIndex.set(
+          entry.index,
+          (
+            allocatedMerchandiseByIndex.get(entry.index) ??
+            new Prisma.Decimal(0)
+          ).plus(allocations[allocationIndex]),
+        );
+      });
+    }
+
+    return items.map((item, index) => {
+      const groupedQuantity = groupedQuantityByIndex.get(index) ?? 0;
+      const allocatedMerchandiseTotal = allocatedMerchandiseByIndex.get(index);
+      if (!groupedQuantity || !allocatedMerchandiseTotal) {
+        return item;
+      }
+
+      const modifierTotal = new Prisma.Decimal(item.modifiersTotal ?? 0);
+      const rawMerchandiseTotal = new Prisma.Decimal(item.lineTotal ?? 0)
+        .minus(item.depositTotal)
+        .minus(modifierTotal.mul(item.quantity));
+      const rawMerchandiseUnitTotal = rawMerchandiseTotal.div(item.quantity);
+      const ungroupedQuantity = Math.max(item.quantity - groupedQuantity, 0);
+      const merchandiseTotal = allocatedMerchandiseTotal.plus(
+        rawMerchandiseUnitTotal.mul(ungroupedQuantity),
+      );
+      const lineTotal = merchandiseTotal
+        .plus(modifierTotal.mul(item.quantity))
+        .plus(item.depositTotal)
+        .toDecimalPlaces(2);
+      const unitPrice = lineTotal
+        .minus(item.depositTotal)
+        .div(item.quantity)
+        .toDecimalPlaces(2);
+
+      return {
+        ...item,
+        unitPrice: Number(unitPrice),
+        unitPriceWithModifiers: Number(unitPrice),
+        lineTotal: Number(lineTotal),
+      };
+    });
   }
 
   private async groupDealItemsForCartResponse(
@@ -2001,13 +2041,47 @@ export class CartService {
         pricing,
       );
 
+      const dealGroupedQuantityByIndex = new Map<number, number>();
+      dealGroups.forEach((dealGroup) => {
+        dealGroup.entries.forEach((entry) => {
+          dealGroupedQuantityByIndex.set(
+            entry.index,
+            (dealGroupedQuantityByIndex.get(entry.index) ?? 0) + entry.quantity,
+          );
+        });
+      });
+      const dealConsumedQuantityByIndex = new Map<number, number>();
+      const dealConsumedLineTotalByIndex = new Map<number, Prisma.Decimal>();
+
       for (const dealGroup of dealGroups) {
-        const includedItems = dealGroup.entries.map((entry) =>
-          this.cloneCartResponseItemQuantity(
+        const includedItems = dealGroup.entries.map((entry) => {
+          const consumedQuantity =
+            dealConsumedQuantityByIndex.get(entry.index) ?? 0;
+          const consumedLineTotal =
+            dealConsumedLineTotalByIndex.get(entry.index) ??
+            new Prisma.Decimal(0);
+          const totalGroupedQuantity =
+            dealGroupedQuantityByIndex.get(entry.index) ?? entry.quantity;
+          const cloned = this.cloneCartResponseItemQuantity(
             items[entry.index],
             entry.quantity,
-          ),
-        );
+            {
+              consumedQuantity,
+              consumedLineTotal,
+              totalGroupedQuantity,
+            },
+          );
+          dealConsumedQuantityByIndex.set(
+            entry.index,
+            consumedQuantity + entry.quantity,
+          );
+          dealConsumedLineTotalByIndex.set(
+            entry.index,
+            consumedLineTotal.plus(cloned.lineTotal ?? 0),
+          );
+
+          return cloned;
+        });
         const depositTotal = includedItems.reduce(
           (sum, item) => sum.plus(item.depositTotal),
           new Prisma.Decimal(0),
@@ -2112,8 +2186,8 @@ export class CartService {
     return this.findFlexibleDealDisplayGroups(items, dealId, pricing);
   }
 
-  private findFlexibleDealDisplayGroups(
-    items: CartResponseItem[],
+  private findFlexibleDealDisplayGroups<T extends CartResponseDealLine>(
+    items: T[],
     dealId: string,
     pricing: NonNullable<
       Awaited<ReturnType<CouponsService['getActiveFixedPriceDealPricing']>>
@@ -2205,16 +2279,22 @@ export class CartService {
   private cloneCartResponseItemQuantity(
     item: CartResponseItem,
     quantity: number,
+    splitContext?: {
+      consumedQuantity: number;
+      consumedLineTotal: Prisma.Decimal;
+      totalGroupedQuantity: number;
+    },
   ): CartResponseItem {
-    if (item.quantity === quantity) {
+    if (item.quantity === quantity && !splitContext) {
       return item;
     }
 
     const currentQuantity = item.quantity || 1;
-    const ratio = new Prisma.Decimal(quantity).div(currentQuantity);
-    const lineTotal = new Prisma.Decimal(item.lineTotal ?? 0)
-      .mul(ratio)
-      .toDecimalPlaces(2);
+    const lineTotal = splitContext
+      ? this.allocateCartResponseLineSplit(item, quantity, splitContext)
+      : new Prisma.Decimal(item.lineTotal ?? 0)
+          .mul(new Prisma.Decimal(quantity).div(currentQuantity))
+          .toDecimalPlaces(2);
 
     return {
       ...item,
@@ -2224,6 +2304,29 @@ export class CartService {
       ),
       lineTotal: Number(lineTotal),
     };
+  }
+
+  private allocateCartResponseLineSplit(
+    item: CartResponseItem,
+    quantity: number,
+    splitContext: {
+      consumedQuantity: number;
+      consumedLineTotal: Prisma.Decimal;
+      totalGroupedQuantity: number;
+    },
+  ) {
+    const lineTotal = new Prisma.Decimal(item.lineTotal ?? 0);
+    if (
+      splitContext.consumedQuantity + quantity >=
+      splitContext.totalGroupedQuantity
+    ) {
+      return lineTotal.minus(splitContext.consumedLineTotal).toDecimalPlaces(2);
+    }
+
+    const currentQuantity = item.quantity || 1;
+    return lineTotal
+      .mul(new Prisma.Decimal(quantity).div(currentQuantity))
+      .toDecimalPlaces(2);
   }
 
   private findDealItemIndexGroups<T extends CartResponseDealLine>(
