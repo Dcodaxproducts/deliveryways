@@ -447,6 +447,75 @@ export class AdminDashboardRepository {
     };
   }
 
+  async getRestaurantOverview(
+    scope: AdminDashboardScope,
+  ): Promise<AdminDashboardRestaurantOverview> {
+    const orderWhere = this.buildOrderWhere(scope);
+    const customerWhere = this.buildCustomerWhere(scope);
+    const deliverymanWhere = this.buildDeliverymanWhere(scope);
+    const employeeWhere = this.buildEmployeeWhere(scope);
+
+    const [
+      ordersAggregate,
+      activeOrders,
+      totalCustomers,
+      activeCustomers,
+      totalDeliverymen,
+      availableDeliverymen,
+      totalEmployees,
+      activeEmployees,
+    ] = await this.prisma.$transaction([
+      this.prisma.order.aggregate({
+        where: orderWhere,
+        _count: { id: true },
+        _sum: { totalAmount: true },
+        _avg: { totalAmount: true },
+      }),
+      this.prisma.order.count({
+        where: {
+          ...orderWhere,
+          status: {
+            in: [
+              'PLACED',
+              'CONFIRMED',
+              'PREPARING',
+              'READY_FOR_PICKUP',
+              'READY_TO_SERVE',
+              'OUT_FOR_DELIVERY',
+            ],
+          },
+        },
+      }),
+      this.prisma.user.count({ where: customerWhere }),
+      this.prisma.user.count({ where: { ...customerWhere, isActive: true } }),
+      this.prisma.deliveryman.count({ where: deliverymanWhere }),
+      this.prisma.deliveryman.count({
+        where: {
+          ...deliverymanWhere,
+          isActive: true,
+          status: DeliverymanStatus.AVAILABLE,
+        },
+      }),
+      this.prisma.staffUser.count({ where: employeeWhere }),
+      this.prisma.staffUser.count({
+        where: { ...employeeWhere, isActive: true },
+      }),
+    ]);
+
+    return {
+      totalOrders: ordersAggregate._count.id,
+      totalRevenue: Number(ordersAggregate._sum.totalAmount ?? 0),
+      averageOrderValue: Number(ordersAggregate._avg.totalAmount ?? 0),
+      activeOrders,
+      totalCustomers,
+      activeCustomers,
+      totalDeliverymen,
+      availableDeliverymen,
+      totalEmployees,
+      activeEmployees,
+    };
+  }
+
   async getDeliverymenStats(
     scope: AdminDashboardScope,
   ): Promise<AdminDashboardDeliverymenStats> {
