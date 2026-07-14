@@ -49,6 +49,11 @@ export class TenantsRepository {
     const where: Prisma.TenantWhereInput = {
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(includeInactive ? {} : { isActive: true }),
+      owner: {
+        role: 'BUSINESS_ADMIN',
+        ...(withDeleted ? {} : { deletedAt: null }),
+        ...(includeInactive ? {} : { isActive: true }),
+      },
       ...(query.search
         ? {
             OR: [
@@ -140,6 +145,10 @@ export class TenantsRepository {
       data: { managerId: null },
     });
 
+    await tx.pushDeviceToken.deleteMany({ where: { tenantId } });
+    await tx.contactSubmission.deleteMany({ where: { tenantId } });
+    await tx.entityTranslation.deleteMany({ where: { tenantId } });
+    await tx.generatedInvoice.deleteMany({ where: { tenantId } });
     await tx.notification.deleteMany({ where: { tenantId } });
     await tx.chatMessage.deleteMany({ where: { thread: { tenantId } } });
     await tx.chatThread.deleteMany({ where: { tenantId } });
@@ -177,6 +186,9 @@ export class TenantsRepository {
     await tx.paymentTransaction.deleteMany({ where: { tenantId } });
 
     await tx.walletAccount.deleteMany({ where: { tenantId } });
+    await tx.restaurantPayoutRequest.deleteMany({ where: { tenantId } });
+    await tx.restaurantWalletTransaction.deleteMany({ where: { tenantId } });
+    await tx.restaurantWalletAccount.deleteMany({ where: { tenantId } });
     await tx.loyaltyAccount.deleteMany({ where: { tenantId } });
     await tx.loyaltyProgram.deleteMany({ where: { tenantId } });
     await tx.coupon.deleteMany({ where: { tenantId } });
@@ -263,6 +275,7 @@ export class TenantsRepository {
     await tx.user.deleteMany({ where: { tenantId } });
 
     await tx.address.deleteMany({ where: { tenantId } });
+    await tx.subscriptionDeduction.deleteMany({ where: { tenantId } });
     await tx.tenantSubscription.deleteMany({ where: { tenantId } });
     await tx.packagePlan.deleteMany({ where: { tenantId } });
     await tx.branch.deleteMany({ where: { tenantId } });
