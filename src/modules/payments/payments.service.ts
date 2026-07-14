@@ -27,6 +27,7 @@ import {
   CreateSubscriptionPaymentAttemptDto,
   ListRestaurantPayoutRequestsDto,
   MarkRestaurantPayoutPaidDto,
+  MarkSubscriptionManualPaidDto,
   ListPaymentsDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
@@ -34,6 +35,7 @@ import {
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
+  SendSubscriptionPaymentRequestDto,
 } from './dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
@@ -44,6 +46,7 @@ import {
   CreateWalletTopUpDto,
   GuestPurchaseGiftCardDto,
 } from '../customer-app/dto';
+import { MailerService } from '../mailer/mailer.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -74,6 +77,7 @@ export class PaymentsService {
     private readonly stripePaymentsService: StripePaymentsService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly globalSettingsService?: GlobalSettingsService,
+    private readonly mailerService?: MailerService,
   ) {}
 
   async createSubscriptionAttempt(
@@ -198,6 +202,219 @@ export class PaymentsService {
       },
       paymentSession,
       message: 'Subscription payment intent created successfully',
+    };
+  }
+
+  async sendSubscriptionPaymentRequest(
+    user: AuthUserContext,
+    subscriptionId: string,
+    dto: SendSubscriptionPaymentRequestDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admins can send payment requests',
+      );
+    }
+
+    const attempt = await this.createSubscriptionAttempt(user, subscriptionId, {
+      currency: dto.currency,
+      note: dto.note ?? 'Super admin payment request sent to owner',
+    });
+    const recipientEmail = await this.resolveSubscriptionPaymentRecipient(
+      subscriptionId,
+      dto.email,
+    );
+    const paymentLink = this.buildSubscriptionPaymentLink(
+      dto.paymentUrl,
+      subscriptionId,
+      attempt.paymentSession.paymentIntentId,
+    );
+    let emailStatus: 'SENT' | 'SKIPPED' = 'SKIPPED';
+    let emailReason: string | null = null;
+
+    if (!recipientEmail) {
+      emailReason = 'No owner or billing email is available';
+    } else if (!this.mailerService) {
+      emailReason = 'Mailer service is not configured';
+    } else {
+      await this.mailerService.sendEmail(
+        recipientEmail,
+        'DeliveryWays subscription payment request',
+        this.buildSubscriptionPaymentRequestEmail({
+          subscriptionId,
+          paymentIntentId: attempt.paymentSession.paymentIntentId,
+          paymentLink,
+        }),
+      );
+      emailStatus = 'SENT';
+    }
+
+    const providerData = this.asJsonObject(
+      attempt.data.transaction.providerData,
+    );
+    const updated = await this.paymentsRepository.updateStatus(
+      attempt.data.transaction.id,
+      {
+        status: PaymentStatus.PENDING,
+        providerRef: attempt.paymentSession.paymentIntentId,
+        providerData: {
+          ...providerData,
+          paymentRequest: {
+            sentBy: user.uid,
+            sentAt: new Date().toISOString(),
+            recipientEmail: recipientEmail ?? null,
+            emailStatus,
+            emailReason,
+            paymentLink: paymentLink ?? null,
+          },
+        } as Prisma.InputJsonValue,
+        note: dto.note ?? attempt.data.transaction.note ?? undefined,
+      },
+    );
+
+    return {
+      data: {
+        subscriptionId,
+        paymentStatus: attempt.data.paymentStatus,
+        transaction: updated,
+        email: {
+          status: emailStatus,
+          recipientEmail: recipientEmail ?? null,
+          reason: emailReason,
+        },
+        paymentLink,
+      },
+      paymentSession: attempt.paymentSession,
+      message:
+        emailStatus === 'SENT'
+          ? 'Subscription payment request sent successfully'
+          : 'Subscription payment request created; email was skipped',
+    };
+  }
+
+  async markSubscriptionManualPaid(
+    user: AuthUserContext,
+    subscriptionId: string,
+    dto: MarkSubscriptionManualPaidDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admins can settle subscriptions',
+      );
+    }
+
+    const manualSettlementMethods: readonly PaymentMethod[] = [
+      PaymentMethod.BANK_TRANSFER,
+      PaymentMethod.COD,
+      PaymentMethod.CARD_ON_DELIVERY,
+    ];
+
+    if (!manualSettlementMethods.includes(dto.paymentMethod)) {
+      throw new BadRequestException(
+        'Manual settlement method is not supported',
+      );
+    }
+
+    const subscription = await this.prisma.tenantSubscription.findUnique({
+      where: { id: subscriptionId },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        packagePlanId: true,
+        paymentStatus: true,
+        planSnapshot: true,
+        packagePlan: {
+          select: {
+            id: true,
+            name: true,
+            billingInterval: true,
+            planPrice: true,
+            vatPercentage: true,
+            currency: true,
+          },
+        },
+      },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Tenant subscription not found');
+    }
+
+    if (!subscription.restaurantId) {
+      throw new BadRequestException(
+        'Subscription restaurant context is required for manual settlement',
+      );
+    }
+
+    if (subscription.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Subscription is already paid');
+    }
+
+    const plan = this.resolveSubscriptionPaymentPlan(subscription);
+    const amount = this.calculateSubscriptionPaymentAmount(plan);
+    if (amount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('Subscription does not require payment');
+    }
+
+    const branchId = await this.resolveSubscriptionPaymentBranchId(
+      subscription.tenantId,
+      subscription.restaurantId,
+    );
+    const settledAt = new Date();
+    const providerData = {
+      target: 'TENANT_SUBSCRIPTION',
+      subscriptionId: subscription.id,
+      packagePlanId: subscription.packagePlanId,
+      planName: plan.name,
+      settlementType: 'MANUAL',
+      manualReference: dto.paymentReference.trim(),
+      receiptUrl: dto.receiptUrl?.trim() ?? null,
+      settledBy: user.uid,
+      settledAt: settledAt.toISOString(),
+      subscriptionFeeAmount: Number(plan.planPrice),
+      vatPercentage: Number(plan.vatPercentage),
+      vatAmount: Number(amount.minus(plan.planPrice).toDecimalPlaces(2)),
+    } as Prisma.InputJsonValue;
+
+    const transaction = await this.prisma.$transaction(async (tx) => {
+      const payment = await this.paymentsRepository.createUnchecked(
+        {
+          tenantId: subscription.tenantId,
+          restaurantId: subscription.restaurantId!,
+          branchId,
+          paymentMethod: dto.paymentMethod,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PAID,
+          amount,
+          currency: plan.currency.toUpperCase(),
+          providerRef: dto.paymentReference.trim(),
+          providerData,
+          note: dto.note.trim(),
+          processedAt: settledAt,
+        },
+        tx,
+      );
+
+      await tx.tenantSubscription.update({
+        where: { id: subscription.id },
+        data: {
+          paymentStatus: PaymentStatus.PAID,
+          status: SubscriptionStatus.ACTIVE,
+          updatedBy: user.uid,
+        },
+      });
+
+      return payment;
+    });
+
+    return {
+      data: {
+        subscriptionId: subscription.id,
+        paymentStatus: PaymentStatus.PAID,
+        transaction,
+      },
+      message: 'Subscription marked as manually paid',
     };
   }
 
@@ -849,6 +1066,91 @@ export class PaymentsService {
     }
 
     return branch.id;
+  }
+
+  private async resolveSubscriptionPaymentRecipient(
+    subscriptionId: string,
+    overrideEmail?: string,
+  ) {
+    if (overrideEmail?.trim()) {
+      return overrideEmail.trim().toLowerCase();
+    }
+
+    const subscription = await this.prisma.tenantSubscription.findUnique({
+      where: { id: subscriptionId },
+      select: {
+        tenantId: true,
+        restaurant: { select: { supportContact: true } },
+      },
+    });
+
+    if (!subscription) return null;
+
+    const owner = await this.prisma.user.findFirst({
+      where: {
+        tenantId: subscription.tenantId,
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        deletedAt: null,
+      },
+      select: { email: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return (
+      owner?.email ??
+      this.readString(
+        this.asJsonObject(subscription.restaurant?.supportContact).email,
+      ) ??
+      null
+    );
+  }
+
+  private readSupportEmail(
+    value: Prisma.JsonValue | null | undefined,
+  ): string | null {
+    const contact = this.asJsonObject(value);
+    return this.readString(contact.email);
+  }
+
+  private buildSubscriptionPaymentLink(
+    paymentUrl: string | undefined,
+    subscriptionId: string,
+    paymentIntentId: string,
+  ) {
+    if (!paymentUrl?.trim()) return null;
+
+    const url = new URL(paymentUrl.trim());
+    url.searchParams.set('subscriptionId', subscriptionId);
+    url.searchParams.set('paymentIntentId', paymentIntentId);
+
+    return url.toString();
+  }
+
+  private buildSubscriptionPaymentRequestEmail(input: {
+    subscriptionId: string;
+    paymentIntentId: string;
+    paymentLink: string | null;
+  }) {
+    const lines = [
+      'Hello,',
+      '',
+      'Your DeliveryWays subscription is waiting for payment.',
+      `Subscription ID: ${input.subscriptionId}`,
+      `Stripe payment intent: ${input.paymentIntentId}`,
+    ];
+
+    if (input.paymentLink) {
+      lines.push('', `Pay online: ${input.paymentLink}`);
+    }
+
+    lines.push(
+      '',
+      'If you have already paid by bank transfer or cash, please share the receipt with DeliveryWays support so a super admin can settle it manually.',
+      '',
+      'DeliveryWays',
+    );
+
+    return lines.join('\n');
   }
 
   private async resolveSubscriptionPaymentBranchId(

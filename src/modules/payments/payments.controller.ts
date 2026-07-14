@@ -33,12 +33,14 @@ import {
   ListPaymentsDto,
   ListRestaurantPayoutRequestsDto,
   MarkRestaurantPayoutPaidDto,
+  MarkSubscriptionManualPaidDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
   ReviewRestaurantPayoutRequestDto,
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
+  SendSubscriptionPaymentRequestDto,
 } from './dto';
 import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
@@ -89,6 +91,42 @@ export class PaymentsController {
     @Body() dto: CreateSubscriptionPaymentAttemptDto,
   ) {
     return this.paymentsService.createSubscriptionAttempt(
+      user,
+      subscriptionId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('subscriptions/:subscriptionId/payment-request')
+  @ApiOperation({
+    summary: 'Create and email a tenant subscription payment request',
+  })
+  sendSubscriptionPaymentRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('subscriptionId') subscriptionId: string,
+    @Body() dto: SendSubscriptionPaymentRequestDto,
+  ) {
+    return this.paymentsService.sendSubscriptionPaymentRequest(
+      user,
+      subscriptionId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('subscriptions/:subscriptionId/mark-manual-paid')
+  @ApiOperation({ summary: 'Mark tenant subscription paid manually' })
+  markSubscriptionManualPaid(
+    @CurrentUser() user: AuthUserContext,
+    @Param('subscriptionId') subscriptionId: string,
+    @Body() dto: MarkSubscriptionManualPaidDto,
+  ) {
+    return this.paymentsService.markSubscriptionManualPaid(
       user,
       subscriptionId,
       dto,

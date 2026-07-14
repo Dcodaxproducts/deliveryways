@@ -872,7 +872,7 @@ export class AuthService {
 
     const loginDeletionState = this.resolveRecoverableLoginState(user);
 
-    this.assertBusinessAdminLoginAccess(user);
+    await this.assertBusinessAdminLoginAccess(user);
 
     if (!user.isActive && !loginDeletionState) {
       throw new ForbiddenException('Your account is inactive');
@@ -952,7 +952,7 @@ export class AuthService {
 
     const loginDeletionState = this.resolveRecoverableLoginState(user);
 
-    this.assertBusinessAdminLoginAccess(user);
+    await this.assertBusinessAdminLoginAccess(user);
 
     if (!user.isActive && !loginDeletionState) {
       throw new ForbiddenException('Your account is inactive');
@@ -1065,8 +1065,10 @@ export class AuthService {
     };
   }
 
-  private assertBusinessAdminLoginAccess(user: {
+  private async assertBusinessAdminLoginAccess(user: {
     role: string;
+    tenantId?: string | null;
+    restaurantId?: string | null;
     isVerified: boolean;
     isApproved: boolean;
     isActive: boolean;
@@ -1089,6 +1091,38 @@ export class AuthService {
 
     if (!user.isActive) {
       throw new ForbiddenException('Your account is inactive');
+    }
+
+    if (!user.tenantId) {
+      return;
+    }
+
+    const now = new Date();
+    const subscription = await this.prisma.tenantSubscription.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        ...(user.restaurantId ? { restaurantId: user.restaurantId } : {}),
+      },
+      select: {
+        status: true,
+        paymentStatus: true,
+        endsAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!subscription) {
+      return;
+    }
+
+    const trialActive =
+      subscription.status === 'TRIALING' &&
+      (!subscription.endsAt || subscription.endsAt > now);
+
+    if (subscription.paymentStatus !== 'PAID' && !trialActive) {
+      throw new ForbiddenException(
+        'Your subscription payment is pending. Please complete payment before accessing the business admin panel.',
+      );
     }
   }
 

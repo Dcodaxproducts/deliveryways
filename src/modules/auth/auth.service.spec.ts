@@ -915,6 +915,9 @@ describe('AuthService login', () => {
         branch: {
           findFirst: jest.fn(),
         },
+        tenantSubscription: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
       } as never,
       jwtService as never,
       {} as never,

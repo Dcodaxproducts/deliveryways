@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   PaymentMethod,
   PaymentStatus,
@@ -15,6 +15,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
   Min,
   ValidateNested,
@@ -50,6 +51,43 @@ export class CreateSubscriptionPaymentAttemptDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+export class SendSubscriptionPaymentRequestDto extends CreateSubscriptionPaymentAttemptDto {
+  @ApiPropertyOptional({ description: 'Optional owner email override' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  email?: string;
+
+  @ApiPropertyOptional({ description: 'Optional frontend payment page URL' })
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  paymentUrl?: string;
+}
+
+export class MarkSubscriptionManualPaidDto {
+  @ApiProperty({
+    enum: ['BANK_TRANSFER', 'COD', 'CARD_ON_DELIVERY'],
+  })
+  @IsEnum(PaymentMethod)
+  paymentMethod!: PaymentMethod;
+
+  @ApiProperty({ maxLength: 191 })
+  @IsString()
+  @MaxLength(191)
+  paymentReference!: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  receiptUrl?: string;
+
+  @ApiProperty({ maxLength: 1000 })
+  @IsString()
+  @MaxLength(1000)
+  note!: string;
 }
 
 export class ListPaymentsDto extends QueryDto {
