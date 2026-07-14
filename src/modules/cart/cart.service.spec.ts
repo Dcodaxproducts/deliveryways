@@ -1582,6 +1582,43 @@ describe('CartService', () => {
     ]);
   });
 
+  it('rejects direct item quantity updates for deal child rows', async () => {
+    const { service, cartRepository } = makeService();
+    cartRepository.findItemByIdForCustomer.mockResolvedValue({
+      id: 'item-1',
+      menuItemId: 'menu-1',
+      variationId: null,
+      quantity: 1,
+      note: null,
+      modifiers: { dealId: 'deal-1', modifiers: [] },
+      cart: {
+        id: 'cart-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: 'user-1',
+        restaurantMenuId: null,
+        items: [],
+      },
+    });
+
+    await expect(
+      service.updateItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        'item-1',
+        { quantity: 2 },
+      ),
+    ).rejects.toThrow(
+      'Deal cart items must be updated through the deal endpoint',
+    );
+    expect(cartRepository.updateItem).not.toHaveBeenCalled();
+  });
+
   it('updates a fixed combo deal quantity as one cart group', async () => {
     const {
       service,

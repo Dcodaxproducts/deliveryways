@@ -661,6 +661,12 @@ export class CartService {
       throw new NotFoundException('Cart item not found');
     }
 
+    if (this.readDealId(item.modifiers)) {
+      throw new BadRequestException(
+        'Deal cart items must be updated through the deal endpoint',
+      );
+    }
+
     const nextPayload: AddCartItemDto = {
       menuItemId: item.menuItemId,
       restaurantMenuId: item.cart.restaurantMenuId ?? undefined,
