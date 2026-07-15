@@ -19,8 +19,8 @@ describe('CartService', () => {
       findActiveBranch: jest.fn(),
       findRestaurantMenuById: jest.fn(),
       findMenuItemForCart: jest.fn(),
-      findSplitSectionItems: jest.fn(),
-      findMenuItemsForResponse: jest.fn(),
+      findSplitSectionItems: jest.fn().mockResolvedValue([]),
+      findMenuItemsForResponse: jest.fn().mockResolvedValue([]),
       findActiveCustomer: jest.fn(),
       findOwnedAddress: jest.fn(),
       create: jest.fn(),
@@ -1937,11 +1937,11 @@ describe('CartService', () => {
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
     ordersService.quote.mockResolvedValue({
       data: {
-        subtotal: 22.58,
-        deliveryFee: 2,
-        serviceChargeAmount: 1,
-        totalAmount: 25.58,
-        payableAmount: 25.58,
+        subtotal: 27.58,
+        deliveryFee: 5,
+        serviceChargeAmount: 3,
+        totalAmount: 35.58,
+        payableAmount: 35.58,
       },
     });
     couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
@@ -1969,16 +1969,122 @@ describe('CartService', () => {
       subtotal: number;
       totalAmount: number;
       payableAmount: number;
-      quote: { subtotal: number; totalAmount: number; payableAmount: number };
+      deliveryFee: number;
+      serviceChargeAmount: number;
+      quote: {
+        subtotal: number;
+        deliveryFee: number;
+        serviceChargeAmount: number;
+        totalAmount: number;
+        payableAmount: number;
+      };
     };
     expect(dealItem.lineTotal).toBe(24.58);
     expect(dealItem.depositTotal).toBe(0.08);
     expect(data.subtotal).toBe(24.5);
-    expect(data.totalAmount).toBe(27.58);
-    expect(data.payableAmount).toBe(27.58);
+    expect(data.deliveryFee).toBe(5);
+    expect(data.serviceChargeAmount).toBe(3);
+    expect(data.totalAmount).toBe(32.58);
+    expect(data.payableAmount).toBe(32.58);
     expect(data.quote.subtotal).toBe(24.5);
-    expect(data.quote.totalAmount).toBe(27.58);
-    expect(data.quote.payableAmount).toBe(27.58);
+    expect(data.quote.deliveryFee).toBe(5);
+    expect(data.quote.serviceChargeAmount).toBe(3);
+    expect(data.quote.totalAmount).toBe(32.58);
+    expect(data.quote.payableAmount).toBe(32.58);
+  });
+
+  it('keeps cart quote response fees aligned with grouped fixed deal display total and deposit', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    cartRepository.findByCustomerId.mockResolvedValue({
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+      ],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Angebot 2',
+        slug: 'angebot-2',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: 25.68,
+        deliveryPriceAdjustment: 0,
+        takeawayPriceAdjustment: 0,
+        depositAmount: 0.08,
+        category: { id: 'cat-1', name: 'Deals', imageUrl: null, items: [] },
+        variations: [],
+        modifierLinks: [],
+        branchOverrides: [],
+      },
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 27.58,
+        deliveryFee: 5,
+        serviceChargeAmount: 3,
+        totalAmount: 35.58,
+        payableAmount: 35.58,
+      },
+    });
+    couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
+      dealId: 'deal-1',
+      title: 'Angebot 2',
+      description: null,
+      imageUrl: null,
+      code: 'DEAL1',
+      fixedPrice: new Prisma.Decimal(24.5),
+      menuItemIds: ['menu-1'],
+      selectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+      requiredQuantity: null,
+      categoryScopes: [],
+    });
+
+    const result = await service.quote(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {},
+    );
+
+    expect(result.data).toMatchObject({
+      subtotal: 24.5,
+      deliveryFee: 5,
+      serviceChargeAmount: 3,
+      totalBeforeDiscount: 32.58,
+      totalAmount: 32.58,
+      payableAmount: 32.58,
+    });
   });
 
   it('updates only the selected duplicate fixed deal group by cart deal item id', async () => {

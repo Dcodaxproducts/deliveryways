@@ -900,8 +900,14 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
     );
+    const quoteResponse = this.toCartQuoteResponse(quote.data);
+    const displayCart = await this.buildCartResponse(cart);
+    const displayItems = Array.isArray(displayCart.items)
+      ? displayCart.items
+      : [];
+
     return {
-      data: this.toCartQuoteResponse(quote.data),
+      data: this.alignQuoteSubtotalWithCartItems(quoteResponse, displayItems),
       message: 'Cart quote generated successfully',
     };
   }
