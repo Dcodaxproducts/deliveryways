@@ -781,20 +781,24 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
+    const dealTarget = this.parseCartDealTarget(dealId);
     const cart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const dealItems = this.findCartItemsByDealId(cart, dealId);
+    const dealItems = await this.findCartItemsForDealTarget(cart, dealTarget);
 
     if (!dealItems.length) {
       throw new NotFoundException('Cart deal not found');
     }
 
-    await this.cartRepository.updateItems(
-      dealItems.map((item) => item.id),
-      { quantity: dto.quantity },
+    await Promise.all(
+      dealItems.map((item) =>
+        this.cartRepository.updateItem(item.item.id, {
+          quantity: item.item.quantity - item.quantity + dto.quantity,
+        }),
+      ),
     );
 
     const updatedCart = await this.getExistingCartOrThrow(
@@ -815,18 +819,33 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
+    const dealTarget = this.parseCartDealTarget(dealId);
     const cart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
       requestedRestaurantId,
     );
-    const dealItems = this.findCartItemsByDealId(cart, dealId);
+    const dealItems = await this.findCartItemsForDealTarget(cart, dealTarget);
 
     if (!dealItems.length) {
       throw new NotFoundException('Cart deal not found');
     }
 
-    await this.cartRepository.deleteItems(dealItems.map((item) => item.id));
+    const itemsToDelete = dealItems
+      .filter((item) => item.item.quantity <= item.quantity)
+      .map((item) => item.item.id);
+    const itemsToReduce = dealItems.filter(
+      (item) => item.item.quantity > item.quantity,
+    );
+
+    await Promise.all([
+      this.cartRepository.deleteItems(itemsToDelete),
+      ...itemsToReduce.map((item) =>
+        this.cartRepository.updateItem(item.item.id, {
+          quantity: item.item.quantity - item.quantity,
+        }),
+      ),
+    ]);
 
     const updatedCart = await this.findActiveCartByCustomerId(cart.customerId);
 
@@ -962,6 +981,99 @@ export class CartService {
     return cart.items.filter(
       (item) => this.readDealId(item.modifiers) === dealId,
     );
+  }
+
+  private parseCartDealTarget(dealIdOrDisplayId: string): {
+    dealId: string;
+    firstIndex?: number;
+    ordinal?: number;
+  } {
+    const parts = dealIdOrDisplayId.split(':');
+    if (parts[0] !== 'deal' || parts.length < 2) {
+      return { dealId: dealIdOrDisplayId };
+    }
+
+    const firstIndex = Number(parts[2]);
+    const ordinal = Number(parts[3]);
+
+    return {
+      dealId: parts[1],
+      ...(Number.isInteger(firstIndex) ? { firstIndex } : {}),
+      ...(Number.isInteger(ordinal) ? { ordinal } : {}),
+    };
+  }
+
+  private async findCartItemsForDealTarget(
+    cart: CartSnapshot,
+    dealTarget: { dealId: string; firstIndex?: number; ordinal?: number },
+  ) {
+    if (dealTarget.firstIndex === undefined || !this.couponsService) {
+      return this.findCartItemsByDealId(cart, dealTarget.dealId).map(
+        (item) => ({
+          item,
+          quantity: item.quantity,
+        }),
+      );
+    }
+
+    const pricing = await this.couponsService.getActiveFixedPriceDealPricing(
+      cart.restaurantId,
+      cart.branchId,
+      dealTarget.dealId,
+    );
+
+    if (!pricing) {
+      return this.findCartItemsByDealId(cart, dealTarget.dealId).map(
+        (item) => ({
+          item,
+          quantity: item.quantity,
+        }),
+      );
+    }
+
+    const menuItems = await this.cartRepository.findMenuItemsForResponse(
+      [...new Set(cart.items.map((item) => item.menuItemId))],
+      cart.restaurantId,
+      cart.branchId,
+    );
+    const categoryIdsByItemId = new Map(
+      menuItems.map((item) => [item.id, item.category?.id ?? null]),
+    );
+    const dealLines = cart.items.map((item) => {
+      const categoryId = categoryIdsByItemId.get(item.menuItemId) ?? null;
+
+      return {
+        id: item.id,
+        dealId: this.readDealId(item.modifiers) ?? null,
+        menuItemId: item.menuItemId,
+        categoryId,
+        categoryIds: categoryId ? [categoryId] : [],
+        quantity: item.quantity,
+        unitPrice: null,
+        unitPriceWithModifiers: null,
+        modifiersTotal: 0,
+        depositTotal: 0,
+        lineTotal: null,
+      } satisfies CartResponseDealLine;
+    });
+    const groups = this.findCartResponseDealDisplayGroups(
+      dealLines as CartResponseItem[],
+      dealTarget.dealId,
+      pricing,
+    );
+    const matchedGroups = groups.filter(
+      (group) => group.entries[0]?.index === dealTarget.firstIndex,
+    );
+    const group = matchedGroups[dealTarget.ordinal ?? 0];
+
+    if (!group) {
+      return [];
+    }
+
+    return group.entries.map((entry) => ({
+      item: cart.items[entry.index],
+      quantity: entry.quantity,
+    }));
   }
 
   private async getCartForAddItem(
@@ -1497,6 +1609,9 @@ export class CartService {
       cart,
       cartQuote,
     );
+    const alignedCartQuote = cartQuote
+      ? this.alignQuoteSubtotalWithCartItems(cartQuote, annotatedDisplayItems)
+      : null;
 
     return this.resolveMediaResponse({
       id: cart.id,
@@ -1513,11 +1628,47 @@ export class CartService {
       customerNote: cart.customerNote,
       note: cart.customerNote,
       items: annotatedDisplayItems,
-      ...(cartQuote ? this.extractCartBillSummary(cartQuote) : {}),
-      ...(cartQuote ? { quote: cartQuote } : {}),
+      ...(alignedCartQuote
+        ? this.extractCartBillSummary(alignedCartQuote)
+        : {}),
+      ...(alignedCartQuote ? { quote: alignedCartQuote } : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
+  }
+
+  private alignQuoteSubtotalWithCartItems<T>(
+    quoteData: T,
+    items: CartDisplayItem[],
+  ): T {
+    if (!quoteData || typeof quoteData !== 'object') {
+      return quoteData;
+    }
+
+    const quote = quoteData as Record<string, unknown>;
+    if (
+      quote.subtotal === undefined ||
+      !items.some((item) => item.type === 'DEAL')
+    ) {
+      return quoteData;
+    }
+
+    return {
+      ...quote,
+      subtotal: this.calculateCartDisplayMerchandiseTotal(items),
+    } as T;
+  }
+
+  private calculateCartDisplayMerchandiseTotal(items: CartDisplayItem[]) {
+    return Number(
+      items
+        .reduce(
+          (sum, item) =>
+            sum.plus(item.lineTotal ?? 0).minus(item.depositTotal ?? 0),
+          new Prisma.Decimal(0),
+        )
+        .toDecimalPlaces(2),
+    );
   }
 
   private async withCartLineDiscountMetadata<T extends CartDisplayItem>(
