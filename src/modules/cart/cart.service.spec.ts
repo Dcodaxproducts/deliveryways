@@ -1936,7 +1936,13 @@ describe('CartService', () => {
     ]);
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
     ordersService.quote.mockResolvedValue({
-      data: { subtotal: 25.68, totalAmount: 25.76, payableAmount: 25.76 },
+      data: {
+        subtotal: 22.58,
+        deliveryFee: 2,
+        serviceChargeAmount: 1,
+        totalAmount: 25.58,
+        payableAmount: 25.58,
+      },
     });
     couponsService.getActiveFixedPriceDealPricing.mockResolvedValue({
       dealId: 'deal-1',
@@ -1961,12 +1967,18 @@ describe('CartService', () => {
     const dealItem = result.data.items[0] as CartResponseDealItem;
     const data = result.data as unknown as {
       subtotal: number;
-      quote: { subtotal: number };
+      totalAmount: number;
+      payableAmount: number;
+      quote: { subtotal: number; totalAmount: number; payableAmount: number };
     };
     expect(dealItem.lineTotal).toBe(24.58);
     expect(dealItem.depositTotal).toBe(0.08);
     expect(data.subtotal).toBe(24.5);
+    expect(data.totalAmount).toBe(27.58);
+    expect(data.payableAmount).toBe(27.58);
     expect(data.quote.subtotal).toBe(24.5);
+    expect(data.quote.totalAmount).toBe(27.58);
+    expect(data.quote.payableAmount).toBe(27.58);
   });
 
   it('updates only the selected duplicate fixed deal group by cart deal item id', async () => {

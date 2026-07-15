@@ -1653,10 +1653,66 @@ export class CartService {
       return quoteData;
     }
 
+    const alignedSubtotal = new Prisma.Decimal(
+      this.calculateCartDisplayMerchandiseTotal(items),
+    );
+    const depositTotal = this.calculateCartDisplayDepositTotal(items);
+    const alignedTotals = this.calculateCartDisplayQuoteTotals(
+      quote,
+      alignedSubtotal,
+      depositTotal,
+    );
+
     return {
       ...quote,
-      subtotal: this.calculateCartDisplayMerchandiseTotal(items),
+      subtotal: Number(alignedSubtotal),
+      ...alignedTotals,
     } as T;
+  }
+
+  private calculateCartDisplayDepositTotal(items: CartDisplayItem[]) {
+    return items
+      .reduce(
+        (sum, item) => sum.plus(item.depositTotal ?? 0),
+        new Prisma.Decimal(0),
+      )
+      .toDecimalPlaces(2);
+  }
+
+  private calculateCartDisplayQuoteTotals(
+    quote: Record<string, unknown>,
+    merchandiseTotal: Prisma.Decimal,
+    depositTotal: Prisma.Decimal,
+  ) {
+    const amount = (key: string) =>
+      new Prisma.Decimal(
+        typeof quote[key] === 'number' || typeof quote[key] === 'string'
+          ? quote[key]
+          : 0,
+      );
+    const totalBeforeDiscount = merchandiseTotal
+      .plus(depositTotal)
+      .plus(amount('deliveryFee'))
+      .plus(amount('serviceChargeAmount'))
+      .plus(amount('tipAmount'));
+    const totalAfterDiscount = Prisma.Decimal.max(
+      totalBeforeDiscount.minus(amount('discountAmount')),
+      new Prisma.Decimal(0),
+    );
+    const payableAmount = Prisma.Decimal.max(
+      totalAfterDiscount
+        .minus(amount('loyaltyDiscountAmount'))
+        .minus(amount('walletAppliedAmount')),
+      new Prisma.Decimal(0),
+    );
+
+    return {
+      totalBeforeDiscount: Number(totalBeforeDiscount.toDecimalPlaces(2)),
+      totalAmount: Number(
+        payableAmount.plus(amount('walletAppliedAmount')).toDecimalPlaces(2),
+      ),
+      payableAmount: Number(payableAmount.toDecimalPlaces(2)),
+    };
   }
 
   private calculateCartDisplayMerchandiseTotal(items: CartDisplayItem[]) {
