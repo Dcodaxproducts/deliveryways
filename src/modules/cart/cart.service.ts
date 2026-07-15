@@ -881,17 +881,38 @@ export class CartService {
 
   async quote(
     user: AuthUserContext,
-    _dto: QuoteCartDto,
+    dto: QuoteCartDto,
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
-    const cart = await this.getExistingCartOrThrow(
+    let cart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
       requestedRestaurantId,
     );
     if (!cart.items.length) {
       throw new BadRequestException('Cart is empty');
+    }
+
+    if (dto.deliveryAddressId !== undefined) {
+      const nextDeliveryAddressId = await this.resolveUpdatedDeliveryAddressId(
+        cart,
+        cart.customerId,
+        dto.deliveryAddressId,
+        cart.orderType,
+      );
+
+      await this.cartRepository.update(cart.id, {
+        deliveryAddress: nextDeliveryAddressId
+          ? { connect: { id: nextDeliveryAddressId } }
+          : { disconnect: true },
+      });
+
+      cart = await this.getExistingCartOrThrow(
+        user,
+        requestedCustomerId,
+        requestedRestaurantId,
+      );
     }
 
     const quote = await this.quoteCartForDisplay(
@@ -2840,11 +2861,7 @@ export class CartService {
 
     try {
       return await this.ordersService.quote(user, quotePayload);
-    } catch (error) {
-      if (!(error instanceof BadRequestException)) {
-        throw error;
-      }
-
+    } catch {
       try {
         return await this.ordersService.quoteForCouponValidation(
           user,

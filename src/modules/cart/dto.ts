@@ -277,7 +277,12 @@ export class CartCustomerScopeDto {
   restaurantId?: string;
 }
 
-export class QuoteCartDto {}
+export class QuoteCartDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  deliveryAddressId?: string | null;
+}
 
 export class CheckoutCartDto {
   @ApiPropertyOptional({

@@ -3640,6 +3640,117 @@ describe('CartService', () => {
     expect(result.message).toBe('Item added to cart successfully');
   });
 
+  it('returns a successful add response with fallback quote totals when response quote decoration fails', async () => {
+    const {
+      service,
+      cartRepository,
+      profilesRepository,
+      ordersService,
+      couponsService,
+    } = makeService();
+    const initialCart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: 'address-1',
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      tipAmount: new Prisma.Decimal(0),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+    const updatedCart = {
+      ...initialCart,
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: { dealId: 'deal-1', modifiers: [] },
+        },
+      ],
+    };
+
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(initialCart)
+      .mockResolvedValueOnce(updatedCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Deal Burger',
+      variations: [],
+      modifierLinks: [],
+      branchOverrides: [],
+    });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        name: 'Deal Burger',
+        slug: 'deal-burger',
+        description: null,
+        imageUrl: null,
+        categoryId: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(12),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        prepTimeMinutes: 0,
+        depositAmount: new Prisma.Decimal(0.5),
+        category: null,
+        categoryLinks: [],
+        variations: [],
+        modifierLinks: [],
+        modifierPriceOverrides: [],
+        branchOverrides: [],
+      },
+    ]);
+    couponsService.isActiveFixedPriceDealItem.mockResolvedValue(true);
+    cartRepository.createItem.mockResolvedValue({ id: 'item-1' });
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockRejectedValue(new Error('quote decoration failed'));
+    ordersService.quoteForCouponValidation.mockResolvedValue({
+      data: {
+        subtotal: 12,
+        deliveryFee: 2,
+        serviceChargeAmount: 1,
+        discountAmount: 0,
+        totalBeforeDiscount: 15.5,
+        totalAmount: 15.5,
+        payableAmount: 15.5,
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.addItem(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        quantity: 1,
+      },
+    );
+
+    expect(result.message).toBe('Item added to cart successfully');
+    expect(result.data.quote).toMatchObject({
+      deliveryFee: 2,
+      serviceChargeAmount: 1,
+      totalAmount: 15.5,
+    });
+  });
+
   it('adds ready-made deal items without requiring modifiers', async () => {
     const { service, cartRepository, couponsService } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -5934,6 +6045,77 @@ describe('CartService', () => {
       'cart-1',
       expect.objectContaining({ orderTime: null }),
     );
+  });
+
+  it('persists explicit deliveryAddressId from cart quote payload before quoting', async () => {
+    const { service, cartRepository, profilesRepository, ordersService } =
+      makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      tipAmount: new Prisma.Decimal(0),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    };
+
+    cartRepository.findByCustomerId
+      .mockResolvedValueOnce(cart)
+      .mockResolvedValueOnce({ ...cart, deliveryAddressId: 'address-1' });
+    cartRepository.findOwnedAddress.mockResolvedValue({ id: 'address-1' });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 10,
+        deliveryFee: 2,
+        serviceChargeAmount: 1,
+        totalAmount: 13,
+        payableAmount: 13,
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { deliveryAddressId: 'address-1' },
+    );
+
+    expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
+      deliveryAddress: { connect: { id: 'address-1' } },
+    });
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ deliveryAddressId: 'address-1' }),
+    );
+    expect(result.data).toMatchObject({
+      deliveryFee: 2,
+      serviceChargeAmount: 1,
+      totalAmount: 13,
+    });
   });
 
   it('updates cart address and returns refreshed quote', async () => {
