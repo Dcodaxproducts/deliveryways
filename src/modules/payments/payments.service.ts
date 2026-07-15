@@ -47,6 +47,7 @@ import {
   GuestPurchaseGiftCardDto,
 } from '../customer-app/dto';
 import { MailerService } from '../mailer/mailer.service';
+import { PackagePlansService } from '../package-plans/package-plans.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -78,6 +79,7 @@ export class PaymentsService {
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly globalSettingsService?: GlobalSettingsService,
     private readonly mailerService?: MailerService,
+    private readonly packagePlansService?: PackagePlansService,
   ) {}
 
   async createSubscriptionAttempt(
@@ -1645,6 +1647,16 @@ export class PaymentsService {
           walletTransactionId: walletTransaction.id,
         },
       });
+    });
+
+    await this.packagePlansService?.persistSpecialPayoutInvoiceForPaidRequest({
+      payoutRequestId: data.id,
+      tenantId: data.tenantId,
+      restaurantId: data.restaurantId,
+      amount: data.amount,
+      currency: data.currency,
+      paidBy: user.uid,
+      paidAt: data.paidAt ?? new Date(),
     });
 
     return {

@@ -655,6 +655,100 @@ export class PackagePlansService {
     };
   }
 
+  async persistSpecialPayoutInvoiceForPaidRequest(input: {
+    payoutRequestId: string;
+    tenantId: string;
+    restaurantId: string;
+    amount: Prisma.Decimal;
+    currency: string;
+    paidBy: string;
+    paidAt: Date;
+  }) {
+    if (!this.invoiceRecordsService) return null;
+
+    const sourceKey = `${input.restaurantId}:special:${input.payoutRequestId}`;
+    if (
+      await this.invoiceRecordsService.hasRecord?.(
+        GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        sourceKey,
+      )
+    ) {
+      return null;
+    }
+
+    const periodTo = new Date(input.paidAt.getTime() + 1);
+    const invoice = await this.buildWeeklyPayoutInvoice({
+      restaurantId: input.restaurantId,
+      fromDate: new Date(0).toISOString(),
+      toDate: periodTo.toISOString(),
+    });
+    let remaining = input.amount.toDecimalPlaces(2);
+    const lineItems = [];
+
+    for (const lineItem of invoice.lineItems) {
+      if (remaining.lessThanOrEqualTo(0)) break;
+
+      const available = new Prisma.Decimal(
+        lineItem.restaurantPayoutAmount,
+      ).toDecimalPlaces(2);
+      const payoutAmount = Prisma.Decimal.min(available, remaining);
+      if (payoutAmount.lessThanOrEqualTo(0)) continue;
+
+      lineItems.push({
+        ...lineItem,
+        restaurantPayoutAmount: Number(payoutAmount),
+      });
+      remaining = remaining.minus(payoutAmount);
+    }
+
+    if (lineItems.length === 0) return null;
+
+    const specialInvoice = {
+      ...invoice,
+      invoiceNumber: this.buildSpecialPayoutInvoiceNumber(
+        input.restaurantId,
+        input.payoutRequestId,
+        input.paidAt,
+      ),
+      issuedAt: input.paidAt,
+      period: {
+        from:
+          lineItems[0]?.paidAt instanceof Date
+            ? lineItems[0].paidAt
+            : invoice.period.from,
+        to: periodTo,
+      },
+      lineItems,
+      sourceKey,
+      payoutRequestId: input.payoutRequestId,
+      totals: {
+        ordersCount: lineItems.length,
+        grossAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.grossAmount),
+          0,
+        ),
+        platformCommissionAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.platformCommissionAmount),
+          0,
+        ),
+        restaurantPayoutAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.restaurantPayoutAmount),
+          0,
+        ),
+        currency: input.currency,
+      },
+      note: 'Special restaurant payout completed before the normal scheduled payout. These paid amounts remain excluded from the next scheduled payout invoice.',
+    };
+
+    await this.persistWeeklyPayoutInvoice(
+      { uid: input.paidBy, role: UserRoleEnum.SUPER_ADMIN } as AuthUserContext,
+      specialInvoice,
+      { status: GeneratedInvoiceStatus.SENT },
+    );
+
+    return specialInvoice;
+  }
+
   async emailDueSubscriptionInvoices(now = new Date()) {
     this.ensureInvoiceAutomationConfigured();
     const systemUser = this.systemInvoiceUser();
@@ -725,12 +819,18 @@ export class PackagePlansService {
       const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
 
       if (
-        !recipientEmail ||
-        (await this.invoiceRecordsService?.hasEmailed(
+        invoice.totals.restaurantPayoutAmount <= 0 ||
+        (await this.invoiceRecordsService?.hasRecord(
           GeneratedInvoiceKind.WEEKLY_PAYOUT,
           sourceKey,
         ))
       ) {
+        results.skipped += 1;
+        continue;
+      }
+
+      if (!recipientEmail) {
+        await this.persistWeeklyPayoutInvoice(systemUser, invoice);
         results.skipped += 1;
         continue;
       }
@@ -771,10 +871,20 @@ export class PackagePlansService {
       period.from,
       period.to,
     );
-    const defaultCurrency = await this.resolveDefaultCurrency();
-    const lineItems = orders.map((order) =>
-      this.toWeeklyPayoutOrderLine(order, plan, defaultCurrency),
+    const specialPayouts = await this.listSpecialPayoutAmountsByOrder(
+      restaurant.id,
     );
+    const defaultCurrency = await this.resolveDefaultCurrency();
+    const lineItems = orders
+      .map((order) =>
+        this.toWeeklyPayoutOrderLine(
+          order,
+          plan,
+          defaultCurrency,
+          specialPayouts.get(order.id) ?? new Prisma.Decimal(0),
+        ),
+      )
+      .filter((item) => item.restaurantPayoutAmount.greaterThan(0));
     const grossAmount = lineItems.reduce(
       (sum, item) => sum.plus(item.grossAmount),
       new Prisma.Decimal(0),
@@ -818,6 +928,7 @@ export class PackagePlansService {
         grossAmount: Number(item.grossAmount),
         platformCommissionAmount: Number(item.platformCommissionAmount),
         restaurantPayoutAmount: Number(item.restaurantPayoutAmount),
+        previousPayoutAmount: Number(item.previousPayoutAmount),
       })),
       totals: {
         ordersCount: lineItems.length,
@@ -838,6 +949,7 @@ export class PackagePlansService {
       PackagePlansService['resolveSubscriptionInvoicePlan']
     > | null,
     defaultCurrency: string,
+    previouslyPaidAmount = new Prisma.Decimal(0),
   ) {
     const grossAmount = new Prisma.Decimal(order.totalAmount).toDecimalPlaces(
       2,
@@ -846,8 +958,16 @@ export class PackagePlansService {
       grossAmount,
       plan,
     );
-    const restaurantPayoutAmount = Prisma.Decimal.max(
+    const calculatedRestaurantPayoutAmount = Prisma.Decimal.max(
       grossAmount.minus(platformCommissionAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const priorPayoutAmount = Prisma.Decimal.min(
+      previouslyPaidAmount.toDecimalPlaces(2),
+      calculatedRestaurantPayoutAmount,
+    );
+    const restaurantPayoutAmount = Prisma.Decimal.max(
+      calculatedRestaurantPayoutAmount.minus(priorPayoutAmount),
       new Prisma.Decimal(0),
     ).toDecimalPlaces(2);
 
@@ -860,9 +980,43 @@ export class PackagePlansService {
       grossAmount,
       platformCommissionAmount,
       restaurantPayoutAmount,
+      previousPayoutAmount: priorPayoutAmount,
       currency: defaultCurrency,
       providerReference: order.transactions[0]?.providerRef ?? null,
     };
+  }
+
+  private async listSpecialPayoutAmountsByOrder(restaurantId: string) {
+    const invoices =
+      await this.packagePlansRepository.listRestaurantSpecialPayoutInvoices?.(
+        restaurantId,
+      );
+    const amounts = new Map<string, Prisma.Decimal>();
+
+    for (const invoice of invoices ?? []) {
+      const snapshot = this.asJsonObject(invoice.snapshot);
+      const lineItems = Array.isArray(snapshot.lineItems)
+        ? snapshot.lineItems
+        : [];
+
+      for (const item of lineItems) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          continue;
+        }
+        const line = item as Record<string, Prisma.JsonValue>;
+        const orderId = this.readString(line.orderId);
+        if (!orderId) {
+          continue;
+        }
+        const amount = this.readDecimal(line.restaurantPayoutAmount);
+        amounts.set(
+          orderId,
+          (amounts.get(orderId) ?? new Prisma.Decimal(0)).plus(amount),
+        );
+      }
+    }
+
+    return amounts;
   }
 
   private calculateOrderCommission(
@@ -914,6 +1068,15 @@ export class PackagePlansService {
     const fromStamp = from.toISOString().slice(0, 10).replace(/-/g, '');
     const toStamp = to.toISOString().slice(0, 10).replace(/-/g, '');
     return `PAYOUT-${restaurantId.slice(-6).toUpperCase()}-${fromStamp}-${toStamp}`;
+  }
+
+  private buildSpecialPayoutInvoiceNumber(
+    restaurantId: string,
+    payoutRequestId: string,
+    paidAt: Date,
+  ) {
+    const paidStamp = paidAt.toISOString().slice(0, 10).replace(/-/g, '');
+    return `PAYOUT-${restaurantId.slice(-6).toUpperCase()}-SPECIAL-${paidStamp}-${payoutRequestId.slice(-6).toUpperCase()}`;
   }
 
   private resolveRestaurantPayoutEmail(restaurant: RestaurantPayoutScope) {
@@ -2032,9 +2195,12 @@ export class PackagePlansService {
   private buildWeeklyPayoutInvoiceSourceKey(
     invoice: Awaited<
       ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
-    >,
+    > & { sourceKey?: string },
   ) {
-    return `${invoice.restaurant.id}:${invoice.period.from.toISOString()}:${invoice.period.to.toISOString()}`;
+    return (
+      invoice.sourceKey ??
+      `${invoice.restaurant.id}:${invoice.period.from.toISOString()}:${invoice.period.to.toISOString()}`
+    );
   }
 
   private resolveLastCompletedPayoutPeriod(
@@ -2071,6 +2237,18 @@ export class PackagePlansService {
     }
 
     return value as Record<string, Prisma.JsonValue>;
+  }
+
+  private readString(value: Prisma.JsonValue | undefined) {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private readDecimal(value: Prisma.JsonValue | undefined) {
+    if (typeof value === 'number' || typeof value === 'string') {
+      return new Prisma.Decimal(value).toDecimalPlaces(2);
+    }
+
+    return new Prisma.Decimal(0);
   }
 
   private readNestedString(

@@ -421,6 +421,22 @@ export class PackagePlansRepository {
     });
   }
 
+  listRestaurantSpecialPayoutInvoices(restaurantId: string) {
+    return this.prisma.generatedInvoice.findMany({
+      where: {
+        kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        restaurantId,
+        sourceKey: { contains: ':special:' },
+      },
+      select: {
+        id: true,
+        sourceKey: true,
+        snapshot: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async listSubscriptions(query: ListTenantSubscriptionsDto) {
     const where: Prisma.TenantSubscriptionWhereInput = {
       ...(query.tenantId ? { tenantId: query.tenantId } : {}),

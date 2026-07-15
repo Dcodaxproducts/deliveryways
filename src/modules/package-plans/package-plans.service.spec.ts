@@ -888,6 +888,7 @@ describe('PackagePlansService', () => {
     };
     const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
     const invoiceRecordsService = {
+      hasRecord: jest.fn().mockResolvedValue(false),
       hasEmailed: jest.fn().mockResolvedValue(false),
       persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
     };
@@ -908,7 +909,7 @@ describe('PackagePlansService', () => {
       new Date('2026-07-01T00:00:00.000Z'),
       new Date('2026-07-08T00:00:00.000Z'),
     );
-    expect(invoiceRecordsService.hasEmailed).toHaveBeenCalledWith(
+    expect(invoiceRecordsService.hasRecord).toHaveBeenCalledWith(
       'WEEKLY_PAYOUT',
       'restaurant-1:2026-07-01T00:00:00.000Z:2026-07-08T00:00:00.000Z',
     );
@@ -948,6 +949,7 @@ describe('PackagePlansService', () => {
     };
     const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
     const invoiceRecordsService = {
+      hasRecord: jest.fn().mockResolvedValue(false),
       hasEmailed: jest.fn().mockResolvedValue(false),
       persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
     };
@@ -965,5 +967,73 @@ describe('PackagePlansService', () => {
       new Date('2026-06-08T00:00:00.000Z'),
       new Date('2026-07-08T00:00:00.000Z'),
     );
+  });
+
+  it('excludes amounts already paid by an early special payout from the next scheduled payout', async () => {
+    const subscription = makeSubscription();
+    const repository = {
+      listActiveRestaurantSubscriptionsForPayouts: jest
+        .fn()
+        .mockResolvedValue([subscription]),
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          id: 'order-early',
+          totalAmount: new Prisma.Decimal(1000),
+        }),
+        makePaidOrder({
+          id: 'order-new',
+          totalAmount: new Prisma.Decimal(2000),
+        }),
+      ]),
+      listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([
+        {
+          id: 'invoice-special-1',
+          sourceKey: 'restaurant-1:special:payout-request-1',
+          snapshot: {
+            lineItems: [
+              { orderId: 'order-early', restaurantPayoutAmount: 950 },
+            ],
+          },
+        },
+      ]),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const persistInvoice = jest.fn(
+      (input: { snapshot: { lineItems: Array<{ orderId: string }> } }) => {
+        void input;
+        return Promise.resolve({ id: 'invoice-record-1' });
+      },
+    );
+    const invoiceRecordsService = {
+      hasRecord: jest.fn().mockResolvedValue(false),
+      persist: persistInvoice,
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    await service.emailDuePayoutInvoices(new Date('2026-07-08T10:00:00.000Z'));
+
+    const persistedInvoice = persistInvoice.mock.calls[0]?.[0].snapshot as {
+      lineItems: Array<{ orderId: string }>;
+    };
+    expect(persistedInvoice.lineItems.map((item) => item.orderId)).toEqual([
+      'order-new',
+    ]);
   });
 });

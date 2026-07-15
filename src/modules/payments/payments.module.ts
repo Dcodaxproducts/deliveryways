@@ -3,6 +3,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { LoyaltyWalletModule } from '../loyalty-wallet/loyalty-wallet.module';
 import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 import { MailerModule } from '../mailer/mailer.module';
+import { PackagePlansModule } from '../package-plans/package-plans.module';
 import { PaymentsController } from './payments.controller';
 import { PaymentsRepository } from './payments.repository';
 import { PaymentsService } from './payments.service';
@@ -14,6 +15,7 @@ import { StripePaymentsService } from './stripe-payments.service';
     LoyaltyWalletModule,
     GlobalSettingsModule,
     MailerModule,
+    PackagePlansModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService, PaymentsRepository, StripePaymentsService],

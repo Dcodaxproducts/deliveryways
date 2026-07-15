@@ -45,6 +45,15 @@ export class InvoiceRecordsService {
     return Boolean(invoice);
   }
 
+  async hasRecord(kind: GeneratedInvoiceKind, sourceKey: string) {
+    const invoice = await this.prisma.generatedInvoice.findFirst({
+      where: { kind, sourceKey },
+      select: { id: true },
+    });
+
+    return Boolean(invoice);
+  }
+
   async persist(input: PersistInvoiceInput) {
     const status = input.status ?? GeneratedInvoiceStatus.ISSUED;
     const eventType = input.eventType ?? GeneratedInvoiceEventType.GENERATED;
