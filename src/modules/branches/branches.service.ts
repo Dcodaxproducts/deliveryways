@@ -1050,9 +1050,10 @@ export class BranchesService {
     }
 
     this.assertBranchWriteAccess(user, branch);
+    const updateDto = this.resolveBranchUpdateDto(user, dto);
     const sanitizedSettings = this.sanitizeBranchSettingsInput(
       user,
-      dto.settings,
+      updateDto.settings,
     );
     this.assertValidDeliveryConfiguration(sanitizedSettings);
     const mergedSettings =
@@ -1067,54 +1068,52 @@ export class BranchesService {
       const data = await this.branchesRepository.update(
         id,
         {
-          name: dto.name,
-          isMain: dto.isMain,
+          name: updateDto.name,
+          isMain: updateDto.isMain,
           logoUrl:
-            dto.logoUrl !== undefined
-              ? this.normalizeMediaUrl(dto.logoUrl)
+            updateDto.logoUrl !== undefined
+              ? this.normalizeMediaUrl(updateDto.logoUrl)
               : undefined,
           coverImage:
-            dto.coverImage !== undefined
-              ? this.normalizeMediaUrl(dto.coverImage)
+            updateDto.coverImage !== undefined
+              ? this.normalizeMediaUrl(updateDto.coverImage)
               : undefined,
-          description: dto.description,
+          description: updateDto.description,
           settings: mergedSettings,
         },
         trx,
       );
 
-      if (this.hasBranchAddressPayload(dto)) {
+      if (this.hasBranchAddressPayload(updateDto)) {
         const updatedAddress =
           await this.branchesRepository.updateBranchAddress(
             id,
-            this.toBranchAddressUpdateInput(dto),
+            this.toBranchAddressUpdateInput(updateDto),
             trx,
           );
 
         if (!updatedAddress) {
-          this.assertCompleteBranchAddress(dto);
+          this.assertCompleteBranchAddress(updateDto);
 
           await this.branchesRepository.createBranchAddress(
             {
               tenantId: branch.tenantId,
               branchId: id,
-              street: dto.street,
-              area: this.resolveShopNumber(dto),
-              postalCode: dto.postalCode,
-              city: dto.city,
-              state: dto.state,
-              country: dto.country,
-              lat: dto.lat,
-              lng: dto.lng,
+              street: updateDto.street,
+              area: this.resolveShopNumber(updateDto),
+              postalCode: updateDto.postalCode,
+              city: updateDto.city,
+              state: updateDto.state,
+              country: updateDto.country,
+              lat: updateDto.lat,
+              lng: updateDto.lng,
             },
             trx,
           );
         }
       }
 
-      if (user.role !== UserRoleEnum.BRANCH_ADMIN) {
-        await this.updateBranchAdminIfRequested(branch, dto, trx);
-      }
+      await this.updateBranchAdminIfRequested(branch, updateDto, trx);
 
       return data;
     };
@@ -1600,7 +1599,9 @@ export class BranchesService {
     }
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.bid) {
+      const scopedBranchId = this.resolveTokenBranchScope(user);
+
+      if (!scopedBranchId) {
         throw new ForbiddenException('Branch context is required');
       }
 
@@ -1610,7 +1611,7 @@ export class BranchesService {
         );
       }
 
-      if (user.bid !== branch.id) {
+      if (scopedBranchId !== branch.id) {
         throw new ForbiddenException(
           'You cannot access resources outside your branch',
         );
@@ -1622,6 +1623,24 @@ export class BranchesService {
     throw new ForbiddenException(
       'Insufficient permissions for branch opening hours write',
     );
+  }
+
+  private resolveBranchUpdateDto(
+    user: AuthUserContext,
+    dto: UpdateBranchDto,
+  ): UpdateBranchDto {
+    if (user.role !== UserRoleEnum.BRANCH_ADMIN) {
+      return dto;
+    }
+
+    return {
+      ...dto,
+      branchAdmin: undefined,
+    };
+  }
+
+  private resolveTokenBranchScope(user: AuthUserContext): string | undefined {
+    return user.bid ?? user.branchId;
   }
 
   private async updateBranchAdminIfRequested(

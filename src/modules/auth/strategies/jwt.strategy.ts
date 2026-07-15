@@ -11,6 +11,7 @@ interface JwtPayload {
   tid?: string | null;
   rid?: string | null;
   bid?: string | null;
+  branchId?: string | null;
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;

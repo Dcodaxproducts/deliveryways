@@ -170,6 +170,8 @@ describe('BranchesService', () => {
       id: 'branch-1',
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
+      managerId: null,
+      manager: null,
       isActive: true,
       deletedAt: null,
     });
@@ -186,7 +188,7 @@ describe('BranchesService', () => {
         uid: 'branch-admin-1',
         tid: 'tenant-1',
         rid: 'restaurant-1',
-        bid: 'branch-1',
+        branchId: 'branch-1',
         role: UserRoleEnum.BRANCH_ADMIN,
       },
       'branch-1',
@@ -205,6 +207,7 @@ describe('BranchesService', () => {
       expect.objectContaining({ name: 'Updated Branch' }),
       expect.any(Object),
     );
+    expect(usersService.findByEmail).not.toHaveBeenCalled();
     expect(usersService.update).not.toHaveBeenCalled();
     expect(result.message).toBe('Branch updated successfully');
   });

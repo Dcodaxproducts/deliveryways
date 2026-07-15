@@ -10,6 +10,7 @@ export interface AuthUserContext {
   tid?: string;
   rid?: string;
   bid?: string;
+  branchId?: string;
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;
