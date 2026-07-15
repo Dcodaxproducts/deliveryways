@@ -126,6 +126,7 @@ export class MenuCategoryRepository {
       where: {
         restaurantId,
         slug,
+        deletedAt: null,
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: { id: true, deletedAt: true },

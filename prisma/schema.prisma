@@ -108,6 +108,9 @@ enum PackageCommissionType {
 }
 
 enum BillingInterval {
+  DAILY
+  WEEKLY
+  BIWEEKLY
   MONTHLY
   YEARLY
 }
@@ -658,7 +661,6 @@ model MenuCategory {
   couponScopes     Coupon[]
   couponScopeLinks CouponScopeCategory[]
 
-  @@unique([restaurantId, slug])
   @@map("menu_categories")
 }
 

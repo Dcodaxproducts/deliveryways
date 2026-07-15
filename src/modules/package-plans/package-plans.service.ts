@@ -2578,13 +2578,24 @@ export class PackagePlansService {
   ): Date {
     const nextBillingAt = startsAt ? new Date(startsAt) : new Date();
 
-    if (billingInterval === BillingInterval.YEARLY) {
-      nextBillingAt.setFullYear(nextBillingAt.getFullYear() + 1);
-      return nextBillingAt;
+    switch (billingInterval) {
+      case BillingInterval.DAILY:
+        nextBillingAt.setDate(nextBillingAt.getDate() + 1);
+        return nextBillingAt;
+      case BillingInterval.WEEKLY:
+        nextBillingAt.setDate(nextBillingAt.getDate() + 7);
+        return nextBillingAt;
+      case BillingInterval.BIWEEKLY:
+        nextBillingAt.setDate(nextBillingAt.getDate() + 14);
+        return nextBillingAt;
+      case BillingInterval.YEARLY:
+        nextBillingAt.setFullYear(nextBillingAt.getFullYear() + 1);
+        return nextBillingAt;
+      case BillingInterval.MONTHLY:
+      default:
+        nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
+        return nextBillingAt;
     }
-
-    nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
-    return nextBillingAt;
   }
 
   private buildPlanSnapshot(plan: {

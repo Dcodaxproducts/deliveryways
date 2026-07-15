@@ -156,6 +156,32 @@ describe('PackagePlansService', () => {
     expect(result.message).toBe('Package plan created successfully');
   });
 
+  it('creates package plan with weekly billing interval', async () => {
+    const repository = {
+      createPlan: jest
+        .fn()
+        .mockResolvedValue(
+          makePlan({ billingInterval: BillingInterval.WEEKLY }),
+        ),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.createPlan(superAdmin, {
+      name: 'Weekly Growth',
+      billingModel: PackageBillingModel.PLAN,
+      billingInterval: BillingInterval.WEEKLY,
+      planPrice: 1250,
+    });
+
+    expect(repository.createPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        billingInterval: BillingInterval.WEEKLY,
+        planPrice: new Prisma.Decimal(1250),
+      }),
+    );
+    expect(result.data.billingInterval).toBe(BillingInterval.WEEKLY);
+  });
+
   it('creates commission package plan with fixed per-order commission', async () => {
     const repository = {
       createPlan: jest.fn().mockResolvedValue(

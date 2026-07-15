@@ -1112,7 +1112,9 @@ export class BranchesService {
         }
       }
 
-      await this.updateBranchAdminIfRequested(branch, dto, trx);
+      if (user.role !== UserRoleEnum.BRANCH_ADMIN) {
+        await this.updateBranchAdminIfRequested(branch, dto, trx);
+      }
 
       return data;
     };

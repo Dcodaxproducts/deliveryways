@@ -516,9 +516,7 @@ export class MenuCategoryService {
 
     if (existing) {
       throw new BadRequestException(
-        existing.deletedAt
-          ? 'A menu category with this slug already exists in this restaurant, including a deleted category'
-          : 'A menu category with this slug already exists in this restaurant',
+        'A menu category with this slug already exists in this restaurant',
       );
     }
   }

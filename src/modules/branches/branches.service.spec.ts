@@ -164,6 +164,51 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
+  it('ignores branch admin payload when an assigned branch admin updates branch details', async () => {
+    const { service, repository, usersService, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Updated Branch',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      'branch-1',
+      {
+        name: 'Updated Branch',
+        branchAdmin: {
+          email: 'branch.admin@example.com',
+          firstName: 'Branch',
+          lastName: 'Admin',
+        },
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({ name: 'Updated Branch' }),
+      expect.any(Object),
+    );
+    expect(usersService.update).not.toHaveBeenCalled();
+    expect(result.message).toBe('Branch updated successfully');
+  });
+
   it('preserves opening hours when branch settings update omits them', async () => {
     const { service, repository, prisma } = makeService();
     const existingOpeningHours = [

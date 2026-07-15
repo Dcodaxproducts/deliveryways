@@ -214,12 +214,16 @@ describe('MenuCategoryService', () => {
     );
   });
 
-  it('surfaces soft-deleted category slug conflicts clearly', async () => {
+  it('allows reusing a slug from a soft-deleted category', async () => {
     const { service, categoryRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    categoryRepository.findByRestaurantAndSlug.mockResolvedValue({
-      id: 'category-2',
-      deletedAt: new Date('2026-04-13T00:00:00.000Z'),
+    categoryRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    categoryRepository.create.mockResolvedValue({
+      id: 'category-3',
+      restaurantId: 'restaurant-1',
+      name: 'Burgers',
+      slug: 'burgers',
+      deletedAt: null,
     });
 
     await expect(
@@ -235,9 +239,16 @@ describe('MenuCategoryService', () => {
           slug: 'burgers',
         },
       ),
-    ).rejects.toThrow(
-      'A menu category with this slug already exists in this restaurant, including a deleted category',
-    );
+    ).resolves.toEqual({
+      data: {
+        id: 'category-3',
+        restaurantId: 'restaurant-1',
+        name: 'Burgers',
+        slug: 'burgers',
+        deletedAt: null,
+      },
+      message: 'Menu category created successfully',
+    });
   });
 
   it('blocks customer writes outside category permissions', async () => {
