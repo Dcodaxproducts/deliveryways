@@ -1659,9 +1659,7 @@ export class BranchesService {
 
     const managerId = branch.manager?.id ?? branch.managerId;
     if (!managerId) {
-      throw new BadRequestException(
-        'Branch admin is not assigned to this branch',
-      );
+      return;
     }
 
     const email = branchAdmin.email?.trim().toLowerCase();

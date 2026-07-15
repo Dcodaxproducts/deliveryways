@@ -406,6 +406,52 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
+  it('allows business admin to update branch details when branch admin payload is present but no manager is assigned', async () => {
+    const { service, repository, usersService, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      managerId: null,
+      manager: null,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'American Corner',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const result = await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        name: 'American Corner',
+        branchAdmin: {
+          email: 'americancorner@yopmail.com',
+          firstName: 'Rames',
+          lastName: 'Kanth',
+          phone: '1234567898',
+        },
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      expect.objectContaining({ name: 'American Corner' }),
+      expect.any(Object),
+    );
+    expect(usersService.update).not.toHaveBeenCalled();
+    expect(result.message).toBe('Branch updated successfully');
+  });
+
   it('blocks branch admin from updating another branch details', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({
