@@ -520,9 +520,8 @@ describe('PaymentsService', () => {
 
     const result = await service.updateRestaurantStripeAccount(
       {
-        uid: 'admin-1',
-        tid: 'tenant-1',
-        role: UserRoleEnum.BUSINESS_ADMIN,
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
       } as never,
       'restaurant-1',
       {
@@ -535,8 +534,8 @@ describe('PaymentsService', () => {
     );
 
     expect(prisma.restaurant.findFirst).toHaveBeenCalledWith({
-      where: { id: 'restaurant-1', tenantId: 'tenant-1', deletedAt: null },
-      select: { id: true },
+      where: { id: 'restaurant-1', deletedAt: null },
+      select: { id: true, tenantId: true, settings: true },
     });
     const restaurantUpdate = prisma.restaurant.update as jest.Mock<
       unknown,
@@ -551,11 +550,31 @@ describe('PaymentsService', () => {
         chargesEnabled: true,
         onboardingComplete: true,
         note: 'Connected',
-        updatedBy: 'admin-1',
+        updatedBy: 'super-1',
       }),
     );
     expect(stripePaymentsService.createTransfer).not.toHaveBeenCalled();
     expect(result.data.stripe.accountId).toBe('acct_new');
+  });
+
+  it('rejects restaurant admin Stripe account updates', async () => {
+    const { service, prisma } = makeService();
+
+    await expect(
+      service.updateRestaurantStripeAccount(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-1',
+        { accountId: 'acct_new' },
+      ),
+    ).rejects.toThrow(
+      'Only super admins can manage restaurant payment configuration',
+    );
+    expect(prisma.restaurant.findFirst).not.toHaveBeenCalled();
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
   });
 
   it('creates a super-admin Stripe transfer to restaurant account', async () => {
@@ -760,9 +779,8 @@ describe('PaymentsService', () => {
 
     const result = await service.updateRestaurantPaymentMethods(
       {
-        uid: 'admin-1',
-        tid: 'tenant-1',
-        role: UserRoleEnum.BUSINESS_ADMIN,
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
       } as never,
       'restaurant-1',
       {
@@ -792,13 +810,36 @@ describe('PaymentsService', () => {
         allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
         walletEnabled: false,
         note: 'Use cash and card',
-        updatedBy: 'admin-1',
+        updatedBy: 'super-1',
       }),
     );
     expect(result.data.methods.allowedPaymentMethods).toEqual([
       PaymentMethod.COD,
       PaymentMethod.STRIPE,
     ]);
+  });
+
+  it('rejects restaurant admin payment method updates', async () => {
+    const { service, prisma } = makeService();
+
+    await expect(
+      service.updateRestaurantPaymentMethods(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-1',
+        {
+          allowedPaymentMethods: [PaymentMethod.COD],
+          walletEnabled: false,
+        },
+      ),
+    ).rejects.toThrow(
+      'Only super admins can manage restaurant payment configuration',
+    );
+    expect(prisma.restaurant.findFirst).not.toHaveBeenCalled();
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
   });
 
   it('marks payment paid from stripe webhook success', async () => {

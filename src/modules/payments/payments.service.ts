@@ -1300,6 +1300,8 @@ export class PaymentsService {
     restaurantId: string,
     dto: UpdateRestaurantStripeAccountDto,
   ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+
     const hasUpdates = Object.values(dto).some((value) => value !== undefined);
     if (!hasUpdates) {
       throw new BadRequestException(
@@ -1357,6 +1359,8 @@ export class PaymentsService {
     restaurantId: string,
     dto: CreateRestaurantStripeTransferDto,
   ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+
     const restaurant = await this.requireRestaurantForStripe(
       user,
       restaurantId,
@@ -1731,6 +1735,8 @@ export class PaymentsService {
     restaurantId: string,
     dto: UpdateRestaurantPaymentMethodsDto,
   ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+
     const restaurant = await this.requireRestaurantForPayments(
       user,
       restaurantId,
@@ -3303,5 +3309,13 @@ export class PaymentsService {
     }
 
     return user.rid;
+  }
+
+  private assertSuperAdminPaymentConfigAccess(user: AuthUserContext) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admins can manage restaurant payment configuration',
+      );
+    }
   }
 }

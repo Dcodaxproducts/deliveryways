@@ -168,7 +168,7 @@ export class PaymentsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Patch('restaurants/:restaurantId/methods')
   @ApiOperation({ summary: 'Update restaurant payment method settings' })
   updateRestaurantPaymentMethods(
@@ -286,7 +286,7 @@ export class PaymentsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Patch('stripe/restaurants/:restaurantId/account')
   updateRestaurantStripeAccount(
     @CurrentUser() user: AuthUserContext,
