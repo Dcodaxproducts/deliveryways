@@ -6232,6 +6232,190 @@ describe('OrdersService - wallet payment', () => {
     );
   });
 
+  it('uses item-specific modifier prices when pricing fixed combo deal quotes', async () => {
+    const calculateQuoteBenefits = jest
+      .fn()
+      .mockImplementation((summary: { subtotal: Prisma.Decimal }) =>
+        Promise.resolve({
+          walletAppliedAmount: new Prisma.Decimal(0),
+          loyaltyDiscountAmount: new Prisma.Decimal(0),
+          loyaltyPointsRedeemed: 0,
+          totalAmount: summary.subtotal,
+        }),
+      );
+    const couponsService = {
+      validateForCheckout: jest.fn(),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
+      isActiveFixedPriceDealItem: jest.fn().mockResolvedValue(true),
+      getActiveFixedPriceDealPricing: jest.fn().mockResolvedValue({
+        dealId: 'deal-1',
+        fixedPrice: new Prisma.Decimal(13.9),
+        menuItemIds: ['menu-1', 'menu-2'],
+      }),
+    };
+    const modifierLink = (menuItemId: string) => ({
+      modifierGroup: {
+        modifierLinks: [
+          {
+            modifier: {
+              id: 'modifier-cheese',
+              name: 'Cheese',
+              priceDelta: new Prisma.Decimal(1.55),
+              itemPriceOverrides: [
+                { menuItemId, priceDelta: new Prisma.Decimal(2) },
+              ],
+              variationPriceOverrides: [],
+            },
+          },
+        ],
+      },
+    });
+    const menuItems = new Map([
+      [
+        'menu-1',
+        {
+          id: 'menu-1',
+          name: 'Deal Pizza Left',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(10),
+          depositAmount: new Prisma.Decimal(0),
+          category: {
+            id: 'cat-1',
+            variations: [],
+            modifierLinks: [modifierLink('menu-1')],
+          },
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          branchOverrides: [],
+          isRequired: false,
+          maxSelect: 2,
+        },
+      ],
+      [
+        'menu-2',
+        {
+          id: 'menu-2',
+          name: 'Deal Pizza Right',
+          restaurantId: 'restaurant-1',
+          basePrice: new Prisma.Decimal(10),
+          depositAmount: new Prisma.Decimal(0),
+          category: {
+            id: 'cat-1',
+            variations: [],
+            modifierLinks: [modifierLink('menu-2')],
+          },
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          branchOverrides: [],
+          isRequired: false,
+          maxSelect: 2,
+        },
+      ],
+    ]);
+    const service = new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {
+              ordering: {
+                allowedOrderTypes: ['DELIVERY'],
+                allowedPaymentMethods: ['COD'],
+              },
+              deliveryConfig: {
+                radiusKm: 5,
+                minOrderAmount: 0,
+                deliveryFee: 0,
+                isFreeDelivery: false,
+                freeDeliveryThreshold: 0,
+              },
+              taxation: { taxPercentage: 0 },
+            },
+          }),
+        },
+        menuItem: {
+          findFirst: jest.fn(({ where }: { where: { id: string } }) =>
+            Promise.resolve(menuItems.get(where.id) ?? null),
+          ),
+        },
+        address: {
+          findFirst: jest.fn().mockResolvedValue({
+            lat: new Prisma.Decimal('31.5204'),
+            lng: new Prisma.Decimal('74.3587'),
+          }),
+        },
+        user: { findFirst: jest.fn() },
+      } as never,
+      {} as never,
+      couponsService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { calculateQuoteBenefits } as never,
+    );
+
+    const result = await service.quote(
+      {
+        uid: 'customer-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.DELIVERY,
+        deliveryAddressId: 'address-1',
+        items: [
+          {
+            menuItemId: 'menu-1',
+            dealId: 'deal-1',
+            quantity: 1,
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+          },
+          {
+            menuItemId: 'menu-2',
+            dealId: 'deal-1',
+            quantity: 1,
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+          },
+        ],
+        orderTime: '2026-03-24T19:30:00.000Z',
+      },
+    );
+
+    expect(result.data.subtotal).toBe(17.9);
+    expect(result.data.items).toEqual([
+      expect.objectContaining({
+        menuItemId: 'menu-1',
+        dealId: 'deal-1',
+        lineTotal: 8.95,
+        snapshotModifiers: [
+          expect.objectContaining({
+            modifierId: 'modifier-cheese',
+            unitPrice: 2,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        menuItemId: 'menu-2',
+        dealId: 'deal-1',
+        lineTotal: 8.95,
+        snapshotModifiers: [
+          expect.objectContaining({
+            modifierId: 'modifier-cheese',
+            unitPrice: 2,
+          }),
+        ],
+      }),
+    ]);
+    expect(calculateQuoteBenefits).toHaveBeenCalledWith(
+      expect.objectContaining({ subtotal: new Prisma.Decimal(17.9) }),
+    );
+  });
+
   it('prices flexible category deal quote lines at the fixed deal price', async () => {
     const calculateQuoteBenefits = jest
       .fn()

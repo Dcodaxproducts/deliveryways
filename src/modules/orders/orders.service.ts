@@ -4369,11 +4369,7 @@ export class OrdersService {
       )?.modifier;
 
       if (found) {
-        return this.resolveModifierPricing(
-          { ...found, itemPriceOverrides: [] },
-          menuItemId,
-          variationId,
-        );
+        return this.resolveModifierPricing(found, menuItemId, variationId);
       }
     }
 
