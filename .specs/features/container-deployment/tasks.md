@@ -64,13 +64,15 @@
 
 ### T3: Add restaurant-admin image
 
+**Status**: Done
+
 **What**: Enable standalone Next output and add its production image files.
 **Where**: restaurant-admin `next.config.mjs`, `Dockerfile`, `.dockerignore`
 **Depends on**: T1
 **Requirement**: DEP-02, DEP-03
 **Tools**: `apply_patch`, Docker, npm
 
-**Done when**: standalone build and container HTTP probe pass.
+**Done when**: standalone build and container HTTP probe pass. Verified with 64 test files / 414 tests and container `/login` HTTP 200.
 
 **Commit**: `build(deploy): add restaurant admin container image`
 
