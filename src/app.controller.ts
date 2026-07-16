@@ -4,6 +4,17 @@ import { Public } from './common/decorators';
 @Controller()
 export class AppController {
   @Public()
+  @Get('/health/live')
+  liveness(this: void) {
+    return {
+      data: {
+        status: 'ok',
+      },
+      message: 'DeliveryWays API is live',
+    };
+  }
+
+  @Public()
   @Get('/')
   root() {
     return {

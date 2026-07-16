@@ -45,6 +45,8 @@
 
 ### T2: Add backend container liveness endpoint
 
+**Status**: Done
+
 **What**: Add a minimal unauthenticated liveness route that does not expose system details.
 **Where**: backend application controller/test files
 **Depends on**: T1
@@ -53,8 +55,8 @@
 
 **Done when**:
 
-- [ ] `GET /api/v1/health/live` returns a stable success response without authentication.
-- [ ] Focused tests and Nest verification pass.
+- [x] `GET /api/v1/health/live` returns a stable success response without authentication.
+- [x] Focused tests and Nest verification pass.
 
 **Verify**: focused Jest plus container HTTP probe.
 
