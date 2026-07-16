@@ -1,0 +1,198 @@
+x-runtime-service: &runtime-service
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-next-healthcheck: &next-healthcheck
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 45s
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - database
+    shm_size: 256mb
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  api:
+    <<: *runtime-service
+    image: ${API_IMAGE:-deliveryway-api:local}
+    build:
+      context: ..
+      target: production
+    env_file:
+      - ${DELIVERYWAY_ENV_FILE:?DELIVERYWAY_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      HOST: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/v1/health/live').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - api-storage:/app/storage
+    networks:
+      - application
+      - database
+
+  restaurant-admin:
+    <<: *runtime-service
+    image: ${RESTAURANT_ADMIN_IMAGE:-deliveryway-restaurant-admin:local}
+    build:
+      context: ../../deliveryway-restaurant-admin
+      target: production
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    environment:
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      <<: *next-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+    networks:
+      - application
+
+  superadmin:
+    <<: *runtime-service
+    image: ${SUPERADMIN_IMAGE:-deliveryway-superadmin:local}
+    build:
+      context: ../../deliveryway-superadmin
+      target: production
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      <<: *next-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/auth/login').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+    networks:
+      - application
+
+  customer:
+    <<: *runtime-service
+    image: ${CUSTOMER_IMAGE:-deliveryway-customer:local}
+    build:
+      context: ../../deliveryway-customer-website
+      target: production
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+        NEXT_PUBLIC_SITE_URL: ${PUBLIC_CUSTOMER_URL:?PUBLIC_CUSTOMER_URL is required}
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      NEXT_PUBLIC_SITE_URL: ${PUBLIC_CUSTOMER_URL:?PUBLIC_CUSTOMER_URL is required}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      <<: *next-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/auth/login').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+    networks:
+      - application
+
+  landing:
+    <<: *runtime-service
+    image: ${LANDING_IMAGE:-deliveryway-landing:local}
+    build:
+      context: ../../Deliveryway-landing-page
+      target: production
+      args:
+        NEXT_PUBLIC_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    environment:
+      NEXT_PUBLIC_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      <<: *next-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+    networks:
+      - application
+
+networks:
+  application:
+    driver: bridge
+  database:
+    driver: bridge
+    internal: true
+
+volumes:
+  api-storage:
+  postgres-data:

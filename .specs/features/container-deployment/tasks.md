@@ -106,6 +106,8 @@
 
 ### T6: Add common Compose definition
 
+**Status**: Done
+
 **What**: Define the API, four web apps, PostgreSQL, private network, health checks, volumes, logs, and restart behavior.
 **Where**: `deploy/compose.yml`
 **Depends on**: T1-T5
@@ -113,6 +115,13 @@
 **Tools**: `apply_patch`, Docker Compose
 
 **Done when**: `docker compose config` renders with no public PostgreSQL port and dependency health gates.
+
+**Verification**:
+
+- [x] Compose renders all six runtime services without starting containers.
+- [x] PostgreSQL has no host port and joins only an internal database network.
+- [x] API waits for PostgreSQL health; web applications wait for API health.
+- [x] Named data volumes, restart policies, stop grace periods, and log rotation render correctly.
 
 **Commit**: `build(deploy): define deliveryway compose stack`
 
