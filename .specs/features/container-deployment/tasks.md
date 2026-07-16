@@ -78,17 +78,21 @@
 
 ### T4: Add superadmin image
 
+**Status**: Done
+
 **What**: Enable standalone Next output and add its production image files.
 **Where**: superadmin `next.config.mjs`, `Dockerfile`, `.dockerignore`
 **Depends on**: T1
 **Requirement**: DEP-02, DEP-03
 **Tools**: `apply_patch`, Docker, npm
 
-**Done when**: standalone build and container HTTP probe pass.
+**Done when**: standalone build and container HTTP probe pass. Verified with lint, explicit TypeScript check, production build, and container `/auth/login` HTTP 200.
 
 **Commit**: `build(deploy): add superadmin container image`
 
 ### T5: Add customer and landing images
+
+**Status**: Done
 
 **What**: Add independently verified standalone image files to the customer website and landing page repositories.
 **Where**: each repository's `next.config.*`, `Dockerfile`, `.dockerignore`
@@ -96,7 +100,7 @@
 **Requirement**: DEP-02, DEP-03
 **Tools**: `apply_patch`, Docker, npm
 
-**Done when**: each image builds and responds to an HTTP probe; commits remain repository-specific.
+**Done when**: each image builds and responds to an HTTP probe; commits remain repository-specific. Customer verified with 63 test files / 441 tests and `/auth/login` HTTP 200; landing verified with lint/typecheck/i18n/build and `/` HTTP 200.
 
 **Commits**: `build(deploy): add customer website container image`; `build(deploy): add landing page container image`
 
