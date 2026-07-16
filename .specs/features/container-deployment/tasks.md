@@ -193,6 +193,8 @@
 
 ### T10: Add release and rollback scripts
 
+**Status**: Done
+
 **What**: Deploy immutable image sets, run smoke checks, record releases, and roll back application images.
 **Where**: `deploy/scripts/deploy.sh`, `smoke-test.sh`, `rollback.sh`
 **Depends on**: T9
@@ -200,6 +202,16 @@
 **Tools**: `apply_patch`, curl, Docker Compose
 
 **Done when**: staging can deploy two versions and return to the prior version without changing its DB volume.
+
+**Verification**:
+
+- [x] First SHA-tagged staging release completes backup, 98 migrations, health waits, and five HTTP probes.
+- [x] Second SHA-tagged release preserves PostgreSQL and reports no pending migrations.
+- [x] Both releases create non-secret immutable image manifests.
+- [x] Rollback restores all five application services to the first image set.
+- [x] PostgreSQL container ID and named volume remain identical across rollback.
+- [x] Post-rollback health and HTTP smoke tests pass.
+- [x] Production deploy/rollback paths require explicit approval and cannot skip image pulls.
 
 **Commit**: `build(deploy): add release and rollback workflow`
 

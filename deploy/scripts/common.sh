@@ -25,6 +25,7 @@ dw_init() {
   DW_ENV_FILE="${2:-/opt/deliveryway/env/.env.${DW_ENVIRONMENT}}"
   DW_COMPOSE_FILE="${DW_DEPLOY_DIR}/compose.yml"
   DW_BACKUP_ROOT="${DELIVERYWAY_BACKUP_ROOT:-/opt/deliveryway/backups}"
+  DW_RELEASE_ROOT="${DELIVERYWAY_RELEASE_ROOT:-/opt/deliveryway/releases}"
 }
 
 dw_read_env() {
@@ -68,4 +69,18 @@ dw_verify_backup() {
   actual_checksum="$(sha256sum "${backup_file}" | awk '{ print $1 }')"
   [[ -n "${expected_checksum}" && "${expected_checksum}" == "${actual_checksum}" ]] \
     || dw_fail "backup checksum verification failed"
+}
+
+dw_image_keys() {
+  printf '%s\n' \
+    API_IMAGE \
+    MIGRATION_IMAGE \
+    RESTAURANT_ADMIN_IMAGE \
+    SUPERADMIN_IMAGE \
+    CUSTOMER_IMAGE \
+    LANDING_IMAGE
+}
+
+dw_is_immutable_image() {
+  [[ "$1" =~ (@sha256:[a-f0-9]{64}|:[a-f0-9]{7,40})$ ]]
 }
