@@ -52,7 +52,7 @@ services:
       - ${DELIVERYWAY_ENV_FILE:?DELIVERYWAY_ENV_FILE is required}
     environment:
       NODE_ENV: production
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      APP_ENV: ${APP_ENV:-unspecified}
       HOST: 0.0.0.0
       PORT: 3000
     depends_on:

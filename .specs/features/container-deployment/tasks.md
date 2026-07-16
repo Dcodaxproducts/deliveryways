@@ -127,6 +127,8 @@
 
 ### T7: Add environment overrides and templates
 
+**Status**: Done; placeholder rejection is enforced by T8
+
 **What**: Add staging/production override files and non-secret environment templates.
 **Where**: `deploy/compose.staging.yml`, `deploy/compose.production.yml`, `deploy/env/*.example`
 **Depends on**: T6
@@ -134,6 +136,14 @@
 **Tools**: `apply_patch`, Docker Compose
 
 **Done when**: both rendered configurations have distinct localhost ports and no placeholder production secrets accepted by preflight.
+
+**Verification**:
+
+- [x] Staging renders as project `deliveryway-staging` on localhost ports 6050-6054.
+- [x] Production renders as project `deliveryway-prod` on localhost ports 5050-5054.
+- [x] Both environments keep PostgreSQL un-published on an internal-only network.
+- [x] Only placeholder templates are versioned; completed environment files remain ignored.
+- [ ] T8 preflight rejects every `REPLACE_WITH` placeholder before mutation.
 
 **Commit**: `build(deploy): isolate staging and production stacks`
 

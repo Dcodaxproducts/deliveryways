@@ -1,0 +1,24 @@
+name: deliveryway-prod
+
+services:
+  api:
+    environment:
+      APP_ENV: production
+    ports:
+      - 127.0.0.1:5050:3000
+
+  restaurant-admin:
+    ports:
+      - 127.0.0.1:5051:3000
+
+  superadmin:
+    ports:
+      - 127.0.0.1:5052:3000
+
+  customer:
+    ports:
+      - 127.0.0.1:5053:3000
+
+  landing:
+    ports:
+      - 127.0.0.1:5054:3000
