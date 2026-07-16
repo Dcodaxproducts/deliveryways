@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.specs
+backups
+coverage
+dist
+memory
+node_modules
+storage
+test
+*.log
+npm-debug.log*
+prisma/manual-*.sql

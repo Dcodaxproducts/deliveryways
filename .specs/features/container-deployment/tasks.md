@@ -25,6 +25,8 @@
 
 ### T1: Add backend Docker build context
 
+**Status**: Done
+
 **What**: Add a multi-stage backend image and build-context exclusions.
 **Where**: `Dockerfile`, `.dockerignore`
 **Depends on**: None
@@ -33,9 +35,9 @@
 
 **Done when**:
 
-- [ ] Production and migration targets build from the lockfile.
-- [ ] API runs with `node dist/src/main.js` as a non-root user.
-- [ ] Secrets, Git metadata, backups, storage, tests, and local dependencies are excluded.
+- [x] Production and migration targets build from the lockfile.
+- [x] API runs with `node dist/src/main.js` as a non-root user.
+- [x] Secrets, Git metadata, backups, storage, tests, and local dependencies are excluded.
 
 **Verify**: `docker build --target production -t deliveryways-api:test .` and inspect image user/entrypoint.
 
