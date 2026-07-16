@@ -143,11 +143,13 @@
 - [x] Production renders as project `deliveryway-prod` on localhost ports 5050-5054.
 - [x] Both environments keep PostgreSQL un-published on an internal-only network.
 - [x] Only placeholder templates are versioned; completed environment files remain ignored.
-- [ ] T8 preflight rejects every `REPLACE_WITH` placeholder before mutation.
+- [x] T8 preflight rejects every `REPLACE_WITH` placeholder before mutation.
 
 **Commit**: `build(deploy): isolate staging and production stacks`
 
 ### T8: Add deployment preflight
+
+**Status**: Done
 
 **What**: Validate host identity, required variables, Compose rendering, image tags, directories, and Docker health before mutation.
 **Where**: `deploy/scripts/preflight.sh`
@@ -156,6 +158,13 @@
 **Tools**: `apply_patch`, ShellCheck if available, Docker Compose
 
 **Done when**: valid config passes and missing/placeholder variables fail without starting services.
+
+**Verification**:
+
+- [x] Bash syntax validation passes.
+- [x] A complete staging fixture passes every check and Compose rendering.
+- [x] The example template fails on placeholder detection with a non-zero exit.
+- [x] No containers, networks, or volumes exist after preflight execution.
 
 **Commit**: `build(deploy): add deployment preflight checks`
 
