@@ -74,6 +74,24 @@ services:
       - application
       - database
 
+  migration:
+    image: ${MIGRATION_IMAGE:-deliveryway-migration:local}
+    build:
+      context: ..
+      target: migration
+    profiles:
+      - tools
+    env_file:
+      - ${DELIVERYWAY_ENV_FILE:?DELIVERYWAY_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - database
+    restart: "no"
+
   restaurant-admin:
     <<: *runtime-service
     image: ${RESTAURANT_ADMIN_IMAGE:-deliveryway-restaurant-admin:local}

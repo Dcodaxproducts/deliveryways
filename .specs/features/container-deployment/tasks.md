@@ -170,6 +170,8 @@
 
 ### T9: Add database lifecycle scripts
 
+**Status**: Done
+
 **What**: Add environment-scoped PostgreSQL backup, migration, and disposable restore verification.
 **Where**: `deploy/scripts/backup-db.sh`, `migrate-db.sh`, `verify-restore.sh`
 **Depends on**: T8
@@ -177,6 +179,15 @@
 **Tools**: `apply_patch`, PostgreSQL container tools, Docker Compose
 
 **Done when**: staging backup, migration, and restore verification pass; scripts refuse ambiguous environment input.
+
+**Verification**:
+
+- [x] Missing backup input stops migration before Compose mutation.
+- [x] A custom-format pre-migration dump and SHA-256 checksum validate successfully.
+- [x] The migration image applies all 98 committed migrations to scratch staging.
+- [x] A post-migration dump restores into a network-isolated disposable PostgreSQL 16 container.
+- [x] The restored database contains 71 public tables.
+- [x] Scratch containers, network, volume, image tag, env file, and backups are cleaned up.
 
 **Commit**: `build(deploy): add database release safeguards`
 

@@ -113,7 +113,7 @@ DeliveryWay currently has a PostgreSQL-only local Compose file and a host Node/P
 | DEP-05 | Private PostgreSQL 16 services and persistent volumes | Verified |
 | DEP-06 | Environment-specific configuration and secrets | Verified |
 | DEP-07 | Liveness/readiness health checks | Verified |
-| DEP-08 | Backup, migration, and restore gates | In Tasks |
+| DEP-08 | Backup, migration, and restore gates | Verified |
 | DEP-09 | Plesk TLS, reverse proxy, and WebSocket routing | In Tasks |
 | DEP-10 | Versioned release and rollback | Implementing |
 | DEP-11 | Logging, monitoring, and resource safeguards | Implementing |

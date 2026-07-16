@@ -78,6 +78,7 @@ readonly REQUIRED_KEYS=(
   POSTGRES_PASSWORD
   DATABASE_URL
   API_IMAGE
+  MIGRATION_IMAGE
   RESTAURANT_ADMIN_IMAGE
   SUPERADMIN_IMAGE
   CUSTOMER_IMAGE
@@ -112,7 +113,7 @@ pass "required environment values"
 [[ "$(read_env CORS_ORIGINS)" != *'*'* ]] || fail "CORS_ORIGINS must not contain a wildcard"
 pass "private database URL and explicit CORS origins"
 
-readonly IMAGE_KEYS=(API_IMAGE RESTAURANT_ADMIN_IMAGE SUPERADMIN_IMAGE CUSTOMER_IMAGE LANDING_IMAGE)
+readonly IMAGE_KEYS=(API_IMAGE MIGRATION_IMAGE RESTAURANT_ADMIN_IMAGE SUPERADMIN_IMAGE CUSTOMER_IMAGE LANDING_IMAGE)
 for key in "${IMAGE_KEYS[@]}"; do
   value="$(read_env "${key}")"
   if [[ ! "${value}" =~ (@sha256:[a-f0-9]{64}|:[a-f0-9]{7,40})$ ]]; then
@@ -160,6 +161,7 @@ docker compose \
   --env-file "${ENV_FILE}" \
   --file "${COMPOSE_FILE}" \
   --file "${OVERRIDE_FILE}" \
+  --profile "*" \
   config --quiet
 pass "Compose configuration renders"
 
