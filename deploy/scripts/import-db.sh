@@ -38,7 +38,7 @@ readonly EXISTING_TABLE_COUNT="$(dw_compose exec --no-TTY postgres \
   || dw_fail "development database is not empty (${EXISTING_TABLE_COUNT} public tables); import refused"
 
 printf 'Restoring verified legacy backup in a single transaction...\n'
-dw_compose exec --interactive postgres \
+dw_compose exec --no-TTY postgres \
   pg_restore \
   --username "${DB_USER}" \
   --dbname "${DB_NAME}" \
