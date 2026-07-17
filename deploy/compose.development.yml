@@ -4,6 +4,7 @@ services:
   api:
     environment:
       APP_ENV: development
+      NODE_ENV: development
     ports:
       - 127.0.0.1:7050:3000
 
