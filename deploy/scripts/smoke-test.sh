@@ -11,19 +11,29 @@ dw_preflight
 
 command -v curl >/dev/null 2>&1 || dw_fail "curl is required for smoke tests"
 
-if [[ "${DW_ENVIRONMENT}" == "staging" ]]; then
-  readonly API_PORT=6050
-  readonly RESTAURANT_ADMIN_PORT=6051
-  readonly SUPERADMIN_PORT=6052
-  readonly CUSTOMER_PORT=6053
-  readonly LANDING_PORT=6054
-else
-  readonly API_PORT=5050
-  readonly RESTAURANT_ADMIN_PORT=5051
-  readonly SUPERADMIN_PORT=5052
-  readonly CUSTOMER_PORT=5053
-  readonly LANDING_PORT=5054
-fi
+case "${DW_ENVIRONMENT}" in
+  development)
+    readonly API_PORT=7050
+    readonly RESTAURANT_ADMIN_PORT=7051
+    readonly SUPERADMIN_PORT=7052
+    readonly CUSTOMER_PORT=7053
+    readonly LANDING_PORT=7054
+    ;;
+  staging)
+    readonly API_PORT=6050
+    readonly RESTAURANT_ADMIN_PORT=6051
+    readonly SUPERADMIN_PORT=6052
+    readonly CUSTOMER_PORT=6053
+    readonly LANDING_PORT=6054
+    ;;
+  production)
+    readonly API_PORT=5050
+    readonly RESTAURANT_ADMIN_PORT=5051
+    readonly SUPERADMIN_PORT=5052
+    readonly CUSTOMER_PORT=5053
+    readonly LANDING_PORT=5054
+    ;;
+esac
 
 readonly SERVICES=(postgres api restaurant-admin superadmin customer landing)
 for service in "${SERVICES[@]}"; do

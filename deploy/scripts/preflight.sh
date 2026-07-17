@@ -38,6 +38,10 @@ require_env() {
 }
 
 case "${ENVIRONMENT}" in
+  development)
+    readonly PROJECT_NAME="deliveryway-development"
+    readonly OVERRIDE_FILE="${DEPLOY_DIR}/compose.development.yml"
+    ;;
   staging)
     readonly PROJECT_NAME="deliveryway-staging"
     readonly OVERRIDE_FILE="${DEPLOY_DIR}/compose.staging.yml"
@@ -47,7 +51,7 @@ case "${ENVIRONMENT}" in
     readonly OVERRIDE_FILE="${DEPLOY_DIR}/compose.production.yml"
     ;;
   *)
-    fail "usage: $0 <staging|production> [env-file]"
+    fail "usage: $0 <development|staging|production> [env-file]"
     ;;
 esac
 
@@ -64,12 +68,13 @@ readonly ENV_MODE="$(stat -c '%a' "${ENV_FILE}")"
 [[ "${ENV_MODE}" == "600" || "${ENV_MODE}" == "640" ]] || fail "environment file mode must be 600 or 640, found ${ENV_MODE}"
 pass "environment file ownership and permissions"
 
-if grep -Eq 'REPLACE_WITH|CHANGE_ME|change-me|example\.com' "${ENV_FILE}"; then
+if grep -Ev '^[[:space:]]*#' "${ENV_FILE}" \
+  | grep -Eq 'REPLACE_WITH|CHANGE_ME|change-me|example\.com'; then
   fail "environment file still contains placeholder values"
 fi
 pass "no placeholder values"
 
-readonly REQUIRED_KEYS=(
+REQUIRED_KEYS=(
   DELIVERYWAY_ENV_FILE
   EXPECTED_HOSTNAME
   EXPECTED_SERVER_IPV4
@@ -87,21 +92,27 @@ readonly REQUIRED_KEYS=(
   PUBLIC_API_BASE_URL
   PUBLIC_RESTAURANT_ADMIN_URL
   PUBLIC_CUSTOMER_URL
-  GOOGLE_CLIENT_ID
-  GOOGLE_MAPS_API_KEY
   CORS_ORIGINS
   CUSTOMER_APP_BASE_DOMAIN
   JWT_ACCESS_SECRET
   JWT_REFRESH_SECRET
-  AWS_ACCESS_KEY_ID
-  AWS_SECRET_ACCESS_KEY
-  AWS_REGION
-  AWS_BUCKET_NAME
   STRIPE_SECRET_KEY
   STRIPE_PUBLISHABLE_KEY
   STRIPE_WEBHOOK_SECRET
-  FIREBASE_SERVICE_ACCOUNT_JSON
 )
+
+if [[ "${ENVIRONMENT}" != "development" ]]; then
+  REQUIRED_KEYS+=(
+    GOOGLE_CLIENT_ID
+    GOOGLE_MAPS_API_KEY
+    AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY
+    AWS_REGION
+    AWS_BUCKET_NAME
+    FIREBASE_SERVICE_ACCOUNT_JSON
+  )
+fi
+readonly REQUIRED_KEYS
 
 for key in "${REQUIRED_KEYS[@]}"; do
   require_env "${key}"
@@ -122,9 +133,9 @@ for key in "${IMAGE_KEYS[@]}"; do
 done
 pass "immutable application image references"
 
-if [[ "${ENVIRONMENT}" == "staging" ]]; then
-  [[ "$(read_env STRIPE_SECRET_KEY)" == sk_test_* ]] || fail "staging must use a Stripe test secret key"
-  [[ "$(read_env STRIPE_PUBLISHABLE_KEY)" == pk_test_* ]] || fail "staging must use a Stripe test publishable key"
+if [[ "${ENVIRONMENT}" == "development" || "${ENVIRONMENT}" == "staging" ]]; then
+  [[ "$(read_env STRIPE_SECRET_KEY)" == sk_test_* ]] || fail "${ENVIRONMENT} must use a Stripe test secret key"
+  [[ "$(read_env STRIPE_PUBLISHABLE_KEY)" == pk_test_* ]] || fail "${ENVIRONMENT} must use a Stripe test publishable key"
 else
   [[ "$(read_env STRIPE_SECRET_KEY)" == sk_live_* ]] || fail "production must use a Stripe live secret key"
   [[ "$(read_env STRIPE_PUBLISHABLE_KEY)" == pk_live_* ]] || fail "production must use a Stripe live publishable key"

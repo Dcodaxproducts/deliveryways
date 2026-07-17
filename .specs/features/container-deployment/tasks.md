@@ -21,6 +21,10 @@
 
 `T12 → T13 → T14 → T15`
 
+### Phase 5: Legacy development migration
+
+`T16 → T17 → T18`
+
 ## Task Breakdown
 
 ### T1: Add backend Docker build context
@@ -263,6 +267,52 @@
 **Requirement**: DEP-04-DEP-12
 
 **Done when**: production health and business-flow smoke tests pass; backup and rollback artifacts are verified.
+
+### T16: Add isolated development environment
+
+**Status**: Done
+
+**What**: Add the development Compose override and non-secret environment template.
+**Where**: `deploy/compose.development.yml`, `deploy/env/.env.development.example`
+**Depends on**: T10
+**Requirement**: DEP-04-DEP-07, DEP-13
+**Tools**: `apply_patch`, Docker Compose; skills `coding-guidelines`, `tlc-spec-driven`
+
+**Done when**:
+
+- [x] Development renders as project `deliveryway-development` on localhost ports 7050-7054.
+- [x] PostgreSQL remains unpublished on an internal-only network.
+- [x] The template contains no deployable secrets.
+
+### T17: Add guarded development import support
+
+**Status**: Done
+
+**What**: Extend environment-aware scripts and add a checksum-gated import that refuses non-empty databases.
+**Where**: `deploy/scripts/common.sh`, `preflight.sh`, `smoke-test.sh`, `import-db.sh`
+**Depends on**: T16
+**Requirement**: DEP-05, DEP-08, DEP-13
+
+**Done when**:
+
+- [x] Preflight accepts only the dedicated development override and environment file.
+- [x] Import verifies the dump checksum before Compose mutation.
+- [x] Import refuses any target with existing public tables.
+- [x] Shell syntax and controlled restore tests pass with a 71-table PostgreSQL 16 restore and all 98 migrations.
+
+### T18: Restore and validate legacy development
+
+**What**: Install transformed secrets, restore the verified legacy dump, start development services, and prove staging isolation.
+**Where**: `/opt/deliveryway` on the Plesk server
+**Depends on**: T17
+**Requirement**: DEP-04-DEP-09, DEP-13
+
+**Done when**:
+
+- [ ] The restored development database contains 71 public tables.
+- [ ] Development API liveness passes through localhost and Plesk HTTPS.
+- [ ] Staging container and PostgreSQL volume identifiers are unchanged.
+- [ ] The old PM2 service remains available until an approved final cutover.
 
 ## Task Granularity Check
 

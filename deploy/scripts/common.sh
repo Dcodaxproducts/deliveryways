@@ -9,6 +9,10 @@ dw_init() {
   DW_ENVIRONMENT="${1:-}"
 
   case "${DW_ENVIRONMENT}" in
+    development)
+      DW_PROJECT_NAME="deliveryway-development"
+      DW_OVERRIDE_FILE="${DW_DEPLOY_DIR}/compose.development.yml"
+      ;;
     staging)
       DW_PROJECT_NAME="deliveryway-staging"
       DW_OVERRIDE_FILE="${DW_DEPLOY_DIR}/compose.staging.yml"
@@ -18,7 +22,7 @@ dw_init() {
       DW_OVERRIDE_FILE="${DW_DEPLOY_DIR}/compose.production.yml"
       ;;
     *)
-      dw_fail "environment must be staging or production"
+      dw_fail "environment must be development, staging, or production"
       ;;
   esac
 

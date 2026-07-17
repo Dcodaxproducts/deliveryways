@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/common.sh"
 dw_init "${1:-}" "${2:-}"
 readonly BACKUP_FILE="${3:-}"
 
-[[ -n "${BACKUP_FILE}" ]] || dw_fail "usage: $0 <staging|production> <env-file> <backup-file>"
+[[ -n "${BACKUP_FILE}" ]] || dw_fail "usage: $0 <development|staging|production> <env-file> <backup-file>"
 
 dw_preflight
 dw_verify_backup "${BACKUP_FILE}"
