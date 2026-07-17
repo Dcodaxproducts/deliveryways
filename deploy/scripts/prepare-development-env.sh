@@ -54,7 +54,7 @@ repo_sha() {
 
   git -C "${directory}" rev-parse --git-dir >/dev/null 2>&1 \
     || fail "Git repository not found: ${directory}"
-  [[ -z "$(git -C "${directory}" status --short)" ]] \
+  [[ -z "$(git --no-optional-locks -C "${directory}" status --short)" ]] \
     || fail "Git repository has local changes: ${directory}"
   git -C "${directory}" rev-parse --short=12 HEAD
 }
