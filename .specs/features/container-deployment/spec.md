@@ -7,7 +7,7 @@ DeliveryWay currently has a PostgreSQL-only local Compose file and a host Node/P
 ## Goals
 
 - [ ] Build reproducible production images for the NestJS backend and four Next.js applications.
-- [ ] Run staging and production as independent Compose projects with separate networks, secrets, databases, and volumes.
+- [ ] Run development, staging, and production as independent Compose projects with separate networks, secrets, databases, and volumes.
 - [ ] Provide verified database backup, migration, health-check, deployment, and rollback procedures.
 - [ ] Keep Plesk/Nginx responsible for public domains, TLS, and reverse proxying.
 
@@ -59,6 +59,19 @@ DeliveryWay currently has a PostgreSQL-only local Compose file and a host Node/P
 
 **Independent Test**: Create a staging backup, restore it into a disposable database, and compare expected schema/data.
 
+### P1: Isolated legacy development migration
+
+**User Story**: As an operator, I want to migrate the active legacy development database and configuration into a dedicated Compose project so that existing app testing can move off the old PM2 server without affecting staging.
+
+**Acceptance Criteria**:
+
+1. WHEN development is rendered THEN Compose SHALL create a development-specific project, localhost ports, private PostgreSQL service, credentials, networks, and volume.
+2. WHEN a legacy backup is imported THEN the import SHALL verify its checksum and refuse to restore into a database that already contains public tables.
+3. WHEN the development stack is started, restored, stopped, or removed THEN the staging containers and PostgreSQL volume SHALL remain unchanged.
+4. WHEN legacy configuration is installed THEN secrets SHALL remain outside Git and environment-specific database/domain values SHALL replace the old server values.
+
+**Independent Test**: Restore the verified legacy dump into the development project, confirm 71 public tables and API liveness, and compare staging container/volume identifiers before and after.
+
 ### P1: Controlled public exposure
 
 **User Story**: As an operator, I want only Plesk/Nginx exposed publicly so that application and database ports remain protected.
@@ -101,6 +114,7 @@ DeliveryWay currently has a PostgreSQL-only local Compose file and a host Node/P
 - WHEN a migration fails THEN application rollout SHALL stop and production traffic SHALL remain on the prior release.
 - WHEN the server reboots THEN enabled containers SHALL restart while persistent volumes retain data.
 - WHEN staging consumes excessive resources THEN production SHALL retain defined resource headroom.
+- WHEN a development import targets a non-empty database THEN the import SHALL stop without changing existing data.
 
 ## Requirement Traceability
 
@@ -118,12 +132,13 @@ DeliveryWay currently has a PostgreSQL-only local Compose file and a host Node/P
 | DEP-10 | Versioned release and rollback | Verified |
 | DEP-11 | Logging, monitoring, and resource safeguards | Implementing |
 | DEP-12 | CI/CD staging promotion and production approval | In Tasks |
+| DEP-13 | Isolated legacy development stack and guarded data import | Implementing |
 
-**Coverage**: 12 total, 12 mapped to tasks, 0 unmapped.
+**Coverage**: 13 total, 13 mapped to tasks, 0 unmapped.
 
 ## Success Criteria
 
-- [ ] Both Compose configurations pass `docker compose config` without exposing PostgreSQL.
+- [ ] All three Compose configurations pass `docker compose config` without exposing PostgreSQL.
 - [ ] Every image builds reproducibly and starts with a health signal.
 - [ ] Staging database backup and disposable restore are proven before production preparation.
 - [ ] A staging release and rollback complete without affecting the production namespace.

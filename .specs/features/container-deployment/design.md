@@ -5,7 +5,7 @@
 
 ## Architecture Overview
 
-Plesk-managed Nginx terminates HTTPS and proxies localhost-only ports to five application containers. The NestJS API and PostgreSQL communicate over a private Compose network. Staging and production reuse the same service definitions but run under different Compose project names, override files, secrets, ports, networks, and volumes.
+Plesk-managed Nginx terminates HTTPS and proxies localhost-only ports to five application containers. The NestJS API and PostgreSQL communicate over a private Compose network. Development, staging, and production reuse the same service definitions but run under different Compose project names, override files, secrets, ports, networks, and volumes.
 
 The application images are defined in their owning repositories. Cross-application orchestration and operational scripts live under the backend repository's `deploy/` directory so the deployment contract is versioned with the API and can reference sibling checkouts on the server.
 
@@ -45,7 +45,7 @@ The application images are defined in their owning repositories. Cross-applicati
 ### Compose orchestration
 
 - **Purpose**: Define services, private networking, volumes, health checks, localhost bindings, logging, and restart behavior.
-- **Location**: backend `deploy/compose.yml`, `deploy/compose.staging.yml`, `deploy/compose.production.yml`.
+- **Location**: backend `deploy/compose.yml`, `deploy/compose.development.yml`, `deploy/compose.staging.yml`, `deploy/compose.production.yml`.
 - **Interfaces**: explicit `docker compose -p deliveryway-{environment}` commands.
 
 ### Operational scripts
@@ -61,7 +61,7 @@ The application images are defined in their owning repositories. Cross-applicati
 
 ## Data and Isolation Model
 
-No application data model changes are introduced. Each server environment receives its own PostgreSQL container, credentials, private network, and named volume. Migration files are promoted between environments; database contents are not.
+No application data model changes are introduced. Each server environment receives its own PostgreSQL container, credentials, private network, and named volume. Migration files are promoted between environments. The only cross-server data movement is the explicitly verified legacy development dump imported once into the isolated development volume; staging and production contents remain independent.
 
 ## Error Handling Strategy
 
@@ -70,6 +70,8 @@ No application data model changes are introduced. Each server environment receiv
 | Missing secret | Preflight/Compose interpolation fails before rollout. | Existing release remains running. |
 | PostgreSQL unhealthy | API readiness fails; migration/deploy stops. | No traffic cutover. |
 | Backup failure | Production migration/deploy aborts. | Database and current release remain unchanged. |
+| Development import targets non-empty DB | Import aborts before `pg_restore`. | Existing development data remains unchanged. |
+| Development import checksum mismatch | Import aborts before starting restore. | No database contents change. |
 | Migration failure | Stop rollout and investigate; do not auto-revert schema. | Prior app remains selected where compatible. |
 | Application health failure | Keep prior image references and roll back application services. | Brief or no outage depending on proxy timing. |
 | Server loss | Restore encrypted off-server backup on replacement host. | Recovery time depends on backup freshness and DNS. |
@@ -81,6 +83,7 @@ No application data model changes are introduced. Each server environment receiv
 | Process manager | Docker restart policies, no PM2 | One process manager avoids duplicate lifecycle behavior. |
 | Database | Self-managed PostgreSQL 16 container initially | Fits single-server scope and existing stack; managed DB remains an upgrade path. |
 | Environment model | Concurrent isolated Compose projects | Avoids unsafe mode switching and shared data. |
+| Legacy development migration | One guarded custom-format restore into a new development volume | Preserves current test data without overwriting staging or normalizing legacy secrets into Git. |
 | Staging runtime | Production builds with `NODE_ENV=production` | Maximizes production parity while using staging-specific `APP_ENV`, domains, data, and keys. |
 | Public exposure | Plesk/Nginx only; app ports bind localhost; DB has no host port | Minimizes attack surface. |
 | Build promotion | Immutable Git-SHA images | Enables reproducibility and rollback without rebuilding. |

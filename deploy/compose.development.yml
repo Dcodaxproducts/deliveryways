@@ -1,0 +1,24 @@
+name: deliveryway-development
+
+services:
+  api:
+    environment:
+      APP_ENV: development
+    ports:
+      - 127.0.0.1:7050:3000
+
+  restaurant-admin:
+    ports:
+      - 127.0.0.1:7051:3000
+
+  superadmin:
+    ports:
+      - 127.0.0.1:7052:3000
+
+  customer:
+    ports:
+      - 127.0.0.1:7053:3000
+
+  landing:
+    ports:
+      - 127.0.0.1:7054:3000
