@@ -1,6 +1,11 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import {
+  AuthUserContext,
+  CurrentUser,
+  Public,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -20,6 +25,15 @@ import { GlobalSettingsService } from './global-settings.service';
 @Controller('admin/global-settings')
 export class GlobalSettingsController {
   constructor(private readonly globalSettingsService: GlobalSettingsService) {}
+
+  @Public()
+  @Get('public/landing-page')
+  @ApiOperation({
+    summary: 'Get public landing-page branding and footer settings',
+  })
+  getPublicLandingPageSettings(): Promise<unknown> {
+    return this.globalSettingsService.getPublicLandingPageSettings();
+  }
 
   @Get()
   @Roles(

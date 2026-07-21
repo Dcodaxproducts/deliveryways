@@ -2088,6 +2088,7 @@ model GlobalSetting {
   paymentMethods              Json?                 @map("payment_methods")
   taxTypes                    Json?                 @map("tax_types")
   productLabels               Json?                 @map("product_labels")
+  landingPageSettings         Json?                 @map("landing_page_settings")
   serviceChargeEnabled        Boolean               @default(false) @map("service_charge_enabled")
   serviceChargeType           ServiceChargeType     @default(PERCENTAGE) @map("service_charge_type")
   serviceChargeValue          Decimal               @default(0) @map("service_charge_value") @db.Decimal(10, 2)

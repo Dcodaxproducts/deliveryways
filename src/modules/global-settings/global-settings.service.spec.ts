@@ -68,6 +68,21 @@ describe('GlobalSettingsService', () => {
       data: {
         scopeKey: 'GLOBAL',
         defaultCurrency: 'PKR',
+        landingPageSettings: {
+          businessName: 'DeliveryWay',
+          logoUrl: null,
+          footerDescription: null,
+          supportEmail: null,
+          supportPhone: null,
+          address: null,
+          copyrightText: `© ${new Date().getFullYear()} DeliveryWay. All rights reserved.`,
+          socialLinks: {
+            facebook: null,
+            twitter: null,
+            instagram: null,
+            youtube: null,
+          },
+        },
         paymentMethods: [
           {
             code: PaymentMethod.COD,
@@ -112,7 +127,8 @@ describe('GlobalSettingsService', () => {
         ],
         serviceCharge: {
           configScope: 'RESTAURANT',
-          message: 'Service charge is configured per restaurant by super admin.',
+          message:
+            'Service charge is configured per restaurant by super admin.',
         },
         transactionFee: {
           configScope: 'GLOBAL',
@@ -265,6 +281,65 @@ describe('GlobalSettingsService', () => {
     });
 
     await expect(service.getCartExpiryMinutes()).resolves.toBe(45);
+  });
+
+  it('returns public landing-page settings with safe defaults', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {
+        businessName: 'DeliveryWay Germany',
+        logoUrl: 'https://cdn.example.com/logo.png',
+        socialLinks: { instagram: 'https://instagram.com/deliveryway' },
+      },
+    });
+
+    await expect(service.getPublicLandingPageSettings()).resolves.toEqual({
+      data: expect.objectContaining({
+        businessName: 'DeliveryWay Germany',
+        logoUrl: 'https://cdn.example.com/logo.png',
+        socialLinks: expect.objectContaining({
+          instagram: 'https://instagram.com/deliveryway',
+          facebook: null,
+        }),
+      }),
+      message: 'Landing page settings fetched successfully',
+    });
+  });
+
+  it('merges landing-page settings without clearing unspecified values', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      notificationSettings: null,
+      paymentMethods: null,
+      taxTypes: null,
+      landingPageSettings: {
+        businessName: 'DeliveryWay',
+        supportEmail: 'old@example.com',
+        socialLinks: { facebook: 'https://facebook.com/old' },
+      },
+    });
+
+    await service.updateSettings(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        landingPageSettings: {
+          supportEmail: 'new@example.com',
+          socialLinks: { instagram: 'https://instagram.com/new' },
+        },
+      },
+    );
+
+    const [update] = updateSingletonSpy.mock.calls[0];
+    expect(update).toMatchObject({
+      landingPageSettings: {
+        businessName: 'DeliveryWay',
+        supportEmail: 'new@example.com',
+        socialLinks: {
+          facebook: 'https://facebook.com/old',
+          instagram: 'https://instagram.com/new',
+        },
+      },
+    });
   });
 
   it('keeps deprecated platform service charge config available for fallback reads', async () => {

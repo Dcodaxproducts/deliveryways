@@ -20,7 +20,7 @@ import {
 import { RolesEnum } from '../../common/enums';
 import { Roles } from '../../common/decorators';
 import { TenantsService } from './tenants.service';
-import { UpdateTenantDto } from './dto';
+import { ResetOwnerPasswordDto, UpdateTenantDto } from './dto';
 
 @ApiTags('Tenants')
 @ApiBearerAuth()
@@ -59,6 +59,16 @@ export class TenantsController {
   @Roles(RolesEnum.SUPER_ADMIN)
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.tenantsService.tenantDetails(user, id);
+  }
+
+  @Patch(':id/owner-password')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  resetOwnerPassword(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: ResetOwnerPasswordDto,
+  ) {
+    return this.tenantsService.resetOwnerPassword(user, id, dto.password);
   }
 
   @Patch(':id')

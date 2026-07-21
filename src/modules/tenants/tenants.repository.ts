@@ -39,7 +39,22 @@ export class TenantsRepository {
       where: { id },
       include: {
         owner: {
-          select: { isApproved: true, isVerified: true },
+          select: {
+            id: true,
+            email: true,
+            isActive: true,
+            isApproved: true,
+            isVerified: true,
+            profile: {
+              select: {
+                firstName: true,
+                lastName: true,
+                phone: true,
+                avatarUrl: true,
+                bio: true,
+              },
+            },
+          },
         },
       },
     });
@@ -69,7 +84,22 @@ export class TenantsRepository {
         where,
         include: {
           owner: {
-            select: { isApproved: true, isVerified: true },
+            select: {
+              id: true,
+              email: true,
+              isActive: true,
+              isApproved: true,
+              isVerified: true,
+              profile: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  phone: true,
+                  avatarUrl: true,
+                  bio: true,
+                },
+              },
+            },
           },
           tenantSubscriptions: {
             orderBy: { createdAt: 'desc' },
@@ -104,6 +134,17 @@ export class TenantsRepository {
     return this.client(tx).tenant.update({
       where: { id },
       data,
+    });
+  }
+
+  async findOwnerByTenantId(tenantId: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        tenantId,
+        role: 'BUSINESS_ADMIN',
+        deletedAt: null,
+      },
+      select: { id: true, email: true },
     });
   }
 

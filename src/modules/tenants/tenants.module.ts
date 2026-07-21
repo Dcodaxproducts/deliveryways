@@ -3,9 +3,10 @@ import { TenantsController } from './tenants.controller';
 import { TenantsService } from './tenants.service';
 import { TenantsRepository } from './tenants.repository';
 import { StorageModule } from '../storage/storage.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [StorageModule],
+  imports: [StorageModule, UsersModule],
   controllers: [TenantsController],
   providers: [TenantsService, TenantsRepository],
   exports: [TenantsService],

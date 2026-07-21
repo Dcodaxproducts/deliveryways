@@ -57,6 +57,22 @@ export interface ServiceChargeSettingsShape {
   value: number;
 }
 
+export interface LandingPageSettingsShape {
+  businessName: string;
+  logoUrl: string | null;
+  footerDescription: string | null;
+  supportEmail: string | null;
+  supportPhone: string | null;
+  address: string | null;
+  copyrightText: string;
+  socialLinks: {
+    facebook: string | null;
+    twitter: string | null;
+    instagram: string | null;
+    youtube: string | null;
+  };
+}
+
 interface NormalizedGlobalSettingsInput {
   globalTaxPercentage?: Prisma.Decimal;
   vatHandlingRule?: VatHandlingRule;
@@ -75,6 +91,7 @@ interface NormalizedGlobalSettingsInput {
   serviceChargeType?: ServiceChargeType;
   serviceChargeValue?: Prisma.Decimal;
   notificationSettings?: Prisma.InputJsonValue;
+  landingPageSettings?: Prisma.InputJsonValue;
   paymentMethods?: Prisma.InputJsonValue;
   taxTypes?: Prisma.InputJsonValue;
   isTaxEnforced?: boolean;
@@ -97,6 +114,17 @@ export class GlobalSettingsService {
     return {
       data: this.serializeSettings(data),
       message: 'Global settings fetched successfully',
+    };
+  }
+
+  async getPublicLandingPageSettings() {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return {
+      data: this.extractLandingPageSettings(data.landingPageSettings),
+      message: 'Landing page settings fetched successfully',
     };
   }
 
@@ -133,6 +161,7 @@ export class GlobalSettingsService {
       current.notificationSettings,
       current.paymentMethods,
       current.taxTypes,
+      current.landingPageSettings,
     );
 
     const data = await this.globalSettingsRepository.updateSingleton(
@@ -248,6 +277,7 @@ export class GlobalSettingsService {
       serviceChargeValue: new Prisma.Decimal(0),
       cartExpiryMinutes: 720,
       notificationSettings: this.buildDefaultNotificationSettings(),
+      landingPageSettings: this.buildDefaultLandingPageSettings(),
       paymentMethods: this.buildDefaultPaymentMethods(),
       taxTypes: this.buildDefaultTaxTypes(new Prisma.Decimal(0)),
       isTaxEnforced: false,
@@ -264,6 +294,7 @@ export class GlobalSettingsService {
     currentNotificationSettings?: Prisma.JsonValue | null,
     currentPaymentMethods?: Prisma.JsonValue | null,
     currentTaxTypes?: Prisma.JsonValue | null,
+    currentLandingPageSettings?: Prisma.JsonValue | null,
   ): NormalizedGlobalSettingsInput {
     if (dto.timezone !== undefined) {
       this.assertValidTimeZone(dto.timezone);
@@ -314,6 +345,13 @@ export class GlobalSettingsService {
           ? this.mergeNotificationSettings(
               currentNotificationSettings,
               dto.notificationSettings,
+            )
+          : undefined,
+      landingPageSettings:
+        dto.landingPageSettings !== undefined
+          ? this.mergeLandingPageSettings(
+              currentLandingPageSettings,
+              dto.landingPageSettings,
             )
           : undefined,
       paymentMethods:
@@ -368,6 +406,7 @@ export class GlobalSettingsService {
     T extends {
       globalTaxPercentage?: Prisma.Decimal | number | null;
       notificationSettings?: Prisma.JsonValue | null;
+      landingPageSettings?: Prisma.JsonValue | null;
       paymentMethods?: Prisma.JsonValue | null;
       taxTypes?: Prisma.JsonValue | null;
       serviceChargeEnabled?: boolean | null;
@@ -379,6 +418,9 @@ export class GlobalSettingsService {
       ...settings,
       notificationSettings: this.extractNotificationSettings(
         settings.notificationSettings,
+      ),
+      landingPageSettings: this.extractLandingPageSettings(
+        settings.landingPageSettings,
       ),
       paymentMethods: this.extractPaymentMethods(settings.paymentMethods),
       taxTypes: this.extractTaxTypes(
@@ -415,6 +457,28 @@ export class GlobalSettingsService {
       whatsappNumber: null,
       notificationTypes: this.defaultNotificationTypeMatrix(),
     } as unknown as Prisma.InputJsonValue;
+  }
+
+  private buildDefaultLandingPageSettings(): Prisma.InputJsonValue {
+    return this.defaultLandingPageSettings() as unknown as Prisma.InputJsonValue;
+  }
+
+  private defaultLandingPageSettings(): LandingPageSettingsShape {
+    return {
+      businessName: 'DeliveryWay',
+      logoUrl: null,
+      footerDescription: null,
+      supportEmail: null,
+      supportPhone: null,
+      address: null,
+      copyrightText: `© ${new Date().getFullYear()} DeliveryWay. All rights reserved.`,
+      socialLinks: {
+        facebook: null,
+        twitter: null,
+        instagram: null,
+        youtube: null,
+      },
+    };
   }
 
   private buildDefaultPaymentMethods(): Prisma.InputJsonValue {
@@ -754,6 +818,91 @@ export class GlobalSettingsService {
       phoneNumber: this.readStringValue(source, [['phoneNumber']]),
       whatsappNumber: this.readStringValue(source, [['whatsappNumber']]),
       notificationTypes: this.extractNotificationTypeMatrix(source),
+    };
+  }
+
+  private mergeLandingPageSettings(
+    currentSource: Prisma.JsonValue | null | undefined,
+    updates: NonNullable<UpdateGlobalSettingsDto['landingPageSettings']>,
+  ): Prisma.InputJsonValue {
+    const current = this.extractLandingPageSettings(currentSource);
+
+    const merged = {
+      businessName:
+        updates.businessName !== undefined
+          ? this.resolveOptionalString(updates.businessName) || 'DeliveryWay'
+          : current.businessName,
+      logoUrl:
+        updates.logoUrl !== undefined
+          ? this.resolveOptionalString(updates.logoUrl)
+          : current.logoUrl,
+      footerDescription:
+        updates.footerDescription !== undefined
+          ? this.resolveOptionalString(updates.footerDescription)
+          : current.footerDescription,
+      supportEmail:
+        updates.supportEmail !== undefined
+          ? this.resolveOptionalString(updates.supportEmail)
+          : current.supportEmail,
+      supportPhone:
+        updates.supportPhone !== undefined
+          ? this.resolveOptionalString(updates.supportPhone)
+          : current.supportPhone,
+      address:
+        updates.address !== undefined
+          ? this.resolveOptionalString(updates.address)
+          : current.address,
+      copyrightText:
+        updates.copyrightText !== undefined
+          ? this.resolveOptionalString(updates.copyrightText) ||
+            this.defaultLandingPageSettings().copyrightText
+          : current.copyrightText,
+      socialLinks: {
+        facebook:
+          updates.socialLinks?.facebook !== undefined
+            ? this.resolveOptionalString(updates.socialLinks.facebook)
+            : current.socialLinks.facebook,
+        twitter:
+          updates.socialLinks?.twitter !== undefined
+            ? this.resolveOptionalString(updates.socialLinks.twitter)
+            : current.socialLinks.twitter,
+        instagram:
+          updates.socialLinks?.instagram !== undefined
+            ? this.resolveOptionalString(updates.socialLinks.instagram)
+            : current.socialLinks.instagram,
+        youtube:
+          updates.socialLinks?.youtube !== undefined
+            ? this.resolveOptionalString(updates.socialLinks.youtube)
+            : current.socialLinks.youtube,
+      },
+    } satisfies LandingPageSettingsShape;
+
+    return merged as unknown as Prisma.InputJsonValue;
+  }
+
+  private extractLandingPageSettings(
+    source: Prisma.JsonValue | null | undefined,
+  ): LandingPageSettingsShape {
+    const defaults = this.defaultLandingPageSettings();
+
+    return {
+      businessName:
+        this.readStringValue(source, [['businessName']]) ??
+        defaults.businessName,
+      logoUrl: this.readStringValue(source, [['logoUrl']]),
+      footerDescription: this.readStringValue(source, [['footerDescription']]),
+      supportEmail: this.readStringValue(source, [['supportEmail']]),
+      supportPhone: this.readStringValue(source, [['supportPhone']]),
+      address: this.readStringValue(source, [['address']]),
+      copyrightText:
+        this.readStringValue(source, [['copyrightText']]) ??
+        defaults.copyrightText,
+      socialLinks: {
+        facebook: this.readStringValue(source, [['socialLinks', 'facebook']]),
+        twitter: this.readStringValue(source, [['socialLinks', 'twitter']]),
+        instagram: this.readStringValue(source, [['socialLinks', 'instagram']]),
+        youtube: this.readStringValue(source, [['socialLinks', 'youtube']]),
+      },
     };
   }
 

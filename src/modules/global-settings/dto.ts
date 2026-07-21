@@ -112,6 +112,82 @@ class NotificationSettingsDto {
   notificationTypes?: NotificationTypesDto;
 }
 
+class LandingPageSocialLinksDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  facebook?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  twitter?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  instagram?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  youtube?: string;
+}
+
+class LandingPageSettingsDto {
+  @ApiPropertyOptional({ example: 'DeliveryWay' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  businessName?: string;
+
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/logo.png' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  logoUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  footerDescription?: string;
+
+  @ApiPropertyOptional({ example: 'support@delivery-way.de' })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  supportEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  supportPhone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  address?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  copyrightText?: string;
+
+  @ApiPropertyOptional({ type: LandingPageSocialLinksDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageSocialLinksDto)
+  socialLinks?: LandingPageSocialLinksDto;
+}
+
 export class PaymentMethodSettingDto {
   @ApiPropertyOptional({ enum: PaymentMethod, example: PaymentMethod.COD })
   @IsEnum(PaymentMethod)
@@ -326,6 +402,12 @@ export class UpdateGlobalSettingsDto {
   @ValidateNested()
   @Type(() => NotificationSettingsDto)
   notificationSettings?: NotificationSettingsDto;
+
+  @ApiPropertyOptional({ type: LandingPageSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageSettingsDto)
+  landingPageSettings?: LandingPageSettingsDto;
 
   @ApiPropertyOptional({ type: [PaymentMethodSettingDto] })
   @IsOptional()

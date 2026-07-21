@@ -10,6 +10,7 @@ describe('TenantsService', () => {
       findBySlug: jest.fn(),
       findById: jest.fn(),
       findDetailsById: jest.fn(),
+      findOwnerByTenantId: jest.fn(),
       list: jest.fn(),
       analytics: jest.fn(),
       getDeleteSummary: jest.fn(),
@@ -24,16 +25,21 @@ describe('TenantsService', () => {
         <T>(value: T): Promise<T> => Promise.resolve(value),
       ),
     };
+    const usersService = {
+      updatePassword: jest.fn(),
+    };
 
     const service = new TenantsService(
       tenantsRepository as never,
       storageService as never,
+      usersService as never,
     );
 
     return {
       service,
       tenantsRepository,
       storageService,
+      usersService,
     };
   };
 
@@ -65,7 +71,12 @@ describe('TenantsService', () => {
       isActive: true,
       deletedAt: null,
       logoUrl: 'https://example.com/logo.png',
-      owner: { isApproved: true, isVerified: true },
+      owner: {
+        id: 'owner-1',
+        email: 'owner@example.com',
+        isApproved: true,
+        isVerified: true,
+      },
     });
 
     const result = await service.tenantDetails(
@@ -86,6 +97,8 @@ describe('TenantsService', () => {
       slug: 'tenant-one',
       isApproved: true,
       isVerified: true,
+      ownerId: 'owner-1',
+      owner: expect.objectContaining({ email: 'owner@example.com' }),
       deletionState: {
         isDeleted: false,
         isActive: true,
@@ -145,6 +158,30 @@ describe('TenantsService', () => {
         'tenant-1',
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('lets super admin set a new business owner password without exposing it', async () => {
+    const { service, tenantsRepository, usersService } = makeService();
+    tenantsRepository.findOwnerByTenantId.mockResolvedValue({
+      id: 'owner-1',
+      email: 'owner@example.com',
+    });
+
+    const result = await service.resetOwnerPassword(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      'tenant-1',
+      'NewPassword@123',
+    );
+
+    expect(usersService.updatePassword).toHaveBeenCalledWith(
+      'owner-1',
+      'NewPassword@123',
+    );
+    expect(result).toEqual({
+      data: { ownerId: 'owner-1', email: 'owner@example.com' },
+      message: 'Business owner password updated successfully',
+    });
+    expect(result.data).not.toHaveProperty('password');
   });
 
   it('force deletes tenant and related records for super admin', async () => {

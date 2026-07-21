@@ -12,12 +12,14 @@ import { PrismaTx } from '../../common/types';
 import { TenantsRepository } from './tenants.repository';
 import { CreateTenantDto, UpdateTenantDto } from './dto';
 import { StorageService } from '../storage/storage.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class TenantsService {
   constructor(
     private readonly tenantsRepository: TenantsRepository,
     private readonly storageService: StorageService,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(dto: CreateTenantDto, tx?: PrismaTx) {
@@ -114,6 +116,30 @@ export class TenantsService {
       ),
       message: 'Tenants fetched successfully',
       meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async resetOwnerPassword(
+    user: AuthUserContext,
+    tenantId: string,
+    password: string,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can reset business owner passwords',
+      );
+    }
+
+    const owner = await this.tenantsRepository.findOwnerByTenantId(tenantId);
+    if (!owner) {
+      throw new NotFoundException('Business owner not found');
+    }
+
+    await this.usersService.updatePassword(owner.id, password);
+
+    return {
+      data: { ownerId: owner.id, email: owner.email },
+      message: 'Business owner password updated successfully',
     };
   }
 
@@ -214,6 +240,11 @@ export class TenantsService {
 
     return {
       ...tenant,
+      owner,
+      ownerId:
+        owner && 'id' in owner && typeof owner.id === 'string'
+          ? owner.id
+          : null,
       isApproved: owner?.isApproved ?? false,
       isVerified: owner?.isVerified ?? false,
     };
