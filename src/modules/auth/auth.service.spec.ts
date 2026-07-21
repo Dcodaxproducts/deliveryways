@@ -98,11 +98,9 @@ describe('AuthService registerTenant duplicate email checks', () => {
     },
     tenant: {
       name: 'Tenant',
-      slug: 'tenant',
     },
     restaurant: {
       name: 'Restaurant',
-      slug: 'restaurant',
     },
     branch: {
       name: 'Main',
@@ -151,11 +149,8 @@ describe('AuthService registerTenant duplicate email checks', () => {
     expect(tenantsService.findBySlug).not.toHaveBeenCalled();
   });
 
-  it('does not block tenant registration when requested slug already exists', async () => {
+  it('does not resolve tenant slugs in the auth layer', async () => {
     usersService.existsByEmailAndRole!.mockResolvedValue(false);
-    tenantsService.findBySlug
-      .mockResolvedValueOnce({ id: 'tenant-1' })
-      .mockResolvedValueOnce(null);
 
     await expect(service.registerTenant(registerTenantDto)).rejects.toThrow(
       BadRequestException,
@@ -166,8 +161,7 @@ describe('AuthService registerTenant duplicate email checks', () => {
       role: UserRoleEnum.BUSINESS_ADMIN,
     });
     expect(usersService.findByEmail).not.toHaveBeenCalled();
-    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(1, 'tenant');
-    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(2, 'tenant-1');
+    expect(tenantsService.findBySlug).not.toHaveBeenCalled();
   });
 });
 
@@ -227,7 +221,10 @@ describe('AuthService registerTenant branch admin onboarding', () => {
   };
   const tenantsService = {
     findBySlug: jest.fn(),
-    create: jest.fn(),
+    create: jest.fn<
+      Promise<{ id: string }>,
+      [Record<string, unknown>, typeof tx]
+    >(),
     assignOwner: jest.fn(),
   };
   const restaurantsService = {
@@ -299,11 +296,7 @@ describe('AuthService registerTenant branch admin onboarding', () => {
     );
   });
 
-  it('creates tenant with a suffixed slug when requested slug is taken', async () => {
-    tenantsService.findBySlug
-      .mockResolvedValueOnce({ id: 'existing-tenant', slug: 'tenant' })
-      .mockResolvedValueOnce(null);
-
+  it('delegates tenant slug generation to TenantsService', async () => {
     await service.registerTenant({
       packagePlanId: 'plan-1',
       user: {
@@ -314,11 +307,9 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
       tenant: {
         name: 'Tenant',
-        slug: 'tenant',
       },
       restaurant: {
         name: 'Restaurant',
-        slug: 'restaurant',
       },
       branch: {
         name: 'Main',
@@ -331,12 +322,8 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
     });
 
-    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(1, 'tenant');
-    expect(tenantsService.findBySlug).toHaveBeenNthCalledWith(2, 'tenant-1');
-    expect(tenantsService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ slug: 'tenant-1' }),
-      tx,
-    );
+    expect(tenantsService.create).toHaveBeenCalledWith(expect.any(Object), tx);
+    expect(tenantsService.create.mock.calls[0]?.[0]).not.toHaveProperty('slug');
   });
 
   it('creates tenant slug from name when slug is omitted', async () => {
@@ -353,7 +340,6 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
       restaurant: {
         name: 'Restaurant',
-        slug: 'restaurant',
       },
       branch: {
         name: 'Main',
@@ -366,11 +352,8 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
     });
 
-    expect(tenantsService.findBySlug).toHaveBeenCalledWith('tenant-name');
-    expect(tenantsService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ slug: 'tenant-name' }),
-      tx,
-    );
+    expect(tenantsService.create).toHaveBeenCalledWith(expect.any(Object), tx);
+    expect(tenantsService.create.mock.calls[0]?.[0]).not.toHaveProperty('slug');
   });
 
   it('creates branch admin credentials while registering a tenant', async () => {
@@ -391,11 +374,9 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       },
       tenant: {
         name: 'Tenant',
-        slug: 'tenant',
       },
       restaurant: {
         name: 'Restaurant',
-        slug: 'restaurant',
       },
       branch: {
         name: 'Main',
@@ -492,11 +473,9 @@ describe('AuthService registerTenant branch admin onboarding', () => {
           },
           tenant: {
             name: 'Tenant',
-            slug: 'tenant',
           },
           restaurant: {
             name: 'Restaurant',
-            slug: 'restaurant',
           },
           branch: {
             name: 'Main',

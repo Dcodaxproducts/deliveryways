@@ -37,6 +37,25 @@ describe('TenantsService', () => {
     };
   };
 
+  it('generates a unique tenant slug from the business name', async () => {
+    const { service, tenantsRepository } = makeService();
+    tenantsRepository.findBySlug
+      .mockResolvedValueOnce({ id: 'existing', slug: 'burger-house' })
+      .mockResolvedValueOnce(null);
+    tenantsRepository.create.mockImplementation((data: unknown) => data);
+
+    const result = await service.create({ name: 'Burger House!' });
+
+    expect(tenantsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Burger House!',
+        slug: 'burger-house-2',
+      }),
+      undefined,
+    );
+    expect(result).toEqual(expect.objectContaining({ slug: 'burger-house-2' }));
+  });
+
   it('returns tenant details for super admin by id', async () => {
     const { service, tenantsRepository, storageService } = makeService();
     tenantsRepository.findDetailsById.mockResolvedValue({

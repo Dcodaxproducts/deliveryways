@@ -21,10 +21,12 @@ export class TenantsService {
   ) {}
 
   async create(dto: CreateTenantDto, tx?: PrismaTx) {
+    const slug = await this.ensureUniqueSlug(dto.name);
+
     return this.tenantsRepository.create(
       {
         name: dto.name,
-        slug: dto.slug,
+        slug,
         bio: dto.bio,
         logoUrl: dto.logoUrl,
         socialLinks: dto.socialLinks as Prisma.InputJsonValue,
@@ -33,6 +35,26 @@ export class TenantsService {
       },
       tx,
     );
+  }
+
+  private async ensureUniqueSlug(source: string): Promise<string> {
+    const base =
+      source
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '') || 'business';
+    let candidate = base;
+    let counter = 2;
+
+    while (await this.tenantsRepository.findBySlug(candidate)) {
+      candidate = `${base}-${counter}`;
+      counter += 1;
+    }
+
+    return candidate;
   }
 
   async assignOwner(tenantId: string, ownerId: string, tx?: PrismaTx) {

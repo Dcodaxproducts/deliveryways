@@ -74,6 +74,7 @@ export class AuthRepository {
           tenantId: tenant.id,
           name: payload.restaurantName,
           slug: payload.restaurantSlug,
+          subdomain: payload.restaurantSlug,
         },
       });
 

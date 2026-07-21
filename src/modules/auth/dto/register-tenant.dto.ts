@@ -53,13 +53,6 @@ export class RegisterTenantInfoDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiPropertyOptional({
-    description: 'Optional unique slug, auto-generated if missing or taken',
-  })
-  @IsOptional()
-  @IsString()
-  slug?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -86,13 +79,6 @@ export class RegisterRestaurantInfoDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
-
-  @ApiPropertyOptional({
-    description: 'Optional unique slug, auto-generated if missing',
-  })
-  @IsOptional()
-  @IsString()
-  slug?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

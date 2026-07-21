@@ -403,23 +403,25 @@ model Tenant {
 }
 
 model Restaurant {
-  id             String    @id @default(cuid())
-  tenantId       String    @map("tenant_id")
-  name           String
-  slug           String    @unique
-  logoUrl        String?   @map("logo_url")
-  coverImage     String?   @map("cover_image")
-  customDomain   String?   @map("custom_domain")
-  tagline        String?
-  bio            String?
-  supportContact Json?     @map("support_contact")
-  branding       Json?
-  socialMedia    Json?     @map("social_media")
-  settings       Json?
-  isActive       Boolean   @default(true) @map("is_active")
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                     String    @id @default(cuid())
+  tenantId               String    @map("tenant_id")
+  name                   String
+  slug                   String    @unique
+  subdomain              String    @unique
+  logoUrl                String?   @map("logo_url")
+  coverImage             String?   @map("cover_image")
+  customDomain           String?   @unique @map("custom_domain")
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
+  tagline                String?
+  bio                    String?
+  supportContact         Json?     @map("support_contact")
+  branding               Json?
+  socialMedia            Json?     @map("social_media")
+  settings               Json?
+  isActive               Boolean   @default(true) @map("is_active")
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id])
   branches               Branch[]

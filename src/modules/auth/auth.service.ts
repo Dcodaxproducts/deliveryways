@@ -173,10 +173,6 @@ export class AuthService {
       throw new BadRequestException('User already exists');
     }
 
-    const tenantSlug = await this.resolveUniqueTenantSlug(
-      dto.tenant.slug ?? dto.tenant.name,
-    );
-
     const packagePlan = await this.prisma.packagePlan.findFirst({
       where: {
         id: dto.packagePlanId,
@@ -206,7 +202,6 @@ export class AuthService {
       const tenant = await this.tenantsService.create(
         {
           name: dto.tenant.name,
-          slug: tenantSlug,
           bio: dto.tenant.bio,
           logoUrl: dto.tenant.logoUrl,
           socialLinks: dto.tenant.socialLinks,
@@ -219,7 +214,6 @@ export class AuthService {
         tenant.id,
         {
           name: dto.restaurant.name,
-          slug: dto.restaurant.slug,
           logoUrl: dto.restaurant.logoUrl,
           coverImage: dto.restaurant.coverImage,
           customDomain: dto.restaurant.customDomain,
@@ -489,29 +483,6 @@ export class AuthService {
           ? 'Tenant registration completed. Email verification is disabled.'
           : 'Tenant registration completed. Verify email with OTP.'),
     };
-  }
-
-  private async resolveUniqueTenantSlug(base: string): Promise<string> {
-    const normalizedBase = this.slugify(base) || 'tenant';
-    let candidate = normalizedBase;
-    let counter = 1;
-
-    while (await this.tenantsService.findBySlug(candidate)) {
-      candidate = `${normalizedBase}-${counter}`;
-      counter += 1;
-    }
-
-    return candidate;
-  }
-
-  private slugify(value: string) {
-    return value
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
   }
 
   private isPackagePlanPaymentRequiredNow(packagePlan: {

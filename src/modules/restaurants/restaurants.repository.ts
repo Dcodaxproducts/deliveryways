@@ -23,6 +23,26 @@ export class RestaurantsRepository {
     });
   }
 
+  async findBySubdomain(subdomain: string) {
+    return this.prisma.restaurant.findUnique({
+      where: { subdomain },
+      select: { id: true, subdomain: true },
+    });
+  }
+
+  async findByCustomDomain(customDomain: string, excludeId?: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        customDomain: {
+          equals: customDomain,
+          mode: Prisma.QueryMode.insensitive,
+        },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, customDomain: true },
+    });
+  }
+
   async listByTenant(
     tenantId: string | undefined,
     query: QueryDto,
@@ -42,6 +62,7 @@ export class RestaurantsRepository {
             OR: [
               { name: { contains: query.search, mode: 'insensitive' } },
               { slug: { contains: query.search, mode: 'insensitive' } },
+              { subdomain: { contains: query.search, mode: 'insensitive' } },
               { customDomain: { contains: query.search, mode: 'insensitive' } },
             ],
           }

@@ -35,6 +35,13 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class RestaurantsService {
+  private static readonly RESERVED_SUBDOMAINS = new Set([
+    'admin',
+    'api',
+    'superadmin',
+    'www',
+  ]);
+
   constructor(
     private readonly restaurantsRepository: RestaurantsRepository,
     private readonly tenantsService: TenantsService,
@@ -43,16 +50,21 @@ export class RestaurantsService {
   ) {}
 
   async create(tenantId: string, dto: CreateRestaurantDto, tx?: PrismaTx) {
-    const slug = await this.ensureUniqueSlug(dto.slug ?? dto.name);
+    const slug = await this.ensureUniqueSlug(dto.name);
+    const subdomain = await this.ensureUniqueSubdomain(dto.name);
+    const customDomain = await this.normalizeUniqueCustomDomain(
+      dto.customDomain,
+    );
 
     return this.restaurantsRepository.create(
       {
         tenant: { connect: { id: tenantId } },
         name: dto.name,
         slug,
+        subdomain,
         logoUrl: this.normalizeMediaUrl(dto.logoUrl),
         coverImage: this.normalizeMediaUrl(dto.coverImage),
-        customDomain: dto.customDomain,
+        customDomain,
         tagline: dto.tagline,
         bio: dto.bio,
         supportContact: dto.supportContact as Prisma.InputJsonValue,
@@ -176,7 +188,6 @@ export class RestaurantsService {
       id,
       {
         name: dto.name,
-        slug: dto.slug ? await this.ensureUniqueSlug(dto.slug, id) : undefined,
         logoUrl:
           dto.logoUrl !== undefined
             ? this.normalizeMediaUrl(dto.logoUrl)
@@ -185,7 +196,12 @@ export class RestaurantsService {
           dto.coverImage !== undefined
             ? this.normalizeMediaUrl(dto.coverImage)
             : undefined,
-        customDomain: dto.customDomain,
+        customDomain:
+          dto.customDomain !== undefined
+            ? await this.normalizeUniqueCustomDomain(dto.customDomain, id)
+            : undefined,
+        customDomainVerifiedAt:
+          dto.customDomain !== undefined ? null : undefined,
         tagline: dto.tagline,
         bio: dto.bio,
         supportContact: dto.supportContact as Prisma.InputJsonValue,
@@ -1526,15 +1542,10 @@ export class RestaurantsService {
     base: string,
     ignoreId?: string,
   ): Promise<string> {
-    const normalizedBase = base
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-');
+    const normalizedBase = this.normalizeHostLabel(base, 'restaurant');
 
     let candidate = normalizedBase;
-    let counter = 1;
+    let counter = 2;
 
     while (true) {
       const existing = await this.restaurantsRepository.findBySlug(candidate);
@@ -1544,5 +1555,70 @@ export class RestaurantsService {
       candidate = `${normalizedBase}-${counter}`;
       counter += 1;
     }
+  }
+
+  private async ensureUniqueSubdomain(base: string): Promise<string> {
+    const normalizedBase = this.normalizeHostLabel(base, 'restaurant');
+    let candidate = normalizedBase;
+    let counter = 2;
+
+    while (
+      RestaurantsService.RESERVED_SUBDOMAINS.has(candidate) ||
+      (await this.restaurantsRepository.findBySubdomain(candidate))
+    ) {
+      candidate = `${normalizedBase}-${counter}`;
+      counter += 1;
+    }
+
+    return candidate;
+  }
+
+  private normalizeHostLabel(source: string, fallback: string): string {
+    return (
+      source
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '') || fallback
+    );
+  }
+
+  private async normalizeUniqueCustomDomain(
+    value: string | undefined,
+    excludeId?: string,
+  ): Promise<string | null | undefined> {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const customDomain = value.trim().toLowerCase().replace(/\.$/, '');
+    if (!customDomain) {
+      return null;
+    }
+
+    if (
+      customDomain.length > 253 ||
+      !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(
+        customDomain,
+      )
+    ) {
+      throw new BadRequestException(
+        'Custom domain must be a hostname without protocol, path, or port',
+      );
+    }
+
+    const existing = await this.restaurantsRepository.findByCustomDomain(
+      customDomain,
+      excludeId,
+    );
+    if (existing) {
+      throw new BadRequestException(
+        'Custom domain is already assigned to another restaurant',
+      );
+    }
+
+    return customDomain;
   }
 }

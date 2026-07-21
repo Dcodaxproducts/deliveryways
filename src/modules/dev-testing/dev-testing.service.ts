@@ -52,13 +52,6 @@ export class DevTestingService {
   async bootstrapStore(dto: DevBootstrapStoreDto) {
     const suffix = Date.now().toString().slice(-6);
     const normalizedBase = (dto.baseName ?? 'Seed Store').trim();
-    const slugBase = normalizedBase
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-
     const ownerPassword = dto.ownerPassword ?? 'Pass@12345';
     const customerPassword = dto.customerPassword ?? 'Pass@12345';
     const packagePlanId =
@@ -74,7 +67,6 @@ export class DevTestingService {
       },
       tenant: {
         name: `${normalizedBase} Tenant`,
-        slug: `${slugBase || 'seed-store'}-${suffix}`,
       },
       restaurant: {
         name: `${normalizedBase} Restaurant`,

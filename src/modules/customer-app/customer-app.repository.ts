@@ -554,37 +554,48 @@ export class CustomerAppRepository {
     });
   }
 
-  async findRestaurantDomainContext(hostname: string, slug?: string) {
+  async findRestaurantDomainContext(hostname: string, subdomain?: string) {
+    const select = {
+      id: true,
+      tenantId: true,
+      name: true,
+      slug: true,
+      subdomain: true,
+      customDomain: true,
+      customDomainVerifiedAt: true,
+      logoUrl: true,
+      branding: true,
+      branches: {
+        where: { deletedAt: null, isActive: true },
+        orderBy: [{ isMain: 'desc' as const }, { createdAt: 'asc' as const }],
+        take: 1,
+        select: { id: true, name: true, isMain: true },
+      },
+    };
+    const customDomainRestaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        customDomain: { equals: hostname, mode: 'insensitive' },
+        customDomainVerifiedAt: { not: null },
+      },
+      select,
+    });
+
+    if (customDomainRestaurant || !subdomain) {
+      return customDomainRestaurant;
+    }
+
     return this.prisma.restaurant.findFirst({
       where: {
         deletedAt: null,
         isActive: true,
-        OR: [
-          { customDomain: { equals: hostname, mode: 'insensitive' } },
-          ...(slug
-            ? [
-                {
-                  slug: { equals: slug, mode: Prisma.QueryMode.insensitive },
-                },
-              ]
-            : []),
-        ],
-      },
-      select: {
-        id: true,
-        tenantId: true,
-        name: true,
-        slug: true,
-        customDomain: true,
-        logoUrl: true,
-        branding: true,
-        branches: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
-          take: 1,
-          select: { id: true, name: true, isMain: true },
+        subdomain: {
+          equals: subdomain,
+          mode: Prisma.QueryMode.insensitive,
         },
       },
+      select,
     });
   }
 

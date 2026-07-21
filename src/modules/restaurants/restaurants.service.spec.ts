@@ -14,18 +14,32 @@ import { GlobalSettingsService } from '../global-settings/global-settings.servic
 describe('RestaurantsService notification settings', () => {
   let service: RestaurantsService;
   let repository: {
+    create: jest.Mock;
+    findBySlug: jest.Mock;
+    findBySubdomain: jest.Mock;
+    findByCustomDomain: jest.Mock;
     findById: jest.Mock;
     findFirstByTenantId: jest.Mock;
     listByTenant: jest.Mock;
-    update: jest.Mock;
+    update: jest.Mock<
+      Promise<unknown>,
+      [string, Record<string, unknown>, unknown?]
+    >;
   };
 
   beforeEach(async () => {
     repository = {
+      create: jest.fn(),
+      findBySlug: jest.fn(),
+      findBySubdomain: jest.fn(),
+      findByCustomDomain: jest.fn(),
       findById: jest.fn(),
       findFirstByTenantId: jest.fn(),
       listByTenant: jest.fn(),
-      update: jest.fn(),
+      update: jest.fn<
+        Promise<unknown>,
+        [string, Record<string, unknown>, unknown?]
+      >(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -60,6 +74,87 @@ describe('RestaurantsService notification settings', () => {
     }).compile();
 
     service = moduleRef.get(RestaurantsService);
+  });
+
+  it('generates unique immutable slug and subdomain values from the name', async () => {
+    repository.findBySlug
+      .mockResolvedValueOnce({ id: 'existing', slug: 'burger-house' })
+      .mockResolvedValueOnce(null);
+    repository.findBySubdomain
+      .mockResolvedValueOnce({ id: 'existing', subdomain: 'burger-house' })
+      .mockResolvedValueOnce(null);
+    repository.findByCustomDomain.mockResolvedValue(null);
+    repository.create.mockImplementation((data: unknown) => data);
+
+    const result = await service.create('tenant-1', {
+      name: 'Burger House!',
+      customDomain: 'Orders.BurgerHouse.COM.',
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        name: 'Burger House!',
+        slug: 'burger-house-2',
+        subdomain: 'burger-house-2',
+        customDomain: 'orders.burgerhouse.com',
+      }),
+    );
+  });
+
+  it('does not change slug or subdomain when the restaurant name changes', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'Old Name',
+      slug: 'old-name',
+      subdomain: 'old-name',
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { name: 'New Name' },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.any(Object),
+      undefined,
+    );
+    expect(repository.update.mock.calls[0]?.[1]).not.toHaveProperty('slug');
+    expect(repository.update.mock.calls[0]?.[1]).not.toHaveProperty(
+      'subdomain',
+    );
+  });
+
+  it('rejects a custom domain assigned to another restaurant', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+    });
+    repository.findByCustomDomain.mockResolvedValue({
+      id: 'restaurant-2',
+      customDomain: 'orders.example.com',
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'business-admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-1',
+        { customDomain: 'Orders.Example.com' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('filters STAFF restaurant lists to assigned restaurantAccess ids', async () => {

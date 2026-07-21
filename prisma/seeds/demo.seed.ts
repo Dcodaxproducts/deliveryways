@@ -27,6 +27,7 @@ export async function seedDemo(prisma: PrismaClient): Promise<void> {
       data: {
         name: 'Demo Restaurant',
         slug: restaurantSlug,
+        subdomain: restaurantSlug,
         tenantId: tenant.id,
         isActive: true,
       },

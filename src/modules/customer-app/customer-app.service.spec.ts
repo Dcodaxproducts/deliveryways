@@ -155,6 +155,7 @@ describe('CustomerAppService', () => {
       findActiveCustomer: jest.fn(),
       findCustomersForTableReservations: jest.fn(),
       findRestaurantScope: jest.fn(),
+      findRestaurantDomainContext: jest.fn(),
       upsertCustomerProfile: jest.fn(),
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
@@ -234,6 +235,40 @@ describe('CustomerAppService', () => {
       contactSubmissionsService,
     };
   };
+
+  it('resolves the explicit restaurant subdomain from the request host', async () => {
+    const { service, repository, configService } = makeService();
+    configService.get.mockReturnValue('delivery-way.de');
+    repository.findRestaurantDomainContext.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'Burger House',
+      slug: 'internal-restaurant-slug',
+      subdomain: 'burger-house',
+      customDomain: null,
+      customDomainVerifiedAt: null,
+      logoUrl: null,
+      branding: null,
+      branches: [{ id: 'branch-1', name: 'Main Branch', isMain: true }],
+    });
+
+    const result = await service.resolveDomainContext(
+      'Burger-House.delivery-way.de:443',
+    );
+
+    expect(repository.findRestaurantDomainContext).toHaveBeenCalledWith(
+      'burger-house.delivery-way.de',
+      'burger-house',
+    );
+    expect(result.data).toMatchObject({
+      restaurantId: 'restaurant-1',
+      restaurantSlug: 'internal-restaurant-slug',
+      restaurantSubdomain: 'burger-house',
+      subdomain: 'burger-house',
+      customDomainVerified: false,
+      branchId: 'branch-1',
+    });
+  });
 
   it('uses opening hours as customer-app delivery-hours fallback', () => {
     const { service } = makeService();

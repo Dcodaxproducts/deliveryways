@@ -14,11 +14,6 @@ export class CreateRestaurantDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiPropertyOptional({ description: 'Unique slug for subdomain/URL routing' })
-  @IsOptional()
-  @IsString()
-  slug?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -29,7 +24,9 @@ export class CreateRestaurantDto {
   @IsString()
   coverImage?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Optional custom storefront domain, e.g. orders.example.com',
+  })
   @IsOptional()
   @IsString()
   customDomain?: string;

@@ -7,11 +7,6 @@ export class CreateTenantDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  slug!: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
