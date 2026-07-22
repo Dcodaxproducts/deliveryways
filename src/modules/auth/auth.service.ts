@@ -588,10 +588,6 @@ export class AuthService {
       ? null
       : this.generateOtpExpiry();
 
-    if (emailEnabled && verificationOtp) {
-      await this.ensureVerificationEmailCanBeSent(dto.email);
-    }
-
     const createdUser = await this.prisma.$transaction(async (tx) => {
       return this.usersService.create(
         {
@@ -617,11 +613,20 @@ export class AuthService {
       );
     });
 
+    let verificationEmailSent = false;
     if (emailEnabled && verificationOtp) {
-      await this.mailerService.sendVerificationEmail(
-        dto.email,
-        verificationOtp,
-      );
+      try {
+        await this.mailerService.sendVerificationEmail(
+          dto.email,
+          verificationOtp,
+        );
+        verificationEmailSent = true;
+      } catch (error) {
+        this.logger.error(
+          `Verification email failed after customer registration for ${dto.email}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     }
 
     const auth = await this.issueAuthTokens({
@@ -650,10 +655,13 @@ export class AuthService {
           isGuest: createdUser.isGuest,
         },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
+        verificationEmailSent: emailEnabled ? verificationEmailSent : undefined,
       },
       message: shouldAutoVerifyUser
         ? 'Customer registration completed. Email verification is disabled.'
-        : 'Customer registration completed. Verify email with OTP.',
+        : verificationEmailSent || !emailEnabled
+          ? 'Customer registration completed. Verify email with OTP.'
+          : 'Customer registration completed. Verification email could not be sent; please resend OTP.',
     };
   }
 
