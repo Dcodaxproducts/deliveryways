@@ -490,6 +490,12 @@ export class StorageService {
         ];
       case UserRoleEnum.BRANCH_ADMIN:
         return [StorageFolderEnum.UPLOADS, StorageFolderEnum.AVATARS];
+      case UserRoleEnum.STAFF:
+        return [
+          StorageFolderEnum.UPLOADS,
+          StorageFolderEnum.MENU_ITEMS,
+          StorageFolderEnum.AVATARS,
+        ];
       case 'DELIVERYMAN':
         return [StorageFolderEnum.UPLOADS, StorageFolderEnum.AVATARS];
       case UserRoleEnum.CUSTOMER:
@@ -521,7 +527,10 @@ export class StorageService {
       scopeParts.push(this.slugify(user.bid));
     }
 
-    if (user.role === UserRoleEnum.CUSTOMER) {
+    if (
+      user.role === UserRoleEnum.CUSTOMER ||
+      user.role === UserRoleEnum.STAFF
+    ) {
       if (user.bid) {
         scopeParts.push(this.slugify(user.bid));
       }

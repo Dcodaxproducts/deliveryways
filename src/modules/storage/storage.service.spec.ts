@@ -146,6 +146,29 @@ describe('StorageService', () => {
     );
   });
 
+  it('allows staff menu image uploads scoped to the staff account', async () => {
+    const result = await service.createPresignedUploadUrl(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      {
+        fileName: 'category-cover.png',
+        contentType: 'image/png',
+        fileSize: 1024,
+      },
+    );
+
+    expect(result.method).toBe('PUT');
+    expect(result.key).toMatch(
+      /^uploads\/tenant-1\/restaurant-1\/branch-1\/staff-1\/\d{4}-\d{2}-\d{2}\//,
+    );
+    expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
+  });
+
   it('rejects non-image and non-PDF upload content types', async () => {
     await expect(
       service.createPresignedUploadUrl(
