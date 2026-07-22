@@ -8,6 +8,7 @@ import {
   VatHandlingRule,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
+import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsRepository } from './global-settings.repository';
 import {
   PaymentMethodSettingDto,
@@ -104,6 +105,7 @@ interface NormalizedGlobalSettingsInput {
 export class GlobalSettingsService {
   constructor(
     private readonly globalSettingsRepository: GlobalSettingsRepository,
+    private readonly storageService: StorageService,
   ) {}
 
   async getSettings() {
@@ -121,9 +123,13 @@ export class GlobalSettingsService {
     const data = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),
     );
+    const settings = this.extractLandingPageSettings(data.landingPageSettings);
 
     return {
-      data: this.extractLandingPageSettings(data.landingPageSettings),
+      data: {
+        ...settings,
+        logoUrl: await this.storageService.resolveViewUrl(settings.logoUrl),
+      },
       message: 'Landing page settings fetched successfully',
     };
   }

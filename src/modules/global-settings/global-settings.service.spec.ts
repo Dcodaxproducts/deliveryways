@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { PaymentMethod, Prisma, ServiceChargeType } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
+import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsRepository } from './global-settings.repository';
 import {
   GlobalSettingsService,
@@ -24,8 +25,13 @@ describe('GlobalSettingsService', () => {
   let updateSingletonSpy: jest.SpiedFunction<
     typeof repositoryImpl.updateSingleton
   >;
+  const resolveViewUrl = jest.fn();
 
   beforeEach(async () => {
+    resolveViewUrl.mockReset();
+    resolveViewUrl.mockImplementation((url: string | null | undefined) =>
+      Promise.resolve(url ?? null),
+    );
     repositoryImpl = {
       ensureSingleton(data: Prisma.GlobalSettingCreateInput) {
         return Promise.resolve(data);
@@ -47,6 +53,10 @@ describe('GlobalSettingsService', () => {
         {
           provide: GlobalSettingsRepository,
           useValue: repositoryImpl,
+        },
+        {
+          provide: StorageService,
+          useValue: { resolveViewUrl },
         },
       ],
     }).compile();
@@ -284,6 +294,7 @@ describe('GlobalSettingsService', () => {
   });
 
   it('returns public landing-page settings with safe defaults', async () => {
+    resolveViewUrl.mockResolvedValue('https://signed.example.com/logo.png');
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',
       landingPageSettings: {
@@ -296,7 +307,7 @@ describe('GlobalSettingsService', () => {
     await expect(service.getPublicLandingPageSettings()).resolves.toEqual({
       data: expect.objectContaining({
         businessName: 'DeliveryWay Germany',
-        logoUrl: 'https://cdn.example.com/logo.png',
+        logoUrl: 'https://signed.example.com/logo.png',
         socialLinks: expect.objectContaining({
           instagram: 'https://instagram.com/deliveryway',
           facebook: null,
@@ -304,6 +315,9 @@ describe('GlobalSettingsService', () => {
       }),
       message: 'Landing page settings fetched successfully',
     });
+    expect(resolveViewUrl).toHaveBeenCalledWith(
+      'https://cdn.example.com/logo.png',
+    );
   });
 
   it('merges landing-page settings without clearing unspecified values', async () => {
