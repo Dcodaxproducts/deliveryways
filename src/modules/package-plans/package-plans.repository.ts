@@ -3,6 +3,7 @@ import {
   GeneratedInvoiceKind,
   PaymentStatus,
   Prisma,
+  RestaurantWalletTransactionType,
   SubscriptionDeductionStatus,
   SubscriptionDeductionType,
   SubscriptionStatus,
@@ -14,6 +15,8 @@ import {
   ListTenantSubscriptionsDto,
   MonthlyInvoiceDatevExportQueryDto,
 } from './dto';
+
+class WalletSettlementConflictError extends Error {}
 
 @Injectable()
 export class PackagePlansRepository {
@@ -352,6 +355,156 @@ export class PackagePlansRepository {
       include: this.subscriptionInclude,
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async settleSubscriptionInvoiceFromWallet(input: {
+    tenantId: string;
+    restaurantId: string;
+    subscriptionId: string;
+    settlementKey: string;
+    invoiceNumber: string;
+    amountDue: Prisma.Decimal;
+    currency: string;
+    periodFrom: Date;
+    periodTo: Date;
+    createdBy: string;
+  }) {
+    const amountDue = input.amountDue.toDecimalPlaces(2);
+    if (amountDue.lessThanOrEqualTo(0)) {
+      return this.emptyWalletSettlement();
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const existing = await tx.restaurantWalletTransaction.findUnique({
+            where: { subscriptionInvoiceKey: input.settlementKey },
+          });
+
+          if (existing) {
+            return {
+              appliedAmount: existing.amount.abs().toDecimalPlaces(2),
+              balanceAfter: existing.balanceAfter,
+              walletAccountId: existing.walletAccountId,
+              walletTransactionId: existing.id,
+            };
+          }
+
+          const wallet = await tx.restaurantWalletAccount.findUnique({
+            where: { restaurantId: input.restaurantId },
+          });
+
+          if (
+            !wallet ||
+            wallet.currency !== input.currency ||
+            wallet.balance.lessThanOrEqualTo(0)
+          ) {
+            return {
+              ...this.emptyWalletSettlement(),
+              balanceAfter: wallet?.balance ?? null,
+              walletAccountId: wallet?.id ?? null,
+            };
+          }
+
+          const appliedAmount = Prisma.Decimal.min(
+            wallet.balance.toDecimalPlaces(2),
+            amountDue,
+          ).toDecimalPlaces(2);
+          const balanceAfter = wallet.balance
+            .minus(appliedAmount)
+            .toDecimalPlaces(2);
+          const updated = await tx.restaurantWalletAccount.updateMany({
+            where: {
+              id: wallet.id,
+              balance: wallet.balance,
+              currency: input.currency,
+            },
+            data: { balance: { decrement: appliedAmount } },
+          });
+
+          if (updated.count !== 1) {
+            throw new WalletSettlementConflictError();
+          }
+
+          const walletTransaction = await tx.restaurantWalletTransaction.create(
+            {
+              data: {
+                walletAccountId: wallet.id,
+                tenantId: input.tenantId,
+                restaurantId: input.restaurantId,
+                subscriptionInvoiceKey: input.settlementKey,
+                type: RestaurantWalletTransactionType.ADJUSTMENT,
+                amount: appliedAmount.negated(),
+                balanceAfter,
+                currency: input.currency,
+                note: 'DeliveryWays subscription invoice settled from restaurant wallet',
+                metadata: {
+                  target: 'TENANT_SUBSCRIPTION',
+                  subscriptionId: input.subscriptionId,
+                  invoiceNumber: input.invoiceNumber,
+                  periodFrom: input.periodFrom.toISOString(),
+                  periodTo: input.periodTo.toISOString(),
+                } as Prisma.InputJsonValue,
+                createdBy: input.createdBy,
+              },
+            },
+          );
+
+          return {
+            appliedAmount,
+            balanceAfter,
+            walletAccountId: wallet.id,
+            walletTransactionId: walletTransaction.id,
+          };
+        });
+      } catch (error) {
+        if (this.isPrismaError(error, 'P2002')) {
+          const existing =
+            await this.prisma.restaurantWalletTransaction.findUnique({
+              where: { subscriptionInvoiceKey: input.settlementKey },
+            });
+          if (existing) {
+            return {
+              appliedAmount: existing.amount.abs().toDecimalPlaces(2),
+              balanceAfter: existing.balanceAfter,
+              walletAccountId: existing.walletAccountId,
+              walletTransactionId: existing.id,
+            };
+          }
+        }
+
+        if (
+          error instanceof WalletSettlementConflictError ||
+          this.isPrismaError(error, 'P2034')
+        ) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new WalletSettlementConflictError(
+      'Restaurant wallet balance changed during subscription settlement',
+    );
+  }
+
+  private emptyWalletSettlement() {
+    return {
+      appliedAmount: new Prisma.Decimal(0),
+      balanceAfter: null as Prisma.Decimal | null,
+      walletAccountId: null as string | null,
+      walletTransactionId: null as string | null,
+    };
+  }
+
+  private isPrismaError(error: unknown, code: string) {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === code
+    );
   }
 
   findRestaurantPayoutScope(restaurantId: string) {

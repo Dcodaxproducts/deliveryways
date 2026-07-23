@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   BillingInterval,
+  GeneratedInvoiceKind,
   PackageBillingModel,
   PackageCommissionType,
   PackagePayoutCycle,
@@ -688,6 +689,12 @@ describe('PackagePlansService', () => {
       listDueSubscriptions: jest.fn().mockResolvedValue([subscription]),
       findSubscriptionById: jest.fn().mockResolvedValue(subscription),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      settleSubscriptionInvoiceFromWallet: jest.fn().mockResolvedValue({
+        appliedAmount: new Prisma.Decimal(0),
+        balanceAfter: new Prisma.Decimal(0),
+        walletAccountId: 'restaurant-wallet-1',
+        walletTransactionId: null,
+      }),
       updateSubscription: jest.fn().mockResolvedValue(subscription),
     };
     const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
@@ -714,12 +721,151 @@ describe('PackagePlansService', () => {
       expect.any(Object),
     );
     expect(invoiceRecordsService.hasEmailed).toHaveBeenCalledWith(
-      'SUBSCRIPTION',
+      GeneratedInvoiceKind.SUBSCRIPTION,
       'subscription-12345678:2026-06-01T00:00:00.000Z:2026-07-01T00:00:00.000Z',
     );
     expect(repository.updateSubscription).toHaveBeenCalledWith(
       'subscription-12345678',
       { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
+    );
+  });
+
+  it('recovers an emailed invoice without debiting or emailing it again', async () => {
+    const subscription = makeSubscription({
+      nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+    const repository = {
+      listDueSubscriptions: jest.fn().mockResolvedValue([subscription]),
+      findSubscriptionById: jest.fn().mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      settleSubscriptionInvoiceFromWallet: jest.fn(),
+      updateSubscription: jest.fn().mockResolvedValue(subscription),
+    };
+    const mailerService = { sendEmail: jest.fn() };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(true),
+      persist: jest.fn(),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.emailDueSubscriptionInvoices(
+      new Date('2026-07-01T02:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ sent: 0, skipped: 1 });
+    expect(
+      repository.settleSubscriptionInvoiceFromWallet,
+    ).not.toHaveBeenCalled();
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+    expect(invoiceRecordsService.persist).not.toHaveBeenCalled();
+    expect(repository.updateSubscription).toHaveBeenCalledWith(
+      'subscription-12345678',
+      { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
+    );
+  });
+
+  it('settles a due subscription fully from the restaurant wallet', async () => {
+    const subscription = makeSubscription();
+    const repository = {
+      listDueSubscriptions: jest.fn().mockResolvedValue([subscription]),
+      findSubscriptionById: jest.fn().mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      settleSubscriptionInvoiceFromWallet: jest.fn().mockResolvedValue({
+        appliedAmount: new Prisma.Decimal(5750),
+        balanceAfter: new Prisma.Decimal(1250),
+        walletAccountId: 'restaurant-wallet-1',
+        walletTransactionId: 'restaurant-wallet-tx-1',
+      }),
+      updateSubscription: jest.fn().mockResolvedValue(subscription),
+      markOneTimeDeductionsApplied: jest.fn().mockResolvedValue({ count: 0 }),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.emailDueSubscriptionInvoices(
+      new Date('2026-07-01T02:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ sent: 0, skipped: 0 });
+    expect(repository.settleSubscriptionInvoiceFromWallet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settlementKey:
+          'subscription-12345678:2026-06-01T00:00:00.000Z:2026-07-01T00:00:00.000Z',
+        amountDue: new Prisma.Decimal(5750),
+      }),
+    );
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+    expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: GeneratedInvoiceKind.SUBSCRIPTION,
+        totalAmount: 0,
+      }),
+    );
+    expect(repository.updateSubscription).toHaveBeenCalledWith(
+      'subscription-12345678',
+      {
+        nextBillingAt: new Date('2026-08-01T00:00:00.000Z'),
+        paymentStatus: PaymentStatus.PAID,
+      },
+    );
+  });
+
+  it('applies a partial wallet settlement and emails only the remainder', async () => {
+    const subscription = makeSubscription();
+    const repository = {
+      listDueSubscriptions: jest.fn().mockResolvedValue([subscription]),
+      findSubscriptionById: jest.fn().mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      settleSubscriptionInvoiceFromWallet: jest.fn().mockResolvedValue({
+        appliedAmount: new Prisma.Decimal(2000),
+        balanceAfter: new Prisma.Decimal(0),
+        walletAccountId: 'restaurant-wallet-1',
+        walletTransactionId: 'restaurant-wallet-tx-1',
+      }),
+      updateSubscription: jest.fn().mockResolvedValue(subscription),
+      markOneTimeDeductionsApplied: jest.fn().mockResolvedValue({ count: 0 }),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.emailDueSubscriptionInvoices(
+      new Date('2026-07-01T02:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ sent: 1, skipped: 0 });
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'billing@pizza.test',
+      expect.any(String),
+      expect.stringContaining('Invoice Amount Due: 3750.00 PKR'),
+      expect.any(Object),
+    );
+    expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        totalAmount: 3750,
+      }),
     );
   });
 

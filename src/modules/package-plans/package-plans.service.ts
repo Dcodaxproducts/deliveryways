@@ -758,38 +758,146 @@ export class PackagePlansService {
 
     for (const subscription of subscriptions) {
       const invoice = await this.buildSubscriptionInvoice(subscription.id);
-      const recipientEmail = invoice.restaurant?.billingEmail;
       const sourceKey = this.buildSubscriptionInvoiceSourceKey(invoice);
 
       if (
-        !recipientEmail ||
-        (await this.invoiceRecordsService?.hasEmailed(
+        await this.invoiceRecordsService?.hasEmailed?.(
           GeneratedInvoiceKind.SUBSCRIPTION,
           sourceKey,
-        ))
+        )
       ) {
+        await this.advanceSubscriptionBillingCursor(invoice);
+        await this.markInvoiceOneTimeDeductionsApplied(invoice, now);
+        results.skipped += 1;
+        continue;
+      }
+
+      const settledInvoice = await this.settleSubscriptionInvoiceFromWallet(
+        systemUser,
+        invoice,
+      );
+      const recipientEmail = settledInvoice.restaurant?.billingEmail;
+
+      if (settledInvoice.totals.amountDue <= 0) {
+        await this.persistSubscriptionInvoice(systemUser, settledInvoice);
+        await this.advanceSubscriptionBillingCursor(
+          settledInvoice,
+          PaymentStatus.PAID,
+        );
+        await this.markInvoiceOneTimeDeductionsApplied(settledInvoice, now);
+        continue;
+      }
+
+      if (!recipientEmail) {
+        await this.persistSubscriptionInvoice(systemUser, settledInvoice);
+        await this.advanceSubscriptionBillingCursor(settledInvoice);
+        await this.markInvoiceOneTimeDeductionsApplied(settledInvoice, now);
         results.skipped += 1;
         continue;
       }
 
       await this.deliverSubscriptionInvoice(
         systemUser,
-        invoice,
+        settledInvoice,
         recipientEmail,
       );
-      await this.advanceSubscriptionBillingCursor(invoice);
-      if (this.packagePlansRepository.markOneTimeDeductionsApplied) {
-        await this.packagePlansRepository.markOneTimeDeductionsApplied(
-          invoice.deductions
-            .filter((item) => item.type === SubscriptionDeductionType.ONE_TIME)
-            .map((item) => item.id),
-          now,
-        );
-      }
+      await this.advanceSubscriptionBillingCursor(settledInvoice);
+      await this.markInvoiceOneTimeDeductionsApplied(settledInvoice, now);
       results.sent += 1;
     }
 
     return results;
+  }
+
+  private async settleSubscriptionInvoiceFromWallet(
+    user: AuthUserContext,
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+  ) {
+    if (!invoice.restaurant || invoice.totals.amountDue <= 0) {
+      return invoice;
+    }
+
+    if (
+      typeof this.packagePlansRepository.settleSubscriptionInvoiceFromWallet !==
+      'function'
+    ) {
+      return invoice;
+    }
+
+    const settlement =
+      await this.packagePlansRepository.settleSubscriptionInvoiceFromWallet({
+        tenantId: invoice.tenant.id,
+        restaurantId: invoice.restaurant.id,
+        subscriptionId: invoice.subscriptionId,
+        settlementKey: this.buildSubscriptionInvoiceSourceKey(invoice),
+        invoiceNumber: invoice.invoiceNumber,
+        amountDue: new Prisma.Decimal(invoice.totals.amountDue).toDecimalPlaces(
+          2,
+        ),
+        currency: invoice.totals.currency,
+        periodFrom: invoice.servicePeriod.from,
+        periodTo: invoice.servicePeriod.to,
+        createdBy: user.uid,
+      });
+    const walletSettlementAmount = settlement.appliedAmount
+      .toDecimalPlaces(2)
+      .toNumber();
+
+    if (walletSettlementAmount <= 0) {
+      return invoice;
+    }
+
+    const amountDue = Number(
+      (invoice.totals.amountDue - walletSettlementAmount).toFixed(2),
+    );
+
+    return {
+      ...invoice,
+      lineItems: [
+        ...invoice.lineItems,
+        {
+          description: 'Restaurant wallet settlement applied',
+          quantity: 1,
+          unitPrice: -walletSettlementAmount,
+          amount: -walletSettlementAmount,
+        },
+      ],
+      totals: {
+        ...invoice.totals,
+        walletSettlementAmount,
+        amountDue,
+        totalAmount: amountDue,
+      },
+      settlement: {
+        walletAppliedAmount: walletSettlementAmount,
+        remainingDueAmount: amountDue,
+        walletAccountId: settlement.walletAccountId,
+        walletTransactionId: settlement.walletTransactionId,
+        balanceAfter:
+          settlement.balanceAfter?.toDecimalPlaces(2).toNumber() ?? null,
+        settledAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  private async markInvoiceOneTimeDeductionsApplied(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+    appliedAt: Date,
+  ) {
+    const deductionIds = invoice.deductions
+      .filter((item) => item.type === SubscriptionDeductionType.ONE_TIME)
+      .map((item) => item.id);
+
+    if (deductionIds.length) {
+      await this.packagePlansRepository.markOneTimeDeductionsApplied(
+        deductionIds,
+        appliedAt,
+      );
+    }
   }
 
   async emailDuePayoutInvoices(now = new Date()) {
@@ -2018,6 +2126,7 @@ export class PackagePlansService {
     invoice: Awaited<
       ReturnType<PackagePlansService['buildSubscriptionInvoice']>
     >,
+    paymentStatus?: PaymentStatus,
   ) {
     await this.packagePlansRepository.updateSubscription(
       invoice.subscriptionId,
@@ -2026,6 +2135,7 @@ export class PackagePlansService {
           invoice.packagePlan.billingInterval,
           invoice.servicePeriod.to.toISOString(),
         ),
+        ...(paymentStatus ? { paymentStatus } : {}),
       },
     );
   }

@@ -1643,23 +1643,24 @@ model RestaurantWalletAccount {
 }
 
 model RestaurantWalletTransaction {
-  id                   String                          @id @default(cuid())
-  walletAccountId      String                          @map("wallet_account_id")
-  tenantId             String                          @map("tenant_id")
-  restaurantId         String                          @map("restaurant_id")
-  branchId             String?                         @map("branch_id")
-  orderId              String?                         @map("order_id")
-  paymentTransactionId String?                         @unique @map("payment_transaction_id")
-  payoutRequestId      String?                         @unique @map("payout_request_id")
-  type                 RestaurantWalletTransactionType
-  amount               Decimal                         @db.Decimal(10, 2)
-  balanceAfter         Decimal                         @map("balance_after") @db.Decimal(10, 2)
-  currency             String                          @default("PKR")
-  note                 String?
-  metadata             Json?
-  createdBy            String?                         @map("created_by")
-  createdAt            DateTime                        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime                        @updatedAt @map("updated_at") @db.Timestamptz
+  id                     String                          @id @default(cuid())
+  walletAccountId        String                          @map("wallet_account_id")
+  tenantId               String                          @map("tenant_id")
+  restaurantId           String                          @map("restaurant_id")
+  branchId               String?                         @map("branch_id")
+  orderId                String?                         @map("order_id")
+  paymentTransactionId   String?                         @unique @map("payment_transaction_id")
+  payoutRequestId        String?                         @unique @map("payout_request_id")
+  subscriptionInvoiceKey String?                         @unique @map("subscription_invoice_key") @db.VarChar(255)
+  type                   RestaurantWalletTransactionType
+  amount                 Decimal                         @db.Decimal(10, 2)
+  balanceAfter           Decimal                         @map("balance_after") @db.Decimal(10, 2)
+  currency               String                          @default("PKR")
+  note                   String?
+  metadata               Json?
+  createdBy              String?                         @map("created_by")
+  createdAt              DateTime                        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                        @updatedAt @map("updated_at") @db.Timestamptz
 
   walletAccount RestaurantWalletAccount @relation(fields: [walletAccountId], references: [id])
 
