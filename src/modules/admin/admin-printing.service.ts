@@ -51,11 +51,12 @@ export class AdminPrintingService {
     private readonly systemHealthMetricsService: SystemHealthMetricsService,
   ) {}
 
-  async getSettings(
-    user: AuthUserContext,
-    query: AdminPrintingScopedQueryDto,
-  ) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async getSettings(user: AuthUserContext, query: AdminPrintingScopedQueryDto) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const { restaurant, branch } = await this.getScopedSettings(scope);
     const restaurantConfig = this.extractPrintingConfig(restaurant?.settings);
     const branchConfig = branch
@@ -80,11 +81,17 @@ export class AdminPrintingService {
     query: AdminPrintingScopedQueryDto,
     dto: UpdateAdminPrintingSettingsDto,
   ) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const hasUpdates = Object.values(dto).some((value) => value !== undefined);
 
     if (!hasUpdates) {
-      throw new BadRequestException('At least one printing setting field is required');
+      throw new BadRequestException(
+        'At least one printing setting field is required',
+      );
     }
 
     if (scope.branchId) {
@@ -123,23 +130,23 @@ export class AdminPrintingService {
     return this.getSettings(user, query);
   }
 
-  async getStatus(
-    user: AuthUserContext,
-    query: AdminPrintingStatusQueryDto,
-  ) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+  async getStatus(user: AuthUserContext, query: AdminPrintingStatusQueryDto) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const { restaurant, branch } = await this.getScopedSettings(scope);
     const restaurantConfig = this.extractPrintingConfig(restaurant?.settings);
     const effectiveSettings = branch
       ? this.extractPrintingConfig(branch.settings, restaurantConfig)
       : restaurantConfig;
-    const logs = this.filterLogsByScope(
-      this.readPrinterLogs(100),
-      scope,
-    );
-    const latestSuccess = logs.find((item) => item.status === 'success') ?? null;
+    const logs = this.filterLogsByScope(this.readPrinterLogs(100), scope);
+    const latestSuccess =
+      logs.find((item) => item.status === 'success') ?? null;
     const latestFailure = logs.find((item) => item.status === 'failed') ?? null;
-    const latestWarning = logs.find((item) => item.status === 'warning') ?? null;
+    const latestWarning =
+      logs.find((item) => item.status === 'warning') ?? null;
     const latest = logs[0] ?? null;
 
     return {
@@ -168,7 +175,11 @@ export class AdminPrintingService {
   }
 
   async getLogs(user: AuthUserContext, query: AdminPrintingLogsQueryDto) {
-    const scope = await this.resolveScope(user, query.restaurantId, query.branchId);
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
     const filtered = this.filterLogsByScope(
       this.readPrinterLogs(1000),
       scope,
@@ -206,13 +217,15 @@ export class AdminPrintingService {
   ): Promise<AdminPrintingScope> {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       if (requestedBranchId) {
-        const branch = await this.adminPrintingRepository.findBranchScope(
-          requestedBranchId,
-        );
+        const branch =
+          await this.adminPrintingRepository.findBranchScope(requestedBranchId);
         if (!branch) {
           throw new NotFoundException('Branch not found');
         }
-        if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
+        if (
+          requestedRestaurantId &&
+          requestedRestaurantId !== branch.restaurantId
+        ) {
           throw new BadRequestException(
             'branchId does not belong to the provided restaurantId',
           );
@@ -226,9 +239,10 @@ export class AdminPrintingService {
       }
 
       if (requestedRestaurantId) {
-        const restaurant = await this.adminPrintingRepository.findRestaurantScope(
-          requestedRestaurantId,
-        );
+        const restaurant =
+          await this.adminPrintingRepository.findRestaurantScope(
+            requestedRestaurantId,
+          );
         if (!restaurant) {
           throw new NotFoundException('Restaurant not found');
         }
@@ -281,7 +295,10 @@ export class AdminPrintingService {
           'You cannot access resources outside your tenant restaurants',
         );
       }
-      if (requestedRestaurantId && requestedRestaurantId !== branch.restaurantId) {
+      if (
+        requestedRestaurantId &&
+        requestedRestaurantId !== branch.restaurantId
+      ) {
         throw new BadRequestException(
           'branchId does not belong to the provided restaurantId',
         );
@@ -356,34 +373,28 @@ export class AdminPrintingService {
       const metaTenantId = this.readStringValue(meta.tenantId);
 
       if (scope.branchId) {
-        if (metaBranchId) {
-          return metaBranchId === scope.branchId;
-        }
-
-        if (metaRestaurantId) {
-          return metaRestaurantId === scope.restaurantId;
-        }
-
-        return true;
+        return (
+          metaBranchId === scope.branchId &&
+          (!metaRestaurantId || metaRestaurantId === scope.restaurantId) &&
+          (!metaTenantId || metaTenantId === scope.tenantId)
+        );
       }
 
       if (scope.restaurantId) {
-        if (metaRestaurantId) {
-          return metaRestaurantId === scope.restaurantId;
-        }
-
-        if (metaBranchId) {
-          return false;
-        }
-
-        return true;
+        return (
+          !metaBranchId &&
+          metaRestaurantId === scope.restaurantId &&
+          (!metaTenantId || metaTenantId === scope.tenantId)
+        );
       }
 
-      if (scope.tenantId && metaTenantId) {
-        return metaTenantId === scope.tenantId;
+      if (scope.tenantId) {
+        return (
+          !metaBranchId && !metaRestaurantId && metaTenantId === scope.tenantId
+        );
       }
 
-      return true;
+      return false;
     });
   }
 
@@ -397,29 +408,31 @@ export class AdminPrintingService {
       enabled:
         typeof printing.enabled === 'boolean'
           ? printing.enabled
-          : fallback?.enabled ?? false,
+          : (fallback?.enabled ?? false),
       autoPrintOnNewOrder:
         typeof printing.autoPrintOnNewOrder === 'boolean'
           ? printing.autoPrintOnNewOrder
-          : fallback?.autoPrintOnNewOrder ?? false,
+          : (fallback?.autoPrintOnNewOrder ?? false),
       autoPrintOnStatusChange:
         typeof printing.autoPrintOnStatusChange === 'boolean'
           ? printing.autoPrintOnStatusChange
-          : fallback?.autoPrintOnStatusChange ?? false,
+          : (fallback?.autoPrintOnStatusChange ?? false),
       printCustomerReceipt:
         typeof printing.printCustomerReceipt === 'boolean'
           ? printing.printCustomerReceipt
-          : fallback?.printCustomerReceipt ?? false,
+          : (fallback?.printCustomerReceipt ?? false),
       printKitchenTicket:
         typeof printing.printKitchenTicket === 'boolean'
           ? printing.printKitchenTicket
-          : fallback?.printKitchenTicket ?? false,
+          : (fallback?.printKitchenTicket ?? false),
       connectionType: this.readConnectionType(
         printing.connectionType,
         fallback?.connectionType ?? null,
       ),
       printerName:
-        this.readStringValue(printing.printerName) ?? fallback?.printerName ?? null,
+        this.readStringValue(printing.printerName) ??
+        fallback?.printerName ??
+        null,
       printerTarget:
         this.readStringValue(printing.printerTarget) ??
         fallback?.printerTarget ??
@@ -460,7 +473,9 @@ export class AdminPrintingService {
         ...(dto.connectionType !== undefined
           ? { connectionType: dto.connectionType }
           : {}),
-        ...(dto.printerName !== undefined ? { printerName: dto.printerName } : {}),
+        ...(dto.printerName !== undefined
+          ? { printerName: dto.printerName }
+          : {}),
         ...(dto.printerTarget !== undefined
           ? { printerTarget: dto.printerTarget }
           : {}),
@@ -473,7 +488,9 @@ export class AdminPrintingService {
 
   private hasPrintingConfig(source: Prisma.JsonValue | null | undefined) {
     const printing = this.readPath(source, ['printing']);
-    return !!printing && typeof printing === 'object' && !Array.isArray(printing);
+    return (
+      !!printing && typeof printing === 'object' && !Array.isArray(printing)
+    );
   }
 
   private toScopeResponse(scope: AdminPrintingScope) {

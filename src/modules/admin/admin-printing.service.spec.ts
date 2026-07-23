@@ -201,6 +201,25 @@ describe('AdminPrintingService', () => {
             timestamp: '2026-04-23T03:00:00.000Z',
             meta: { restaurantId: 'restaurant-1', branchId: 'branch-2' },
           },
+          {
+            id: 'log-4',
+            type: 'printer',
+            status: 'warning',
+            message: 'Unscoped printer warning',
+            timestamp: '2026-04-23T02:00:00.000Z',
+          },
+          {
+            id: 'log-5',
+            type: 'printer',
+            status: 'failed',
+            message: 'Wrong tenant printer failure',
+            timestamp: '2026-04-23T01:00:00.000Z',
+            meta: {
+              tenantId: 'tenant-2',
+              restaurantId: 'restaurant-1',
+              branchId: 'branch-1',
+            },
+          },
         ],
       }),
     };

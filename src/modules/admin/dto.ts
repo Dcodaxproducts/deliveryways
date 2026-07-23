@@ -1110,32 +1110,32 @@ export class UpdateAdminPrintingSettingsDto {
   @ApiPropertyOptional({ enum: ['USB', 'LAN', 'BLUETOOTH', 'CLOUD'] })
   @IsOptional()
   @IsIn(['USB', 'LAN', 'BLUETOOTH', 'CLOUD'])
-  connectionType?: 'USB' | 'LAN' | 'BLUETOOTH' | 'CLOUD';
+  connectionType?: 'USB' | 'LAN' | 'BLUETOOTH' | 'CLOUD' | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  printerName?: string;
+  printerName?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  printerTarget?: string;
+  printerTarget?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  deviceId?: string;
+  deviceId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  ipAddress?: string;
+  ipAddress?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  queueName?: string;
+  queueName?: string | null;
 }
 
 export class AdminPrintingStatusQueryDto extends AdminPrintingScopedQueryDto {}

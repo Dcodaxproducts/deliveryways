@@ -57,7 +57,9 @@ export class AdminPrintingController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
   )
-  @ApiOperation({ summary: 'Get admin printer status and recent health summary' })
+  @ApiOperation({
+    summary: 'Get admin printer status and recent health summary',
+  })
   getStatus(
     @CurrentUser() user: AuthUserContext,
     @Query() query: AdminPrintingStatusQueryDto,
