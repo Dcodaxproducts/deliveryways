@@ -272,7 +272,7 @@ describe('AdminReportsService', () => {
               businessName: 'Restaurant GmbH',
               taxNumber: 'VAT-123',
               billingAddress: {
-                street: 'Main Street 1',
+                street: 'Main Street 1,',
                 city: 'Berlin',
                 country: 'Germany',
               },
@@ -284,7 +284,11 @@ describe('AdminReportsService', () => {
             },
           },
         },
-        branch: { id: 'branch-1', name: 'Main', settings: null },
+        branch: {
+          id: 'branch-1',
+          name: 'Main',
+          settings: { contact: { phone: '+49 201 123456' } },
+        },
         customer: {
           id: 'customer-1',
           email: 'customer@test.com',
@@ -293,8 +297,9 @@ describe('AdminReportsService', () => {
         coupon: null,
         deliveryAddress: {
           id: 'address-1',
-          street: 'Customer Street 2',
-          area: null,
+          street: 'Customer Street 2,',
+          area: ' , ',
+          postalCode: '10115',
           city: 'Berlin',
           state: 'BE',
           country: 'Germany',
@@ -347,6 +352,7 @@ describe('AdminReportsService', () => {
     expect(result.data.business).toEqual(
       expect.objectContaining({
         name: 'Restaurant GmbH',
+        phone: '+49 201 123456',
         taxNumber: 'VAT-123',
       }),
     );
@@ -355,7 +361,7 @@ describe('AdminReportsService', () => {
     );
     expect(result.data.business.bankDetails.iban).toBe('DE123');
     expect(result.data.customerBillingAddress.formatted).toBe(
-      'Customer Street 2, Berlin, BE, Germany',
+      'Customer Street 2, 10115 Berlin, BE, Germany',
     );
     expect(result.data.taxBreakdown).toEqual({
       label: 'VAT/Tax (inclusive)',
@@ -454,6 +460,10 @@ describe('AdminReportsService', () => {
     expect(result.fileName).toBe('INV-12345678.pdf');
     expect(result.mimeType).toBe('application/pdf');
     expect(result.content.toString('utf8')).toContain('%PDF-1.4');
+    expect(result.content.toString('utf8')).toContain(
+      'VAT/Tax \\(inclusive\\) \\(5%\\):',
+    );
+    expect(result.content.toString('utf8')).toContain('(50.00) Tj');
     expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
       expect.objectContaining({
         invoiceNumber: 'INV-12345678',

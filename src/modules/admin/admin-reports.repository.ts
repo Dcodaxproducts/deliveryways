@@ -537,6 +537,7 @@ export class AdminReportsRepository {
             id: true,
             street: true,
             area: true,
+            postalCode: true,
             city: true,
             state: true,
             country: true,

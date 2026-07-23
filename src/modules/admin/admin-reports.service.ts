@@ -726,7 +726,11 @@ export class AdminReportsService {
           title: 'Totals',
           rows: [
             `Subtotal: ${this.formatMoney(summary.subtotal)}`,
-            `Tax: ${this.formatMoney(summary.taxAmount)}`,
+            `${summary.taxBreakdown.label}${
+              summary.taxBreakdown.ratePercentage > 0
+                ? ` (${summary.taxBreakdown.ratePercentage}%)`
+                : ''
+            }: ${this.formatMoney(summary.taxAmount)}`,
             `Delivery Fee: ${this.formatMoney(summary.deliveryFee)}`,
             `Discount: ${this.formatMoney(summary.discountAmount)}`,
             `Wallet Applied: ${this.formatMoney(summary.walletAppliedAmount)}`,
@@ -1035,7 +1039,12 @@ export class AdminReportsService {
       phone:
         this.readSettingsString(
           [branchSettings, restaurantSettings],
-          [['invoice', 'phone'], ['billing', 'phone'], ['phone']],
+          [
+            ['invoice', 'phone'],
+            ['billing', 'phone'],
+            ['contact', 'phone'],
+            ['phone'],
+          ],
         ) ?? this.readStringValue(supportContact.phone),
       taxNumber: this.readSettingsString(
         [branchSettings, restaurantSettings],
@@ -1095,6 +1104,7 @@ export class AdminReportsService {
       const result = this.toInvoiceAddress({
         street: this.readStringValue(address.street),
         area: this.readStringValue(address.area),
+        postalCode: this.readStringValue(address.postalCode),
         city: this.readStringValue(address.city),
         state: this.readStringValue(address.state),
         country: this.readStringValue(address.country),
@@ -1136,6 +1146,7 @@ export class AdminReportsService {
       | {
           street?: string | null;
           area?: string | null;
+          postalCode?: string | null;
           city?: string | null;
           state?: string | null;
           country?: string | null;
@@ -1143,20 +1154,37 @@ export class AdminReportsService {
       | null
       | undefined,
   ) {
-    const parts = [
-      address?.street,
-      address?.area,
-      address?.city,
-      address?.state,
-      address?.country,
-    ].filter((part): part is string => Boolean(part));
+    const normalizePart = (value?: string | null) => {
+      const normalized = value?.trim().replace(/^[,\s]+|[,\s]+$/g, '');
+      return normalized || null;
+    };
+    const street = normalizePart(address?.street);
+    const area = normalizePart(address?.area);
+    const postalCode = normalizePart(address?.postalCode);
+    const city = normalizePart(address?.city);
+    const state = normalizePart(address?.state);
+    const country = normalizePart(address?.country);
+    const locality = [postalCode, city].filter(Boolean).join(' ') || null;
+    const seen = new Set<string>();
+    const parts = [street, area, locality, state, country].filter(
+      (part): part is string => {
+        if (!part) return false;
+
+        const key = part.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+
+        seen.add(key);
+        return true;
+      },
+    );
 
     return {
-      street: address?.street ?? null,
-      area: address?.area ?? null,
-      city: address?.city ?? null,
-      state: address?.state ?? null,
-      country: address?.country ?? null,
+      street,
+      area,
+      postalCode,
+      city,
+      state,
+      country,
       formatted: parts.length ? parts.join(', ') : null,
     };
   }
