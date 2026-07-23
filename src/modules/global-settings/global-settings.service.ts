@@ -72,6 +72,17 @@ export interface LandingPageSettingsShape {
     instagram: string | null;
     youtube: string | null;
   };
+  faqs: LandingPageFaqShape[];
+}
+
+export interface LandingPageFaqShape {
+  id: string;
+  questionEn: string;
+  answerEn: string;
+  questionDe: string;
+  answerDe: string;
+  isActive: boolean;
+  sortOrder: number;
 }
 
 interface NormalizedGlobalSettingsInput {
@@ -484,6 +495,7 @@ export class GlobalSettingsService {
         instagram: null,
         youtube: null,
       },
+      faqs: [],
     };
   }
 
@@ -881,6 +893,24 @@ export class GlobalSettingsService {
             ? this.resolveOptionalString(updates.socialLinks.youtube)
             : current.socialLinks.youtube,
       },
+      faqs:
+        updates.faqs !== undefined
+          ? updates.faqs
+              .map((faq) => ({
+                id: faq.id.trim(),
+                questionEn: faq.questionEn.trim(),
+                answerEn: faq.answerEn.trim(),
+                questionDe: faq.questionDe.trim(),
+                answerDe: faq.answerDe.trim(),
+                isActive: faq.isActive,
+                sortOrder: faq.sortOrder,
+              }))
+              .sort(
+                (left, right) =>
+                  left.sortOrder - right.sortOrder ||
+                  left.id.localeCompare(right.id),
+              )
+          : current.faqs,
     } satisfies LandingPageSettingsShape;
 
     return merged as unknown as Prisma.InputJsonValue;
@@ -909,7 +939,50 @@ export class GlobalSettingsService {
         instagram: this.readStringValue(source, [['socialLinks', 'instagram']]),
         youtube: this.readStringValue(source, [['socialLinks', 'youtube']]),
       },
+      faqs: this.extractLandingPageFaqs(source),
     };
+  }
+
+  private extractLandingPageFaqs(source: Prisma.JsonValue | null | undefined) {
+    const rawFaqs = this.readPath(source, ['faqs']);
+    if (!Array.isArray(rawFaqs)) {
+      return [];
+    }
+
+    return rawFaqs
+      .map((value, index): LandingPageFaqShape | null => {
+        const faq = this.asObject(value);
+        const id = this.readStringValue(faq, [['id']]);
+        const questionEn = this.readStringValue(faq, [['questionEn']]);
+        const answerEn = this.readStringValue(faq, [['answerEn']]);
+        const questionDe = this.readStringValue(faq, [['questionDe']]);
+        const answerDe = this.readStringValue(faq, [['answerDe']]);
+
+        if (!id || !questionEn || !answerEn || !questionDe || !answerDe) {
+          return null;
+        }
+
+        const rawSortOrder = this.readPath(faq, ['sortOrder']);
+        return {
+          id,
+          questionEn,
+          answerEn,
+          questionDe,
+          answerDe,
+          isActive: typeof faq.isActive === 'boolean' ? faq.isActive : true,
+          sortOrder:
+            typeof rawSortOrder === 'number' &&
+            Number.isInteger(rawSortOrder) &&
+            rawSortOrder >= 0
+              ? rawSortOrder
+              : index,
+        };
+      })
+      .filter((faq): faq is LandingPageFaqShape => faq !== null)
+      .sort(
+        (left, right) =>
+          left.sortOrder - right.sortOrder || left.id.localeCompare(right.id),
+      );
   }
 
   private extractNotificationTypeMatrix(source: unknown) {

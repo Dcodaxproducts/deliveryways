@@ -13,6 +13,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -138,6 +139,37 @@ class LandingPageSocialLinksDto {
   youtube?: string;
 }
 
+class LandingPageFaqDto {
+  @ApiPropertyOptional({ example: 'faq-order-types' })
+  @IsString()
+  id!: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  questionEn!: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  answerEn!: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  questionDe!: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  answerDe!: string;
+
+  @ApiPropertyOptional({ default: true })
+  @IsBoolean()
+  isActive!: boolean;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0 })
+  @IsInt()
+  @Min(0)
+  sortOrder!: number;
+}
+
 class LandingPageSettingsDto {
   @ApiPropertyOptional({ example: 'DeliveryWay' })
   @IsOptional()
@@ -186,6 +218,13 @@ class LandingPageSettingsDto {
   @ValidateNested()
   @Type(() => LandingPageSocialLinksDto)
   socialLinks?: LandingPageSocialLinksDto;
+
+  @ApiPropertyOptional({ type: [LandingPageFaqDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LandingPageFaqDto)
+  faqs?: LandingPageFaqDto[];
 }
 
 export class PaymentMethodSettingDto {

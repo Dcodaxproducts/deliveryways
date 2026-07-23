@@ -92,6 +92,7 @@ describe('GlobalSettingsService', () => {
             instagram: null,
             youtube: null,
           },
+          faqs: [],
         },
         paymentMethods: [
           {
@@ -301,6 +302,26 @@ describe('GlobalSettingsService', () => {
         businessName: 'DeliveryWay Germany',
         logoUrl: 'https://cdn.example.com/logo.png',
         socialLinks: { instagram: 'https://instagram.com/deliveryway' },
+        faqs: [
+          {
+            id: 'faq-second',
+            questionEn: 'Second?',
+            answerEn: 'Second.',
+            questionDe: 'Zweite?',
+            answerDe: 'Zweite.',
+            isActive: false,
+            sortOrder: 2,
+          },
+          {
+            id: 'faq-first',
+            questionEn: 'First?',
+            answerEn: 'First.',
+            questionDe: 'Erste?',
+            answerDe: 'Erste.',
+            isActive: true,
+            sortOrder: 1,
+          },
+        ],
       },
     });
 
@@ -314,6 +335,10 @@ describe('GlobalSettingsService', () => {
           instagram: 'https://instagram.com/deliveryway',
           facebook: null,
         }),
+        faqs: [
+          expect.objectContaining({ id: 'faq-first', isActive: true }),
+          expect.objectContaining({ id: 'faq-second', isActive: false }),
+        ],
       }),
       message: 'Landing page settings fetched successfully',
     });
@@ -332,6 +357,17 @@ describe('GlobalSettingsService', () => {
         businessName: 'DeliveryWay',
         supportEmail: 'old@example.com',
         socialLinks: { facebook: 'https://facebook.com/old' },
+        faqs: [
+          {
+            id: 'existing',
+            questionEn: 'Existing?',
+            answerEn: 'Existing.',
+            questionDe: 'Bestehend?',
+            answerDe: 'Bestehend.',
+            isActive: true,
+            sortOrder: 0,
+          },
+        ],
       },
     });
 
@@ -354,6 +390,17 @@ describe('GlobalSettingsService', () => {
           facebook: 'https://facebook.com/old',
           instagram: 'https://instagram.com/new',
         },
+        faqs: [
+          {
+            id: 'existing',
+            questionEn: 'Existing?',
+            answerEn: 'Existing.',
+            questionDe: 'Bestehend?',
+            answerDe: 'Bestehend.',
+            isActive: true,
+            sortOrder: 0,
+          },
+        ],
       },
     });
   });
