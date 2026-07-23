@@ -305,9 +305,11 @@ describe('GlobalSettingsService', () => {
     });
 
     await expect(service.getPublicLandingPageSettings()).resolves.toEqual({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({
         businessName: 'DeliveryWay Germany',
         logoUrl: 'https://signed.example.com/logo.png',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         socialLinks: expect.objectContaining({
           instagram: 'https://instagram.com/deliveryway',
           facebook: null,

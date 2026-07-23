@@ -150,6 +150,8 @@ describe('CustomerAppService', () => {
       resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
     };
 
+    const listCuisineCategories = jest.fn();
+
     const repository = {
       findCustomerProfile: jest.fn(),
       findActiveCustomer: jest.fn(),
@@ -162,7 +164,8 @@ describe('CustomerAppService', () => {
       findBranchPublicContent: jest.fn(),
       findPublicAddress: jest.fn().mockResolvedValue(null),
       findBranchesPublicContent,
-      listCuisineCategories: jest.fn(),
+      listCuisineCategories,
+      listMenuCategories: listCuisineCategories,
       findPublicCuisine: jest.fn(),
       listCuisineMenuItems: jest.fn(),
       listPromotionalItems: jest.fn(),
