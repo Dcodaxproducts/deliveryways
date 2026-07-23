@@ -3,6 +3,7 @@ import { MailerModule } from '../mailer/mailer.module';
 import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsRepository } from './notifications.repository';
+import { NotificationsRealtimeService } from './notifications-realtime.service';
 import { NotificationsService } from './notifications.service';
 import { PushNotificationsService } from './push-notifications.service';
 
@@ -12,8 +13,9 @@ import { PushNotificationsService } from './push-notifications.service';
   providers: [
     NotificationsService,
     NotificationsRepository,
+    NotificationsRealtimeService,
     PushNotificationsService,
   ],
-  exports: [NotificationsService],
+  exports: [NotificationsService, NotificationsRealtimeService],
 })
 export class NotificationsModule {}

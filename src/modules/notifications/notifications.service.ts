@@ -22,6 +22,7 @@ import {
   UnregisterPushTokenDto,
 } from './dto';
 import { NotificationsRepository } from './notifications.repository';
+import { NotificationsRealtimeService } from './notifications-realtime.service';
 import { PushNotificationsService } from './push-notifications.service';
 
 const CUSTOMER_NOTIFICATION_TYPES: NotificationType[] = [
@@ -65,6 +66,7 @@ export class NotificationsService {
     private readonly mailerService: MailerService,
     private readonly pushNotificationsService: PushNotificationsService,
     private readonly globalSettingsService?: GlobalSettingsService,
+    private readonly notificationsRealtimeService?: NotificationsRealtimeService,
   ) {}
 
   async list(user: AuthUserContext, query: ListNotificationsDto) {
@@ -327,6 +329,17 @@ export class NotificationsService {
         totalAmount: Number(order.totalAmount),
         customerId: order.customerId,
       },
+    });
+
+    this.notificationsRealtimeService?.emitOrderCreated({
+      id: order.id,
+      status: order.status,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      orderType: order.orderType,
+      paymentStatus: order.paymentStatus,
+      totalAmount: Number(order.totalAmount),
+      createdAt: order.createdAt,
     });
   }
 

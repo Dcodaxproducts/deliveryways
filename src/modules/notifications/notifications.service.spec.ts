@@ -32,6 +32,9 @@ describe('NotificationsService', () => {
   let pushNotificationsService: {
     sendToTokens: jest.Mock;
   };
+  let notificationsRealtimeService: {
+    emitOrderCreated: jest.Mock;
+  };
 
   beforeEach(() => {
     notificationsRepository = {
@@ -59,11 +62,16 @@ describe('NotificationsService', () => {
     pushNotificationsService = {
       sendToTokens: jest.fn().mockResolvedValue([]),
     };
+    notificationsRealtimeService = {
+      emitOrderCreated: jest.fn(),
+    };
 
     service = new NotificationsService(
       notificationsRepository as never,
       mailerService as never,
       pushNotificationsService as never,
+      undefined,
+      notificationsRealtimeService as never,
     );
   });
 
@@ -340,8 +348,11 @@ describe('NotificationsService', () => {
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
       customerId: 'user-1',
+      status: 'PLACED',
+      orderType: 'DELIVERY',
       totalAmount: 450,
       paymentStatus: 'PENDING',
+      createdAt: new Date('2026-07-23T12:00:00.000Z'),
       customer: {
         email: 'customer@example.com',
         profile: {
@@ -389,6 +400,16 @@ describe('NotificationsService', () => {
         type: NotificationType.ORDER_PLACED,
       }),
     );
+    expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith({
+      id: 'order-1',
+      status: 'PLACED',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderType: 'DELIVERY',
+      paymentStatus: 'PENDING',
+      totalAmount: 450,
+      createdAt: new Date('2026-07-23T12:00:00.000Z'),
+    });
   });
 
   it('creates deliveryman in-app notification when assigned order status changes', async () => {

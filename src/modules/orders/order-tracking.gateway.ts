@@ -7,11 +7,17 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { Server, Socket } from 'socket.io';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
+import { NotificationsRealtimeService } from '../notifications';
 import { OrdersService } from './orders.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
 
@@ -43,16 +49,22 @@ export class OrderTrackingGateway
     private readonly configService: ConfigService,
     private readonly ordersService: OrdersService,
     private readonly orderTrackingRealtimeService: OrderTrackingRealtimeService,
+    private readonly notificationsRealtimeService: NotificationsRealtimeService,
   ) {}
 
   afterInit(server: Server) {
     this.orderTrackingRealtimeService.registerServer(server);
+    this.notificationsRealtimeService.registerServer(server);
   }
 
   async handleConnection(client: OrderTrackingSocket) {
     try {
       const user = await this.authenticate(client);
       this.setSocketUser(client, user);
+      const adminOrdersRoom = this.getAdminOrdersRoom(user);
+      if (adminOrdersRoom) {
+        await client.join(adminOrdersRoom);
+      }
       this.logger.log(
         `Order tracking socket connected: ${client.id} (${user.uid})`,
       );
@@ -149,6 +161,33 @@ export class OrderTrackingGateway
 
   private setSocketUser(client: OrderTrackingSocket, user: AuthUserContext) {
     (client.data as { user?: AuthUserContext }).user = user;
+  }
+
+  private getAdminOrdersRoom(user: AuthUserContext) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.rid) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      return this.notificationsRealtimeService.getRestaurantOrdersRoom(
+        user.rid,
+      );
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      if (!user.rid || !user.bid) {
+        throw new ForbiddenException(
+          'Restaurant and branch context are required',
+        );
+      }
+
+      return this.notificationsRealtimeService.getBranchOrdersRoom(
+        user.rid,
+        user.bid,
+      );
+    }
+
+    return null;
   }
 
   private getSocketUser(client: OrderTrackingSocket) {
