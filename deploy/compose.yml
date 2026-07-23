@@ -99,11 +99,11 @@ services:
       context: ../../deliveryway-restaurant-admin
       target: production
       args:
-        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     environment:
-      NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     depends_on:
