@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -10,7 +11,11 @@ import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
 import { PrismaTx } from '../../common/types';
 import { TenantsRepository } from './tenants.repository';
-import { CreateTenantDto, UpdateTenantDto } from './dto';
+import {
+  CreateTenantDto,
+  UpdateBusinessOwnerDetailsDto,
+  UpdateTenantDto,
+} from './dto';
 import { StorageService } from '../storage/storage.service';
 import { UsersService } from '../users/users.service';
 
@@ -141,6 +146,99 @@ export class TenantsService {
       data: { ownerId: owner.id, email: owner.email },
       message: 'Business owner password updated successfully',
     };
+  }
+
+  async updateBusinessOwnerDetails(
+    user: AuthUserContext,
+    tenantId: string,
+    dto: UpdateBusinessOwnerDetailsDto,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can update business owner details',
+      );
+    }
+
+    const tenant = await this.tenantsRepository.findDetailsById(tenantId);
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+    if (!tenant.owner) {
+      throw new NotFoundException('Business owner not found');
+    }
+    const owner = tenant.owner;
+
+    const normalizedEmail = dto.owner?.email?.trim().toLowerCase();
+    if (normalizedEmail && normalizedEmail !== owner.email) {
+      const existingUser = await this.usersService.findByEmail(
+        normalizedEmail,
+        owner.restaurantId ?? undefined,
+      );
+      if (existingUser && existingUser.id !== owner.id) {
+        throw new ConflictException(
+          'A user with this email already exists for the restaurant',
+        );
+      }
+    }
+
+    await this.tenantsRepository.transaction(async (tx) => {
+      if (dto.tenant) {
+        await this.tenantsRepository.update(
+          tenantId,
+          {
+            name: dto.tenant.name,
+            bio: dto.tenant.bio,
+            logoUrl: dto.tenant.logoUrl,
+            isActive: dto.tenant.isActive,
+            socialLinks: dto.tenant.socialLinks as Prisma.InputJsonValue,
+            brandingConfig: dto.tenant.brandingConfig as Prisma.InputJsonValue,
+            settings: dto.tenant.settings as Prisma.InputJsonValue,
+          },
+          tx,
+        );
+      }
+
+      if (dto.owner) {
+        const profile = owner.profile;
+        const profileChanged =
+          dto.owner.firstName !== undefined ||
+          dto.owner.lastName !== undefined ||
+          dto.owner.phone !== undefined ||
+          dto.owner.avatarUrl !== undefined ||
+          dto.owner.bio !== undefined;
+
+        await this.usersService.update(
+          owner.id,
+          {
+            email: normalizedEmail,
+            isActive: dto.owner.isActive,
+            isApproved: dto.owner.isApproved,
+            isVerified: dto.owner.isVerified,
+            profile: profileChanged
+              ? {
+                  firstName: dto.owner.firstName ?? profile?.firstName ?? '',
+                  lastName: dto.owner.lastName ?? profile?.lastName ?? '',
+                  phone: dto.owner.phone ?? profile?.phone ?? undefined,
+                  avatarUrl:
+                    dto.owner.avatarUrl ?? profile?.avatarUrl ?? undefined,
+                  bio: dto.owner.bio ?? profile?.bio ?? undefined,
+                }
+              : undefined,
+          },
+          tx,
+        );
+
+        if (dto.owner.password) {
+          await this.usersService.updatePassword(
+            owner.id,
+            dto.owner.password,
+            tx,
+          );
+        }
+      }
+    });
+
+    return this.tenantDetails(user, tenantId);
   }
 
   async updateTenant(

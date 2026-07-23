@@ -42,9 +42,14 @@ export class TenantsRepository {
           select: {
             id: true,
             email: true,
+            role: true,
+            restaurantId: true,
+            branchId: true,
             isActive: true,
             isApproved: true,
             isVerified: true,
+            createdAt: true,
+            updatedAt: true,
             profile: {
               select: {
                 firstName: true,
@@ -52,6 +57,22 @@ export class TenantsRepository {
                 phone: true,
                 avatarUrl: true,
                 bio: true,
+              },
+            },
+          },
+        },
+        tenantSubscriptions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            packagePlan: {
+              select: {
+                id: true,
+                name: true,
+                billingModel: true,
+                billingInterval: true,
+                currency: true,
+                planPrice: true,
               },
             },
           },

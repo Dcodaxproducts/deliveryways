@@ -61,6 +61,7 @@ export class UsersService {
         verificationOtpAttempts: dto.verificationOtpAttempts,
         isVerified: dto.isVerified,
         isApproved: dto.isApproved,
+        isActive: dto.isActive,
         isGuest: dto.isGuest,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
@@ -275,9 +276,9 @@ export class UsersService {
     });
   }
 
-  async updatePassword(userId: string, plainPassword: string) {
+  async updatePassword(userId: string, plainPassword: string, tx?: PrismaTx) {
     const hashed = await bcrypt.hash(plainPassword, 10);
-    return this.usersRepository.update(userId, { password: hashed });
+    return this.usersRepository.update(userId, { password: hashed }, tx);
   }
 
   async softDeleteUser(userId: string) {

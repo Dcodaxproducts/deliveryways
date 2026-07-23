@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserRoleEnum } from '../../common/enums';
 import { TenantsService } from './tenants.service';
 
@@ -26,6 +30,8 @@ describe('TenantsService', () => {
       ),
     };
     const usersService = {
+      findByEmail: jest.fn(),
+      update: jest.fn(),
       updatePassword: jest.fn(),
     };
 
@@ -98,6 +104,8 @@ describe('TenantsService', () => {
       isApproved: true,
       isVerified: true,
       ownerId: 'owner-1',
+      // Jest asymmetric matchers are intentionally untyped.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       owner: expect.objectContaining({ email: 'owner@example.com' }),
       deletionState: {
         isDeleted: false,
@@ -182,6 +190,113 @@ describe('TenantsService', () => {
       message: 'Business owner password updated successfully',
     });
     expect(result.data).not.toHaveProperty('password');
+  });
+
+  it('updates owner account and tenant business data in one transaction', async () => {
+    const { service, tenantsRepository, usersService } = makeService();
+    const tenant = {
+      id: 'tenant-1',
+      name: 'Old Business',
+      slug: 'old-business',
+      isActive: true,
+      deletedAt: null,
+      owner: {
+        id: 'owner-1',
+        email: 'owner@example.com',
+        restaurantId: 'restaurant-1',
+        isActive: true,
+        isApproved: true,
+        isVerified: true,
+        profile: {
+          firstName: 'Old',
+          lastName: 'Owner',
+          phone: '111',
+          avatarUrl: null,
+          bio: null,
+        },
+      },
+    };
+    tenantsRepository.findDetailsById.mockResolvedValue(tenant);
+    usersService.findByEmail.mockResolvedValue(null);
+
+    await service.updateBusinessOwnerDetails(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      'tenant-1',
+      {
+        owner: {
+          email: 'NEW@EXAMPLE.COM',
+          firstName: 'New',
+          lastName: 'Owner',
+          phone: '222',
+          password: 'NewPassword@123',
+        },
+        tenant: {
+          name: 'New Business',
+          bio: 'Updated business',
+          isActive: true,
+        },
+      },
+    );
+
+    expect(tenantsRepository.transaction).toHaveBeenCalledTimes(1);
+    expect(tenantsRepository.update).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({
+        name: 'New Business',
+        bio: 'Updated business',
+        isActive: true,
+      }),
+      {},
+    );
+    expect(usersService.update).toHaveBeenCalledWith(
+      'owner-1',
+      expect.objectContaining({
+        email: 'new@example.com',
+        // Jest asymmetric matchers are intentionally untyped.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        profile: expect.objectContaining({
+          firstName: 'New',
+          lastName: 'Owner',
+          phone: '222',
+        }),
+      }),
+      {},
+    );
+    expect(usersService.updatePassword).toHaveBeenCalledWith(
+      'owner-1',
+      'NewPassword@123',
+      {},
+    );
+  });
+
+  it('rejects an owner email already used by another restaurant user', async () => {
+    const { service, tenantsRepository, usersService } = makeService();
+    tenantsRepository.findDetailsById.mockResolvedValue({
+      id: 'tenant-1',
+      owner: {
+        id: 'owner-1',
+        email: 'owner@example.com',
+        restaurantId: 'restaurant-1',
+        profile: {
+          firstName: 'Business',
+          lastName: 'Owner',
+        },
+      },
+    });
+    usersService.findByEmail.mockResolvedValue({
+      id: 'another-user',
+      email: 'taken@example.com',
+    });
+
+    await expect(
+      service.updateBusinessOwnerDetails(
+        { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+        'tenant-1',
+        { owner: { email: 'taken@example.com' } },
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(tenantsRepository.transaction).not.toHaveBeenCalled();
   });
 
   it('force deletes tenant and related records for super admin', async () => {

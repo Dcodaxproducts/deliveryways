@@ -15,16 +15,20 @@ import { AuthUserContext } from '../../common/decorators';
 import {
   JwtAuthGuard,
   RolesGuard,
-  TenantAccessGuard,
+  TenantAccessGuard as TenantGuard,
 } from '../../common/guards';
 import { RolesEnum } from '../../common/enums';
 import { Roles } from '../../common/decorators';
 import { TenantsService } from './tenants.service';
-import { ResetOwnerPasswordDto, UpdateTenantDto } from './dto';
+import {
+  ResetOwnerPasswordDto,
+  UpdateBusinessOwnerDetailsDto,
+  UpdateTenantDto,
+} from './dto';
 
 @ApiTags('Tenants')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
 @Controller('tenants')
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
@@ -69,6 +73,16 @@ export class TenantsController {
     @Body() dto: ResetOwnerPasswordDto,
   ) {
     return this.tenantsService.resetOwnerPassword(user, id, dto.password);
+  }
+
+  @Patch(':id/business-owner')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  updateBusinessOwnerDetails(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateBusinessOwnerDetailsDto,
+  ) {
+    return this.tenantsService.updateBusinessOwnerDetails(user, id, dto);
   }
 
   @Patch(':id')
