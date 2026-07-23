@@ -2030,7 +2030,7 @@ describe('CustomerAppService', () => {
         fontFamily: 'Inter',
       },
     });
-    expect(result.data.branch).toEqual({
+    expect(result.data.branch).toMatchObject({
       id: 'branch-1',
       name: 'Main Branch',
       logoUrl: null,

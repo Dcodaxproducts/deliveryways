@@ -7,6 +7,7 @@ import {
   ListCuisinesQueryDto,
   ListCustomerFavoritesQueryDto,
   ListPublicOrderReviewsQueryDto,
+  ListPublicMenuItemsQueryDto,
   ListPromotionalItemsQueryDto,
   PublicRestaurantQueryDto,
 } from './dto';
@@ -23,9 +24,7 @@ const restaurantMenuScheduleSelect = {
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  private buildPublicMenuItemInclude(
-    branchId?: string,
-  ): Prisma.MenuItemInclude {
+  private buildPublicMenuItemInclude(branchId?: string) {
     return {
       restaurant: {
         select: {
@@ -176,7 +175,7 @@ export class CustomerAppRepository {
             take: 1,
           }
         : false,
-    };
+    } satisfies Prisma.MenuItemInclude;
   }
 
   private buildPublicMenuItemVisibilityWhere(
@@ -1213,6 +1212,66 @@ export class CustomerAppRepository {
               }
             : false,
         },
+      }),
+      this.prisma.menuItem.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  async listPublicMenuItems(
+    query: ListPublicMenuItemsQueryDto & { restaurantId: string },
+  ) {
+    const restaurantId = query.restaurantId;
+    const branchId = query.branchId;
+    const search = query.search?.trim();
+    const now = new Date();
+    const where: Prisma.MenuItemWhereInput = {
+      restaurantId,
+      deletedAt: null,
+      isActive: true,
+      ...(query.categoryId
+        ? {
+            OR: [
+              { categoryId: query.categoryId },
+              { categoryLinks: { some: { menuCategoryId: query.categoryId } } },
+            ],
+          }
+        : {}),
+      ...(search
+        ? {
+            AND: [
+              {
+                OR: [
+                  { name: { contains: search, mode: 'insensitive' } },
+                  { slug: { contains: search, mode: 'insensitive' } },
+                  { description: { contains: search, mode: 'insensitive' } },
+                  { sku: { contains: search, mode: 'insensitive' } },
+                ],
+              },
+            ],
+          }
+        : {}),
+      ...(query.supportsSplitPizza === true
+        ? { supportsSplitPizza: true }
+        : {}),
+      OR: [
+        this.buildPublicMenuItemVisibilityWhere(branchId),
+        this.buildDealScopedMenuItemVisibilityWhere(
+          restaurantId,
+          branchId,
+          now,
+        ),
+      ],
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.menuItem.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { createdAt: 'desc' }],
+        include: this.buildPublicMenuItemInclude(branchId),
       }),
       this.prisma.menuItem.count({ where }),
     ]);

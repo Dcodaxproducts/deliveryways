@@ -136,6 +136,49 @@ export class ListCuisinesQueryDto extends QueryDto {
   limit = 20;
 }
 
+export class ListPublicMenuItemsQueryDto extends QueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional for authenticated customers; token restaurant scope is used when available',
+  })
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional locale for translated public content, e.g. de, ar, pt-br',
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
+
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit = 20;
+
+  @ApiPropertyOptional({ description: 'Filter split pizza-capable items' })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined ? undefined : value === true || value === 'true',
+  )
+  supportsSplitPizza?: boolean;
+}
+
 export class ListCuisineItemsQueryDto extends QueryDto {
   @ApiPropertyOptional({
     description:

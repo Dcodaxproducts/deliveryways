@@ -32,6 +32,7 @@ import {
   ListCustomerGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
   ListPublicOrderReviewsQueryDto,
+  ListPublicMenuItemsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
   PublicBranchStatsQueryDto,
@@ -146,9 +147,11 @@ type PublicRestaurantMenuScheduleLink = {
 
 type PublicMenuItemScheduleCarrier = {
   menuLinks?: PublicRestaurantMenuScheduleLink[];
-  category?: {
-    menuLinks?: PublicRestaurantMenuScheduleLink[];
-  } | null;
+  category?:
+    | ({
+        menuLinks?: PublicRestaurantMenuScheduleLink[];
+      } & Record<string, unknown>)
+    | null;
   categoryLinks?: Array<{
     menuCategory?: {
       menuLinks?: PublicRestaurantMenuScheduleLink[];
@@ -675,7 +678,11 @@ export class CustomerAppService {
         cuisineId,
         resolvedQuery,
       );
-    const visibleItems = this.filterAvailableMenuItems(items);
+    const visibleItems = items.filter((item) =>
+      this.isMenuItemAvailableForCurrentSchedule(
+        item as PublicMenuItemScheduleCarrier,
+      ),
+    );
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
@@ -764,6 +771,42 @@ export class CustomerAppService {
         ),
       ),
       message: 'Promotional cuisines fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async listItems(query: ListPublicMenuItemsQueryDto, user?: AuthUserContext) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const { items, total } =
+      await this.customerAppRepository.listPublicMenuItems(resolvedQuery);
+    const visibleItems = items.filter((item) =>
+      this.isMenuItemAvailableForCurrentSchedule(
+        item as PublicMenuItemScheduleCarrier,
+      ),
+    );
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      visibleItems.flatMap((item) => this.collectMenuItemTranslationRefs(item)),
+    );
+
+    return {
+      data: await Promise.all(
+        visibleItems.map((item) =>
+          this.mapMenuItem(
+            item,
+            promotionContext.promotions,
+            promotionContext.happyHours,
+            translationContext,
+          ),
+        ),
+      ),
+      message: 'Menu items fetched successfully',
       meta: buildPaginationMeta(query, total),
     };
   }
@@ -1048,16 +1091,46 @@ export class CustomerAppService {
       this.resolveHomeCurrency(restaurant.settings),
       this.resolveHomeTimezone(),
     ]);
+    const [restaurantLogoUrl, restaurantCoverImage, branchLogoUrl, branchCoverImage] =
+      await Promise.all([
+        this.resolveMediaUrl(translatedRestaurant.logoUrl),
+        this.resolveMediaUrl(translatedRestaurant.coverImage),
+        this.resolveMediaUrl(translatedBranch?.logoUrl ?? null),
+        this.resolveMediaUrl(translatedBranch?.coverImage ?? null),
+      ]);
+    const storefrontLogoUrl = branchLogoUrl ?? restaurantLogoUrl;
+    const storefrontContactInfo = branchContactInfo ?? restaurantContactInfo;
+    const restaurantPublicAddress = this.mapPublicAddress(
+      restaurantAddress,
+      'shopNumber',
+    );
+    const branchPublicAddress = this.mapPublicAddress(branchAddress, 'shopNumber');
+    const footer = {
+      logoUrl: storefrontLogoUrl,
+      restaurantLogoUrl,
+      branchLogoUrl,
+      contactInfo: storefrontContactInfo,
+      contacts: storefrontContactInfo,
+      phone: storefrontContactInfo.phone,
+      whatsapp: storefrontContactInfo.whatsapp,
+      email: storefrontContactInfo.email,
+      address: branchPublicAddress ?? restaurantPublicAddress,
+      socialMediaLinks: this.extractSocialMediaLinks(
+        translatedRestaurant.socialMedia,
+        restaurant.settings,
+      ),
+    };
 
     return {
       data: {
         restaurant: {
           id: translatedRestaurant.id,
           name: translatedRestaurant.name,
-          logoUrl: await this.resolveMediaUrl(translatedRestaurant.logoUrl),
-          coverImage: await this.resolveMediaUrl(
-            translatedRestaurant.coverImage,
-          ),
+          logoUrl: restaurantLogoUrl,
+          restaurantLogoUrl,
+          storefrontLogoUrl,
+          businessLogo: null,
+          coverImage: restaurantCoverImage,
           tagline: translatedRestaurant.tagline,
           bio: translatedRestaurant.bio,
           socialMediaLinks: this.extractSocialMediaLinks(
@@ -1068,8 +1141,16 @@ export class CustomerAppService {
           phone: restaurantContactInfo.phone,
           whatsapp: restaurantContactInfo.whatsapp,
           email: restaurantContactInfo.email,
-          address: this.mapPublicAddress(restaurantAddress, 'shopNumber'),
+          contacts: restaurantContactInfo,
+          address: restaurantPublicAddress,
         },
+        contactInfo: storefrontContactInfo,
+        contacts: storefrontContactInfo,
+        footer,
+        logoUrl: storefrontLogoUrl,
+        restaurantLogoUrl,
+        storefrontLogoUrl,
+        businessLogo: null,
         config: {
           currency,
           timezone,
@@ -1079,18 +1160,18 @@ export class CustomerAppService {
           ? {
               id: translatedBranch.id,
               name: translatedBranch.name,
-              logoUrl: await this.resolveMediaUrl(
-                translatedBranch.logoUrl ?? null,
-              ),
-              coverImage: await this.resolveMediaUrl(
-                translatedBranch.coverImage,
-              ),
+              logoUrl: branchLogoUrl,
+              restaurantLogoUrl,
+              storefrontLogoUrl,
+              businessLogo: null,
+              coverImage: branchCoverImage,
               description: translatedBranch.description,
               contactInfo: branchContactInfo,
               phone: branchContactInfo?.phone ?? null,
               whatsapp: branchContactInfo?.whatsapp ?? null,
               email: branchContactInfo?.email ?? null,
-              address: this.mapPublicAddress(branchAddress, 'shopNumber'),
+              contacts: branchContactInfo,
+              address: branchPublicAddress,
               isOpen: this.isBranchOpenNow(translatedBranch.settings),
               scheduleTimings: {
                 timezone,
