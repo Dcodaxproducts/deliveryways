@@ -31,6 +31,8 @@ import {
   ListAdminTableReservationsQueryDto,
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
+  ListMenuCategoriesQueryDto,
+  ListMenuCategoryItemsQueryDto,
   ListCustomerFavoritesQueryDto,
   ListCustomerGiftCardsQueryDto,
   ListPublicGiftCardsQueryDto,
@@ -156,6 +158,33 @@ export class CustomerAppController {
     @Query() query: PublicRestaurantQueryDto,
   ) {
     return this.customerAppService.getFaqs(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('categories')
+  @ApiOperation({ summary: 'List public restaurant menu categories' })
+  listMenuCategories(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Query() query: ListMenuCategoriesQueryDto,
+  ) {
+    return this.customerAppService.listMenuCategories(query, user);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('categories/:categoryId/items')
+  @ApiOperation({ summary: 'List public menu items for a menu category' })
+  listMenuCategoryItems(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Param('categoryId') categoryId: string,
+    @Query() query: ListMenuCategoryItemsQueryDto,
+  ) {
+    return this.customerAppService.listMenuCategoryItems(
+      categoryId,
+      query,
+      user,
+    );
   }
 
   @Public()

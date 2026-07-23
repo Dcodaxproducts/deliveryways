@@ -5,6 +5,7 @@ import {
   HomeScreenQueryDto,
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
+  ListMenuCategoriesQueryDto,
   ListCustomerFavoritesQueryDto,
   ListPublicOrderReviewsQueryDto,
   ListPublicMenuItemsQueryDto,
@@ -888,6 +889,92 @@ export class CustomerAppRepository {
             ? Number(summary._avg.rating.toFixed(2))
             : null,
       },
+    };
+  }
+
+  async listMenuCategories(
+    query: ListMenuCategoriesQueryDto,
+    scope?: { categoryIds?: string[]; includeItems?: boolean },
+  ) {
+    const branchId = query.branchId;
+    const categoryIds = scope?.categoryIds ?? [];
+    const includeItems = scope?.includeItems ?? false;
+    const itemVisibilityWhere: Prisma.MenuItemWhereInput = {
+      restaurantId: query.restaurantId,
+      deletedAt: null,
+      isActive: true,
+      ...(branchId
+        ? {
+            OR: [
+              { branchOverrides: { none: { branchId } } },
+              {
+                branchOverrides: {
+                  some: { branchId, isAvailable: true },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const where: Prisma.MenuCategoryWhereInput = {
+      restaurantId: query.restaurantId,
+      deletedAt: null,
+      isActive: true,
+      ...(categoryIds.length ? { id: { in: categoryIds } } : {}),
+      ...(branchId
+        ? {
+            OR: [
+              { overrides: { none: { branchId } } },
+              { overrides: { some: { branchId, isVisible: true } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.menuCategory.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        include: {
+          _count: {
+            select: {
+              itemLinks: { where: { menuItem: itemVisibilityWhere } },
+            },
+          },
+          itemLinks: includeItems
+            ? {
+                where: { menuItem: itemVisibilityWhere },
+                orderBy: [{ sortOrder: 'asc' }],
+                include: {
+                  menuItem: {
+                    include: this.buildPublicMenuItemInclude(branchId),
+                  },
+                },
+              }
+            : false,
+        },
+      }),
+      this.prisma.menuCategory.count({ where }),
+    ]);
+
+    return {
+      items: items.map((item) => {
+        const linkedItems = includeItems
+          ? (item.itemLinks as unknown as Array<{ menuItem: unknown }>)
+          : [];
+
+        return {
+          ...item,
+          categoryIds: [item.id],
+          _count: { items: item._count.itemLinks },
+          items: includeItems
+            ? linkedItems.map((link) => link.menuItem)
+            : undefined,
+        };
+      }),
+      total,
     };
   }
 

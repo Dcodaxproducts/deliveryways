@@ -210,6 +210,10 @@ export class ListCuisineItemsQueryDto extends QueryDto {
   limit = 20;
 }
 
+export class ListMenuCategoriesQueryDto extends ListCuisinesQueryDto {}
+
+export class ListMenuCategoryItemsQueryDto extends ListCuisineItemsQueryDto {}
+
 export class ListPromotionalItemsQueryDto extends PublicRestaurantQueryDto {
   @ApiPropertyOptional({ default: 8, minimum: 1, maximum: 25 })
   @IsOptional()

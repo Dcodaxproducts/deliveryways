@@ -28,6 +28,8 @@ import {
   ListAdminTableReservationsQueryDto,
   ListCuisineItemsQueryDto,
   ListCuisinesQueryDto,
+  ListMenuCategoriesQueryDto,
+  ListMenuCategoryItemsQueryDto,
   ListCustomerFavoritesQueryDto,
   ListCustomerGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
@@ -623,6 +625,50 @@ export class CustomerAppService {
     };
   }
 
+  async listMenuCategories(
+    query: ListMenuCategoriesQueryDto,
+    user?: AuthUserContext,
+  ) {
+    const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
+    await this.getPublicContent(resolvedQuery, user);
+    const promotionContext = await this.loadPromotionContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.branchId,
+    );
+    const { items, total } =
+      await this.customerAppRepository.listMenuCategories(resolvedQuery, {
+        includeItems: false,
+      });
+    const translationContext = await this.loadTranslationContext(
+      resolvedQuery.restaurantId,
+      resolvedQuery.locale,
+      this.collectMenuCategoryTranslationRefs(items),
+    );
+
+    return {
+      data: await Promise.all(
+        items.map((item) =>
+          this.mapMenuCategory(
+            item,
+            promotionContext.promotions,
+            promotionContext.happyHours,
+            translationContext,
+          ),
+        ),
+      ),
+      message: 'Menu categories fetched successfully',
+      meta: buildPaginationMeta(query, total),
+    };
+  }
+
+  async listMenuCategoryItems(
+    categoryId: string,
+    query: ListMenuCategoryItemsQueryDto,
+    user?: AuthUserContext,
+  ) {
+    return this.listItems({ ...query, categoryId }, user);
+  }
+
   async listCuisines(query: ListCuisinesQueryDto, user?: AuthUserContext) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     await this.getPublicContent(resolvedQuery, user);
@@ -1011,7 +1057,7 @@ export class CustomerAppService {
       resolvedQuery.branchId,
     );
     const [cuisines, promotionalItems, faqs] = await Promise.all([
-      this.customerAppRepository.listCuisineCategories(
+      this.customerAppRepository.listMenuCategories(
         {
           ...resolvedQuery,
           page: 1,
@@ -1045,7 +1091,7 @@ export class CustomerAppService {
         ...(branch
           ? [{ entityType: 'BRANCH' as const, entityId: branch.id }]
           : []),
-        ...this.collectCuisineTranslationRefs(cuisines.items),
+        ...this.collectMenuCategoryTranslationRefs(cuisines.items),
         ...visiblePromotionalItems.flatMap((item) =>
           this.collectMenuItemTranslationRefs(item),
         ),
@@ -1091,20 +1137,27 @@ export class CustomerAppService {
       this.resolveHomeCurrency(restaurant.settings),
       this.resolveHomeTimezone(),
     ]);
-    const [restaurantLogoUrl, restaurantCoverImage, branchLogoUrl, branchCoverImage] =
-      await Promise.all([
-        this.resolveMediaUrl(translatedRestaurant.logoUrl),
-        this.resolveMediaUrl(translatedRestaurant.coverImage),
-        this.resolveMediaUrl(translatedBranch?.logoUrl ?? null),
-        this.resolveMediaUrl(translatedBranch?.coverImage ?? null),
-      ]);
+    const [
+      restaurantLogoUrl,
+      restaurantCoverImage,
+      branchLogoUrl,
+      branchCoverImage,
+    ] = await Promise.all([
+      this.resolveMediaUrl(translatedRestaurant.logoUrl),
+      this.resolveMediaUrl(translatedRestaurant.coverImage),
+      this.resolveMediaUrl(translatedBranch?.logoUrl ?? null),
+      this.resolveMediaUrl(translatedBranch?.coverImage ?? null),
+    ]);
     const storefrontLogoUrl = branchLogoUrl ?? restaurantLogoUrl;
     const storefrontContactInfo = branchContactInfo ?? restaurantContactInfo;
     const restaurantPublicAddress = this.mapPublicAddress(
       restaurantAddress,
       'shopNumber',
     );
-    const branchPublicAddress = this.mapPublicAddress(branchAddress, 'shopNumber');
+    const branchPublicAddress = this.mapPublicAddress(
+      branchAddress,
+      'shopNumber',
+    );
     const footer = {
       logoUrl: storefrontLogoUrl,
       restaurantLogoUrl,
@@ -1206,7 +1259,7 @@ export class CustomerAppService {
           : null,
         cuisines: await Promise.all(
           cuisines.items.map((item) =>
-            this.mapCuisineCategory(
+            this.mapMenuCategory(
               item,
               promotionContext.promotions,
               promotionContext.happyHours,
@@ -2080,6 +2133,22 @@ export class CustomerAppService {
 
   private translationKey(entityType: LocalizationEntityType, entityId: string) {
     return `${entityType}:${entityId}`;
+  }
+
+  private collectMenuCategoryTranslationRefs(
+    categories: Array<{
+      id: string;
+      items?: unknown[];
+    }>,
+  ): EntityTranslationRef[] {
+    return categories.flatMap((category) => [
+      { entityType: 'MENU_CATEGORY', entityId: category.id },
+      ...(
+        (category.items ?? []) as Array<
+          Parameters<CustomerAppService['collectMenuItemTranslationRefs']>[0]
+        >
+      ).flatMap((item) => this.collectMenuItemTranslationRefs(item)),
+    ]);
   }
 
   private collectCuisineTranslationRefs(
@@ -3038,6 +3107,65 @@ export class CustomerAppService {
     return Array.from(modifierById.values()).sort(
       (left, right) => left.sortOrder - right.sortOrder,
     );
+  }
+
+  private async mapMenuCategory(
+    item: {
+      id: string;
+      name: string;
+      slug: string;
+      description?: string | null;
+      imageUrl?: string | null;
+      sortOrder?: number;
+      _count: { items: number };
+      items?: unknown[];
+      categoryIds?: string[];
+    },
+    promotions: Array<Record<string, unknown>> = [],
+    happyHours: Array<Record<string, unknown>> = [],
+    translationContext?: CustomerAppTranslationContext,
+  ) {
+    const translatedItem = this.applyEntityTranslation(
+      'MENU_CATEGORY',
+      item.id,
+      item,
+      translationContext,
+    );
+    const visibleItems = this.filterAvailableMenuItems(
+      (item.items ?? []) as PublicMenuItemScheduleCarrier[],
+    );
+
+    return {
+      id: item.id,
+      name: translatedItem.name,
+      slug: item.slug,
+      description: translatedItem.description ?? null,
+      imageUrl: await this.resolveMediaUrl(item.imageUrl),
+      sortOrder: item.sortOrder,
+      itemCount: item.items ? visibleItems.length : item._count.items,
+      ...(item.items
+        ? {
+            items: await Promise.all(
+              visibleItems.map((menuItem) =>
+                this.mapMenuItem(
+                  menuItem as Parameters<CustomerAppService['mapMenuItem']>[0],
+                  promotions,
+                  happyHours,
+                  translationContext,
+                ),
+              ),
+            ),
+          }
+        : {}),
+      promotion: this.resolveBestCategoryPromotion(
+        item.categoryIds ?? [item.id],
+        promotions,
+      ),
+      happyHour: this.resolveBestCategoryHappyHour(
+        item.categoryIds ?? [item.id],
+        happyHours,
+      ),
+    };
   }
 
   private async mapCuisineCategory(
