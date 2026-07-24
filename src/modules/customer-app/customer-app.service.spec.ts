@@ -847,7 +847,7 @@ describe('CustomerAppService', () => {
     expect(mailerService.sendEmail).not.toHaveBeenCalled();
   });
 
-  it('populates restaurant on promotional items', async () => {
+  it('returns compact promotional item cards without relation graphs', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -883,18 +883,22 @@ describe('CustomerAppService', () => {
       limit: 10,
     });
 
-    expect(result.data[0].restaurant).toEqual({
-      id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
-      logoUrl: 'https://cdn.example.com/logo.png',
-      tagline: 'Fresh food fast',
-    });
+    expect(repository.listPromotionalItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        limit: 10,
+      }),
+      {
+        menuItemIds: ['item-1'],
+        categoryIds: [],
+        includeDetails: false,
+      },
+    );
     expect(result.data[0].category).toEqual({
       id: 'category-1',
       name: 'Burgers',
       imageUrl: 'https://cdn.example.com/category.png',
     });
-    expect(result.data[0].depositAmount).toBe(100);
     expect(result.data[0].discountedBasePrice).toBe(719.1);
     expect(result.data[0].promotion).toEqual(
       expect.objectContaining({
@@ -908,40 +912,11 @@ describe('CustomerAppService', () => {
       { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
       { value: 'VEGAN', label: 'Vegan' },
     ]);
-    expect(result.data[0].allergenFlags).toEqual(['A', '1']);
-    expect(result.data[0].allergens).toEqual([{ code: 'A', label: 'Gluten' }]);
-    expect(result.data[0].additives).toEqual([
-      { code: '1', label: 'Coloring' },
-    ]);
-    expect(result.data[0]).toEqual(
-      expect.objectContaining({
-        isRequired: false,
-        minSelect: 0,
-        maxSelect: 1,
-      }),
-    );
-    expect(result.data[0].modifiers).toEqual([
-      expect.objectContaining({
-        id: 'modifier-1',
-        name: 'Extra Cheese',
-        priceDelta: 150,
-        isRequired: true,
-      }),
-    ]);
-    expect('modifierLinks' in result.data[0]).toBe(false);
-    expect(result.data[0].modifierPriceOverrides).toBe(
-      itemFixture.modifierPriceOverrides,
-    );
-    expect(result.data[0].variations).toEqual([
-      expect.objectContaining({
-        id: 'variation-1',
-        name: 'Large',
-        price: new Prisma.Decimal(899),
-        pickupPrice: null,
-        displayText: 'Large',
-      }),
-    ]);
-    expect('modifierGroups' in result.data[0]).toBe(false);
+    expect(result.data[0]).not.toHaveProperty('restaurant');
+    expect(result.data[0]).not.toHaveProperty('modifierLinks');
+    expect(result.data[0]).not.toHaveProperty('modifierPriceOverrides');
+    expect(result.data[0]).not.toHaveProperty('modifiers');
+    expect(result.data[0]).not.toHaveProperty('variations');
   });
 
   it('omits exhausted auto-apply promotions from public item promotion payloads', async () => {

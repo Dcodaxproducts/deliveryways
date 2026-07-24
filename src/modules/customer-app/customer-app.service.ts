@@ -887,6 +887,7 @@ export class CustomerAppService {
         categoryIds: promotionContext.hasBroadHappyHour
           ? []
           : promotionContext.categoryIds,
+        includeDetails: false,
       },
     );
     const visibleItems = this.filterAvailableMenuItems(items);
@@ -899,7 +900,7 @@ export class CustomerAppService {
     return {
       data: await Promise.all(
         visibleItems.map((item) =>
-          this.mapMenuItem(
+          this.mapHomeMenuItemCard(
             item,
             promotionContext.promotions,
             promotionContext.happyHours,
