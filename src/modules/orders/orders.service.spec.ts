@@ -5172,37 +5172,7 @@ describe('OrdersService - admin customer resolution', () => {
 });
 
 describe('OrdersService - wallet payment', () => {
-  it('rejects a payment method excluded by restaurant configuration', () => {
-    const service = new OrdersService(
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-    const isPaymentAllowed = (
-      service as unknown as {
-        isPaymentAllowed: (
-          settings: { allowedPaymentMethods: string[] },
-          paymentMethod: string,
-          activeGlobalPaymentMethods: string[],
-          restaurantPaymentMethods: string[],
-        ) => boolean;
-      }
-    ).isPaymentAllowed.bind(service);
-
-    expect(
-      isPaymentAllowed(
-        { allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE] },
-        PaymentMethod.STRIPE,
-        [PaymentMethod.STRIPE],
-        [PaymentMethod.COD],
-      ),
-    ).toBe(false);
-  });
-
-  it('allows checkout with a globally active payment method absent from branch settings', async () => {
+  it('keeps restaurant settlement settings separate from checkout methods', async () => {
     const paymentTransactionCreate = jest.fn();
     const ordersRepository = {
       create: jest.fn().mockResolvedValue({
@@ -5409,7 +5379,7 @@ describe('OrdersService - wallet payment', () => {
             settings: {
               payments: {
                 methods: {
-                  allowedPaymentMethods: ['STRIPE'],
+                  allowedPaymentMethods: ['COD'],
                 },
               },
             },

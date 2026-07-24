@@ -358,9 +358,8 @@ export class CustomerAppService {
           allowedOrderTypes: this.readStringArrayValue(branch.settings, [
             ['allowedOrderTypes'],
           ]),
-          allowedPaymentMethods: this.resolveEffectivePaymentMethods(
+          allowedPaymentMethods: this.resolveCheckoutPaymentMethods(
             branch.settings,
-            restaurant.settings,
             activePlatformMethods,
           ),
           openingHours: this.readBranchScheduleHours(
@@ -1298,9 +1297,8 @@ export class CustomerAppService {
                   translatedBranch.settings,
                   [['allowedOrderTypes']],
                 ),
-                allowedPaymentMethods: this.resolveEffectivePaymentMethods(
+                allowedPaymentMethods: this.resolveCheckoutPaymentMethods(
                   translatedBranch.settings,
-                  restaurant.settings,
                   activePlatformMethods,
                 ),
               },
@@ -4699,9 +4697,8 @@ export class CustomerAppService {
     return [];
   }
 
-  private resolveEffectivePaymentMethods(
+  private resolveCheckoutPaymentMethods(
     branchSettings: unknown,
-    restaurantSettings: unknown,
     activePlatformMethods: PaymentMethod[],
   ) {
     const fallbackMethods = [
@@ -4714,20 +4711,7 @@ export class CustomerAppService {
       this.readPath(branchSettings, ['allowedPaymentMethods']),
       fallbackMethods,
     );
-    const restaurantMethods = this.readPaymentMethods(
-      this.readPath(restaurantSettings, [
-        'payments',
-        'methods',
-        'allowedPaymentMethods',
-      ]),
-      fallbackMethods,
-    );
-
-    return restaurantMethods.filter(
-      (method) =>
-        branchMethods.includes(method) ||
-        activePlatformMethods.includes(method),
-    );
+    return [...new Set([...branchMethods, ...activePlatformMethods])];
   }
 
   private readPaymentMethods(input: unknown, fallback: PaymentMethod[]) {
