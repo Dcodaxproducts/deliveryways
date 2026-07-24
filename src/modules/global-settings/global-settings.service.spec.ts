@@ -8,6 +8,29 @@ import {
   PaymentMethodSettingsShape,
 } from './global-settings.service';
 
+const emptyLandingPage = {
+  hero: {
+    eyebrowEn: null,
+    eyebrowDe: null,
+    headingEn: null,
+    headingDe: null,
+    subheadingEn: null,
+    subheadingDe: null,
+  },
+  contentEn: null,
+  contentDe: null,
+};
+
+const emptyLandingPages = {
+  services: emptyLandingPage,
+  pricing: emptyLandingPage,
+  about: emptyLandingPage,
+  privacyPolicy: emptyLandingPage,
+  support: emptyLandingPage,
+  termsOfService: emptyLandingPage,
+  contact: emptyLandingPage,
+};
+
 describe('GlobalSettingsService', () => {
   let service: GlobalSettingsService;
   let repositoryImpl: {
@@ -95,6 +118,7 @@ describe('GlobalSettingsService', () => {
             instagram: null,
             youtube: null,
           },
+          pages: emptyLandingPages,
           faqs: [],
         },
         paymentMethods: [
@@ -338,10 +362,7 @@ describe('GlobalSettingsService', () => {
           instagram: 'https://instagram.com/deliveryway',
           facebook: null,
         }),
-        faqs: [
-          expect.objectContaining({ id: 'faq-first', isActive: true }),
-          expect.objectContaining({ id: 'faq-second', isActive: false }),
-        ],
+        faqs: [expect.objectContaining({ id: 'faq-first', isActive: true })],
       }),
       message: 'Landing page settings fetched successfully',
     });
@@ -393,6 +414,7 @@ describe('GlobalSettingsService', () => {
           facebook: 'https://facebook.com/old',
           instagram: 'https://instagram.com/new',
         },
+        pages: emptyLandingPages,
         faqs: [
           {
             id: 'existing',
@@ -406,6 +428,63 @@ describe('GlobalSettingsService', () => {
         ],
       },
     });
+  });
+
+  it('updates bilingual landing pages and sanitizes rich text', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {
+        supportEmail: 'old@example.com',
+        pages: {
+          about: {
+            hero: { headingEn: 'Old heading' },
+            contentEn: '<p>Old content</p>',
+          },
+        },
+      },
+    });
+    updateSingletonSpy.mockImplementation((update) =>
+      Promise.resolve({
+        scopeKey: 'GLOBAL',
+        landingPageSettings: update.landingPageSettings,
+      }),
+    );
+
+    const result = await service.updateLandingPageSettings(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        pages: {
+          about: {
+            hero: {
+              headingEn: 'About DeliveryWay',
+              headingDe: 'Über DeliveryWay',
+            },
+            contentEn:
+              '<h2 onclick="alert(1)">Story</h2><script>alert(1)</script>',
+            contentDe: '<p>Unsere Geschichte</p>',
+          },
+        },
+      },
+    );
+
+    const [update] = updateSingletonSpy.mock.calls[0];
+    expect(update).toMatchObject({
+      updatedBy: 'admin-1',
+      landingPageSettings: {
+        supportEmail: 'old@example.com',
+        pages: {
+          about: {
+            hero: {
+              headingEn: 'About DeliveryWay',
+              headingDe: 'Über DeliveryWay',
+            },
+            contentEn: '<h2>Story</h2>',
+            contentDe: '<p>Unsere Geschichte</p>',
+          },
+        },
+      },
+    });
+    expect(result.data.pages.about.contentEn).toBe('<h2>Story</h2>');
   });
 
   it('keeps deprecated platform service charge config available for fallback reads', async () => {

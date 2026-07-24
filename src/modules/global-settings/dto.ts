@@ -19,6 +19,7 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -139,25 +140,144 @@ class LandingPageSocialLinksDto {
   youtube?: string;
 }
 
+class LandingPageHeroDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100)
+  eyebrowEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100)
+  eyebrowDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(200)
+  headingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(200)
+  headingDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(500)
+  subheadingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(500)
+  subheadingDe?: string;
+}
+
+class LandingPageContentDto {
+  @ApiPropertyOptional({ type: LandingPageHeroDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageHeroDto)
+  hero?: LandingPageHeroDto;
+
+  @ApiPropertyOptional({
+    description: 'Sanitized rich-text HTML for the English page body.',
+  })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100000)
+  contentEn?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sanitized rich-text HTML for the German page body.',
+  })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100000)
+  contentDe?: string;
+}
+
+class LandingPagePagesDto {
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  services?: LandingPageContentDto;
+
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  pricing?: LandingPageContentDto;
+
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  about?: LandingPageContentDto;
+
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  privacyPolicy?: LandingPageContentDto;
+
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  support?: LandingPageContentDto;
+
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  termsOfService?: LandingPageContentDto;
+
+  @ApiPropertyOptional({ type: LandingPageContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPageContentDto)
+  contact?: LandingPageContentDto;
+}
+
 class LandingPageFaqDto {
   @ApiPropertyOptional({ example: 'faq-order-types' })
   @IsString()
+  @MaxLength(100)
   id!: string;
 
   @ApiPropertyOptional()
   @IsString()
+  @MaxLength(500)
   questionEn!: string;
 
   @ApiPropertyOptional()
   @IsString()
+  @MaxLength(5000)
   answerEn!: string;
 
   @ApiPropertyOptional()
   @IsString()
+  @MaxLength(500)
   questionDe!: string;
 
   @ApiPropertyOptional()
   @IsString()
+  @MaxLength(5000)
   answerDe!: string;
 
   @ApiPropertyOptional({ default: true })
@@ -170,7 +290,7 @@ class LandingPageFaqDto {
   sortOrder!: number;
 }
 
-class LandingPageSettingsDto {
+export class LandingPageSettingsDto {
   @ApiPropertyOptional({ example: 'DeliveryWay' })
   @IsOptional()
   @Transform(normalizeOptionalString)
@@ -219,6 +339,12 @@ class LandingPageSettingsDto {
   @Type(() => LandingPageSocialLinksDto)
   socialLinks?: LandingPageSocialLinksDto;
 
+  @ApiPropertyOptional({ type: LandingPagePagesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPagePagesDto)
+  pages?: LandingPagePagesDto;
+
   @ApiPropertyOptional({ type: [LandingPageFaqDto] })
   @IsOptional()
   @IsArray()
@@ -226,6 +352,8 @@ class LandingPageSettingsDto {
   @Type(() => LandingPageFaqDto)
   faqs?: LandingPageFaqDto[];
 }
+
+export class UpdateLandingPageSettingsDto extends LandingPageSettingsDto {}
 
 export class PaymentMethodSettingDto {
   @ApiPropertyOptional({ enum: PaymentMethod, example: PaymentMethod.COD })

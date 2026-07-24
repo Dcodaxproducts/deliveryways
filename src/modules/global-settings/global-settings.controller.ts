@@ -16,6 +16,7 @@ import {
   UpdateGlobalPaymentMethodsDto,
   UpdateGlobalSettingsDto,
   UpdateGlobalTaxTypesDto,
+  UpdateLandingPageSettingsDto,
 } from './dto';
 import { GlobalSettingsService } from './global-settings.service';
 
@@ -44,6 +45,13 @@ export class GlobalSettingsController {
   @ApiOperation({ summary: 'Get platform-wide global settings' })
   getSettings(): Promise<unknown> {
     return this.globalSettingsService.getSettings();
+  }
+
+  @Get('landing-page')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Get editable landing-page content and settings' })
+  getLandingPageSettings(): Promise<unknown> {
+    return this.globalSettingsService.getLandingPageSettings();
   }
 
   @Get('payment-methods')
@@ -76,6 +84,16 @@ export class GlobalSettingsController {
     @Body() dto: UpdateGlobalSettingsDto,
   ): Promise<unknown> {
     return this.globalSettingsService.updateSettings(user, dto);
+  }
+
+  @Patch('landing-page')
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Update landing-page content and settings' })
+  updateLandingPageSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: UpdateLandingPageSettingsDto,
+  ): Promise<unknown> {
+    return this.globalSettingsService.updateLandingPageSettings(user, dto);
   }
 
   @Patch('payment-methods')

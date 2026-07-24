@@ -14,9 +14,11 @@ import {
   PaymentMethodSettingDto,
   TaxTypeSettingDto,
   UpdateGlobalPaymentMethodsDto,
+  UpdateLandingPageSettingsDto,
   UpdateGlobalSettingsDto,
   UpdateGlobalTaxTypesDto,
 } from './dto';
+import { sanitizeLandingContentHtml } from './landing-page-content.util';
 
 export interface NotificationChannelMatrix {
   email: boolean;
@@ -72,8 +74,35 @@ export interface LandingPageSettingsShape {
     instagram: string | null;
     youtube: string | null;
   };
+  pages: LandingPagePagesShape;
   faqs: LandingPageFaqShape[];
 }
+
+export interface LandingPageHeroShape {
+  eyebrowEn: string | null;
+  eyebrowDe: string | null;
+  headingEn: string | null;
+  headingDe: string | null;
+  subheadingEn: string | null;
+  subheadingDe: string | null;
+}
+
+export interface LandingPageContentShape {
+  hero: LandingPageHeroShape;
+  contentEn: string | null;
+  contentDe: string | null;
+}
+
+export type LandingPagePagesShape = Record<
+  | 'services'
+  | 'pricing'
+  | 'about'
+  | 'privacyPolicy'
+  | 'support'
+  | 'termsOfService'
+  | 'contact',
+  LandingPageContentShape
+>;
 
 export interface LandingPageFaqShape {
   id: string;
@@ -140,7 +169,19 @@ export class GlobalSettingsService {
       data: {
         ...settings,
         logoUrl: await this.storageService.resolveViewUrl(settings.logoUrl),
+        faqs: settings.faqs.filter((faq) => faq.isActive),
       },
+      message: 'Landing page settings fetched successfully',
+    };
+  }
+
+  async getLandingPageSettings() {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return {
+      data: this.extractLandingPageSettings(data.landingPageSettings),
       message: 'Landing page settings fetched successfully',
     };
   }
@@ -189,6 +230,36 @@ export class GlobalSettingsService {
     return {
       data: this.serializeSettings(data),
       message: 'Global settings updated successfully',
+    };
+  }
+
+  async updateLandingPageSettings(
+    user: AuthUserContext,
+    dto: UpdateLandingPageSettingsDto,
+  ) {
+    const current = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+    const landingPageSettings = this.mergeLandingPageSettings(
+      current.landingPageSettings,
+      dto,
+    );
+    const data = await this.globalSettingsRepository.updateSingleton(
+      {
+        landingPageSettings,
+        updatedBy: user.uid,
+      },
+      {
+        ...this.buildDefaultCreateInput(),
+        landingPageSettings,
+        createdBy: user.uid,
+        updatedBy: user.uid,
+      },
+    );
+
+    return {
+      data: this.extractLandingPageSettings(data.landingPageSettings),
+      message: 'Landing page settings updated successfully',
     };
   }
 
@@ -495,7 +566,33 @@ export class GlobalSettingsService {
         instagram: null,
         youtube: null,
       },
+      pages: this.defaultLandingPagePages(),
       faqs: [],
+    };
+  }
+
+  private defaultLandingPagePages(): LandingPagePagesShape {
+    const emptyPage = (): LandingPageContentShape => ({
+      hero: {
+        eyebrowEn: null,
+        eyebrowDe: null,
+        headingEn: null,
+        headingDe: null,
+        subheadingEn: null,
+        subheadingDe: null,
+      },
+      contentEn: null,
+      contentDe: null,
+    });
+
+    return {
+      services: emptyPage(),
+      pricing: emptyPage(),
+      about: emptyPage(),
+      privacyPolicy: emptyPage(),
+      support: emptyPage(),
+      termsOfService: emptyPage(),
+      contact: emptyPage(),
     };
   }
 
@@ -893,6 +990,7 @@ export class GlobalSettingsService {
             ? this.resolveOptionalString(updates.socialLinks.youtube)
             : current.socialLinks.youtube,
       },
+      pages: this.mergeLandingPagePages(current.pages, updates.pages),
       faqs:
         updates.faqs !== undefined
           ? updates.faqs
@@ -939,7 +1037,140 @@ export class GlobalSettingsService {
         instagram: this.readStringValue(source, [['socialLinks', 'instagram']]),
         youtube: this.readStringValue(source, [['socialLinks', 'youtube']]),
       },
+      pages: this.extractLandingPagePages(source),
       faqs: this.extractLandingPageFaqs(source),
+    };
+  }
+
+  private mergeLandingPagePages(
+    current: LandingPagePagesShape,
+    updates: UpdateLandingPageSettingsDto['pages'],
+  ): LandingPagePagesShape {
+    if (!updates) {
+      return current;
+    }
+
+    return {
+      services: this.mergeLandingPageContent(
+        current.services,
+        updates.services,
+      ),
+      pricing: this.mergeLandingPageContent(current.pricing, updates.pricing),
+      about: this.mergeLandingPageContent(current.about, updates.about),
+      privacyPolicy: this.mergeLandingPageContent(
+        current.privacyPolicy,
+        updates.privacyPolicy,
+      ),
+      support: this.mergeLandingPageContent(current.support, updates.support),
+      termsOfService: this.mergeLandingPageContent(
+        current.termsOfService,
+        updates.termsOfService,
+      ),
+      contact: this.mergeLandingPageContent(current.contact, updates.contact),
+    };
+  }
+
+  private mergeLandingPageContent(
+    current: LandingPageContentShape,
+    updates:
+      | NonNullable<UpdateLandingPageSettingsDto['pages']>['about']
+      | undefined,
+  ): LandingPageContentShape {
+    if (!updates) {
+      return current;
+    }
+
+    return {
+      hero: {
+        eyebrowEn: this.mergeOptionalLandingString(
+          current.hero.eyebrowEn,
+          updates.hero?.eyebrowEn,
+        ),
+        eyebrowDe: this.mergeOptionalLandingString(
+          current.hero.eyebrowDe,
+          updates.hero?.eyebrowDe,
+        ),
+        headingEn: this.mergeOptionalLandingString(
+          current.hero.headingEn,
+          updates.hero?.headingEn,
+        ),
+        headingDe: this.mergeOptionalLandingString(
+          current.hero.headingDe,
+          updates.hero?.headingDe,
+        ),
+        subheadingEn: this.mergeOptionalLandingString(
+          current.hero.subheadingEn,
+          updates.hero?.subheadingEn,
+        ),
+        subheadingDe: this.mergeOptionalLandingString(
+          current.hero.subheadingDe,
+          updates.hero?.subheadingDe,
+        ),
+      },
+      contentEn:
+        updates.contentEn !== undefined
+          ? this.sanitizeOptionalLandingHtml(updates.contentEn)
+          : current.contentEn,
+      contentDe:
+        updates.contentDe !== undefined
+          ? this.sanitizeOptionalLandingHtml(updates.contentDe)
+          : current.contentDe,
+    };
+  }
+
+  private mergeOptionalLandingString(
+    current: string | null,
+    update: string | undefined,
+  ): string | null {
+    return update !== undefined ? this.resolveOptionalString(update) : current;
+  }
+
+  private sanitizeOptionalLandingHtml(value: string): string | null {
+    const sanitized = sanitizeLandingContentHtml(value);
+    return sanitized.length > 0 ? sanitized : null;
+  }
+
+  private extractLandingPagePages(
+    source: Prisma.JsonValue | null | undefined,
+  ): LandingPagePagesShape {
+    return {
+      services: this.extractLandingPageContent(source, 'services'),
+      pricing: this.extractLandingPageContent(source, 'pricing'),
+      about: this.extractLandingPageContent(source, 'about'),
+      privacyPolicy: this.extractLandingPageContent(source, 'privacyPolicy'),
+      support: this.extractLandingPageContent(source, 'support'),
+      termsOfService: this.extractLandingPageContent(source, 'termsOfService'),
+      contact: this.extractLandingPageContent(source, 'contact'),
+    };
+  }
+
+  private extractLandingPageContent(
+    source: Prisma.JsonValue | null | undefined,
+    page: keyof LandingPagePagesShape,
+  ): LandingPageContentShape {
+    const heroPath = ['pages', page, 'hero'];
+    const contentEn = this.readStringValue(source, [
+      ['pages', page, 'contentEn'],
+    ]);
+    const contentDe = this.readStringValue(source, [
+      ['pages', page, 'contentDe'],
+    ]);
+
+    return {
+      hero: {
+        eyebrowEn: this.readStringValue(source, [[...heroPath, 'eyebrowEn']]),
+        eyebrowDe: this.readStringValue(source, [[...heroPath, 'eyebrowDe']]),
+        headingEn: this.readStringValue(source, [[...heroPath, 'headingEn']]),
+        headingDe: this.readStringValue(source, [[...heroPath, 'headingDe']]),
+        subheadingEn: this.readStringValue(source, [
+          [...heroPath, 'subheadingEn'],
+        ]),
+        subheadingDe: this.readStringValue(source, [
+          [...heroPath, 'subheadingDe'],
+        ]),
+      },
+      contentEn: contentEn ? sanitizeLandingContentHtml(contentEn) : null,
+      contentDe: contentDe ? sanitizeLandingContentHtml(contentDe) : null,
     };
   }
 
