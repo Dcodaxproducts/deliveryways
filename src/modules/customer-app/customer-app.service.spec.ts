@@ -991,7 +991,13 @@ describe('CustomerAppService', () => {
     expect(result.data[0]).not.toHaveProperty('modifierLinks');
     expect(result.data[0]).not.toHaveProperty('modifierPriceOverrides');
     expect(result.data[0]).not.toHaveProperty('modifiers');
-    expect(result.data[0]).not.toHaveProperty('variations');
+    expect(result.data[0].variations).toEqual([
+      expect.objectContaining({
+        id: 'variation-1',
+        name: 'Large',
+        price: new Prisma.Decimal(899),
+      }),
+    ]);
   });
 
   it('returns compact public item cards for menu browsing', async () => {
@@ -1043,7 +1049,13 @@ describe('CustomerAppService', () => {
     expect(result.data[0]).not.toHaveProperty('modifierLinks');
     expect(result.data[0]).not.toHaveProperty('modifierPriceOverrides');
     expect(result.data[0]).not.toHaveProperty('modifiers');
-    expect(result.data[0]).not.toHaveProperty('variations');
+    expect(result.data[0].variations).toEqual([
+      expect.objectContaining({
+        id: 'variation-1',
+        name: 'Large',
+        price: new Prisma.Decimal(899),
+      }),
+    ]);
   });
 
   it('omits exhausted auto-apply promotions from public item promotion payloads', async () => {
@@ -2284,7 +2296,16 @@ describe('CustomerAppService', () => {
       }),
     );
     expect(result.data.promotionalItems[0]).not.toHaveProperty('modifiers');
-    expect(result.data.promotionalItems[0]).not.toHaveProperty('variations');
+    expect(result.data.promotionalItems[0].variations).toEqual([
+      expect.objectContaining({
+        id: 'variation-1',
+        name: 'Large',
+        price: new Prisma.Decimal(899),
+      }),
+    ]);
+    expect(result.data.promotionalItems[0].variations[0]).not.toHaveProperty(
+      'itemPriceOverrides',
+    );
     expect(result.data.promotionalItems[0]).not.toHaveProperty('restaurant');
   });
 

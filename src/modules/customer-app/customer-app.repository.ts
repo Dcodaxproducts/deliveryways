@@ -22,6 +22,16 @@ const restaurantMenuScheduleSelect = {
   deletedAt: true,
 } satisfies Prisma.RestaurantMenuSelect;
 
+const publicMenuItemVariationCardSelect = {
+  id: true,
+  name: true,
+  description: true,
+  price: true,
+  sortOrder: true,
+  isDefault: true,
+  isActive: true,
+} satisfies Prisma.MenuItemVariationSelect;
+
 @Injectable()
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -197,6 +207,23 @@ export class CustomerAppRepository {
           id: true,
           name: true,
           imageUrl: true,
+          variations: {
+            where: { deletedAt: null, isActive: true },
+            select: publicMenuItemVariationCardSelect,
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          },
+          variationLinks: {
+            where: { isActive: true },
+            select: {
+              sortOrder: true,
+              isDefault: true,
+              isActive: true,
+              variation: {
+                select: publicMenuItemVariationCardSelect,
+              },
+            },
+            orderBy: [{ sortOrder: 'asc' }],
+          },
           menuLinks: {
             include: {
               restaurantMenu: {
@@ -228,6 +255,19 @@ export class CustomerAppRepository {
             select: restaurantMenuScheduleSelect,
           },
         },
+      },
+      variationPriceOverrides: {
+        select: {
+          menuItemId: true,
+          variationId: true,
+          price: true,
+          pickupPrice: true,
+          displayText: true,
+          variation: {
+            select: publicMenuItemVariationCardSelect,
+          },
+        },
+        orderBy: [{ variation: { sortOrder: 'asc' } }],
       },
       branchOverrides: branchId
         ? {
@@ -1440,35 +1480,53 @@ export class CustomerAppRepository {
     const branchId = query.branchId;
     const search = query.search?.trim();
     const now = new Date();
-    const where: Prisma.MenuItemWhereInput = {
-      restaurantId,
-      deletedAt: null,
-      isActive: true,
-      ...(query.categoryId
-        ? {
-            OR: [
-              { categoryId: query.categoryId },
-              { categoryLinks: { some: { menuCategoryId: query.categoryId } } },
-            ],
-          }
-        : {}),
-      ...(search
-        ? {
-            AND: [
-              {
-                OR: [
-                  { name: { contains: search, mode: 'insensitive' } },
-                  { slug: { contains: search, mode: 'insensitive' } },
-                  { description: { contains: search, mode: 'insensitive' } },
-                  { sku: { contains: search, mode: 'insensitive' } },
-                ],
-              },
-            ],
-          }
-        : {}),
-      ...(query.supportsSplitPizza === true
-        ? { supportsSplitPizza: true }
-        : {}),
+    const requiredFilters: Prisma.MenuItemWhereInput[] = [];
+
+    if (query.categoryId) {
+      requiredFilters.push({
+        OR: [
+          { categoryId: query.categoryId },
+          {
+            categoryLinks: {
+              some: { menuCategoryId: query.categoryId },
+            },
+          },
+        ],
+      });
+    }
+
+    if (search) {
+      requiredFilters.push({
+        OR: [
+          {
+            name: {
+              contains: search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+          {
+            slug: {
+              contains: search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+          {
+            description: {
+              contains: search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+          {
+            sku: {
+              contains: search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+        ],
+      });
+    }
+
+    requiredFilters.push({
       OR: [
         this.buildPublicMenuItemVisibilityWhere(branchId),
         this.buildDealScopedMenuItemVisibilityWhere(
@@ -1477,6 +1535,16 @@ export class CustomerAppRepository {
           now,
         ),
       ],
+    });
+
+    const where: Prisma.MenuItemWhereInput = {
+      restaurantId,
+      deletedAt: null,
+      isActive: true,
+      AND: requiredFilters,
+      ...(query.supportsSplitPizza === true
+        ? { supportsSplitPizza: true }
+        : {}),
     };
 
     const [items, total] = await Promise.all([

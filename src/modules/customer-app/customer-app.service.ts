@@ -98,7 +98,9 @@ type PublicMenuItemVariation = {
   name: string;
   description: string | null;
   price: Prisma.Decimal;
+  sortOrder?: number;
   isDefault: boolean;
+  isActive?: boolean;
   itemPriceOverrides?: Array<{
     menuItemId: string;
     price: Prisma.Decimal;
@@ -3029,6 +3031,45 @@ export class CustomerAppService {
       effectiveBasePrice,
       happyHours,
     );
+    const variations = this.normalizeVariations(
+      this.resolvePublicItemVariations(item),
+      item.id,
+    ).map((variation) => {
+      const translatedVariation = this.applyEntityTranslation(
+        'MENU_ITEM_VARIATION',
+        variation.id,
+        variation,
+        translationContext,
+      );
+      const variationPromotion = this.resolveBestScopedItemPromotion(
+        item.id,
+        this.itemCategoryIds(item),
+        translatedVariation.price,
+        promotions,
+      );
+      const variationHappyHour = this.resolveBestScopedItemHappyHour(
+        item.id,
+        this.itemCategoryIds(item),
+        translatedVariation.price,
+        happyHours,
+      );
+
+      return {
+        id: translatedVariation.id,
+        name: translatedVariation.name,
+        description: translatedVariation.description,
+        price: translatedVariation.price,
+        pickupPrice: translatedVariation.pickupPrice ?? null,
+        displayText: translatedVariation.displayText ?? null,
+        sortOrder: translatedVariation.sortOrder ?? 0,
+        isDefault: translatedVariation.isDefault,
+        isActive: translatedVariation.isActive ?? true,
+        discountedPrice: variationPromotion?.discountedAmount ?? null,
+        promotion: variationPromotion ?? null,
+        happyHourDiscountedPrice: variationHappyHour?.discountedPrice ?? null,
+        happyHour: variationHappyHour ?? null,
+      };
+    });
 
     return {
       id: item.id,
@@ -3052,6 +3093,7 @@ export class CustomerAppService {
             imageUrl: await this.resolveMediaUrl(translatedCategory.imageUrl),
           }
         : null,
+      variations,
       isAvailable: branchOverride?.isAvailable ?? true,
     };
   }
