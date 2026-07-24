@@ -197,6 +197,19 @@ describe('CustomerAppService', () => {
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+      getPaymentMethods: jest.fn().mockResolvedValue({
+        data: [
+          { code: 'COD', label: 'Cash', isActive: true },
+          {
+            code: 'CARD_ON_DELIVERY',
+            label: 'Card on delivery',
+            isActive: true,
+          },
+          { code: 'PAYPAL', label: 'PayPal', isActive: true },
+          { code: 'WALLET', label: 'Wallet', isActive: true },
+          { code: 'STRIPE', label: 'Stripe', isActive: false },
+        ],
+      }),
       getSettings: jest.fn().mockResolvedValue({
         data: { timezone: 'Europe/Berlin' },
       }),
@@ -277,7 +290,16 @@ describe('CustomerAppService', () => {
 
   it('lists sanitized active branches for anonymous ordering', async () => {
     const { service, repository } = makeService();
-    repository.findRestaurantScope.mockResolvedValue({ id: 'restaurant-1' });
+    repository.findRestaurantScope.mockResolvedValue({
+      id: 'restaurant-1',
+      settings: {
+        payments: {
+          methods: {
+            allowedPaymentMethods: ['COD', 'STRIPE'],
+          },
+        },
+      },
+    });
     repository.listPublicBranches.mockResolvedValue({
       items: [
         {
@@ -298,6 +320,7 @@ describe('CustomerAppService', () => {
           },
           settings: {
             allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+            allowedPaymentMethods: ['COD', 'STRIPE', 'WALLET'],
             openingHours: [{ dayOfWeek: 'MONDAY' }],
             internalNote: 'must not be public',
           },
@@ -320,6 +343,7 @@ describe('CustomerAppService', () => {
         isOnlyBranch: true,
         settings: {
           allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+          allowedPaymentMethods: ['COD', 'STRIPE'],
           openingHours: [{ dayOfWeek: 'MONDAY' }],
           deliveryHours: [{ dayOfWeek: 'MONDAY' }],
           holidayOpeningHours: [],

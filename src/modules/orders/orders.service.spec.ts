@@ -5172,6 +5172,36 @@ describe('OrdersService - admin customer resolution', () => {
 });
 
 describe('OrdersService - wallet payment', () => {
+  it('rejects a payment method excluded by restaurant configuration', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const isPaymentAllowed = (
+      service as unknown as {
+        isPaymentAllowed: (
+          settings: { allowedPaymentMethods: string[] },
+          paymentMethod: string,
+          activeGlobalPaymentMethods: string[],
+          restaurantPaymentMethods: string[],
+        ) => boolean;
+      }
+    ).isPaymentAllowed.bind(service);
+
+    expect(
+      isPaymentAllowed(
+        { allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE] },
+        PaymentMethod.STRIPE,
+        [PaymentMethod.STRIPE],
+        [PaymentMethod.COD],
+      ),
+    ).toBe(false);
+  });
+
   it('allows checkout with a globally active payment method absent from branch settings', async () => {
     const paymentTransactionCreate = jest.fn();
     const ordersRepository = {
@@ -5375,6 +5405,15 @@ describe('OrdersService - wallet payment', () => {
           tenantId: 'tenant-1',
           restaurantId: 'restaurant-1',
           settings: { allowedPaymentMethods: ['STRIPE'] },
+          restaurant: {
+            settings: {
+              payments: {
+                methods: {
+                  allowedPaymentMethods: ['STRIPE'],
+                },
+              },
+            },
+          },
         },
         customer: { customerId: 'customer-1' },
         lines: [

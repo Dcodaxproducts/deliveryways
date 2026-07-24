@@ -10,6 +10,7 @@ import {
   AddressRefType,
   CouponDealSelectionMode,
   LocalizationEntityType,
+  PaymentMethod,
   Prisma,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -338,6 +339,11 @@ export class CustomerAppService {
 
     const { items, total } =
       await this.customerAppRepository.listPublicBranches(query);
+    const platformMethods =
+      (await this.globalSettingsService?.getPaymentMethods())?.data ?? [];
+    const activePlatformMethods = platformMethods
+      .filter((method) => method.isActive)
+      .map((method) => method.code);
 
     return {
       data: items.map((branch) => ({
@@ -352,6 +358,11 @@ export class CustomerAppService {
           allowedOrderTypes: this.readStringArrayValue(branch.settings, [
             ['allowedOrderTypes'],
           ]),
+          allowedPaymentMethods: this.resolveEffectivePaymentMethods(
+            branch.settings,
+            restaurant.settings,
+            activePlatformMethods,
+          ),
           openingHours: this.readBranchScheduleHours(
             branch.settings,
             'openingHours',
@@ -4670,6 +4681,49 @@ export class CustomerAppService {
     }
 
     return [];
+  }
+
+  private resolveEffectivePaymentMethods(
+    branchSettings: unknown,
+    restaurantSettings: unknown,
+    activePlatformMethods: PaymentMethod[],
+  ) {
+    const fallbackMethods = [
+      PaymentMethod.COD,
+      PaymentMethod.CARD_ON_DELIVERY,
+      PaymentMethod.PAYPAL,
+      PaymentMethod.WALLET,
+    ];
+    const branchMethods = this.readPaymentMethods(
+      this.readPath(branchSettings, ['allowedPaymentMethods']),
+      fallbackMethods,
+    );
+    const restaurantMethods = this.readPaymentMethods(
+      this.readPath(restaurantSettings, [
+        'payments',
+        'methods',
+        'allowedPaymentMethods',
+      ]),
+      fallbackMethods,
+    );
+
+    return restaurantMethods.filter(
+      (method) =>
+        branchMethods.includes(method) ||
+        activePlatformMethods.includes(method),
+    );
+  }
+
+  private readPaymentMethods(input: unknown, fallback: PaymentMethod[]) {
+    if (!Array.isArray(input)) {
+      return fallback;
+    }
+
+    return input.filter(
+      (method): method is PaymentMethod =>
+        typeof method === 'string' &&
+        Object.values(PaymentMethod).includes(method as PaymentMethod),
+    );
   }
 
   private readBooleanValue(source: unknown, paths: string[][]): boolean {

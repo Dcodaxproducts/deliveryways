@@ -323,11 +323,15 @@ export class OrdersService {
     const branchSettings = this.readBranchSettings(quote.branch.settings);
     const activeGlobalPaymentMethods =
       await this.resolveActiveGlobalPaymentMethods();
+    const restaurantPaymentMethods = this.readRestaurantAllowedPaymentMethods(
+      quote.branch.restaurant?.settings,
+    );
     if (
       !this.isPaymentAllowed(
         branchSettings,
         dto.paymentMethod,
         activeGlobalPaymentMethods,
+        restaurantPaymentMethods,
       )
     ) {
       throw new BadRequestException(
@@ -4130,7 +4134,17 @@ export class OrdersService {
     settings: BranchSettings,
     paymentMethod: string,
     activeGlobalPaymentMethods: string[] = [],
+    restaurantPaymentMethods: string[] = [
+      PaymentMethod.COD,
+      PaymentMethod.CARD_ON_DELIVERY,
+      PaymentMethod.PAYPAL,
+      PaymentMethod.WALLET,
+    ],
   ): boolean {
+    if (!restaurantPaymentMethods.includes(paymentMethod)) {
+      return false;
+    }
+
     if (paymentMethod === 'WALLET' || paymentMethod === 'PAYPAL') {
       return true;
     }
@@ -4138,6 +4152,42 @@ export class OrdersService {
     return (
       settings.allowedPaymentMethods.includes(paymentMethod) ||
       activeGlobalPaymentMethods.includes(paymentMethod)
+    );
+  }
+
+  private readRestaurantAllowedPaymentMethods(settings: unknown): string[] {
+    const fallbackMethods = [
+      PaymentMethod.COD,
+      PaymentMethod.CARD_ON_DELIVERY,
+      PaymentMethod.PAYPAL,
+      PaymentMethod.WALLET,
+    ];
+
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return fallbackMethods;
+    }
+
+    const payments = (settings as Record<string, unknown>).payments;
+    if (!payments || typeof payments !== 'object' || Array.isArray(payments)) {
+      return fallbackMethods;
+    }
+
+    const methods = (payments as Record<string, unknown>).methods;
+    if (!methods || typeof methods !== 'object' || Array.isArray(methods)) {
+      return fallbackMethods;
+    }
+
+    const allowedPaymentMethods = (methods as Record<string, unknown>)
+      .allowedPaymentMethods;
+
+    if (!Array.isArray(allowedPaymentMethods)) {
+      return fallbackMethods;
+    }
+
+    return allowedPaymentMethods.filter(
+      (method): method is PaymentMethod =>
+        typeof method === 'string' &&
+        Object.values(PaymentMethod).includes(method as PaymentMethod),
     );
   }
 
