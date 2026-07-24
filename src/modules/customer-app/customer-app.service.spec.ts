@@ -2261,13 +2261,14 @@ describe('CustomerAppService', () => {
     repository.listCuisineCategories.mockResolvedValue({
       items: [
         {
-          id: 'category-1',
-          name: 'Burgers',
-          slug: 'burgers',
+          id: 'cuisine-1',
+          name: 'American',
+          slug: 'american',
           description: null,
-          imageUrl: 'category.png',
+          imageUrl: 'cuisine.png',
           sortOrder: 0,
           _count: { items: 3 },
+          categoryIds: ['category-1'],
         },
       ],
       total: 1,
@@ -2305,7 +2306,8 @@ describe('CustomerAppService', () => {
     );
     expect(result.data.cuisines[0]).toEqual(
       expect.objectContaining({
-        id: 'category-1',
+        id: 'cuisine-1',
+        name: 'American',
         itemCount: 3,
       }),
     );

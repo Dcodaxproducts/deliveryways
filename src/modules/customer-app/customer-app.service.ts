@@ -1118,7 +1118,7 @@ export class CustomerAppService {
       resolvedQuery.branchId,
     );
     const [cuisines, promotionalItems, faqs] = await Promise.all([
-      this.customerAppRepository.listMenuCategories(
+      this.customerAppRepository.listCuisineCategories(
         {
           ...resolvedQuery,
           page: 1,
@@ -1153,7 +1153,7 @@ export class CustomerAppService {
         ...(branch
           ? [{ entityType: 'BRANCH' as const, entityId: branch.id }]
           : []),
-        ...this.collectMenuCategoryTranslationRefs(cuisines.items),
+        ...this.collectCuisineTranslationRefs(cuisines.items),
         ...visiblePromotionalItems.flatMap((item) =>
           this.collectMenuItemTranslationRefs(item),
         ),
@@ -1337,7 +1337,7 @@ export class CustomerAppService {
           : null,
         cuisines: await Promise.all(
           cuisines.items.map((item) =>
-            this.mapMenuCategory(
+            this.mapCuisineCategory(
               item,
               promotionContext.promotions,
               promotionContext.happyHours,
