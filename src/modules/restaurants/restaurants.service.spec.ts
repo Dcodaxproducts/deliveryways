@@ -1149,6 +1149,10 @@ describe('RestaurantsService notification settings', () => {
       coverImage: null,
       isActive: true,
       settings: {
+        legalProfile: {
+          legalBusinessName: 'Protected Legal Name',
+          taxNumber: 'VAT-123',
+        },
         serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
       },
     });
@@ -1161,6 +1165,10 @@ describe('RestaurantsService notification settings', () => {
       isActive: true,
       settings: {
         branding: { theme: 'dark' },
+        legalProfile: {
+          legalBusinessName: 'Protected Legal Name',
+          taxNumber: 'VAT-123',
+        },
         serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
       },
     });
@@ -1176,6 +1184,7 @@ describe('RestaurantsService notification settings', () => {
       {
         settings: {
           branding: { theme: 'dark' },
+          legalProfile: {},
           serviceCharge: { isEnabled: false, type: 'AMOUNT', value: 0 },
         },
       },
@@ -1189,9 +1198,77 @@ describe('RestaurantsService notification settings', () => {
 
     expect(updateData.settings).toMatchObject({
       branding: { theme: 'dark' },
+      legalProfile: {
+        legalBusinessName: 'Protected Legal Name',
+        taxNumber: 'VAT-123',
+      },
       serviceCharge: { isEnabled: true, type: 'PERCENTAGE', value: 5 },
     });
     expect(updateData.settings).not.toHaveProperty('transactionFee');
     expect(tx).toBeUndefined();
+  });
+
+  it('prevents super admin from replacing legal profile through generic settings update', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: {
+        legalProfile: {
+          legalBusinessName: 'Protected Legal Name',
+          taxNumber: 'VAT-123',
+          contractText: 'Protected agreement',
+        },
+        customerApp: { giftCardsEnabled: false },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: {
+        legalProfile: {
+          legalBusinessName: 'Protected Legal Name',
+          taxNumber: 'VAT-123',
+          contractText: 'Protected agreement',
+        },
+        customerApp: { giftCardsEnabled: true },
+      },
+    });
+
+    await service.update(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'restaurant-1',
+      {
+        settings: {
+          legalProfile: null,
+          customerApp: { giftCardsEnabled: true },
+        },
+      },
+    );
+
+    const [, updateData] = repository.update.mock.calls[0] as [
+      string,
+      { settings: Record<string, unknown> },
+      undefined,
+    ];
+
+    expect(updateData.settings).toMatchObject({
+      legalProfile: {
+        legalBusinessName: 'Protected Legal Name',
+        taxNumber: 'VAT-123',
+        contractText: 'Protected agreement',
+      },
+      customerApp: { giftCardsEnabled: true },
+    });
   });
 });

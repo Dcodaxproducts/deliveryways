@@ -796,6 +796,7 @@ export class RestaurantsService {
       );
       const restNext = { ...next };
       delete restNext.transactionFee;
+      delete restNext.legalProfile;
 
       return {
         ...current,
@@ -807,6 +808,7 @@ export class RestaurantsService {
     const rest = { ...next };
     delete rest.transactionFee;
     delete rest.serviceCharge;
+    delete rest.legalProfile;
 
     return {
       ...current,
