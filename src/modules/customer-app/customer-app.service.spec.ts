@@ -889,6 +889,11 @@ describe('CustomerAppService', () => {
       logoUrl: 'https://cdn.example.com/logo.png',
       tagline: 'Fresh food fast',
     });
+    expect(result.data[0].category).toEqual({
+      id: 'category-1',
+      name: 'Burgers',
+      imageUrl: 'https://cdn.example.com/category.png',
+    });
     expect(result.data[0].depositAmount).toBe(100);
     expect(result.data[0].discountedBasePrice).toBe(719.1);
     expect(result.data[0].promotion).toEqual(
@@ -2243,7 +2248,7 @@ describe('CustomerAppService', () => {
 
     expect(repository.listPromotionalItems).toHaveBeenCalledWith(
       expect.objectContaining({ restaurantId: 'restaurant-1' }),
-      { menuItemIds: [], categoryIds: [] },
+      { menuItemIds: [], categoryIds: [], includeDetails: false },
     );
     const [promotionalItem] = result.data.promotionalItems as Array<{
       id: string;

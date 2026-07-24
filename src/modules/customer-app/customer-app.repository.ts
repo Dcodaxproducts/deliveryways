@@ -179,6 +179,65 @@ export class CustomerAppRepository {
     } satisfies Prisma.MenuItemInclude;
   }
 
+  private buildPublicMenuItemCardInclude(branchId?: string) {
+    return {
+      restaurant: {
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          tagline: true,
+          settings: true,
+          tenant: { select: { settings: true } },
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          imageUrl: true,
+          menuLinks: {
+            include: {
+              restaurantMenu: {
+                select: restaurantMenuScheduleSelect,
+              },
+            },
+          },
+        },
+      },
+      categoryLinks: {
+        select: {
+          menuCategoryId: true,
+          menuCategory: {
+            select: {
+              menuLinks: {
+                include: {
+                  restaurantMenu: {
+                    select: restaurantMenuScheduleSelect,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      menuLinks: {
+        include: {
+          restaurantMenu: {
+            select: restaurantMenuScheduleSelect,
+          },
+        },
+      },
+      branchOverrides: branchId
+        ? {
+            where: { branchId },
+            select: { priceOverride: true, isAvailable: true },
+            take: 1,
+          }
+        : false,
+    } satisfies Prisma.MenuItemInclude;
+  }
+
   private buildPublicMenuItemVisibilityWhere(
     branchId?: string,
   ): Prisma.MenuItemWhereInput {
@@ -931,7 +990,7 @@ export class CustomerAppRepository {
         : {}),
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.menuCategory.findMany({
         where,
         skip: (query.page - 1) * query.limit,
@@ -1574,7 +1633,11 @@ export class CustomerAppRepository {
 
   async listPromotionalItems(
     query: HomeScreenQueryDto | ListPromotionalItemsQueryDto,
-    scope?: { menuItemIds?: string[]; categoryIds?: string[] },
+    scope?: {
+      menuItemIds?: string[];
+      categoryIds?: string[];
+      includeDetails?: boolean;
+    },
   ) {
     const branchId = query.branchId;
     const take = 'promotionLimit' in query ? query.promotionLimit : query.limit;
@@ -1626,157 +1689,160 @@ export class CustomerAppRepository {
       },
       take,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        restaurant: {
-          select: {
-            id: true,
-            name: true,
-            logoUrl: true,
-            tagline: true,
-            settings: true,
-            tenant: { select: { settings: true } },
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            imageUrl: true,
-            variations: {
-              where: { deletedAt: null, isActive: true },
-              include: {
-                modifierPriceOverrides: {
-                  include: {
-                    modifier: {
-                      include: {
-                        itemPriceOverrides: true,
-                        variationPriceOverrides: true,
+      include:
+        scope?.includeDetails === false
+          ? this.buildPublicMenuItemCardInclude(branchId)
+          : {
+              restaurant: {
+                select: {
+                  id: true,
+                  name: true,
+                  logoUrl: true,
+                  tagline: true,
+                  settings: true,
+                  tenant: { select: { settings: true } },
+                },
+              },
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                  variations: {
+                    where: { deletedAt: null, isActive: true },
+                    include: {
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
+                      itemPriceOverrides: true,
+                    },
+                    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                  },
+                  variationLinks: {
+                    where: { isActive: true },
+                    include: {
+                      variation: {
+                        include: {
+                          modifierPriceOverrides: {
+                            include: {
+                              modifier: {
+                                include: {
+                                  itemPriceOverrides: true,
+                                  variationPriceOverrides: true,
+                                },
+                              },
+                            },
+                          },
+                          itemPriceOverrides: true,
+                        },
+                      },
+                    },
+                    orderBy: [{ sortOrder: 'asc' }],
+                  },
+                  menuLinks: {
+                    include: {
+                      restaurantMenu: {
+                        select: restaurantMenuScheduleSelect,
                       },
                     },
                   },
                 },
-                itemPriceOverrides: true,
               },
-              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            },
-            variationLinks: {
-              where: { isActive: true },
-              include: {
-                variation: {
-                  include: {
-                    modifierPriceOverrides: {
-                      include: {
-                        modifier: {
-                          include: {
-                            itemPriceOverrides: true,
-                            variationPriceOverrides: true,
+              modifierLinks: {
+                orderBy: [{ sortOrder: 'asc' }],
+                include: {
+                  modifierGroup: {
+                    include: {
+                      modifierLinks: {
+                        where: {
+                          modifier: { deletedAt: null, isActive: true },
+                        },
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                        orderBy: [
+                          { sortOrder: 'asc' },
+                          { modifier: { createdAt: 'asc' } },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+              modifierPriceOverrides: {
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [{ modifier: { sortOrder: 'asc' } }],
+              },
+              variationPriceOverrides: {
+                include: {
+                  variation: {
+                    include: {
+                      modifierPriceOverrides: {
+                        include: {
+                          modifier: {
+                            include: {
+                              itemPriceOverrides: true,
+                              variationPriceOverrides: true,
+                            },
+                          },
+                        },
+                      },
+                      itemPriceOverrides: true,
+                    },
+                  },
+                },
+                orderBy: [{ variation: { sortOrder: 'asc' } }],
+              },
+              categoryLinks: {
+                include: {
+                  menuCategory: {
+                    select: {
+                      id: true,
+                      menuLinks: {
+                        include: {
+                          restaurantMenu: {
+                            select: restaurantMenuScheduleSelect,
                           },
                         },
                       },
                     },
-                    itemPriceOverrides: true,
                   },
                 },
               },
-              orderBy: [{ sortOrder: 'asc' }],
-            },
-            menuLinks: {
-              include: {
-                restaurantMenu: {
-                  select: restaurantMenuScheduleSelect,
-                },
-              },
-            },
-          },
-        },
-        modifierLinks: {
-          orderBy: [{ sortOrder: 'asc' }],
-          include: {
-            modifierGroup: {
-              include: {
-                modifierLinks: {
-                  where: {
-                    modifier: { deletedAt: null, isActive: true },
-                  },
-                  include: {
-                    modifier: {
-                      include: {
-                        itemPriceOverrides: true,
-                        variationPriceOverrides: true,
-                      },
-                    },
-                  },
-                  orderBy: [
-                    { sortOrder: 'asc' },
-                    { modifier: { createdAt: 'asc' } },
-                  ],
-                },
-              },
-            },
-          },
-        },
-        modifierPriceOverrides: {
-          include: {
-            modifier: {
-              include: {
-                itemPriceOverrides: true,
-                variationPriceOverrides: true,
-              },
-            },
-          },
-          orderBy: [{ modifier: { sortOrder: 'asc' } }],
-        },
-        variationPriceOverrides: {
-          include: {
-            variation: {
-              include: {
-                modifierPriceOverrides: {
-                  include: {
-                    modifier: {
-                      include: {
-                        itemPriceOverrides: true,
-                        variationPriceOverrides: true,
-                      },
-                    },
-                  },
-                },
-                itemPriceOverrides: true,
-              },
-            },
-          },
-          orderBy: [{ variation: { sortOrder: 'asc' } }],
-        },
-        categoryLinks: {
-          include: {
-            menuCategory: {
-              select: {
-                id: true,
-                menuLinks: {
-                  include: {
-                    restaurantMenu: {
-                      select: restaurantMenuScheduleSelect,
-                    },
+              menuLinks: {
+                include: {
+                  restaurantMenu: {
+                    select: restaurantMenuScheduleSelect,
                   },
                 },
               },
+              branchOverrides: branchId
+                ? {
+                    where: { branchId },
+                    select: { priceOverride: true, isAvailable: true },
+                    take: 1,
+                  }
+                : false,
             },
-          },
-        },
-        menuLinks: {
-          include: {
-            restaurantMenu: {
-              select: restaurantMenuScheduleSelect,
-            },
-          },
-        },
-        branchOverrides: branchId
-          ? {
-              where: { branchId },
-              select: { priceOverride: true, isAvailable: true },
-              take: 1,
-            }
-          : false,
-      },
     });
   }
 }

@@ -1077,6 +1077,7 @@ export class CustomerAppService {
             categoryIds: promotionContext.hasBroadHappyHour
               ? []
               : promotionContext.categoryIds,
+            includeDetails: false,
           })
         : Promise.resolve([]),
       this.getFaqs(resolvedQuery, user),
@@ -2929,7 +2930,8 @@ export class CustomerAppService {
         : null,
       category: translatedCategory
         ? {
-            ...translatedCategory,
+            id: translatedCategory.id,
+            name: translatedCategory.name,
             imageUrl: await this.resolveMediaUrl(translatedCategory.imageUrl),
           }
         : null,
