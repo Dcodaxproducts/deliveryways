@@ -1411,13 +1411,13 @@ export class CustomerAppRepository {
       ],
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.menuItem.findMany({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { createdAt: 'desc' }],
-        include: this.buildPublicMenuItemInclude(branchId),
+        include: this.buildPublicMenuItemCardInclude(branchId),
       }),
       this.prisma.menuItem.count({ where }),
     ]);
@@ -1435,17 +1435,26 @@ export class CustomerAppRepository {
 
     return this.prisma.menuItem.findFirst({
       where: {
-        slug: { equals: slug.trim(), mode: 'insensitive' },
         restaurantId,
         deletedAt: null,
         isActive: true,
-        OR: [
-          this.buildPublicMenuItemVisibilityWhere(branchId),
-          this.buildDealScopedMenuItemVisibilityWhere(
-            restaurantId,
-            branchId,
-            now,
-          ),
+        AND: [
+          {
+            OR: [
+              { id: slug.trim() },
+              { slug: { equals: slug.trim(), mode: 'insensitive' } },
+            ],
+          },
+          {
+            OR: [
+              this.buildPublicMenuItemVisibilityWhere(branchId),
+              this.buildDealScopedMenuItemVisibilityWhere(
+                restaurantId,
+                branchId,
+                now,
+              ),
+            ],
+          },
         ],
       },
       include: {

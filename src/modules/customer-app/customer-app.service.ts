@@ -844,7 +844,7 @@ export class CustomerAppService {
     return {
       data: await Promise.all(
         visibleItems.map((item) =>
-          this.mapMenuItem(
+          this.mapHomeMenuItemCard(
             item,
             promotionContext.promotions,
             promotionContext.happyHours,

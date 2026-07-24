@@ -168,6 +168,7 @@ describe('CustomerAppService', () => {
       listMenuCategories: listCuisineCategories,
       findPublicCuisine: jest.fn(),
       listCuisineMenuItems: jest.fn(),
+      listPublicMenuItems: jest.fn(),
       listPromotionalItems: jest.fn(),
       listPublicDealScopeMenuItems: jest.fn(),
       findPublicMenuItemBySlug: jest.fn(),
@@ -912,6 +913,58 @@ describe('CustomerAppService', () => {
       { value: 'NON_ALCOHOLIC', label: 'Non Alcoholic' },
       { value: 'VEGAN', label: 'Vegan' },
     ]);
+    expect(result.data[0]).not.toHaveProperty('restaurant');
+    expect(result.data[0]).not.toHaveProperty('modifierLinks');
+    expect(result.data[0]).not.toHaveProperty('modifierPriceOverrides');
+    expect(result.data[0]).not.toHaveProperty('modifiers');
+    expect(result.data[0]).not.toHaveProperty('variations');
+  });
+
+  it('returns compact public item cards for menu browsing', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listPublicMenuItems.mockResolvedValue({
+      items: [itemFixture],
+      total: 1,
+    });
+
+    const result = await service.listItems({
+      restaurantId: 'restaurant-1',
+      categoryId: 'category-1',
+      page: 1,
+      limit: 12,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(repository.listPublicMenuItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        categoryId: 'category-1',
+      }),
+    );
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        id: 'item-1',
+        slug: 'zinger-burger',
+        category: {
+          id: 'category-1',
+          name: 'Burgers',
+          imageUrl: 'https://cdn.example.com/category.png',
+        },
+      }),
+    );
     expect(result.data[0]).not.toHaveProperty('restaurant');
     expect(result.data[0]).not.toHaveProperty('modifierLinks');
     expect(result.data[0]).not.toHaveProperty('modifierPriceOverrides');
