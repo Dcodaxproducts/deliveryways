@@ -34,6 +34,7 @@ import {
   ListCustomerGiftCardsQueryDto,
   ListCustomerPromotionsQueryDto,
   ListPublicOrderReviewsQueryDto,
+  ListPublicBranchesQueryDto,
   ListPublicMenuItemsQueryDto,
   ListPromotionalItemsQueryDto,
   ListTableReservationsQueryDto,
@@ -322,6 +323,52 @@ export class CustomerAppService {
         branding: restaurant.branding,
       },
       message: 'Domain context resolved successfully',
+    };
+  }
+
+  async listPublicBranches(query: ListPublicBranchesQueryDto) {
+    const restaurant = await this.customerAppRepository.findRestaurantScope(
+      query.restaurantId,
+    );
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const { items, total } =
+      await this.customerAppRepository.listPublicBranches(query);
+
+    return {
+      data: items.map((branch) => ({
+        id: branch.id,
+        restaurantId: branch.restaurantId,
+        name: branch.name,
+        isMain: branch.isMain,
+        isActive: branch.isActive,
+        isOnlyBranch: total === 1,
+        address: branch.address,
+        settings: {
+          allowedOrderTypes: this.readStringArrayValue(branch.settings, [
+            ['allowedOrderTypes'],
+          ]),
+          openingHours: this.readBranchScheduleHours(
+            branch.settings,
+            'openingHours',
+          ),
+          deliveryHours: this.readBranchScheduleHours(
+            branch.settings,
+            'deliveryHours',
+          ),
+          holidayOpeningHours: this.readBranchHolidayOpeningHours(
+            branch.settings,
+          ),
+          temporaryClosure: this.resolveActiveTemporaryClosure(branch.settings),
+          tableReservationsEnabled: this.readBooleanValue(branch.settings, [
+            ['tableReservationsEnabled'],
+          ]),
+        },
+      })),
+      message: 'Branches fetched successfully',
+      meta: buildPaginationMeta(query, total),
     };
   }
 
@@ -4567,6 +4614,20 @@ export class CustomerAppService {
     }
 
     return null;
+  }
+
+  private readStringArrayValue(source: unknown, paths: string[][]): string[] {
+    for (const path of paths) {
+      const value = this.readPath(source, path);
+      if (Array.isArray(value)) {
+        return value.filter(
+          (item): item is string =>
+            typeof item === 'string' && item.trim().length > 0,
+        );
+      }
+    }
+
+    return [];
   }
 
   private readBooleanValue(source: unknown, paths: string[][]): boolean {

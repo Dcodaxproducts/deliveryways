@@ -158,6 +158,7 @@ describe('CustomerAppService', () => {
       findCustomersForTableReservations: jest.fn(),
       findRestaurantScope: jest.fn(),
       findRestaurantDomainContext: jest.fn(),
+      listPublicBranches: jest.fn(),
       upsertCustomerProfile: jest.fn(),
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
@@ -272,6 +273,79 @@ describe('CustomerAppService', () => {
       customDomainVerified: false,
       branchId: 'branch-1',
     });
+  });
+
+  it('lists sanitized active branches for anonymous ordering', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantScope.mockResolvedValue({ id: 'restaurant-1' });
+    repository.listPublicBranches.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          restaurantId: 'restaurant-1',
+          name: 'Main Branch',
+          isMain: true,
+          isActive: true,
+          address: {
+            street: 'Main Street 1',
+            area: null,
+            postalCode: '10115',
+            city: 'Berlin',
+            state: 'Berlin',
+            country: 'Germany',
+            lat: null,
+            lng: null,
+          },
+          settings: {
+            allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+            openingHours: [{ dayOfWeek: 'MONDAY' }],
+            internalNote: 'must not be public',
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listPublicBranches({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'branch-1',
+        isOnlyBranch: true,
+        settings: {
+          allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+          openingHours: [{ dayOfWeek: 'MONDAY' }],
+          deliveryHours: [{ dayOfWeek: 'MONDAY' }],
+          holidayOpeningHours: [],
+          temporaryClosure: null,
+          tableReservationsEnabled: false,
+        },
+      }),
+    ]);
+    expect(result.data[0]?.settings).not.toHaveProperty('internalNote');
+    expect(result.meta).toMatchObject({ total: 1 });
+  });
+
+  it('rejects public branch listing for an unknown restaurant', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantScope.mockResolvedValue(null);
+
+    await expect(
+      service.listPublicBranches({
+        restaurantId: 'missing',
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      }),
+    ).rejects.toThrow('Restaurant not found');
+    expect(repository.listPublicBranches).not.toHaveBeenCalled();
   });
 
   it('uses opening hours as customer-app delivery-hours fallback', () => {

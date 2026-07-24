@@ -66,6 +66,13 @@ export class DomainContextQueryDto {
   host!: string;
 }
 
+export class ListPublicBranchesQueryDto extends QueryDto {
+  @ApiProperty({ description: 'Restaurant whose active branches are listed' })
+  @IsString()
+  @IsNotEmpty()
+  restaurantId!: string;
+}
+
 export class PublicMenuItemBySlugQueryDto extends PublicRestaurantQueryDto {}
 
 export class SubmitContactFormDto {

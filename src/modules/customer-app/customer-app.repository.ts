@@ -8,6 +8,7 @@ import {
   ListMenuCategoriesQueryDto,
   ListCustomerFavoritesQueryDto,
   ListPublicOrderReviewsQueryDto,
+  ListPublicBranchesQueryDto,
   ListPublicMenuItemsQueryDto,
   ListPromotionalItemsQueryDto,
   PublicRestaurantQueryDto,
@@ -656,6 +657,73 @@ export class CustomerAppRepository {
       },
       select,
     });
+  }
+
+  async listPublicBranches(query: ListPublicBranchesQueryDto) {
+    const where = {
+      restaurantId: query.restaurantId,
+      deletedAt: null,
+      isActive: true,
+      ...(query.search?.trim()
+        ? {
+            name: {
+              contains: query.search.trim(),
+              mode: Prisma.QueryMode.insensitive,
+            },
+          }
+        : {}),
+    } satisfies Prisma.BranchWhereInput;
+
+    const [branches, total] = await Promise.all([
+      this.prisma.branch.findMany({
+        where,
+        orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        select: {
+          id: true,
+          restaurantId: true,
+          name: true,
+          isMain: true,
+          isActive: true,
+          settings: true,
+        },
+      }),
+      this.prisma.branch.count({ where }),
+    ]);
+
+    const addresses = branches.length
+      ? await this.prisma.address.findMany({
+          where: {
+            referenceId: { in: branches.map((branch) => branch.id) },
+            refType: AddressRefType.BRANCH,
+            deletedAt: null,
+            isActive: true,
+          },
+          select: {
+            referenceId: true,
+            street: true,
+            area: true,
+            postalCode: true,
+            city: true,
+            state: true,
+            country: true,
+            lat: true,
+            lng: true,
+          },
+        })
+      : [];
+    const addressByBranchId = new Map(
+      addresses.map((address) => [address.referenceId, address]),
+    );
+
+    return {
+      items: branches.map((branch) => ({
+        ...branch,
+        address: addressByBranchId.get(branch.id) ?? null,
+      })),
+      total,
+    };
   }
 
   async findRestaurantPublicContent(restaurantId: string) {

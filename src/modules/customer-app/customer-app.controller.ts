@@ -37,6 +37,7 @@ import {
   ListCustomerFavoritesQueryDto,
   ListCustomerGiftCardsQueryDto,
   ListPublicGiftCardsQueryDto,
+  ListPublicBranchesQueryDto,
   ListCustomerPromotionsQueryDto,
   ListPublicOrderReviewsQueryDto,
   ListPublicMenuItemsQueryDto,
@@ -69,6 +70,13 @@ export class CustomerAppController {
   })
   resolveDomainContext(@Query() query: DomainContextQueryDto) {
     return this.customerAppService.resolveDomainContext(query.host);
+  }
+
+  @Public()
+  @Get('branches')
+  @ApiOperation({ summary: 'List active branches for public ordering' })
+  listPublicBranches(@Query() query: ListPublicBranchesQueryDto) {
+    return this.customerAppService.listPublicBranches(query);
   }
 
   @ApiBearerAuth()
