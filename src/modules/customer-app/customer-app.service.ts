@@ -1195,10 +1195,15 @@ export class CustomerAppService {
           restaurantContactInfo,
         )
       : null;
-    const [currency, timezone] = await Promise.all([
+    const [currency, timezone, platformMethodsResponse] = await Promise.all([
       this.resolveHomeCurrency(restaurant.settings),
       this.resolveHomeTimezone(),
+      this.globalSettingsService?.getPaymentMethods(),
     ]);
+    const activePlatformMethods =
+      platformMethodsResponse?.data
+        ?.filter((method) => method.isActive)
+        .map((method) => method.code) ?? [];
     const [
       restaurantLogoUrl,
       restaurantCoverImage,
@@ -1288,6 +1293,17 @@ export class CustomerAppService {
               contacts: branchContactInfo,
               address: branchPublicAddress,
               isOpen: this.isBranchOpenNow(translatedBranch.settings),
+              settings: {
+                allowedOrderTypes: this.readStringArrayValue(
+                  translatedBranch.settings,
+                  [['allowedOrderTypes']],
+                ),
+                allowedPaymentMethods: this.resolveEffectivePaymentMethods(
+                  translatedBranch.settings,
+                  restaurant.settings,
+                  activePlatformMethods,
+                ),
+              },
               scheduleTimings: {
                 timezone,
                 openingHours: this.readBranchScheduleHours(

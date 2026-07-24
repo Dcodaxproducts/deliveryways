@@ -2203,6 +2203,10 @@ describe('CustomerAppService', () => {
         lng: 74.3587,
       },
       isOpen: false,
+      settings: {
+        allowedOrderTypes: [],
+        allowedPaymentMethods: ['COD', 'CARD_ON_DELIVERY', 'PAYPAL', 'WALLET'],
+      },
       scheduleTimings: {
         timezone: 'Europe/Berlin',
         openingHours: [
