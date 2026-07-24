@@ -12,6 +12,7 @@ import { LocalizationsModule } from '../localizations';
 import { MailerModule } from '../mailer/mailer.module';
 import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 import { ContactSubmissionsModule } from '../contact-submissions/contact-submissions.module';
+import { AcceptLanguageQueryInterceptor } from './accept-language-query.interceptor';
 
 @Module({
   imports: [
@@ -26,6 +27,10 @@ import { ContactSubmissionsModule } from '../contact-submissions/contact-submiss
     ContactSubmissionsModule,
   ],
   controllers: [CustomerAppController, PublicContentController],
-  providers: [CustomerAppRepository, CustomerAppService],
+  providers: [
+    AcceptLanguageQueryInterceptor,
+    CustomerAppRepository,
+    CustomerAppService,
+  ],
 })
 export class CustomerAppModule {}

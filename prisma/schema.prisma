@@ -2079,7 +2079,7 @@ model GlobalSetting {
   defaultHybridFeePercentage  Decimal               @default(0) @map("default_hybrid_fee_percentage") @db.Decimal(5, 2)
   defaultCurrency             String                @default("PKR") @map("default_currency") @db.VarChar(10)
   currencyDisplayFormat       CurrencyDisplayFormat @default(SYMBOL_AMOUNT) @map("currency_display_format")
-  defaultLanguage             String                @default("en") @map("default_language") @db.VarChar(16)
+  defaultLanguage             String                @default("de") @map("default_language") @db.VarChar(16)
   dateFormat                  PlatformDateFormat    @default(DD_MM_YYYY) @map("date_format")
   timezone                    String                @default("Asia/Karachi") @db.VarChar(100)
   primaryColor                String?               @map("primary_color") @db.VarChar(20)

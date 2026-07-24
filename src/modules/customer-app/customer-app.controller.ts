@@ -8,6 +8,7 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -54,6 +55,7 @@ import {
   UpdateTableReservationStatusDto,
 } from './dto';
 import { CustomerAppService } from './customer-app.service';
+import { AcceptLanguageQueryInterceptor } from './accept-language-query.interceptor';
 
 @ApiTags('Customer App')
 @Controller('customer-app')
@@ -129,6 +131,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('privacy-policy')
   @ApiOperation({ summary: 'Fetch public privacy policy content' })
   getPrivacyPolicy(
@@ -140,6 +143,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('help-support')
   @ApiOperation({ summary: 'Fetch public help and support content' })
   getHelpSupport(
@@ -151,6 +155,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('faqs')
   @ApiOperation({ summary: 'Fetch public FAQ content' })
   getFaqs(
@@ -162,6 +167,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('categories')
   @ApiOperation({ summary: 'List public restaurant menu categories' })
   listMenuCategories(
@@ -173,6 +179,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('categories/:categoryId/items')
   @ApiOperation({ summary: 'List public menu items for a menu category' })
   listMenuCategoryItems(
@@ -189,6 +196,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('cuisines')
   @ApiOperation({ summary: 'List public cuisines/categories' })
   listCuisines(
@@ -200,6 +208,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('cuisines/:cuisineId/items')
   @ApiOperation({ summary: 'List public menu items for a cuisine/category' })
   listCuisineItems(
@@ -212,6 +221,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('promotional-cuisines')
   @ApiOperation({
     summary: 'List public cuisines/categories with active promotions',
@@ -225,6 +235,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('items')
   @ApiOperation({ summary: 'List public menu items for customer browsing' })
   listItems(
@@ -236,6 +247,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('promotional-items')
   @ApiOperation({ summary: 'List home-screen promotional menu items' })
   listPromotionalItems(
@@ -247,6 +259,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('coupons')
   @ApiOperation({ summary: 'List active public coupon codes' })
   listCoupons(
@@ -258,6 +271,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('deals')
   @ApiOperation({ summary: 'List active public fixed-price deals' })
   listDeals(
@@ -269,6 +283,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('promotions')
   @ApiOperation({ summary: 'List active public promotion campaigns' })
   listPromotions(
@@ -280,6 +295,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('items/:slug')
   @ApiOperation({ summary: 'Fetch single public menu item by slug' })
   getItemBySlug(
@@ -292,6 +308,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('home')
   @ApiOperation({ summary: 'Fetch home-screen data bundle for customer app' })
   getHomeScreen(
@@ -303,6 +320,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('branch-stats')
   @ApiOperation({ summary: 'Fetch public customer-web branch stats' })
   getBranchStats(
@@ -314,6 +332,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('reviews')
   @ApiOperation({ summary: 'List public order reviews' })
   listPublicReviews(
@@ -483,6 +502,7 @@ export class CustomerAppController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('gift-cards/available')
   @ApiOperation({ summary: 'List public gift cards when enabled' })
   listPublicGiftCards(

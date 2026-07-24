@@ -1,9 +1,18 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Public } from '../../common/decorators';
 import { OptionalJwtAuthGuard } from '../../common/guards';
 import { PublicRestaurantQueryDto, SubmitContactFormDto } from './dto';
 import { CustomerAppService } from './customer-app.service';
+import { AcceptLanguageQueryInterceptor } from './accept-language-query.interceptor';
 
 @ApiTags('Public Content')
 @Controller('public-content')
@@ -12,6 +21,7 @@ export class PublicContentController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('privacy-policy')
   @ApiOperation({ summary: 'Fetch public privacy policy content' })
   getPrivacyPolicy(
@@ -23,6 +33,7 @@ export class PublicContentController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('help-support')
   @ApiOperation({ summary: 'Fetch public help and support content' })
   getHelpSupport(
@@ -34,6 +45,7 @@ export class PublicContentController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('about-us')
   @ApiOperation({ summary: 'Fetch public About Us content' })
   getAboutUs(
@@ -57,6 +69,7 @@ export class PublicContentController {
 
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('faqs')
   @ApiOperation({ summary: 'Fetch public FAQ content' })
   getFaqs(

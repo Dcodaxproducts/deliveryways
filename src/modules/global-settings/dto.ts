@@ -334,7 +334,7 @@ export class UpdateGlobalSettingsDto {
   @IsEnum(CurrencyDisplayFormat)
   currencyDisplayFormat?: CurrencyDisplayFormat;
 
-  @ApiPropertyOptional({ example: 'en' })
+  @ApiPropertyOptional({ example: 'de' })
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsString()

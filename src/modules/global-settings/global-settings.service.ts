@@ -283,7 +283,7 @@ export class GlobalSettingsService {
       defaultHybridFeePercentage: new Prisma.Decimal(0),
       defaultCurrency: 'PKR',
       currencyDisplayFormat: CurrencyDisplayFormat.SYMBOL_AMOUNT,
-      defaultLanguage: 'en',
+      defaultLanguage: 'de',
       dateFormat: PlatformDateFormat.DD_MM_YYYY,
       timezone: 'Asia/Karachi',
       primaryColor: null,

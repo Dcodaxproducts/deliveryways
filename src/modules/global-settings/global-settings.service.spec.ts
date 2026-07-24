@@ -74,6 +74,9 @@ describe('GlobalSettingsService', () => {
     const result = await service.getSettings();
 
     expect(ensureSingletonSpy).toHaveBeenCalledTimes(1);
+    expect(ensureSingletonSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultLanguage: 'de' }),
+    );
     expect(result).toEqual({
       data: {
         scopeKey: 'GLOBAL',
