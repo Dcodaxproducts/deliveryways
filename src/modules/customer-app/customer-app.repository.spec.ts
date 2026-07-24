@@ -1,10 +1,37 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { CustomerAppRepository } from './customer-app.repository';
 
+type FindManyMenuItems = (
+  args: Prisma.MenuItemFindManyArgs,
+) => Promise<unknown[]>;
+type CountMenuItems = (args: Prisma.MenuItemCountArgs) => Promise<number>;
+
+type CompactMenuItemInclude = {
+  category: {
+    select: {
+      variations: {
+        select: Record<string, boolean>;
+      };
+    };
+  };
+  variationPriceOverrides: {
+    select: {
+      variation: {
+        select: Record<string, boolean>;
+      };
+    };
+  };
+};
+
 describe('CustomerAppRepository', () => {
   it('keeps category membership and public visibility as required filters', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
-    const count = jest.fn().mockResolvedValue(0);
+    const findMany = jest
+      .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
+      .mockResolvedValue([]);
+    const count = jest
+      .fn<ReturnType<CountMenuItems>, Parameters<CountMenuItems>>()
+      .mockResolvedValue(0);
     const prisma = {
       menuItem: {
         findMany,
@@ -25,35 +52,36 @@ describe('CustomerAppRepository', () => {
       sortOrder: 'ASC',
     });
 
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          AND: expect.arrayContaining([
+    const query = findMany.mock.calls[0]?.[0];
+    expect(query?.where?.AND).toEqual(
+      expect.arrayContaining([
+        {
+          OR: [
+            { categoryId: 'category-1' },
             {
-              OR: [
-                { categoryId: 'category-1' },
-                {
-                  categoryLinks: {
-                    some: { menuCategoryId: 'category-1' },
-                  },
-                },
-              ],
+              categoryLinks: {
+                some: { menuCategoryId: 'category-1' },
+              },
             },
-          ]),
-        }),
-      }),
+          ],
+        },
+      ]),
     );
     expect(count).toHaveBeenCalledWith({
-      where: findMany.mock.calls[0]?.[0]?.where,
+      where: query?.where,
     });
   });
 
   it('loads variation summaries without modifier relation graphs', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
+    const findMany = jest
+      .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
+      .mockResolvedValue([]);
     const prisma = {
       menuItem: {
         findMany,
-        count: jest.fn().mockResolvedValue(0),
+        count: jest
+          .fn<ReturnType<CountMenuItems>, Parameters<CountMenuItems>>()
+          .mockResolvedValue(0),
       },
     };
     const repository = new CustomerAppRepository(
@@ -68,7 +96,8 @@ describe('CustomerAppRepository', () => {
       sortOrder: 'ASC',
     });
 
-    const include = findMany.mock.calls[0]?.[0]?.include;
+    const include = findMany.mock.calls[0]?.[0]
+      ?.include as unknown as CompactMenuItemInclude;
 
     expect(include.category.select.variations.select).toEqual(
       expect.objectContaining({
