@@ -2964,6 +2964,7 @@ export class CustomerAppService {
 
     return {
       id: item.id,
+      restaurantId: item.restaurant?.id ?? '',
       name: translatedItem.name,
       slug: item.slug,
       description: translatedItem.description,
@@ -3098,6 +3099,7 @@ export class CustomerAppService {
 
     return {
       id: item.id,
+      restaurantId: item.restaurant?.id ?? '',
       name: translatedItem.name,
       slug: item.slug,
       description: translatedItem.description,
@@ -3119,6 +3121,7 @@ export class CustomerAppService {
           }
         : null,
       variations,
+      isActive: true,
       isAvailable: branchOverride?.isAvailable ?? true,
     };
   }
@@ -4719,11 +4722,13 @@ export class CustomerAppService {
       return fallback;
     }
 
-    return input.filter(
+    const methods = input.filter(
       (method): method is PaymentMethod =>
         typeof method === 'string' &&
         Object.values(PaymentMethod).includes(method as PaymentMethod),
     );
+
+    return methods.length > 0 ? methods : fallback;
   }
 
   private readBooleanValue(source: unknown, paths: string[][]): boolean {

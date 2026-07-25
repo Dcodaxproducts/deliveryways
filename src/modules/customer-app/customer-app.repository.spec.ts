@@ -6,6 +6,12 @@ type FindManyMenuItems = (
   args: Prisma.MenuItemFindManyArgs,
 ) => Promise<unknown[]>;
 type CountMenuItems = (args: Prisma.MenuItemCountArgs) => Promise<number>;
+type FindManyMenuCategories = (
+  args: Prisma.MenuCategoryFindManyArgs,
+) => Promise<unknown[]>;
+type CountMenuCategories = (
+  args: Prisma.MenuCategoryCountArgs,
+) => Promise<number>;
 
 type CompactMenuItemInclude = {
   category: {
@@ -25,6 +31,35 @@ type CompactMenuItemInclude = {
 };
 
 describe('CustomerAppRepository', () => {
+  it('keeps newly created categories after older categories with equal sort order', async () => {
+    const findMany = jest
+      .fn<
+        ReturnType<FindManyMenuCategories>,
+        Parameters<FindManyMenuCategories>
+      >()
+      .mockResolvedValue([]);
+    const count = jest
+      .fn<ReturnType<CountMenuCategories>, Parameters<CountMenuCategories>>()
+      .mockResolvedValue(0);
+    const repository = new CustomerAppRepository({
+      menuCategory: { findMany, count },
+    } as unknown as PrismaService);
+
+    await repository.listMenuCategories({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 20,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(findMany.mock.calls[0]?.[0]?.orderBy).toEqual([
+      { sortOrder: 'asc' },
+      { createdAt: 'asc' },
+      { name: 'asc' },
+    ]);
+  });
+
   it('keeps category membership and public visibility as required filters', async () => {
     const findMany = jest
       .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
@@ -70,6 +105,11 @@ describe('CustomerAppRepository', () => {
     expect(count).toHaveBeenCalledWith({
       where: query?.where,
     });
+    expect(query?.orderBy).toEqual([
+      { sortOrder: 'asc' },
+      { createdAt: 'asc' },
+      { name: 'asc' },
+    ]);
   });
 
   it('loads variation summaries without modifier relation graphs', async () => {

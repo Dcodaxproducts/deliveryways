@@ -353,6 +353,43 @@ describe('CustomerAppService', () => {
     expect(result.meta).toMatchObject({ total: 1 });
   });
 
+  it('uses safe checkout methods when legacy branch settings contain an empty array', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantScope.mockResolvedValue({ id: 'restaurant-1' });
+    repository.listPublicBranches.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          restaurantId: 'restaurant-1',
+          name: 'Main Branch',
+          isMain: true,
+          isActive: true,
+          address: null,
+          settings: {
+            allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
+            allowedPaymentMethods: [],
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listPublicBranches({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(result.data[0]?.settings.allowedPaymentMethods).toEqual([
+      'COD',
+      'CARD_ON_DELIVERY',
+      'PAYPAL',
+      'WALLET',
+    ]);
+  });
+
   it('rejects public branch listing for an unknown restaurant', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantScope.mockResolvedValue(null);
@@ -1058,7 +1095,9 @@ describe('CustomerAppService', () => {
     expect(result.data[0]).toEqual(
       expect.objectContaining({
         id: 'item-1',
+        restaurantId: 'restaurant-1',
         slug: 'zinger-burger',
+        isActive: true,
         category: {
           id: 'category-1',
           name: 'Burgers',

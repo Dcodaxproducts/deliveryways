@@ -1103,7 +1103,7 @@ export class CustomerAppRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }],
         include: {
           _count: {
             select: {
@@ -1552,7 +1552,7 @@ export class CustomerAppRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { createdAt: 'desc' }],
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }],
         include: this.buildPublicMenuItemCardInclude(branchId),
       }),
       this.prisma.menuItem.count({ where }),
