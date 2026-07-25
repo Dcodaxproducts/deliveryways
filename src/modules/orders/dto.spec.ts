@@ -81,9 +81,9 @@ describe('Order DTO validation', () => {
           paymentMethod: PaymentMethodEnum.COD,
           orderTime: '2026-03-24T19:30:00.000Z',
           guestContact: {
-            firstName: 'Guest',
+            firstName: 'Max Mustermann',
             email: 'guest@example.com',
-            phone: '+923001234567',
+            phone: '+49 151 23456789',
             privacyPolicyAccepted: true,
           },
           guestDeliveryAddress: {
@@ -104,7 +104,7 @@ describe('Order DTO validation', () => {
     ).resolves.toMatchObject({
       guestContact: {
         email: 'guest@example.com',
-        phone: '+923001234567',
+        phone: '+49 151 23456789',
         privacyPolicyAccepted: true,
       },
       guestDeliveryAddress: {
@@ -113,5 +113,28 @@ describe('Order DTO validation', () => {
         lng: '74.3587',
       },
     });
+  });
+
+  it('rejects generated guest identities and invalid contact details', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          branchId: 'branch-1',
+          orderType: OrderTypeEnum.TAKEAWAY,
+          paymentMethod: PaymentMethodEnum.COD,
+          guestContact: {
+            firstName: 'G',
+            email: 'guest+restaurant-1@guest.deliveryways.local',
+            phone: '123',
+            privacyPolicyAccepted: true,
+          },
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        },
+        {
+          type: 'body',
+          metatype: CreateOrderDto,
+        },
+      ),
+    ).rejects.toThrow();
   });
 });

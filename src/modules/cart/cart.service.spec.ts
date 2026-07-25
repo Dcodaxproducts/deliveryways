@@ -6997,8 +6997,9 @@ describe('CartService', () => {
       {
         paymentMethod: PaymentMethodEnum.COD,
         guestContact: {
+          firstName: 'Max Mustermann',
           email: 'guest@example.com',
-          phone: '+923001234567',
+          phone: '+49 151 23456789',
           privacyPolicyAccepted: true,
         },
         guestDeliveryAddress: {
@@ -7016,8 +7017,9 @@ describe('CartService', () => {
       expect.any(Object),
       expect.objectContaining({
         guestContact: {
+          firstName: 'Max Mustermann',
           email: 'guest@example.com',
-          phone: '+923001234567',
+          phone: '+49 151 23456789',
           privacyPolicyAccepted: true,
         },
         guestDeliveryAddress: {

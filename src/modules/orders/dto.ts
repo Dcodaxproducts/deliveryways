@@ -15,15 +15,23 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
 
 export const ORDER_ITEM_SECTION_SLOT_VALUES = ['LEFT', 'RIGHT'] as const;
+
+const trimStringValue = (value: unknown) =>
+  typeof value === 'string' ? value.trim() : value;
+
+const normalizeEmailValue = (value: unknown) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : value;
 
 export class OrderItemModifierDto {
   @ApiProperty()
@@ -110,23 +118,35 @@ export class OrderItemDto {
 }
 
 export class GuestOrderContactDto {
-  @ApiPropertyOptional({ example: 'Ali' })
-  @IsOptional()
+  @ApiProperty({ example: 'Max Mustermann' })
+  @Transform(({ value }) => trimStringValue(value as unknown))
   @IsString()
-  firstName?: string;
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(100)
+  @Matches(/\p{L}/u)
+  firstName!: string;
 
   @ApiPropertyOptional({ example: 'Khan' })
   @IsOptional()
+  @Transform(({ value }) => trimStringValue(value as unknown))
   @IsString()
+  @MaxLength(100)
   lastName?: string;
 
   @ApiProperty({ example: 'guest@example.com' })
+  @Transform(({ value }) => normalizeEmailValue(value as unknown))
   @IsEmail()
+  @MaxLength(254)
+  @Matches(/^(?!.*@guest\.deliveryways?(?:\.local)?$).+$/i)
   email!: string;
 
-  @ApiProperty({ example: '+923001234567' })
+  @ApiProperty({ example: '+49 151 23456789' })
+  @Transform(({ value }) => trimStringValue(value as unknown))
   @IsString()
   @IsNotEmpty()
+  @MaxLength(30)
+  @Matches(/^(?=(?:\D*\d){7,15}\D*$)[+()\d\s./-]+$/)
   phone!: string;
 
   @ApiProperty({
