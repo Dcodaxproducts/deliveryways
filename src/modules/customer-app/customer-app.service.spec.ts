@@ -2059,9 +2059,49 @@ describe('CustomerAppService', () => {
     );
   });
 
-  it('fetches public item by slug without legacy modifier groups', async () => {
+  it('fetches public item details with inherited category add-on groups', async () => {
     const { service, repository } = makeService();
-    repository.findPublicMenuItemBySlug.mockResolvedValue(itemFixture);
+    repository.findPublicMenuItemBySlug.mockResolvedValue({
+      ...itemFixture,
+      modifierLinks: [],
+      category: {
+        ...itemFixture.category,
+        modifierLinks: [
+          {
+            id: 'category-group-link-1',
+            sortOrder: 2,
+            selectionType: 'MULTIPLE',
+            minSelect: 0,
+            maxSelect: 3,
+            modifierGroup: {
+              id: 'category-group-1',
+              name: 'Extras',
+              description: 'Choose your extras',
+              minSelect: 0,
+              maxSelect: 3,
+              isRequired: false,
+              sortOrder: 2,
+              isActive: true,
+              modifierLinks: [
+                {
+                  id: 'category-modifier-link-1',
+                  sortOrder: 1,
+                  modifier: {
+                    id: 'modifier-2',
+                    name: 'Extra Sauce',
+                    priceDelta: new Prisma.Decimal(50),
+                    sortOrder: 1,
+                    isActive: true,
+                    itemPriceOverrides: [],
+                    variationPriceOverrides: [],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
 
     const result = await service.getItemBySlug(' Zinger-Burger ', {
       restaurantId: 'restaurant-1',
@@ -2080,7 +2120,22 @@ describe('CustomerAppService', () => {
     expect(result.data.nutritionalInformation).toBe('520 kcal');
     expect(result.data.prepTimeMinutes).toBe(15);
     expect(result.data.depositAmount).toBe(100);
-    expect('modifierGroups' in result.data).toBe(false);
+    expect(result.data.modifierGroups).toEqual([
+      expect.objectContaining({
+        id: 'category-group-1',
+        name: 'Extras',
+        selectionType: 'MULTIPLE',
+        minSelect: 0,
+        maxSelect: 3,
+        modifiers: [
+          expect.objectContaining({
+            id: 'modifier-2',
+            name: 'Extra Sauce',
+            priceDelta: 50,
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('includes restaurant cover image on home-screen/public content responses', async () => {

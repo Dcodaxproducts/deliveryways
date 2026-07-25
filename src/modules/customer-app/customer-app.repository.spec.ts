@@ -6,6 +6,9 @@ type FindManyMenuItems = (
   args: Prisma.MenuItemFindManyArgs,
 ) => Promise<unknown[]>;
 type CountMenuItems = (args: Prisma.MenuItemCountArgs) => Promise<number>;
+type FindFirstMenuItem = (
+  args: Prisma.MenuItemFindFirstArgs,
+) => Promise<unknown>;
 type FindManyMenuCategories = (
   args: Prisma.MenuCategoryFindManyArgs,
 ) => Promise<unknown[]>;
@@ -31,6 +34,51 @@ type CompactMenuItemInclude = {
 };
 
 describe('CustomerAppRepository', () => {
+  it('loads inherited category modifier groups for public item details', async () => {
+    const findFirst = jest
+      .fn<ReturnType<FindFirstMenuItem>, Parameters<FindFirstMenuItem>>()
+      .mockResolvedValue(null);
+    const repository = new CustomerAppRepository({
+      menuItem: { findFirst },
+    } as unknown as PrismaService);
+
+    await repository.findPublicMenuItemBySlug('item-1', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    const query = findFirst.mock.calls[0]?.[0];
+    const categoryInclude = query?.include?.category;
+    const categorySelect =
+      typeof categoryInclude === 'object' && categoryInclude !== null
+        ? categoryInclude.select
+        : undefined;
+
+    const modifierLinks = categorySelect?.modifierLinks;
+
+    expect(modifierLinks).toBeDefined();
+
+    if (typeof modifierLinks !== 'object' || modifierLinks === null) {
+      throw new Error('Category modifier links must be included');
+    }
+
+    const modifierGroup = modifierLinks.include?.modifierGroup;
+
+    if (typeof modifierGroup !== 'object' || modifierGroup === null) {
+      throw new Error('Modifier group details must be included');
+    }
+
+    const groupModifierLinks = modifierGroup.include?.modifierLinks;
+
+    if (typeof groupModifierLinks !== 'object' || groupModifierLinks === null) {
+      throw new Error('Active modifier details must be included');
+    }
+
+    expect(groupModifierLinks.where).toEqual({
+      modifier: { deletedAt: null, isActive: true },
+    });
+  });
+
   it('keeps newly created categories after older categories with equal sort order', async () => {
     const findMany = jest
       .fn<

@@ -1647,6 +1647,32 @@ export class CustomerAppRepository {
               },
               orderBy: [{ sortOrder: 'asc' }],
             },
+            modifierLinks: {
+              orderBy: [{ sortOrder: 'asc' }],
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifierLinks: {
+                      where: {
+                        modifier: { deletedAt: null, isActive: true },
+                      },
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: true,
+                            variationPriceOverrides: true,
+                          },
+                        },
+                      },
+                      orderBy: [
+                        { sortOrder: 'asc' },
+                        { modifier: { createdAt: 'asc' } },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
             menuLinks: {
               include: {
                 restaurantMenu: {

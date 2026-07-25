@@ -10,6 +10,7 @@ import {
   AddressRefType,
   CouponDealSelectionMode,
   LocalizationEntityType,
+  ModifierSelectionType,
   PaymentMethod,
   Prisma,
 } from '@prisma/client';
@@ -119,7 +120,7 @@ type PublicMenuItemVariation = {
 type PublicMenuItemModifier = {
   id: string;
   name: string;
-  priceDelta?: Prisma.Decimal;
+  priceDelta: Prisma.Decimal;
   sortOrder: number;
   isActive?: boolean;
   itemPriceOverrides?: Array<{
@@ -131,6 +132,29 @@ type PublicMenuItemModifier = {
     variationId: string;
     priceDelta: Prisma.Decimal;
   }>;
+};
+
+type PublicMenuItemModifierGroupLink = {
+  id: string;
+  sortOrder: number;
+  selectionType: ModifierSelectionType;
+  minSelect: number;
+  maxSelect: number;
+  modifierGroup: {
+    id: string;
+    name: string;
+    description?: string | null;
+    minSelect: number;
+    maxSelect: number;
+    isRequired: boolean;
+    sortOrder: number;
+    isActive: boolean;
+    modifierLinks: Array<{
+      id: string;
+      sortOrder: number;
+      modifier: PublicMenuItemModifier;
+    }>;
+  };
 };
 
 type PublicMenuItemVariationOverride = {
@@ -1095,13 +1119,18 @@ export class CustomerAppService {
       this.collectMenuItemTranslationRefs(item),
     );
 
+    const mappedItem = await this.mapMenuItem(
+      item,
+      promotionContext.promotions,
+      promotionContext.happyHours,
+      translationContext,
+    );
+
     return {
-      data: await this.mapMenuItem(
-        item,
-        promotionContext.promotions,
-        promotionContext.happyHours,
-        translationContext,
-      ),
+      data: {
+        ...mappedItem,
+        modifierGroups: this.mapItemModifierGroups(item, translationContext),
+      },
       message: 'Menu item fetched successfully',
     };
   }
@@ -2268,7 +2297,17 @@ export class CustomerAppService {
   private collectMenuItemTranslationRefs(item: {
     id: string;
     restaurant?: { id: string } | null;
-    category?: { id: string } | null;
+    category?: {
+      id: string;
+      modifierLinks?: Array<{
+        modifierGroup: {
+          id: string;
+          modifierLinks: Array<{
+            modifier: { id: string };
+          }>;
+        };
+      }>;
+    } | null;
     variations?: Array<{ id: string }>;
     variationPriceOverrides?: Array<{
       variation?: { id: string } | null;
@@ -2313,7 +2352,12 @@ export class CustomerAppService {
       }
     }
 
-    for (const groupLink of item.modifierLinks ?? []) {
+    const modifierGroupLinks = [
+      ...(item.modifierLinks ?? []),
+      ...(item.category?.modifierLinks ?? []),
+    ];
+
+    for (const groupLink of modifierGroupLinks) {
       refs.push({
         entityType: 'MODIFIER_GROUP',
         entityId: groupLink.modifierGroup.id,
@@ -2833,6 +2877,7 @@ export class CustomerAppService {
           isActive: boolean;
           variation: PublicMenuItemVariation;
         }>;
+        modifierLinks?: PublicMenuItemModifierGroupLink[];
         menuLinks?: PublicRestaurantMenuScheduleLink[];
       };
       categoryLinks?: Array<{
@@ -2851,29 +2896,7 @@ export class CustomerAppService {
         isRequired?: boolean;
         modifier: PublicMenuItemModifier;
       }>;
-      modifierLinks?: Array<{
-        sortOrder: number;
-        modifierGroup: {
-          id: string;
-          name: string;
-          minSelect: number;
-          maxSelect: number;
-          isRequired: boolean;
-          modifierLinks: Array<{
-            sortOrder: number;
-            modifier: {
-              id: string;
-              name: string;
-              priceDelta: Prisma.Decimal;
-              sortOrder?: number;
-              itemPriceOverrides?: Array<{
-                menuItemId: string;
-                priceDelta: Prisma.Decimal;
-              }>;
-            };
-          }>;
-        };
-      }>;
+      modifierLinks?: PublicMenuItemModifierGroupLink[];
       branchOverrides?: Array<{
         priceOverride: Prisma.Decimal | null;
         isAvailable: boolean;
@@ -3225,6 +3248,107 @@ export class CustomerAppService {
     }
 
     return Array.from(modifierById.values()).sort(
+      (left, right) => left.sortOrder - right.sortOrder,
+    );
+  }
+
+  private mapItemModifierGroups(
+    item: Parameters<CustomerAppService['mapMenuItem']>[0],
+    translationContext?: CustomerAppTranslationContext,
+  ) {
+    const groupsById = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        description: string | null;
+        selectionType: ModifierSelectionType;
+        minSelect: number;
+        maxSelect: number;
+        isRequired: boolean;
+        sortOrder: number;
+        isActive: boolean;
+        modifiers: Array<{
+          id: string;
+          name: string;
+          priceDelta: number;
+          sortOrder: number;
+          isActive: boolean;
+        }>;
+      }
+    >();
+    const priceOverrides = item.modifierPriceOverrides ?? [];
+    const links = [
+      ...(item.modifierLinks ?? []),
+      ...(item.category?.modifierLinks ?? []),
+    ];
+
+    for (const link of links) {
+      const group = link.modifierGroup;
+
+      if (!group.isActive || groupsById.has(group.id)) {
+        continue;
+      }
+
+      const translatedGroup = this.applyEntityTranslation(
+        'MODIFIER_GROUP',
+        group.id,
+        group,
+        translationContext,
+      );
+      const minSelect = link.minSelect ?? group.minSelect;
+      const maxSelect = link.maxSelect ?? group.maxSelect;
+      const modifiers = group.modifierLinks
+        .filter(({ modifier }) => modifier.isActive !== false)
+        .map(({ modifier, sortOrder }) => {
+          const translatedModifier = this.applyEntityTranslation(
+            'MODIFIER',
+            modifier.id,
+            modifier,
+            translationContext,
+          );
+          const priceOverride = priceOverrides.find(
+            (override) =>
+              override.modifierId === modifier.id ||
+              override.modifier.id === modifier.id,
+          );
+          const itemPriceOverride = modifier.itemPriceOverrides?.find(
+            (override) => override.menuItemId === item.id,
+          );
+
+          return {
+            id: modifier.id,
+            name: translatedModifier.name,
+            priceDelta: Number(
+              priceOverride?.priceDelta ??
+                itemPriceOverride?.priceDelta ??
+                modifier.priceDelta,
+            ),
+            sortOrder: modifier.sortOrder ?? sortOrder,
+            isActive: true,
+          };
+        })
+        .sort((left, right) => left.sortOrder - right.sortOrder);
+
+      if (!modifiers.length) {
+        continue;
+      }
+
+      groupsById.set(group.id, {
+        id: group.id,
+        name: translatedGroup.name,
+        description: translatedGroup.description ?? null,
+        selectionType: link.selectionType,
+        minSelect,
+        maxSelect,
+        isRequired: minSelect > 0,
+        sortOrder: link.sortOrder,
+        isActive: true,
+        modifiers,
+      });
+    }
+
+    return Array.from(groupsById.values()).sort(
       (left, right) => left.sortOrder - right.sortOrder,
     );
   }
