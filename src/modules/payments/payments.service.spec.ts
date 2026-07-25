@@ -1496,6 +1496,46 @@ describe('PaymentsService', () => {
     expect(JSON.stringify(result.data)).not.toContain('encrypted-credentials');
   });
 
+  it('lets super admin disable an approved restaurant payout provider', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          payoutProviders: {
+            configurations: {
+              PAYPAL: {
+                provider: 'PAYPAL',
+                enabled: true,
+                publicDetails: {
+                  recipientEmail: 'owner@example.com',
+                  environment: 'LIVE',
+                },
+                encryptedCredentials: 'encrypted-credentials',
+                approvedAt: '2026-07-25T00:00:00.000Z',
+                approvedBy: 'super-1',
+              },
+            },
+          },
+        },
+      },
+    });
+    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    const result = await service.updateRestaurantPayoutProviderConfiguration(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+      RestaurantPayoutProvider.PAYPAL,
+      { enabled: false },
+    );
+    expect(prisma.restaurant.update).toHaveBeenCalledTimes(1);
+    expect(result.data).toEqual({
+      provider: RestaurantPayoutProvider.PAYPAL,
+      enabled: false,
+    });
+  });
+
   it('debits the wallet once after an approved Stripe provider payout succeeds', async () => {
     const { service, prisma, stripePaymentsService, transactionTx } =
       makeService();

@@ -37,6 +37,7 @@ import {
   RestaurantPaymentManagementQueryDto,
   ReviewRestaurantPayoutRequestDto,
   ReviewRestaurantPayoutProviderRequestDto,
+  UpdateRestaurantPayoutProviderConfigurationDto,
   RestaurantPayoutProvider,
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
@@ -1745,6 +1746,73 @@ export class PaymentsService {
     return {
       data: this.serializeRestaurantPayoutProviderRequest(rejectedRequest),
       message: 'Payout provider request rejected successfully',
+    };
+  }
+
+  async updateRestaurantPayoutProviderConfiguration(
+    user: AuthUserContext,
+    restaurantId: string,
+    provider: RestaurantPayoutProvider,
+    dto: UpdateRestaurantPayoutProviderConfigurationDto,
+  ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    this.assertRestaurantPayoutProvider(provider);
+
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const current = this.readRestaurantPayoutProviders(restaurant.settings);
+    const configuration =
+      current.configurations[provider] ??
+      this.resolveRestaurantPayoutProviderConfiguration(
+        restaurant.settings,
+        provider,
+      );
+
+    if (!configuration) {
+      throw new BadRequestException(
+        `${provider} must be approved before it can be enabled`,
+      );
+    }
+
+    const updatedConfiguration: RestaurantPayoutProviderConfiguration = {
+      ...configuration,
+      enabled: dto.enabled,
+    };
+    let nextSettings = this.writeRestaurantPayoutProviders(
+      restaurant.settings,
+      {
+        ...current,
+        configurations: {
+          ...current.configurations,
+          [provider]: updatedConfiguration,
+        },
+      },
+    );
+
+    if (provider === RestaurantPayoutProvider.STRIPE) {
+      const stripe = this.readRestaurantStripeSettings(nextSettings);
+      nextSettings = this.writeRestaurantStripeSettings(nextSettings, {
+        ...stripe,
+        payoutsEnabled: dto.enabled,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+      });
+    }
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true },
+    });
+
+    return {
+      data: {
+        provider: updatedConfiguration.provider,
+        enabled: updatedConfiguration.enabled,
+      },
+      message: `${provider} payout provider ${dto.enabled ? 'enabled' : 'disabled'} successfully`,
     };
   }
 

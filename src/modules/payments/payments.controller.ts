@@ -44,6 +44,7 @@ import {
   ReviewRestaurantPayoutProviderRequestDto,
   RestaurantPayoutProvider,
   UpdateRestaurantPaymentMethodsDto,
+  UpdateRestaurantPayoutProviderConfigurationDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
   SendSubscriptionPaymentRequestDto,
@@ -310,6 +311,28 @@ export class PaymentsController {
     @Body() dto: RejectRestaurantPayoutProviderRequestDto,
   ) {
     return this.paymentsService.rejectRestaurantPayoutProviderRequest(
+      user,
+      restaurantId,
+      provider,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Patch('restaurants/:restaurantId/payout-providers/:provider')
+  @ApiOperation({
+    summary: 'Enable or disable an approved restaurant payout provider',
+  })
+  updateRestaurantPayoutProviderConfiguration(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Param('provider', new ParseEnumPipe(RestaurantPayoutProvider))
+    provider: RestaurantPayoutProvider,
+    @Body() dto: UpdateRestaurantPayoutProviderConfigurationDto,
+  ) {
+    return this.paymentsService.updateRestaurantPayoutProviderConfiguration(
       user,
       restaurantId,
       provider,

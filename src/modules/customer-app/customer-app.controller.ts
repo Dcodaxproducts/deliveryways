@@ -206,7 +206,7 @@ export class CustomerAppController {
   @UseGuards(OptionalJwtAuthGuard)
   @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('cuisines')
-  @ApiOperation({ summary: 'List public cuisines/categories' })
+  @ApiOperation({ summary: 'List public cuisines' })
   listCuisines(
     @CurrentUser() user: AuthUserContext | undefined,
     @Query() query: ListCuisinesQueryDto,
@@ -218,7 +218,7 @@ export class CustomerAppController {
   @UseGuards(OptionalJwtAuthGuard)
   @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('cuisines/:cuisineId/items')
-  @ApiOperation({ summary: 'List public menu items for a cuisine/category' })
+  @ApiOperation({ summary: 'List public menu items for a cuisine' })
   listCuisineItems(
     @CurrentUser() user: AuthUserContext | undefined,
     @Param('cuisineId') cuisineId: string,
@@ -232,7 +232,7 @@ export class CustomerAppController {
   @UseInterceptors(AcceptLanguageQueryInterceptor)
   @Get('promotional-cuisines')
   @ApiOperation({
-    summary: 'List public cuisines/categories with active promotions',
+    summary: 'List public cuisines with active promotions',
   })
   listPromotionalCuisines(
     @CurrentUser() user: AuthUserContext | undefined,

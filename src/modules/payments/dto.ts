@@ -370,6 +370,12 @@ export class RejectRestaurantPayoutProviderRequestDto {
   reason!: string;
 }
 
+export class UpdateRestaurantPayoutProviderConfigurationDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean;
+}
+
 export class CreateRestaurantProviderPayoutDto {
   @ApiProperty({ enum: RestaurantPayoutProvider })
   @IsEnum(RestaurantPayoutProvider)
