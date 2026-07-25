@@ -8,6 +8,8 @@ import { PaymentsController } from './payments.controller';
 import { PaymentsRepository } from './payments.repository';
 import { PaymentsService } from './payments.service';
 import { StripePaymentsService } from './stripe-payments.service';
+import { PaypalPayoutsService } from './paypal-payouts.service';
+import { PayoutCredentialsService } from './payout-credentials.service';
 
 @Module({
   imports: [
@@ -18,7 +20,13 @@ import { StripePaymentsService } from './stripe-payments.service';
     PackagePlansModule,
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService, PaymentsRepository, StripePaymentsService],
+  providers: [
+    PaymentsService,
+    PaymentsRepository,
+    StripePaymentsService,
+    PaypalPayoutsService,
+    PayoutCredentialsService,
+  ],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

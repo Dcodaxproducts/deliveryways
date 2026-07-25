@@ -7,6 +7,7 @@ import {
   RestaurantWalletTransactionType,
 } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
+import { PaypalPayoutEnvironment, RestaurantPayoutProvider } from './dto';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
@@ -96,6 +97,7 @@ describe('PaymentsService', () => {
       },
       restaurantPayoutRequest: {
         create: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
         update: jest.fn(),
@@ -128,6 +130,14 @@ describe('PaymentsService', () => {
       cancelPaymentIntent: jest.fn(),
       refundPaymentIntent: jest.fn(),
     };
+    const paypalPayoutsService = {
+      createPayout: jest.fn(),
+      verifyCredentials: jest.fn(),
+    };
+    const payoutCredentialsService = {
+      encrypt: jest.fn().mockReturnValue('encrypted-credentials'),
+      decrypt: jest.fn(),
+    };
 
     const loyaltyWalletService = {
       awardPointsForPaidOrder: jest.fn(),
@@ -151,6 +161,8 @@ describe('PaymentsService', () => {
       prisma as never,
       notificationsService as never,
       stripePaymentsService as never,
+      paypalPayoutsService as never,
+      payoutCredentialsService as never,
       loyaltyWalletService as never,
       globalSettingsService as never,
     );
@@ -161,6 +173,8 @@ describe('PaymentsService', () => {
       prisma,
       notificationsService,
       stripePaymentsService,
+      paypalPayoutsService,
+      payoutCredentialsService,
       loyaltyWalletService,
       globalSettingsService,
       transactionTx,
@@ -577,77 +591,33 @@ describe('PaymentsService', () => {
     expect(prisma.restaurant.update).not.toHaveBeenCalled();
   });
 
-  it('creates a super-admin Stripe transfer to restaurant account', async () => {
-    const { service, prisma, stripePaymentsService } = makeService();
-    prisma.restaurant.findFirst.mockResolvedValue({
-      id: 'restaurant-1',
-      tenantId: 'tenant-1',
-      settings: {
-        currency: 'USD',
-        payments: {
-          stripe: {
-            accountId: 'acct_123',
-            payoutsEnabled: true,
-            chargesEnabled: true,
-            onboardingComplete: true,
-          },
-        },
-      },
-    });
-    prisma.restaurant.findUnique.mockResolvedValue({
-      settings: { currency: 'USD' },
-    });
-    stripePaymentsService.createTransfer.mockResolvedValue({
-      id: 'tr_123',
-    });
-    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+  it('routes the legacy Stripe transfer endpoint through wallet settlement', async () => {
+    const { service } = makeService();
+    const createProviderPayout = jest
+      .spyOn(service, 'createRestaurantProviderPayout')
+      .mockResolvedValue({
+        data: { id: 'request-1' },
+        message: 'Restaurant provider payout completed successfully',
+      } as never);
+    const user = {
+      uid: 'super-1',
+      role: UserRoleEnum.SUPER_ADMIN,
+    } as never;
 
-    const result = await service.createRestaurantStripeTransfer(
-      {
-        uid: 'super-1',
-        role: UserRoleEnum.SUPER_ADMIN,
-      } as never,
-      'restaurant-1',
-      {
-        amount: 125.5,
-        description: 'Weekly payout',
-      },
-    );
-
-    expect(stripePaymentsService.createTransfer).toHaveBeenCalledWith({
+    await service.createRestaurantStripeTransfer(user, 'restaurant-1', {
       amount: 125.5,
-      currency: 'PKR',
-      destinationAccountId: 'acct_123',
+      currency: 'EUR',
       description: 'Weekly payout',
-      idempotencyKey: undefined,
-      metadata: {
-        restaurantId: 'restaurant-1',
-        tenantId: 'tenant-1',
-        actorId: 'super-1',
-      },
+      idempotencyKey: 'legacy-payout-1',
     });
-    const restaurantUpdate = prisma.restaurant.update as jest.Mock<
-      unknown,
-      [RestaurantStripeSettingsUpdateArgs]
-    >;
-    const updateArgs = restaurantUpdate.mock.calls[0]?.[0];
-    expect(updateArgs?.where).toEqual({ id: 'restaurant-1' });
-    expect(updateArgs?.data.settings.payments.stripe.lastTransfer).toEqual(
-      expect.objectContaining({
-        id: 'tr_123',
-        amount: 125.5,
-        currency: 'PKR',
-        destinationAccountId: 'acct_123',
-        createdBy: 'super-1',
-      }),
-    );
-    expect(result.data.transfer).toEqual(
-      expect.objectContaining({
-        id: 'tr_123',
-        amount: 125.5,
-        currency: 'PKR',
-      }),
-    );
+
+    expect(createProviderPayout).toHaveBeenCalledWith(user, 'restaurant-1', {
+      provider: RestaurantPayoutProvider.STRIPE,
+      amount: 125.5,
+      currency: 'EUR',
+      description: 'Weekly payout',
+      idempotencyKey: 'legacy-payout-1',
+    });
   });
 
   it('fetches restaurant payment management summary', async () => {
@@ -1346,6 +1316,55 @@ describe('PaymentsService', () => {
     ).rejects.toThrow('Requested amount exceeds wallet balance');
   });
 
+  it('rejects manual bank requests when an automated provider is active', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          payoutProviders: {
+            configurations: {
+              PAYPAL: {
+                provider: 'PAYPAL',
+                enabled: true,
+                publicDetails: {
+                  recipientEmail: 'owner@example.com',
+                  environment: 'LIVE',
+                },
+                encryptedCredentials: 'encrypted-credentials',
+                approvedAt: '2026-07-25T00:00:00.000Z',
+                approvedBy: 'super-1',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    await expect(
+      service.createRestaurantPayoutRequest(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'restaurant-1',
+        {
+          amount: 500,
+          bankDetails: {
+            bankName: 'Bank',
+            accountTitle: 'Pizza House',
+            accountNumber: '123456',
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      'Manual bank payout requests are only available without an approved automated payout provider',
+    );
+    expect(prisma.restaurantPayoutRequest.create).not.toHaveBeenCalled();
+  });
+
   it('deducts restaurant wallet only when approved payout is marked paid', async () => {
     const { service, prisma, transactionTx } = makeService();
     Object.assign(transactionTx, {
@@ -1424,5 +1443,222 @@ describe('PaymentsService', () => {
       amount: new Prisma.Decimal(-500),
       balanceAfter: new Prisma.Decimal(500),
     });
+  });
+
+  it('encrypts PayPal credentials and returns only redacted request details', async () => {
+    const { service, prisma, payoutCredentialsService } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {},
+    });
+    prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    const result = await service.createRestaurantPayoutProviderRequest(
+      {
+        uid: 'owner-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      } as never,
+      'restaurant-1',
+      {
+        provider: RestaurantPayoutProvider.PAYPAL,
+        paypalClientId: 'paypal-client-1234',
+        paypalClientSecret: 'paypal-secret',
+        paypalRecipientEmail: 'owner@example.com',
+        paypalEnvironment: PaypalPayoutEnvironment.LIVE,
+      },
+    );
+
+    expect(payoutCredentialsService.encrypt).toHaveBeenCalledWith(
+      'restaurant-1',
+      RestaurantPayoutProvider.PAYPAL,
+      {
+        clientId: 'paypal-client-1234',
+        clientSecret: 'paypal-secret',
+        recipientEmail: 'owner@example.com',
+        environment: PaypalPayoutEnvironment.LIVE,
+      },
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        provider: RestaurantPayoutProvider.PAYPAL,
+        status: 'REQUESTED',
+        credentialsSubmitted: true,
+        publicDetails: {
+          clientIdLast4: '1234',
+          recipientEmail: 'owner@example.com',
+          environment: PaypalPayoutEnvironment.LIVE,
+        },
+      }),
+    );
+    expect(JSON.stringify(result.data)).not.toContain('paypal-secret');
+    expect(JSON.stringify(result.data)).not.toContain('encrypted-credentials');
+  });
+
+  it('debits the wallet once after an approved Stripe provider payout succeeds', async () => {
+    const { service, prisma, stripePaymentsService, transactionTx } =
+      makeService();
+    const approvedRequest = {
+      id: 'request-auto-1',
+      walletAccountId: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      requestedBy: 'super-1',
+      reviewedBy: 'super-1',
+      paidBy: null,
+      status: RestaurantPayoutRequestStatus.APPROVED,
+      amount: new Prisma.Decimal(250),
+      currency: 'EUR',
+      bankDetails: {
+        provider: 'STRIPE',
+        idempotencyKey: 'AUTO:STRIPE:payout-1',
+      },
+      note: null,
+      rejectionReason: null,
+      approvalNote: null,
+      paymentReference: null,
+      paidNote: null,
+      approvedAt: new Date(),
+      rejectedAt: null,
+      paidAt: null,
+      walletTransactionId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          payoutProviders: {
+            configurations: {
+              STRIPE: {
+                provider: 'STRIPE',
+                enabled: true,
+                publicDetails: { accountId: 'acct_123' },
+                encryptedCredentials: null,
+                approvedAt: '2026-07-25T00:00:00.000Z',
+                approvedBy: 'super-1',
+              },
+            },
+          },
+        },
+      },
+    });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      balance: new Prisma.Decimal(1000),
+      currency: 'EUR',
+    });
+    prisma.restaurantPayoutRequest.findFirst.mockResolvedValue(null);
+    prisma.restaurantPayoutRequest.create.mockResolvedValue(approvedRequest);
+    prisma.restaurantPayoutRequest.findUnique.mockResolvedValue({
+      ...approvedRequest,
+      walletAccount: {
+        id: 'wallet-1',
+        balance: new Prisma.Decimal(1000),
+      },
+    });
+    prisma.restaurantWalletTransaction.findUnique.mockResolvedValue(null);
+    prisma.restaurantWalletTransaction.create.mockResolvedValue({
+      id: 'wallet-tx-auto-1',
+    });
+    prisma.restaurantPayoutRequest.update.mockResolvedValue({
+      ...approvedRequest,
+      status: RestaurantPayoutRequestStatus.PAID,
+      paidBy: 'super-1',
+      paidAt: new Date(),
+      paymentReference: 'tr_123',
+      walletTransactionId: 'wallet-tx-auto-1',
+    });
+    Object.assign(transactionTx, {
+      restaurantPayoutRequest: prisma.restaurantPayoutRequest,
+      restaurantWalletAccount: prisma.restaurantWalletAccount,
+      restaurantWalletTransaction: prisma.restaurantWalletTransaction,
+    });
+    stripePaymentsService.createTransfer.mockResolvedValue({ id: 'tr_123' });
+
+    const result = await service.createRestaurantProviderPayout(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+      {
+        provider: RestaurantPayoutProvider.STRIPE,
+        amount: 250,
+        currency: 'EUR',
+        idempotencyKey: 'payout-1',
+      },
+    );
+
+    expect(stripePaymentsService.createTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 250,
+        currency: 'EUR',
+        destinationAccountId: 'acct_123',
+        idempotencyKey: 'payout-1',
+      }),
+    );
+    expect(prisma.restaurantWalletAccount.update).toHaveBeenCalledWith({
+      where: { id: 'wallet-1' },
+      data: { balance: new Prisma.Decimal(750) },
+    });
+    expect(result.data.status).toBe(RestaurantPayoutRequestStatus.PAID);
+  });
+
+  it('returns an already-paid provider payout without transferring again', async () => {
+    const { service, prisma, stripePaymentsService } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          payoutProviders: {
+            configurations: {
+              STRIPE: {
+                provider: 'STRIPE',
+                enabled: true,
+                publicDetails: { accountId: 'acct_123' },
+                encryptedCredentials: null,
+                approvedAt: '2026-07-25T00:00:00.000Z',
+                approvedBy: 'super-1',
+              },
+            },
+          },
+        },
+      },
+    });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(750),
+      currency: 'EUR',
+    });
+    prisma.restaurantPayoutRequest.findFirst.mockResolvedValue({
+      id: 'request-auto-1',
+      status: RestaurantPayoutRequestStatus.PAID,
+      amount: new Prisma.Decimal(250),
+      currency: 'EUR',
+      bankDetails: {
+        provider: 'STRIPE',
+        idempotencyKey: 'AUTO:STRIPE:payout-1',
+      },
+    });
+
+    const result = await service.createRestaurantProviderPayout(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+      {
+        provider: RestaurantPayoutProvider.STRIPE,
+        amount: 250,
+        currency: 'EUR',
+        idempotencyKey: 'payout-1',
+      },
+    );
+
+    expect(stripePaymentsService.createTransfer).not.toHaveBeenCalled();
+    expect(prisma.restaurantWalletAccount.update).not.toHaveBeenCalled();
+    expect(result.message).toBe('Restaurant payout was already completed');
   });
 });

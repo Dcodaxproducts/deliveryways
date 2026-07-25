@@ -22,16 +22,22 @@ import { PrismaService } from '../../database';
 import {
   AdminUpdatePaymentStatusDto,
   CreateRestaurantPayoutRequestDto,
+  CreateRestaurantPayoutProviderRequestDto,
+  CreateRestaurantProviderPayoutDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   CreateSubscriptionPaymentAttemptDto,
   ListRestaurantPayoutRequestsDto,
   MarkRestaurantPayoutPaidDto,
   MarkSubscriptionManualPaidDto,
+  PaypalPayoutEnvironment,
+  RejectRestaurantPayoutProviderRequestDto,
   ListPaymentsDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
   ReviewRestaurantPayoutRequestDto,
+  ReviewRestaurantPayoutProviderRequestDto,
+  RestaurantPayoutProvider,
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
@@ -48,6 +54,8 @@ import {
 } from '../customer-app/dto';
 import { MailerService } from '../mailer/mailer.service';
 import { PackagePlansService } from '../package-plans/package-plans.service';
+import { PaypalPayoutsService } from './paypal-payouts.service';
+import { PayoutCredentialsService } from './payout-credentials.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -69,6 +77,43 @@ export interface RestaurantPaymentMethodSettings {
   updatedBy: string | null;
 }
 
+type RestaurantPayoutProviderRequestStatus =
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'REJECTED';
+
+interface RestaurantPayoutProviderRequest {
+  provider: RestaurantPayoutProvider;
+  status: RestaurantPayoutProviderRequestStatus;
+  publicDetails: Prisma.JsonObject;
+  encryptedCredentials: string | null;
+  note: string | null;
+  requestedAt: string;
+  requestedBy: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  rejectionReason: string | null;
+}
+
+interface RestaurantPayoutProviderConfiguration {
+  provider: RestaurantPayoutProvider;
+  enabled: boolean;
+  publicDetails: Prisma.JsonObject;
+  encryptedCredentials: string | null;
+  approvedAt: string;
+  approvedBy: string;
+}
+
+interface RestaurantPayoutProvidersSettings {
+  requests: Partial<
+    Record<RestaurantPayoutProvider, RestaurantPayoutProviderRequest>
+  >;
+  configurations: Partial<
+    Record<RestaurantPayoutProvider, RestaurantPayoutProviderConfiguration>
+  >;
+}
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -76,6 +121,8 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly stripePaymentsService: StripePaymentsService,
+    private readonly paypalPayoutsService: PaypalPayoutsService,
+    private readonly payoutCredentialsService: PayoutCredentialsService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly globalSettingsService?: GlobalSettingsService,
     private readonly mailerService?: MailerService,
@@ -1361,78 +1408,15 @@ export class PaymentsService {
     restaurantId: string,
     dto: CreateRestaurantStripeTransferDto,
   ) {
-    this.assertSuperAdminPaymentConfigAccess(user);
-
-    const restaurant = await this.requireRestaurantForStripe(
-      user,
-      restaurantId,
-    );
-    const stripeSettings = this.readRestaurantStripeSettings(
-      restaurant.settings,
-    );
-
-    if (!stripeSettings.accountId) {
-      throw new BadRequestException(
-        'Restaurant Stripe accountId is required before transfers',
-      );
-    }
-
-    if (!stripeSettings.payoutsEnabled) {
-      throw new BadRequestException(
-        'Stripe payouts are disabled for this restaurant',
-      );
-    }
-
-    const currency = await this.resolvePreferredCurrency(
-      restaurant.id,
-      dto.currency,
-    );
-    const transfer = await this.stripePaymentsService.createTransfer({
+    return this.createRestaurantProviderPayout(user, restaurantId, {
+      provider: RestaurantPayoutProvider.STRIPE,
       amount: dto.amount,
-      currency,
-      destinationAccountId: stripeSettings.accountId,
-      description:
-        dto.description ?? `DeliveryWays restaurant payout ${restaurant.id}`,
-      idempotencyKey: dto.idempotencyKey,
-      metadata: {
-        restaurantId: restaurant.id,
-        tenantId: restaurant.tenantId,
-        actorId: user.uid,
-      },
+      currency: dto.currency,
+      description: dto.description,
+      idempotencyKey:
+        this.resolveOptionalString(dto.idempotencyKey) ??
+        randomBytes(16).toString('hex'),
     });
-    const transferSnapshot: Prisma.JsonObject = {
-      id: transfer.id,
-      amount: dto.amount,
-      currency,
-      destinationAccountId: stripeSettings.accountId,
-      description:
-        dto.description ?? `DeliveryWays restaurant payout ${restaurant.id}`,
-      createdAt: new Date().toISOString(),
-      createdBy: user.uid,
-    };
-    const nextSettings = this.writeRestaurantStripeSettings(
-      restaurant.settings,
-      {
-        ...stripeSettings,
-        updatedAt: new Date().toISOString(),
-        updatedBy: user.uid,
-        lastTransfer: transferSnapshot,
-      },
-    );
-
-    await this.prisma.restaurant.update({
-      where: { id: restaurant.id },
-      data: { settings: nextSettings as Prisma.InputJsonValue },
-      select: { id: true },
-    });
-
-    return {
-      data: {
-        restaurantId: restaurant.id,
-        transfer: transferSnapshot,
-      },
-      message: 'Restaurant Stripe transfer created successfully',
-    };
   }
 
   async getRestaurantWallet(user: AuthUserContext, restaurantId: string) {
@@ -1506,6 +1490,19 @@ export class PaymentsService {
       user,
       restaurantId,
     );
+    const configuredProviders = Object.values(
+      this.readRestaurantPayoutProviders(restaurant.settings).configurations,
+    ).some((configuration) => configuration?.enabled);
+    const legacyStripe =
+      this.resolveRestaurantPayoutProviderConfiguration(
+        restaurant.settings,
+        RestaurantPayoutProvider.STRIPE,
+      )?.enabled ?? false;
+    if (configuredProviders || legacyStripe) {
+      throw new BadRequestException(
+        'Manual bank payout requests are only available without an approved automated payout provider',
+      );
+    }
     const wallet = await this.ensureRestaurantWalletAccount(
       restaurant.tenantId,
       restaurant.id,
@@ -1536,6 +1533,349 @@ export class PaymentsService {
     return {
       data: this.serializeRestaurantPayoutRequest(data),
       message: 'Restaurant payout request created successfully',
+    };
+  }
+
+  async getRestaurantPayoutProviderRequests(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const settings = this.readRestaurantPayoutProviders(restaurant.settings);
+    const stripe = this.resolveRestaurantPayoutProviderConfiguration(
+      restaurant.settings,
+      RestaurantPayoutProvider.STRIPE,
+    );
+    if (stripe && !settings.configurations.STRIPE) {
+      settings.configurations.STRIPE = stripe;
+    }
+
+    return {
+      data: this.serializeRestaurantPayoutProviders(settings),
+      message: 'Restaurant payout provider requests fetched successfully',
+    };
+  }
+
+  async createRestaurantPayoutProviderRequest(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: CreateRestaurantPayoutProviderRequestDto,
+  ) {
+    if (user.role !== UserRoleEnum.BUSINESS_ADMIN) {
+      throw new ForbiddenException(
+        'Only restaurant business owners can submit payout provider requests',
+      );
+    }
+
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const current = this.readRestaurantPayoutProviders(restaurant.settings);
+    const request = this.buildRestaurantPayoutProviderRequest(
+      restaurant.id,
+      user.uid,
+      dto,
+    );
+    const nextSettings = this.writeRestaurantPayoutProviders(
+      restaurant.settings,
+      {
+        ...current,
+        requests: {
+          ...current.requests,
+          [dto.provider]: request,
+        },
+      },
+    );
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true },
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutProviderRequest(request),
+      message: 'Payout provider request submitted successfully',
+    };
+  }
+
+  async approveRestaurantPayoutProviderRequest(
+    user: AuthUserContext,
+    restaurantId: string,
+    provider: RestaurantPayoutProvider,
+    dto: ReviewRestaurantPayoutProviderRequestDto,
+  ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    this.assertRestaurantPayoutProvider(provider);
+
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const current = this.readRestaurantPayoutProviders(restaurant.settings);
+    const request = current.requests[provider];
+
+    if (!request || request.status !== 'REQUESTED') {
+      throw new BadRequestException(
+        'A pending payout provider request is required',
+      );
+    }
+
+    const now = new Date().toISOString();
+    const reviewedRequest: RestaurantPayoutProviderRequest = {
+      ...request,
+      status: 'APPROVED',
+      reviewedAt: now,
+      reviewedBy: user.uid,
+      reviewNote: this.resolveOptionalString(dto.note) ?? null,
+      rejectionReason: null,
+    };
+    const configuration: RestaurantPayoutProviderConfiguration = {
+      provider,
+      enabled: true,
+      publicDetails: request.publicDetails,
+      encryptedCredentials: request.encryptedCredentials,
+      approvedAt: now,
+      approvedBy: user.uid,
+    };
+    if (provider === RestaurantPayoutProvider.PAYPAL) {
+      await this.paypalPayoutsService.verifyCredentials(
+        this.readPaypalCredentials(restaurant.id, configuration),
+      );
+    }
+    let nextSettings = this.writeRestaurantPayoutProviders(
+      restaurant.settings,
+      {
+        requests: {
+          ...current.requests,
+          [provider]: reviewedRequest,
+        },
+        configurations: {
+          ...current.configurations,
+          [provider]: configuration,
+        },
+      },
+    );
+
+    if (provider === RestaurantPayoutProvider.STRIPE) {
+      const accountId = this.readString(request.publicDetails.accountId);
+      if (!accountId || !accountId.startsWith('acct_')) {
+        throw new BadRequestException(
+          'A valid Stripe connected account ID is required',
+        );
+      }
+      const stripe = this.readRestaurantStripeSettings(nextSettings);
+      nextSettings = this.writeRestaurantStripeSettings(nextSettings, {
+        ...stripe,
+        accountId,
+        payoutsEnabled: true,
+        onboardingComplete: true,
+        note:
+          this.resolveOptionalString(dto.note) ??
+          stripe.note ??
+          'Approved restaurant payout provider request',
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    }
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true },
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutProviderRequest(reviewedRequest),
+      message: 'Payout provider request approved successfully',
+    };
+  }
+
+  async rejectRestaurantPayoutProviderRequest(
+    user: AuthUserContext,
+    restaurantId: string,
+    provider: RestaurantPayoutProvider,
+    dto: RejectRestaurantPayoutProviderRequestDto,
+  ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    this.assertRestaurantPayoutProvider(provider);
+
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const current = this.readRestaurantPayoutProviders(restaurant.settings);
+    const request = current.requests[provider];
+
+    if (!request || request.status !== 'REQUESTED') {
+      throw new BadRequestException(
+        'A pending payout provider request is required',
+      );
+    }
+
+    const rejectedRequest: RestaurantPayoutProviderRequest = {
+      ...request,
+      status: 'REJECTED',
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: user.uid,
+      reviewNote: null,
+      rejectionReason: dto.reason.trim(),
+    };
+    const nextSettings = this.writeRestaurantPayoutProviders(
+      restaurant.settings,
+      {
+        ...current,
+        requests: {
+          ...current.requests,
+          [provider]: rejectedRequest,
+        },
+      },
+    );
+
+    await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+      select: { id: true },
+    });
+
+    return {
+      data: this.serializeRestaurantPayoutProviderRequest(rejectedRequest),
+      message: 'Payout provider request rejected successfully',
+    };
+  }
+
+  async createRestaurantProviderPayout(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: CreateRestaurantProviderPayoutDto,
+  ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const configuration = this.resolveRestaurantPayoutProviderConfiguration(
+      restaurant.settings,
+      dto.provider,
+    );
+
+    if (!configuration?.enabled) {
+      throw new BadRequestException(
+        `${dto.provider} payouts are not approved for this restaurant`,
+      );
+    }
+
+    const wallet = await this.ensureRestaurantWalletAccount(
+      restaurant.tenantId,
+      restaurant.id,
+      dto.currency ?? (await this.resolvePreferredCurrency(restaurant.id)),
+    );
+    const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
+    if (amount.greaterThan(wallet.balance)) {
+      throw new BadRequestException('Payout amount exceeds wallet balance');
+    }
+
+    const idempotencyKey = dto.idempotencyKey.trim();
+    const pendingReference = `AUTO:${dto.provider}:${idempotencyKey}`;
+    let request = await this.prisma.restaurantPayoutRequest.findFirst({
+      where: {
+        restaurantId: restaurant.id,
+        bankDetails: {
+          path: ['idempotencyKey'],
+          equals: pendingReference,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (request?.status === RestaurantPayoutRequestStatus.PAID) {
+      return {
+        data: this.serializeRestaurantPayoutRequest(request),
+        message: 'Restaurant payout was already completed',
+      };
+    }
+
+    if (!request) {
+      request = await this.prisma.restaurantPayoutRequest.create({
+        data: {
+          walletAccountId: wallet.id,
+          tenantId: restaurant.tenantId,
+          restaurantId: restaurant.id,
+          requestedBy: user.uid,
+          reviewedBy: user.uid,
+          status: RestaurantPayoutRequestStatus.APPROVED,
+          amount,
+          currency: (dto.currency ?? wallet.currency).trim().toUpperCase(),
+          bankDetails: {
+            provider: dto.provider,
+            idempotencyKey: pendingReference,
+            ...configuration.publicDetails,
+          } as Prisma.InputJsonValue,
+          note:
+            this.resolveOptionalString(dto.description) ??
+            `Automated ${dto.provider} payout`,
+          approvalNote: 'Approved provider payout initiated by super admin',
+          approvedAt: new Date(),
+        },
+      });
+    }
+
+    const description =
+      this.resolveOptionalString(dto.description) ??
+      `DeliveryWays restaurant payout ${restaurant.id}`;
+    let providerReference: string;
+
+    if (dto.provider === RestaurantPayoutProvider.STRIPE) {
+      const accountId = this.readString(configuration.publicDetails.accountId);
+      if (!accountId) {
+        throw new BadRequestException('Approved Stripe account ID is missing');
+      }
+      const transfer = await this.stripePaymentsService.createTransfer({
+        amount: Number(request.amount),
+        currency: request.currency,
+        destinationAccountId: accountId,
+        description,
+        idempotencyKey,
+        metadata: {
+          restaurantId: restaurant.id,
+          tenantId: restaurant.tenantId,
+          payoutRequestId: request.id,
+          actorId: user.uid,
+        },
+      });
+      providerReference = transfer.id;
+    } else {
+      const credentials = this.readPaypalCredentials(
+        restaurant.id,
+        configuration,
+      );
+      const payout = await this.paypalPayoutsService.createPayout({
+        credentials,
+        amount: Number(request.amount),
+        currency: request.currency,
+        description,
+        idempotencyKey,
+      });
+      providerReference = payout.id;
+    }
+
+    const completion = await this.completeRestaurantPayoutRequest(
+      user,
+      request.id,
+      providerReference,
+      `Automated ${dto.provider} payout completed`,
+    );
+    if (completion.completed) {
+      await this.persistSpecialPayoutInvoice(completion.data, user.uid);
+    }
+
+    return {
+      data: this.serializeRestaurantPayoutRequest(completion.data),
+      message: 'Restaurant provider payout completed successfully',
     };
   }
 
@@ -1588,79 +1928,19 @@ export class PaymentsService {
     id: string,
     dto: MarkRestaurantPayoutPaidDto,
   ) {
-    const data = await this.prisma.$transaction(async (tx) => {
-      const request = await tx.restaurantPayoutRequest.findUnique({
-        where: { id },
-        include: { walletAccount: true },
-      });
-
-      if (!request) {
-        throw new NotFoundException('Restaurant payout request not found');
-      }
-
-      if (request.status !== RestaurantPayoutRequestStatus.APPROVED) {
-        throw new BadRequestException(
-          'Only approved payout requests can be marked paid',
-        );
-      }
-
-      if (request.amount.greaterThan(request.walletAccount.balance)) {
-        throw new BadRequestException(
-          'Requested amount exceeds wallet balance',
-        );
-      }
-
-      const nextBalance = request.walletAccount.balance.minus(request.amount);
-      await tx.restaurantWalletAccount.update({
-        where: { id: request.walletAccountId },
-        data: { balance: nextBalance },
-      });
-      const walletTransaction = await tx.restaurantWalletTransaction.create({
-        data: {
-          walletAccountId: request.walletAccountId,
-          tenantId: request.tenantId,
-          restaurantId: request.restaurantId,
-          branchId: request.branchId,
-          payoutRequestId: request.id,
-          type: RestaurantWalletTransactionType.PAYOUT_DEBIT,
-          amount: request.amount.negated(),
-          balanceAfter: nextBalance,
-          currency: request.currency,
-          note:
-            this.resolveOptionalString(dto.note) ??
-            'Manual bank payout completed by super admin',
-          metadata: {
-            paymentReference: dto.paymentReference ?? null,
-          } as Prisma.InputJsonValue,
-          createdBy: user.uid,
-        },
-      });
-
-      return tx.restaurantPayoutRequest.update({
-        where: { id: request.id },
-        data: {
-          status: RestaurantPayoutRequestStatus.PAID,
-          paidBy: user.uid,
-          paidAt: new Date(),
-          paymentReference: this.resolveOptionalString(dto.paymentReference),
-          paidNote: this.resolveOptionalString(dto.note),
-          walletTransactionId: walletTransaction.id,
-        },
-      });
-    });
-
-    await this.packagePlansService?.persistSpecialPayoutInvoiceForPaidRequest({
-      payoutRequestId: data.id,
-      tenantId: data.tenantId,
-      restaurantId: data.restaurantId,
-      amount: data.amount,
-      currency: data.currency,
-      paidBy: user.uid,
-      paidAt: data.paidAt ?? new Date(),
-    });
+    const completion = await this.completeRestaurantPayoutRequest(
+      user,
+      id,
+      this.resolveOptionalString(dto.paymentReference) ?? null,
+      this.resolveOptionalString(dto.note) ??
+        'Manual bank payout completed by super admin',
+    );
+    if (completion.completed) {
+      await this.persistSpecialPayoutInvoice(completion.data, user.uid);
+    }
 
     return {
-      data: this.serializeRestaurantPayoutRequest(data),
+      data: this.serializeRestaurantPayoutRequest(completion.data),
       message: 'Restaurant payout marked paid successfully',
     };
   }
@@ -3021,6 +3301,326 @@ export class PaymentsService {
     } satisfies Prisma.JsonObject;
   }
 
+  private readRestaurantPayoutProviders(
+    settings: Prisma.JsonValue | null | undefined,
+  ): RestaurantPayoutProvidersSettings {
+    const payoutProviders = this.asJsonObject(
+      this.readPath(settings, ['payments', 'payoutProviders']),
+    );
+    const requests = this.asJsonObject(payoutProviders.requests);
+    const configurations = this.asJsonObject(payoutProviders.configurations);
+
+    return {
+      requests: Object.fromEntries(
+        Object.values(RestaurantPayoutProvider)
+          .map((provider) => {
+            const request = this.parseRestaurantPayoutProviderRequest(
+              provider,
+              requests[provider],
+            );
+            return request ? [provider, request] : null;
+          })
+          .filter(
+            (
+              entry,
+            ): entry is [
+              RestaurantPayoutProvider,
+              RestaurantPayoutProviderRequest,
+            ] => entry !== null,
+          ),
+      ),
+      configurations: Object.fromEntries(
+        Object.values(RestaurantPayoutProvider)
+          .map((provider) => {
+            const configuration =
+              this.parseRestaurantPayoutProviderConfiguration(
+                provider,
+                configurations[provider],
+              );
+            return configuration ? [provider, configuration] : null;
+          })
+          .filter(
+            (
+              entry,
+            ): entry is [
+              RestaurantPayoutProvider,
+              RestaurantPayoutProviderConfiguration,
+            ] => entry !== null,
+          ),
+      ),
+    };
+  }
+
+  private writeRestaurantPayoutProviders(
+    settings: Prisma.JsonValue | null | undefined,
+    payoutProviderSettings: RestaurantPayoutProvidersSettings,
+  ) {
+    const root = this.asJsonObject(settings);
+    const payments = this.asJsonObject(root.payments);
+
+    return {
+      ...root,
+      payments: {
+        ...payments,
+        payoutProviders: {
+          requests: payoutProviderSettings.requests,
+          configurations: payoutProviderSettings.configurations,
+        },
+      },
+    } as unknown as Prisma.JsonObject;
+  }
+
+  private parseRestaurantPayoutProviderRequest(
+    provider: RestaurantPayoutProvider,
+    value: unknown,
+  ): RestaurantPayoutProviderRequest | null {
+    const record = this.asJsonObject(value);
+    const status = this.readString(record.status);
+    const requestedAt = this.readString(record.requestedAt);
+    const requestedBy = this.readString(record.requestedBy);
+
+    if (
+      !requestedAt ||
+      !requestedBy ||
+      !status ||
+      !(['REQUESTED', 'APPROVED', 'REJECTED'] as const).includes(
+        status as RestaurantPayoutProviderRequestStatus,
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      provider,
+      status: status as RestaurantPayoutProviderRequestStatus,
+      publicDetails: this.asJsonObject(record.publicDetails),
+      encryptedCredentials: this.readString(record.encryptedCredentials),
+      note: this.readString(record.note),
+      requestedAt,
+      requestedBy,
+      reviewedAt: this.readString(record.reviewedAt),
+      reviewedBy: this.readString(record.reviewedBy),
+      reviewNote: this.readString(record.reviewNote),
+      rejectionReason: this.readString(record.rejectionReason),
+    };
+  }
+
+  private parseRestaurantPayoutProviderConfiguration(
+    provider: RestaurantPayoutProvider,
+    value: unknown,
+  ): RestaurantPayoutProviderConfiguration | null {
+    const record = this.asJsonObject(value);
+    const approvedAt = this.readString(record.approvedAt);
+    const approvedBy = this.readString(record.approvedBy);
+
+    if (!approvedAt || !approvedBy) {
+      return null;
+    }
+
+    return {
+      provider,
+      enabled: this.readBoolean(record.enabled, false),
+      publicDetails: this.asJsonObject(record.publicDetails),
+      encryptedCredentials: this.readString(record.encryptedCredentials),
+      approvedAt,
+      approvedBy,
+    };
+  }
+
+  private buildRestaurantPayoutProviderRequest(
+    restaurantId: string,
+    userId: string,
+    dto: CreateRestaurantPayoutProviderRequestDto,
+  ): RestaurantPayoutProviderRequest {
+    const requestedAt = new Date().toISOString();
+
+    if (dto.provider === RestaurantPayoutProvider.STRIPE) {
+      const accountId = this.resolveOptionalString(dto.stripeAccountId);
+      if (!accountId) {
+        throw new BadRequestException('Stripe account ID is required');
+      }
+
+      return {
+        provider: dto.provider,
+        status: 'REQUESTED',
+        publicDetails: { accountId },
+        encryptedCredentials: null,
+        note: this.resolveOptionalString(dto.note) ?? null,
+        requestedAt,
+        requestedBy: userId,
+        reviewedAt: null,
+        reviewedBy: null,
+        reviewNote: null,
+        rejectionReason: null,
+      };
+    }
+
+    const clientId = this.resolveOptionalString(dto.paypalClientId);
+    const clientSecret = this.resolveOptionalString(dto.paypalClientSecret);
+    const recipientEmail = this.resolveOptionalString(dto.paypalRecipientEmail);
+    const environment = dto.paypalEnvironment ?? PaypalPayoutEnvironment.LIVE;
+    if (!clientId || !clientSecret || !recipientEmail) {
+      throw new BadRequestException(
+        'PayPal client ID, client secret, and recipient email are required',
+      );
+    }
+
+    return {
+      provider: dto.provider,
+      status: 'REQUESTED',
+      publicDetails: {
+        clientIdLast4: clientId.slice(-4),
+        recipientEmail,
+        environment,
+      },
+      encryptedCredentials: this.payoutCredentialsService.encrypt(
+        restaurantId,
+        dto.provider,
+        {
+          clientId,
+          clientSecret,
+          recipientEmail,
+          environment,
+        },
+      ),
+      note: this.resolveOptionalString(dto.note) ?? null,
+      requestedAt,
+      requestedBy: userId,
+      reviewedAt: null,
+      reviewedBy: null,
+      reviewNote: null,
+      rejectionReason: null,
+    };
+  }
+
+  private serializeRestaurantPayoutProviders(
+    settings: RestaurantPayoutProvidersSettings,
+  ) {
+    return {
+      requests: Object.values(settings.requests)
+        .filter(
+          (request): request is RestaurantPayoutProviderRequest =>
+            request !== undefined,
+        )
+        .map((request) =>
+          this.serializeRestaurantPayoutProviderRequest(request),
+        ),
+      configurations: Object.values(settings.configurations)
+        .filter(
+          (
+            configuration,
+          ): configuration is RestaurantPayoutProviderConfiguration =>
+            configuration !== undefined,
+        )
+        .map((configuration) => ({
+          provider: configuration.provider,
+          enabled: configuration.enabled,
+          publicDetails: configuration.publicDetails,
+          credentialsConfigured: Boolean(
+            configuration.encryptedCredentials ||
+            configuration.provider === RestaurantPayoutProvider.STRIPE,
+          ),
+          approvedAt: configuration.approvedAt,
+          approvedBy: configuration.approvedBy,
+        })),
+    };
+  }
+
+  private serializeRestaurantPayoutProviderRequest(
+    request: RestaurantPayoutProviderRequest,
+  ) {
+    return {
+      provider: request.provider,
+      status: request.status,
+      publicDetails: request.publicDetails,
+      credentialsSubmitted: Boolean(
+        request.encryptedCredentials ||
+        request.provider === RestaurantPayoutProvider.STRIPE,
+      ),
+      note: request.note,
+      requestedAt: request.requestedAt,
+      requestedBy: request.requestedBy,
+      reviewedAt: request.reviewedAt,
+      reviewedBy: request.reviewedBy,
+      reviewNote: request.reviewNote,
+      rejectionReason: request.rejectionReason,
+    };
+  }
+
+  private readPaypalCredentials(
+    restaurantId: string,
+    configuration: RestaurantPayoutProviderConfiguration,
+  ) {
+    if (!configuration.encryptedCredentials) {
+      throw new BadRequestException('Approved PayPal credentials are missing');
+    }
+    const credentials = this.payoutCredentialsService.decrypt(
+      restaurantId,
+      RestaurantPayoutProvider.PAYPAL,
+      configuration.encryptedCredentials,
+    );
+    const clientId = this.readString(credentials.clientId);
+    const clientSecret = this.readString(credentials.clientSecret);
+    const recipientEmail = this.readString(credentials.recipientEmail);
+    const environment = this.readString(credentials.environment);
+
+    if (
+      !clientId ||
+      !clientSecret ||
+      !recipientEmail ||
+      !environment ||
+      !Object.values(PaypalPayoutEnvironment).includes(
+        environment as PaypalPayoutEnvironment,
+      )
+    ) {
+      throw new BadRequestException(
+        'Approved PayPal credentials are incomplete',
+      );
+    }
+
+    return {
+      clientId,
+      clientSecret,
+      recipientEmail,
+      environment: environment as PaypalPayoutEnvironment,
+    };
+  }
+
+  private resolveRestaurantPayoutProviderConfiguration(
+    settings: Prisma.JsonValue | null | undefined,
+    provider: RestaurantPayoutProvider,
+  ) {
+    const configured =
+      this.readRestaurantPayoutProviders(settings).configurations[provider];
+    if (configured) {
+      return configured;
+    }
+
+    if (provider !== RestaurantPayoutProvider.STRIPE) {
+      return undefined;
+    }
+
+    const stripe = this.readRestaurantStripeSettings(settings);
+    if (!stripe.accountId || !stripe.payoutsEnabled) {
+      return undefined;
+    }
+
+    return {
+      provider,
+      enabled: true,
+      publicDetails: { accountId: stripe.accountId },
+      encryptedCredentials: null,
+      approvedAt: stripe.updatedAt ?? new Date(0).toISOString(),
+      approvedBy: stripe.updatedBy ?? 'legacy-superadmin-configuration',
+    } satisfies RestaurantPayoutProviderConfiguration;
+  }
+
+  private assertRestaurantPayoutProvider(provider: RestaurantPayoutProvider) {
+    if (!Object.values(RestaurantPayoutProvider).includes(provider)) {
+      throw new BadRequestException('Unsupported payout provider');
+    }
+  }
+
   private readPath(
     source: Prisma.JsonValue | null | undefined,
     path: string[],
@@ -3115,6 +3715,119 @@ export class PaymentsService {
       ...(bankDetails.iban?.trim() ? { iban: bankDetails.iban.trim() } : {}),
       ...(bankDetails.phone?.trim() ? { phone: bankDetails.phone.trim() } : {}),
     };
+  }
+
+  private async completeRestaurantPayoutRequest(
+    user: AuthUserContext,
+    id: string,
+    paymentReference: string | null,
+    note: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const request = await tx.restaurantPayoutRequest.findUnique({
+        where: { id },
+        include: { walletAccount: true },
+      });
+
+      if (!request) {
+        throw new NotFoundException('Restaurant payout request not found');
+      }
+
+      if (request.status === RestaurantPayoutRequestStatus.PAID) {
+        return { data: request, completed: false };
+      }
+
+      if (request.status !== RestaurantPayoutRequestStatus.APPROVED) {
+        throw new BadRequestException(
+          'Only approved payout requests can be marked paid',
+        );
+      }
+
+      if (request.amount.greaterThan(request.walletAccount.balance)) {
+        throw new BadRequestException(
+          'Requested amount exceeds wallet balance',
+        );
+      }
+
+      const existingTransaction =
+        await tx.restaurantWalletTransaction.findUnique({
+          where: { payoutRequestId: request.id },
+        });
+      if (existingTransaction) {
+        const data = await tx.restaurantPayoutRequest.update({
+          where: { id: request.id },
+          data: {
+            status: RestaurantPayoutRequestStatus.PAID,
+            paidBy: user.uid,
+            paidAt: request.paidAt ?? new Date(),
+            paymentReference:
+              paymentReference ?? request.paymentReference ?? undefined,
+            paidNote: note,
+            walletTransactionId: existingTransaction.id,
+          },
+        });
+        return { data, completed: false };
+      }
+
+      const nextBalance = request.walletAccount.balance.minus(request.amount);
+      await tx.restaurantWalletAccount.update({
+        where: { id: request.walletAccountId },
+        data: { balance: nextBalance },
+      });
+      const walletTransaction = await tx.restaurantWalletTransaction.create({
+        data: {
+          walletAccountId: request.walletAccountId,
+          tenantId: request.tenantId,
+          restaurantId: request.restaurantId,
+          branchId: request.branchId,
+          payoutRequestId: request.id,
+          type: RestaurantWalletTransactionType.PAYOUT_DEBIT,
+          amount: request.amount.negated(),
+          balanceAfter: nextBalance,
+          currency: request.currency,
+          note,
+          metadata: {
+            paymentReference,
+          } as Prisma.InputJsonValue,
+          createdBy: user.uid,
+        },
+      });
+      const data = await tx.restaurantPayoutRequest.update({
+        where: { id: request.id },
+        data: {
+          status: RestaurantPayoutRequestStatus.PAID,
+          paidBy: user.uid,
+          paidAt: new Date(),
+          paymentReference: paymentReference ?? undefined,
+          paidNote: note,
+          walletTransactionId: walletTransaction.id,
+        },
+      });
+
+      return { data, completed: true };
+    });
+  }
+
+  private async persistSpecialPayoutInvoice(
+    data: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      amount: Prisma.Decimal;
+      currency: string;
+      paidAt: Date | null;
+    },
+    paidBy: string,
+  ) {
+    await this.packagePlansService?.persistSpecialPayoutInvoiceForPaidRequest({
+      payoutRequestId: data.id,
+      tenantId: data.tenantId,
+      restaurantId: data.restaurantId,
+      amount: data.amount,
+      currency: data.currency,
+      paidBy,
+      paidAt: data.paidAt ?? new Date(),
+    });
   }
 
   private serializeRestaurantPayoutRequest(request: {

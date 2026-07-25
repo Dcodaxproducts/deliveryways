@@ -11,6 +11,7 @@ import {
   IsBoolean,
   IsArray,
   IsDefined,
+  IsEmail,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -19,6 +20,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 
@@ -282,6 +284,119 @@ export class CreateRestaurantStripeTransferDto {
   @IsString()
   @MaxLength(191)
   idempotencyKey?: string;
+}
+
+export enum RestaurantPayoutProvider {
+  STRIPE = 'STRIPE',
+  PAYPAL = 'PAYPAL',
+}
+
+export enum PaypalPayoutEnvironment {
+  SANDBOX = 'SANDBOX',
+  LIVE = 'LIVE',
+}
+
+export class CreateRestaurantPayoutProviderRequestDto {
+  @ApiProperty({ enum: RestaurantPayoutProvider })
+  @IsEnum(RestaurantPayoutProvider)
+  provider!: RestaurantPayoutProvider;
+
+  @ApiPropertyOptional({ maxLength: 191 })
+  @ValidateIf(
+    (dto: CreateRestaurantPayoutProviderRequestDto) =>
+      dto.provider === RestaurantPayoutProvider.STRIPE,
+  )
+  @IsString()
+  @MaxLength(191)
+  stripeAccountId?: string;
+
+  @ApiPropertyOptional({ maxLength: 191 })
+  @ValidateIf(
+    (dto: CreateRestaurantPayoutProviderRequestDto) =>
+      dto.provider === RestaurantPayoutProvider.PAYPAL,
+  )
+  @IsString()
+  @MaxLength(191)
+  paypalClientId?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @ValidateIf(
+    (dto: CreateRestaurantPayoutProviderRequestDto) =>
+      dto.provider === RestaurantPayoutProvider.PAYPAL,
+  )
+  @IsString()
+  @MaxLength(500)
+  paypalClientSecret?: string;
+
+  @ApiPropertyOptional({ maxLength: 320 })
+  @ValidateIf(
+    (dto: CreateRestaurantPayoutProviderRequestDto) =>
+      dto.provider === RestaurantPayoutProvider.PAYPAL,
+  )
+  @IsEmail()
+  @MaxLength(320)
+  paypalRecipientEmail?: string;
+
+  @ApiPropertyOptional({
+    enum: PaypalPayoutEnvironment,
+    default: PaypalPayoutEnvironment.LIVE,
+  })
+  @ValidateIf(
+    (dto: CreateRestaurantPayoutProviderRequestDto) =>
+      dto.provider === RestaurantPayoutProvider.PAYPAL,
+  )
+  @IsEnum(PaypalPayoutEnvironment)
+  paypalEnvironment?: PaypalPayoutEnvironment;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class ReviewRestaurantPayoutProviderRequestDto {
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class RejectRestaurantPayoutProviderRequestDto {
+  @ApiProperty({ maxLength: 500 })
+  @IsString()
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class CreateRestaurantProviderPayoutDto {
+  @ApiProperty({ enum: RestaurantPayoutProvider })
+  @IsEnum(RestaurantPayoutProvider)
+  provider!: RestaurantPayoutProvider;
+
+  @ApiProperty({ minimum: 0.01 })
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @ApiPropertyOptional({ maxLength: 10 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  currency?: string;
+
+  @ApiProperty({ maxLength: 191 })
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey!: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
 }
 
 export class RestaurantPayoutBankDetailsDto {

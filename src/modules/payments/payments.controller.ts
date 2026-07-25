@@ -5,6 +5,7 @@ import {
   Headers,
   Patch,
   Param,
+  ParseEnumPipe,
   Post,
   Query,
   Req,
@@ -27,6 +28,8 @@ import {
 import {
   AdminUpdatePaymentStatusDto,
   CreateRestaurantPayoutRequestDto,
+  CreateRestaurantPayoutProviderRequestDto,
+  CreateRestaurantProviderPayoutDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   CreateSubscriptionPaymentAttemptDto,
@@ -34,9 +37,12 @@ import {
   ListRestaurantPayoutRequestsDto,
   MarkRestaurantPayoutPaidDto,
   MarkSubscriptionManualPaidDto,
+  RejectRestaurantPayoutProviderRequestDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
   ReviewRestaurantPayoutRequestDto,
+  ReviewRestaurantPayoutProviderRequestDto,
+  RestaurantPayoutProvider,
   UpdateRestaurantPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
@@ -231,6 +237,99 @@ export class PaymentsController {
     @Body() dto: CreateRestaurantPayoutRequestDto,
   ) {
     return this.paymentsService.createRestaurantPayoutRequest(
+      user,
+      restaurantId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Get('restaurants/:restaurantId/payout-provider-requests')
+  @ApiOperation({
+    summary: 'Get redacted restaurant payout provider configuration requests',
+  })
+  getRestaurantPayoutProviderRequests(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+  ) {
+    return this.paymentsService.getRestaurantPayoutProviderRequests(
+      user,
+      restaurantId,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN)
+  @Post('restaurants/:restaurantId/payout-provider-requests')
+  @ApiOperation({
+    summary: 'Submit Stripe or PayPal payout configuration for review',
+  })
+  createRestaurantPayoutProviderRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: CreateRestaurantPayoutProviderRequestDto,
+  ) {
+    return this.paymentsService.createRestaurantPayoutProviderRequest(
+      user,
+      restaurantId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurants/:restaurantId/payout-provider-requests/:provider/approve')
+  approveRestaurantPayoutProviderRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Param('provider', new ParseEnumPipe(RestaurantPayoutProvider))
+    provider: RestaurantPayoutProvider,
+    @Body() dto: ReviewRestaurantPayoutProviderRequestDto,
+  ) {
+    return this.paymentsService.approveRestaurantPayoutProviderRequest(
+      user,
+      restaurantId,
+      provider,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurants/:restaurantId/payout-provider-requests/:provider/reject')
+  rejectRestaurantPayoutProviderRequest(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Param('provider', new ParseEnumPipe(RestaurantPayoutProvider))
+    provider: RestaurantPayoutProvider,
+    @Body() dto: RejectRestaurantPayoutProviderRequestDto,
+  ) {
+    return this.paymentsService.rejectRestaurantPayoutProviderRequest(
+      user,
+      restaurantId,
+      provider,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurants/:restaurantId/provider-payouts')
+  @ApiOperation({
+    summary: 'Transfer a wallet payout through an approved provider',
+  })
+  createRestaurantProviderPayout(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: CreateRestaurantProviderPayoutDto,
+  ) {
+    return this.paymentsService.createRestaurantProviderPayout(
       user,
       restaurantId,
       dto,
