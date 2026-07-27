@@ -19,6 +19,7 @@ import {
 } from '../../common/guards';
 import {
   AddCartItemDto,
+  AddCartDealDto,
   CartCustomerScopeDto,
   CheckoutCartDto,
   QuoteCartDto,
@@ -44,6 +45,20 @@ import { CartService } from './cart.service';
 @Controller('cart')
 export class CartController {
   constructor(private readonly cartService: CartService) {}
+
+  @Post('deals')
+  addDeal(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: AddCartDealDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.addDealItems(
+      user,
+      dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
+  }
 
   @Get()
   getCart(

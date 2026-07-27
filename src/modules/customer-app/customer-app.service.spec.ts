@@ -1488,16 +1488,15 @@ describe('CustomerAppService', () => {
     const [firstDealItem, secondDealItem] = result.data[0]
       .scopeMenuItems as unknown as Array<Record<string, unknown>>;
 
-    expect('isRequired' in firstDealItem).toBe(false);
-    expect('minSelect' in firstDealItem).toBe(false);
-    expect('maxSelect' in firstDealItem).toBe(false);
-    expect('modifiers' in firstDealItem).toBe(false);
-    expect('modifierLinks' in firstDealItem).toBe(false);
-    expect('isRequired' in secondDealItem).toBe(false);
-    expect('minSelect' in secondDealItem).toBe(false);
-    expect('maxSelect' in secondDealItem).toBe(false);
-    expect('modifiers' in secondDealItem).toBe(false);
-    expect('modifierLinks' in secondDealItem).toBe(false);
+    expect(Array.isArray(firstDealItem.variations)).toBe(true);
+    expect(Array.isArray(firstDealItem.modifierGroups)).toBe(true);
+    expect(Array.isArray(firstDealItem.modifiers)).toBe(true);
+    expect(firstDealItem.hasConfigurableOptions).toBe(true);
+    expect(firstDealItem.supportsDealIdCartPayload).toBe(true);
+    expect(Array.isArray(secondDealItem.variations)).toBe(true);
+    expect(Array.isArray(secondDealItem.modifierGroups)).toBe(true);
+    expect(Array.isArray(secondDealItem.modifiers)).toBe(true);
+    expect(secondDealItem.supportsDealIdCartPayload).toBe(true);
     expect(result.message).toBe('Deals fetched successfully');
   });
 

@@ -26,6 +26,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   AddCartItemDto,
+  AddCartDealDto,
   CartItemModifierDto,
   CartItemModifierSelectionDto,
   CartItemSectionDto,
@@ -581,6 +582,7 @@ export class CartService {
     dto: AddCartItemDto,
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
+    skipResponse = false,
   ) {
     const cart = await this.getCartForAddItem(user, dto, requestedCustomerId);
     const validatedDto = await this.assertValidCartItem(
@@ -628,6 +630,13 @@ export class CartService {
       });
     }
 
+    if (skipResponse) {
+      return {
+        data: {} as Awaited<ReturnType<typeof this.buildCartResponse>>,
+        message: 'Item added to cart successfully',
+      };
+    }
+
     const updatedCart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
@@ -637,6 +646,34 @@ export class CartService {
     return {
       data: await this.buildCartResponse(updatedCart, user),
       message: 'Item added to cart successfully',
+    };
+  }
+
+  async addDealItems(
+    user: AuthUserContext,
+    dto: AddCartDealDto,
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    for (const item of dto.items) {
+      await this.addItem(
+        user,
+        item,
+        requestedCustomerId,
+        requestedRestaurantId,
+        true,
+      );
+    }
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
+
+    return {
+      data: await this.buildCartResponse(updatedCart, user),
+      message: 'Deal added to cart successfully',
     };
   }
 
@@ -2990,8 +3027,14 @@ export class CartService {
     cart: CartSnapshot,
     dto: CheckoutCartDto,
   ): Promise<CreateOrderDto> {
+    const quotePayload = await this.toQuotePayload(cart);
+
     return {
-      ...(await this.toQuotePayload(cart)),
+      ...quotePayload,
+      deliveryAddressId:
+        dto.deliveryAddressId !== undefined
+          ? (dto.deliveryAddressId ?? undefined)
+          : quotePayload.deliveryAddressId,
       orderTime:
         dto.orderTime ??
         dto.scheduledDeliveryAt ??
@@ -3300,7 +3343,10 @@ export class CartService {
     }
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
-    if (!inferredDealId) {
+    if (
+      !inferredDealId ||
+      (this.resolveSelectedModifiers(validatedDto)?.length ?? 0) > 0
+    ) {
       this.assertModifierSelectionLimits(
         menuItem,
         validatedDto.modifiers ?? [],

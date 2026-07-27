@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayMinSize,
   IsDateString,
   IsEnum,
   IsIn,
@@ -132,6 +133,15 @@ export class AddCartItemDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+export class AddCartDealDto {
+  @ApiProperty({ type: [AddCartItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => AddCartItemDto)
+  items!: AddCartItemDto[];
 }
 
 export class UpdateCartItemDto {
@@ -285,6 +295,11 @@ export class QuoteCartDto {
 }
 
 export class CheckoutCartDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  deliveryAddressId?: string | null;
+
   @ApiPropertyOptional({
     description:
       'Requested order time in ISO 8601 format. Falls back to saved cart orderTime, then current time.',

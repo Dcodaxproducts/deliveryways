@@ -3593,6 +3593,59 @@ describe('OrdersService - coupon quote validation', () => {
     ).toThrow('CRAB Add-ons allows at most 2 modifier selection(s)');
   });
 
+  it('uses item-specific modifier group limits at checkout', () => {
+    const assertionService = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const assertGroupedModifierSelectionLimits = (
+      assertionService as unknown as {
+        assertGroupedModifierSelectionLimits: (
+          item: unknown,
+          selections: unknown[],
+        ) => void;
+      }
+    ).assertGroupedModifierSelectionLimits.bind(assertionService);
+    const item = {
+      id: 'pizza-1',
+      name: 'Pizza Chicken',
+      modifierLinks: [
+        {
+          selectionType: 'MULTIPLE',
+          minSelect: 0,
+          maxSelect: 2,
+          modifierGroup: {
+            id: 'pizza-rand',
+            name: 'Pizza Rand',
+            minSelect: 0,
+            maxSelect: 1,
+            isRequired: false,
+            modifierLinks: [
+              { modifier: { id: 'cheese-rand' } },
+              { modifier: { id: 'salami-rand' } },
+            ],
+          },
+        },
+      ],
+    };
+
+    expect(() =>
+      assertGroupedModifierSelectionLimits(item, [
+        {
+          modifierGroupId: 'pizza-rand',
+          modifiers: [
+            { modifierId: 'cheese-rand', quantity: 1 },
+            { modifierId: 'salami-rand', quantity: 1 },
+          ],
+        },
+      ]),
+    ).not.toThrow();
+  });
+
   it('rejects free order item modifier selections above one', async () => {
     const prisma = {
       branch: {

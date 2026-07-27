@@ -54,6 +54,9 @@ import { OrdersRepository } from './orders.repository';
 const DEFAULT_SCHEDULE_TIMEZONE = 'Asia/Karachi';
 
 interface OrderModifierLink {
+  selectionType?: 'SINGLE' | 'MULTIPLE';
+  minSelect?: number;
+  maxSelect?: number;
   modifierGroup: {
     id: string;
     name: string;
@@ -4604,8 +4607,16 @@ export class OrdersService {
         (sum, modifier) => sum + (modifier.quantity ?? 1),
         0,
       );
-      const minSelect = link.modifierGroup.minSelect;
-      const maxSelect = link.modifierGroup.maxSelect;
+      const minSelect = link.minSelect ?? link.modifierGroup.minSelect;
+      const maxSelect = link.maxSelect ?? link.modifierGroup.maxSelect;
+      const selectionType =
+        link.selectionType ?? (maxSelect > 1 ? 'MULTIPLE' : 'SINGLE');
+
+      if (selectionType === 'SINGLE' && totalSelected > 1) {
+        throw new BadRequestException(
+          `${link.modifierGroup.name} allows only one modifier selection`,
+        );
+      }
 
       if (totalSelected < minSelect) {
         throw new BadRequestException(
@@ -4621,7 +4632,7 @@ export class OrdersService {
     }
 
     for (const link of availableLinks) {
-      const minSelect = link.modifierGroup.minSelect;
+      const minSelect = link.minSelect ?? link.modifierGroup.minSelect;
       if (minSelect < 1 || selectionsByGroupId.has(link.modifierGroup.id)) {
         continue;
       }

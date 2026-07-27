@@ -4006,6 +4006,7 @@ export class CustomerAppService {
     item: Parameters<CustomerAppService['mapMenuItem']>[0],
   ) {
     const mappedItem = await this.mapMenuItem(item, []);
+    const modifierGroups = this.mapItemModifierGroups(item);
 
     return {
       id: mappedItem.id,
@@ -4023,6 +4024,23 @@ export class CustomerAppService {
             imageUrl: mappedItem.category.imageUrl,
           }
         : null,
+      variations: mappedItem.variations,
+      modifierGroups,
+      modifiers: mappedItem.modifiers,
+      supportsSplitPizza: this.readStringArray(item.dietaryFlags).includes(
+        '__SPLIT_PIZZA_ENABLED__',
+      ),
+      isRequired: mappedItem.isRequired,
+      minSelect: mappedItem.minSelect,
+      maxSelect: mappedItem.maxSelect,
+      hasConfigurableOptions:
+        mappedItem.variations.length > 0 || modifierGroups.length > 0,
+      requiresCustomization:
+        mappedItem.isRequired ||
+        modifierGroups.some((group) => (Number(group.minSelect) || 0) > 0),
+      supportsDealIdCartPayload: true,
+      supportsDealCartPayload: true,
+      isDealMenuItem: true,
     };
   }
 
