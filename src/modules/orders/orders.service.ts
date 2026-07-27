@@ -880,142 +880,35 @@ export class OrdersService {
         )
       : null;
 
+    const menuItemsById = await this.loadQuoteMenuItems(
+      dto.items.map((item) => item.menuItemId),
+      branch.restaurantId,
+      branch.id,
+    );
+    const readyMadeDealIds = await Promise.all(
+      dto.items.map(async (requestedItem) => {
+        const explicitDealId = this.resolveOptionalString(requestedItem.dealId);
+
+        return explicitDealId
+          ? (await this.isReadyMadeDealItem(
+              branch.restaurantId,
+              branch.id,
+              explicitDealId,
+              requestedItem.menuItemId,
+            ))
+            ? explicitDealId
+            : null
+          : this.findReadyMadeDealIdForItem(
+              branch.restaurantId,
+              branch.id,
+              requestedItem.menuItemId,
+            );
+      }),
+    );
     const lines: QuoteLine[] = [];
 
-    for (const requestedItem of dto.items) {
-      const menuItem = await this.prisma.menuItem.findFirst({
-        where: {
-          id: requestedItem.menuItemId,
-          restaurantId: branch.restaurantId,
-          deletedAt: null,
-          isActive: true,
-        },
-        include: {
-          category: {
-            select: {
-              id: true,
-              variations: {
-                where: { deletedAt: null, isActive: true },
-                include: {
-                  modifierPriceOverrides: {
-                    include: {
-                      modifier: {
-                        include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
-                        },
-                      },
-                    },
-                  },
-                  itemPriceOverrides: true,
-                },
-              },
-              variationLinks: {
-                where: {
-                  isActive: true,
-                  variation: { deletedAt: null, isActive: true },
-                },
-                include: {
-                  variation: {
-                    include: {
-                      modifierPriceOverrides: {
-                        include: {
-                          modifier: {
-                            include: {
-                              itemPriceOverrides: true,
-                              variationPriceOverrides: true,
-                            },
-                          },
-                        },
-                      },
-                      itemPriceOverrides: true,
-                    },
-                  },
-                },
-                orderBy: [{ sortOrder: 'asc' }],
-              },
-              modifierLinks: {
-                orderBy: [{ sortOrder: 'asc' }],
-                include: {
-                  modifierGroup: {
-                    include: {
-                      modifierLinks: {
-                        where: {
-                          modifier: { deletedAt: null, isActive: true },
-                        },
-                        include: {
-                          modifier: {
-                            include: {
-                              itemPriceOverrides: true,
-                              variationPriceOverrides: true,
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          modifierLinks: {
-            include: {
-              modifierGroup: {
-                include: {
-                  modifierLinks: {
-                    where: {
-                      modifier: { deletedAt: null, isActive: true },
-                    },
-                    include: {
-                      modifier: {
-                        include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          modifierPriceOverrides: {
-            include: {
-              modifier: {
-                include: {
-                  itemPriceOverrides: true,
-                  variationPriceOverrides: true,
-                },
-              },
-            },
-          },
-          variationPriceOverrides: {
-            include: {
-              variation: {
-                include: {
-                  modifierPriceOverrides: {
-                    include: {
-                      modifier: {
-                        include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
-                        },
-                      },
-                    },
-                  },
-                  itemPriceOverrides: true,
-                },
-              },
-            },
-          },
-          categoryLinks: { select: { menuCategoryId: true } },
-          branchOverrides: {
-            where: {
-              branchId: branch.id,
-            },
-          },
-        },
-      });
+    for (const [itemIndex, requestedItem] of dto.items.entries()) {
+      const menuItem = menuItemsById.get(requestedItem.menuItemId);
 
       if (!menuItem) {
         throw new BadRequestException(
@@ -1055,20 +948,7 @@ export class OrdersService {
       ).plus(this.resolveOrderTypePriceAdjustment(menuItem, dto.orderType));
       const depositAmount = menuItem.depositAmount ?? new Prisma.Decimal(0);
       const explicitDealId = this.resolveOptionalString(requestedItem.dealId);
-      const readyMadeDealId = explicitDealId
-        ? (await this.isReadyMadeDealItem(
-            branch.restaurantId,
-            branch.id,
-            explicitDealId,
-            menuItem.id,
-          ))
-          ? explicitDealId
-          : null
-        : await this.findReadyMadeDealIdForItem(
-            branch.restaurantId,
-            branch.id,
-            menuItem.id,
-          );
+      const readyMadeDealId = readyMadeDealIds[itemIndex];
 
       if (explicitDealId && !readyMadeDealId) {
         throw new BadRequestException(
@@ -1609,6 +1489,176 @@ export class OrdersService {
     }
 
     return pricedLines;
+  }
+
+  private async loadQuoteMenuItems(
+    menuItemIds: string[],
+    restaurantId: string,
+    branchId: string,
+  ) {
+    const uniqueMenuItemIds = [...new Set(menuItemIds)];
+    const include = {
+      category: {
+        select: {
+          id: true,
+          variations: {
+            where: { deletedAt: null, isActive: true },
+            include: {
+              modifierPriceOverrides: {
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+              },
+              itemPriceOverrides: true,
+            },
+          },
+          variationLinks: {
+            where: {
+              isActive: true,
+              variation: { deletedAt: null, isActive: true },
+            },
+            include: {
+              variation: {
+                include: {
+                  modifierPriceOverrides: {
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
+                  itemPriceOverrides: true,
+                },
+              },
+            },
+            orderBy: [{ sortOrder: 'asc' as const }],
+          },
+          modifierLinks: {
+            orderBy: [{ sortOrder: 'asc' as const }],
+            include: {
+              modifierGroup: {
+                include: {
+                  modifierLinks: {
+                    where: {
+                      modifier: { deletedAt: null, isActive: true },
+                    },
+                    include: {
+                      modifier: {
+                        include: {
+                          itemPriceOverrides: true,
+                          variationPriceOverrides: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      modifierLinks: {
+        include: {
+          modifierGroup: {
+            include: {
+              modifierLinks: {
+                where: {
+                  modifier: { deletedAt: null, isActive: true },
+                },
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      modifierPriceOverrides: {
+        include: {
+          modifier: {
+            include: {
+              itemPriceOverrides: true,
+              variationPriceOverrides: true,
+            },
+          },
+        },
+      },
+      variationPriceOverrides: {
+        include: {
+          variation: {
+            include: {
+              modifierPriceOverrides: {
+                include: {
+                  modifier: {
+                    include: {
+                      itemPriceOverrides: true,
+                      variationPriceOverrides: true,
+                    },
+                  },
+                },
+              },
+              itemPriceOverrides: true,
+            },
+          },
+        },
+      },
+      categoryLinks: { select: { menuCategoryId: true } },
+      branchOverrides: {
+        where: { branchId },
+      },
+    } satisfies Prisma.MenuItemInclude;
+
+    const bulkItems =
+      typeof this.prisma.menuItem.findMany === 'function'
+        ? await this.prisma.menuItem.findMany({
+            where: {
+              id: { in: uniqueMenuItemIds },
+              restaurantId,
+              deletedAt: null,
+              isActive: true,
+            },
+            include,
+          })
+        : [];
+    const menuItemsById = new Map(bulkItems.map((item) => [item.id, item]));
+    const missingMenuItemIds = uniqueMenuItemIds.filter(
+      (menuItemId) => !menuItemsById.has(menuItemId),
+    );
+
+    const fallbackItems = await Promise.all(
+      missingMenuItemIds.map((menuItemId) =>
+        this.prisma.menuItem.findFirst({
+          where: {
+            id: menuItemId,
+            restaurantId,
+            deletedAt: null,
+            isActive: true,
+          },
+          include,
+        }),
+      ),
+    );
+
+    for (const item of fallbackItems) {
+      if (item) {
+        menuItemsById.set(item.id, item);
+      }
+    }
+
+    return menuItemsById;
   }
 
   private applyFixedDealPricingForDeal(

@@ -15,6 +15,55 @@ import {
 } from '../../common/enums';
 import { OrdersService } from './orders.service';
 
+describe('OrdersService - quote menu loading', () => {
+  it('loads all unique cart menu items in one database query', async () => {
+    let receivedMenuItemIds: string[] = [];
+    let receivedRestaurantId = '';
+    const findMany = jest.fn(
+      (args: {
+        where: {
+          id: { in: string[] };
+          restaurantId: string;
+        };
+      }) => {
+        receivedMenuItemIds = args.where.id.in;
+        receivedRestaurantId = args.where.restaurantId;
+        return Promise.resolve([{ id: 'menu-1' }, { id: 'menu-2' }]);
+      },
+    );
+    const findFirst = jest.fn();
+    const service = new OrdersService(
+      { menuItem: { findMany, findFirst } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const loadQuoteMenuItems = (
+      service as unknown as {
+        loadQuoteMenuItems: (
+          menuItemIds: string[],
+          restaurantId: string,
+          branchId: string,
+        ) => Promise<Map<string, { id: string }>>;
+      }
+    ).loadQuoteMenuItems.bind(service);
+
+    const result = await loadQuoteMenuItems(
+      ['menu-1', 'menu-2', 'menu-1'],
+      'restaurant-1',
+      'branch-1',
+    );
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(receivedMenuItemIds).toEqual(['menu-1', 'menu-2']);
+    expect(receivedRestaurantId).toBe('restaurant-1');
+    expect(findFirst).not.toHaveBeenCalled();
+    expect([...result.keys()]).toEqual(['menu-1', 'menu-2']);
+  });
+});
+
 describe('OrdersService - delivery radius', () => {
   let service: OrdersService;
 
