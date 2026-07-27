@@ -292,44 +292,68 @@ export class NotificationsService {
     const currency =
       (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR';
 
-    await this.createAndDispatchCustomerEmail({
-      tenantId: order.tenantId,
-      restaurantId: order.restaurantId,
-      branchId: order.branchId,
+    const subject = `New order ${order.id}`;
+    const body = `${order.branch.name} received a new order for ${currency} ${Number(order.totalAmount).toFixed(2)}.`;
+    const payload = {
       orderId: order.id,
-      recipientUserId: order.customerId,
-      recipientEmail: order.customer.email,
-      type: NotificationType.ORDER_PLACED,
-      subject: `Order ${order.id} placed successfully`,
-      body: this.buildOrderPlacedBody(
-        order.customer.profile?.firstName,
-        order.id,
-        order.branch.name,
-        Number(order.totalAmount),
-        currency,
-      ),
-      payload: {
+      branchName: order.branch.name,
+      totalAmount: Number(order.totalAmount),
+      customerId: order.customerId,
+    };
+    const notificationTasks: Array<Promise<unknown>> = [
+      this.createAndDispatchCustomerEmail({
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
         orderId: order.id,
-        branchName: order.branch.name,
-        totalAmount: Number(order.totalAmount),
-      },
-    });
+        recipientUserId: order.customerId,
+        recipientEmail: order.customer.email,
+        type: NotificationType.ORDER_PLACED,
+        subject: `Order ${order.id} placed successfully`,
+        body: this.buildOrderPlacedBody(
+          order.customer.profile?.firstName,
+          order.id,
+          order.branch.name,
+          Number(order.totalAmount),
+          currency,
+        ),
+        payload: {
+          orderId: order.id,
+          branchName: order.branch.name,
+          totalAmount: Number(order.totalAmount),
+        },
+      }),
+      this.createAdminInAppNotification({
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
+        orderId: order.id,
+        type: NotificationType.ORDER_PLACED,
+        subject,
+        body,
+        payload,
+      }),
+    ];
+    const restaurantEmail = this.resolveNewOrderRestaurantEmail(
+      order.restaurant.settings,
+    );
 
-    await this.createAdminInAppNotification({
-      tenantId: order.tenantId,
-      restaurantId: order.restaurantId,
-      branchId: order.branchId,
-      orderId: order.id,
-      type: NotificationType.ORDER_PLACED,
-      subject: `New order ${order.id}`,
-      body: `${order.branch.name} received a new order for ${currency} ${Number(order.totalAmount).toFixed(2)}.`,
-      payload: {
-        orderId: order.id,
-        branchName: order.branch.name,
-        totalAmount: Number(order.totalAmount),
-        customerId: order.customerId,
-      },
-    });
+    if (restaurantEmail) {
+      notificationTasks.push(
+        this.createAndDispatchAdminEmail({
+          tenantId: order.tenantId,
+          restaurantId: order.restaurantId,
+          branchId: order.branchId,
+          recipientEmail: restaurantEmail,
+          type: NotificationType.ORDER_PLACED,
+          subject,
+          body,
+          payload,
+        }),
+      );
+    }
+
+    await Promise.all(notificationTasks);
 
     this.notificationsRealtimeService?.emitOrderCreated({
       id: order.id,
@@ -787,7 +811,7 @@ export class NotificationsService {
     tenantId: string;
     restaurantId: string;
     branchId: string;
-    recipientUserId: string;
+    recipientUserId?: string;
     recipientEmail: string;
     type: NotificationType;
     subject: string;
@@ -798,7 +822,9 @@ export class NotificationsService {
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
       branch: { connect: { id: input.branchId } },
-      recipientUser: { connect: { id: input.recipientUserId } },
+      recipientUser: input.recipientUserId
+        ? { connect: { id: input.recipientUserId } }
+        : undefined,
       recipientEmail: input.recipientEmail,
       audience: NotificationAudience.ADMIN,
       channel: NotificationChannel.EMAIL,
@@ -826,6 +852,54 @@ export class NotificationsService {
       seen.add(emailKey);
       return true;
     });
+  }
+
+  private resolveNewOrderRestaurantEmail(
+    settings: Prisma.JsonValue | null,
+  ): string | null {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return null;
+    }
+
+    const notificationSettings = (
+      settings as {
+        notificationSettings?: unknown;
+      }
+    ).notificationSettings;
+    if (
+      !notificationSettings ||
+      typeof notificationSettings !== 'object' ||
+      Array.isArray(notificationSettings)
+    ) {
+      return null;
+    }
+
+    const config = notificationSettings as {
+      emailAddress?: unknown;
+      notificationTypes?: unknown;
+    };
+    const notificationTypes = config.notificationTypes;
+    if (
+      !notificationTypes ||
+      typeof notificationTypes !== 'object' ||
+      Array.isArray(notificationTypes)
+    ) {
+      return null;
+    }
+
+    const newOrder = (notificationTypes as { newOrder?: unknown }).newOrder;
+    if (
+      !newOrder ||
+      typeof newOrder !== 'object' ||
+      Array.isArray(newOrder) ||
+      (newOrder as { email?: unknown }).email !== true
+    ) {
+      return null;
+    }
+
+    return typeof config.emailAddress === 'string' && config.emailAddress.trim()
+      ? config.emailAddress.trim().toLowerCase()
+      : null;
   }
 
   private async dispatchNotification(notification: {
@@ -953,13 +1027,19 @@ export class NotificationsService {
       return;
     }
 
-    if (
-      user.role === UserRoleEnum.CUSTOMER ||
-      user.role === UserRoleEnum.STAFF
-    ) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
       throw new ForbiddenException(
         'You do not have access to this notification',
       );
+    }
+
+    if (this.isStaff(user)) {
+      this.assertStaffNotificationScope(
+        user,
+        notification.restaurantId,
+        notification.branchId,
+      );
+      return;
     }
 
     if (
@@ -1001,8 +1081,21 @@ export class NotificationsService {
       };
     }
 
-    if (user.role === UserRoleEnum.STAFF) {
-      throw new ForbiddenException('Notification access is not available');
+    if (this.isStaff(user)) {
+      const restaurantId = query.restaurantId ?? user.rid;
+      if (!restaurantId) {
+        throw new ForbiddenException('restaurantId is required');
+      }
+
+      this.assertStaffNotificationScope(user, restaurantId, query.branchId);
+
+      return {
+        audience: NotificationAudience.ADMIN,
+        restaurantId,
+        branchId: query.branchId,
+        recipientUserId: undefined,
+        allowedTypes: ADMIN_NOTIFICATION_TYPES,
+      };
     }
 
     if (user.role === 'DELIVERYMAN') {
@@ -1059,6 +1152,47 @@ export class NotificationsService {
     }
 
     throw new ForbiddenException('restaurantId is required');
+  }
+
+  private isStaff(user: AuthUserContext): boolean {
+    return (
+      user.role === UserRoleEnum.STAFF || user.actorType === UserRoleEnum.STAFF
+    );
+  }
+
+  private assertStaffNotificationScope(
+    user: AuthUserContext,
+    restaurantId: string,
+    branchId?: string,
+  ): void {
+    const access = user.restaurantAccess;
+    const allRestaurants =
+      access?.allRestaurants === true ||
+      access?.hasAllRestaurantsAccess === true;
+    const restaurantIds = access?.restaurantIds ?? [];
+    const hasRestaurantAccess =
+      allRestaurants ||
+      user.rid === restaurantId ||
+      restaurantIds.includes(restaurantId);
+
+    if (!hasRestaurantAccess) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this restaurant',
+      );
+    }
+
+    const branchIds = access?.branchIds ?? [];
+    const restrictedBranchIds = user.bid
+      ? Array.from(new Set([user.bid, ...branchIds]))
+      : branchIds;
+    if (
+      restrictedBranchIds.length &&
+      (!branchId || !restrictedBranchIds.includes(branchId))
+    ) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this branch',
+      );
+    }
   }
 
   private toFeedItem(

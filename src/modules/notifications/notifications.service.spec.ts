@@ -5,6 +5,7 @@ import {
   NotificationType,
   PushPlatform,
 } from '@prisma/client';
+import { ForbiddenException } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 
 describe('NotificationsService', () => {
@@ -159,6 +160,91 @@ describe('NotificationsService', () => {
       }),
     );
     expect(result.data).toEqual({ total: 5, unseen: 3, seen: 2 });
+  });
+
+  it('returns admin notifications for staff within assigned restaurant scope', async () => {
+    notificationsRepository.countSummary.mockResolvedValue({
+      total: 2,
+      unseen: 1,
+      seen: 1,
+    });
+
+    const result = await service.summary(
+      {
+        uid: 'staff-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          branchIds: [],
+        },
+      } as never,
+      {
+        restaurantId: 'restaurant-1',
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(notificationsRepository.buildWhere).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        restaurantId: 'restaurant-1',
+      }),
+    );
+    expect(result.data.unseen).toBe(1);
+  });
+
+  it('returns admin notifications for staff with one directly assigned restaurant', async () => {
+    notificationsRepository.countSummary.mockResolvedValue({
+      total: 1,
+      unseen: 1,
+      seen: 0,
+    });
+
+    const result = await service.summary(
+      {
+        uid: 'staff-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        rid: 'restaurant-1',
+        restaurantAccess: null,
+      } as never,
+      {
+        restaurantId: 'restaurant-1',
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(result.data.unseen).toBe(1);
+  });
+
+  it('denies staff notifications outside assigned restaurant scope', async () => {
+    await expect(
+      service.summary(
+        {
+          uid: 'staff-1',
+          role: 'STAFF',
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            branchIds: [],
+          },
+        } as never,
+        {
+          restaurantId: 'restaurant-2',
+          page: 1,
+          limit: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('lists deliveryman notifications for the logged-in deliveryman', async () => {
@@ -363,6 +449,18 @@ describe('NotificationsService', () => {
         id: 'branch-1',
         name: 'Main Branch',
       },
+      restaurant: {
+        settings: {
+          notificationSettings: {
+            emailAddress: ' Orders@Restaurant.Example ',
+            notificationTypes: {
+              newOrder: {
+                email: true,
+              },
+            },
+          },
+        },
+      },
     });
     notificationsRepository.create
       .mockResolvedValueOnce({
@@ -374,6 +472,12 @@ describe('NotificationsService', () => {
       .mockResolvedValueOnce({
         id: 'admin-notification-1',
         recipientEmail: null,
+        subject: 'New order order-1',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'restaurant-email-1',
+        recipientEmail: 'orders@restaurant.example',
         subject: 'New order order-1',
         body: 'body',
       });
@@ -400,6 +504,16 @@ describe('NotificationsService', () => {
         type: NotificationType.ORDER_PLACED,
       }),
     );
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'orders@restaurant.example',
+        type: NotificationType.ORDER_PLACED,
+      }),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
     expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith({
       id: 'order-1',
       status: 'PLACED',

@@ -97,6 +97,11 @@ export class NotificationsRepository {
             name: true,
           },
         },
+        restaurant: {
+          select: {
+            settings: true,
+          },
+        },
       },
     });
   }
