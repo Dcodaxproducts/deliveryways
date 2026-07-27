@@ -34,6 +34,24 @@ type CompactMenuItemInclude = {
 };
 
 describe('CustomerAppRepository', () => {
+  it('counts only active, non-deleted restaurant branches', async () => {
+    const count = jest.fn().mockResolvedValue(1);
+    const repository = new CustomerAppRepository({
+      branch: { count },
+    } as unknown as PrismaService);
+
+    await expect(repository.countActiveBranches('restaurant-1')).resolves.toBe(
+      1,
+    );
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+  });
+
   it('loads inherited category modifier groups for public item details', async () => {
     const findFirst = jest
       .fn<ReturnType<FindFirstMenuItem>, Parameters<FindFirstMenuItem>>()
@@ -108,6 +126,34 @@ describe('CustomerAppRepository', () => {
     ]);
   });
 
+  it('orders storefront categories oldest first when requested', async () => {
+    const findMany = jest
+      .fn<
+        ReturnType<FindManyMenuCategories>,
+        Parameters<FindManyMenuCategories>
+      >()
+      .mockResolvedValue([]);
+    const repository = new CustomerAppRepository({
+      menuCategory: {
+        findMany,
+        count: jest.fn().mockResolvedValue(0),
+      },
+    } as unknown as PrismaService);
+
+    await repository.listMenuCategories({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'ASC',
+    });
+
+    expect(findMany.mock.calls[0]?.[0]?.orderBy).toEqual([
+      { createdAt: 'asc' },
+      { name: 'asc' },
+    ]);
+  });
+
   it('keeps category membership and public visibility as required filters', async () => {
     const findMany = jest
       .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
@@ -155,6 +201,31 @@ describe('CustomerAppRepository', () => {
     });
     expect(query?.orderBy).toEqual([
       { sortOrder: 'asc' },
+      { createdAt: 'asc' },
+      { name: 'asc' },
+    ]);
+  });
+
+  it('orders storefront items oldest first when requested', async () => {
+    const findMany = jest
+      .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
+      .mockResolvedValue([]);
+    const repository = new CustomerAppRepository({
+      menuItem: {
+        findMany,
+        count: jest.fn().mockResolvedValue(0),
+      },
+    } as unknown as PrismaService);
+
+    await repository.listPublicMenuItems({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 12,
+      sortBy: 'createdAt',
+      sortOrder: 'ASC',
+    });
+
+    expect(findMany.mock.calls[0]?.[0]?.orderBy).toEqual([
       { createdAt: 'asc' },
       { name: 'asc' },
     ]);

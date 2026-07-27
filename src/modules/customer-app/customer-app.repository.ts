@@ -766,6 +766,16 @@ export class CustomerAppRepository {
     };
   }
 
+  async countActiveBranches(restaurantId: string) {
+    return this.prisma.branch.count({
+      where: {
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+  }
+
   async findRestaurantPublicContent(restaurantId: string) {
     return this.prisma.restaurant.findFirst({
       where: {
@@ -1066,6 +1076,15 @@ export class CustomerAppRepository {
     const branchId = query.branchId;
     const categoryIds = scope?.categoryIds ?? [];
     const includeItems = scope?.includeItems ?? false;
+    const categoryOrderBy: Prisma.MenuCategoryOrderByWithRelationInput[] =
+      query.sortBy === 'createdAt'
+        ? [
+            {
+              createdAt: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+            },
+            { name: 'asc' },
+          ]
+        : [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }];
     const itemVisibilityWhere: Prisma.MenuItemWhereInput = {
       restaurantId: query.restaurantId,
       deletedAt: null,
@@ -1103,7 +1122,7 @@ export class CustomerAppRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }],
+        orderBy: categoryOrderBy,
         include: {
           _count: {
             select: {
@@ -1546,13 +1565,22 @@ export class CustomerAppRepository {
         ? { supportsSplitPizza: true }
         : {}),
     };
+    const itemOrderBy: Prisma.MenuItemOrderByWithRelationInput[] =
+      query.sortBy === 'createdAt'
+        ? [
+            {
+              createdAt: query.sortOrder.toLowerCase() as 'asc' | 'desc',
+            },
+            { name: 'asc' },
+          ]
+        : [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }];
 
     const [items, total] = await Promise.all([
       this.prisma.menuItem.findMany({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }],
+        orderBy: itemOrderBy,
         include: this.buildPublicMenuItemCardInclude(branchId),
       }),
       this.prisma.menuItem.count({ where }),

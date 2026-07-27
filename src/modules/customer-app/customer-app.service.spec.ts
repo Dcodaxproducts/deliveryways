@@ -159,6 +159,7 @@ describe('CustomerAppService', () => {
       findRestaurantScope: jest.fn(),
       findRestaurantDomainContext: jest.fn(),
       listPublicBranches: jest.fn(),
+      countActiveBranches: jest.fn().mockResolvedValue(1),
       upsertCustomerProfile: jest.fn(),
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
@@ -2294,6 +2295,7 @@ describe('CustomerAppService', () => {
         lng: 74.3587,
       },
       isOpen: false,
+      isOnlyBranch: true,
       settings: {
         allowedOrderTypes: [],
         allowedPaymentMethods: ['COD', 'CARD_ON_DELIVERY', 'PAYPAL', 'WALLET'],

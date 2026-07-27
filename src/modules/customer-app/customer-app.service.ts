@@ -1223,11 +1223,13 @@ export class CustomerAppService {
           restaurantContactInfo,
         )
       : null;
-    const [currency, timezone, platformMethodsResponse] = await Promise.all([
-      this.resolveHomeCurrency(restaurant.settings),
-      this.resolveHomeTimezone(),
-      this.globalSettingsService?.getPaymentMethods(),
-    ]);
+    const [currency, timezone, platformMethodsResponse, activeBranchCount] =
+      await Promise.all([
+        this.resolveHomeCurrency(restaurant.settings),
+        this.resolveHomeTimezone(),
+        this.globalSettingsService?.getPaymentMethods(),
+        this.customerAppRepository.countActiveBranches(restaurant.id),
+      ]);
     const activePlatformMethods =
       platformMethodsResponse?.data
         ?.filter((method) => method.isActive)
@@ -1321,6 +1323,7 @@ export class CustomerAppService {
               contacts: branchContactInfo,
               address: branchPublicAddress,
               isOpen: this.isBranchOpenNow(translatedBranch.settings),
+              isOnlyBranch: activeBranchCount === 1,
               settings: {
                 allowedOrderTypes: this.readStringArrayValue(
                   translatedBranch.settings,
