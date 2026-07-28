@@ -807,7 +807,11 @@ export class MenuItemService {
     dto: CreateProductLabelDto,
     requestedRestaurantId?: string,
   ) {
-    const state = await this.loadProductLabelState(user, requestedRestaurantId);
+    const state = await this.loadProductLabelState(
+      user,
+      requestedRestaurantId,
+      'write',
+    );
     const value = this.normalizeLabelValue(dto.value ?? dto.label);
     const label = dto.label.trim();
 
@@ -834,7 +838,11 @@ export class MenuItemService {
     dto: UpdateProductLabelDto,
     requestedRestaurantId?: string,
   ) {
-    const state = await this.loadProductLabelState(user, requestedRestaurantId);
+    const state = await this.loadProductLabelState(
+      user,
+      requestedRestaurantId,
+      'write',
+    );
     const normalizedValue = this.normalizeLabelValue(value);
     const index = state.labels.findIndex(
       (item) => item.value === normalizedValue,
@@ -882,7 +890,11 @@ export class MenuItemService {
     value: string,
     requestedRestaurantId?: string,
   ) {
-    const state = await this.loadProductLabelState(user, requestedRestaurantId);
+    const state = await this.loadProductLabelState(
+      user,
+      requestedRestaurantId,
+      'write',
+    );
     const normalizedValue = this.normalizeLabelValue(value);
     const exists = state.labels.some((item) => item.value === normalizedValue);
 
@@ -927,6 +939,7 @@ export class MenuItemService {
     const state = await this.loadAllergenAdditiveTemplateState(
       user,
       dto.restaurantId,
+      'write',
     );
     const templates = {
       allergens: this.normalizeTemplateEntries(
@@ -957,7 +970,11 @@ export class MenuItemService {
   ) {
     const templateType = this.resolveTemplateType(type);
     const { tenantId, settings, templates } =
-      await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
+      await this.loadAllergenAdditiveTemplateState(
+        user,
+        requestedRestaurantId,
+        'write',
+      );
     const entries = templates[templateType];
     const entry = { code: dto.code.trim(), label: dto.label.trim() };
 
@@ -990,7 +1007,11 @@ export class MenuItemService {
   ) {
     const templateType = this.resolveTemplateType(type);
     const { tenantId, settings, templates } =
-      await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
+      await this.loadAllergenAdditiveTemplateState(
+        user,
+        requestedRestaurantId,
+        'write',
+      );
     const entries = templates[templateType];
     const currentCode = code.trim();
     const index = entries.findIndex((entry) => entry.code === currentCode);
@@ -1040,7 +1061,11 @@ export class MenuItemService {
   ) {
     const templateType = this.resolveTemplateType(type);
     const { tenantId, settings, templates } =
-      await this.loadAllergenAdditiveTemplateState(user, requestedRestaurantId);
+      await this.loadAllergenAdditiveTemplateState(
+        user,
+        requestedRestaurantId,
+        'write',
+      );
     const currentCode = code.trim();
     const exists = templates[templateType].some(
       (entry) => entry.code === currentCode,
@@ -2059,10 +2084,12 @@ export class MenuItemService {
   private async loadProductLabelState(
     user: AuthUserContext,
     requestedRestaurantId?: string,
+    operation: 'read' | 'write' = 'read',
   ) {
     const { tenantId, settings } = await this.loadTenantSettingsState(
       user,
       requestedRestaurantId,
+      operation,
     );
     const labels = this.readProductLabels(
       this.readPath(settings, ['productLabels']) ??
@@ -2142,10 +2169,12 @@ export class MenuItemService {
   private async loadAllergenAdditiveTemplateState(
     user: AuthUserContext,
     requestedRestaurantId?: string,
+    operation: 'read' | 'write' = 'read',
   ) {
     const { tenantId, settings } = await this.loadTenantSettingsState(
       user,
       requestedRestaurantId,
+      operation,
     );
 
     return {
@@ -2158,7 +2187,38 @@ export class MenuItemService {
   private async loadTenantSettingsState(
     user: AuthUserContext,
     requestedRestaurantId?: string,
+    operation: 'read' | 'write' = 'read',
   ) {
+    if (
+      typeof this.staffMenuAccessService?.isStaff === 'function' &&
+      this.staffMenuAccessService.isStaff(user)
+    ) {
+      const restaurantId =
+        operation === 'write'
+          ? await this.staffMenuAccessService.resolveRestaurantIdForWrite(
+              user,
+              requestedRestaurantId,
+            )
+          : await this.staffMenuAccessService.resolveRestaurantIdForRead(
+              user,
+              requestedRestaurantId,
+            );
+
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: { id: restaurantId, deletedAt: null },
+        select: { tenantId: true, tenant: { select: { settings: true } } },
+      });
+
+      if (!restaurant) {
+        throw new NotFoundException('Restaurant not found');
+      }
+
+      return {
+        tenantId: restaurant.tenantId,
+        settings: this.toJsonObject(restaurant.tenant.settings),
+      };
+    }
+
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');

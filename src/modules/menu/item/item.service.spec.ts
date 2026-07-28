@@ -114,12 +114,18 @@ describe('MenuItemService', () => {
       getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
       getActiveHappyHours: jest.fn().mockResolvedValue([]),
     };
+    const staffMenuAccessService = {
+      isStaff: jest.fn().mockReturnValue(false),
+      resolveRestaurantIdForRead: jest.fn(),
+      resolveRestaurantIdForWrite: jest.fn(),
+    };
 
     const service = new MenuItemService(
       itemRepository as never,
       prisma as never,
       storageService as never,
       couponsService as never,
+      staffMenuAccessService as never,
     );
 
     return {
@@ -128,6 +134,7 @@ describe('MenuItemService', () => {
       prisma,
       storageService,
       couponsService,
+      staffMenuAccessService,
       tx,
     };
   };
@@ -828,6 +835,89 @@ describe('MenuItemService', () => {
       allergens: [{ code: 'A', label: 'Gluten' }],
       additives: [{ code: '1', label: 'Coloring' }],
     });
+  });
+
+  it('loads allergen templates for staff from the selected restaurant context', async () => {
+    const { service, prisma, staffMenuAccessService } = makeService();
+    staffMenuAccessService.isStaff.mockReturnValue(true);
+    staffMenuAccessService.resolveRestaurantIdForRead.mockResolvedValue(
+      'restaurant-1',
+    );
+    prisma.restaurant.findFirst.mockResolvedValue({
+      tenantId: 'tenant-1',
+      tenant: {
+        settings: {
+          customerApp: {
+            allergenAdditiveTemplates: {
+              allergens: [{ code: 'A', label: 'Gluten' }],
+              additives: [{ code: '1', label: 'Coloring' }],
+            },
+          },
+        },
+      },
+    });
+
+    await expect(
+      service.getAllergenAdditiveTemplates(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+        },
+        'restaurant-1',
+      ),
+    ).resolves.toMatchObject({
+      data: {
+        allergens: [{ code: 'A', label: 'Gluten' }],
+        additives: [{ code: '1', label: 'Coloring' }],
+      },
+    });
+
+    expect(
+      staffMenuAccessService.resolveRestaurantIdForRead,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'staff-1' }),
+      'restaurant-1',
+    );
+    expect(prisma.restaurant.findFirst).toHaveBeenCalledWith({
+      where: { id: 'restaurant-1', deletedAt: null },
+      select: { tenantId: true, tenant: { select: { settings: true } } },
+    });
+  });
+
+  it('uses staff write scope when changing tenant-backed menu settings', async () => {
+    const { service, prisma, staffMenuAccessService } = makeService();
+    staffMenuAccessService.isStaff.mockReturnValue(true);
+    staffMenuAccessService.resolveRestaurantIdForWrite.mockResolvedValue(
+      'restaurant-1',
+    );
+    prisma.restaurant.findFirst.mockResolvedValue({
+      tenantId: 'tenant-1',
+      tenant: { settings: { productLabels: [] } },
+    });
+    prisma.tenant.update.mockResolvedValue({ id: 'tenant-1' });
+
+    await service.createLabel(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+      },
+      { label: 'Seasonal' },
+      'restaurant-1',
+    );
+
+    expect(
+      staffMenuAccessService.resolveRestaurantIdForWrite,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'staff-1' }),
+      'restaurant-1',
+    );
+    expect(
+      staffMenuAccessService.resolveRestaurantIdForRead,
+    ).not.toHaveBeenCalled();
   });
 
   it('creates, updates, and deletes allergen template entries', async () => {
