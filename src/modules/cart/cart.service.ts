@@ -3279,24 +3279,18 @@ export class CartService {
           menuItem.id,
         )
       : null;
-    const inferredDealId = explicitDealId
-      ? (explicitDealOptions?.dealId ?? null)
-      : await this.findReadyMadeDealIdForItem(
-          restaurantId,
-          branchId,
-          menuItem.id,
-        );
+    const validatedDealId = explicitDealOptions?.dealId ?? null;
 
-    if (explicitDealId && !inferredDealId) {
+    if (explicitDealId && !validatedDealId) {
       throw new BadRequestException(
         `Deal not found for item: ${menuItem.name}`,
       );
     }
 
-    const validatedDto = inferredDealId
+    const validatedDto = validatedDealId
       ? {
           ...dto,
-          dealId: inferredDealId,
+          dealId: validatedDealId,
           variationId: explicitDealOptions?.forcedVariationId ?? undefined,
         }
       : dto;
@@ -3344,7 +3338,7 @@ export class CartService {
 
     this.assertItemQuantityLimits(menuItem, dto.quantity);
     if (
-      !inferredDealId ||
+      !validatedDealId ||
       (this.resolveSelectedModifiers(validatedDto)?.length ?? 0) > 0
     ) {
       this.assertModifierSelectionLimits(
@@ -3386,20 +3380,6 @@ export class CartService {
       )) ?? false;
 
     return isFixedDealItem ? { dealId, forcedVariationId: null } : null;
-  }
-
-  private async findReadyMadeDealIdForItem(
-    restaurantId: string,
-    branchId: string,
-    menuItemId: string,
-  ) {
-    return (
-      (await this.couponsService?.findActiveFixedPriceDealIdForItem?.(
-        restaurantId,
-        branchId,
-        menuItemId,
-      )) ?? null
-    );
   }
 
   private assertModifierSelectionLimits(

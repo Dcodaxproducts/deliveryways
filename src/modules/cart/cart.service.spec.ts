@@ -4397,7 +4397,7 @@ describe('CartService', () => {
     );
   });
 
-  it('infers ready-made deal items without requiring dealId in add-to-cart', async () => {
+  it('keeps an individually added deal-eligible item as a regular cart item', async () => {
     const { service, cartRepository, couponsService } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
@@ -4418,8 +4418,8 @@ describe('CartService', () => {
     cartRepository.findMenuItemForCart.mockResolvedValue({
       id: 'menu-1',
       name: 'Basic Pizza Copy',
-      isRequired: true,
-      minSelect: 1,
+      isRequired: false,
+      minSelect: 0,
       maxSelect: 2,
       variations: [],
       modifierLinks: [],
@@ -4449,14 +4449,11 @@ describe('CartService', () => {
 
     expect(
       couponsService.findActiveFixedPriceDealIdForItem,
-    ).toHaveBeenCalledWith('restaurant-1', 'branch-1', 'menu-1');
+    ).not.toHaveBeenCalled();
     expect(cartRepository.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
         menuItemId: 'menu-1',
-        modifiers: {
-          dealId: 'deal-1',
-          modifiers: [],
-        },
+        modifiers: undefined,
       }),
     );
   });

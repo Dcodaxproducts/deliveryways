@@ -789,27 +789,39 @@ describe('PaymentsService', () => {
     ]);
   });
 
-  it('rejects restaurant admin payment method updates', async () => {
+  it('allows a restaurant admin to update payment methods for its tenant restaurant', async () => {
     const { service, prisma } = makeService();
-
-    await expect(
-      service.updateRestaurantPaymentMethods(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          role: UserRoleEnum.BUSINESS_ADMIN,
-        } as never,
-        'restaurant-1',
-        {
-          allowedPaymentMethods: [PaymentMethod.COD],
-          walletEnabled: false,
-        },
-      ),
-    ).rejects.toThrow(
-      'Only super admins can manage restaurant payment configuration',
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {},
+    });
+    prisma.restaurant.update.mockImplementation(
+      (args: RestaurantStripeSettingsUpdateArgs) =>
+        Promise.resolve({
+          id: args.where.id,
+          settings: args.data.settings,
+        }),
     );
-    expect(prisma.restaurant.findFirst).not.toHaveBeenCalled();
-    expect(prisma.restaurant.update).not.toHaveBeenCalled();
+
+    const result = await service.updateRestaurantPaymentMethods(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      {
+        allowedPaymentMethods: [PaymentMethod.COD],
+        walletEnabled: false,
+      },
+    );
+
+    expect(prisma.restaurant.findFirst).toHaveBeenCalled();
+    expect(result.data.methods.allowedPaymentMethods).toEqual([
+      PaymentMethod.COD,
+    ]);
+    expect(prisma.restaurant.update).toHaveBeenCalled();
   });
 
   it('marks payment paid from stripe webhook success', async () => {

@@ -2095,8 +2095,6 @@ export class PaymentsService {
     restaurantId: string,
     dto: UpdateRestaurantPaymentMethodsDto,
   ) {
-    this.assertSuperAdminPaymentConfigAccess(user);
-
     const restaurant = await this.requireRestaurantForPayments(
       user,
       restaurantId,
