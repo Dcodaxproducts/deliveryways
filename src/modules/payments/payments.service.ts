@@ -17,7 +17,10 @@ import {
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
-import { buildPaginationMeta } from '../../common/utils';
+import {
+  buildPaginationMeta,
+  resolveAvailablePaymentMethods,
+} from '../../common/utils';
 import { PrismaService } from '../../database';
 import {
   AdminUpdatePaymentStatusDto,
@@ -3176,25 +3179,17 @@ export class PaymentsService {
     },
     paymentMethod: PaymentMethod,
   ) {
-    const branchMethods = this.readBranchAllowedPaymentMethods(
-      order.branch.settings,
-    );
-    const restaurantMethods = this.readRestaurantPaymentMethodSettings(
-      order.restaurant.settings,
-    ).allowedPaymentMethods;
     const globalMethods = await this.getGlobalPaymentMethods();
     const activeGlobalMethods = globalMethods
       .filter((method) => method.isActive)
       .map((method) => method.code);
+    const availableMethods = resolveAvailablePaymentMethods({
+      platformMethods: globalMethods.length > 0 ? activeGlobalMethods : null,
+      restaurantSettings: order.restaurant.settings,
+      branchSettings: order.branch.settings,
+    });
 
-    if (
-      paymentMethod === PaymentMethod.COD ||
-      paymentMethod === PaymentMethod.WALLET ||
-      paymentMethod === PaymentMethod.PAYPAL ||
-      branchMethods.includes(paymentMethod) ||
-      restaurantMethods.includes(paymentMethod) ||
-      activeGlobalMethods.includes(paymentMethod)
-    ) {
+    if (availableMethods.includes(paymentMethod)) {
       return;
     }
 

@@ -5432,7 +5432,7 @@ describe('OrdersService - wallet payment', () => {
           tenantId: 'tenant-1',
           restaurantId: 'restaurant-1',
           settings: {
-            allowedPaymentMethods: ['COD'],
+            allowedPaymentMethods: ['CARD_ON_DELIVERY'],
           },
         },
         customer: { customerId: 'customer-1' },
@@ -5545,66 +5545,67 @@ describe('OrdersService - wallet payment', () => {
       { getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR') } as never,
     );
 
-    jest
+    const quote = {
+      branch: {
+        id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        settings: { allowedPaymentMethods: ['STRIPE'] },
+        restaurant: {
+          settings: {
+            payments: {
+              methods: {
+                allowedPaymentMethods: ['STRIPE'],
+              },
+            },
+          },
+        },
+      },
+      customer: { customerId: 'customer-1' },
+      lines: [
+        {
+          menuItemId: 'menu-1',
+          categoryId: 'cat-1',
+          menuItemName: 'Burger',
+          quantity: 1,
+          depositAmount: new Prisma.Decimal(0),
+          unitPrice: new Prisma.Decimal(500),
+          lineTotal: new Prisma.Decimal(500),
+        },
+      ],
+      subtotal: new Prisma.Decimal(500),
+      taxAmount: new Prisma.Decimal(0),
+      deliveryFee: new Prisma.Decimal(0),
+      discountAmount: new Prisma.Decimal(0),
+      walletAppliedAmount: new Prisma.Decimal(0),
+      loyaltyDiscountAmount: new Prisma.Decimal(0),
+      loyaltyPointsRedeemed: 0,
+      totalAmount: new Prisma.Decimal(500),
+      couponId: undefined,
+    };
+    const buildQuoteSpy = jest
       .spyOn(
         service as unknown as {
           buildQuote: (user: unknown, dto: unknown) => Promise<unknown>;
         },
         'buildQuote',
       )
-      .mockResolvedValue({
-        branch: {
-          id: 'branch-1',
-          tenantId: 'tenant-1',
-          restaurantId: 'restaurant-1',
-          settings: { allowedPaymentMethods: ['STRIPE'] },
-          restaurant: {
-            settings: {
-              payments: {
-                methods: {
-                  allowedPaymentMethods: ['COD'],
-                },
-              },
-            },
-          },
-        },
-        customer: { customerId: 'customer-1' },
-        lines: [
-          {
-            menuItemId: 'menu-1',
-            categoryId: 'cat-1',
-            menuItemName: 'Burger',
-            quantity: 1,
-            depositAmount: new Prisma.Decimal(0),
-            unitPrice: new Prisma.Decimal(500),
-            lineTotal: new Prisma.Decimal(500),
-          },
-        ],
-        subtotal: new Prisma.Decimal(500),
-        taxAmount: new Prisma.Decimal(0),
-        deliveryFee: new Prisma.Decimal(0),
-        discountAmount: new Prisma.Decimal(0),
-        walletAppliedAmount: new Prisma.Decimal(0),
-        loyaltyDiscountAmount: new Prisma.Decimal(0),
-        loyaltyPointsRedeemed: 0,
-        totalAmount: new Prisma.Decimal(500),
-        couponId: undefined,
-      });
+      .mockResolvedValue(quote);
 
-    await service.create(
-      {
-        uid: 'customer-1',
-        tid: 'tenant-1',
-        rid: 'restaurant-1',
-        role: UserRoleEnum.CUSTOMER,
-      } as never,
-      {
-        branchId: 'branch-1',
-        orderType: OrderTypeEnum.DELIVERY,
-        paymentMethod: PaymentMethodEnum.STRIPE,
-        items: [],
-      },
-    );
+    const user = {
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    } as never;
+    const dto = {
+      branchId: 'branch-1',
+      orderType: OrderTypeEnum.DELIVERY,
+      paymentMethod: PaymentMethodEnum.STRIPE,
+      items: [],
+    };
+
+    await service.create(user, dto);
 
     expect(ordersRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -5625,6 +5626,26 @@ describe('OrdersService - wallet payment', () => {
     expect(paymentTransactionCall.data.status).toBe(PaymentStatus.PENDING);
     expect(notifyOrderPlaced).not.toHaveBeenCalled();
     expect(loyaltyWalletService.awardPointsForPaidOrder).not.toHaveBeenCalled();
+
+    buildQuoteSpy.mockResolvedValue({
+      ...quote,
+      branch: {
+        ...quote.branch,
+        restaurant: {
+          settings: {
+            payments: {
+              methods: {
+                allowedPaymentMethods: ['COD'],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    await expect(service.create(user, dto)).rejects.toThrow(
+      'Payment method is not allowed for this restaurant and branch',
+    );
   });
 
   it('marks wallet-only orders as paid and awards loyalty points', async () => {

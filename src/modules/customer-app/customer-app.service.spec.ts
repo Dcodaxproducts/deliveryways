@@ -335,13 +335,7 @@ describe('CustomerAppService', () => {
         isOnlyBranch: true,
         settings: {
           allowedOrderTypes: ['DELIVERY', 'TAKEAWAY'],
-          allowedPaymentMethods: [
-            'COD',
-            'STRIPE',
-            'WALLET',
-            'CARD_ON_DELIVERY',
-            'PAYPAL',
-          ],
+          allowedPaymentMethods: ['COD', 'WALLET'],
           openingHours: [{ dayOfWeek: 'MONDAY' }],
           deliveryHours: [{ dayOfWeek: 'MONDAY' }],
           holidayOpeningHours: [],
@@ -388,6 +382,49 @@ describe('CustomerAppService', () => {
       'CARD_ON_DELIVERY',
       'PAYPAL',
       'WALLET',
+    ]);
+  });
+
+  it('restricts public branch methods to the restaurant payment settings', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantScope.mockResolvedValue({
+      id: 'restaurant-1',
+      settings: {
+        payments: {
+          methods: {
+            allowedPaymentMethods: ['CARD_ON_DELIVERY', 'PAYPAL'],
+          },
+        },
+      },
+    });
+    repository.listPublicBranches.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          restaurantId: 'restaurant-1',
+          name: 'Main Branch',
+          isMain: true,
+          isActive: true,
+          address: null,
+          settings: {
+            allowedPaymentMethods: ['COD', 'CARD_ON_DELIVERY', 'PAYPAL'],
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listPublicBranches({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(result.data[0]?.settings.allowedPaymentMethods).toEqual([
+      'CARD_ON_DELIVERY',
+      'PAYPAL',
     ]);
   });
 

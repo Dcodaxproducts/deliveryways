@@ -650,7 +650,7 @@ export class CustomerAppRepository {
         deletedAt: null,
         ...(tenantId ? { tenantId } : {}),
       },
-      select: { id: true },
+      select: { id: true, settings: true },
     });
   }
 

@@ -15,3 +15,4 @@ export {
   type CustomerAppFaqVisibility,
 } from './customer-app-faq.util';
 export { isRestaurantMenuAvailableAt } from './restaurant-menu-context.util';
+export { resolveAvailablePaymentMethods } from './payment-methods.util';

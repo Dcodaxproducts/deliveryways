@@ -151,6 +151,7 @@ describe('PaymentsService', () => {
         data: [
           { code: PaymentMethod.COD, label: 'Cash', isActive: true },
           { code: PaymentMethod.STRIPE, label: 'Stripe', isActive: true },
+          { code: PaymentMethod.WALLET, label: 'Wallet', isActive: true },
           { code: PaymentMethod.BANK_TRANSFER, label: 'Bank', isActive: false },
         ],
       }),
@@ -709,6 +710,7 @@ describe('PaymentsService', () => {
     expect(result.data.payments.methods.activePlatformMethods).toEqual([
       PaymentMethod.COD,
       PaymentMethod.STRIPE,
+      PaymentMethod.WALLET,
     ]);
     expect(result.data.payments.stripe).toEqual(
       expect.objectContaining({

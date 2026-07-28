@@ -24,7 +24,10 @@ import {
   UserRoleEnum,
 } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
-import { buildPaginationMeta } from '../../common/utils';
+import {
+  buildPaginationMeta,
+  resolveAvailablePaymentMethods,
+} from '../../common/utils';
 import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../../database';
@@ -326,15 +329,14 @@ export class OrdersService {
     const branchSettings = this.readBranchSettings(quote.branch.settings);
     const activeGlobalPaymentMethods =
       await this.resolveActiveGlobalPaymentMethods();
-    if (
-      !this.isPaymentAllowed(
-        branchSettings,
-        dto.paymentMethod,
-        activeGlobalPaymentMethods,
-      )
-    ) {
+    const availablePaymentMethods = resolveAvailablePaymentMethods({
+      platformMethods: activeGlobalPaymentMethods,
+      restaurantSettings: quote.branch.restaurant?.settings,
+      branchSettings: quote.branch.settings,
+    });
+    if (!availablePaymentMethods.includes(dto.paymentMethod as PaymentMethod)) {
       throw new BadRequestException(
-        'Payment method is not allowed for this branch',
+        'Payment method is not allowed for this restaurant and branch',
       );
     }
 
@@ -4216,22 +4218,9 @@ export class OrdersService {
     return [OrderStatus.OUT_FOR_DELIVERY, OrderStatus.CANCELLED];
   }
 
-  private isPaymentAllowed(
-    settings: BranchSettings,
-    paymentMethod: string,
-    activeGlobalPaymentMethods: string[] = [],
-  ): boolean {
-    if (paymentMethod === 'WALLET' || paymentMethod === 'PAYPAL') {
-      return true;
-    }
-
-    return (
-      settings.allowedPaymentMethods.includes(paymentMethod) ||
-      activeGlobalPaymentMethods.includes(paymentMethod)
-    );
-  }
-
-  private async resolveActiveGlobalPaymentMethods(): Promise<string[]> {
+  private async resolveActiveGlobalPaymentMethods(): Promise<
+    PaymentMethod[] | null
+  > {
     const globalSettingDelegate = (
       this.prisma as unknown as {
         globalSetting?: {
@@ -4244,7 +4233,7 @@ export class OrdersService {
     ).globalSetting;
 
     if (!globalSettingDelegate) {
-      return [];
+      return Object.values(PaymentMethod);
     }
 
     const settings = await globalSettingDelegate.findUnique({
@@ -4252,7 +4241,14 @@ export class OrdersService {
       select: { paymentMethods: true },
     });
 
-    return this.readActiveGlobalPaymentMethods(settings?.paymentMethods);
+    if (!settings || !Array.isArray(settings.paymentMethods)) {
+      return Object.values(PaymentMethod);
+    }
+
+    return this.readActiveGlobalPaymentMethods(settings.paymentMethods).filter(
+      (method): method is PaymentMethod =>
+        Object.values(PaymentMethod).includes(method as PaymentMethod),
+    );
   }
 
   private readActiveGlobalPaymentMethods(

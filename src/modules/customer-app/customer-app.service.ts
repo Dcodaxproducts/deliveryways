@@ -11,7 +11,6 @@ import {
   CouponDealSelectionMode,
   LocalizationEntityType,
   ModifierSelectionType,
-  PaymentMethod,
   Prisma,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -23,6 +22,7 @@ import {
   extractCustomerAppFaqCategories,
   isRestaurantMenuAvailableAt,
   normalizeCustomerAppFaqItem,
+  resolveAvailablePaymentMethods,
 } from '../../common/utils';
 import {
   CreateTableReservationDto,
@@ -364,11 +364,13 @@ export class CustomerAppService {
 
     const { items, total } =
       await this.customerAppRepository.listPublicBranches(query);
-    const platformMethods =
-      (await this.globalSettingsService?.getPaymentMethods())?.data ?? [];
-    const activePlatformMethods = platformMethods
-      .filter((method) => method.isActive)
-      .map((method) => method.code);
+    const platformMethodsResponse =
+      await this.globalSettingsService?.getPaymentMethods();
+    const activePlatformMethods = platformMethodsResponse
+      ? platformMethodsResponse.data
+          .filter((method) => method.isActive)
+          .map((method) => method.code)
+      : null;
 
     return {
       data: items.map((branch) => ({
@@ -383,10 +385,11 @@ export class CustomerAppService {
           allowedOrderTypes: this.readStringArrayValue(branch.settings, [
             ['allowedOrderTypes'],
           ]),
-          allowedPaymentMethods: this.resolveCheckoutPaymentMethods(
-            branch.settings,
-            activePlatformMethods,
-          ),
+          allowedPaymentMethods: resolveAvailablePaymentMethods({
+            platformMethods: activePlatformMethods,
+            restaurantSettings: restaurant.settings,
+            branchSettings: branch.settings,
+          }),
           openingHours: this.readBranchScheduleHours(
             branch.settings,
             'openingHours',
@@ -1242,10 +1245,11 @@ export class CustomerAppService {
         this.globalSettingsService?.getPaymentMethods(),
         this.customerAppRepository.countActiveBranches(restaurant.id),
       ]);
-    const activePlatformMethods =
-      platformMethodsResponse?.data
-        ?.filter((method) => method.isActive)
-        .map((method) => method.code) ?? [];
+    const activePlatformMethods = platformMethodsResponse
+      ? platformMethodsResponse.data
+          .filter((method) => method.isActive)
+          .map((method) => method.code)
+      : null;
     const [
       restaurantLogoUrl,
       restaurantCoverImage,
@@ -1341,10 +1345,11 @@ export class CustomerAppService {
                   translatedBranch.settings,
                   [['allowedOrderTypes']],
                 ),
-                allowedPaymentMethods: this.resolveCheckoutPaymentMethods(
-                  translatedBranch.settings,
-                  activePlatformMethods,
-                ),
+                allowedPaymentMethods: resolveAvailablePaymentMethods({
+                  platformMethods: activePlatformMethods,
+                  restaurantSettings: restaurant.settings,
+                  branchSettings: translatedBranch.settings,
+                }),
               },
               scheduleTimings: {
                 timezone,
@@ -4870,37 +4875,6 @@ export class CustomerAppService {
     }
 
     return [];
-  }
-
-  private resolveCheckoutPaymentMethods(
-    branchSettings: unknown,
-    activePlatformMethods: PaymentMethod[],
-  ) {
-    const fallbackMethods = [
-      PaymentMethod.COD,
-      PaymentMethod.CARD_ON_DELIVERY,
-      PaymentMethod.PAYPAL,
-      PaymentMethod.WALLET,
-    ];
-    const branchMethods = this.readPaymentMethods(
-      this.readPath(branchSettings, ['allowedPaymentMethods']),
-      fallbackMethods,
-    );
-    return [...new Set([...branchMethods, ...activePlatformMethods])];
-  }
-
-  private readPaymentMethods(input: unknown, fallback: PaymentMethod[]) {
-    if (!Array.isArray(input)) {
-      return fallback;
-    }
-
-    const methods = input.filter(
-      (method): method is PaymentMethod =>
-        typeof method === 'string' &&
-        Object.values(PaymentMethod).includes(method as PaymentMethod),
-    );
-
-    return methods.length > 0 ? methods : fallback;
   }
 
   private readBooleanValue(source: unknown, paths: string[][]): boolean {
