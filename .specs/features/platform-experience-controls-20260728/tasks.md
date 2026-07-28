@@ -49,7 +49,7 @@
 ## 6. Verification and delivery
 
 - [x] 6.1 Run per-file backend enforcement scripts where available.
-- [ ] 6.2 Run backend project typecheck/build/tests/lint.
-- [ ] 6.3 Run affected frontend typecheck/build/tests/lint.
-- [ ] 6.4 Commit atomic verified changes and push the feature branches.
+- [x] 6.2 Run backend project typecheck/build/tests/lint.
+- [x] 6.3 Run affected frontend typecheck/build/tests/lint.
+- [x] 6.4 Commit atomic verified changes and push the feature branches.
 - [ ] 6.5 Provide the server pull/deploy commands; do not deploy.
