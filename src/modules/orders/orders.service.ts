@@ -541,6 +541,39 @@ export class OrdersService {
     };
   }
 
+  async resolveRealtimeAdminOrderScope(
+    user: AuthUserContext,
+    requestedRestaurantId?: string,
+    requestedBranchId?: string,
+  ): Promise<{ restaurantId: string; branchId?: string } | null> {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!requestedRestaurantId) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      await this.resolveRestaurantId(user, requestedRestaurantId);
+
+      return { restaurantId: requestedRestaurantId };
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      const restaurantId = requestedRestaurantId ?? user.rid;
+      const branchId = requestedBranchId ?? user.bid;
+
+      if (!restaurantId || !branchId) {
+        throw new ForbiddenException(
+          'Restaurant and branch context are required',
+        );
+      }
+
+      await this.ensureBranchAccess(user, restaurantId, branchId);
+
+      return { restaurantId, branchId };
+    }
+
+    return null;
+  }
+
   async details(user: AuthUserContext, id: string) {
     const order = await this.ordersRepository.findById(id);
 

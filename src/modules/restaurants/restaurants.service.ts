@@ -562,8 +562,11 @@ export class RestaurantsService {
     };
   }
 
-  async notificationSettings(user: AuthUserContext) {
-    const restaurant = await this.getRestaurantForNotificationSettings(user);
+  async notificationSettings(user: AuthUserContext, restaurantId: string) {
+    const restaurant = await this.getRestaurantForNotificationSettings(
+      user,
+      restaurantId,
+    );
 
     return {
       data: this.extractNotificationSettings(restaurant),
@@ -573,10 +576,14 @@ export class RestaurantsService {
 
   async updateNotificationSettings(
     user: AuthUserContext,
+    restaurantId: string,
     dto: UpdateRestaurantNotificationSettingsDto,
     tx?: PrismaTx,
   ) {
-    const restaurant = await this.getRestaurantForNotificationSettings(user);
+    const restaurant = await this.getRestaurantForNotificationSettings(
+      user,
+      restaurantId,
+    );
     const nextSettings = this.mergeNotificationSettings(
       restaurant.settings,
       dto,
@@ -1365,7 +1372,10 @@ export class RestaurantsService {
     return Number.isFinite(numberValue) ? numberValue : 0;
   }
 
-  private async getRestaurantForNotificationSettings(user: AuthUserContext) {
+  private async getRestaurantForNotificationSettings(
+    user: AuthUserContext,
+    restaurantId: string,
+  ) {
     if (
       user.role !== UserRoleEnum.BUSINESS_ADMIN &&
       user.role !== UserRoleEnum.SUPER_ADMIN
@@ -1375,13 +1385,8 @@ export class RestaurantsService {
       );
     }
 
-    if (!user.tid) {
-      throw new ForbiddenException('Tenant context is required');
-    }
-
-    const restaurant = await this.restaurantsRepository.findFirstByTenantId(
-      user.tid,
-    );
+    await this.ensureRestaurantWriteAccess(user, restaurantId);
+    const restaurant = await this.restaurantsRepository.findById(restaurantId);
 
     if (!restaurant || restaurant.deletedAt) {
       throw new NotFoundException('Restaurant not found');

@@ -7,16 +7,11 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import {
-  ForbiddenException,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { Server, Socket } from 'socket.io';
 import { AuthUserContext } from '../../common/decorators';
-import { UserRoleEnum } from '../../common/enums';
 import { NotificationsRealtimeService } from '../notifications';
 import { OrdersService } from './orders.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
@@ -61,7 +56,7 @@ export class OrderTrackingGateway
     try {
       const user = await this.authenticate(client);
       this.setSocketUser(client, user);
-      const adminOrdersRoom = this.getAdminOrdersRoom(user);
+      const adminOrdersRoom = await this.getAdminOrdersRoom(user, client);
       if (adminOrdersRoom) {
         await client.join(adminOrdersRoom);
       }
@@ -163,31 +158,37 @@ export class OrderTrackingGateway
     (client.data as { user?: AuthUserContext }).user = user;
   }
 
-  private getAdminOrdersRoom(user: AuthUserContext) {
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
-      }
+  private async getAdminOrdersRoom(
+    user: AuthUserContext,
+    client: OrderTrackingSocket,
+  ) {
+    const auth = client.handshake.auth as Record<string, unknown>;
+    const requestedRestaurantId = this.resolveOptionalString(auth.restaurantId);
+    const requestedBranchId = this.resolveOptionalString(auth.branchId);
+    const scope = await this.ordersService.resolveRealtimeAdminOrderScope(
+      user,
+      requestedRestaurantId,
+      requestedBranchId,
+    );
 
-      return this.notificationsRealtimeService.getRestaurantOrdersRoom(
-        user.rid,
-      );
+    if (!scope) {
+      return null;
     }
 
-    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.rid || !user.bid) {
-        throw new ForbiddenException(
-          'Restaurant and branch context are required',
-        );
-      }
-
+    if (scope.branchId) {
       return this.notificationsRealtimeService.getBranchOrdersRoom(
-        user.rid,
-        user.bid,
+        scope.restaurantId,
+        scope.branchId,
       );
     }
 
-    return null;
+    return this.notificationsRealtimeService.getRestaurantOrdersRoom(
+      scope.restaurantId,
+    );
+  }
+
+  private resolveOptionalString(value: unknown) {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   }
 
   private getSocketUser(client: OrderTrackingSocket) {

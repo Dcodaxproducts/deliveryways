@@ -1,13 +1,17 @@
+import { ForbiddenException } from '@nestjs/common';
 import { UserRoleEnum } from '../../common/enums';
 import { OrderTrackingGateway } from './order-tracking.gateway';
 
 describe('OrderTrackingGateway', () => {
-  const makeGateway = (user: {
-    uid: string;
-    role: UserRoleEnum;
-    rid?: string;
-    bid?: string;
-  }) => {
+  const makeGateway = (
+    user: {
+      uid: string;
+      role: UserRoleEnum;
+      rid?: string;
+      bid?: string;
+    },
+    scope: { restaurantId: string; branchId?: string } | null = null,
+  ) => {
     const realtimeService = {
       registerServer: jest.fn(),
       getRestaurantOrdersRoom: jest.fn(
@@ -18,6 +22,9 @@ describe('OrderTrackingGateway', () => {
           `orders:restaurant:${restaurantId}:branch:${branchId}`,
       ),
     };
+    const ordersService = {
+      resolveRealtimeAdminOrderScope: jest.fn().mockResolvedValue(scope),
+    };
     const gateway = new OrderTrackingGateway(
       {
         verifyAsync: jest.fn().mockResolvedValue(user),
@@ -25,7 +32,7 @@ describe('OrderTrackingGateway', () => {
       {
         get: jest.fn().mockReturnValue('test-secret'),
       } as never,
-      {} as never,
+      ordersService as never,
       {} as never,
       realtimeService as never,
     );
@@ -33,7 +40,11 @@ describe('OrderTrackingGateway', () => {
       id: 'socket-1',
       data: {},
       handshake: {
-        auth: { token: 'valid-token' },
+        auth: {
+          token: 'valid-token',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+        },
         headers: {},
       },
       join: jest.fn().mockResolvedValue(undefined),
@@ -41,29 +52,42 @@ describe('OrderTrackingGateway', () => {
       disconnect: jest.fn(),
     };
 
-    return { gateway, client, realtimeService };
+    return { gateway, client, realtimeService, ordersService };
   };
 
-  it('joins business admins to their restaurant order room', async () => {
-    const { gateway, client } = makeGateway({
+  it('joins business admins using their validated handshake restaurant', async () => {
+    const user = {
       uid: 'owner-1',
       role: UserRoleEnum.BUSINESS_ADMIN,
-      rid: 'restaurant-1',
+    };
+    const { gateway, client, ordersService } = makeGateway(user, {
+      restaurantId: 'restaurant-1',
     });
 
     await gateway.handleConnection(client as never);
 
+    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledWith(
+      user,
+      'restaurant-1',
+      'branch-1',
+    );
     expect(client.join).toHaveBeenCalledWith('orders:restaurant:restaurant-1');
     expect(client.disconnect).not.toHaveBeenCalled();
   });
 
   it('joins branch admins only to their branch order room', async () => {
-    const { gateway, client } = makeGateway({
-      uid: 'branch-admin-1',
-      role: UserRoleEnum.BRANCH_ADMIN,
-      rid: 'restaurant-1',
-      bid: 'branch-1',
-    });
+    const { gateway, client } = makeGateway(
+      {
+        uid: 'branch-admin-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      },
+      {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+    );
 
     await gateway.handleConnection(client as never);
 
@@ -86,10 +110,13 @@ describe('OrderTrackingGateway', () => {
   });
 
   it('rejects an admin token without its required restaurant context', async () => {
-    const { gateway, client } = makeGateway({
+    const { gateway, client, ordersService } = makeGateway({
       uid: 'owner-1',
       role: UserRoleEnum.BUSINESS_ADMIN,
     });
+    ordersService.resolveRealtimeAdminOrderScope.mockRejectedValue(
+      new ForbiddenException('Restaurant context is required'),
+    );
 
     await gateway.handleConnection(client as never);
 

@@ -9,7 +9,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
@@ -28,6 +33,7 @@ import {
   UpdateRestaurantDto,
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
+  UpdateRestaurantNotificationSettingsDto,
   UpdateRestaurantServiceChargeDto,
 } from './dto';
 
@@ -87,6 +93,31 @@ export class RestaurantsController {
   @Get('customer-app-content')
   customerAppContentFromContext(@CurrentUser() user: AuthUserContext) {
     return this.restaurantsService.customerAppContentFromContext(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get(':id/notification-settings')
+  @ApiOperation({ summary: 'Get restaurant notification settings' })
+  notificationSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.notificationSettings(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/notification-settings')
+  @ApiOperation({ summary: 'Update restaurant notification settings' })
+  updateNotificationSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantNotificationSettingsDto,
+  ) {
+    return this.restaurantsService.updateNotificationSettings(user, id, dto);
   }
 
   @ApiBearerAuth()

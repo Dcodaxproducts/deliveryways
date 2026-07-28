@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { UserRoleEnum } from '../../common/enums';
 import { RestaurantsRepository } from './restaurants.repository';
@@ -931,7 +927,7 @@ describe('RestaurantsService notification settings', () => {
   });
 
   it('returns notification settings from tenant restaurant settings json', async () => {
-    repository.findFirstByTenantId.mockResolvedValue({
+    repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       deletedAt: null,
@@ -951,12 +947,15 @@ describe('RestaurantsService notification settings', () => {
       },
     });
 
-    const result = await service.notificationSettings({
-      role: UserRoleEnum.BUSINESS_ADMIN,
-      tid: 'tenant-1',
-    } as never);
+    const result = await service.notificationSettings(
+      {
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      } as never,
+      'restaurant-1',
+    );
 
-    expect(repository.findFirstByTenantId).toHaveBeenCalledWith('tenant-1');
+    expect(repository.findById).toHaveBeenCalledWith('restaurant-1');
     expect(result.data).toEqual({
       emailAddress: 'ops@example.com',
       phoneNumber: '+923001234567',
@@ -972,7 +971,7 @@ describe('RestaurantsService notification settings', () => {
   });
 
   it('updates notification settings and preserves existing matrix values', async () => {
-    repository.findFirstByTenantId.mockResolvedValue({
+    repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       deletedAt: null,
@@ -1013,6 +1012,7 @@ describe('RestaurantsService notification settings', () => {
         role: UserRoleEnum.BUSINESS_ADMIN,
         tid: 'tenant-1',
       } as never,
+      'restaurant-1',
       {
         emailAddress: 'ops@example.com',
         whatsappNumber: '+923009876543',
@@ -1051,7 +1051,7 @@ describe('RestaurantsService notification settings', () => {
   });
 
   it('rejects email channel selection without an email address', async () => {
-    repository.findFirstByTenantId.mockResolvedValue({
+    repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       deletedAt: null,
@@ -1064,6 +1064,7 @@ describe('RestaurantsService notification settings', () => {
           role: UserRoleEnum.BUSINESS_ADMIN,
           tid: 'tenant-1',
         } as never,
+        'restaurant-1',
         {
           notificationTypes: {
             newOrder: { email: true },
@@ -1073,23 +1074,37 @@ describe('RestaurantsService notification settings', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('requires tenant context for notification settings', async () => {
-    await expect(
-      service.notificationSettings({
+  it('allows super admins to read a specific restaurant settings', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: null,
+    });
+
+    const result = await service.notificationSettings(
+      {
         role: UserRoleEnum.SUPER_ADMIN,
-      } as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+      } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data.emailAddress).toBeNull();
+    expect(result.data.notificationTypes).toBeDefined();
   });
 
-  it('throws when tenant has no restaurant for notification settings', async () => {
-    repository.findFirstByTenantId.mockResolvedValue(null);
+  it('rejects a restaurant outside the business admin tenant', async () => {
+    repository.findById.mockResolvedValue(null);
 
     await expect(
-      service.notificationSettings({
-        role: UserRoleEnum.BUSINESS_ADMIN,
-        tid: 'tenant-1',
-      } as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+      service.notificationSettings(
+        {
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'restaurant-1',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('allows super admin to update restaurant service charge', async () => {

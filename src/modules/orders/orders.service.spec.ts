@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   CouponCampaignKind,
   CouponDealSelectionMode,
@@ -1031,6 +1031,87 @@ describe('OrdersService - delivery radius', () => {
         { lat: 31.5, lng: 74.4 },
       ]),
     ).toBe(false);
+  });
+});
+
+describe('OrdersService - realtime admin order scope', () => {
+  it('validates a business admin restaurant against their tenant', async () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: 'restaurant-1' });
+    const service = new OrdersService(
+      { restaurant: { findFirst } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.resolveRealtimeAdminOrderScope(
+        {
+          uid: 'owner-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'restaurant-1',
+      ),
+    ).resolves.toEqual({ restaurantId: 'restaurant-1' });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+  });
+
+  it('rejects a business admin restaurant outside their tenant', async () => {
+    const service = new OrdersService(
+      {
+        restaurant: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.resolveRealtimeAdminOrderScope(
+        {
+          uid: 'owner-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'restaurant-2',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects a branch admin requesting another branch', async () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.resolveRealtimeAdminOrderScope(
+        {
+          uid: 'branch-admin-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+        },
+        'restaurant-1',
+        'branch-2',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
