@@ -3031,8 +3031,9 @@ export class CartService {
 
     return {
       ...quotePayload,
-      deliveryAddressId:
-        dto.deliveryAddressId !== undefined
+      deliveryAddressId: dto.guestDeliveryAddress
+        ? undefined
+        : dto.deliveryAddressId !== undefined
           ? (dto.deliveryAddressId ?? undefined)
           : quotePayload.deliveryAddressId,
       orderTime:

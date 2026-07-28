@@ -6959,7 +6959,7 @@ describe('CartService', () => {
       branchId: 'branch-1',
       customerId: 'guest-1',
       orderType: 'DELIVERY',
-      deliveryAddressId: null,
+      deliveryAddressId: 'stale-address-1',
       couponCode: null,
       paymentMethod: PaymentMethodEnum.COD,
       orderTime: new Date('2026-03-24T19:30:00.000Z'),
@@ -7013,6 +7013,7 @@ describe('CartService', () => {
     expect(ordersService.create).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
+        deliveryAddressId: undefined,
         guestContact: {
           firstName: 'Max Mustermann',
           email: 'guest@example.com',
