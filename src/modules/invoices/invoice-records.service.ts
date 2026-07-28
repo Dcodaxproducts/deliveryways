@@ -134,6 +134,29 @@ export class InvoiceRecordsService {
     return invoice;
   }
 
+  async recordDownload(invoiceId: string, actorId?: string | null) {
+    return this.prisma.$transaction(async (tx) => {
+      const invoice = await tx.generatedInvoice.update({
+        where: { id: invoiceId },
+        data: { downloadedCount: { increment: 1 } },
+      });
+
+      await tx.generatedInvoiceEvent.create({
+        data: {
+          generatedInvoiceId: invoice.id,
+          eventType: GeneratedInvoiceEventType.DOWNLOADED,
+          actorId,
+          metadata: {
+            sourceKey: invoice.sourceKey,
+            invoiceNumber: invoice.invoiceNumber,
+          },
+        },
+      });
+
+      return invoice;
+    });
+  }
+
   private toJsonSnapshot(value: Prisma.InputJsonValue) {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }

@@ -397,6 +397,62 @@ export class AdminReportsService {
     };
   }
 
+  async downloadGeneratedInvoicePdf(
+    user: AuthUserContext,
+    invoiceId: string,
+    query: AdminReportsScopedQueryDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+    const invoice = await this.adminReportsRepository.findGeneratedInvoiceById(
+      scope,
+      invoiceId,
+    );
+
+    if (!invoice) {
+      throw new NotFoundException('Generated invoice not found');
+    }
+
+    if (invoice.kind === GeneratedInvoiceKind.ORDER && invoice.orderId) {
+      return this.downloadInvoicePdf(user, invoice.orderId, query);
+    }
+
+    const snapshot = this.asObject(invoice.snapshot);
+    const restaurant = this.asObject(snapshot.restaurant);
+    const tenant = this.asObject(snapshot.tenant);
+    const totals = this.asObject(snapshot.totals);
+    const content = this.buildSimplePdf([
+      'DeliveryWay Generated Invoice',
+      '',
+      `Invoice: ${invoice.invoiceNumber}`,
+      `Type: ${invoice.kind.replaceAll('_', ' ')}`,
+      `Status: ${invoice.status}`,
+      `Issued: ${invoice.createdAt.toISOString()}`,
+      `Tenant: ${typeof tenant.name === 'string' ? tenant.name : (invoice.tenantId ?? 'N/A')}`,
+      `Restaurant: ${typeof restaurant.name === 'string' ? restaurant.name : (invoice.restaurantId ?? 'N/A')}`,
+      `Period From: ${this.formatDate(invoice.periodFrom)}`,
+      `Period To: ${this.formatDate(invoice.periodTo)}`,
+      `Currency: ${invoice.currency}`,
+      `Total: ${this.formatMoney(Number(invoice.totalAmount))}`,
+      ...Object.entries(totals)
+        .filter(
+          ([, value]) => typeof value === 'number' || typeof value === 'string',
+        )
+        .map(([key, value]) => `${key}: ${String(value)}`),
+    ]);
+
+    await this.invoiceRecordsService?.recordDownload(invoice.id, user.uid);
+
+    return {
+      fileName: `${invoice.invoiceNumber}.pdf`,
+      mimeType: 'application/pdf',
+      content,
+    };
+  }
+
   async listInvoices(user: AuthUserContext, query: AdminInvoicesQueryDto) {
     const scope = await this.resolveScope(
       user,

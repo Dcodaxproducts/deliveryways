@@ -74,8 +74,56 @@ export interface LandingPageSettingsShape {
     instagram: string | null;
     youtube: string | null;
   };
+  home: LandingHomeSettingsShape;
   pages: LandingPagePagesShape;
   faqs: LandingPageFaqShape[];
+}
+
+export interface LandingHomeLocalizedBlockShape {
+  headingEn: string | null;
+  headingDe: string | null;
+  descriptionEn: string | null;
+  descriptionDe: string | null;
+  checklistEn: string[];
+  checklistDe: string[];
+  imageUrl: string | null;
+  isVisible: boolean;
+}
+
+export interface LandingHomeSettingsShape {
+  hero: {
+    badgeEn: string | null;
+    badgeDe: string | null;
+    headingEn: string | null;
+    headingDe: string | null;
+    subheadingEn: string | null;
+    subheadingDe: string | null;
+    imageUrl: string | null;
+    primaryCtaEn: string | null;
+    primaryCtaDe: string | null;
+    primaryCtaUrl: string | null;
+    secondaryCtaEn: string | null;
+    secondaryCtaDe: string | null;
+    secondaryCtaUrl: string | null;
+  };
+  featuredRestaurants: {
+    headingEn: string | null;
+    headingDe: string | null;
+    restaurantIds: string[];
+    isVisible: boolean;
+  };
+  growth: LandingHomeLocalizedBlockShape;
+  orderManagement: LandingHomeLocalizedBlockShape;
+  appDownload: {
+    headingEn: string | null;
+    headingDe: string | null;
+    descriptionEn: string | null;
+    descriptionDe: string | null;
+    backgroundImageUrl: string | null;
+    googlePlayUrl: string | null;
+    appStoreUrl: string | null;
+    isVisible: boolean;
+  };
 }
 
 export interface LandingPageHeroShape {
@@ -566,8 +614,58 @@ export class GlobalSettingsService {
         instagram: null,
         youtube: null,
       },
+      home: this.defaultLandingHomeSettings(),
       pages: this.defaultLandingPagePages(),
       faqs: [],
+    };
+  }
+
+  private defaultLandingHomeSettings(): LandingHomeSettingsShape {
+    const emptyBlock = (): LandingHomeLocalizedBlockShape => ({
+      headingEn: null,
+      headingDe: null,
+      descriptionEn: null,
+      descriptionDe: null,
+      checklistEn: [],
+      checklistDe: [],
+      imageUrl: null,
+      isVisible: true,
+    });
+
+    return {
+      hero: {
+        badgeEn: null,
+        badgeDe: null,
+        headingEn: null,
+        headingDe: null,
+        subheadingEn: null,
+        subheadingDe: null,
+        imageUrl: null,
+        primaryCtaEn: null,
+        primaryCtaDe: null,
+        primaryCtaUrl: null,
+        secondaryCtaEn: null,
+        secondaryCtaDe: null,
+        secondaryCtaUrl: null,
+      },
+      featuredRestaurants: {
+        headingEn: null,
+        headingDe: null,
+        restaurantIds: [],
+        isVisible: true,
+      },
+      growth: emptyBlock(),
+      orderManagement: emptyBlock(),
+      appDownload: {
+        headingEn: null,
+        headingDe: null,
+        descriptionEn: null,
+        descriptionDe: null,
+        backgroundImageUrl: null,
+        googlePlayUrl: null,
+        appStoreUrl: null,
+        isVisible: true,
+      },
     };
   }
 
@@ -990,6 +1088,28 @@ export class GlobalSettingsService {
             ? this.resolveOptionalString(updates.socialLinks.youtube)
             : current.socialLinks.youtube,
       },
+      home: updates.home
+        ? this.extractLandingHomeSettings({
+            home: {
+              ...current.home,
+              ...updates.home,
+              hero: { ...current.home.hero, ...updates.home.hero },
+              featuredRestaurants: {
+                ...current.home.featuredRestaurants,
+                ...updates.home.featuredRestaurants,
+              },
+              growth: { ...current.home.growth, ...updates.home.growth },
+              orderManagement: {
+                ...current.home.orderManagement,
+                ...updates.home.orderManagement,
+              },
+              appDownload: {
+                ...current.home.appDownload,
+                ...updates.home.appDownload,
+              },
+            },
+          } as unknown as Prisma.JsonValue)
+        : current.home,
       pages: this.mergeLandingPagePages(current.pages, updates.pages),
       faqs:
         updates.faqs !== undefined
@@ -1037,8 +1157,94 @@ export class GlobalSettingsService {
         instagram: this.readStringValue(source, [['socialLinks', 'instagram']]),
         youtube: this.readStringValue(source, [['socialLinks', 'youtube']]),
       },
+      home: this.extractLandingHomeSettings(source),
       pages: this.extractLandingPagePages(source),
       faqs: this.extractLandingPageFaqs(source),
+    };
+  }
+
+  private extractLandingHomeSettings(
+    source: Prisma.JsonValue | null | undefined,
+  ): LandingHomeSettingsShape {
+    const read = (section: string, key: string) =>
+      this.readStringValue(source, [['home', section, key]]);
+    const readStrings = (section: string, key: string) => {
+      const value = this.readPath(source, ['home', section, key]);
+      return Array.isArray(value)
+        ? value
+            .filter((item): item is string => typeof item === 'string')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+    };
+    const readVisible = (section: string) => {
+      const value = this.readPath(source, ['home', section, 'isVisible']);
+      return typeof value === 'boolean' ? value : true;
+    };
+
+    return {
+      hero: {
+        badgeEn: read('hero', 'badgeEn'),
+        badgeDe: read('hero', 'badgeDe'),
+        headingEn: read('hero', 'headingEn'),
+        headingDe: read('hero', 'headingDe'),
+        subheadingEn: read('hero', 'subheadingEn'),
+        subheadingDe: read('hero', 'subheadingDe'),
+        imageUrl: read('hero', 'imageUrl'),
+        primaryCtaEn: read('hero', 'primaryCtaEn'),
+        primaryCtaDe: read('hero', 'primaryCtaDe'),
+        primaryCtaUrl: read('hero', 'primaryCtaUrl'),
+        secondaryCtaEn: read('hero', 'secondaryCtaEn'),
+        secondaryCtaDe: read('hero', 'secondaryCtaDe'),
+        secondaryCtaUrl: read('hero', 'secondaryCtaUrl'),
+      },
+      featuredRestaurants: {
+        headingEn: read('featuredRestaurants', 'headingEn'),
+        headingDe: read('featuredRestaurants', 'headingDe'),
+        restaurantIds: readStrings('featuredRestaurants', 'restaurantIds'),
+        isVisible: readVisible('featuredRestaurants'),
+      },
+      growth: this.extractLandingHomeBlock(source, 'growth'),
+      orderManagement: this.extractLandingHomeBlock(source, 'orderManagement'),
+      appDownload: {
+        headingEn: read('appDownload', 'headingEn'),
+        headingDe: read('appDownload', 'headingDe'),
+        descriptionEn: read('appDownload', 'descriptionEn'),
+        descriptionDe: read('appDownload', 'descriptionDe'),
+        backgroundImageUrl: read('appDownload', 'backgroundImageUrl'),
+        googlePlayUrl: read('appDownload', 'googlePlayUrl'),
+        appStoreUrl: read('appDownload', 'appStoreUrl'),
+        isVisible: readVisible('appDownload'),
+      },
+    } satisfies LandingHomeSettingsShape;
+  }
+
+  private extractLandingHomeBlock(
+    source: Prisma.JsonValue | null | undefined,
+    section: 'growth' | 'orderManagement',
+  ): LandingHomeLocalizedBlockShape {
+    const value = (key: string) =>
+      this.readStringValue(source, [['home', section, key]]);
+    const checklist = (key: 'checklistEn' | 'checklistDe') => {
+      const raw = this.readPath(source, ['home', section, key]);
+      return Array.isArray(raw)
+        ? raw
+            .filter((item): item is string => typeof item === 'string')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+    };
+    const visible = this.readPath(source, ['home', section, 'isVisible']);
+
+    return {
+      headingEn: value('headingEn'),
+      headingDe: value('headingDe'),
+      descriptionEn: value('descriptionEn'),
+      descriptionDe: value('descriptionDe'),
+      checklistEn: checklist('checklistEn'),
+      checklistDe: checklist('checklistDe'),
+      imageUrl: value('imageUrl'),
+      isVisible: typeof visible === 'boolean' ? visible : true,
     };
   }
 

@@ -426,6 +426,17 @@ export class AdminReportsRepository {
     });
   }
 
+  async findGeneratedInvoiceById(scope: AdminReportsScope, invoiceId: string) {
+    return this.prisma.generatedInvoice.findFirst({
+      where: {
+        id: invoiceId,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+      },
+    });
+  }
+
   async listInvoices(scope: AdminReportsScope, query: AdminInvoicesQueryDto) {
     return this.prisma.order.findMany({
       where: this.buildOrderWhere(scope, query),

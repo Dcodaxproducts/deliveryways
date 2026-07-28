@@ -156,6 +156,36 @@ export class RestaurantsService {
     };
   }
 
+  async listFeaturedForLanding() {
+    const landingSettings =
+      await this.globalSettingsService?.getPublicLandingPageSettings();
+    const ids =
+      landingSettings?.data.home.featuredRestaurants.restaurantIds ?? [];
+    const restaurants = ids.length
+      ? await this.restaurantsRepository.listActiveFeatured(ids)
+      : [];
+    const byId = new Map(
+      restaurants.map((restaurant) => [restaurant.id, restaurant]),
+    );
+
+    return {
+      data: await Promise.all(
+        ids
+          .map((id) => byId.get(id))
+          .filter((restaurant): restaurant is NonNullable<typeof restaurant> =>
+            Boolean(restaurant),
+          )
+          .map(async (restaurant) => ({
+            ...restaurant,
+            logoUrl: await this.storageService.resolveViewUrl(
+              restaurant.logoUrl,
+            ),
+          })),
+      ),
+      message: 'Featured restaurants fetched successfully',
+    };
+  }
+
   async details(user: AuthUserContext, id: string) {
     const restaurant = await this.restaurantsRepository.findById(id);
 

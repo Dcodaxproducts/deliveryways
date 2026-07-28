@@ -1280,6 +1280,7 @@ export class OrdersService {
       lines,
       branch.restaurantId,
       branch.id,
+      customer.isGuest,
     );
     const subtotal = pricedLines.reduce(
       (sum, line) => sum.plus(line.lineTotal),
@@ -1367,6 +1368,7 @@ export class OrdersService {
       restaurantId: branch.restaurantId,
       branchId: branch.id,
       customerId: customer.customerId,
+      customerIsGuest: customer.isGuest,
       subtotal: Number(subtotal),
       menuItemIds: pricedLines.map((line) => line.menuItemId),
       categoryIds: [
@@ -1489,6 +1491,7 @@ export class OrdersService {
     lines: QuoteLine[],
     restaurantId: string,
     branchId: string,
+    customerIsGuest: boolean,
   ): Promise<QuoteLine[]> {
     const dealIds = [
       ...new Set(
@@ -1507,6 +1510,7 @@ export class OrdersService {
               restaurantId,
               branchId,
               dealId,
+              customerIsGuest,
             )
           : null;
 

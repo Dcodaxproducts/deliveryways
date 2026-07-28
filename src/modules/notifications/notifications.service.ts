@@ -300,7 +300,29 @@ export class NotificationsService {
       totalAmount: Number(order.totalAmount),
       customerId: order.customerId,
     };
-    const notificationTasks: Array<Promise<unknown>> = [
+    await this.createAdminInAppNotification({
+      tenantId: order.tenantId,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      orderId: order.id,
+      type: NotificationType.ORDER_PLACED,
+      subject,
+      body,
+      payload,
+    });
+
+    this.notificationsRealtimeService?.emitOrderCreated({
+      id: order.id,
+      status: order.status,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      orderType: order.orderType,
+      paymentStatus: order.paymentStatus,
+      totalAmount: Number(order.totalAmount),
+      createdAt: order.createdAt,
+    });
+
+    const emailTasks: Array<Promise<unknown>> = [
       this.createAndDispatchCustomerEmail({
         tenantId: order.tenantId,
         restaurantId: order.restaurantId,
@@ -323,23 +345,14 @@ export class NotificationsService {
           totalAmount: Number(order.totalAmount),
         },
       }),
-      this.createAdminInAppNotification({
-        tenantId: order.tenantId,
-        restaurantId: order.restaurantId,
-        branchId: order.branchId,
-        orderId: order.id,
-        type: NotificationType.ORDER_PLACED,
-        subject,
-        body,
-        payload,
-      }),
     ];
     const restaurantEmail = this.resolveNewOrderRestaurantEmail(
+      order.branch.settings,
       order.restaurant.settings,
     );
 
     if (restaurantEmail) {
-      notificationTasks.push(
+      emailTasks.push(
         this.createAndDispatchAdminEmail({
           tenantId: order.tenantId,
           restaurantId: order.restaurantId,
@@ -353,17 +366,11 @@ export class NotificationsService {
       );
     }
 
-    await Promise.all(notificationTasks);
-
-    this.notificationsRealtimeService?.emitOrderCreated({
-      id: order.id,
-      status: order.status,
-      restaurantId: order.restaurantId,
-      branchId: order.branchId,
-      orderType: order.orderType,
-      paymentStatus: order.paymentStatus,
-      totalAmount: Number(order.totalAmount),
-      createdAt: order.createdAt,
+    void Promise.all(emailTasks).catch((error: unknown) => {
+      this.logger.error(
+        `Order ${order.id} email notification dispatch failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
     });
   }
 
@@ -855,8 +862,16 @@ export class NotificationsService {
   }
 
   private resolveNewOrderRestaurantEmail(
-    settings: Prisma.JsonValue | null,
+    branchSettings: Prisma.JsonValue | null,
+    restaurantSettings: Prisma.JsonValue | null,
   ): string | null {
+    return (
+      this.readNewOrderEmail(branchSettings) ??
+      this.readNewOrderEmail(restaurantSettings)
+    );
+  }
+
+  private readNewOrderEmail(settings: Prisma.JsonValue | null): string | null {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return null;
     }

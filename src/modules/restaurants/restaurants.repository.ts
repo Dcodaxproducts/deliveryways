@@ -101,6 +101,24 @@ export class RestaurantsRepository {
     });
   }
 
+  async listActiveFeatured(ids: string[]) {
+    return this.prisma.restaurant.findMany({
+      where: {
+        id: { in: ids },
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        subdomain: true,
+        customDomain: true,
+        logoUrl: true,
+      },
+    });
+  }
+
   async findFirstByTenantId(tenantId: string) {
     return this.prisma.restaurant.findFirst({
       where: {

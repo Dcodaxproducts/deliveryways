@@ -176,6 +176,33 @@ export class AdminReportsController {
     return this.adminReportsService.listGeneratedInvoices(user, query);
   }
 
+  @Get('generated-invoices/:invoiceId/pdf')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'View or download an authorized generated invoice' })
+  async downloadGeneratedInvoicePdf(
+    @CurrentUser() user: AuthUserContext,
+    @Param('invoiceId') invoiceId: string,
+    @Query() query: AdminReportsScopedQueryDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.adminReportsService.downloadGeneratedInvoicePdf(
+      user,
+      invoiceId,
+      query,
+    );
+
+    response.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `inline; filename="${file.fileName}"`,
+    });
+
+    return new StreamableFile(file.content);
+  }
+
   @Get('invoices')
   @Roles(
     RolesEnum.SUPER_ADMIN,

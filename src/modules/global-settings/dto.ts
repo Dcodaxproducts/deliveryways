@@ -290,6 +290,214 @@ class LandingPageFaqDto {
   sortOrder!: number;
 }
 
+class LandingHomeHeroDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  badgeEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  badgeDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subheadingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subheadingDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  primaryCtaEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  primaryCtaDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  primaryCtaUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  secondaryCtaEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  secondaryCtaDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  secondaryCtaUrl?: string;
+}
+
+class LandingHomeFeaturedRestaurantsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingDe?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  restaurantIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+}
+
+class LandingHomeContentBlockDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descriptionEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descriptionDe?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  checklistEn?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  checklistDe?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+}
+
+class LandingHomeAppDownloadDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  headingDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descriptionEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  descriptionDe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  backgroundImageUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  googlePlayUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  appStoreUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+}
+
+class LandingHomeSettingsDto {
+  @ApiPropertyOptional({ type: LandingHomeHeroDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeHeroDto)
+  hero?: LandingHomeHeroDto;
+
+  @ApiPropertyOptional({ type: LandingHomeFeaturedRestaurantsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeFeaturedRestaurantsDto)
+  featuredRestaurants?: LandingHomeFeaturedRestaurantsDto;
+
+  @ApiPropertyOptional({ type: LandingHomeContentBlockDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeContentBlockDto)
+  growth?: LandingHomeContentBlockDto;
+
+  @ApiPropertyOptional({ type: LandingHomeContentBlockDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeContentBlockDto)
+  orderManagement?: LandingHomeContentBlockDto;
+
+  @ApiPropertyOptional({ type: LandingHomeAppDownloadDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeAppDownloadDto)
+  appDownload?: LandingHomeAppDownloadDto;
+}
+
 export class LandingPageSettingsDto {
   @ApiPropertyOptional({ example: 'DeliveryWay' })
   @IsOptional()
@@ -338,6 +546,12 @@ export class LandingPageSettingsDto {
   @ValidateNested()
   @Type(() => LandingPageSocialLinksDto)
   socialLinks?: LandingPageSocialLinksDto;
+
+  @ApiPropertyOptional({ type: LandingHomeSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeSettingsDto)
+  home?: LandingHomeSettingsDto;
 
   @ApiPropertyOptional({ type: LandingPagePagesDto })
   @IsOptional()

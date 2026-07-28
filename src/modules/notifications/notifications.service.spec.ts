@@ -448,6 +448,7 @@ describe('NotificationsService', () => {
       branch: {
         id: 'branch-1',
         name: 'Main Branch',
+        settings: null,
       },
       restaurant: {
         settings: {
@@ -464,15 +465,15 @@ describe('NotificationsService', () => {
     });
     notificationsRepository.create
       .mockResolvedValueOnce({
-        id: 'notification-1',
-        recipientEmail: 'customer@example.com',
-        subject: 'Order order-1 placed successfully',
-        body: 'body',
-      })
-      .mockResolvedValueOnce({
         id: 'admin-notification-1',
         recipientEmail: null,
         subject: 'New order order-1',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'notification-1',
+        recipientEmail: 'customer@example.com',
+        subject: 'Order order-1 placed successfully',
         body: 'body',
       })
       .mockResolvedValueOnce({
@@ -487,20 +488,21 @@ describe('NotificationsService', () => {
     });
 
     await service.notifyOrderPlaced('order-1');
+    await Promise.resolve();
 
     expect(notificationsRepository.create).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        audience: NotificationAudience.CUSTOMER,
-        channel: NotificationChannel.EMAIL,
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.IN_APP,
         type: NotificationType.ORDER_PLACED,
       }),
     );
     expect(notificationsRepository.create).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        audience: NotificationAudience.ADMIN,
-        channel: NotificationChannel.IN_APP,
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
         type: NotificationType.ORDER_PLACED,
       }),
     );
@@ -524,6 +526,173 @@ describe('NotificationsService', () => {
       totalAmount: 450,
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
     });
+  });
+
+  it('returns from order placement notification without waiting for SMTP', async () => {
+    let finishEmail: (() => void) | undefined;
+    const delayedEmail = new Promise<void>((resolve) => {
+      finishEmail = resolve;
+    });
+    mailerService.sendEmail.mockReturnValue(delayedEmail);
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      status: 'PLACED',
+      orderType: 'DELIVERY',
+      totalAmount: 450,
+      paymentStatus: 'PENDING',
+      createdAt: new Date('2026-07-23T12:00:00.000Z'),
+      customer: {
+        email: 'customer@example.com',
+        profile: { firstName: 'Bilal' },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+        settings: null,
+      },
+      restaurant: { settings: null },
+    });
+    notificationsRepository.create
+      .mockResolvedValueOnce({
+        id: 'admin-notification-1',
+        recipientEmail: null,
+        subject: 'New order order-1',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'customer-notification-1',
+        recipientEmail: 'customer@example.com',
+        subject: 'Order order-1 placed successfully',
+        body: 'body',
+      });
+
+    await expect(service.notifyOrderPlaced('order-1')).resolves.toBeUndefined();
+    expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalled();
+
+    finishEmail?.();
+    await delayedEmail;
+  });
+
+  it('prefers the branch new-order email over the restaurant fallback', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      status: 'PLACED',
+      orderType: 'DELIVERY',
+      totalAmount: 450,
+      paymentStatus: 'PENDING',
+      createdAt: new Date('2026-07-23T12:00:00.000Z'),
+      customer: {
+        email: 'customer@example.com',
+        profile: { firstName: 'Bilal' },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+        settings: {
+          notificationSettings: {
+            emailAddress: ' Branch@Restaurant.Example ',
+            notificationTypes: { newOrder: { email: true } },
+          },
+        },
+      },
+      restaurant: {
+        settings: {
+          notificationSettings: {
+            emailAddress: 'restaurant@example.com',
+            notificationTypes: { newOrder: { email: true } },
+          },
+        },
+      },
+    });
+    notificationsRepository.create.mockImplementation(
+      (input: { recipientEmail?: string | null }) =>
+        Promise.resolve({
+          id: `notification-${input.recipientEmail ?? 'admin'}`,
+          recipientEmail: input.recipientEmail ?? null,
+          subject: 'subject',
+          body: 'body',
+        }),
+    );
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+    mailerService.sendEmail.mockResolvedValue(undefined);
+
+    await service.notifyOrderPlaced('order-1');
+    await Promise.resolve();
+
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'branch@restaurant.example',
+      }),
+    );
+  });
+
+  it('falls back to restaurant email when branch new-order email is disabled', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      status: 'PLACED',
+      orderType: 'DELIVERY',
+      totalAmount: 450,
+      paymentStatus: 'PENDING',
+      createdAt: new Date('2026-07-23T12:00:00.000Z'),
+      customer: {
+        email: 'customer@example.com',
+        profile: { firstName: 'Bilal' },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+        settings: {
+          notificationSettings: {
+            emailAddress: 'branch@example.com',
+            notificationTypes: { newOrder: { email: false } },
+          },
+        },
+      },
+      restaurant: {
+        settings: {
+          notificationSettings: {
+            emailAddress: 'restaurant@example.com',
+            notificationTypes: { newOrder: { email: true } },
+          },
+        },
+      },
+    });
+    notificationsRepository.create.mockImplementation(
+      (input: { recipientEmail?: string | null }) =>
+        Promise.resolve({
+          id: `notification-${input.recipientEmail ?? 'admin'}`,
+          recipientEmail: input.recipientEmail ?? null,
+          subject: 'subject',
+          body: 'body',
+        }),
+    );
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+    mailerService.sendEmail.mockResolvedValue(undefined);
+
+    await service.notifyOrderPlaced('order-1');
+    await Promise.resolve();
+
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'restaurant@example.com',
+      }),
+    );
   });
 
   it('creates deliveryman in-app notification when assigned order status changes', async () => {

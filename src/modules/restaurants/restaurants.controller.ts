@@ -82,6 +82,12 @@ export class RestaurantsController {
   }
 
   @Public()
+  @Get('featured')
+  listFeatured() {
+    return this.restaurantsService.listFeaturedForLanding();
+  }
+
+  @Public()
   @Get('public')
   listPublic(@Query('tenantId') tenantId: string, @Query() query: QueryDto) {
     return this.restaurantsService.listPublic(tenantId, query);

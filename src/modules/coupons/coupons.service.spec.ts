@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   CouponApplyMode,
+  CouponAudience,
   CouponCampaignKind,
   CouponDealSelectionMode,
   CouponDiscountType,
@@ -22,6 +23,7 @@ describe('CouponsService', () => {
     code: 'SAVE20',
     title: '20% Off',
     description: null,
+    audience: CouponAudience.BOTH,
     status: CouponStatus.ACTIVE,
     applyMode: CouponApplyMode.SCOPED_ITEMS,
     autoApply: false,
@@ -180,6 +182,34 @@ describe('CouponsService', () => {
     const result = await service.validateForCheckout(baseInput);
 
     expect(Number(result.discountAmount)).toBe(100);
+  });
+
+  it('rejects a registered-only coupon for a guest customer', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({ audience: CouponAudience.REGISTERED }),
+    );
+
+    await expect(
+      service.validateForCheckout({
+        ...baseInput,
+        customerIsGuest: true,
+      }),
+    ).rejects.toThrow('Coupon is not available for this customer');
+  });
+
+  it('filters guest-only promotions out for registered customers', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([
+      makeCoupon({ id: 'guest', audience: CouponAudience.GUEST }),
+      makeCoupon({ id: 'both', audience: CouponAudience.BOTH }),
+    ]);
+
+    const promotions = await service.getActiveAutoApplyPromotions(
+      'rid-1',
+      'bid-1',
+      false,
+    );
+
+    expect(promotions.map((promotion) => promotion.id)).toEqual(['both']);
   });
 
   it('excludes fixed-price deals from coupons list', async () => {

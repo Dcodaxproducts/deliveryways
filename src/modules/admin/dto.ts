@@ -18,6 +18,7 @@ import {
 } from 'class-validator';
 import { AdminListQueryDto } from '../../common/dto';
 import {
+  CouponAudience,
   CouponCampaignKind,
   CouponDealSelectionMode,
   CouponDiscountType,
@@ -598,6 +599,15 @@ export class AdminPromotionBaseDto {
   description?: string;
 
   @ApiPropertyOptional({
+    enum: CouponAudience,
+    default: CouponAudience.BOTH,
+    description: 'Customer audience allowed to see and use this campaign',
+  })
+  @IsOptional()
+  @IsEnum(CouponAudience)
+  audience?: CouponAudience;
+
+  @ApiPropertyOptional({
     description: 'Promotion/deal image URL used as thumbnail in customer apps.',
   })
   @IsOptional()
@@ -840,6 +850,11 @@ export class UpdateAdminPromotionDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({ enum: CouponAudience })
+  @IsOptional()
+  @IsEnum(CouponAudience)
+  audience?: CouponAudience;
 
   @ApiPropertyOptional({
     description: 'Promotion/deal image URL used as thumbnail in customer apps.',

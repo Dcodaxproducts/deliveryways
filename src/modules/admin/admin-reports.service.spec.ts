@@ -375,6 +375,91 @@ describe('AdminReportsService', () => {
     expect(result.message).toBe('Invoice fetched successfully');
   });
 
+  it('downloads a tenant-scoped subscription invoice from generated history', async () => {
+    const repository = {
+      findGeneratedInvoiceById: jest.fn().mockResolvedValue({
+        id: 'generated-1',
+        invoiceNumber: 'SUB-INV-202607',
+        kind: 'SUBSCRIPTION',
+        status: 'ISSUED',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: null,
+        orderId: null,
+        currency: 'EUR',
+        totalAmount: 125,
+        periodFrom: new Date('2026-07-01T00:00:00.000Z'),
+        periodTo: new Date('2026-07-31T23:59:59.000Z'),
+        createdAt: new Date('2026-07-28T00:00:00.000Z'),
+        snapshot: {
+          tenant: { name: 'Tenant One' },
+          restaurant: { name: 'Pizza House' },
+          totals: { subscriptionFee: 125 },
+        },
+      }),
+    };
+    const invoiceRecordsService = {
+      recordDownload: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new AdminReportsService(
+      repository as never,
+      undefined,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.downloadGeneratedInvoicePdf(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'generated-1',
+      {},
+    );
+
+    expect(repository.findGeneratedInvoiceById).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      'generated-1',
+    );
+    expect(result.fileName).toBe('SUB-INV-202607.pdf');
+    expect(result.content.toString('utf8')).toContain('%PDF-1.4');
+    expect(invoiceRecordsService.recordDownload).toHaveBeenCalledWith(
+      'generated-1',
+      'business-1',
+    );
+  });
+
+  it('does not expose a generated invoice outside the actor scope', async () => {
+    const repository = {
+      findGeneratedInvoiceById: jest.fn().mockResolvedValue(null),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    await expect(
+      service.downloadGeneratedInvoicePdf(
+        {
+          uid: 'branch-admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: 'BRANCH_ADMIN',
+        } as never,
+        'another-tenant-invoice',
+        {},
+      ),
+    ).rejects.toThrow('Generated invoice not found');
+    expect(repository.findGeneratedInvoiceById).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      'another-tenant-invoice',
+    );
+  });
+
   it('returns generated invoice PDF content for download', async () => {
     const repository = {
       findInvoiceOrder: jest.fn().mockResolvedValue({

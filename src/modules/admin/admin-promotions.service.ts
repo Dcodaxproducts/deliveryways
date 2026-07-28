@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   CouponApplyMode,
+  CouponAudience,
   CouponCampaignKind,
   CouponDealSelectionMode,
   CouponDiscountType,
@@ -182,6 +183,7 @@ export class AdminPromotionsService {
       code: this.resolvePromotionCode(dto.code, codePrefix),
       title: dto.title,
       description: dto.description,
+      audience: dto.audience ?? CouponAudience.BOTH,
       imageUrl: this.resolveImageUrl(dto),
       kind: CouponCampaignKind.PROMOTION,
       status:
@@ -269,6 +271,7 @@ export class AdminPromotionsService {
       code: this.resolvePromotionCode(dto.code, 'GIFT'),
       title: dto.title,
       description: dto.description,
+      audience: dto.audience ?? CouponAudience.BOTH,
       imageUrl: this.resolveImageUrl(dto),
       kind: CouponCampaignKind.GIFT_CARD,
       status:
@@ -442,6 +445,7 @@ export class AdminPromotionsService {
       ...(dto.description !== undefined
         ? { description: dto.description }
         : {}),
+      ...(dto.audience !== undefined ? { audience: dto.audience } : {}),
       ...(this.hasImageUrlInput(dto)
         ? { imageUrl: this.resolveImageUrl(dto) }
         : {}),
@@ -690,6 +694,7 @@ export class AdminPromotionsService {
       code: this.resolvePromotionCode(dto.code, 'HAPPY'),
       title: dto.title,
       description: dto.description,
+      audience: dto.audience ?? CouponAudience.BOTH,
       imageUrl: this.resolveImageUrl(dto),
       kind: CouponCampaignKind.HAPPY_HOUR,
       status:
@@ -799,6 +804,7 @@ export class AdminPromotionsService {
       ...(dto.description !== undefined
         ? { description: dto.description }
         : {}),
+      ...(dto.audience !== undefined ? { audience: dto.audience } : {}),
       ...(this.hasImageUrlInput(dto)
         ? { imageUrl: this.resolveImageUrl(dto) }
         : {}),
@@ -1273,6 +1279,7 @@ export class AdminPromotionsService {
     description: string | null;
     imageUrl: string | null;
     kind: CouponCampaignKind;
+    audience: CouponAudience;
     status: CouponStatus;
     applyMode: CouponApplyMode;
     autoApply: boolean;
@@ -1313,6 +1320,7 @@ export class AdminPromotionsService {
       imageUrl: coupon.imageUrl,
       thumbnailUrl: coupon.imageUrl,
       kind: coupon.kind,
+      audience: coupon.audience,
       status: coupon.status,
       applyMode: coupon.applyMode,
       autoApply: coupon.autoApply,

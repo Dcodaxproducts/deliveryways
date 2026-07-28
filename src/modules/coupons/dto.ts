@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { CouponDiscountType, CouponStatus } from '@prisma/client';
+import {
+  CouponAudience,
+  CouponDiscountType,
+  CouponStatus,
+} from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -26,6 +30,15 @@ export class CouponInputDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({
+    enum: CouponAudience,
+    default: CouponAudience.BOTH,
+    description: 'Customer audience allowed to see and use this campaign',
+  })
+  @IsOptional()
+  @IsEnum(CouponAudience)
+  audience?: CouponAudience;
 
   @ApiPropertyOptional()
   @IsOptional()

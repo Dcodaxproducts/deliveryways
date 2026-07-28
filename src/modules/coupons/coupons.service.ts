@@ -7,6 +7,7 @@ import {
 import {
   Coupon,
   CouponApplyMode,
+  CouponAudience,
   CouponCampaignKind,
   CouponDealSelectionMode,
   CouponDiscountType,
@@ -39,6 +40,7 @@ export interface CouponValidationInput {
   restaurantId: string;
   branchId: string;
   customerId: string;
+  customerIsGuest?: boolean;
   code: string;
   subtotal: number;
   menuItemIds: string[];
@@ -118,6 +120,7 @@ export class CouponsService {
       code: dto.code.trim().toUpperCase(),
       title: dto.title,
       description: dto.description,
+      audience: dto.audience ?? CouponAudience.BOTH,
       discountType: dto.discountType,
       discountValue: new Prisma.Decimal(dto.discountValue),
       maxDiscountAmount:
@@ -190,6 +193,7 @@ export class CouponsService {
     const data = await this.couponsRepository.update(id, {
       title: dto.title,
       description: dto.description,
+      audience: dto.audience,
       branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
       discountType: dto.discountType,
       discountValue:
@@ -264,6 +268,7 @@ export class CouponsService {
       restaurantId,
       branchId: dto.branchId,
       customerId,
+      customerIsGuest: user.isGuest === true,
       code: dto.code,
       subtotal: dto.subtotal,
       menuItemIds: dto.menuItemIds ?? [],
@@ -296,29 +301,51 @@ export class CouponsService {
     return this.validateResolvedCoupon(coupon, input);
   }
 
-  async getActiveAutoApplyPromotions(restaurantId: string, branchId?: string) {
-    return this.couponsRepository.findAutoApplyPromotions(
+  async getActiveAutoApplyPromotions(
+    restaurantId: string,
+    branchId?: string,
+    customerIsGuest = false,
+  ) {
+    const promotions = await this.couponsRepository.findAutoApplyPromotions(
       restaurantId,
       branchId,
     );
-  }
 
-  async getActiveCustomerCoupons(restaurantId: string, branchId?: string) {
-    return this.couponsRepository.findActiveCustomerCoupons(
-      restaurantId,
-      branchId,
+    return promotions.filter((promotion) =>
+      this.isAudienceEligible(promotion.audience, customerIsGuest),
     );
   }
 
-  async getActiveHappyHours(restaurantId: string, branchId?: string) {
+  async getActiveCustomerCoupons(
+    restaurantId: string,
+    branchId?: string,
+    customerIsGuest = false,
+  ) {
+    const coupons = await this.couponsRepository.findActiveCustomerCoupons(
+      restaurantId,
+      branchId,
+    );
+
+    return coupons.filter((coupon) =>
+      this.isAudienceEligible(coupon.audience, customerIsGuest),
+    );
+  }
+
+  async getActiveHappyHours(
+    restaurantId: string,
+    branchId?: string,
+    customerIsGuest = false,
+  ) {
     const now = new Date();
     const happyHours = await this.couponsRepository.findActiveHappyHours(
       restaurantId,
       branchId,
     );
 
-    return happyHours.filter((happyHour) =>
-      this.isCouponScheduleActive(happyHour, now),
+    return happyHours.filter(
+      (happyHour) =>
+        this.isAudienceEligible(happyHour.audience, customerIsGuest) &&
+        this.isCouponScheduleActive(happyHour, now),
     );
   }
 
@@ -356,6 +383,7 @@ export class CouponsService {
     restaurantId: string,
     branchId: string | undefined,
     dealId: string,
+    customerIsGuest = false,
   ): Promise<FixedPriceDealPricing | null> {
     const deal = await this.couponsRepository.findActivePromotionById(
       restaurantId,
@@ -363,7 +391,11 @@ export class CouponsService {
       dealId,
     );
 
-    if (!deal || !this.isFixedPriceDeal(deal)) {
+    if (
+      !deal ||
+      !this.isAudienceEligible(deal.audience, customerIsGuest) ||
+      !this.isFixedPriceDeal(deal)
+    ) {
       return null;
     }
 
@@ -632,8 +664,16 @@ export class CouponsService {
     input: Omit<CouponValidationInput, 'code'>,
   ): Promise<CouponValidationResult | null> {
     const [promotions, happyHours] = await Promise.all([
-      this.getActiveAutoApplyPromotions(input.restaurantId, input.branchId),
-      this.getActiveHappyHours(input.restaurantId, input.branchId),
+      this.getActiveAutoApplyPromotions(
+        input.restaurantId,
+        input.branchId,
+        input.customerIsGuest,
+      ),
+      this.getActiveHappyHours(
+        input.restaurantId,
+        input.branchId,
+        input.customerIsGuest,
+      ),
     ]);
 
     let best: CouponValidationResult | null = null;
@@ -719,6 +759,12 @@ export class CouponsService {
     input: CouponValidationInput,
   ): Promise<CouponValidationResult> {
     const now = new Date();
+    if (!this.isAudienceEligible(coupon.audience, input.customerIsGuest)) {
+      throw new BadRequestException(
+        'Coupon is not available for this customer',
+      );
+    }
+
     if (
       !coupon.isActive ||
       coupon.status !== CouponStatus.ACTIVE ||
@@ -1307,6 +1353,19 @@ export class CouponsService {
         );
       }
     }
+  }
+
+  private isAudienceEligible(
+    audience: CouponAudience | null | undefined,
+    customerIsGuest = false,
+  ) {
+    return (
+      audience === null ||
+      audience === undefined ||
+      audience === CouponAudience.BOTH ||
+      (customerIsGuest && audience === CouponAudience.GUEST) ||
+      (!customerIsGuest && audience === CouponAudience.REGISTERED)
+    );
   }
 
   private isCouponScheduleActive(

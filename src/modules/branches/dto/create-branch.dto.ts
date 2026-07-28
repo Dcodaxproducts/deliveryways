@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -219,6 +219,42 @@ class BranchContactDto {
   phone?: string;
 }
 
+class BranchNewOrderNotificationDto {
+  @ApiPropertyOptional({
+    description: 'Send new-order emails to the configured branch address',
+  })
+  @IsOptional()
+  @IsBoolean()
+  email?: boolean;
+}
+
+class BranchNotificationTypesDto {
+  @ApiPropertyOptional({ type: BranchNewOrderNotificationDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BranchNewOrderNotificationDto)
+  newOrder?: BranchNewOrderNotificationDto;
+}
+
+class BranchNotificationSettingsDto {
+  @ApiPropertyOptional({
+    description: 'Branch-specific recipient for new-order notifications',
+    example: 'orders.main@example.com',
+  })
+  @IsOptional()
+  @IsEmail()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  emailAddress?: string;
+
+  @ApiPropertyOptional({ type: BranchNotificationTypesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BranchNotificationTypesDto)
+  notificationTypes?: BranchNotificationTypesDto;
+}
+
 export class BranchSettingsDto {
   @ApiPropertyOptional({
     description:
@@ -325,6 +361,16 @@ export class BranchSettingsDto {
   @ValidateNested()
   @Type(() => BranchContactDto)
   contact?: BranchContactDto;
+
+  @ApiPropertyOptional({
+    type: BranchNotificationSettingsDto,
+    description:
+      'Branch-specific notification settings. New-order email falls back to the restaurant setting when disabled or omitted.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BranchNotificationSettingsDto)
+  notificationSettings?: BranchNotificationSettingsDto;
 }
 
 export class CreateBranchAdminDto {

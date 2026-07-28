@@ -31,6 +31,53 @@ const emptyLandingPages = {
   contact: emptyLandingPage,
 };
 
+const emptyLandingHomeBlock = {
+  headingEn: null,
+  headingDe: null,
+  descriptionEn: null,
+  descriptionDe: null,
+  checklistEn: [],
+  checklistDe: [],
+  imageUrl: null,
+  isVisible: true,
+};
+
+const emptyLandingHome = {
+  hero: {
+    badgeEn: null,
+    badgeDe: null,
+    headingEn: null,
+    headingDe: null,
+    subheadingEn: null,
+    subheadingDe: null,
+    imageUrl: null,
+    primaryCtaEn: null,
+    primaryCtaDe: null,
+    primaryCtaUrl: null,
+    secondaryCtaEn: null,
+    secondaryCtaDe: null,
+    secondaryCtaUrl: null,
+  },
+  featuredRestaurants: {
+    headingEn: null,
+    headingDe: null,
+    restaurantIds: [],
+    isVisible: true,
+  },
+  growth: emptyLandingHomeBlock,
+  orderManagement: emptyLandingHomeBlock,
+  appDownload: {
+    headingEn: null,
+    headingDe: null,
+    descriptionEn: null,
+    descriptionDe: null,
+    backgroundImageUrl: null,
+    googlePlayUrl: null,
+    appStoreUrl: null,
+    isVisible: true,
+  },
+};
+
 describe('GlobalSettingsService', () => {
   let service: GlobalSettingsService;
   let repositoryImpl: {
@@ -118,6 +165,7 @@ describe('GlobalSettingsService', () => {
             instagram: null,
             youtube: null,
           },
+          home: emptyLandingHome,
           pages: emptyLandingPages,
           faqs: [],
         },
@@ -427,6 +475,63 @@ describe('GlobalSettingsService', () => {
           },
         ],
       },
+    });
+  });
+
+  it('merges managed homepage sections without clearing sibling fields', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {
+        home: {
+          hero: {
+            headingEn: 'Run your restaurant from one place',
+            headingDe: 'Verwalten Sie Ihr Restaurant zentral',
+          },
+          featuredRestaurants: {
+            headingEn: 'Featured restaurants',
+            restaurantIds: ['restaurant-1'],
+            isVisible: true,
+          },
+          growth: {
+            headingEn: 'Grow faster',
+            checklistEn: ['Manage orders'],
+            isVisible: true,
+          },
+        },
+      },
+    });
+    updateSingletonSpy.mockImplementation((update) =>
+      Promise.resolve({
+        scopeKey: 'GLOBAL',
+        landingPageSettings: update.landingPageSettings,
+      }),
+    );
+
+    const result = await service.updateLandingPageSettings(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        home: {
+          hero: { subheadingEn: 'One platform for every order.' },
+          featuredRestaurants: { restaurantIds: ['restaurant-2'] },
+          growth: { isVisible: false },
+        },
+      },
+    );
+
+    expect(result.data.home.hero).toMatchObject({
+      headingEn: 'Run your restaurant from one place',
+      headingDe: 'Verwalten Sie Ihr Restaurant zentral',
+      subheadingEn: 'One platform for every order.',
+    });
+    expect(result.data.home.featuredRestaurants).toMatchObject({
+      headingEn: 'Featured restaurants',
+      restaurantIds: ['restaurant-2'],
+      isVisible: true,
+    });
+    expect(result.data.home.growth).toMatchObject({
+      headingEn: 'Grow faster',
+      checklistEn: ['Manage orders'],
+      isVisible: false,
     });
   });
 

@@ -1240,6 +1240,7 @@ describe('CustomerAppService', () => {
     expect(couponsService.getActiveAutoApplyPromotions).toHaveBeenCalledWith(
       'restaurant-1',
       undefined,
+      true,
     );
     expect(result.data).toEqual([
       expect.objectContaining({
@@ -1324,6 +1325,7 @@ describe('CustomerAppService', () => {
     expect(couponsService.getActiveCustomerCoupons).toHaveBeenCalledWith(
       'restaurant-1',
       'branch-1',
+      true,
     );
     expect(result.data).toEqual([
       expect.objectContaining({
@@ -1794,6 +1796,7 @@ describe('CustomerAppService', () => {
     expect(couponsService.getActiveHappyHours).toHaveBeenCalledWith(
       'restaurant-1',
       'branch-1',
+      true,
     );
     const item = result.data.items[0] as {
       happyHourDiscountedBasePrice: number | null;

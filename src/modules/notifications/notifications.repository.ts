@@ -95,6 +95,7 @@ export class NotificationsRepository {
           select: {
             id: true,
             name: true,
+            settings: true,
           },
         },
         restaurant: {

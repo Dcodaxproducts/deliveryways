@@ -292,6 +292,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       customer.restaurantId,
       customer.branchId ?? undefined,
+      user,
     );
 
     return {
@@ -717,6 +718,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const { items, total } =
       await this.customerAppRepository.listMenuCategories(resolvedQuery, {
@@ -758,6 +760,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const { items, total } =
       await this.customerAppRepository.listCuisineCategories(resolvedQuery, {
@@ -815,6 +818,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
@@ -862,6 +866,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
 
     if (
@@ -917,6 +922,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
@@ -949,6 +955,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     if (
       !promotionContext.menuItemIds.length &&
@@ -1004,6 +1011,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const promotions = promotionContext.promotions
       .filter((promotion) => promotion.discountType !== 'FIXED_PRICE')
@@ -1034,6 +1042,7 @@ export class CustomerAppService {
       (await this.couponsService?.getActiveCustomerCoupons(
         resolvedQuery.restaurantId,
         resolvedQuery.branchId,
+        this.isGuestAudience(user),
       )) ?? [];
     const pageItems = coupons.slice(0, query.limit);
     const translationContext = await this.loadTranslationContext(
@@ -1061,6 +1070,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const deals = promotionContext.promotions
       .filter((promotion) => promotion.discountType === 'FIXED_PRICE')
@@ -1112,6 +1122,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
@@ -1144,6 +1155,7 @@ export class CustomerAppService {
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
+      user,
     );
     const [cuisines, promotionalItems, faqs] = await Promise.all([
       this.customerAppRepository.listCuisineCategories(
@@ -3682,7 +3694,16 @@ export class CustomerAppService {
     return holiday.date ?? holiday.toDate ?? '';
   }
 
-  private async loadPromotionContext(restaurantId: string, branchId?: string) {
+  private isGuestAudience(user?: AuthUserContext) {
+    return !user || user.isGuest === true;
+  }
+
+  private async loadPromotionContext(
+    restaurantId: string,
+    branchId?: string,
+    user?: AuthUserContext,
+  ) {
+    const customerIsGuest = this.isGuestAudience(user);
     const [rawPromotions, rawHappyHours]: [
       AutoApplyPromotion[],
       ActiveHappyHour[],
@@ -3690,9 +3711,13 @@ export class CustomerAppService {
       this.couponsService?.getActiveAutoApplyPromotions(
         restaurantId,
         branchId,
+        customerIsGuest,
       ) ?? Promise.resolve([]),
-      this.couponsService?.getActiveHappyHours(restaurantId, branchId) ??
-        Promise.resolve([]),
+      this.couponsService?.getActiveHappyHours(
+        restaurantId,
+        branchId,
+        customerIsGuest,
+      ) ?? Promise.resolve([]),
     ]);
     const promotions = rawPromotions.filter(
       (promotion) => !this.isPromotionUsageLimitReached(promotion),
@@ -3769,6 +3794,7 @@ export class CustomerAppService {
       description: translatedPromotion.description,
       imageUrl,
       thumbnailUrl: imageUrl,
+      audience: promotion.audience,
       applyMode: promotion.applyMode,
       discountType: promotion.discountType,
       discountValue: Number(promotion.discountValue),
@@ -3899,6 +3925,7 @@ export class CustomerAppService {
       description: translatedCoupon.description,
       imageUrl,
       thumbnailUrl: imageUrl,
+      audience: coupon.audience,
       applyMode: coupon.applyMode,
       discountType: coupon.discountType,
       discountValue: Number(coupon.discountValue),
