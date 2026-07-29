@@ -181,6 +181,7 @@ describe('CustomerAppService', () => {
     const couponsService = {
       getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
       getActiveCustomerCoupons: jest.fn().mockResolvedValue([]),
+      getActiveCustomerDeals: jest.fn().mockResolvedValue([]),
       getActiveHappyHours: jest.fn().mockResolvedValue([]),
     };
 
@@ -1415,15 +1416,7 @@ describe('CustomerAppService', () => {
       scopeCategory: null,
       scopeCategories: [],
     };
-    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
-      {
-        ...basePromotion,
-        id: 'promo-1',
-        title: 'Ten Percent Off',
-        discountType: 'PERCENTAGE',
-        discountValue: new Prisma.Decimal(10),
-        scopeMenuItems: [],
-      },
+    couponsService.getActiveCustomerDeals.mockResolvedValue([
       {
         ...basePromotion,
         id: 'deal-1',
@@ -1483,6 +1476,11 @@ describe('CustomerAppService', () => {
       limit: 10,
     });
 
+    expect(couponsService.getActiveCustomerDeals).toHaveBeenCalledWith(
+      'restaurant-1',
+      undefined,
+      true,
+    );
     expect(repository.listPublicDealScopeMenuItems).toHaveBeenCalledWith(
       {
         restaurantId: 'restaurant-1',
@@ -1562,7 +1560,7 @@ describe('CustomerAppService', () => {
       email: null,
       settings: {},
     });
-    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+    couponsService.getActiveCustomerDeals.mockResolvedValue([
       {
         id: 'deal-1',
         title: 'Branch Combo',

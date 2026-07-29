@@ -70,6 +70,7 @@ describe('CouponsService', () => {
       findById: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
+      findActiveDeals: jest.fn(),
       findActiveHappyHours: jest.fn(),
       findActivePromotionById: jest.fn(),
       findTenantRestaurants: jest.fn(),
@@ -210,6 +211,26 @@ describe('CouponsService', () => {
     );
 
     expect(promotions.map((promotion) => promotion.id)).toEqual(['both']);
+  });
+
+  it('returns active fixed-price deals without making them auto promotions', async () => {
+    repository.findActiveDeals!.mockResolvedValue([
+      makeCoupon({
+        id: 'deal-guest',
+        audience: CouponAudience.GUEST,
+        discountType: CouponDiscountType.FIXED_PRICE,
+      }),
+      makeCoupon({
+        id: 'deal-both',
+        audience: CouponAudience.BOTH,
+        discountType: CouponDiscountType.FIXED_PRICE,
+      }),
+    ]);
+
+    const deals = await service.getActiveCustomerDeals('rid-1', 'bid-1', false);
+
+    expect(repository.findActiveDeals).toHaveBeenCalledWith('rid-1', 'bid-1');
+    expect(deals.map((deal) => deal.id)).toEqual(['deal-both']);
   });
 
   it('excludes fixed-price deals from coupons list', async () => {

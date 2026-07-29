@@ -513,6 +513,47 @@ describe('RolesGuard staff role permissions', () => {
     });
   });
 
+  it('hydrates STAFF restaurant context for deal category menu items', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'menu-management', operations: ['read'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+        RolesEnum.STAFF,
+      ],
+      controllerPath: 'menu/items',
+      method: RequestMethod.GET,
+      prisma,
+    });
+    const user: TestUser = { uid: 'staff-1', role: RolesEnum.STAFF };
+
+    await expect(
+      guard.canActivate(
+        createContext(user, {
+          query: {
+            restaurantId: 'restaurant-1',
+            categoryId: 'category-1',
+          },
+        }),
+      ),
+    ).resolves.toBe(true);
+    expect(user).toMatchObject({
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+    });
+  });
+
   it.each([
     {
       name: 'invoice history',

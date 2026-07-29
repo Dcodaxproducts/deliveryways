@@ -313,9 +313,7 @@ export class CustomerAppService {
   async resolveDomainContext(host: string) {
     const hostname = this.normalizeDomainHost(host);
     const baseDomain = this.normalizeDomainHost(
-      this.configService?.get<string>('CUSTOMER_APP_BASE_DOMAIN') ??
-        process.env.CUSTOMER_APP_BASE_DOMAIN ??
-        '',
+      this.configService?.get<string>('CUSTOMER_APP_BASE_DOMAIN') ?? '',
     );
     const subdomain = this.extractRestaurantSubdomain(hostname, baseDomain);
 
@@ -1073,13 +1071,14 @@ export class CustomerAppService {
   ) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     await this.getPublicContent(resolvedQuery, user);
-    const promotionContext = await this.loadPromotionContext(
-      resolvedQuery.restaurantId,
-      resolvedQuery.branchId,
-      user,
-    );
-    const deals = promotionContext.promotions
-      .filter((promotion) => promotion.discountType === 'FIXED_PRICE')
+    const deals = (
+      (await this.couponsService?.getActiveCustomerDeals(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+        this.isGuestAudience(user),
+      )) ?? []
+    )
+      .filter((promotion) => !this.isPromotionUsageLimitReached(promotion))
       .sort(
         (left, right) =>
           left.sortOrder - right.sortOrder ||

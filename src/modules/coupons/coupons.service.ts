@@ -356,6 +356,21 @@ export class CouponsService {
     );
   }
 
+  async getActiveCustomerDeals(
+    restaurantId: string,
+    branchId?: string,
+    customerIsGuest = false,
+  ) {
+    const deals = await this.couponsRepository.findActiveDeals(
+      restaurantId,
+      branchId,
+    );
+
+    return deals.filter((deal) =>
+      this.isAudienceEligible(deal.audience, customerIsGuest),
+    );
+  }
+
   async getActiveHappyHours(
     restaurantId: string,
     branchId?: string,

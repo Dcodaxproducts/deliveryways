@@ -32,6 +32,35 @@ describe('CouponsRepository', () => {
     });
   });
 
+  it('lists active fixed-price deals independently from auto promotions', async () => {
+    const findMany = jest.fn<
+      Promise<unknown[]>,
+      [
+        {
+          where?: {
+            autoApply?: unknown;
+            discountType?: unknown;
+            kind?: unknown;
+          };
+        },
+      ]
+    >();
+    findMany.mockResolvedValue([]);
+    const repository = new CouponsRepository({
+      coupon: { findMany },
+    } as never);
+
+    await repository.findActiveDeals('restaurant-1', 'branch-1');
+
+    const findManyArgs = findMany.mock.calls[0]?.[0];
+
+    expect(findManyArgs?.where?.kind).toBe(CouponCampaignKind.PROMOTION);
+    expect(findManyArgs?.where?.discountType).toBe(
+      CouponDiscountType.FIXED_PRICE,
+    );
+    expect(findManyArgs?.where).not.toHaveProperty('autoApply');
+  });
+
   it('excludes fixed-price deals from coupon list queries', async () => {
     const findMany = jest.fn<
       Promise<unknown[]>,

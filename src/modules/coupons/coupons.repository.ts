@@ -110,6 +110,28 @@ export class CouponsRepository {
     });
   }
 
+  async findActiveDeals(restaurantId: string, branchId?: string) {
+    const now = new Date();
+
+    return this.prisma.coupon.findMany({
+      where: {
+        restaurantId,
+        kind: CouponCampaignKind.PROMOTION,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        deletedAt: null,
+        isActive: true,
+        status: CouponStatus.ACTIVE,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+        ],
+        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
+      },
+      include: this.includeConfig,
+      orderBy: [{ createdAt: 'desc' }],
+    });
+  }
+
   async findActiveHappyHours(restaurantId: string, branchId?: string) {
     const now = new Date();
 
