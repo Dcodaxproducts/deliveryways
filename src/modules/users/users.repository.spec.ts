@@ -1,6 +1,53 @@
 import { UsersRepository } from './users.repository';
 
 describe('UsersRepository', () => {
+  it('finds POS customers by customer ID or order ID', async () => {
+    type FindManyArgs = {
+      where: {
+        OR?: unknown[];
+      };
+    };
+    const findMany = jest.fn((args: FindManyArgs): Promise<unknown[]> => {
+      void args;
+      return Promise.resolve([]);
+    });
+    const count = jest.fn().mockResolvedValue(0);
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    await repository.listCustomers('tenant-1', {
+      page: 1,
+      limit: 20,
+      search: 'lookup-123',
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    } as never);
+
+    const query = findMany.mock.calls[0]?.[0];
+
+    expect(query?.where.OR?.[0]).toEqual({
+      id: {
+        contains: 'lookup-123',
+        mode: 'insensitive',
+      },
+    });
+    expect(query?.where.OR?.[3]).toEqual({
+      customerOrders: {
+        some: {
+          id: {
+            contains: 'lookup-123',
+            mode: 'insensitive',
+          },
+        },
+      },
+    });
+  });
+
   const makeTransaction = () => {
     const calls: string[] = [];
     const modelMocks = new Map<string, Record<string, jest.Mock>>();

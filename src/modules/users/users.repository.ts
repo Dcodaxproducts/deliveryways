@@ -118,6 +118,12 @@ export class UsersRepository {
       ...(query.search
         ? {
             OR: [
+              {
+                id: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
               { email: { contains: query.search, mode: 'insensitive' } },
               {
                 profile: {
@@ -133,6 +139,16 @@ export class UsersRepository {
                     },
                     { phone: { contains: query.search, mode: 'insensitive' } },
                   ],
+                },
+              },
+              {
+                customerOrders: {
+                  some: {
+                    id: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
                 },
               },
             ],
