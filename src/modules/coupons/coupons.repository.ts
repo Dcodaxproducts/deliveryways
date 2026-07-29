@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
   Coupon,
-  CouponApplyMode,
   CouponCampaignKind,
   CouponDiscountType,
   CouponStatus,
@@ -61,6 +60,9 @@ export class CouponsRepository {
         restaurantId,
         kind: CouponCampaignKind.PROMOTION,
         autoApply: true,
+        discountType: {
+          not: CouponDiscountType.FIXED_PRICE,
+        },
         deletedAt: null,
         isActive: true,
         status: CouponStatus.ACTIVE,
@@ -152,39 +154,6 @@ export class CouponsRepository {
         OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
       },
       include: this.includeConfig,
-    });
-  }
-
-  async findActivePromotionsForMenuItem(
-    restaurantId: string,
-    branchId: string | undefined,
-    menuItemId: string,
-  ) {
-    const now = new Date();
-
-    return this.prisma.coupon.findMany({
-      where: {
-        restaurantId,
-        kind: CouponCampaignKind.PROMOTION,
-        applyMode: CouponApplyMode.SCOPED_ITEMS,
-        discountType: CouponDiscountType.FIXED_PRICE,
-        deletedAt: null,
-        isActive: true,
-        status: CouponStatus.ACTIVE,
-        AND: [
-          {
-            OR: [
-              { scopeMenuItemId: menuItemId },
-              { scopeMenuItems: { some: { menuItemId } } },
-            ],
-          },
-          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-        ],
-        OR: [{ branchId: null }, ...(branchId ? [{ branchId }] : [])],
-      },
-      include: this.includeConfig,
-      orderBy: [{ createdAt: 'desc' }],
     });
   }
 

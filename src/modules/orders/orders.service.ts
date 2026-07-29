@@ -933,11 +933,7 @@ export class OrdersService {
             ))
             ? explicitDealId
             : null
-          : this.findReadyMadeDealIdForItem(
-              branch.restaurantId,
-              branch.id,
-              requestedItem.menuItemId,
-            );
+          : null;
       }),
     );
     const lines: QuoteLine[] = [];
@@ -4601,20 +4597,6 @@ export class OrdersService {
       branchId,
       dealId,
       menuItemId,
-    );
-  }
-
-  private async findReadyMadeDealIdForItem(
-    restaurantId: string,
-    branchId: string,
-    menuItemId: string,
-  ) {
-    return (
-      (await this.couponsService.findActiveFixedPriceDealIdForItem?.(
-        restaurantId,
-        branchId,
-        menuItemId,
-      )) ?? null
     );
   }
 

@@ -6157,22 +6157,11 @@ describe('OrdersService - wallet payment', () => {
     expect(item.discountedLineTotal).toBe(18);
   });
 
-  it('passes selected deal items into auto-apply order quote flow', async () => {
+  it('keeps ordinary items out of fixed-price deals unless the deal is explicit', async () => {
     const couponsService = {
       validateForCheckout: jest.fn(),
-      findBestAutoApplyPromotion: jest.fn().mockResolvedValue({
-        coupon: {
-          id: 'deal-1',
-          code: 'DEAL-1',
-          title: 'Burger Combo',
-          applyMode: 'SCOPED_ITEMS',
-          autoApply: true,
-          discountType: 'FIXED_PRICE',
-          discountValue: new Prisma.Decimal(799),
-        },
-        discountAmount: new Prisma.Decimal(301),
-        eligibleSubtotal: new Prisma.Decimal(1100),
-      }),
+      findActiveFixedPriceDealIdForItem: jest.fn().mockResolvedValue('deal-1'),
+      findBestAutoApplyPromotion: jest.fn().mockResolvedValue(null),
     };
     const menuItems = new Map([
       [
@@ -6249,7 +6238,7 @@ describe('OrdersService - wallet payment', () => {
           walletAppliedAmount: new Prisma.Decimal(0),
           loyaltyDiscountAmount: new Prisma.Decimal(0),
           loyaltyPointsRedeemed: 0,
-          totalAmount: new Prisma.Decimal(799),
+          totalAmount: new Prisma.Decimal(1100),
         }),
       } as never,
     );
@@ -6273,31 +6262,28 @@ describe('OrdersService - wallet payment', () => {
       },
     );
 
+    expect(
+      couponsService.findActiveFixedPriceDealIdForItem,
+    ).not.toHaveBeenCalled();
     expect(couponsService.findBestAutoApplyPromotion).toHaveBeenCalledWith(
       expect.objectContaining({
         lineItems: [
           expect.objectContaining({
             menuItemId: 'burger-1',
             categoryId: 'cat-burger',
+            dealId: undefined,
           }),
           expect.objectContaining({
             menuItemId: 'drink-1',
             categoryId: 'cat-drink',
+            dealId: undefined,
           }),
         ],
         subtotal: 1100,
       }),
     );
-    expect(result.data.discountAmount).toBe(301);
-    expect(result.data.appliedPromotion).toEqual({
-      id: 'deal-1',
-      title: 'Burger Combo',
-      applyMode: 'SCOPED_ITEMS',
-      autoApply: true,
-      discountType: 'FIXED_PRICE',
-      discountValue: 799,
-      discountAmount: 301,
-    });
+    expect(result.data.discountAmount).toBe(0);
+    expect(result.data.appliedPromotion).toBeNull();
   });
 
   it('prices explicit fixed combo deal lines at the fixed deal price', async () => {

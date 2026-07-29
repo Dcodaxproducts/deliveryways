@@ -446,57 +446,6 @@ export class CouponsService {
     };
   }
 
-  async findActiveFixedPriceDealIdForItem(
-    restaurantId: string,
-    branchId: string | undefined,
-    menuItemId: string,
-  ) {
-    const promotions =
-      await this.couponsRepository.findActivePromotionsForMenuItem(
-        restaurantId,
-        branchId,
-        menuItemId,
-      );
-    const deal = promotions.find((promotion) => {
-      if (!this.isReadyMadeFixedPriceDeal(promotion)) {
-        return false;
-      }
-
-      return this.resolveReadyMadeDealMenuItemId(promotion) === menuItemId;
-    });
-
-    return deal?.id ?? null;
-  }
-
-  private isReadyMadeFixedPriceDeal(
-    coupon: Coupon & {
-      scopeMenuItem?: { id: string } | null;
-      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
-      scopeCategory?: { id: string } | null;
-      scopeCategories?: Array<{ menuCategory: { id: string } }>;
-    },
-  ) {
-    if (
-      coupon.discountType !== CouponDiscountType.FIXED_PRICE ||
-      coupon.applyMode !== CouponApplyMode.SCOPED_ITEMS ||
-      (coupon.dealSelectionMode ?? CouponDealSelectionMode.FIXED_ITEMS) !==
-        CouponDealSelectionMode.FIXED_ITEMS
-    ) {
-      return false;
-    }
-
-    const scopedMenuItemIds = this.resolveScopedIds(
-      coupon.scopeMenuItem?.id ?? coupon.scopeMenuItemId,
-      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
-    );
-    const scopedCategoryIds = this.resolveScopedIds(
-      coupon.scopeCategory?.id ?? coupon.scopeCategoryId,
-      coupon.scopeCategories?.map((entry) => entry.menuCategory.id) ?? [],
-    );
-
-    return scopedMenuItemIds.length === 1 && scopedCategoryIds.length === 0;
-  }
-
   private isFixedItemsFixedPriceDeal(
     coupon: Coupon & {
       scopeMenuItem?: { id: string } | null;
@@ -710,18 +659,6 @@ export class CouponsService {
         ),
       ),
     ];
-  }
-
-  private resolveReadyMadeDealMenuItemId(
-    coupon: Coupon & {
-      scopeMenuItem?: { id: string } | null;
-      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
-    },
-  ) {
-    return this.resolveScopedIds(
-      coupon.scopeMenuItem?.id ?? coupon.scopeMenuItemId,
-      coupon.scopeMenuItems?.map((entry) => entry.menuItem.id) ?? [],
-    )[0];
   }
 
   async findBestAutoApplyPromotion(
