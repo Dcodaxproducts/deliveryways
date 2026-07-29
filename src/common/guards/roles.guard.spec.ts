@@ -207,6 +207,70 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
+  it('allows STAFF to update an order with order-management update access', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'order-management', operations: ['update'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+        RolesEnum.DELIVERYMAN,
+      ],
+      controllerPath: 'orders',
+      handlerPath: ':id/status',
+      method: RequestMethod.PATCH,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('does not treat read-only order access as order update access', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'order-management', operations: ['read'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+        RolesEnum.DELIVERYMAN,
+      ],
+      controllerPath: 'orders',
+      handlerPath: ':id/status',
+      method: RequestMethod.PATCH,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).rejects.toThrow('Your role does not have access to this action');
+  });
+
   it.each(['orders/trend', 'revenue/trend'])(
     'allows STAFF with reports permission to read %s',
     async (handlerPath) => {
