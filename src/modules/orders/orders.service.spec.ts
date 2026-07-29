@@ -2211,6 +2211,101 @@ describe('OrdersService - deliveryman order access', () => {
     );
   });
 
+  it('allows STAFF to fetch order details inside an assigned restaurant and branch', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-2',
+      branchId: 'branch-2',
+      customerId: 'customer-1',
+      deliverymanId: null,
+    });
+    const staffUser = {
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      actorType: 'STAFF' as const,
+      rid: 'restaurant-1',
+      bid: 'branch-1',
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1', 'restaurant-2'],
+        branchIds: ['branch-1', 'branch-2'],
+      },
+    };
+
+    const result = await service.details(staffUser as never, 'order-1');
+
+    expect(result.message).toBe('Order fetched successfully');
+  });
+
+  it('blocks STAFF order details outside assigned branches', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-2',
+      customerId: 'customer-1',
+      deliverymanId: null,
+    });
+    const staffUser = {
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      actorType: 'STAFF' as const,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-1'],
+      },
+    };
+
+    await expect(
+      service.details(staffUser as never, 'order-1'),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned branches',
+    );
+  });
+
+  it('allows STAFF to update an order status inside assigned scope', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'TAKEAWAY',
+      status: 'PREPARING',
+    });
+    ordersRepository.updateStatus.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: null,
+      orderType: 'TAKEAWAY',
+      status: 'READY_FOR_PICKUP',
+    });
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    const result = await service.updateStatus(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          branchIds: ['branch-1'],
+        },
+      } as never,
+      'order-1',
+      { status: 'READY_FOR_PICKUP' } as never,
+    );
+
+    expect(ordersRepository.updateStatus).toHaveBeenCalledWith(
+      'order-1',
+      'READY_FOR_PICKUP',
+      undefined,
+    );
+    expect(result.message).toBe('Order status updated successfully');
+  });
+
   it('allows deliveryman to fetch details of assigned orders', async () => {
     ordersRepository.findById.mockResolvedValue({
       id: 'order-1',

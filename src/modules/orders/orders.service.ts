@@ -586,7 +586,12 @@ export class OrdersService {
     if (user.role === 'DELIVERYMAN') {
       this.assertDeliverymanOrderAccess(user, order.deliverymanId);
     } else {
-      await this.assertOrderAccess(user, order.restaurantId, order.customerId);
+      await this.assertOrderAccess(
+        user,
+        order.restaurantId,
+        order.customerId,
+        order.branchId,
+      );
     }
 
     return {
@@ -719,7 +724,12 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    await this.assertOrderAccess(
+      user,
+      order.restaurantId,
+      order.customerId,
+      order.branchId,
+    );
 
     const terminalStatuses: OrderStatus[] = [
       OrderStatus.DELIVERED,
@@ -766,6 +776,7 @@ export class OrdersService {
       user,
       order.restaurantId,
       order.customerId,
+      order.branchId,
       true,
     );
 
@@ -816,6 +827,7 @@ export class OrdersService {
 
     await this.assertTrackingAccess(user, {
       restaurantId: order.restaurantId,
+      branchId: order.branchId,
       customerId: order.customerId,
       deliverymanId: order.deliverymanId,
     });
@@ -3922,6 +3934,36 @@ export class OrdersService {
       return;
     }
 
+    if (this.isStaffActor(user)) {
+      const allRestaurants =
+        user.restaurantAccess?.allRestaurants === true ||
+        user.restaurantAccess?.hasAllRestaurantsAccess === true;
+      const allowedRestaurantIds = user.restaurantAccess?.restaurantIds ?? [];
+      const allowedBranchIds = user.restaurantAccess?.branchIds ?? [];
+
+      if (
+        !allRestaurants &&
+        user.rid !== restaurantId &&
+        !allowedRestaurantIds.includes(restaurantId)
+      ) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      if (
+        allowedBranchIds.length > 0 &&
+        user.bid !== branchId &&
+        !allowedBranchIds.includes(branchId)
+      ) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned branches',
+        );
+      }
+
+      return;
+    }
+
     if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
       if (!user.tid) {
         throw new ForbiddenException('Tenant context is required');
@@ -4008,6 +4050,7 @@ export class OrdersService {
     user: AuthUserContext,
     restaurantId: string,
     customerId: string,
+    branchId?: string,
     adminOnly = false,
   ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
@@ -4035,6 +4078,15 @@ export class OrdersService {
       return;
     }
 
+    if (this.isStaffActor(user)) {
+      if (!branchId) {
+        throw new ForbiddenException('Branch context is required');
+      }
+
+      await this.ensureBranchAccess(user, restaurantId, branchId);
+      return;
+    }
+
     if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
@@ -4055,6 +4107,7 @@ export class OrdersService {
     user: AuthUserContext,
     order: {
       restaurantId: string;
+      branchId: string;
       customerId: string;
       deliverymanId: string | null;
     },
@@ -4064,7 +4117,12 @@ export class OrdersService {
       return;
     }
 
-    await this.assertOrderAccess(user, order.restaurantId, order.customerId);
+    await this.assertOrderAccess(
+      user,
+      order.restaurantId,
+      order.customerId,
+      order.branchId,
+    );
   }
 
   private async emitTrackingUpdate(orderId: string) {
