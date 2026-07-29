@@ -21,6 +21,7 @@ import {
   AdminListPromotionsQueryDto,
   AdminPromotionStatsQueryDto,
   CreateAdminDealDto,
+  ReorderAdminDealsDto,
   UpdateAdminDealDto,
 } from './dto';
 import { AdminPromotionsService } from './admin-promotions.service';
@@ -60,6 +61,20 @@ export class AdminDealsController {
     @Body() dto: CreateAdminDealDto,
   ) {
     return this.adminPromotionsService.createDeal(user, dto);
+  }
+
+  @Patch('reorder')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Persist fixed-price deal display order' })
+  reorderDeals(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ReorderAdminDealsDto,
+  ) {
+    return this.adminPromotionsService.reorderDeals(user, dto);
   }
 
   @Get(':id')

@@ -1175,6 +1175,7 @@ model Coupon {
   scopeCategoryId      String?                  @map("scope_category_id")
   dealSelectionMode    CouponDealSelectionMode? @map("deal_selection_mode")
   dealRequiredQuantity Int?                     @map("deal_required_quantity")
+  sortOrder            Int                      @default(0) @map("sort_order")
   isActive             Boolean                  @default(true) @map("is_active")
   deletedAt            DateTime?                @map("deleted_at") @db.Timestamptz
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
@@ -1192,6 +1193,7 @@ model Coupon {
 
   @@unique([restaurantId, code])
   @@index([restaurantId, status, isActive])
+  @@index([restaurantId, kind, sortOrder])
   @@index([branchId])
   @@map("coupons")
 }
@@ -1212,13 +1214,15 @@ model CouponScopeMenuItem {
 }
 
 model CouponScopeCategory {
-  id                String   @id @default(cuid())
-  couponId          String   @map("coupon_id")
-  menuCategoryId    String   @map("menu_category_id")
-  itemLimit         Int?     @map("item_limit")
-  forcedVariationId String?  @map("forced_variation_id")
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id                  String   @id @default(cuid())
+  couponId            String   @map("coupon_id")
+  menuCategoryId      String   @map("menu_category_id")
+  itemLimit           Int?     @map("item_limit")
+  forcedVariationId   String?  @map("forced_variation_id")
+  includedMenuItemIds Json?    @map("included_menu_item_ids")
+  excludedMenuItemIds Json?    @map("excluded_menu_item_ids")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   coupon          Coupon             @relation(fields: [couponId], references: [id], onDelete: Cascade)
   menuCategory    MenuCategory       @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)

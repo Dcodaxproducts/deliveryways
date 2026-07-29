@@ -17,6 +17,7 @@ export interface AdminPromotionScope {
 export type AdminPromotionListQuery = AdminListPromotionsQueryDto & {
   autoApply?: boolean;
   excludeDiscountType?: CouponDiscountType;
+  sortDeals?: boolean;
 };
 
 @Injectable()
@@ -53,6 +54,25 @@ export class AdminPromotionsRepository {
         restaurantId,
         deletedAt: null,
         isActive: true,
+      },
+    });
+  }
+
+  countActiveMenuItemsInCategory(
+    restaurantId: string,
+    categoryId: string,
+    menuItemIds: string[],
+  ) {
+    return this.prisma.menuItem.count({
+      where: {
+        id: { in: menuItemIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          { categoryId },
+          { categoryLinks: { some: { menuCategoryId: categoryId } } },
+        ],
       },
     });
   }
@@ -153,13 +173,57 @@ export class AdminPromotionsRepository {
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: query.sortDeals
+          ? [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+          : [{ startsAt: 'desc' }, { createdAt: 'desc' }],
         include: this.includeConfig,
       }),
       this.prisma.coupon.count({ where }),
     ]);
 
     return { items, total };
+  }
+
+  findDealIdsInScope(scope: AdminPromotionScope, dealIds: string[]) {
+    return this.prisma.coupon.findMany({
+      where: {
+        id: { in: dealIds },
+        deletedAt: null,
+        kind: CouponCampaignKind.PROMOTION,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+      },
+      select: { id: true },
+    });
+  }
+
+  findAllDealIdsInScope(scope: AdminPromotionScope) {
+    return this.prisma.coupon.findMany({
+      where: {
+        deletedAt: null,
+        kind: CouponCampaignKind.PROMOTION,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+  }
+
+  reorderDeals(orderedDealIds: string[]) {
+    return this.prisma.$transaction(
+      orderedDealIds.map((id, sortOrder) =>
+        this.prisma.coupon.update({
+          where: { id },
+          data: { sortOrder },
+          select: { id: true, sortOrder: true },
+        }),
+      ),
+    );
   }
 
   async getOverview(scope: AdminPromotionScope) {
@@ -422,6 +486,8 @@ export class AdminPromotionsRepository {
       select: {
         itemLimit: true,
         forcedVariationId: true,
+        includedMenuItemIds: true,
+        excludedMenuItemIds: true,
         forcedVariation: {
           select: { id: true, name: true },
         },

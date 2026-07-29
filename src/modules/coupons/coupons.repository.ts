@@ -336,6 +336,8 @@ export class CouponsRepository {
       select: {
         itemLimit: true,
         forcedVariationId: true,
+        includedMenuItemIds: true,
+        excludedMenuItemIds: true,
         forcedVariation: { select: { id: true, name: true } },
         menuCategory: {
           select: {

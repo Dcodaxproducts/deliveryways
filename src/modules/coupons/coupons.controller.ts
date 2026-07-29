@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -61,6 +62,14 @@ export class CouponsController {
     @Body() dto: UpdateCouponDto,
   ) {
     return this.couponsService.update(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.couponsService.remove(user, id);
   }
 
   @ApiBearerAuth()

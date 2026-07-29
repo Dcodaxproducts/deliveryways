@@ -67,6 +67,7 @@ describe('MenuItemService', () => {
     const prisma = {
       menuItem: {
         count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
       },
@@ -74,6 +75,7 @@ describe('MenuItemService', () => {
         findUnique: jest.fn(),
       },
       restaurantMenuItem: {
+        findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
       },
@@ -102,8 +104,11 @@ describe('MenuItemService', () => {
           taxTypes: null,
         }),
       },
-      $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-        Promise.resolve(callback(tx)),
+      $transaction: jest.fn(
+        (input: Array<Promise<unknown>> | ((tx: unknown) => unknown)) =>
+          Array.isArray(input)
+            ? Promise.all(input)
+            : Promise.resolve(input(tx)),
       ),
     };
 
@@ -1663,6 +1668,42 @@ describe('MenuItemService', () => {
       data: { id: 'item-1', sortOrder: 4 },
       message: 'Menu item reordered successfully',
     });
+  });
+
+  it('persists a partial drag operation without disturbing unloaded items', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuItem.findMany
+      .mockResolvedValueOnce([
+        { id: 'item-1', restaurantId: 'restaurant-1' },
+        { id: 'item-2', restaurantId: 'restaurant-1' },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'item-1' },
+        { id: 'item-2' },
+        { id: 'item-3' },
+      ]);
+    prisma.menuItem.update.mockResolvedValue({});
+
+    await service.reorder(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        items: [
+          { id: 'item-2', sortOrder: 1 },
+          { id: 'item-1', sortOrder: 2 },
+        ],
+      },
+    );
+
+    expect(prisma.menuItem.update.mock.calls).toEqual([
+      [{ where: { id: 'item-2' }, data: { sortOrder: 0 } }],
+      [{ where: { id: 'item-1' }, data: { sortOrder: 1 } }],
+      [{ where: { id: 'item-3' }, data: { sortOrder: 2 } }],
+    ]);
   });
 
   it('reorders a single menu item inside a restaurant menu', async () => {

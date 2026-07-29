@@ -29,6 +29,7 @@ export class MailerService {
     const username = this.configService.get<string>('MAIL_USERNAME');
     const password = this.configService.get<string>('MAIL_PASSWORD');
     const encryption = this.configService.get<string>('MAIL_ENCRYPTION', 'ssl');
+    const normalizedEncryption = encryption.toLowerCase();
 
     if (!host || !username || !password) {
       this.logger.error(
@@ -43,7 +44,11 @@ export class MailerService {
     this.transporter = nodemailer.createTransport({
       host,
       port,
-      secure: encryption.toLowerCase() === 'ssl' || port === 465,
+      secure: normalizedEncryption === 'ssl' || port === 465,
+      requireTLS: normalizedEncryption === 'tls',
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
         user: username,
         pass: password,

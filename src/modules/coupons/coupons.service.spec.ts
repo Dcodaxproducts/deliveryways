@@ -67,6 +67,7 @@ describe('CouponsService', () => {
       list: jest.fn(),
       findByCode: jest.fn(),
       findByCodeOrId: jest.fn(),
+      findById: jest.fn(),
       countCustomerUsage: jest.fn().mockResolvedValue(0),
       findAutoApplyPromotions: jest.fn(),
       findActiveHappyHours: jest.fn(),
@@ -1123,5 +1124,69 @@ describe('CouponsService', () => {
     expect(result.map((coupon) => coupon.id)).toEqual(['happy-active']);
 
     global.Date = originalDate;
+  });
+
+  it('stops a happy hour exactly at its configured end time', async () => {
+    const originalDate = global.Date;
+
+    class MockDate extends Date {
+      constructor(...args: ConstructorParameters<DateConstructor>) {
+        if (args.length) {
+          super(...args);
+          return;
+        }
+
+        super('2026-04-22T17:00:00.000Z');
+      }
+
+      static now() {
+        return new originalDate('2026-04-22T17:00:00.000Z').getTime();
+      }
+    }
+
+    global.Date = MockDate as DateConstructor;
+    repository.findActiveHappyHours!.mockResolvedValue([
+      makeCoupon({
+        id: 'happy-ended',
+        activeDays: [3],
+        dailyStartTime: '14:00',
+        dailyEndTime: '17:00',
+      }),
+    ]);
+
+    await expect(
+      service.getActiveHappyHours('rid-1', 'bid-1'),
+    ).resolves.toEqual([]);
+
+    global.Date = originalDate;
+  });
+
+  it('soft deletes a coupon after validating restaurant access', async () => {
+    let capturedUpdate: unknown;
+    repository.findById!.mockResolvedValue(makeCoupon());
+    repository.findRestaurantInTenant!.mockResolvedValue({ id: 'rid-1' });
+    repository.update!.mockImplementation((_id: string, input: unknown) => {
+      capturedUpdate = input;
+      return Promise.resolve({ id: 'cpn-1' });
+    });
+
+    const result = await service.remove(
+      {
+        uid: 'admin-1',
+        tid: 'tid-1',
+        rid: 'rid-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'cpn-1',
+    );
+
+    expect(repository.update).toHaveBeenCalledWith('cpn-1', capturedUpdate);
+    expect(capturedUpdate).not.toBeNull();
+    expect(typeof capturedUpdate).toBe('object');
+    const updateInput = capturedUpdate as Record<string, unknown>;
+    expect(updateInput.isActive).toBe(false);
+    expect(updateInput.status).toBe(CouponStatus.SUSPENDED);
+    expect(updateInput.deletedAt).toBeInstanceOf(Date);
+    expect(result.data).toEqual({ id: 'cpn-1' });
   });
 });

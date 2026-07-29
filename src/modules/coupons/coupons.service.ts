@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   Coupon,
@@ -25,6 +26,7 @@ import {
   ValidateCouponDto,
 } from './dto';
 import { CouponsRepository } from './coupons.repository';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
 
 export interface CouponValidationLineInput {
   menuItemId: string;
@@ -98,7 +100,11 @@ export interface FixedPriceDealItemOptions {
 
 @Injectable()
 export class CouponsService {
-  constructor(private readonly couponsRepository: CouponsRepository) {}
+  constructor(
+    private readonly couponsRepository: CouponsRepository,
+    @Optional()
+    private readonly globalSettingsService?: GlobalSettingsService,
+  ) {}
 
   async create(user: AuthUserContext, dto: CreateCouponDto) {
     const restaurantId = await this.requireRestaurantId(
@@ -228,6 +234,25 @@ export class CouponsService {
     };
   }
 
+  async remove(user: AuthUserContext, id: string) {
+    const coupon = await this.couponsRepository.findById(id);
+    if (!coupon || coupon.deletedAt) {
+      throw new NotFoundException('Coupon not found');
+    }
+
+    await this.ensureRestaurantAccess(user, coupon.restaurantId);
+    await this.couponsRepository.update(id, {
+      deletedAt: new Date(),
+      isActive: false,
+      status: CouponStatus.SUSPENDED,
+    });
+
+    return {
+      data: { id },
+      message: 'Coupon deleted successfully',
+    };
+  }
+
   async setStatus(
     user: AuthUserContext,
     code: string,
@@ -337,6 +362,7 @@ export class CouponsService {
     customerIsGuest = false,
   ) {
     const now = new Date();
+    const timezone = await this.resolveScheduleTimezone();
     const happyHours = await this.couponsRepository.findActiveHappyHours(
       restaurantId,
       branchId,
@@ -345,7 +371,7 @@ export class CouponsService {
     return happyHours.filter(
       (happyHour) =>
         this.isAudienceEligible(happyHour.audience, customerIsGuest) &&
-        this.isCouponScheduleActive(happyHour, now),
+        this.isCouponScheduleActive(happyHour, now, timezone),
     );
   }
 
@@ -554,6 +580,8 @@ export class CouponsService {
       scopeCategories?: Array<{
         itemLimit?: number | null;
         forcedVariationId?: string | null;
+        includedMenuItemIds?: Prisma.JsonValue | null;
+        excludedMenuItemIds?: Prisma.JsonValue | null;
         menuCategory: {
           id: string;
           variations?: Array<{ id: string }>;
@@ -572,13 +600,34 @@ export class CouponsService {
           entry.menuCategory,
           entry.forcedVariationId ?? null,
         );
+        const includedMenuItemIds = this.readStringArrayJson(
+          entry.includedMenuItemIds,
+        );
+        const configuredExcludedMenuItemIds = this.readStringArrayJson(
+          entry.excludedMenuItemIds,
+        );
+        const menuItemIds = (
+          includedMenuItemIds.length
+            ? eligibility.eligibleMenuItemIds.filter((id) =>
+                includedMenuItemIds.includes(id),
+              )
+            : eligibility.eligibleMenuItemIds
+        ).filter((id) => !configuredExcludedMenuItemIds.includes(id));
 
         return {
           menuCategoryId: entry.menuCategory.id,
           itemLimit: entry.itemLimit ?? null,
           forcedVariationId: entry.forcedVariationId ?? null,
-          menuItemIds: eligibility.eligibleMenuItemIds,
-          excludedMenuItemIds: eligibility.excludedMenuItemIds,
+          menuItemIds,
+          excludedMenuItemIds: [
+            ...new Set([
+              ...eligibility.excludedMenuItemIds,
+              ...configuredExcludedMenuItemIds,
+              ...eligibility.eligibleMenuItemIds.filter(
+                (id) => includedMenuItemIds.length && !menuItemIds.includes(id),
+              ),
+            ]),
+          ],
         };
       }),
       ...((coupon.scopeCategory?.id ?? coupon.scopeCategoryId)
@@ -646,6 +695,21 @@ export class CouponsService {
         (menuItemId) => !eligibleMenuItemIds.includes(menuItemId),
       ),
     };
+  }
+
+  private readStringArrayJson(value: Prisma.JsonValue | null | undefined) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return [
+      ...new Set(
+        value.filter(
+          (entry): entry is string =>
+            typeof entry === 'string' && entry.trim().length > 0,
+        ),
+      ),
+    ];
   }
 
   private resolveReadyMadeDealMenuItemId(
@@ -779,7 +843,13 @@ export class CouponsService {
       throw new BadRequestException('Coupon is not valid at this time');
     }
 
-    if (!this.isCouponScheduleActive(coupon, now)) {
+    if (
+      !this.isCouponScheduleActive(
+        coupon,
+        now,
+        await this.resolveScheduleTimezone(),
+      )
+    ) {
       throw new BadRequestException('Coupon is not valid at this time');
     }
 
@@ -1371,29 +1441,72 @@ export class CouponsService {
   private isCouponScheduleActive(
     coupon: Pick<Coupon, 'activeDays' | 'dailyStartTime' | 'dailyEndTime'>,
     now: Date,
+    timezone = 'UTC',
   ) {
+    const localTime = this.resolveLocalScheduleTime(now, timezone);
     const activeDays = this.readActiveDays(coupon.activeDays);
-    if (activeDays && !activeDays.includes(now.getUTCDay())) {
-      return false;
-    }
 
     if (!coupon.dailyStartTime || !coupon.dailyEndTime) {
-      return true;
+      return !activeDays || activeDays.includes(localTime.weekday);
     }
 
-    const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const currentMinutes = localTime.minutes;
     const startMinutes = this.parseTimeToMinutes(coupon.dailyStartTime);
     const endMinutes = this.parseTimeToMinutes(coupon.dailyEndTime);
 
     if (startMinutes === null || endMinutes === null) {
-      return true;
+      return !activeDays || activeDays.includes(localTime.weekday);
     }
 
     if (startMinutes <= endMinutes) {
-      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+      return (
+        (!activeDays || activeDays.includes(localTime.weekday)) &&
+        currentMinutes >= startMinutes &&
+        currentMinutes < endMinutes
+      );
     }
 
-    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    const scheduleWeekday =
+      currentMinutes < endMinutes
+        ? (localTime.weekday + 6) % 7
+        : localTime.weekday;
+
+    return (
+      (!activeDays || activeDays.includes(scheduleWeekday)) &&
+      (currentMinutes >= startMinutes || currentMinutes < endMinutes)
+    );
+  }
+
+  private resolveLocalScheduleTime(now: Date, timezone: string) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(now);
+    const readPart = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((part) => part.type === type)?.value ?? '';
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weekday = weekdays.indexOf(readPart('weekday'));
+    const hour = Number(readPart('hour'));
+    const minute = Number(readPart('minute'));
+
+    return {
+      weekday: weekday >= 0 ? weekday : now.getUTCDay(),
+      minutes:
+        Number.isFinite(hour) && Number.isFinite(minute)
+          ? hour * 60 + minute
+          : now.getUTCHours() * 60 + now.getUTCMinutes(),
+    };
+  }
+
+  private async resolveScheduleTimezone() {
+    const settings = await this.globalSettingsService?.getSettings();
+    const timezone = settings?.data?.timezone;
+    return typeof timezone === 'string' && timezone.trim()
+      ? timezone.trim()
+      : 'UTC';
   }
 
   private isCouponWithinDateWindow(

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsDateString,
   IsArray,
   IsBoolean,
@@ -578,6 +579,44 @@ export class AdminDealCategoryScopeDto {
   @IsOptional()
   @IsString()
   variationId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Optional allow-list of items from this category. Empty means every active category item is eligible.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  includedMenuItemIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Items excluded from this category rule after applying its allow-list.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  excludedMenuItemIds?: string[];
+}
+
+export class ReorderAdminDealsDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  orderedDealIds!: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
 }
 
 export class AdminPromotionBaseDto {

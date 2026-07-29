@@ -623,6 +623,97 @@ describe('AdminPromotionsService', () => {
     expect(result.message).toBe('Deals fetched successfully');
   });
 
+  it('creates a mixed deal with fixed items and a selective repeatable category group', async () => {
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(1),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(1),
+      countActiveMenuItemsInCategory: jest.fn().mockResolvedValue(2),
+      create: jest.fn().mockResolvedValue(
+        makeCoupon({
+          kind: CouponCampaignKind.PROMOTION,
+          discountType: CouponDiscountType.FIXED_PRICE,
+          dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+          dealRequiredQuantity: 3,
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.createDeal(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Burger plus two sides',
+        discountValue: 1499,
+        startsAt: '2026-04-22T00:00:00.000Z',
+        expiresAt: '2026-05-22T00:00:00.000Z',
+        scopeMenuItemIds: ['burger-1'],
+        scopeCategories: [
+          {
+            menuCategoryId: 'sides',
+            itemLimit: 2,
+            includedMenuItemIds: ['fries', 'wedges'],
+          },
+        ],
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+      },
+    );
+
+    expect(repository.countActiveMenuItemsInCategory).toHaveBeenCalledWith(
+      'restaurant-1',
+      'sides',
+      ['fries', 'wedges'],
+    );
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dealRequiredQuantity: 3,
+        scopeMenuItems: {
+          create: [{ menuItem: { connect: { id: 'burger-1' } } }],
+        },
+        scopeCategories: {
+          create: [
+            expect.objectContaining({
+              menuCategory: { connect: { id: 'sides' } },
+              itemLimit: 2,
+              includedMenuItemIds: ['fries', 'wedges'],
+            }),
+          ],
+        },
+      }),
+    );
+  });
+
+  it('reorders only deals inside the selected restaurant scope', async () => {
+    const repository = {
+      findDealIdsInScope: jest
+        .fn()
+        .mockResolvedValue([{ id: 'deal-2' }, { id: 'deal-1' }]),
+      findAllDealIdsInScope: jest
+        .fn()
+        .mockResolvedValue([{ id: 'deal-1' }, { id: 'deal-2' }]),
+      reorderDeals: jest
+        .fn()
+        .mockResolvedValue([{ id: 'deal-2' }, { id: 'deal-1' }]),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.reorderDeals(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      { orderedDealIds: ['deal-2', 'deal-1'] },
+    );
+
+    expect(repository.reorderDeals).toHaveBeenCalledWith(['deal-2', 'deal-1']);
+  });
+
   it('passes campaign-only filters for promotion lists', async () => {
     const repository = {
       list: jest.fn().mockResolvedValue({

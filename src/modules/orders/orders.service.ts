@@ -1867,38 +1867,61 @@ export class OrdersService {
     );
 
     if (categoryScopes.length) {
-      const unitsByScope = categoryScopes.map((scope) =>
-        unitsForIndexes(
-          eligibleIndexes.filter((index) =>
-            this.quoteLineMatchesDealCategoryScope(lines[index], scope),
-          ),
-        ),
+      const remainingByIndex = new Map(
+        eligibleIndexes.map((index) => [index, lines[index].quantity]),
       );
+      const groups: Array<{
+        entries: Array<{ index: number; quantity: number }>;
+        quantity: number;
+      }> = [];
 
-      if (unitsByScope.some((scopeUnits) => !scopeUnits.length)) {
-        return [];
+      while (true) {
+        const selectedUnits: number[] = [];
+        const nextRemaining = new Map(remainingByIndex);
+        const takeUnit = (predicate: (index: number) => boolean) => {
+          const index = eligibleIndexes.find(
+            (candidateIndex) =>
+              (nextRemaining.get(candidateIndex) ?? 0) > 0 &&
+              predicate(candidateIndex),
+          );
+          if (index === undefined) {
+            return false;
+          }
+
+          nextRemaining.set(index, (nextRemaining.get(index) ?? 0) - 1);
+          selectedUnits.push(index);
+          return true;
+        };
+
+        const hasRequiredItems = pricing.menuItemIds.every((menuItemId) =>
+          takeUnit((index) => lines[index].menuItemId === menuItemId),
+        );
+        if (!hasRequiredItems) {
+          break;
+        }
+
+        const hasCategorySelections = categoryScopes.every((scope) =>
+          Array.from({ length: scope.itemLimit ?? 1 }).every(() =>
+            takeUnit((index) =>
+              this.quoteLineMatchesDealCategoryScope(lines[index], scope),
+            ),
+          ),
+        );
+        if (!hasCategorySelections) {
+          break;
+        }
+
+        remainingByIndex.clear();
+        nextRemaining.forEach((quantity, index) =>
+          remainingByIndex.set(index, quantity),
+        );
+        groups.push({
+          entries: compactEntries(selectedUnits),
+          quantity: 1,
+        });
       }
 
-      const groupCount = Math.min(
-        ...unitsByScope.map((scopeUnits, scopeIndex) =>
-          Math.floor(
-            scopeUnits.length / (categoryScopes[scopeIndex].itemLimit ?? 1),
-          ),
-        ),
-      );
-
-      return Array.from({ length: groupCount }, (_, groupIndex) => {
-        const groupUnits = unitsByScope.flatMap((scopeUnits, scopeIndex) => {
-          const itemLimit = categoryScopes[scopeIndex].itemLimit ?? 1;
-          const start = groupIndex * itemLimit;
-          return scopeUnits.slice(start, start + itemLimit);
-        });
-
-        return {
-          entries: compactEntries(groupUnits),
-          quantity: 1,
-        };
-      }).filter((group) => group.entries.length > 0);
+      return groups;
     }
 
     const requiredQuantity = pricing.requiredQuantity ?? 0;

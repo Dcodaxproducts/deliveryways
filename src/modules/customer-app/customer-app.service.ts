@@ -1016,7 +1016,10 @@ export class CustomerAppService {
       resolvedQuery.branchId,
       user,
     );
-    const promotions = promotionContext.promotions
+    const promotions = [
+      ...promotionContext.promotions,
+      ...promotionContext.happyHours,
+    ]
       .filter((promotion) => promotion.discountType !== 'FIXED_PRICE')
       .slice(0, query.limit);
     const translationContext = await this.loadTranslationContext(
@@ -1077,6 +1080,11 @@ export class CustomerAppService {
     );
     const deals = promotionContext.promotions
       .filter((promotion) => promotion.discountType === 'FIXED_PRICE')
+      .sort(
+        (left, right) =>
+          left.sortOrder - right.sortOrder ||
+          left.createdAt.getTime() - right.createdAt.getTime(),
+      )
       .slice(0, query.limit);
     const scopedMenuItemsById = await this.loadDealScopeMenuItems(
       resolvedQuery,
@@ -3851,14 +3859,37 @@ export class CustomerAppService {
             entry.menuCategory,
             entry.forcedVariationId ?? null,
           );
+          const includedMenuItemIds = this.readStringArrayJson(
+            entry.includedMenuItemIds,
+          );
+          const configuredExcludedMenuItemIds = this.readStringArrayJson(
+            entry.excludedMenuItemIds,
+          );
+          const eligibleMenuItemIds = (
+            includedMenuItemIds.length
+              ? eligibility.eligibleMenuItemIds.filter((id) =>
+                  includedMenuItemIds.includes(id),
+                )
+              : eligibility.eligibleMenuItemIds
+          ).filter((id) => !configuredExcludedMenuItemIds.includes(id));
 
           return {
             menuCategoryId: entry.menuCategory.id,
             itemLimit: entry.itemLimit ?? null,
             variationId: entry.forcedVariationId ?? null,
             variation: entry.forcedVariation ?? null,
-            eligibleMenuItemIds: eligibility.eligibleMenuItemIds,
-            excludedMenuItemIds: eligibility.excludedMenuItemIds,
+            eligibleMenuItemIds,
+            excludedMenuItemIds: [
+              ...new Set([
+                ...eligibility.excludedMenuItemIds,
+                ...configuredExcludedMenuItemIds,
+                ...eligibility.eligibleMenuItemIds.filter(
+                  (id) =>
+                    includedMenuItemIds.length &&
+                    !eligibleMenuItemIds.includes(id),
+                ),
+              ]),
+            ],
           };
         }) ?? [],
     };
@@ -3909,6 +3940,21 @@ export class CustomerAppService {
         (menuItemId) => !eligibleMenuItemIds.includes(menuItemId),
       ),
     };
+  }
+
+  private readStringArrayJson(value: Prisma.JsonValue | null | undefined) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return [
+      ...new Set(
+        value.filter(
+          (entry): entry is string =>
+            typeof entry === 'string' && entry.trim().length > 0,
+        ),
+      ),
+    ];
   }
 
   private async mapPublicCoupon(

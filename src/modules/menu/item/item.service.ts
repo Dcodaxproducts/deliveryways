@@ -1245,15 +1245,35 @@ export class MenuItemService {
         throw new BadRequestException('All items must be attached to the menu');
       }
 
-      const sortOrderByItemId = new Map(
-        dto.items.map((item) => [item.id, item.sortOrder]),
+      const requestedOrder = [...dto.items]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => item.id);
+      const requestedIdSet = new Set(requestedOrder);
+      const allLinks = await this.prisma.restaurantMenuItem.findMany({
+        where: { restaurantMenuId: dto.menuId },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        select: { id: true, menuItemId: true },
+      });
+      let requestedIndex = 0;
+      const completeLinks = allLinks.map((link) =>
+        requestedIdSet.has(link.menuItemId)
+          ? {
+              ...link,
+              menuItemId: requestedOrder[requestedIndex++],
+            }
+          : link,
+      );
+      const linkByMenuItemId = new Map(
+        allLinks.map((link) => [link.menuItemId, link]),
       );
 
       await this.prisma.$transaction(
-        links.map((link) =>
+        completeLinks.map((entry, sortOrder) =>
           this.prisma.restaurantMenuItem.update({
-            where: { id: link.id },
-            data: { sortOrder: sortOrderByItemId.get(link.menuItemId) ?? 0 },
+            where: {
+              id: linkByMenuItemId.get(entry.menuItemId)?.id ?? entry.id,
+            },
+            data: { sortOrder },
           }),
         ),
       );
@@ -1280,14 +1300,28 @@ export class MenuItemService {
         'write',
       );
 
-      const sortOrderById = new Map(
-        dto.items.map((item) => [item.id, item.sortOrder]),
+      const requestedOrder = [...dto.items]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => item.id);
+      const requestedIdSet = new Set(requestedOrder);
+      const allItems = await this.prisma.menuItem.findMany({
+        where: {
+          restaurantId: [...restaurantIds][0],
+          deletedAt: null,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true },
+      });
+      let requestedIndex = 0;
+      const completeOrder = allItems.map(({ id }) =>
+        requestedIdSet.has(id) ? requestedOrder[requestedIndex++] : id,
       );
+
       await this.prisma.$transaction(
-        items.map((item) =>
+        completeOrder.map((id, sortOrder) =>
           this.prisma.menuItem.update({
-            where: { id: item.id },
-            data: { sortOrder: sortOrderById.get(item.id) ?? 0 },
+            where: { id },
+            data: { sortOrder },
           }),
         ),
       );

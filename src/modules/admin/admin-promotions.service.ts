@@ -26,6 +26,7 @@ import {
   CreateAdminGiftCardDto,
   CreateAdminHappyHourDto,
   CreateAdminPromotionDto,
+  ReorderAdminDealsDto,
   UpdateAdminDealDto,
   UpdateAdminGiftCardDto,
   UpdateAdminHappyHourDto,
@@ -42,6 +43,8 @@ interface NormalizedDealCategoryScope {
   menuCategoryId: string;
   itemLimit?: number;
   variationId?: string;
+  includedMenuItemIds?: string[];
+  excludedMenuItemIds?: string[];
 }
 
 type PromotionDateInput = string | Date | null | undefined;
@@ -54,7 +57,7 @@ type AdminPromotionCreateInput = Omit<
 };
 type AdminPromotionListOptions = Pick<
   AdminPromotionListQuery,
-  'autoApply' | 'excludeDiscountType'
+  'autoApply' | 'excludeDiscountType' | 'sortDeals'
 >;
 
 @Injectable()
@@ -252,12 +255,49 @@ export class AdminPromotionsService {
         discountType: CouponDiscountType.FIXED_PRICE,
       },
       CouponCampaignKind.PROMOTION,
+      { sortDeals: true },
     );
 
     return {
       ...result,
       message: 'Deals fetched successfully',
     };
+  }
+
+  async reorderDeals(user: AuthUserContext, dto: ReorderAdminDealsDto) {
+    const scope = await this.resolveScope(user, dto.restaurantId, dto.branchId);
+    const orderedDealIds = [...new Set(dto.orderedDealIds)];
+    if (orderedDealIds.length !== dto.orderedDealIds.length) {
+      throw new BadRequestException('Deal order contains duplicate ids');
+    }
+
+    const scopedDeals = await this.adminPromotionsRepository.findDealIdsInScope(
+      scope,
+      orderedDealIds,
+    );
+    if (scopedDeals.length !== orderedDealIds.length) {
+      throw new ForbiddenException(
+        'One or more deals are outside the selected restaurant scope',
+      );
+    }
+
+    const allScopedDeals =
+      await this.adminPromotionsRepository.findAllDealIdsInScope(scope);
+    const orderedIdSet = new Set(orderedDealIds);
+    let replacementIndex = 0;
+    const completeOrder = allScopedDeals.map(({ id }) => {
+      if (!orderedIdSet.has(id)) {
+        return id;
+      }
+
+      const replacementId = orderedDealIds[replacementIndex];
+      replacementIndex += 1;
+      return replacementId;
+    });
+
+    const data =
+      await this.adminPromotionsRepository.reorderDeals(completeOrder);
+    return { data, message: 'Deals reordered successfully' };
   }
 
   async createGiftCard(user: AuthUserContext, dto: CreateAdminGiftCardDto) {
@@ -1139,10 +1179,14 @@ export class AdminPromotionsService {
     dto: {
       dealRequiredQuantity?: number;
       scopeCategories?: AdminDealCategoryScopeDto[];
+      scopeMenuItemId?: string;
+      scopeMenuItemIds?: string[];
     },
     existing?: {
       dealRequiredQuantity?: number | null;
       scopeCategories?: Array<{ itemLimit?: number | null }>;
+      scopeMenuItemId?: string | null;
+      scopeMenuItems?: Array<{ menuItem: { id: string } }>;
     },
   ) {
     if (dealSelectionMode !== CouponDealSelectionMode.FLEXIBLE_ITEMS) {
@@ -1154,10 +1198,31 @@ export class AdminPromotionsService {
     }
 
     if (dto.scopeCategories !== undefined) {
-      const requiredQuantity = dto.scopeCategories.reduce(
+      const categoryQuantity = dto.scopeCategories.reduce(
         (sum, entry) => sum + (entry.itemLimit ?? 0),
         0,
       );
+      const fixedItemQuantity =
+        categoryQuantity > 0
+          ? new Set(
+              (dto.scopeMenuItemId !== undefined ||
+              dto.scopeMenuItemIds !== undefined
+                ? [
+                    ...(dto.scopeMenuItemId ? [dto.scopeMenuItemId] : []),
+                    ...(dto.scopeMenuItemIds ?? []),
+                  ]
+                : [
+                    ...(existing?.scopeMenuItemId
+                      ? [existing.scopeMenuItemId]
+                      : []),
+                    ...(existing?.scopeMenuItems ?? []).map(
+                      (entry) => entry.menuItem.id,
+                    ),
+                  ]
+              ).filter(Boolean),
+            ).size
+          : 0;
+      const requiredQuantity = categoryQuantity + fixedItemQuantity;
 
       return requiredQuantity > 0 ? requiredQuantity : null;
     }
@@ -1166,10 +1231,23 @@ export class AdminPromotionsService {
       (sum, entry) => sum + (entry.itemLimit ?? 0),
       0,
     );
+    const existingFixedItemCount =
+      existingCategoryLimit > 0
+        ? new Set(
+            [
+              ...(existing?.scopeMenuItemId ? [existing.scopeMenuItemId] : []),
+              ...(existing?.scopeMenuItems ?? []).map(
+                (entry) => entry.menuItem.id,
+              ),
+            ].filter(Boolean),
+          ).size
+        : 0;
 
     return (
       existing?.dealRequiredQuantity ??
-      (existingCategoryLimit > 0 ? existingCategoryLimit : null)
+      (existingCategoryLimit > 0
+        ? existingCategoryLimit + existingFixedItemCount
+        : null)
     );
   }
 
@@ -1203,15 +1281,6 @@ export class AdminPromotionsService {
       if (!scopeIds.menuItemIds.length && !scopeIds.categoryIds.length) {
         throw new BadRequestException(
           'Flexible deals require menu item or category scope',
-        );
-      }
-
-      if (
-        scopeIds.menuItemIds.length &&
-        dealRequiredQuantity > scopeIds.menuItemIds.length
-      ) {
-        throw new BadRequestException(
-          'dealRequiredQuantity cannot exceed scoped menu item count',
         );
       }
 
@@ -1297,6 +1366,7 @@ export class AdminPromotionsService {
     dailyEndTime: string | null;
     dealSelectionMode?: CouponDealSelectionMode | null;
     dealRequiredQuantity?: number | null;
+    sortOrder?: number;
     isActive: boolean;
     branch?: { id: string; name: string } | null;
     restaurant?: { id: string; name: string } | null;
@@ -1306,6 +1376,8 @@ export class AdminPromotionsService {
     scopeCategories?: Array<{
       itemLimit?: number | null;
       forcedVariationId?: string | null;
+      includedMenuItemIds?: Prisma.JsonValue | null;
+      excludedMenuItemIds?: Prisma.JsonValue | null;
       forcedVariation?: { id: string; name: string } | null;
       menuCategory: { id: string; name: string };
     }>;
@@ -1346,6 +1418,7 @@ export class AdminPromotionsService {
       dailyEndTime: coupon.dailyEndTime,
       dealSelectionMode: coupon.dealSelectionMode ?? null,
       dealRequiredQuantity: coupon.dealRequiredQuantity ?? null,
+      sortOrder: coupon.sortOrder ?? 0,
       isActive: coupon.isActive,
       branch: coupon.branch ?? null,
       restaurant: coupon.restaurant ?? null,
@@ -1365,6 +1438,12 @@ export class AdminPromotionsService {
           itemLimit: entry.itemLimit ?? null,
           variationId: entry.forcedVariationId ?? null,
           variation: entry.forcedVariation ?? null,
+          includedMenuItemIds: this.readStringArrayJson(
+            entry.includedMenuItemIds,
+          ),
+          excludedMenuItemIds: this.readStringArrayJson(
+            entry.excludedMenuItemIds,
+          ),
         })) ?? [],
       createdAt: coupon.createdAt,
       updatedAt: coupon.updatedAt,
@@ -1453,6 +1532,8 @@ export class AdminPromotionsService {
         menuCategory: { id: string };
         itemLimit?: number | null;
         forcedVariationId?: string | null;
+        includedMenuItemIds?: Prisma.JsonValue | null;
+        excludedMenuItemIds?: Prisma.JsonValue | null;
       }>;
     },
   ) {
@@ -1463,11 +1544,19 @@ export class AdminPromotionsService {
             menuCategoryId: entry.menuCategoryId,
             itemLimit: entry.itemLimit,
             variationId: entry.variationId,
+            includedMenuItemIds: entry.includedMenuItemIds,
+            excludedMenuItemIds: entry.excludedMenuItemIds,
           }))
         : (existing?.scopeCategories ?? []).map((entry) => ({
             menuCategoryId: entry.menuCategory.id,
             itemLimit: entry.itemLimit ?? undefined,
             variationId: entry.forcedVariationId ?? undefined,
+            includedMenuItemIds: this.readStringArrayJson(
+              entry.includedMenuItemIds,
+            ),
+            excludedMenuItemIds: this.readStringArrayJson(
+              entry.excludedMenuItemIds,
+            ),
           }));
     const scopes = new Map<string, NormalizedDealCategoryScope>();
 
@@ -1482,6 +1571,20 @@ export class AdminPromotionsService {
           ? { itemLimit: entry.itemLimit }
           : {}),
         ...(entry.variationId ? { variationId: entry.variationId } : {}),
+        ...(entry.includedMenuItemIds?.length
+          ? {
+              includedMenuItemIds: [
+                ...new Set(entry.includedMenuItemIds.filter(Boolean)),
+              ],
+            }
+          : {}),
+        ...(entry.excludedMenuItemIds?.length
+          ? {
+              excludedMenuItemIds: [
+                ...new Set(entry.excludedMenuItemIds.filter(Boolean)),
+              ],
+            }
+          : {}),
       });
     }
 
@@ -1508,6 +1611,30 @@ export class AdminPromotionsService {
     }
 
     for (const rule of scopeCategoryRules.values()) {
+      const includedIds = rule.includedMenuItemIds ?? [];
+      const excludedIds = rule.excludedMenuItemIds ?? [];
+      const overlappingId = includedIds.find((id) => excludedIds.includes(id));
+      if (overlappingId) {
+        throw new BadRequestException(
+          'A deal item cannot be both included and excluded',
+        );
+      }
+
+      const scopedItemIds = [...new Set([...includedIds, ...excludedIds])];
+      if (scopedItemIds.length) {
+        const itemCount =
+          await this.adminPromotionsRepository.countActiveMenuItemsInCategory(
+            restaurantId,
+            rule.menuCategoryId,
+            scopedItemIds,
+          );
+        if (itemCount !== scopedItemIds.length) {
+          throw new BadRequestException(
+            'One or more deal category items were not found in restaurant',
+          );
+        }
+      }
+
       if (rule.variationId) {
         const variation =
           await this.adminPromotionsRepository.findActiveCategoryVariation(
@@ -1528,14 +1655,44 @@ export class AdminPromotionsService {
     rule?: NormalizedDealCategoryScope,
   ): Pick<
     Prisma.CouponScopeCategoryCreateWithoutCouponInput,
-    'itemLimit' | 'forcedVariation'
+    | 'itemLimit'
+    | 'forcedVariation'
+    | 'includedMenuItemIds'
+    | 'excludedMenuItemIds'
   > {
     return {
       ...(rule?.itemLimit !== undefined ? { itemLimit: rule.itemLimit } : {}),
       ...(rule?.variationId
         ? { forcedVariation: { connect: { id: rule.variationId } } }
         : {}),
+      ...(rule?.includedMenuItemIds?.length
+        ? {
+            includedMenuItemIds:
+              rule.includedMenuItemIds as Prisma.InputJsonValue,
+          }
+        : {}),
+      ...(rule?.excludedMenuItemIds?.length
+        ? {
+            excludedMenuItemIds:
+              rule.excludedMenuItemIds as Prisma.InputJsonValue,
+          }
+        : {}),
     };
+  }
+
+  private readStringArrayJson(value: Prisma.JsonValue | null | undefined) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return [
+      ...new Set(
+        value.filter(
+          (entry): entry is string =>
+            typeof entry === 'string' && entry.trim().length > 0,
+        ),
+      ),
+    ];
   }
 
   private hasScopeInput(dto: {
