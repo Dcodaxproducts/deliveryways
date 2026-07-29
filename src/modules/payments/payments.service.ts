@@ -24,6 +24,7 @@ import {
 import { PrismaService } from '../../database';
 import {
   AdminUpdatePaymentStatusDto,
+  ConfigureGlobalPayoutProviderDto,
   CreateRestaurantPayoutRequestDto,
   CreateRestaurantPayoutProviderRequestDto,
   CreateRestaurantProviderPayoutDto,
@@ -115,6 +116,21 @@ interface RestaurantPayoutProvidersSettings {
   >;
   configurations: Partial<
     Record<RestaurantPayoutProvider, RestaurantPayoutProviderConfiguration>
+  >;
+}
+
+interface GlobalPayoutProviderConfiguration {
+  provider: RestaurantPayoutProvider;
+  enabled: boolean;
+  publicDetails: Prisma.JsonObject;
+  encryptedCredentials: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+interface GlobalPayoutProvidersSettings {
+  configurations: Partial<
+    Record<RestaurantPayoutProvider, GlobalPayoutProviderConfiguration>
   >;
 }
 
@@ -1560,6 +1576,73 @@ export class PaymentsService {
     return {
       data: this.serializeRestaurantPayoutProviders(settings),
       message: 'Restaurant payout provider requests fetched successfully',
+    };
+  }
+
+  async getGlobalPayoutProviders(user: AuthUserContext) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    const settings = await this.readGlobalPayoutProviders();
+
+    return {
+      data: this.serializeGlobalPayoutProviders(settings),
+      message: 'Global payout providers fetched successfully',
+    };
+  }
+
+  async configureGlobalPayoutProvider(
+    user: AuthUserContext,
+    dto: ConfigureGlobalPayoutProviderDto,
+  ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    this.assertRestaurantPayoutProvider(dto.provider);
+
+    const current = await this.readGlobalPayoutProviders();
+    const existing = current.configurations[dto.provider];
+    const credentials = this.buildGlobalPayoutCredentials(dto, existing);
+    const now = new Date().toISOString();
+
+    if (dto.provider === RestaurantPayoutProvider.PAYPAL) {
+      await this.paypalPayoutsService.verifyCredentials({
+        clientId: credentials.clientId,
+        clientSecret: credentials.clientSecret,
+        recipientEmail: 'credential-verification@deliveryways.app',
+        environment:
+          credentials.environment === 'SANDBOX'
+            ? PaypalPayoutEnvironment.SANDBOX
+            : PaypalPayoutEnvironment.LIVE,
+      });
+    }
+
+    const configuration: GlobalPayoutProviderConfiguration = {
+      provider: dto.provider,
+      enabled: dto.enabled ?? existing?.enabled ?? true,
+      publicDetails: this.buildGlobalPayoutPublicDetails(dto, credentials),
+      encryptedCredentials: this.payoutCredentialsService.encrypt(
+        'GLOBAL',
+        dto.provider,
+        credentials,
+      ),
+      updatedAt: now,
+      updatedBy: user.uid,
+    };
+    const next: GlobalPayoutProvidersSettings = {
+      configurations: {
+        ...current.configurations,
+        [dto.provider]: configuration,
+      },
+    };
+
+    if (!this.globalSettingsService) {
+      throw new BadRequestException('Global settings service is unavailable');
+    }
+    await this.globalSettingsService.updatePayoutProviderSettings(
+      user,
+      next as unknown as Prisma.InputJsonValue,
+    );
+
+    return {
+      data: this.serializeGlobalPayoutProviders(next),
+      message: 'Global payout provider configured successfully',
     };
   }
 
@@ -3631,6 +3714,141 @@ export class PaymentsService {
           ),
           approvedAt: configuration.approvedAt,
           approvedBy: configuration.approvedBy,
+        })),
+    };
+  }
+
+  private async readGlobalPayoutProviders(): Promise<GlobalPayoutProvidersSettings> {
+    if (!this.globalSettingsService) {
+      throw new BadRequestException('Global settings service is unavailable');
+    }
+
+    const stored = await this.globalSettingsService.getPayoutProviderSettings();
+    const root = this.asJsonObject(stored);
+    const configurations = this.asJsonObject(root.configurations);
+    const result: GlobalPayoutProvidersSettings = { configurations: {} };
+
+    for (const provider of Object.values(RestaurantPayoutProvider)) {
+      const record = this.asJsonObject(configurations[provider]);
+      const updatedAt = this.readString(record.updatedAt);
+      const updatedBy = this.readString(record.updatedBy);
+      const encryptedCredentials = this.readString(record.encryptedCredentials);
+      if (!updatedAt || !updatedBy || !encryptedCredentials) {
+        continue;
+      }
+
+      result.configurations[provider] = {
+        provider,
+        enabled: this.readBoolean(record.enabled, false),
+        publicDetails: this.asJsonObject(record.publicDetails),
+        encryptedCredentials,
+        updatedAt,
+        updatedBy,
+      };
+    }
+
+    return result;
+  }
+
+  private buildGlobalPayoutCredentials(
+    dto: ConfigureGlobalPayoutProviderDto,
+    existing?: GlobalPayoutProviderConfiguration,
+  ): Record<string, string> {
+    const existingCredentials = existing
+      ? this.payoutCredentialsService.decrypt(
+          'GLOBAL',
+          dto.provider,
+          existing.encryptedCredentials,
+        )
+      : {};
+
+    if (dto.provider === RestaurantPayoutProvider.STRIPE) {
+      const secretKey =
+        this.resolveOptionalString(dto.stripeSecretKey) ??
+        this.readString(existingCredentials.secretKey);
+      const publishableKey =
+        this.resolveOptionalString(dto.stripePublishableKey) ??
+        this.readString(existingCredentials.publishableKey);
+      const webhookSecret =
+        this.resolveOptionalString(dto.stripeWebhookSecret) ??
+        this.readString(existingCredentials.webhookSecret);
+
+      if (!secretKey?.startsWith('sk_') || !publishableKey?.startsWith('pk_')) {
+        throw new BadRequestException(
+          'Valid Stripe secret and publishable keys are required',
+        );
+      }
+      if (webhookSecret && !webhookSecret.startsWith('whsec_')) {
+        throw new BadRequestException('Stripe webhook secret is invalid');
+      }
+
+      return {
+        secretKey,
+        publishableKey,
+        ...(webhookSecret ? { webhookSecret } : {}),
+      };
+    }
+
+    const clientId =
+      this.resolveOptionalString(dto.paypalClientId) ??
+      this.readString(existingCredentials.clientId);
+    const clientSecret =
+      this.resolveOptionalString(dto.paypalClientSecret) ??
+      this.readString(existingCredentials.clientSecret);
+    const environment =
+      dto.paypalEnvironment ??
+      (this.readString(
+        existingCredentials.environment,
+      ) as PaypalPayoutEnvironment | null) ??
+      PaypalPayoutEnvironment.LIVE;
+
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException(
+        'PayPal client ID and client secret are required',
+      );
+    }
+
+    return { clientId, clientSecret, environment };
+  }
+
+  private buildGlobalPayoutPublicDetails(
+    dto: ConfigureGlobalPayoutProviderDto,
+    credentials: Record<string, string>,
+  ): Prisma.JsonObject {
+    const note = this.resolveOptionalString(dto.note) ?? null;
+
+    if (dto.provider === RestaurantPayoutProvider.STRIPE) {
+      return {
+        secretKeyLast4: credentials.secretKey.slice(-4),
+        publishableKeyLast4: credentials.publishableKey.slice(-4),
+        webhookConfigured: Boolean(credentials.webhookSecret),
+        note,
+      };
+    }
+
+    return {
+      clientIdLast4: credentials.clientId.slice(-4),
+      environment: credentials.environment,
+      note,
+    };
+  }
+
+  private serializeGlobalPayoutProviders(
+    settings: GlobalPayoutProvidersSettings,
+  ) {
+    return {
+      configurations: Object.values(settings.configurations)
+        .filter(
+          (configuration): configuration is GlobalPayoutProviderConfiguration =>
+            configuration !== undefined,
+        )
+        .map((configuration) => ({
+          provider: configuration.provider,
+          enabled: configuration.enabled,
+          publicDetails: configuration.publicDetails,
+          credentialsConfigured: true,
+          updatedAt: configuration.updatedAt,
+          updatedBy: configuration.updatedBy,
         })),
     };
   }

@@ -147,6 +147,8 @@ describe('PaymentsService', () => {
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+      getPayoutProviderSettings: jest.fn().mockResolvedValue(null),
+      updatePayoutProviderSettings: jest.fn(),
       getPaymentMethods: jest.fn().mockResolvedValue({
         data: [
           { code: PaymentMethod.COD, label: 'Cash', isActive: true },
@@ -181,6 +183,120 @@ describe('PaymentsService', () => {
       transactionTx,
     };
   };
+
+  it('stores and returns only redacted global Stripe credentials', async () => {
+    const { service, globalSettingsService, payoutCredentialsService } =
+      makeService();
+
+    payoutCredentialsService.encrypt.mockReturnValue('encrypted-stripe');
+
+    const result = await service.configureGlobalPayoutProvider(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      {
+        provider: RestaurantPayoutProvider.STRIPE,
+        stripeSecretKey: 'sk_test_secret1234',
+        stripePublishableKey: 'pk_test_public5678',
+        stripeWebhookSecret: 'whsec_webhook9012',
+      },
+    );
+
+    expect(payoutCredentialsService.encrypt).toHaveBeenCalledWith(
+      'GLOBAL',
+      RestaurantPayoutProvider.STRIPE,
+      {
+        secretKey: 'sk_test_secret1234',
+        publishableKey: 'pk_test_public5678',
+        webhookSecret: 'whsec_webhook9012',
+      },
+    );
+    expect(
+      globalSettingsService.updatePayoutProviderSettings,
+    ).toHaveBeenCalled();
+    expect(result.data.configurations[0]).toMatchObject({
+      provider: RestaurantPayoutProvider.STRIPE,
+      credentialsConfigured: true,
+      publicDetails: {
+        secretKeyLast4: '1234',
+        publishableKeyLast4: '5678',
+        webhookConfigured: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('sk_test_secret1234');
+  });
+
+  it('preserves stored global PayPal credentials when masked fields stay blank', async () => {
+    const {
+      service,
+      globalSettingsService,
+      payoutCredentialsService,
+      paypalPayoutsService,
+    } = makeService();
+
+    globalSettingsService.getPayoutProviderSettings.mockResolvedValue({
+      configurations: {
+        PAYPAL: {
+          provider: RestaurantPayoutProvider.PAYPAL,
+          enabled: true,
+          publicDetails: {
+            clientIdLast4: '1234',
+            environment: PaypalPayoutEnvironment.SANDBOX,
+          },
+          encryptedCredentials: 'stored-paypal',
+          updatedAt: '2026-07-29T00:00:00.000Z',
+          updatedBy: 'super-admin-old',
+        },
+      },
+    });
+    payoutCredentialsService.decrypt.mockReturnValue({
+      clientId: 'paypal-client-1234',
+      clientSecret: 'paypal-secret-5678',
+      environment: PaypalPayoutEnvironment.SANDBOX,
+    });
+
+    await service.configureGlobalPayoutProvider(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      {
+        provider: RestaurantPayoutProvider.PAYPAL,
+        enabled: false,
+      },
+    );
+
+    expect(paypalPayoutsService.verifyCredentials).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: 'paypal-client-1234',
+        clientSecret: 'paypal-secret-5678',
+        environment: PaypalPayoutEnvironment.SANDBOX,
+      }),
+    );
+    expect(payoutCredentialsService.encrypt).toHaveBeenCalledWith(
+      'GLOBAL',
+      RestaurantPayoutProvider.PAYPAL,
+      {
+        clientId: 'paypal-client-1234',
+        clientSecret: 'paypal-secret-5678',
+        environment: PaypalPayoutEnvironment.SANDBOX,
+      },
+    );
+  });
+
+  it('rejects global payout configuration from non-super-admin users', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.getGlobalPayoutProviders({
+        uid: 'business-admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never),
+    ).rejects.toThrow(
+      'Only super admins can manage restaurant payment configuration',
+    );
+  });
 
   it('creates a Stripe payment intent for stripe attempts', async () => {
     const {
@@ -1132,6 +1248,66 @@ describe('PaymentsService', () => {
       clientSecret: 'pi_wallet_123_secret',
       publishableKey: 'pk_test_123',
       paymentIntentId: 'pi_wallet_123',
+    });
+  });
+
+  it('creates guest gift cards through online Stripe payment only', async () => {
+    const { service, prisma, paymentsRepository, stripePaymentsService } =
+      makeService();
+
+    prisma.branch.findFirst.mockResolvedValue({ id: 'branch-main-1' });
+    prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
+    paymentsRepository.createUnchecked.mockResolvedValue({
+      id: 'payment-gift-1',
+    });
+    stripePaymentsService.createPaymentIntent.mockResolvedValue({
+      id: 'pi_gift_123',
+      client_secret: 'pi_gift_123_secret',
+    });
+    paymentsRepository.updateStatus.mockResolvedValue({
+      id: 'payment-gift-1',
+      providerRef: 'pi_gift_123',
+    });
+
+    const result = await service.createGuestGiftCardPurchaseAttempt(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      },
+      {
+        amount: 50,
+        buyerEmail: 'guest@example.com',
+        title: 'Birthday',
+      },
+    );
+
+    expect(paymentsRepository.createUnchecked).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 'branch-main-1',
+        paymentMethod: PaymentMethod.STRIPE,
+        type: 'CHARGE',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        providerData: expect.objectContaining({
+          target: 'GUEST_GIFT_CARD_PURCHASE',
+          buyerEmail: 'guest@example.com',
+        }),
+      }),
+    );
+    expect(stripePaymentsService.createPaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 50,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        metadata: expect.objectContaining({
+          giftCardPurchase: 'true',
+          buyerEmail: 'guest@example.com',
+        }),
+      }),
+    );
+    expect(result.paymentSession).toEqual({
+      provider: 'stripe',
+      clientSecret: 'pi_gift_123_secret',
+      publishableKey: 'pk_test_123',
+      paymentIntentId: 'pi_gift_123',
     });
   });
 

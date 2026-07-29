@@ -2098,6 +2098,7 @@ model GlobalSetting {
   fontFamily                  String?               @map("font_family") @db.VarChar(100)
   notificationSettings        Json?                 @map("notification_settings")
   paymentMethods              Json?                 @map("payment_methods")
+  payoutProviderSettings      Json?                 @map("payout_provider_settings")
   taxTypes                    Json?                 @map("tax_types")
   productLabels               Json?                 @map("product_labels")
   landingPageSettings         Json?                 @map("landing_page_settings")

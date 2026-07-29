@@ -376,6 +376,61 @@ export class UpdateRestaurantPayoutProviderConfigurationDto {
   enabled!: boolean;
 }
 
+export class ConfigureGlobalPayoutProviderDto {
+  @ApiProperty({ enum: RestaurantPayoutProvider })
+  @IsEnum(RestaurantPayoutProvider)
+  provider!: RestaurantPayoutProvider;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  stripeSecretKey?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  stripePublishableKey?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  stripeWebhookSecret?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  paypalClientId?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  paypalClientSecret?: string;
+
+  @ApiPropertyOptional({
+    enum: PaypalPayoutEnvironment,
+    default: PaypalPayoutEnvironment.LIVE,
+  })
+  @IsOptional()
+  @IsEnum(PaypalPayoutEnvironment)
+  paypalEnvironment?: PaypalPayoutEnvironment;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class CreateRestaurantProviderPayoutDto {
   @ApiProperty({ enum: RestaurantPayoutProvider })
   @IsEnum(RestaurantPayoutProvider)

@@ -250,6 +250,34 @@ export class GlobalSettingsService {
     return data.cartExpiryMinutes;
   }
 
+  async getPayoutProviderSettings(): Promise<Prisma.JsonValue | null> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return data.payoutProviderSettings;
+  }
+
+  async updatePayoutProviderSettings(
+    user: AuthUserContext,
+    settings: Prisma.InputJsonValue,
+  ): Promise<Prisma.JsonValue | null> {
+    const data = await this.globalSettingsRepository.updateSingleton(
+      {
+        payoutProviderSettings: settings,
+        updatedBy: user.uid,
+      },
+      {
+        ...this.buildDefaultCreateInput(),
+        payoutProviderSettings: settings,
+        createdBy: user.uid,
+        updatedBy: user.uid,
+      },
+    );
+
+    return data.payoutProviderSettings;
+  }
+
   async getServiceChargeConfig(): Promise<ServiceChargeSettingsShape> {
     const data = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),
