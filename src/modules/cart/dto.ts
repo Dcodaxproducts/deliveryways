@@ -292,6 +292,16 @@ export class QuoteCartDto {
   @IsOptional()
   @IsString()
   deliveryAddressId?: string | null;
+
+  @ApiPropertyOptional({
+    type: GuestOrderDeliveryAddressDto,
+    description:
+      'Inline delivery address used to calculate an accurate guest cart quote.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestOrderDeliveryAddressDto)
+  guestDeliveryAddress?: GuestOrderDeliveryAddressDto;
 }
 
 export class CheckoutCartDto {

@@ -20,7 +20,11 @@ import {
 import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { ProfilesRepository } from '../profiles/profiles.repository';
 import { StorageService } from '../storage/storage.service';
-import { CreateOrderDto, QuoteOrderDto } from '../orders/dto';
+import {
+  CreateOrderDto,
+  GuestOrderDeliveryAddressDto,
+  QuoteOrderDto,
+} from '../orders/dto';
 import { OrdersService } from '../orders/orders.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
@@ -957,6 +961,7 @@ export class CartService {
       cart,
       requestedCustomerId,
       requestedRestaurantId,
+      dto.guestDeliveryAddress,
     );
     const quoteResponse = this.toCartQuoteResponse(quote.data);
     const displayCart = await this.buildCartResponse(cart);
@@ -2814,6 +2819,7 @@ export class CartService {
     cart: CartSnapshot,
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
+    guestDeliveryAddress?: GuestOrderDeliveryAddressDto,
   ) {
     try {
       return await this.quoteCartClearingStaleOrderTime(
@@ -2821,6 +2827,7 @@ export class CartService {
         cart,
         requestedCustomerId,
         requestedRestaurantId,
+        guestDeliveryAddress,
       );
     } catch (error) {
       if (
@@ -2840,7 +2847,7 @@ export class CartService {
 
       return this.ordersService.quoteForCouponValidation(
         user,
-        await this.toQuotePayload(quoteCart),
+        await this.toQuotePayload(quoteCart, guestDeliveryAddress),
       );
     }
   }
@@ -2850,11 +2857,12 @@ export class CartService {
     cart: CartSnapshot,
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
+    guestDeliveryAddress?: GuestOrderDeliveryAddressDto,
   ) {
     try {
       return await this.ordersService.quote(
         user,
-        await this.toQuotePayload(cart),
+        await this.toQuotePayload(cart, guestDeliveryAddress),
       );
     } catch (error) {
       if (
@@ -2874,7 +2882,7 @@ export class CartService {
 
       return this.ordersService.quote(
         user,
-        await this.toQuotePayload(refreshedCart),
+        await this.toQuotePayload(refreshedCart, guestDeliveryAddress),
       );
     }
   }
@@ -2987,7 +2995,10 @@ export class CartService {
     );
   }
 
-  private async toQuotePayload(cart: CartSnapshot): Promise<QuoteOrderDto> {
+  private async toQuotePayload(
+    cart: CartSnapshot,
+    guestDeliveryAddress?: GuestOrderDeliveryAddressDto,
+  ): Promise<QuoteOrderDto> {
     const orderType = this.toOrderTypeEnum(cart.orderType);
 
     return {
@@ -2996,9 +3007,10 @@ export class CartService {
       restaurantMenuId: cart.restaurantMenuId ?? undefined,
       orderType,
       deliveryAddressId:
-        cart.orderType === OrderType.DELIVERY
+        cart.orderType === OrderType.DELIVERY && !guestDeliveryAddress
           ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
           : undefined,
+      guestDeliveryAddress,
       couponCode: cart.couponCode ?? undefined,
       tipAmount: Number(cart.tipAmount),
       orderTime:

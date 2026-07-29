@@ -1,5 +1,5 @@
 import { ArgumentMetadata, ValidationPipe } from '@nestjs/common';
-import { AddCartItemDto } from './dto';
+import { AddCartItemDto, QuoteCartDto } from './dto';
 
 describe('Cart DTO validation', () => {
   const validationPipe = new ValidationPipe({
@@ -39,6 +39,33 @@ describe('Cart DTO validation', () => {
           modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
         },
       ],
+    });
+  });
+
+  it('allows an inline guest delivery address when quoting a cart', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          guestDeliveryAddress: {
+            street: 'Ghori Town Main Road',
+            houseNumber: '20',
+            postalCode: '45327',
+            city: 'Zone IV',
+            state: 'Islamabad',
+            country: 'Pakistan',
+            lat: '33.601',
+            lng: '73.167',
+          },
+        },
+        {
+          ...bodyMetadata,
+          metatype: QuoteCartDto,
+        },
+      ),
+    ).resolves.toMatchObject({
+      guestDeliveryAddress: {
+        postalCode: '45327',
+      },
     });
   });
 });

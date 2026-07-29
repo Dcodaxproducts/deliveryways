@@ -6115,6 +6115,81 @@ describe('CartService', () => {
     });
   });
 
+  it('quotes a guest cart with the submitted postal-code delivery address', async () => {
+    const { service, cartRepository, ordersService } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'guest-1',
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      customerNote: null,
+      tipAmount: new Prisma.Decimal(0),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    };
+    const guestDeliveryAddress = {
+      street: 'Ghori Town Main Road',
+      houseNumber: '20',
+      postalCode: '45327',
+      city: 'Zone IV',
+      state: 'Islamabad',
+      country: 'Pakistan',
+      lat: '33.601',
+      lng: '73.167',
+    };
+
+    cartRepository.findByCustomerId.mockResolvedValue(cart);
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([]);
+    ordersService.quote.mockResolvedValue({
+      data: {
+        subtotal: 11.5,
+        deliveryFee: 3,
+        serviceChargeAmount: 3,
+        totalAmount: 17.5,
+        payableAmount: 17.5,
+      },
+      message: 'Order quote generated successfully',
+    });
+
+    const result = await service.quote(
+      {
+        uid: 'guest-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { guestDeliveryAddress },
+    );
+
+    expect(ordersService.quote).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        deliveryAddressId: undefined,
+        guestDeliveryAddress,
+      }),
+    );
+    expect(result.data).toMatchObject({
+      deliveryFee: 3,
+      totalAmount: 17.5,
+    });
+  });
+
   it('updates cart address and returns refreshed quote', async () => {
     const { service, cartRepository, profilesRepository, ordersService } =
       makeService();
