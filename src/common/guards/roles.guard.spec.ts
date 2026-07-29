@@ -26,6 +26,16 @@ type PrismaMock = {
   staffUser: {
     findUnique: jest.Mock;
   };
+  restaurant?: {
+    findFirst: jest.Mock;
+  };
+  branch?: {
+    findFirst: jest.Mock;
+  };
+};
+
+type ScopeLookupArgs = {
+  where: { id: string };
 };
 
 describe('RolesGuard staff role permissions', () => {
@@ -61,15 +71,37 @@ describe('RolesGuard staff role permissions', () => {
       }),
     } as unknown as Reflector;
 
-    return new RolesGuard(reflector, prisma as never);
+    return new RolesGuard(reflector, {
+      restaurant: {
+        findFirst: jest.fn().mockImplementation((args: ScopeLookupArgs) => ({
+          id: args.where.id,
+          tenantId: 'tenant-1',
+        })),
+      },
+      branch: {
+        findFirst: jest.fn().mockImplementation((args: ScopeLookupArgs) => ({
+          id: args.where.id,
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+        })),
+      },
+      ...prisma,
+    } as never);
   };
 
-  const createContext = (user: TestUser): ExecutionContext =>
+  const createContext = (
+    user: TestUser,
+    request?: {
+      query?: Record<string, unknown>;
+      body?: Record<string, unknown>;
+      params?: Record<string, unknown>;
+    },
+  ): ExecutionContext =>
     ({
       getHandler: () => handler,
       getClass: () => controller,
       switchToHttp: () => ({
-        getRequest: () => ({ user }),
+        getRequest: () => ({ user, ...request }),
       }),
     }) as unknown as ExecutionContext;
 
@@ -90,11 +122,19 @@ describe('RolesGuard staff role permissions', () => {
     },
     isActive: true,
     deletedAt: null,
+    ownerUser: {
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+    },
     staffRole: {
       isActive: true,
       deletedAt: null,
       permissions,
       restaurantAccess: null,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
     },
   });
 
@@ -417,12 +457,205 @@ describe('RolesGuard staff role permissions', () => {
       method: RequestMethod.GET,
       prisma,
     });
+    const user: TestUser = { uid: 'staff-1', role: RolesEnum.STAFF };
 
     await expect(
       guard.canActivate(
-        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+        createContext(user, {
+          query: { restaurantId: 'restaurant-1' },
+        }),
       ),
     ).resolves.toBe(true);
+    expect(user).toMatchObject({
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+    });
+  });
+
+  it.each([
+    {
+      name: 'invoice history',
+      permission: 'reports-payouts',
+      controllerPath: 'admin/reports',
+      handlerPath: 'generated-invoices',
+    },
+    {
+      name: 'table reservations',
+      permission: 'table-reservations',
+      controllerPath: 'customer-app',
+      handlerPath: 'admin/table-reservations',
+    },
+  ])(
+    'hydrates selected restaurant tenant context for STAFF $name',
+    async ({ permission, controllerPath, handlerPath }) => {
+      const prisma: PrismaMock = {
+        staffUser: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(
+              activeStaffRole([{ access: permission, operations: ['read'] }]),
+            ),
+        },
+      };
+      const guard = createGuard({
+        roles: [
+          RolesEnum.SUPER_ADMIN,
+          RolesEnum.BUSINESS_ADMIN,
+          RolesEnum.BRANCH_ADMIN,
+        ],
+        controllerPath,
+        handlerPath,
+        method: RequestMethod.GET,
+        prisma,
+      });
+      const user: TestUser = { uid: 'staff-1', role: RolesEnum.STAFF };
+
+      await expect(
+        guard.canActivate(
+          createContext(user, {
+            query: { restaurantId: 'restaurant-1' },
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(user).toMatchObject({
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      });
+    },
+  );
+
+  it('denies STAFF requests outside assigned restaurants before service access', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'menu-management', operations: ['read'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'admin/deals',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { query: { restaurantId: 'restaurant-2' } },
+        ),
+      ),
+    ).rejects.toThrow('Staff account is not assigned to this restaurant');
+  });
+
+  it('keeps all-restaurants STAFF access inside the owner tenant', async () => {
+    const staff = {
+      ...activeStaffRole([{ access: 'menu-management', operations: ['read'] }]),
+      tenantId: null,
+      restaurantAccess: {
+        restaurantIds: [],
+        branchIds: [],
+        allRestaurants: true,
+        hasAllRestaurantsAccess: true,
+      },
+      staffRole: {
+        ...activeStaffRole([]).staffRole,
+        permissions: [{ access: 'menu-management', operations: ['read'] }],
+        tenantId: null,
+      },
+    };
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest.fn().mockResolvedValue(staff),
+      },
+      restaurant: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'admin/deals',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { query: { restaurantId: 'restaurant-from-another-tenant' } },
+        ),
+      ),
+    ).rejects.toThrow('Staff account is not assigned to this restaurant');
+    expect(prisma.restaurant?.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'restaurant-from-another-tenant',
+        deletedAt: null,
+        isActive: true,
+        tenantId: 'tenant-1',
+      },
+      select: { id: true, tenantId: true },
+    });
+  });
+
+  it('hydrates and validates selected branch context for STAFF requests', async () => {
+    const staff = {
+      ...activeStaffRole([
+        { access: 'table-reservations', operations: ['read'] },
+      ]),
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-1'],
+        allRestaurants: false,
+        hasAllRestaurantsAccess: false,
+      },
+    };
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest.fn().mockResolvedValue(staff),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'customer-app',
+      handlerPath: 'admin/table-reservations',
+      method: RequestMethod.GET,
+      prisma,
+    });
+    const user: TestUser = { uid: 'staff-1', role: RolesEnum.STAFF };
+
+    await expect(
+      guard.canActivate(
+        createContext(user, {
+          query: {
+            restaurantId: 'restaurant-1',
+            branchId: 'branch-1',
+          },
+        }),
+      ),
+    ).resolves.toBe(true);
+    expect(user).toMatchObject({
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      bid: 'branch-1',
+    });
   });
 
   it('allows STAFF to read group orders with main order-management permission', async () => {

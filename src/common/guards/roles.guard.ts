@@ -34,12 +34,40 @@ type StaffPermissionRecord = {
   restaurantAccess: Prisma.JsonValue;
   isActive: boolean;
   deletedAt: Date | null;
+  ownerUser: {
+    tenantId: string | null;
+    restaurantId: string | null;
+    branchId: string | null;
+  };
   staffRole: {
     isActive: boolean;
     deletedAt: Date | null;
     permissions: Prisma.JsonValue;
     restaurantAccess: Prisma.JsonValue;
+    tenantId: string | null;
+    restaurantId: string | null;
+    branchId: string | null;
   } | null;
+};
+
+type StaffRequestUser = {
+  uid?: string;
+  role?: string;
+  actorType?: string;
+  ownerUserId?: string;
+  staffRoleId?: string;
+  panelType?: string;
+  tid?: string | null;
+  rid?: string | null;
+  bid?: string | null;
+  restaurantAccess?: StaffRestaurantAccess | null;
+};
+
+type StaffGuardRequest = {
+  user?: StaffRequestUser;
+  params?: Record<string, unknown>;
+  query?: Record<string, unknown>;
+  body?: Record<string, unknown>;
 };
 
 @Injectable()
@@ -59,21 +87,8 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{
-      user?: {
-        uid?: string;
-        role?: string;
-        actorType?: string;
-        ownerUserId?: string;
-        staffRoleId?: string;
-        panelType?: string;
-        tid?: string | null;
-        rid?: string | null;
-        bid?: string | null;
-        restaurantAccess?: StaffRestaurantAccess | null;
-      };
-    }>();
-    if (await this.canStaffUseRolePermission(context, request.user)) {
+    const request = context.switchToHttp().getRequest<StaffGuardRequest>();
+    if (await this.canStaffUseRolePermission(context, request)) {
       return true;
     }
 
@@ -95,19 +110,9 @@ export class RolesGuard implements CanActivate {
 
   private async canStaffUseRolePermission(
     context: ExecutionContext,
-    user?: {
-      uid?: string;
-      role?: string;
-      actorType?: string;
-      ownerUserId?: string;
-      staffRoleId?: string;
-      panelType?: string;
-      tid?: string | null;
-      rid?: string | null;
-      bid?: string | null;
-      restaurantAccess?: StaffRestaurantAccess | null;
-    },
+    request: StaffGuardRequest,
   ): Promise<boolean> {
+    const user = request.user;
     if (!user?.uid || !this.isStaffActor(user)) {
       return false;
     }
@@ -124,12 +129,22 @@ export class RolesGuard implements CanActivate {
         restaurantAccess: true,
         isActive: true,
         deletedAt: true,
+        ownerUser: {
+          select: {
+            tenantId: true,
+            restaurantId: true,
+            branchId: true,
+          },
+        },
         staffRole: {
           select: {
             isActive: true,
             deletedAt: true,
             permissions: true,
             restaurantAccess: true,
+            tenantId: true,
+            restaurantId: true,
+            branchId: true,
           },
         },
       },
@@ -139,24 +154,26 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    this.attachStaffScopeToRequestUser(user, staff);
+    this.attachStaffIdentityToRequestUser(user, staff);
 
     const accessKeys = this.resolveRouteAccessKeys(context);
     if (!accessKeys.length) {
       return false;
     }
 
-    if (this.isEssentialStaffRead(context)) {
-      return true;
+    const canUsePermission =
+      this.isEssentialStaffRead(context) ||
+      this.hasPermission(
+        staff.staffRole.permissions,
+        accessKeys,
+        this.resolveRequiredOperation(context),
+      );
+    if (!canUsePermission) {
+      return false;
     }
 
-    const canUsePermission = this.hasPermission(
-      staff.staffRole.permissions,
-      accessKeys,
-      this.resolveRequiredOperation(context),
-    );
-
-    return canUsePermission;
+    await this.hydrateSelectedStaffScope(user, staff, request);
+    return true;
   }
 
   private isEssentialStaffRead(context: ExecutionContext): boolean {
@@ -173,16 +190,8 @@ export class RolesGuard implements CanActivate {
     );
   }
 
-  private attachStaffScopeToRequestUser(
-    user: {
-      ownerUserId?: string;
-      staffRoleId?: string;
-      panelType?: string;
-      tid?: string | null;
-      rid?: string | null;
-      bid?: string | null;
-      restaurantAccess?: StaffRestaurantAccess | null;
-    },
+  private attachStaffIdentityToRequestUser(
+    user: StaffRequestUser,
     staff: StaffPermissionRecord & {
       staffRole: NonNullable<StaffPermissionRecord['staffRole']>;
     },
@@ -190,12 +199,141 @@ export class RolesGuard implements CanActivate {
     user.ownerUserId = staff.ownerUserId;
     user.staffRoleId = staff.staffRoleId;
     user.panelType = staff.panelType;
-    user.tid = staff.tenantId;
-    user.rid = staff.restaurantId;
-    user.bid = staff.branchId;
+    user.tid =
+      staff.tenantId ??
+      staff.staffRole.tenantId ??
+      staff.ownerUser.tenantId ??
+      null;
+    user.rid =
+      staff.restaurantId ??
+      staff.staffRole.restaurantId ??
+      staff.ownerUser.restaurantId ??
+      null;
+    user.bid =
+      staff.branchId ??
+      staff.staffRole.branchId ??
+      staff.ownerUser.branchId ??
+      null;
     user.restaurantAccess =
       this.normalizeStaffRestaurantAccess(staff.restaurantAccess) ??
       this.normalizeStaffRestaurantAccess(staff.staffRole.restaurantAccess);
+  }
+
+  private async hydrateSelectedStaffScope(
+    user: StaffRequestUser,
+    staff: StaffPermissionRecord & {
+      staffRole: NonNullable<StaffPermissionRecord['staffRole']>;
+    },
+    request: StaffGuardRequest,
+  ): Promise<void> {
+    const access = user.restaurantAccess;
+    const allRestaurants =
+      access?.allRestaurants === true ||
+      access?.hasAllRestaurantsAccess === true;
+    const restaurantIds = new Set([
+      ...(access?.restaurantIds ?? []),
+      ...(staff.restaurantId ? [staff.restaurantId] : []),
+      ...(staff.staffRole.restaurantId ? [staff.staffRole.restaurantId] : []),
+    ]);
+    const branchIds = new Set([
+      ...(access?.branchIds ?? []),
+      ...(staff.branchId ? [staff.branchId] : []),
+      ...(staff.staffRole.branchId ? [staff.staffRole.branchId] : []),
+    ]);
+    const requestedRestaurantId = this.readRequestedScopeId(
+      request,
+      'restaurantId',
+    );
+    const requestedBranchId = this.readRequestedScopeId(request, 'branchId');
+    let restaurantId =
+      requestedRestaurantId ??
+      user.rid ??
+      (restaurantIds.size === 1 ? [...restaurantIds][0] : undefined);
+    const branchId =
+      requestedBranchId ??
+      user.bid ??
+      (branchIds.size === 1 ? [...branchIds][0] : undefined);
+
+    if (branchId) {
+      if (!allRestaurants && branchIds.size && !branchIds.has(branchId)) {
+        throw new ForbiddenException(
+          'Staff account is not assigned to this branch',
+        );
+      }
+
+      const branch = await this.prisma.branch.findFirst({
+        where: {
+          id: branchId,
+          deletedAt: null,
+          ...(user.tid ? { tenantId: user.tid } : {}),
+        },
+        select: { id: true, tenantId: true, restaurantId: true },
+      });
+      if (!branch) {
+        throw new ForbiddenException(
+          'Staff account is not assigned to this branch',
+        );
+      }
+      if (restaurantId && branch.restaurantId !== restaurantId) {
+        throw new ForbiddenException(
+          'Staff branch access does not match the selected restaurant',
+        );
+      }
+
+      restaurantId = branch.restaurantId;
+      user.bid = branch.id;
+      user.tid = branch.tenantId;
+    }
+
+    if (!restaurantId) {
+      return;
+    }
+    if (
+      !allRestaurants &&
+      restaurantIds.size > 0 &&
+      !restaurantIds.has(restaurantId)
+    ) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this restaurant',
+      );
+    }
+    if (!allRestaurants && restaurantIds.size === 0) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this restaurant',
+      );
+    }
+
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+        isActive: true,
+        ...(user.tid ? { tenantId: user.tid } : {}),
+      },
+      select: { id: true, tenantId: true },
+    });
+    if (!restaurant) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this restaurant',
+      );
+    }
+
+    user.tid = restaurant.tenantId;
+    user.rid = restaurant.id;
+  }
+
+  private readRequestedScopeId(
+    request: StaffGuardRequest,
+    key: 'restaurantId' | 'branchId',
+  ): string | undefined {
+    const value =
+      request.body?.[key] ?? request.query?.[key] ?? request.params?.[key];
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized || undefined;
   }
 
   private normalizeStaffRestaurantAccess(

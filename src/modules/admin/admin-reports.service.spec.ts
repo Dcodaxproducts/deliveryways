@@ -241,6 +241,35 @@ describe('AdminReportsService', () => {
     );
   });
 
+  it('lists generated invoice history for permission-authorized staff scope', async () => {
+    const repository = {
+      listGeneratedInvoices: jest.fn().mockResolvedValue([]),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    await service.listGeneratedInvoices(
+      {
+        uid: 'staff-1',
+        actorType: 'STAFF',
+        role: 'STAFF',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      {
+        restaurantId: 'restaurant-1',
+        kind: 'SUBSCRIPTION',
+      } as never,
+    );
+
+    expect(repository.listGeneratedInvoices).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        kind: 'SUBSCRIPTION',
+      }),
+    );
+  });
+
   it('returns generated invoice details for branch admin scope', async () => {
     const repository = {
       findInvoiceOrder: jest.fn().mockResolvedValue({

@@ -281,7 +281,7 @@ describe('AdminPromotionsService', () => {
     const createInput = createInputs[0];
 
     if (!createInput) {
-      throw new Error('Expected create input');
+      throw new BadRequestException('Expected create input');
     }
 
     expect(createInput.startsAt).toBeNull();
@@ -621,6 +621,39 @@ describe('AdminPromotionsService', () => {
       }),
     );
     expect(result.message).toBe('Deals fetched successfully');
+  });
+
+  it('lists deals for permission-authorized staff using hydrated restaurant scope', async () => {
+    const repository = {
+      list: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    await service.listDeals(
+      {
+        uid: 'staff-1',
+        actorType: 'STAFF',
+        role: 'STAFF',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      } as never,
+      {
+        restaurantId: 'restaurant-1',
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+    );
+
+    expect(repository.list).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        kind: CouponCampaignKind.PROMOTION,
+        discountType: CouponDiscountType.FIXED_PRICE,
+      }),
+    );
   });
 
   it('creates a mixed deal with fixed items and a selective repeatable category group', async () => {

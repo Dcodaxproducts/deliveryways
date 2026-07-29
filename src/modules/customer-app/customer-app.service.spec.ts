@@ -3249,6 +3249,35 @@ describe('CustomerAppService', () => {
     });
   });
 
+  it('lists table reservations for permission-authorized staff scope', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomersForTableReservations.mockResolvedValue([]);
+    repository.findBranchesPublicContent.mockResolvedValue([]);
+
+    await service.listAdminTableReservations(
+      {
+        uid: 'staff-1',
+        actorType: 'STAFF',
+        role: UserRoleEnum.STAFF,
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+      },
+      {
+        restaurantId: 'restaurant-1',
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      } as never,
+    );
+
+    expect(repository.findCustomersForTableReservations).toHaveBeenCalledWith({
+      restaurantId: 'restaurant-1',
+      customerId: undefined,
+      search: undefined,
+    });
+  });
+
   it('forces branch-admin reservation fetches to stay within assigned branch', async () => {
     const { service, repository } = makeService();
     repository.findCustomersForTableReservations.mockResolvedValue([
