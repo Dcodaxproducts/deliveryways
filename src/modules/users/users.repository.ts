@@ -220,10 +220,187 @@ export class UsersRepository {
   }
 
   async forceDeleteUsersByEmails(emails: string[]) {
-    return this.prisma.user.deleteMany({
-      where: {
-        email: { in: emails },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const users = await tx.user.findMany({
+        where: { email: { in: emails } },
+        select: { id: true },
+      });
+      const userIds = users.map((user) => user.id);
+
+      if (userIds.length === 0) {
+        return { count: 0 };
+      }
+
+      const [orders, hostedGroupOrders, ownedStaffRoles] = await Promise.all([
+        tx.order.findMany({
+          where: { customerId: { in: userIds } },
+          select: { id: true },
+        }),
+        tx.groupOrderSession.findMany({
+          where: { hostUserId: { in: userIds } },
+          select: { id: true },
+        }),
+        tx.staffRole.findMany({
+          where: { ownerUserId: { in: userIds } },
+          select: { id: true },
+        }),
+      ]);
+      const orderIds = orders.map((order) => order.id);
+      const hostedGroupOrderIds = hostedGroupOrders.map(
+        (session) => session.id,
+      );
+      const ownedStaffRoleIds = ownedStaffRoles.map((role) => role.id);
+
+      await tx.tenant.updateMany({
+        where: { ownerId: { in: userIds } },
+        data: { ownerId: null },
+      });
+      await tx.branch.updateMany({
+        where: { managerId: { in: userIds } },
+        data: { managerId: null },
+      });
+      await tx.inventoryMovement.updateMany({
+        where: { createdByUserId: { in: userIds } },
+        data: { createdByUserId: null },
+      });
+      await tx.contactSubmission.updateMany({
+        where: { customerId: { in: userIds } },
+        data: { customerId: null },
+      });
+      await tx.contactSubmission.updateMany({
+        where: { repliedById: { in: userIds } },
+        data: { repliedById: null },
+      });
+      await tx.posOrderDraft.updateMany({
+        where: { customerId: { in: userIds } },
+        data: { customerId: null },
+      });
+      await tx.groupOrderSession.updateMany({
+        where: { finalOrderId: { in: orderIds } },
+        data: { finalOrderId: null },
+      });
+      await tx.generatedInvoice.updateMany({
+        where: {
+          OR: [{ customerId: { in: userIds } }, { orderId: { in: orderIds } }],
+        },
+        data: {
+          customerId: null,
+          orderId: null,
+        },
+      });
+      await tx.restaurantWalletTransaction.updateMany({
+        where: { orderId: { in: orderIds } },
+        data: {
+          orderId: null,
+          paymentTransactionId: null,
+        },
+      });
+
+      await tx.pushDeviceToken.deleteMany({
+        where: { userId: { in: userIds } },
+      });
+      await tx.notification.deleteMany({
+        where: {
+          OR: [
+            { recipientUserId: { in: userIds } },
+            { orderId: { in: orderIds } },
+            {
+              paymentTransaction: {
+                orderId: { in: orderIds },
+              },
+            },
+          ],
+        },
+      });
+      await tx.chatMessage.updateMany({
+        where: { senderUserId: { in: userIds } },
+        data: { senderUserId: null },
+      });
+      await tx.chatThread.deleteMany({
+        where: {
+          OR: [{ customerId: { in: userIds } }, { orderId: { in: orderIds } }],
+        },
+      });
+
+      await tx.groupOrderParticipant.deleteMany({
+        where: { userId: { in: userIds } },
+      });
+      await tx.groupOrderSession.deleteMany({
+        where: { id: { in: hostedGroupOrderIds } },
+      });
+      await tx.couponUsage.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+      await tx.orderReview.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+      await tx.walletTransaction.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+      await tx.loyaltyTransaction.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+      await tx.walletAccount.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+      await tx.loyaltyAccount.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+
+      await tx.paymentTransaction.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
+      await tx.orderItem.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
+      await tx.order.deleteMany({
+        where: { id: { in: orderIds } },
+      });
+      await tx.cart.deleteMany({
+        where: { customerId: { in: userIds } },
+      });
+
+      const ownedStaffUsers = await tx.staffUser.findMany({
+        where: {
+          OR: [
+            { ownerUserId: { in: userIds } },
+            { staffRoleId: { in: ownedStaffRoleIds } },
+          ],
+        },
+        select: { id: true },
+      });
+      const ownedStaffUserIds = ownedStaffUsers.map(
+        (staffUser) => staffUser.id,
+      );
+
+      await tx.chatThread.updateMany({
+        where: { assignedStaffUserId: { in: ownedStaffUserIds } },
+        data: { assignedStaffUserId: null },
+      });
+      await tx.chatMessage.updateMany({
+        where: { senderStaffUserId: { in: ownedStaffUserIds } },
+        data: { senderStaffUserId: null },
+      });
+      await tx.staffUser.deleteMany({
+        where: { id: { in: ownedStaffUserIds } },
+      });
+      await tx.staffRole.deleteMany({
+        where: { id: { in: ownedStaffRoleIds } },
+      });
+
+      await tx.profile.deleteMany({
+        where: { userId: { in: userIds } },
+      });
+      await tx.address.deleteMany({
+        where: {
+          referenceId: { in: userIds },
+          refType: 'USER',
+        },
+      });
+
+      return tx.user.deleteMany({
+        where: { id: { in: userIds } },
+      });
     });
   }
 
