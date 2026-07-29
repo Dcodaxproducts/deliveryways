@@ -424,9 +424,12 @@ export class StaffManagementService {
 
     if (allRestaurants) {
       if (roleRestaurantIds.size > 0 || roleBranchIds.size > 0) {
-        throw new ForbiddenException(
-          'Staff account all-restaurants access must stay within the assigned role access',
-        );
+        return {
+          restaurantIds: [...roleRestaurantIds],
+          branchIds: [...roleBranchIds],
+          allRestaurants: false,
+          hasAllRestaurantsAccess: false,
+        } as Prisma.InputJsonValue;
       }
 
       return {

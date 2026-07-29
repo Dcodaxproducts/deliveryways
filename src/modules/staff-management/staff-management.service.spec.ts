@@ -506,4 +506,75 @@ describe('StaffManagementService', () => {
       expect.objectContaining({ allRestaurants: true }),
     );
   });
+
+  it('clamps all-restaurants staff access to the assigned role scope', async () => {
+    const staffRolesService = {
+      getManageableRoleOrThrow: jest.fn().mockResolvedValue({
+        id: 'role-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          branchIds: ['branch-1'],
+        },
+      }),
+    };
+    service = new StaffManagementService(
+      repository,
+      staffRolesService as unknown as StaffRolesService,
+    );
+    repository.findByEmail.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      id: 'staff-1',
+      email: 'employee@example.com',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-1'],
+        allRestaurants: false,
+        hasAllRestaurantsAccess: false,
+      },
+      deletedAt: null,
+      password: 'hashed-password',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      {
+        staffRoleId: 'role-1',
+        email: 'Employee@Example.com',
+        password: 'Employee@123',
+        firstName: 'New',
+        lastName: 'Employee',
+        allRestaurants: true,
+      },
+    );
+
+    expect(repository.create.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          branchIds: ['branch-1'],
+          allRestaurants: false,
+          hasAllRestaurantsAccess: false,
+        },
+      }),
+    );
+  });
 });

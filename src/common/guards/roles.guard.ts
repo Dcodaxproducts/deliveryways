@@ -376,7 +376,7 @@ export class RolesGuard implements CanActivate {
         ['employees', 'staff-roles', 'storefront-settings', 'settings'],
       ],
       ['admin/promotions', ['promotion-management', 'promotions']],
-      ['admin/deals', ['promotion-management', 'coupons', 'promotions']],
+      ['admin/deals', ['menu-management', 'menu', 'deals']],
       ['admin/loyalty', ['loyalty-program', 'customers']],
       ['admin/printing', ['auto-printing-pos', 'pos-management', 'pos']],
       ['admin/reports', ['reports-payouts', 'reports']],
@@ -392,6 +392,7 @@ export class RolesGuard implements CanActivate {
       ],
       ['coupons', ['promotion-management', 'coupons']],
       ['orders', ['order-management', 'orders']],
+      ['group-orders', ['order-management', 'orders']],
       ['pos', ['pos-management', 'pos', 'table-reservations']],
       [
         'payments',
@@ -407,6 +408,15 @@ export class RolesGuard implements CanActivate {
       [
         'localizations',
         ['content-management', 'storefront-settings', 'settings'],
+      ],
+      ['restaurants/:id/customer-app-faqs', ['content-management', 'faqs']],
+      [
+        'restaurants/:id/customer-app-content',
+        ['content-management', 'storefront-settings'],
+      ],
+      [
+        'restaurants/:id/legal-profile',
+        ['content-management', 'legal-profile'],
       ],
       [
         'menu',
