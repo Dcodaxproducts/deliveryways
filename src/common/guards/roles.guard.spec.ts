@@ -207,6 +207,47 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
+  it.each(['orders/trend', 'revenue/trend'])(
+    'allows STAFF with reports permission to read %s',
+    async (handlerPath) => {
+      const prisma: PrismaMock = {
+        staffUser: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(
+              activeStaffRole([
+                { access: 'reports-payouts', operations: ['read'] },
+              ]),
+            ),
+        },
+      };
+      const guard = createGuard({
+        roles: [
+          RolesEnum.SUPER_ADMIN,
+          RolesEnum.BUSINESS_ADMIN,
+          RolesEnum.BRANCH_ADMIN,
+        ],
+        controllerPath: 'admin/dashboard',
+        handlerPath,
+        method: RequestMethod.GET,
+        prisma,
+      });
+      const user: TestUser = { uid: 'staff-1', role: RolesEnum.STAFF };
+
+      await expect(
+        guard.canActivate(
+          createContext(user, {
+            query: { restaurantId: 'restaurant-1' },
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(user).toMatchObject({
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      });
+    },
+  );
+
   it('allows STAFF to read global settings as an essential app dependency', async () => {
     const prisma: PrismaMock = {
       staffUser: {

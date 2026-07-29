@@ -494,6 +494,14 @@ export class RolesGuard implements CanActivate {
   private addMappedAccessKeys(path: string, candidates: Set<string>): void {
     const mappings: Array<[string, string[]]> = [
       ['admin/dashboard/orders/stats', ['order-management', 'orders']],
+      [
+        'admin/dashboard/orders/trend',
+        ['reports-payouts', 'reports', 'order-management', 'orders'],
+      ],
+      [
+        'admin/dashboard/revenue/trend',
+        ['reports-payouts', 'reports', 'dashboard'],
+      ],
       ['admin/dashboard', ['dashboard', 'reports']],
       ['admin/global-settings', ['storefront-settings', 'settings']],
       ['restaurants/customer-app-content', ['storefront-settings']],
