@@ -1459,20 +1459,26 @@ describe('PaymentsService', () => {
     });
   });
 
-  it('encrypts PayPal credentials and returns only redacted request details', async () => {
-    const { service, prisma, payoutCredentialsService } = makeService();
+  it('lets only super admin configure encrypted PayPal credentials and returns redacted details', async () => {
+    const { service, prisma, payoutCredentialsService, paypalPayoutsService } =
+      makeService();
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       settings: {},
     });
     prisma.restaurant.update.mockResolvedValue({ id: 'restaurant-1' });
+    payoutCredentialsService.decrypt.mockReturnValue({
+      clientId: 'paypal-client-1234',
+      clientSecret: 'paypal-secret',
+      recipientEmail: 'owner@example.com',
+      environment: PaypalPayoutEnvironment.LIVE,
+    });
 
-    const result = await service.createRestaurantPayoutProviderRequest(
+    const result = await service.configureRestaurantPayoutProvider(
       {
-        uid: 'owner-1',
-        role: UserRoleEnum.BUSINESS_ADMIN,
-        tid: 'tenant-1',
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
       } as never,
       'restaurant-1',
       {
@@ -1494,20 +1500,46 @@ describe('PaymentsService', () => {
         environment: PaypalPayoutEnvironment.LIVE,
       },
     );
+    expect(paypalPayoutsService.verifyCredentials).toHaveBeenCalledWith({
+      clientId: 'paypal-client-1234',
+      clientSecret: 'paypal-secret',
+      recipientEmail: 'owner@example.com',
+      environment: PaypalPayoutEnvironment.LIVE,
+    });
     expect(result.data).toEqual(
       expect.objectContaining({
-        provider: RestaurantPayoutProvider.PAYPAL,
-        status: 'REQUESTED',
-        credentialsSubmitted: true,
-        publicDetails: {
-          clientIdLast4: '1234',
-          recipientEmail: 'owner@example.com',
-          environment: PaypalPayoutEnvironment.LIVE,
-        },
+        configurations: [
+          expect.objectContaining({
+            provider: RestaurantPayoutProvider.PAYPAL,
+            enabled: true,
+            credentialsConfigured: true,
+          }),
+        ],
       }),
     );
     expect(JSON.stringify(result.data)).not.toContain('paypal-secret');
     expect(JSON.stringify(result.data)).not.toContain('encrypted-credentials');
+  });
+
+  it('rejects restaurant owner payout credential configuration', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.configureRestaurantPayoutProvider(
+        {
+          uid: 'owner-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'restaurant-1',
+        {
+          provider: RestaurantPayoutProvider.STRIPE,
+          stripeAccountId: 'acct_restaurant',
+        },
+      ),
+    ).rejects.toThrow(
+      'Only super admins can manage restaurant payment configuration',
+    );
   });
 
   it('lets super admin disable an approved restaurant payout provider', async () => {

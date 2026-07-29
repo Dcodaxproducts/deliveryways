@@ -1563,16 +1563,13 @@ export class PaymentsService {
     };
   }
 
-  async createRestaurantPayoutProviderRequest(
+  async configureRestaurantPayoutProvider(
     user: AuthUserContext,
     restaurantId: string,
     dto: CreateRestaurantPayoutProviderRequestDto,
   ) {
-    if (user.role !== UserRoleEnum.BUSINESS_ADMIN) {
-      throw new ForbiddenException(
-        'Only restaurant business owners can submit payout provider requests',
-      );
-    }
+    this.assertSuperAdminPaymentConfigAccess(user);
+    this.assertRestaurantPayoutProvider(dto.provider);
 
     const restaurant = await this.requireRestaurantForPayments(
       user,
@@ -1584,26 +1581,75 @@ export class PaymentsService {
       user.uid,
       dto,
     );
+    const now = new Date().toISOString();
+    const configuration: RestaurantPayoutProviderConfiguration = {
+      provider: dto.provider,
+      enabled: true,
+      publicDetails: request.publicDetails,
+      encryptedCredentials: request.encryptedCredentials,
+      approvedAt: now,
+      approvedBy: user.uid,
+    };
+
+    if (dto.provider === RestaurantPayoutProvider.PAYPAL) {
+      await this.paypalPayoutsService.verifyCredentials(
+        this.readPaypalCredentials(restaurant.id, configuration),
+      );
+    }
+
+    const configuredRequest: RestaurantPayoutProviderRequest = {
+      ...request,
+      status: 'APPROVED',
+      reviewedAt: now,
+      reviewedBy: user.uid,
+      reviewNote: request.note,
+    };
     const nextSettings = this.writeRestaurantPayoutProviders(
       restaurant.settings,
       {
         ...current,
         requests: {
           ...current.requests,
-          [dto.provider]: request,
+          [dto.provider]: configuredRequest,
+        },
+        configurations: {
+          ...current.configurations,
+          [dto.provider]: configuration,
         },
       },
     );
 
+    const settingsWithStripe =
+      dto.provider === RestaurantPayoutProvider.STRIPE
+        ? this.writeRestaurantStripeSettings(nextSettings, {
+            ...this.readRestaurantStripeSettings(nextSettings),
+            accountId: this.readString(request.publicDetails.accountId),
+            payoutsEnabled: true,
+            onboardingComplete: true,
+            note: request.note,
+            updatedAt: now,
+            updatedBy: user.uid,
+          })
+        : nextSettings;
+
     await this.prisma.restaurant.update({
       where: { id: restaurant.id },
-      data: { settings: nextSettings as Prisma.InputJsonValue },
+      data: { settings: settingsWithStripe as Prisma.InputJsonValue },
       select: { id: true },
     });
 
     return {
-      data: this.serializeRestaurantPayoutProviderRequest(request),
-      message: 'Payout provider request submitted successfully',
+      data: this.serializeRestaurantPayoutProviders({
+        requests: {
+          ...current.requests,
+          [dto.provider]: configuredRequest,
+        },
+        configurations: {
+          ...current.configurations,
+          [dto.provider]: configuration,
+        },
+      }),
+      message: 'Payout provider configured successfully',
     };
   }
 
@@ -3497,8 +3543,10 @@ export class PaymentsService {
 
     if (dto.provider === RestaurantPayoutProvider.STRIPE) {
       const accountId = this.resolveOptionalString(dto.stripeAccountId);
-      if (!accountId) {
-        throw new BadRequestException('Stripe account ID is required');
+      if (!accountId?.startsWith('acct_')) {
+        throw new BadRequestException(
+          'A valid Stripe connected account ID is required',
+        );
       }
 
       return {

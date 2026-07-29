@@ -263,25 +263,6 @@ export class PaymentsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-  @Roles(RolesEnum.BUSINESS_ADMIN)
-  @Post('restaurants/:restaurantId/payout-provider-requests')
-  @ApiOperation({
-    summary: 'Submit Stripe or PayPal payout configuration for review',
-  })
-  createRestaurantPayoutProviderRequest(
-    @CurrentUser() user: AuthUserContext,
-    @Param('restaurantId') restaurantId: string,
-    @Body() dto: CreateRestaurantPayoutProviderRequestDto,
-  ) {
-    return this.paymentsService.createRestaurantPayoutProviderRequest(
-      user,
-      restaurantId,
-      dto,
-    );
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.SUPER_ADMIN)
   @Post('restaurants/:restaurantId/payout-provider-requests/:provider/approve')
   approveRestaurantPayoutProviderRequest(
@@ -295,6 +276,26 @@ export class PaymentsController {
       user,
       restaurantId,
       provider,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('restaurants/:restaurantId/payout-providers/configuration')
+  @ApiOperation({
+    summary:
+      'Configure encrypted Stripe or PayPal payout credentials for a restaurant',
+  })
+  configureRestaurantPayoutProvider(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: CreateRestaurantPayoutProviderRequestDto,
+  ) {
+    return this.paymentsService.configureRestaurantPayoutProvider(
+      user,
+      restaurantId,
       dto,
     );
   }
