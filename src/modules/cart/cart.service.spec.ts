@@ -17,6 +17,10 @@ describe('CartService', () => {
     const cartRepository = {
       findByCustomerId: jest.fn(),
       findActiveBranch: jest.fn(),
+      findPaymentSettingsForBranch: jest.fn().mockResolvedValue({
+        settings: null,
+        restaurant: { settings: null },
+      }),
       findRestaurantMenuById: jest.fn(),
       findMenuItemForCart: jest.fn(),
       findSplitSectionItems: jest.fn().mockResolvedValue([]),
@@ -61,6 +65,12 @@ describe('CartService', () => {
 
     const globalSettingsService = {
       getCartExpiryMinutes: jest.fn().mockResolvedValue(720),
+      getPaymentMethods: jest.fn().mockResolvedValue({
+        data: Object.values(PaymentMethodEnum).map((code) => ({
+          code,
+          isActive: true,
+        })),
+      }),
     };
 
     const service = new CartService(
@@ -82,6 +92,47 @@ describe('CartService', () => {
       globalSettingsService,
     };
   };
+
+  it('returns only platform, restaurant, and branch enabled POS methods', async () => {
+    const { service, cartRepository, globalSettingsService } = makeService();
+    cartRepository.findPaymentSettingsForBranch.mockResolvedValue({
+      settings: {
+        allowedPaymentMethods: [
+          PaymentMethodEnum.COD,
+          PaymentMethodEnum.STRIPE,
+        ],
+      },
+      restaurant: {
+        settings: {
+          payments: {
+            methods: {
+              allowedPaymentMethods: [
+                PaymentMethodEnum.COD,
+                PaymentMethodEnum.PAYPAL,
+              ],
+            },
+          },
+        },
+      },
+    });
+    globalSettingsService.getPaymentMethods.mockResolvedValue({
+      data: [
+        { code: PaymentMethodEnum.COD, isActive: true },
+        { code: PaymentMethodEnum.PAYPAL, isActive: true },
+        { code: PaymentMethodEnum.STRIPE, isActive: true },
+      ],
+    });
+
+    await expect(
+      (
+        service as unknown as {
+          resolveCartAvailablePaymentMethods: (
+            branchId: string,
+          ) => Promise<PaymentMethodEnum[]>;
+        }
+      ).resolveCartAvailablePaymentMethods('branch-1'),
+    ).resolves.toEqual([PaymentMethodEnum.COD]);
+  });
 
   const assertModifierSelectionLimits = (
     service: CartService,
@@ -819,6 +870,7 @@ describe('CartService', () => {
       totalAmount: 1050,
       payableAmount: 1050,
       couponCode: 'SAVE10',
+      availablePaymentMethods: Object.values(PaymentMethodEnum),
     });
     expect((result.data as { quote?: unknown }).quote).not.toHaveProperty(
       'chargeBreakdown',

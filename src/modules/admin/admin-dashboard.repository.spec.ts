@@ -39,4 +39,44 @@ describe('AdminDashboardRepository', () => {
     });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
+
+  it('counts all scoped employee roles including roles without employees', async () => {
+    const prisma = {
+      $transaction: jest.fn((queries: unknown[]) => Promise.resolve(queries)),
+      staffUser: {
+        count: jest.fn().mockReturnValueOnce(4).mockReturnValueOnce(3),
+        findMany: jest.fn().mockReturnValue([
+          {
+            staffRoleId: 'role-1',
+            staffRole: { name: 'Cashier' },
+          },
+          {
+            staffRoleId: 'role-1',
+            staffRole: { name: 'Cashier' },
+          },
+        ]),
+      },
+      staffRole: {
+        count: jest.fn().mockReturnValue(3),
+      },
+    };
+    const repository = new AdminDashboardRepository(prisma as never);
+
+    await expect(
+      repository.getEmployeesStats({ tenantId: 'tenant-1' }),
+    ).resolves.toMatchObject({
+      totalEmployees: 4,
+      activeEmployees: 3,
+      inactiveEmployees: 1,
+      totalRoles: 3,
+      roleBreakdown: [{ staffRoleId: 'role-1', name: 'Cashier', count: 2 }],
+    });
+
+    expect(prisma.staffRole.count).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        tenantId: 'tenant-1',
+      },
+    });
+  });
 });

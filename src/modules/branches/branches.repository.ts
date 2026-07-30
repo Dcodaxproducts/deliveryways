@@ -12,6 +12,52 @@ export class BranchesRepository {
     return tx ?? this.prisma;
   }
 
+  transaction<T>(callback: (tx: PrismaTx) => Promise<T>) {
+    return this.prisma.$transaction(callback);
+  }
+
+  findStaffBranchAccess(staffId: string) {
+    return this.prisma.staffUser.findUnique({
+      where: { id: staffId },
+      select: {
+        restaurantId: true,
+        branchId: true,
+        restaurantAccess: true,
+        isActive: true,
+        deletedAt: true,
+        staffRole: {
+          select: {
+            permissions: true,
+            restaurantAccess: true,
+            isActive: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+  }
+
+  findBranchTenant(id: string) {
+    return this.prisma.branch.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true },
+    });
+  }
+
+  findBranchRestaurant(id: string) {
+    return this.prisma.branch.findUnique({
+      where: { id },
+      select: { id: true, restaurantId: true },
+    });
+  }
+
+  findRestaurantInTenant(id: string, tenantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: { id, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+  }
+
   async create(
     payload: {
       tenantId: string;

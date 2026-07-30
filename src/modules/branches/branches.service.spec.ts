@@ -24,6 +24,13 @@ describe('BranchesService', () => {
       softDelete: jest.fn(),
       getDeleteSummary: jest.fn(),
       forceDelete: jest.fn(),
+      transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+        callback({}),
+      ),
+      findStaffBranchAccess: jest.fn(),
+      findBranchTenant: jest.fn(),
+      findBranchRestaurant: jest.fn(),
+      findRestaurantInTenant: jest.fn(),
     };
 
     const usersService = {
@@ -37,6 +44,9 @@ describe('BranchesService', () => {
       branch: { findUnique: jest.fn() },
       staffUser: { findUnique: jest.fn() },
     };
+    repository.findStaffBranchAccess.mockImplementation(
+      () => prisma.staffUser.findUnique() as Promise<unknown>,
+    );
 
     const storageService = {
       resolveViewUrl: jest.fn((value?: string | null) => value ?? null),
@@ -45,7 +55,6 @@ describe('BranchesService', () => {
     const service = new BranchesService(
       repository as never,
       usersService as never,
-      prisma as never,
       storageService as never,
     );
 
@@ -1136,6 +1145,102 @@ describe('BranchesService', () => {
       expect.objectContaining({ id: 'branch-2', name: 'Downtown' }),
     ]);
     expect(result.meta.total).toBe(1);
+  });
+
+  it('allows staff with branch management write permission to update an assigned branch', async () => {
+    const { service, repository, prisma } = makeService();
+    prisma.staffUser.findUnique.mockResolvedValue({
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-1'],
+      },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [
+          { access: 'branch-management', operations: ['read', 'update'] },
+        ],
+        restaurantAccess: null,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: null,
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    await expect(
+      service.updateOpeningHours(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          staffRoleId: 'role-1',
+        },
+        'branch-1',
+        {
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.MONDAY,
+              isClosed: false,
+              openTime: '09:00',
+              closeTime: '18:00',
+            },
+          ],
+        },
+      ),
+    ).resolves.toMatchObject({
+      message: 'Branch opening hours updated successfully',
+    });
+  });
+
+  it('rejects staff branch writes outside assigned branch ids', async () => {
+    const { service, repository, prisma } = makeService();
+    prisma.staffUser.findUnique.mockResolvedValue({
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-1'],
+      },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [
+          { access: 'branch-management', operations: ['read', 'update'] },
+        ],
+        restaurantAccess: null,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: null,
+    });
+
+    await expect(
+      service.updateOpeningHours(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          staffRoleId: 'role-1',
+        },
+        'branch-2',
+        { openingHours: [] },
+      ),
+    ).rejects.toThrow('Staff account is not assigned to this branch');
   });
 
   it('rejects staff branch list without branch management read permission', async () => {

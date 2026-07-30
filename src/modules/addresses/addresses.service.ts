@@ -26,12 +26,16 @@ export class AddressesService {
   ) {}
 
   async create(user: AuthUserContext, dto: CreateAddressDto, tx?: PrismaTx) {
-    const tenantId = this.getRequiredTenantId(user);
+    const scope = await this.resolveCustomerScope(
+      user,
+      dto.customerId,
+      dto.branchId,
+    );
 
     const data = await this.addressesRepository.create(
       {
-        tenantId,
-        referenceId: user.uid,
+        tenantId: scope.tenantId,
+        referenceId: scope.userId,
         refType: 'USER',
         street: dto.street,
         area: this.resolveHouseNumber(dto),
@@ -45,9 +49,11 @@ export class AddressesService {
       tx,
     );
 
-    const currentDefaultAddressId = await this.getDefaultAddressId(user.uid);
+    const currentDefaultAddressId = await this.getDefaultAddressId(
+      scope.userId,
+    );
     if (dto.isDefault || !currentDefaultAddressId) {
-      await this.setDefaultAddressId(user.uid, data.id);
+      await this.setDefaultAddressId(scope.userId, data.id);
     }
 
     return {
@@ -155,7 +161,15 @@ export class AddressesService {
     user: AuthUserContext,
     query: ListAddressesDto,
   ): Promise<ResolvedAddressListScope> {
-    if (!query.customerId || query.customerId === user.uid) {
+    return this.resolveCustomerScope(user, query.customerId, query.branchId);
+  }
+
+  private async resolveCustomerScope(
+    user: AuthUserContext,
+    customerId?: string,
+    branchId?: string,
+  ): Promise<ResolvedAddressListScope> {
+    if (!customerId || customerId === user.uid) {
       return {
         userId: user.uid,
         tenantId: this.getRequiredTenantId(user),
@@ -177,7 +191,7 @@ export class AddressesService {
         : this.getRequiredTenantId(user);
 
     const customer = await this.addressesRepository.findActiveCustomer(
-      query.customerId,
+      customerId,
       tenantId,
     );
 
@@ -192,16 +206,16 @@ export class AddressesService {
         );
       }
 
-      if (query.branchId && user.bid && query.branchId !== user.bid) {
+      if (branchId && user.bid && branchId !== user.bid) {
         throw new ForbiddenException(
           'You cannot access resources outside your branch',
         );
       }
     }
 
-    if (query.branchId) {
+    if (branchId) {
       const branch = await this.addressesRepository.findActiveBranch(
-        query.branchId,
+        branchId,
         user.role === UserRoleEnum.SUPER_ADMIN ? undefined : customer.tenantId,
       );
 

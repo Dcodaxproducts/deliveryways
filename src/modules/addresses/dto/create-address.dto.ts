@@ -10,6 +10,20 @@ import {
 } from 'class-validator';
 
 export class CreateAddressDto {
+  @ApiPropertyOptional({
+    description: 'Target customer id when an admin creates a POS address',
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional branch scope for admin POS address creation',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

@@ -10,7 +10,6 @@ import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
 import { buildPaginationMeta } from '../../common/utils';
-import { PrismaService } from '../../database';
 import { UsersService } from '../users/users.service';
 import { StorageService } from '../storage/storage.service';
 import { BranchesRepository } from './branches.repository';
@@ -109,7 +108,6 @@ export class BranchesService {
   constructor(
     private readonly branchesRepository: BranchesRepository,
     private readonly usersService: UsersService,
-    private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
   ) {}
 
@@ -232,7 +230,7 @@ export class BranchesService {
 
     const result = tx
       ? await operation(tx)
-      : await this.prisma.$transaction(async (trx) => operation(trx));
+      : await this.branchesRepository.transaction(operation);
 
     return {
       data: {
@@ -261,25 +259,31 @@ export class BranchesService {
       dto.restaurantId,
     );
 
-    const createdBranches = await this.prisma.$transaction(async (trx) => {
-      const results: Branch[] = [];
+    const createdBranches = await this.branchesRepository.transaction(
+      async (trx) => {
+        const results: Branch[] = [];
 
-      for (const item of dto.branches) {
-        const branchInput: CreateBranchDto = {
-          ...item,
-          restaurantId: effectiveRestaurantId,
-          settings: this.sanitizeBranchSettingsInput(
-            user,
-            item.settings,
-          ) as CreateBranchDto['settings'],
-        };
+        for (const item of dto.branches) {
+          const branchInput: CreateBranchDto = {
+            ...item,
+            restaurantId: effectiveRestaurantId,
+            settings: this.sanitizeBranchSettingsInput(
+              user,
+              item.settings,
+            ) as CreateBranchDto['settings'],
+          };
 
-        const branch = await this.create(user.tid as string, branchInput, trx);
-        results.push(branch);
-      }
+          const branch = await this.create(
+            user.tid as string,
+            branchInput,
+            trx,
+          );
+          results.push(branch);
+        }
 
-      return results;
-    });
+        return results;
+      },
+    );
 
     return {
       data: createdBranches.map((branch) =>
@@ -469,7 +473,11 @@ export class BranchesService {
   }
 
   private isStaff(user: AuthUserContext) {
-    return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
+    return (
+      user.actorType === 'STAFF' ||
+      user.role === UserRoleEnum.STAFF ||
+      Boolean(user.staffRoleId)
+    );
   }
 
   private async resolveStaffBranchAccess(
@@ -480,24 +488,7 @@ export class BranchesService {
       throw new ForbiddenException('Staff authentication is required');
     }
 
-    const staff = await this.prisma.staffUser.findUnique({
-      where: { id: user.uid },
-      select: {
-        restaurantId: true,
-        branchId: true,
-        restaurantAccess: true,
-        isActive: true,
-        deletedAt: true,
-        staffRole: {
-          select: {
-            permissions: true,
-            restaurantAccess: true,
-            isActive: true,
-            deletedAt: true,
-          },
-        },
-      },
-    });
+    const staff = await this.branchesRepository.findStaffBranchAccess(user.uid);
 
     if (
       !staff ||
@@ -778,7 +769,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
 
     const settings = this.readSettings(branch.settings);
     const holidayOpeningHours = this.normalizeHolidayOpeningHours(
@@ -847,7 +838,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
 
     const settings = this.readSettings(branch.settings);
     const data = await this.branchesRepository.update(
@@ -919,7 +910,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
 
     const settings = this.readSettings(branch.settings);
     const deliveryHours = this.normalizeOpeningHours(
@@ -958,7 +949,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
 
     const openingHours =
       dto.openingHours === undefined
@@ -1003,7 +994,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
 
     const settings = this.readSettings(branch.settings);
     const temporaryClosure = this.normalizeTemporaryClosure(dto);
@@ -1049,7 +1040,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
     const updateDto = this.resolveBranchUpdateDto(user, dto);
     const sanitizedSettings = this.sanitizeBranchSettingsInput(
       user,
@@ -1120,7 +1111,7 @@ export class BranchesService {
 
     const data = tx
       ? await operation(tx)
-      : await this.prisma.$transaction(async (trx) => operation(trx));
+      : await this.branchesRepository.transaction(operation);
 
     return {
       data: await this.resolveBranchMedia(
@@ -1158,10 +1149,7 @@ export class BranchesService {
       );
     }
 
-    const branch = await this.prisma.branch.findUnique({
-      where: { id },
-      select: { id: true, tenantId: true },
-    });
+    const branch = await this.branchesRepository.findBranchTenant(id);
 
     if (!branch) {
       throw new BadRequestException('Branch not found');
@@ -1199,7 +1187,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchWriteAccess(user, branch);
+    await this.assertBranchWriteAccess(user, branch);
 
     const data = await this.branchesRepository.update(
       id,
@@ -1285,10 +1273,7 @@ export class BranchesService {
       );
     }
 
-    const branch = await this.prisma.branch.findUnique({
-      where: { id },
-      select: { id: true, restaurantId: true },
-    });
+    const branch = await this.branchesRepository.findBranchRestaurant(id);
 
     if (!branch) {
       throw new BadRequestException('Branch not found');
@@ -1299,10 +1284,10 @@ export class BranchesService {
         throw new ForbiddenException('Tenant context is required');
       }
 
-      const restaurant = await this.prisma.restaurant.findFirst({
-        where: { id: branch.restaurantId, tenantId: user.tid, deletedAt: null },
-        select: { id: true },
-      });
+      const restaurant = await this.branchesRepository.findRestaurantInTenant(
+        branch.restaurantId,
+        user.tid,
+      );
 
       if (!restaurant) {
         throw new ForbiddenException(
@@ -1576,7 +1561,7 @@ export class BranchesService {
     }
   }
 
-  private assertBranchWriteAccess(
+  private async assertBranchWriteAccess(
     user: AuthUserContext,
     branch: { tenantId: string; restaurantId: string; id: string },
   ) {
@@ -1614,6 +1599,22 @@ export class BranchesService {
       if (scopedBranchId !== branch.id) {
         throw new ForbiddenException(
           'You cannot access resources outside your branch',
+        );
+      }
+
+      return;
+    }
+
+    if (this.isStaff(user)) {
+      const staffAccess = await this.resolveStaffBranchAccess(user, 'update');
+      this.resolveStaffRestaurantId(staffAccess, branch.restaurantId);
+
+      if (
+        staffAccess.branchIds.length > 0 &&
+        !staffAccess.branchIds.includes(branch.id)
+      ) {
+        throw new ForbiddenException(
+          'Staff account is not assigned to this branch',
         );
       }
 

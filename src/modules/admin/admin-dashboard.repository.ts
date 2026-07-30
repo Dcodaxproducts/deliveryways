@@ -125,6 +125,7 @@ export interface AdminDashboardEmployeesStats {
   totalEmployees: number;
   activeEmployees: number;
   inactiveEmployees: number;
+  totalRoles: number;
   roleBreakdown: Array<{
     staffRoleId: string | null;
     name: string;
@@ -563,7 +564,7 @@ export class AdminDashboardRepository {
     scope: AdminDashboardScope,
   ): Promise<AdminDashboardEmployeesStats> {
     const where = this.buildEmployeeWhere(scope);
-    const [totalEmployees, activeEmployees, employees] =
+    const [totalEmployees, activeEmployees, employees, totalRoles] =
       await this.prisma.$transaction([
         this.prisma.staffUser.count({ where }),
         this.prisma.staffUser.count({ where: { ...where, isActive: true } }),
@@ -577,6 +578,9 @@ export class AdminDashboardRepository {
               },
             },
           },
+        }),
+        this.prisma.staffRole.count({
+          where: this.buildStaffRoleWhere(scope),
         }),
       ]);
 
@@ -603,6 +607,7 @@ export class AdminDashboardRepository {
       totalEmployees,
       activeEmployees,
       inactiveEmployees: totalEmployees - activeEmployees,
+      totalRoles,
       roleBreakdown: Array.from(roleMap.values()).sort(
         (left, right) =>
           right.count - left.count || left.name.localeCompare(right.name),
@@ -1110,6 +1115,15 @@ export class AdminDashboardRepository {
   }
 
   private buildEmployeeWhere(scope: AdminDashboardScope) {
+    return {
+      deletedAt: null,
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      ...(scope.branchId ? { branchId: scope.branchId } : {}),
+    };
+  }
+
+  private buildStaffRoleWhere(scope: AdminDashboardScope) {
     return {
       deletedAt: null,
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),

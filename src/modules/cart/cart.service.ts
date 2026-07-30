@@ -17,7 +17,10 @@ import {
   PaymentMethodEnum,
   UserRoleEnum,
 } from '../../common/enums';
-import { isRestaurantMenuAvailableAt } from '../../common/utils';
+import {
+  isRestaurantMenuAvailableAt,
+  resolveAvailablePaymentMethods,
+} from '../../common/utils';
 import { ProfilesRepository } from '../profiles/profiles.repository';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -1681,6 +1684,8 @@ export class CartService {
     const alignedCartQuote = cartQuote
       ? this.alignQuoteSubtotalWithCartItems(cartQuote, annotatedDisplayItems)
       : null;
+    const availablePaymentMethods =
+      await this.resolveCartAvailablePaymentMethods(cart.branchId);
 
     return this.resolveMediaResponse({
       id: cart.id,
@@ -1697,10 +1702,18 @@ export class CartService {
       customerNote: cart.customerNote,
       note: cart.customerNote,
       items: annotatedDisplayItems,
+      availablePaymentMethods,
       ...(alignedCartQuote
         ? this.extractCartBillSummary(alignedCartQuote)
         : {}),
-      ...(alignedCartQuote ? { quote: alignedCartQuote } : {}),
+      ...(alignedCartQuote
+        ? {
+            quote: {
+              ...alignedCartQuote,
+              availablePaymentMethods,
+            },
+          }
+        : {}),
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
     });
@@ -2920,6 +2933,24 @@ export class CartService {
         throw fallbackError;
       }
     }
+  }
+
+  private async resolveCartAvailablePaymentMethods(branchId: string) {
+    const branch =
+      await this.cartRepository.findPaymentSettingsForBranch(branchId);
+    if (!branch) return [];
+
+    const globalMethods = this.globalSettingsService
+      ? (await this.globalSettingsService.getPaymentMethods()).data
+          .filter((method) => method.isActive)
+          .map((method) => method.code)
+      : Object.values(PaymentMethod);
+
+    return resolveAvailablePaymentMethods({
+      platformMethods: globalMethods,
+      restaurantSettings: branch.restaurant.settings,
+      branchSettings: branch.settings,
+    });
   }
 
   private async resolveMediaResponse<T>(data: T) {

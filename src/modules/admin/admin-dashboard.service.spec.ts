@@ -448,6 +448,7 @@ describe('AdminDashboardService', () => {
         totalEmployees: 12,
         activeEmployees: 10,
         inactiveEmployees: 2,
+        totalRoles: 3,
         roleBreakdown: [{ staffRoleId: 'role-1', name: 'Cashier', count: 5 }],
       }),
     };
@@ -469,6 +470,7 @@ describe('AdminDashboardService', () => {
         totalEmployees: 12,
         activeEmployees: 10,
         inactiveEmployees: 2,
+        totalRoles: 3,
         roleBreakdown: [{ staffRoleId: 'role-1', name: 'Cashier', count: 5 }],
       },
       message: 'Admin dashboard employee stats fetched successfully',

@@ -144,6 +144,80 @@ describe('AddressesService', () => {
     });
   });
 
+  it('allows business admin to create an address for a scoped POS customer', async () => {
+    const { service, addressesRepository, profilesRepository } = makeService();
+    addressesRepository.findActiveCustomer.mockResolvedValue({
+      id: 'customer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    addressesRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+    });
+    addressesRepository.create.mockResolvedValue({
+      id: 'address-1',
+      area: '12',
+    });
+    profilesRepository.findByUserId.mockResolvedValue(null);
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        customerId: 'customer-1',
+        branchId: 'branch-1',
+        street: 'Main Street',
+        houseNumber: '12',
+        postalCode: '10115',
+        city: 'Berlin',
+        state: 'Berlin',
+        country: 'Germany',
+        lat: '52.5200',
+        lng: '13.4050',
+      },
+    );
+
+    expect(addressesRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        referenceId: 'customer-1',
+      }),
+      undefined,
+    );
+    expect(profilesRepository.upsertMetadata).toHaveBeenCalledWith(
+      'customer-1',
+      { defaultAddressId: 'address-1' },
+    );
+  });
+
+  it('blocks customers from creating addresses for another customer', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.create(
+        {
+          uid: 'customer-1',
+          tid: 'tenant-1',
+          role: 'CUSTOMER',
+        } as never,
+        {
+          customerId: 'customer-2',
+          street: 'Main Street',
+          city: 'Berlin',
+          state: 'Berlin',
+          country: 'Germany',
+          lat: '52.5200',
+          lng: '13.4050',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('enforces optional branch scope for business admin customer address fetch', async () => {
     const { service, addressesRepository } = makeService();
     addressesRepository.findActiveCustomer.mockResolvedValue({

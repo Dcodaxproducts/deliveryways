@@ -155,6 +155,24 @@ export class CartRepository {
     });
   }
 
+  async findPaymentSettingsForBranch(branchId: string) {
+    return this.prisma.branch.findFirst({
+      where: {
+        id: branchId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        settings: true,
+        restaurant: {
+          select: {
+            settings: true,
+          },
+        },
+      },
+    });
+  }
+
   async findRestaurantMenuById(restaurantMenuId: string, restaurantId: string) {
     return this.prisma.restaurantMenu.findFirst({
       where: {
