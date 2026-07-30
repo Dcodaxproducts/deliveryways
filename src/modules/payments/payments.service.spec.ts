@@ -167,6 +167,7 @@ describe('PaymentsService', () => {
     };
     const mailerService = {
       sendEmail: jest.fn().mockResolvedValue(undefined),
+      sendTransactionalEmail: jest.fn().mockResolvedValue(undefined),
     };
 
     const service = new PaymentsService(
@@ -1206,10 +1207,15 @@ describe('PaymentsService', () => {
     await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
 
     expect(transactionTx.coupon.create).toHaveBeenCalledTimes(1);
-    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+    expect(mailerService.sendTransactionalEmail).toHaveBeenCalledWith(
       'recipient@example.com',
-      'Buyer Name sent you a DeliveryWays gift card',
-      expect.stringContaining('Gift card code: GIFT-ABC123'),
+      expect.objectContaining({
+        template: 'giftCard',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        variables: expect.objectContaining({
+          code: 'GIFT-ABC123',
+        }),
+      }),
     );
     expect(paymentsRepository.updateStatus).toHaveBeenLastCalledWith(
       'payment-gift-1',
@@ -1261,10 +1267,15 @@ describe('PaymentsService', () => {
     await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
 
     expect(transactionTx.coupon.create).not.toHaveBeenCalled();
-    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+    expect(mailerService.sendTransactionalEmail).toHaveBeenCalledWith(
       'recipient@example.com',
-      expect.any(String),
-      expect.stringContaining('Gift card code: GIFT-EXISTING'),
+      expect.objectContaining({
+        template: 'giftCard',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        variables: expect.objectContaining({
+          code: 'GIFT-EXISTING',
+        }),
+      }),
     );
   });
 

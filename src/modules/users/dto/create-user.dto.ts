@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsEmail,
   IsInt,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -38,6 +39,11 @@ export class CreateUserProfileDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ enum: ['de', 'en'] })
+  @IsOptional()
+  @IsIn(['de', 'en'])
+  locale?: 'de' | 'en';
 }
 
 export class CreateUserDto {

@@ -88,6 +88,70 @@ class NotificationTypesDto {
   payoutUpdate?: NotificationChannelPreferenceDto;
 }
 
+class LocalizedEmailTemplateDto {
+  @ApiPropertyOptional({ example: 'Bestellbestätigung {{orderNumber}}' })
+  @IsString()
+  @MaxLength(500)
+  subject!: string;
+
+  @ApiPropertyOptional({
+    example: 'Hallo {{customerName}}, Ihre Bestellung wurde bestätigt.',
+  })
+  @IsString()
+  @MaxLength(20000)
+  body!: string;
+}
+
+class BilingualEmailTemplateDto {
+  @ApiPropertyOptional({ type: LocalizedEmailTemplateDto })
+  @ValidateNested()
+  @Type(() => LocalizedEmailTemplateDto)
+  de!: LocalizedEmailTemplateDto;
+
+  @ApiPropertyOptional({ type: LocalizedEmailTemplateDto })
+  @ValidateNested()
+  @Type(() => LocalizedEmailTemplateDto)
+  en!: LocalizedEmailTemplateDto;
+}
+
+class CustomerEmailTemplatesDto {
+  @ApiPropertyOptional({ type: BilingualEmailTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BilingualEmailTemplateDto)
+  verification?: BilingualEmailTemplateDto;
+
+  @ApiPropertyOptional({ type: BilingualEmailTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BilingualEmailTemplateDto)
+  passwordReset?: BilingualEmailTemplateDto;
+
+  @ApiPropertyOptional({ type: BilingualEmailTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BilingualEmailTemplateDto)
+  orderConfirmation?: BilingualEmailTemplateDto;
+
+  @ApiPropertyOptional({ type: BilingualEmailTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BilingualEmailTemplateDto)
+  orderStatus?: BilingualEmailTemplateDto;
+
+  @ApiPropertyOptional({ type: BilingualEmailTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BilingualEmailTemplateDto)
+  paymentStatus?: BilingualEmailTemplateDto;
+
+  @ApiPropertyOptional({ type: BilingualEmailTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BilingualEmailTemplateDto)
+  giftCard?: BilingualEmailTemplateDto;
+}
+
 class NotificationSettingsDto {
   @ApiPropertyOptional({ example: 'jhondoe@example.com' })
   @IsOptional()
@@ -112,6 +176,12 @@ class NotificationSettingsDto {
   @ValidateNested()
   @Type(() => NotificationTypesDto)
   notificationTypes?: NotificationTypesDto;
+
+  @ApiPropertyOptional({ type: CustomerEmailTemplatesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomerEmailTemplatesDto)
+  emailTemplates?: CustomerEmailTemplatesDto;
 }
 
 class LandingPageSocialLinksDto {

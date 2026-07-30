@@ -56,6 +56,7 @@ import { RestaurantsService } from '../restaurants/restaurants.service';
 import { BranchesService } from '../branches/branches.service';
 import { UsersService } from '../users/users.service';
 import { MailerService } from '../mailer/mailer.service';
+import { resolveCustomerEmailLocale } from '../global-settings/email-templates';
 import { StaffManagementRepository } from '../staff-management/staff-management.repository';
 import { StorageService } from '../storage/storage.service';
 
@@ -557,7 +558,8 @@ export class AuthService {
     };
   }
 
-  async registerCustomer(dto: RegisterCustomerDto) {
+  async registerCustomer(dto: RegisterCustomerDto, locale?: string) {
+    const customerLocale = resolveCustomerEmailLocale(locale, 'de');
     const restaurant = await this.prisma.restaurant.findFirst({
       where: {
         id: dto.restaurantId,
@@ -607,6 +609,7 @@ export class AuthService {
             firstName: dto.firstName,
             lastName: dto.lastName,
             phone: dto.phone,
+            locale: customerLocale,
           },
         },
         tx,
@@ -619,6 +622,7 @@ export class AuthService {
         await this.mailerService.sendVerificationEmail(
           dto.email,
           verificationOtp,
+          customerLocale,
         );
         verificationEmailSent = true;
       } catch (error) {
@@ -665,7 +669,8 @@ export class AuthService {
     };
   }
 
-  async registerGuestCustomer(dto: RegisterGuestCustomerDto) {
+  async registerGuestCustomer(dto: RegisterGuestCustomerDto, locale?: string) {
+    const customerLocale = resolveCustomerEmailLocale(locale, 'de');
     const restaurant = await this.prisma.restaurant.findFirst({
       where: {
         id: dto.restaurantId,
@@ -701,6 +706,7 @@ export class AuthService {
             firstName: dto.firstName?.trim() || 'Guest',
             lastName: dto.lastName?.trim() || 'Customer',
             phone: dto.phone,
+            locale: customerLocale,
           },
         },
         tx,
@@ -1797,14 +1803,14 @@ export class AuthService {
     });
   }
 
-  async forgotPassword(dto: ForgotPasswordDto) {
-    return this.issuePasswordResetOtp(dto);
+  async forgotPassword(dto: ForgotPasswordDto, locale?: string) {
+    return this.issuePasswordResetOtp(dto, locale);
   }
 
-  async resendOtp(dto: ResendOtpDto) {
+  async resendOtp(dto: ResendOtpDto, locale?: string) {
     return dto.purpose === OtpPurposeEnum.VERIFICATION
-      ? this.issueVerificationOtp(dto)
-      : this.issuePasswordResetOtp(dto);
+      ? this.issueVerificationOtp(dto, locale)
+      : this.issuePasswordResetOtp(dto, locale);
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -2161,6 +2167,10 @@ export class AuthService {
     const emailPrefix = dbUser.email.split('@')[0] || 'user';
 
     if (dbUser.profile) {
+      const metadata = this.mergeProfileLocale(
+        dbUser.profile.metadata,
+        dto.locale,
+      );
       await this.prisma.profile.update({
         where: { id: dbUser.profile.id },
         data: {
@@ -2169,6 +2179,7 @@ export class AuthService {
           avatarUrl: dto.avatarUrl,
           phone: dto.phone,
           bio: dto.bio,
+          metadata,
         },
       });
     } else {
@@ -2180,6 +2191,7 @@ export class AuthService {
           avatarUrl: dto.avatarUrl,
           phone: dto.phone,
           bio: dto.bio,
+          metadata: dto.locale ? { locale: dto.locale } : undefined,
         },
       });
     }
@@ -2690,6 +2702,7 @@ export class AuthService {
 
   private async issueVerificationOtp(
     dto: Pick<ResendOtpDto, 'email' | 'restaurantId'>,
+    requestedLocale?: string,
   ) {
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
@@ -2715,7 +2728,11 @@ export class AuthService {
     );
 
     if (emailEnabled) {
-      await this.mailerService.sendVerificationEmail(dto.email, otp);
+      await this.mailerService.sendVerificationEmail(
+        dto.email,
+        otp,
+        this.readProfileLocale(user.profile?.metadata) ?? requestedLocale,
+      );
     }
 
     return {
@@ -2729,6 +2746,7 @@ export class AuthService {
 
   private async issuePasswordResetOtp(
     dto: Pick<ForgotPasswordDto, 'email' | 'restaurantId'>,
+    requestedLocale?: string,
   ) {
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
     const shouldExposeDevToken = this.shouldExposeDevToken(emailEnabled);
@@ -2749,7 +2767,15 @@ export class AuthService {
     }
 
     if (emailEnabled) {
-      await this.mailerService.sendPasswordResetEmail(dto.email, otp);
+      const user = await this.usersService.findByEmail(
+        dto.email,
+        dto.restaurantId,
+      );
+      await this.mailerService.sendPasswordResetEmail(
+        dto.email,
+        otp,
+        this.readProfileLocale(user?.profile?.metadata) ?? requestedLocale,
+      );
     }
 
     return {
@@ -2763,6 +2789,35 @@ export class AuthService {
 
   private generateGuestEmail(restaurantId: string): string {
     return `guest+${restaurantId}+${Date.now()}-${randomBytes(4).toString('hex')}@guest.deliveryways.local`;
+  }
+
+  private mergeProfileLocale(
+    metadata: Prisma.JsonValue | null | undefined,
+    locale: 'de' | 'en' | undefined,
+  ): Prisma.InputJsonValue | undefined {
+    if (!locale) {
+      return undefined;
+    }
+
+    const current =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? metadata
+        : {};
+    return {
+      ...current,
+      locale,
+    } as Prisma.InputJsonValue;
+  }
+
+  private readProfileLocale(
+    metadata: Prisma.JsonValue | null | undefined,
+  ): string | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+
+    const locale = (metadata as Record<string, unknown>).locale;
+    return typeof locale === 'string' ? locale : null;
   }
 
   private generateOtp(): string {

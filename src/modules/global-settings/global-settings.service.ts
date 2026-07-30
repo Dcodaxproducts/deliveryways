@@ -18,6 +18,11 @@ import {
   UpdateGlobalSettingsDto,
   UpdateGlobalTaxTypesDto,
 } from './dto';
+import {
+  CustomerEmailTemplates,
+  normalizeCustomerEmailTemplates,
+  validateCustomerEmailTemplates,
+} from './email-templates';
 import { sanitizeLandingContentHtml } from './landing-page-content.util';
 
 export interface NotificationChannelMatrix {
@@ -38,6 +43,7 @@ export interface NotificationSettingsShape {
     | 'payoutUpdate',
     NotificationChannelMatrix
   >;
+  emailTemplates: CustomerEmailTemplates;
 }
 
 export interface PaymentMethodSettingsShape {
@@ -240,6 +246,21 @@ export class GlobalSettingsService {
     );
 
     return data.defaultCurrency.trim().toUpperCase();
+  }
+
+  async getCustomerEmailConfiguration(): Promise<{
+    defaultLanguage: string;
+    templates: CustomerEmailTemplates;
+  }> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return {
+      defaultLanguage: data.defaultLanguage,
+      templates: this.extractNotificationSettings(data.notificationSettings)
+        .emailTemplates,
+    };
   }
 
   async getCartExpiryMinutes(): Promise<number> {
@@ -620,6 +641,7 @@ export class GlobalSettingsService {
       phoneNumber: null,
       whatsappNumber: null,
       notificationTypes: this.defaultNotificationTypeMatrix(),
+      emailTemplates: normalizeCustomerEmailTemplates(null),
     } as unknown as Prisma.InputJsonValue;
   }
 
@@ -1029,6 +1051,12 @@ export class GlobalSettingsService {
           updates.notificationTypes as Record<string, unknown>,
         )
       : current.notificationTypes;
+    const emailTemplates = updates.emailTemplates
+      ? normalizeCustomerEmailTemplates({
+          ...current.emailTemplates,
+          ...updates.emailTemplates,
+        })
+      : current.emailTemplates;
 
     const merged = {
       emailAddress:
@@ -1044,6 +1072,7 @@ export class GlobalSettingsService {
           ? (updates.whatsappNumber ?? null)
           : current.whatsappNumber,
       notificationTypes,
+      emailTemplates,
     } satisfies NotificationSettingsShape;
 
     this.validateNotificationSettings(merged);
@@ -1059,6 +1088,9 @@ export class GlobalSettingsService {
       phoneNumber: this.readStringValue(source, [['phoneNumber']]),
       whatsappNumber: this.readStringValue(source, [['whatsappNumber']]),
       notificationTypes: this.extractNotificationTypeMatrix(source),
+      emailTemplates: normalizeCustomerEmailTemplates(
+        this.readPath(source, ['emailTemplates']),
+      ),
     };
   }
 
@@ -1516,6 +1548,8 @@ export class GlobalSettingsService {
   }
 
   private validateNotificationSettings(settings: NotificationSettingsShape) {
+    validateCustomerEmailTemplates(settings.emailTemplates);
+
     if (
       this.isNotificationChannelUsed(settings.notificationTypes, 'email') &&
       !settings.emailAddress

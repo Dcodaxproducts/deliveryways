@@ -1000,6 +1000,7 @@ export class PaymentsService {
       branchId?: string;
     },
     dto: GuestPurchaseGiftCardDto,
+    locale?: string,
   ) {
     const branchId = await this.resolveGuestGiftCardBranchId(context);
     const currency = await this.resolvePreferredCurrency(
@@ -1030,6 +1031,7 @@ export class PaymentsService {
         title: dto.title ?? null,
         message: dto.message ?? null,
         expiresAt: dto.expiresAt ?? null,
+        locale: locale ?? null,
       } as Prisma.InputJsonValue,
     });
 
@@ -3258,21 +3260,21 @@ export class PaymentsService {
         ? providerData.expiresAt.trim()
         : '';
 
-    await this.mailerService.sendEmail(
-      recipientEmail,
-      `${buyerName} sent you a DeliveryWays gift card`,
-      [
+    await this.mailerService.sendTransactionalEmail(recipientEmail, {
+      template: 'giftCard',
+      locale:
+        typeof providerData.locale === 'string' ? providerData.locale : null,
+      variables: {
+        buyerName,
+        buyerEmail,
         title,
-        '',
-        `${buyerName}${buyerEmail ? ` (${buyerEmail})` : ''} sent you a gift card.`,
-        `Value: ${Number(payment.amount).toFixed(2)} ${payment.currency}`,
-        `Gift card code: ${code}`,
-        ...(expiresAt ? [`Expires: ${expiresAt}`] : []),
-        ...(message ? ['', `Message: ${message}`] : []),
-        '',
-        'Use this code at checkout or in your DeliveryWays wallet.',
-      ].join('\n'),
-    );
+        amount: Number(payment.amount).toFixed(2),
+        currency: payment.currency,
+        code,
+        expiresAt,
+        message,
+      },
+    });
 
     await this.paymentsRepository.updateStatus(payment.id, {
       status: PaymentStatus.PAID,

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateMyProfileDto {
   @ApiPropertyOptional()
@@ -33,4 +33,9 @@ export class UpdateMyProfileDto {
   @IsString()
   @MaxLength(1000)
   bio?: string;
+
+  @ApiPropertyOptional({ enum: ['de', 'en'] })
+  @IsOptional()
+  @IsIn(['de', 'en'])
+  locale?: 'de' | 'en';
 }

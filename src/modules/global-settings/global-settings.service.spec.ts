@@ -3,6 +3,7 @@ import { PaymentMethod, Prisma, ServiceChargeType } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsRepository } from './global-settings.repository';
+import { DEFAULT_CUSTOMER_EMAIL_TEMPLATES } from './email-templates';
 import {
   GlobalSettingsService,
   PaymentMethodSettingsShape,
@@ -224,6 +225,7 @@ describe('GlobalSettingsService', () => {
           emailAddress: null,
           phoneNumber: null,
           whatsappNumber: null,
+          emailTemplates: DEFAULT_CUSTOMER_EMAIL_TEMPLATES,
           notificationTypes: {
             newOrder: { email: false, sms: false, whatsapp: false },
             orderCancelled: { email: false, sms: false, whatsapp: false },

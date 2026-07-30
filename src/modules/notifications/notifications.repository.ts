@@ -103,6 +103,17 @@ export class NotificationsRepository {
             settings: true,
           },
         },
+        items: {
+          select: {
+            menuItemName: true,
+            variationName: true,
+            quantity: true,
+            lineTotal: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
       },
     });
   }

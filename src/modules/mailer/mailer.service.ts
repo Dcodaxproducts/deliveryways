@@ -1,7 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { SendMailOptions, Transporter } from 'nodemailer';
+import { GlobalSettingsService } from '../global-settings/global-settings.service';
+import {
+  CustomerEmailLocale,
+  CustomerEmailTemplateKey,
+  DEFAULT_CUSTOMER_EMAIL_TEMPLATES,
+  renderEmailTemplateText,
+  resolveCustomerEmailLocale,
+} from '../global-settings/email-templates';
+
+export interface TransactionalEmailInput {
+  template: CustomerEmailTemplateKey;
+  locale?: string | null;
+  variables: Record<string, string | number | null | undefined>;
+}
 
 @Injectable()
 export class MailerService {
@@ -9,7 +23,11 @@ export class MailerService {
   private readonly transporter: Transporter;
   private readonly fromAddress: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional()
+    private readonly globalSettingsService?: GlobalSettingsService,
+  ) {
     this.fromAddress = this.configService.get<string>(
       'MAIL_FROM_ADDRESS',
       'no-reply@deliveryways.app',
@@ -95,19 +113,78 @@ export class MailerService {
     this.logger.log(`Email queued for ${to} with subject "${subject}"`);
   }
 
-  async sendVerificationEmail(email: string, otp: string): Promise<void> {
-    await this.sendEmail(
-      email,
-      'Verify your account',
-      `Your OTP code is: ${otp}. It expires in 10 minutes.`,
+  async sendVerificationEmail(
+    email: string,
+    otp: string,
+    locale?: string | null,
+  ): Promise<void> {
+    await this.sendTransactionalEmail(email, {
+      template: 'verification',
+      locale,
+      variables: { otp, expiresMinutes: 10 },
+    });
+  }
+
+  async sendPasswordResetEmail(
+    email: string,
+    otp: string,
+    locale?: string | null,
+  ): Promise<void> {
+    await this.sendTransactionalEmail(email, {
+      template: 'passwordReset',
+      locale,
+      variables: { otp, expiresMinutes: 10 },
+    });
+  }
+
+  async renderTransactionalEmail(input: TransactionalEmailInput): Promise<{
+    locale: CustomerEmailLocale;
+    subject: string;
+    body: string;
+  }> {
+    const configuration =
+      await this.globalSettingsService?.getCustomerEmailConfiguration();
+    const locale = resolveCustomerEmailLocale(
+      input.locale,
+      configuration?.defaultLanguage,
+    );
+    const template =
+      configuration?.templates[input.template][locale] ??
+      DEFAULT_CUSTOMER_EMAIL_TEMPLATES[input.template][locale];
+
+    return {
+      locale,
+      subject: renderEmailTemplateText(template.subject, input.variables),
+      body: renderEmailTemplateText(template.body, input.variables),
+    };
+  }
+
+  async resolveTransactionalLocale(
+    requestedLocale?: string | null,
+  ): Promise<CustomerEmailLocale> {
+    const configuration =
+      await this.globalSettingsService?.getCustomerEmailConfiguration();
+    return resolveCustomerEmailLocale(
+      requestedLocale,
+      configuration?.defaultLanguage,
     );
   }
 
-  async sendPasswordResetEmail(email: string, otp: string): Promise<void> {
-    await this.sendEmail(
-      email,
-      'Reset your password',
-      `Your password reset OTP is: ${otp}. It expires in 10 minutes.`,
-    );
+  async sendTransactionalEmail(
+    to: string,
+    input: TransactionalEmailInput,
+    options?: Pick<SendMailOptions, 'attachments'>,
+  ): Promise<void> {
+    const rendered = await this.renderTransactionalEmail(input);
+    await this.sendEmail(to, rendered.subject, rendered.body, options);
+  }
+
+  resolveProfileLocale(metadata: unknown): string | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+
+    const locale = (metadata as Record<string, unknown>).locale;
+    return typeof locale === 'string' ? locale : null;
   }
 }

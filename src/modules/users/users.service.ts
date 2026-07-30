@@ -38,6 +38,9 @@ export class UsersService {
                 avatarUrl: dto.profile.avatarUrl,
                 bio: dto.profile.bio,
                 phone: dto.profile.phone,
+                metadata: dto.profile.locale
+                  ? { locale: dto.profile.locale }
+                  : undefined,
               },
             }
           : undefined,
@@ -77,6 +80,9 @@ export class UsersService {
                   avatarUrl: dto.profile.avatarUrl,
                   bio: dto.profile.bio,
                   phone: dto.profile.phone,
+                  metadata: dto.profile.locale
+                    ? { locale: dto.profile.locale }
+                    : undefined,
                 },
                 update: {
                   firstName: dto.profile.firstName,
@@ -84,6 +90,9 @@ export class UsersService {
                   avatarUrl: dto.profile.avatarUrl,
                   bio: dto.profile.bio,
                   phone: dto.profile.phone,
+                  metadata: dto.profile.locale
+                    ? { locale: dto.profile.locale }
+                    : undefined,
                 },
               },
             }

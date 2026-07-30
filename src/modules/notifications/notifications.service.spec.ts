@@ -29,6 +29,9 @@ describe('NotificationsService', () => {
   };
   let mailerService: {
     sendEmail: jest.Mock;
+    resolveProfileLocale: jest.Mock;
+    resolveTransactionalLocale: jest.Mock;
+    renderTransactionalEmail: jest.Mock;
   };
   let pushNotificationsService: {
     sendToTokens: jest.Mock;
@@ -59,6 +62,15 @@ describe('NotificationsService', () => {
     };
     mailerService = {
       sendEmail: jest.fn(),
+      resolveProfileLocale: jest.fn().mockReturnValue(null),
+      resolveTransactionalLocale: jest.fn().mockResolvedValue('de'),
+      renderTransactionalEmail: jest.fn().mockImplementation(({ template }) =>
+        Promise.resolve({
+          locale: 'de',
+          subject: `${template} subject`,
+          body: `${template} body`,
+        }),
+      ),
     };
     pushNotificationsService = {
       sendToTokens: jest.fn().mockResolvedValue([]),
@@ -436,6 +448,10 @@ describe('NotificationsService', () => {
       customerId: 'user-1',
       status: 'PLACED',
       orderType: 'DELIVERY',
+      subtotal: 400,
+      taxAmount: 20,
+      deliveryFee: 30,
+      discountAmount: 0,
       totalAmount: 450,
       paymentStatus: 'PENDING',
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
@@ -462,6 +478,14 @@ describe('NotificationsService', () => {
           },
         },
       },
+      items: [
+        {
+          menuItemName: 'Pizza',
+          variationName: 'Groß',
+          quantity: 2,
+          lineTotal: 400,
+        },
+      ],
     });
     notificationsRepository.create
       .mockResolvedValueOnce({
@@ -488,7 +512,7 @@ describe('NotificationsService', () => {
     });
 
     await service.notifyOrderPlaced('order-1');
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(notificationsRepository.create).toHaveBeenNthCalledWith(
       1,
@@ -498,16 +522,14 @@ describe('NotificationsService', () => {
         type: NotificationType.ORDER_PLACED,
       }),
     );
-    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
-      2,
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         audience: NotificationAudience.CUSTOMER,
         channel: NotificationChannel.EMAIL,
         type: NotificationType.ORDER_PLACED,
       }),
     );
-    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
-      3,
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         audience: NotificationAudience.ADMIN,
         channel: NotificationChannel.EMAIL,
@@ -516,6 +538,18 @@ describe('NotificationsService', () => {
       }),
     );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
+    expect(mailerService.renderTransactionalEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: 'orderConfirmation',
+        locale: 'de',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        variables: expect.objectContaining({
+          items: '2 × Pizza (Groß) — 400.00 PKR',
+          subtotal: '400.00',
+          totalAmount: '450.00',
+        }),
+      }),
+    );
     expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith({
       id: 'order-1',
       status: 'PLACED',

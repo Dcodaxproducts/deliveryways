@@ -1710,6 +1710,7 @@ export class CustomerAppService {
         branchId: dto.branchId ?? branch?.id,
       },
       dto,
+      query.locale,
     );
 
     return {

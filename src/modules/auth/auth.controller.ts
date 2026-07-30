@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Patch,
   Post,
   Query,
@@ -93,8 +94,11 @@ export class AuthController {
 
   @Public()
   @Post('register-customer')
-  registerCustomer(@Body() dto: RegisterCustomerDto) {
-    return this.authService.registerCustomer(dto);
+  registerCustomer(
+    @Body() dto: RegisterCustomerDto,
+    @Headers('accept-language') locale?: string,
+  ) {
+    return this.authService.registerCustomer(dto, locale);
   }
 
   @Public()
@@ -107,8 +111,11 @@ export class AuthController {
     },
   })
   @Post('register-guest')
-  registerGuest(@Body() dto: RegisterGuestCustomerDto) {
-    return this.authService.registerGuestCustomer(dto);
+  registerGuest(
+    @Body() dto: RegisterGuestCustomerDto,
+    @Headers('accept-language') locale?: string,
+  ) {
+    return this.authService.registerGuestCustomer(dto, locale);
   }
 
   @Public()
@@ -207,15 +214,21 @@ export class AuthController {
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('forgot-password')
-  forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(dto);
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Headers('accept-language') locale?: string,
+  ) {
+    return this.authService.forgotPassword(dto, locale);
   }
 
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('resend-otp')
-  resendOtp(@Body() dto: ResendOtpDto) {
-    return this.authService.resendOtp(dto);
+  resendOtp(
+    @Body() dto: ResendOtpDto,
+    @Headers('accept-language') locale?: string,
+  ) {
+    return this.authService.resendOtp(dto, locale);
   }
 
   @ApiBearerAuth()

@@ -322,8 +322,37 @@ export class NotificationsService {
       createdAt: order.createdAt,
     });
 
-    const emailTasks: Array<Promise<unknown>> = [
-      this.createAndDispatchCustomerEmail({
+    const customerEmailTask = (async () => {
+      const customerLocale =
+        await this.mailerService.resolveTransactionalLocale(
+          this.mailerService.resolveProfileLocale(
+            order.customer.profile?.metadata,
+          ),
+        );
+      const customerEmail = await this.mailerService.renderTransactionalEmail({
+        template: 'orderConfirmation',
+        locale: customerLocale,
+        variables: {
+          customerName: order.customer.profile?.firstName ?? '',
+          orderNumber: order.id,
+          branchName: order.branch.name,
+          orderType: this.localizeOrderType(order.orderType, customerLocale),
+          items: (order.items ?? [])
+            .map(
+              (item) =>
+                `${item.quantity} × ${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} — ${Number(item.lineTotal).toFixed(2)} ${currency}`,
+            )
+            .join('\n'),
+          subtotal: Number(order.subtotal).toFixed(2),
+          taxAmount: Number(order.taxAmount).toFixed(2),
+          deliveryFee: Number(order.deliveryFee).toFixed(2),
+          discountAmount: Number(order.discountAmount).toFixed(2),
+          totalAmount: Number(order.totalAmount).toFixed(2),
+          currency,
+        },
+      });
+
+      await this.createAndDispatchCustomerEmail({
         tenantId: order.tenantId,
         restaurantId: order.restaurantId,
         branchId: order.branchId,
@@ -331,21 +360,16 @@ export class NotificationsService {
         recipientUserId: order.customerId,
         recipientEmail: order.customer.email,
         type: NotificationType.ORDER_PLACED,
-        subject: `Order ${order.id} placed successfully`,
-        body: this.buildOrderPlacedBody(
-          order.customer.profile?.firstName,
-          order.id,
-          order.branch.name,
-          Number(order.totalAmount),
-          currency,
-        ),
+        subject: customerEmail.subject,
+        body: customerEmail.body,
         payload: {
           orderId: order.id,
           branchName: order.branch.name,
           totalAmount: Number(order.totalAmount),
         },
-      }),
-    ];
+      });
+    })();
+    const emailTasks: Array<Promise<unknown>> = [customerEmailTask];
     const restaurantEmail = this.resolveNewOrderRestaurantEmail(
       order.branch.settings,
       order.restaurant.settings,
@@ -386,6 +410,19 @@ export class NotificationsService {
       order.status === 'CANCELLED'
         ? NotificationType.ORDER_CANCELLED
         : NotificationType.ORDER_STATUS_CHANGED;
+    const customerLocale = await this.mailerService.resolveTransactionalLocale(
+      this.mailerService.resolveProfileLocale(order.customer.profile?.metadata),
+    );
+    const customerEmail = await this.mailerService.renderTransactionalEmail({
+      template: 'orderStatus',
+      locale: customerLocale,
+      variables: {
+        customerName: order.customer.profile?.firstName ?? '',
+        orderNumber: order.id,
+        branchName: order.branch.name,
+        status: this.localizeOrderStatus(order.status, customerLocale),
+      },
+    });
 
     await this.createAndDispatchCustomerEmail({
       tenantId: order.tenantId,
@@ -395,13 +432,8 @@ export class NotificationsService {
       recipientUserId: order.customerId,
       recipientEmail: order.customer.email,
       type,
-      subject: `Order ${order.id} is now ${order.status}`,
-      body: this.buildOrderStatusBody(
-        order.customer.profile?.firstName,
-        order.id,
-        order.branch.name,
-        order.status,
-      ),
+      subject: customerEmail.subject,
+      body: customerEmail.body,
       payload: {
         orderId: order.id,
         branchName: order.branch.name,
@@ -465,6 +497,23 @@ export class NotificationsService {
       return;
     }
 
+    const customerLocale = await this.mailerService.resolveTransactionalLocale(
+      this.mailerService.resolveProfileLocale(
+        payment.order.customer.profile?.metadata,
+      ),
+    );
+    const customerEmail = await this.mailerService.renderTransactionalEmail({
+      template: 'paymentStatus',
+      locale: customerLocale,
+      variables: {
+        customerName: payment.order.customer.profile?.firstName ?? '',
+        orderNumber: payment.orderId,
+        branchName: payment.order.branch.name,
+        status: this.localizePaymentStatus('PENDING', customerLocale),
+        amount: Number(payment.amount).toFixed(2),
+        currency: payment.currency,
+      },
+    });
     await this.createAndDispatchCustomerEmail({
       tenantId: payment.tenantId,
       restaurantId: payment.restaurantId,
@@ -474,15 +523,8 @@ export class NotificationsService {
       recipientUserId: payment.order.customerId,
       recipientEmail: payment.order.customer.email,
       type: NotificationType.PAYMENT_ATTEMPT_CREATED,
-      subject: `Payment attempt created for order ${payment.orderId}`,
-      body: this.buildPaymentBody(
-        payment.order.customer.profile?.firstName,
-        payment.orderId,
-        payment.order.branch.name,
-        'A new payment attempt has been created',
-        Number(payment.amount),
-        payment.currency,
-      ),
+      subject: customerEmail.subject,
+      body: customerEmail.body,
       payload: {
         paymentTransactionId: payment.id,
         orderId: payment.orderId,
@@ -510,7 +552,23 @@ export class NotificationsService {
     }
 
     const type = this.mapPaymentType(payment.status);
-    const summary = this.mapPaymentSummary(payment.status);
+    const customerLocale = await this.mailerService.resolveTransactionalLocale(
+      this.mailerService.resolveProfileLocale(
+        payment.order.customer.profile?.metadata,
+      ),
+    );
+    const customerEmail = await this.mailerService.renderTransactionalEmail({
+      template: 'paymentStatus',
+      locale: customerLocale,
+      variables: {
+        customerName: payment.order.customer.profile?.firstName ?? '',
+        orderNumber: payment.orderId,
+        branchName: payment.order.branch.name,
+        status: this.localizePaymentStatus(payment.status, customerLocale),
+        amount: Number(payment.amount).toFixed(2),
+        currency: payment.currency,
+      },
+    });
 
     await this.createAndDispatchCustomerEmail({
       tenantId: payment.tenantId,
@@ -521,15 +579,8 @@ export class NotificationsService {
       recipientUserId: payment.order.customerId,
       recipientEmail: payment.order.customer.email,
       type,
-      subject: `Payment update for order ${payment.orderId}: ${payment.status}`,
-      body: this.buildPaymentBody(
-        payment.order.customer.profile?.firstName,
-        payment.orderId,
-        payment.order.branch.name,
-        summary,
-        Number(payment.amount),
-        payment.currency,
-      ),
+      subject: customerEmail.subject,
+      body: customerEmail.body,
       payload: {
         paymentTransactionId: payment.id,
         orderId: payment.orderId,
@@ -1280,55 +1331,44 @@ export class NotificationsService {
     return NotificationType.PAYMENT_REFUNDED;
   }
 
-  private mapPaymentSummary(status: string): string {
-    if (status === 'PAID') {
-      return 'Your payment has been marked as paid';
+  private localizeOrderType(orderType: string, locale: 'de' | 'en'): string {
+    if (locale === 'en') {
+      return orderType === 'DINE_IN'
+        ? 'Dine in'
+        : orderType === 'DELIVERY'
+          ? 'Delivery'
+          : 'Pickup';
     }
 
-    if (status === 'FAILED') {
-      return 'Your payment attempt has failed';
-    }
-
-    if (status === 'CANCELLED') {
-      return 'Your payment attempt has been cancelled';
-    }
-
-    return 'A refund has been processed for your payment';
+    return orderType === 'DINE_IN'
+      ? 'Vor Ort'
+      : orderType === 'DELIVERY'
+        ? 'Lieferung'
+        : 'Abholung';
   }
 
-  private buildOrderPlacedBody(
-    firstName: string | undefined,
-    orderId: string,
-    branchName: string,
-    totalAmount: number,
-    currency: string,
-  ): string {
-    const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
-
-    return `${greeting}\n\nYour order ${orderId} has been placed successfully at ${branchName}. Total payable amount: ${currency} ${totalAmount.toFixed(2)}.`;
+  private localizeOrderStatus(status: string, locale: 'de' | 'en'): string {
+    const translations: Record<string, { de: string; en: string }> = {
+      PLACED: { de: 'Bestellung aufgegeben', en: 'Placed' },
+      CONFIRMED: { de: 'Bestätigt', en: 'Confirmed' },
+      PREPARING: { de: 'In Zubereitung', en: 'Preparing' },
+      READY: { de: 'Abholbereit', en: 'Ready' },
+      OUT_FOR_DELIVERY: { de: 'Unterwegs', en: 'Out for delivery' },
+      DELIVERED: { de: 'Geliefert', en: 'Delivered' },
+      COMPLETED: { de: 'Abgeschlossen', en: 'Completed' },
+      CANCELLED: { de: 'Storniert', en: 'Cancelled' },
+    };
+    return translations[status]?.[locale] ?? status;
   }
 
-  private buildOrderStatusBody(
-    firstName: string | undefined,
-    orderId: string,
-    branchName: string,
-    status: string,
-  ): string {
-    const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
-
-    return `${greeting}\n\nYour order ${orderId} at ${branchName} is now ${status}.`;
-  }
-
-  private buildPaymentBody(
-    firstName: string | undefined,
-    orderId: string,
-    branchName: string,
-    summary: string,
-    amount: number,
-    currency: string,
-  ): string {
-    const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
-
-    return `${greeting}\n\n${summary} for order ${orderId} at ${branchName}. Amount: ${currency} ${amount.toFixed(2)}.`;
+  private localizePaymentStatus(status: string, locale: 'de' | 'en'): string {
+    const translations: Record<string, { de: string; en: string }> = {
+      PENDING: { de: 'Ausstehend', en: 'Pending' },
+      PAID: { de: 'Bezahlt', en: 'Paid' },
+      FAILED: { de: 'Fehlgeschlagen', en: 'Failed' },
+      CANCELLED: { de: 'Storniert', en: 'Cancelled' },
+      REFUNDED: { de: 'Erstattet', en: 'Refunded' },
+    };
+    return translations[status]?.[locale] ?? status;
   }
 }
