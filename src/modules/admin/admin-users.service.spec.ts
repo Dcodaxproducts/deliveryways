@@ -8,6 +8,58 @@ import { UserRoleEnum } from '../../common/enums';
 import { AdminUsersService } from './admin-users.service';
 
 describe('AdminUsersService', () => {
+  describe('listCustomers', () => {
+    it('scopes staff customer lists to the selected assigned restaurant', async () => {
+      const usersService = {
+        listCustomers: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+      };
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await service.listCustomers(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          restaurantAccess: { restaurantIds: ['restaurant-1'] },
+        } as never,
+        {
+          page: 1,
+          limit: 20,
+          restaurantId: 'restaurant-1',
+        } as never,
+      );
+
+      expect(usersService.listCustomers).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ restaurantId: 'restaurant-1' }),
+        false,
+      );
+    });
+
+    it('rejects staff customer lists outside assigned restaurants', async () => {
+      const usersService = { listCustomers: jest.fn() };
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await expect(
+        service.listCustomers(
+          {
+            uid: 'staff-1',
+            role: UserRoleEnum.STAFF,
+            tid: 'tenant-1',
+            restaurantAccess: { restaurantIds: ['restaurant-1'] },
+          } as never,
+          {
+            page: 1,
+            limit: 20,
+            restaurantId: 'restaurant-2',
+          } as never,
+        ),
+      ).rejects.toThrow('Staff account is not assigned to this restaurant');
+      expect(usersService.listCustomers).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateCustomerStatus', () => {
     it('blocks a tenant-scoped customer for business admin', async () => {
       const usersService = {
@@ -398,6 +450,66 @@ describe('AdminUsersService', () => {
           'business-admin-1',
         ),
       ).rejects.toThrow(BadRequestException);
+      expect(usersService.softDeleteUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeCustomer', () => {
+    it('allows assigned Customer Management staff to delete only a scoped customer', async () => {
+      const usersService = {
+        findCustomerById: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          restaurantId: 'restaurant-1',
+        }),
+        softDeleteUser: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+          isActive: false,
+          deletedAt: new Date('2026-07-30T10:00:00.000Z'),
+          deleteAfter: new Date('2026-08-29T10:00:00.000Z'),
+        }),
+      };
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await expect(
+        service.removeCustomer(
+          {
+            uid: 'staff-1',
+            role: UserRoleEnum.STAFF,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            restaurantAccess: { restaurantIds: ['restaurant-1'] },
+          } as never,
+          'customer-1',
+        ),
+      ).resolves.toMatchObject({
+        data: { id: 'customer-1', role: UserRoleEnum.CUSTOMER },
+      });
+      expect(usersService.softDeleteUser).toHaveBeenCalledWith('customer-1');
+    });
+
+    it('rejects staff customer access outside assigned restaurants', async () => {
+      const usersService = {
+        findCustomerById: jest.fn().mockResolvedValue({
+          id: 'customer-2',
+          restaurantId: 'restaurant-2',
+        }),
+        softDeleteUser: jest.fn(),
+      };
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      await expect(
+        service.removeCustomer(
+          {
+            uid: 'staff-1',
+            role: UserRoleEnum.STAFF,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            restaurantAccess: { restaurantIds: ['restaurant-1'] },
+          } as never,
+          'customer-2',
+        ),
+      ).rejects.toThrow('Staff account is not assigned to this restaurant');
       expect(usersService.softDeleteUser).not.toHaveBeenCalled();
     });
   });

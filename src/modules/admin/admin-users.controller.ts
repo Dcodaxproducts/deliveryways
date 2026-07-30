@@ -106,6 +106,20 @@ export class AdminUsersController {
     return this.adminUsersService.removeUser(user, id);
   }
 
+  @Delete('customers/:id')
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+  )
+  @ApiOperation({ summary: 'Soft delete a scoped customer account' })
+  removeCustomer(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.adminUsersService.removeCustomer(user, id);
+  }
+
   @Post('force-delete')
   @Roles(RolesEnum.SUPER_ADMIN)
   @ApiOperation({ summary: 'Force delete user accounts by email' })

@@ -382,6 +382,10 @@ export class GuestPurchaseGiftCardDto extends PurchaseGiftCardDto {
   @IsEmail()
   buyerEmail!: string;
 
+  @ApiProperty({ example: 'recipient@example.com' })
+  @IsEmail()
+  recipientEmail!: string;
+
   @ApiPropertyOptional({ example: 'Ali Khan' })
   @IsOptional()
   @IsString()

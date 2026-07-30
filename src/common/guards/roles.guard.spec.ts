@@ -207,6 +207,110 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
+  it.each([
+    ['customer-management', 'admin/users', 'customers'],
+    ['pos-management', 'admin/users', 'customers'],
+    ['pos-management', 'admin/users', 'customers/:id'],
+  ])(
+    'allows STAFF with %s read access to read %s/%s',
+    async (access, controllerPath, handlerPath) => {
+      const prisma: PrismaMock = {
+        staffUser: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(
+              activeStaffRole([{ access, operations: ['read'] }]),
+            ),
+        },
+      };
+      const guard = createGuard({
+        roles: [
+          RolesEnum.SUPER_ADMIN,
+          RolesEnum.BUSINESS_ADMIN,
+          RolesEnum.BRANCH_ADMIN,
+        ],
+        controllerPath,
+        handlerPath,
+        method: RequestMethod.GET,
+        prisma,
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext(
+            { uid: 'staff-1', role: RolesEnum.STAFF },
+            { query: { restaurantId: 'restaurant-1' } },
+          ),
+        ),
+      ).resolves.toBe(true);
+    },
+  );
+
+  it('does not allow POS-only staff to update customers', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'pos-management', operations: ['manage'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'admin/users',
+      handlerPath: 'customers/:id',
+      method: RequestMethod.PATCH,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).rejects.toThrow('Your role does not have access to this action');
+  });
+
+  it('allows Customer Management staff to read customer stats', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'customer-management', operations: ['read'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'admin/dashboard',
+      handlerPath: 'customers/stats',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { query: { restaurantId: 'restaurant-1' } },
+        ),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it('allows STAFF to update an order with order-management update access', async () => {
     const prisma: PrismaMock = {
       staffUser: {

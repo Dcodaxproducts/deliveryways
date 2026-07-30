@@ -67,6 +67,9 @@ describe('PaymentsService', () => {
       tenantSubscription: {
         update: jest.fn(),
       },
+      coupon: {
+        create: jest.fn(),
+      },
     };
 
     const prisma = {
@@ -80,6 +83,9 @@ describe('PaymentsService', () => {
       },
       branch: {
         findFirst: jest.fn(),
+      },
+      coupon: {
+        findUnique: jest.fn(),
       },
       restaurant: {
         findUnique: jest.fn(),
@@ -158,6 +164,9 @@ describe('PaymentsService', () => {
         ],
       }),
     };
+    const mailerService = {
+      sendEmail: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new PaymentsService(
       paymentsRepository as never,
@@ -168,6 +177,7 @@ describe('PaymentsService', () => {
       payoutCredentialsService as never,
       loyaltyWalletService as never,
       globalSettingsService as never,
+      mailerService as never,
     );
 
     return {
@@ -180,6 +190,7 @@ describe('PaymentsService', () => {
       payoutCredentialsService,
       loyaltyWalletService,
       globalSettingsService,
+      mailerService,
       transactionTx,
     };
   };
@@ -1085,6 +1096,119 @@ describe('PaymentsService', () => {
     expect(result.received).toBe(true);
   });
 
+  it('fulfills a guest gift card and emails the recipient after Stripe success', async () => {
+    const {
+      service,
+      stripePaymentsService,
+      paymentsRepository,
+      notificationsService,
+      transactionTx,
+      mailerService,
+    } = makeService();
+    const pendingPayment = {
+      id: 'payment-gift-1',
+      orderId: null,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      amount: new Prisma.Decimal(50),
+      currency: 'EUR',
+      providerRef: 'pi_gift_123',
+      providerData: {
+        target: 'GUEST_GIFT_CARD_PURCHASE',
+        buyerEmail: 'buyer@example.com',
+        buyerName: 'Buyer Name',
+        recipientEmail: 'recipient@example.com',
+        title: 'Birthday',
+        message: 'Enjoy your meal',
+      },
+      status: PaymentStatus.PENDING,
+    };
+    const fulfilledPayment = {
+      ...pendingPayment,
+      status: PaymentStatus.PAID,
+      providerData: {
+        ...pendingPayment.providerData,
+        giftCardId: 'gift-card-1',
+        giftCardCode: 'GIFT-ABC123',
+      },
+      processedAt: new Date('2026-07-30T10:00:00.000Z'),
+    };
+
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_gift_123' } },
+    });
+    paymentsRepository.findByProviderRef
+      .mockResolvedValueOnce(pendingPayment)
+      .mockResolvedValueOnce(fulfilledPayment);
+    transactionTx.coupon.create.mockResolvedValue({ id: 'gift-card-1' });
+
+    await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
+
+    expect(transactionTx.coupon.create).toHaveBeenCalledTimes(1);
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'recipient@example.com',
+      'Buyer Name sent you a DeliveryWays gift card',
+      expect.stringContaining('Gift card code: GIFT-ABC123'),
+    );
+    expect(paymentsRepository.updateStatus).toHaveBeenLastCalledWith(
+      'payment-gift-1',
+      expect.objectContaining({
+        status: PaymentStatus.PAID,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        providerData: expect.objectContaining({
+          giftCardEmailRecipient: 'recipient@example.com',
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          giftCardEmailSentAt: expect.any(String),
+        }),
+      }),
+    );
+    expect(
+      notificationsService.notifyPaymentStatusChanged,
+    ).toHaveBeenCalledWith('payment-gift-1');
+  });
+
+  it('retries only gift-card email delivery for an already fulfilled payment', async () => {
+    const {
+      service,
+      stripePaymentsService,
+      paymentsRepository,
+      transactionTx,
+      mailerService,
+    } = makeService();
+
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_gift_retry' } },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-gift-retry',
+      orderId: null,
+      amount: new Prisma.Decimal(25),
+      currency: 'EUR',
+      providerRef: 'pi_gift_retry',
+      providerData: {
+        target: 'GUEST_GIFT_CARD_PURCHASE',
+        buyerEmail: 'buyer@example.com',
+        recipientEmail: 'recipient@example.com',
+        giftCardId: 'gift-card-existing',
+        giftCardCode: 'GIFT-EXISTING',
+      },
+      status: PaymentStatus.PAID,
+      processedAt: new Date('2026-07-30T10:00:00.000Z'),
+    });
+
+    await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
+
+    expect(transactionTx.coupon.create).not.toHaveBeenCalled();
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'recipient@example.com',
+      expect.any(String),
+      expect.stringContaining('Gift card code: GIFT-EXISTING'),
+    );
+  });
+
   it('marks subscription failed from stripe webhook failure', async () => {
     const {
       service,
@@ -1277,6 +1401,7 @@ describe('PaymentsService', () => {
       {
         amount: 50,
         buyerEmail: 'guest@example.com',
+        recipientEmail: 'recipient@example.com',
         title: 'Birthday',
       },
     );
@@ -1290,6 +1415,7 @@ describe('PaymentsService', () => {
         providerData: expect.objectContaining({
           target: 'GUEST_GIFT_CARD_PURCHASE',
           buyerEmail: 'guest@example.com',
+          recipientEmail: 'recipient@example.com',
         }),
       }),
     );
@@ -1300,6 +1426,7 @@ describe('PaymentsService', () => {
         metadata: expect.objectContaining({
           giftCardPurchase: 'true',
           buyerEmail: 'guest@example.com',
+          recipientEmail: 'recipient@example.com',
         }),
       }),
     );

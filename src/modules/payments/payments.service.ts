@@ -1025,6 +1025,7 @@ export class PaymentsService {
       providerData: {
         target: 'GUEST_GIFT_CARD_PURCHASE',
         buyerEmail: dto.buyerEmail,
+        recipientEmail: dto.recipientEmail,
         buyerName: dto.buyerName ?? null,
         title: dto.title ?? null,
         message: dto.message ?? null,
@@ -1043,6 +1044,7 @@ export class PaymentsService {
         restaurantId: context.restaurantId,
         giftCardPurchase: 'true',
         buyerEmail: dto.buyerEmail,
+        recipientEmail: dto.recipientEmail,
       },
     });
 
@@ -1052,6 +1054,7 @@ export class PaymentsService {
       providerData: {
         target: 'GUEST_GIFT_CARD_PURCHASE',
         buyerEmail: dto.buyerEmail,
+        recipientEmail: dto.recipientEmail,
         buyerName: dto.buyerName ?? null,
         title: dto.title ?? null,
         message: dto.message ?? null,
@@ -2794,7 +2797,17 @@ export class PaymentsService {
     const payment =
       await this.paymentsRepository.findByProviderRef(providerRef);
 
-    if (!payment || payment.status === PaymentStatus.PAID) {
+    if (!payment) {
+      return;
+    }
+
+    if (payment.status === PaymentStatus.PAID) {
+      if (
+        this.readPaymentTarget(payment.providerData) ===
+        'GUEST_GIFT_CARD_PURCHASE'
+      ) {
+        await this.sendGuestGiftCardEmail(payment);
+      }
       return;
     }
 
@@ -2821,6 +2834,11 @@ export class PaymentsService {
           providerRef,
           paymentIntent,
         );
+        const fulfilledPayment =
+          await this.paymentsRepository.findByProviderRef(providerRef);
+        if (fulfilledPayment) {
+          await this.sendGuestGiftCardEmail(fulfilledPayment);
+        }
         await this.notificationsService.notifyPaymentStatusChanged(payment.id);
         return;
       }
@@ -3176,6 +3194,7 @@ export class PaymentsService {
             giftCardId: giftCard.id,
             giftCardCode: code,
             qrPayload: `DWGC:${code}`,
+            expiresAt: expiresAt.toISOString(),
           } as Prisma.InputJsonValue,
           processedAt: now,
         },
@@ -3184,6 +3203,87 @@ export class PaymentsService {
     });
 
     void paymentIntent;
+  }
+
+  private async sendGuestGiftCardEmail(payment: {
+    id: string;
+    amount: Prisma.Decimal;
+    currency: string;
+    providerRef: string | null;
+    providerData: Prisma.JsonValue | null;
+    processedAt?: Date | null;
+  }) {
+    const providerData = this.asJsonObject(payment.providerData);
+    if (typeof providerData.giftCardEmailSentAt === 'string') {
+      return;
+    }
+
+    const recipientEmail =
+      typeof providerData.recipientEmail === 'string'
+        ? providerData.recipientEmail.trim().toLowerCase()
+        : '';
+    const code =
+      typeof providerData.giftCardCode === 'string'
+        ? providerData.giftCardCode.trim()
+        : '';
+    if (!recipientEmail || !code) {
+      throw new BadRequestException(
+        'Fulfilled gift card recipient and code are required',
+      );
+    }
+    if (!this.mailerService) {
+      throw new BadRequestException('Gift card email service is unavailable');
+    }
+
+    const buyerName =
+      typeof providerData.buyerName === 'string' &&
+      providerData.buyerName.trim()
+        ? providerData.buyerName.trim()
+        : 'Someone';
+    const buyerEmail =
+      typeof providerData.buyerEmail === 'string'
+        ? providerData.buyerEmail.trim()
+        : '';
+    const title =
+      typeof providerData.title === 'string' && providerData.title.trim()
+        ? providerData.title.trim()
+        : 'Gift Card';
+    const message =
+      typeof providerData.message === 'string' && providerData.message.trim()
+        ? providerData.message.trim()
+        : '';
+    const expiresAt =
+      typeof providerData.expiresAt === 'string' &&
+      providerData.expiresAt.trim()
+        ? providerData.expiresAt.trim()
+        : '';
+
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `${buyerName} sent you a DeliveryWays gift card`,
+      [
+        title,
+        '',
+        `${buyerName}${buyerEmail ? ` (${buyerEmail})` : ''} sent you a gift card.`,
+        `Value: ${Number(payment.amount).toFixed(2)} ${payment.currency}`,
+        `Gift card code: ${code}`,
+        ...(expiresAt ? [`Expires: ${expiresAt}`] : []),
+        ...(message ? ['', `Message: ${message}`] : []),
+        '',
+        'Use this code at checkout or in your DeliveryWays wallet.',
+      ].join('\n'),
+    );
+
+    await this.paymentsRepository.updateStatus(payment.id, {
+      status: PaymentStatus.PAID,
+      providerRef: payment.providerRef ?? undefined,
+      providerData: {
+        ...providerData,
+        giftCardEmailSentAt: new Date().toISOString(),
+        giftCardEmailRecipient: recipientEmail,
+      } as Prisma.InputJsonValue,
+      processedAt: payment.processedAt ?? new Date(),
+    });
   }
 
   private async generateUniqueGiftCardCode(restaurantId: string) {

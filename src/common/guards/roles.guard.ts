@@ -483,6 +483,14 @@ export class RolesGuard implements CanActivate {
       candidates.add('order-management');
       candidates.add('orders');
     }
+    if (
+      this.resolveRequiredOperation(context) === 'read' &&
+      (normalizedPath === 'admin/users/customers' ||
+        normalizedPath === 'admin/users/customers/:id')
+    ) {
+      candidates.add('pos-management');
+      candidates.add('pos');
+    }
 
     normalizedPath
       .split('/')
@@ -512,6 +520,7 @@ export class RolesGuard implements CanActivate {
   private addMappedAccessKeys(path: string, candidates: Set<string>): void {
     const mappings: Array<[string, string[]]> = [
       ['admin/dashboard/orders/stats', ['order-management', 'orders']],
+      ['admin/dashboard/customers/stats', ['customer-management', 'customers']],
       [
         'admin/dashboard/orders/trend',
         ['reports-payouts', 'reports', 'order-management', 'orders'],
@@ -542,6 +551,7 @@ export class RolesGuard implements CanActivate {
       ],
       ['admin/promotions', ['promotion-management', 'promotions']],
       ['admin/deals', ['menu-management', 'menu', 'deals']],
+      ['admin/users/customers', ['customer-management', 'customers']],
       ['admin/loyalty', ['loyalty-program', 'customers']],
       ['admin/printing', ['auto-printing-pos', 'pos-management', 'pos']],
       ['admin/reports', ['reports-payouts', 'reports']],

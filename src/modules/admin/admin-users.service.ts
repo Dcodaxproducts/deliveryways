@@ -41,6 +41,7 @@ export class AdminUsersService {
 
       scopedQuery.restaurantId = user.rid;
     }
+    this.scopeStaffCustomerList(user, scopedQuery);
 
     const allowWithDeleted =
       user.role === UserRoleEnum.SUPER_ADMIN && !!scopedQuery.withDeleted;
@@ -76,7 +77,10 @@ export class AdminUsersService {
     }
 
     const restaurantId =
-      user.role === UserRoleEnum.BRANCH_ADMIN ? user.rid : query.restaurantId;
+      user.role === UserRoleEnum.BRANCH_ADMIN
+        ? user.rid
+        : (query.restaurantId ??
+          (this.isStaffActor(user) ? user.rid : undefined));
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
       throw new ForbiddenException('Restaurant context is required');
@@ -91,6 +95,7 @@ export class AdminUsersService {
       throw new NotFoundException('Customer not found');
     }
 
+    this.assertStaffCustomerRestaurantAccess(user, customer.restaurantId);
     return {
       data: this.withDeletionState(customer),
       message: 'Customer fetched successfully',
@@ -211,6 +216,22 @@ export class AdminUsersService {
         deleteAfter: deletedUser.deleteAfter,
       },
       message: 'User scheduled for deletion in 30 days',
+    };
+  }
+
+  async removeCustomer(user: AuthUserContext, id: string) {
+    const customer = await this.getAccessibleCustomerOrThrow(user, id);
+    const deletedUser = await this.usersService.softDeleteUser(customer.id);
+
+    return {
+      data: {
+        id: deletedUser.id,
+        role: deletedUser.role,
+        isActive: deletedUser.isActive,
+        deletedAt: deletedUser.deletedAt,
+        deleteAfter: deletedUser.deleteAfter,
+      },
+      message: 'Customer scheduled for deletion in 30 days',
     };
   }
 
@@ -418,7 +439,80 @@ export class AdminUsersService {
       throw new NotFoundException('Customer not found');
     }
 
+    this.assertStaffCustomerRestaurantAccess(user, customer.restaurantId);
     return customer;
+  }
+
+  private assertStaffCustomerRestaurantAccess(
+    user: AuthUserContext,
+    customerRestaurantId?: string | null,
+  ) {
+    if (user.role !== UserRoleEnum.STAFF && user.actorType !== 'STAFF') {
+      return;
+    }
+
+    const access = user.restaurantAccess;
+    if (
+      access?.allRestaurants === true ||
+      access?.hasAllRestaurantsAccess === true
+    ) {
+      return;
+    }
+
+    const restaurantIds = new Set([
+      ...(access?.restaurantIds ?? []),
+      ...(user.rid ? [user.rid] : []),
+    ]);
+    if (
+      !customerRestaurantId ||
+      restaurantIds.size === 0 ||
+      !restaurantIds.has(customerRestaurantId)
+    ) {
+      throw new ForbiddenException(
+        'Staff account is not assigned to this restaurant',
+      );
+    }
+  }
+
+  private scopeStaffCustomerList(
+    user: AuthUserContext,
+    query: AdminListCustomersDto,
+  ) {
+    if (!this.isStaffActor(user)) {
+      return;
+    }
+
+    const access = user.restaurantAccess;
+    if (
+      access?.allRestaurants === true ||
+      access?.hasAllRestaurantsAccess === true
+    ) {
+      return;
+    }
+
+    const restaurantIds = new Set([
+      ...(access?.restaurantIds ?? []),
+      ...(user.rid ? [user.rid] : []),
+    ]);
+    if (query.restaurantId) {
+      if (!restaurantIds.has(query.restaurantId)) {
+        throw new ForbiddenException(
+          'Staff account is not assigned to this restaurant',
+        );
+      }
+      return;
+    }
+
+    if (restaurantIds.size === 1) {
+      query.restaurantId = [...restaurantIds][0];
+      return;
+    }
+
+    throw new ForbiddenException('Restaurant context is required');
+  }
+
+  private isStaffActor(user: AuthUserContext) {
+    return user.role === UserRoleEnum.STAFF || user.actorType === 'STAFF';
   }
 
   private canSoftDeleteUser(
