@@ -1596,6 +1596,51 @@ export class LoyaltyWalletService {
       return { tenantId: user.tid, restaurantId: restaurant.id };
     }
 
+    if (this.isStaffActor(user)) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      const assignedRestaurantIds = new Set([
+        ...(user.restaurantAccess?.restaurantIds ?? []),
+        ...(user.rid ? [user.rid] : []),
+      ]);
+      const restaurantId =
+        requestedRestaurantId ??
+        user.rid ??
+        (assignedRestaurantIds.size === 1
+          ? [...assignedRestaurantIds][0]
+          : undefined);
+
+      if (!restaurantId) {
+        throw new BadRequestException('restaurantId is required');
+      }
+
+      const hasAllRestaurantsAccess =
+        user.restaurantAccess?.allRestaurants === true ||
+        user.restaurantAccess?.hasAllRestaurantsAccess === true;
+      if (
+        !hasAllRestaurantsAccess &&
+        !assignedRestaurantIds.has(restaurantId)
+      ) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      const restaurant = await this.repository.findRestaurantScope(
+        restaurantId,
+        user.tid,
+      );
+      if (!restaurant) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      return { tenantId: user.tid, restaurantId: restaurant.id };
+    }
+
     if (!(allowBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)) {
       throw new ForbiddenException(
         'Insufficient permissions for loyalty management',
@@ -1617,6 +1662,10 @@ export class LoyaltyWalletService {
     }
 
     return { tenantId: user.tid, restaurantId: user.rid };
+  }
+
+  private isStaffActor(user: AuthUserContext): boolean {
+    return user.role === UserRoleEnum.STAFF || user.actorType === 'STAFF';
   }
 
   private async generateUniqueGiftCardCode(restaurantId: string, tx: PrismaTx) {

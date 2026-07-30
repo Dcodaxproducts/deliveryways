@@ -1152,4 +1152,51 @@ describe('CouponsService', () => {
     expect(updateInput.deletedAt).toBeInstanceOf(Date);
     expect(result.data).toEqual({ id: 'cpn-1' });
   });
+
+  it('allows Promotion Management staff to delete an assigned restaurant coupon', async () => {
+    repository.findById!.mockResolvedValue(makeCoupon());
+    repository.findRestaurantInTenant!.mockResolvedValue({ id: 'rid-1' });
+    repository.update!.mockResolvedValue({ id: 'cpn-1' });
+
+    await expect(
+      service.remove(
+        {
+          uid: 'staff-1',
+          tid: 'tid-1',
+          role: 'STAFF',
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['rid-1'],
+            allRestaurants: false,
+          },
+        } as never,
+        'cpn-1',
+      ),
+    ).resolves.toEqual(expect.objectContaining({ data: { id: 'cpn-1' } }));
+  });
+
+  it('blocks staff from deleting a coupon outside assigned restaurants', async () => {
+    repository.findById!.mockResolvedValue(
+      makeCoupon({ restaurantId: 'rid-2' }),
+    );
+
+    await expect(
+      service.remove(
+        {
+          uid: 'staff-1',
+          tid: 'tid-1',
+          role: 'STAFF',
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['rid-1'],
+            allRestaurants: false,
+          },
+        } as never,
+        'cpn-1',
+      ),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned restaurants',
+    );
+    expect(repository.update).not.toHaveBeenCalled();
+  });
 });

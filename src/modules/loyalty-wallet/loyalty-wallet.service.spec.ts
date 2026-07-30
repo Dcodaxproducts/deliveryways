@@ -17,6 +17,7 @@ describe('LoyaltyWalletService', () => {
       updateLoyaltyProgram: jest.fn(),
       findProfileMetadata: jest.fn(),
       findRestaurantSettings: jest.fn(),
+      findRestaurantScope: jest.fn(),
       findWalletAccount: jest.fn(),
       createWalletAccount: jest.fn(),
       updateWalletAccount: jest.fn(),
@@ -268,6 +269,63 @@ describe('LoyaltyWalletService', () => {
         role: UserRoleEnum.SUPER_ADMIN,
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('allows Loyalty Program staff to fetch an assigned restaurant program', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantScope.mockResolvedValue({ id: 'restaurant-1' });
+    repository.findLoyaltyProgram.mockResolvedValue({
+      id: 'program-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      pointsPerCurrencyUnit: new Prisma.Decimal(0.05),
+      currencyAmountPerPoint: new Prisma.Decimal(1),
+      redemptionValuePerPoint: new Prisma.Decimal(1),
+      minimumRedeemPoints: 50,
+      allowWalletConversion: true,
+      allowOrderDiscount: true,
+      pointsExpiryDays: null,
+      createdAt: new Date('2026-04-09T00:00:00.000Z'),
+      updatedAt: new Date('2026-04-09T00:00:00.000Z'),
+    });
+
+    const result = await service.getLoyaltyProgramSettings(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          allRestaurants: false,
+        },
+      },
+      'restaurant-1',
+    );
+
+    expect(result.data.restaurantId).toBe('restaurant-1');
+  });
+
+  it('blocks Loyalty Program staff outside assigned restaurants', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.getLoyaltyProgramSettings(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            allRestaurants: false,
+          },
+        },
+        'restaurant-2',
+      ),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned restaurants',
+    );
   });
 
   it('redeems active gift card into wallet balance', async () => {

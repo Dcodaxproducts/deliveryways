@@ -78,6 +78,17 @@ export class DeliverymenRepository {
     });
   }
 
+  findRestaurantScope(restaurantId: string, tenantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        tenantId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+  }
+
   async list(
     restaurantId: string | undefined,
     query: QueryDto & { branchId?: string; status?: string },

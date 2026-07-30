@@ -4446,6 +4446,51 @@ export class PaymentsService {
       return restaurantId;
     }
 
+    if (this.isStaffActor(user)) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      const assignedRestaurantIds = new Set([
+        ...(user.restaurantAccess?.restaurantIds ?? []),
+        ...(user.rid ? [user.rid] : []),
+      ]);
+      const resolvedRestaurantId =
+        restaurantId ??
+        user.rid ??
+        (assignedRestaurantIds.size === 1
+          ? [...assignedRestaurantIds][0]
+          : undefined);
+      if (!resolvedRestaurantId) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      const hasAllRestaurantsAccess =
+        user.restaurantAccess?.allRestaurants === true ||
+        user.restaurantAccess?.hasAllRestaurantsAccess === true;
+      if (
+        !hasAllRestaurantsAccess &&
+        !assignedRestaurantIds.has(resolvedRestaurantId)
+      ) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      const assignedRestaurant =
+        await this.paymentsRepository.findRestaurantScope(
+          resolvedRestaurantId,
+          user.tid,
+        );
+      if (!assignedRestaurant) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your assigned restaurants',
+        );
+      }
+
+      return assignedRestaurant.id;
+    }
+
     if (!(allowBranchAdmin && user.role === UserRoleEnum.BRANCH_ADMIN)) {
       throw new ForbiddenException('Insufficient permissions for payments');
     }
@@ -4461,6 +4506,10 @@ export class PaymentsService {
     }
 
     return user.rid;
+  }
+
+  private isStaffActor(user: AuthUserContext): boolean {
+    return user.role === UserRoleEnum.STAFF || user.actorType === 'STAFF';
   }
 
   private assertSuperAdminPaymentConfigAccess(user: AuthUserContext) {

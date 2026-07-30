@@ -46,6 +46,7 @@ describe('DeliverymenService', () => {
   beforeEach(() => {
     repository = {
       findById: jest.fn().mockResolvedValue(deliveryman),
+      findRestaurantScope: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
       update: jest
         .fn()
         .mockResolvedValue({ ...deliveryman, status: DeliverymanStatus.BUSY }),
@@ -631,5 +632,42 @@ describe('DeliverymenService', () => {
         },
       ),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows assigned staff to fetch deliveryman details', async () => {
+    const result = await service.details(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          allRestaurants: false,
+        },
+      },
+      'dm-1',
+    );
+
+    expect(result.data.id).toBe('dm-1');
+  });
+
+  it('allows all-restaurants staff only when deliveryman belongs to owner tenant', async () => {
+    repository.findRestaurantScope!.mockResolvedValueOnce(null);
+
+    await expect(
+      service.details(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: { allRestaurants: true },
+        },
+        'dm-1',
+      ),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned restaurants',
+    );
   });
 });

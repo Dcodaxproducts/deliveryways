@@ -58,6 +58,7 @@ describe('PaymentsService', () => {
       summarizeRestaurantTransactions: jest.fn(),
       summarizeRestaurantWallets: jest.fn(),
       sumSuccessfulRefunds: jest.fn(),
+      findRestaurantScope: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
     };
 
     const transactionTx = {
@@ -951,6 +952,64 @@ describe('PaymentsService', () => {
       PaymentMethod.COD,
     ]);
     expect(prisma.restaurant.update).toHaveBeenCalled();
+  });
+
+  it('allows Payment Settings staff to update an assigned restaurant', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {},
+    });
+    prisma.restaurant.update.mockImplementation(
+      (args: RestaurantStripeSettingsUpdateArgs) =>
+        Promise.resolve({
+          id: args.where.id,
+          settings: args.data.settings,
+        }),
+    );
+
+    const result = await service.updateRestaurantPaymentMethods(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          allRestaurants: false,
+        },
+      },
+      'restaurant-1',
+      {
+        allowedPaymentMethods: [PaymentMethod.COD],
+        walletEnabled: false,
+      },
+    );
+
+    expect(result.data.restaurantId).toBe('restaurant-1');
+  });
+
+  it('blocks Payment Settings staff outside assigned restaurants', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.getRestaurantWallet(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            allRestaurants: false,
+          },
+        },
+        'restaurant-2',
+      ),
+    ).rejects.toThrow(
+      'You cannot access resources outside your assigned restaurants',
+    );
   });
 
   it('marks payment paid from stripe webhook success', async () => {

@@ -1240,6 +1240,19 @@ export class CouponsService {
       return this.resolveSingleTenantRestaurantId(tenantId);
     }
 
+    if (this.isStaffActor(user)) {
+      const restaurantId =
+        requestedRestaurantId ??
+        user.rid ??
+        this.resolveSingleAssignedRestaurantId(user);
+      if (!restaurantId) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      await this.ensureStaffRestaurantAccess(user, restaurantId);
+      return restaurantId;
+    }
+
     if (!user.rid) {
       throw new ForbiddenException('Restaurant context is required');
     }
@@ -1307,11 +1320,55 @@ export class CouponsService {
       return;
     }
 
+    if (this.isStaffActor(user)) {
+      await this.ensureStaffRestaurantAccess(user, restaurantId);
+      return;
+    }
+
     if (user.rid !== restaurantId) {
       throw new ForbiddenException(
         'You cannot access resources outside your restaurant',
       );
     }
+  }
+
+  private async ensureStaffRestaurantAccess(
+    user: AuthUserContext,
+    restaurantId: string,
+  ): Promise<void> {
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const hasAllRestaurantsAccess =
+      user.restaurantAccess?.allRestaurants === true ||
+      user.restaurantAccess?.hasAllRestaurantsAccess === true;
+    const assignedRestaurantIds = new Set([
+      ...(user.restaurantAccess?.restaurantIds ?? []),
+      ...(user.rid ? [user.rid] : []),
+    ]);
+
+    if (!hasAllRestaurantsAccess && !assignedRestaurantIds.has(restaurantId)) {
+      throw new ForbiddenException(
+        'You cannot access resources outside your assigned restaurants',
+      );
+    }
+
+    await this.assertRestaurantInTenant(user.tid, restaurantId);
+  }
+
+  private resolveSingleAssignedRestaurantId(
+    user: AuthUserContext,
+  ): string | undefined {
+    const restaurantIds = new Set([
+      ...(user.restaurantAccess?.restaurantIds ?? []),
+      ...(user.rid ? [user.rid] : []),
+    ]);
+    return restaurantIds.size === 1 ? [...restaurantIds][0] : undefined;
+  }
+
+  private isStaffActor(user: AuthUserContext): boolean {
+    return user.role === UserRoleEnum.STAFF || user.actorType === 'STAFF';
   }
 
   private async resolveSingleTenantRestaurantId(tenantId: string) {

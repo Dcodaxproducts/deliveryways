@@ -1115,4 +1115,65 @@ describe('RolesGuard staff role permissions', () => {
       ),
     ).rejects.toThrow('Your role does not have access to this action');
   });
+
+  it('maps deliveryman dashboard stats to the Deliveryman module', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'deliveryman', operations: ['read'] }]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'admin/dashboard',
+      handlerPath: 'deliverymen/stats',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { query: { restaurantId: 'restaurant-1' } },
+        ),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('does not let Deliveryman read permission authorize nested updates', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([{ access: 'deliveryman', operations: ['read'] }]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'deliverymen',
+      handlerPath: ':id',
+      method: RequestMethod.PATCH,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({ uid: 'staff-1', role: RolesEnum.STAFF }),
+      ),
+    ).rejects.toThrow('Your role does not have access to this action');
+  });
 });

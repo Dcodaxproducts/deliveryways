@@ -99,6 +99,17 @@ export class PaymentsRepository {
     });
   }
 
+  findRestaurantScope(restaurantId: string, tenantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        tenantId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+  }
+
   async findLatestPendingChargeByOrderId(orderId: string) {
     return this.prisma.paymentTransaction.findFirst({
       where: {

@@ -521,6 +521,7 @@ export class RolesGuard implements CanActivate {
     const mappings: Array<[string, string[]]> = [
       ['admin/dashboard/orders/stats', ['order-management', 'orders']],
       ['admin/dashboard/customers/stats', ['customer-management', 'customers']],
+      ['admin/dashboard/deliverymen/stats', ['deliveryman', 'deliverymen']],
       [
         'admin/dashboard/orders/trend',
         ['reports-payouts', 'reports', 'order-management', 'orders'],
