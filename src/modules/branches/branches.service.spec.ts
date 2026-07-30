@@ -844,6 +844,65 @@ describe('BranchesService', () => {
     ).toBe('Lahore');
   });
 
+  it('allows all-restaurant staff to fetch a selected branch for editing', async () => {
+    const { service, repository, prisma } = makeService();
+    prisma.staffUser.findUnique.mockResolvedValue({
+      restaurantId: null,
+      branchId: null,
+      restaurantAccess: { allRestaurants: true },
+      isActive: true,
+      deletedAt: null,
+      staffRole: {
+        permissions: [
+          { access: 'branch-management', operations: ['read', 'update'] },
+        ],
+        restaurantAccess: { allRestaurants: true },
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-2',
+      name: 'Selected Restaurant Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: null,
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+      managerId: null,
+      manager: null,
+      restaurant: {
+        id: 'restaurant-2',
+        name: 'Selected Restaurant',
+        slug: 'selected-restaurant',
+        logoUrl: null,
+        coverImage: null,
+      },
+    });
+    repository.listBranchAddresses.mockResolvedValue([]);
+
+    const result = await service.details(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        staffRoleId: 'role-1',
+      },
+      'branch-2',
+    );
+
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: 'branch-2',
+        restaurantId: 'restaurant-2',
+      }),
+    );
+  });
+
   it('allows super admin to fetch all branches without restaurant filter', async () => {
     const { service, repository } = makeService();
     repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });

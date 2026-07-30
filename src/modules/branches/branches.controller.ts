@@ -17,7 +17,7 @@ import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
   RolesGuard,
-  TenantAccessGuard,
+  TenantAccessGuard as TenantGuard,
 } from '../../common/guards';
 import { BranchesService } from './branches.service';
 import {
@@ -40,7 +40,7 @@ export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @ApiBody({
     schema: {
@@ -71,7 +71,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Post('bulk')
   createBulk(
@@ -82,7 +82,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
@@ -134,12 +134,13 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.STAFF,
   )
   @Get(':id')
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -147,11 +148,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
     RolesEnum.CUSTOMER,
   )
   @Get(':id/opening-hours')
@@ -160,11 +162,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Put(':id/opening-hours')
   updateOpeningHours(
@@ -176,12 +179,13 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.STAFF,
   )
   @Get(':id/holiday-opening-hours')
   holidayOpeningHours(
@@ -192,11 +196,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Put(':id/holiday-opening-hours')
   updateHolidayOpeningHours(
@@ -208,12 +213,13 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.STAFF,
   )
   @Get(':id/delivery-time')
   deliveryTime(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -221,11 +227,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Put(':id/delivery-time')
   updateDeliveryTime(
@@ -237,12 +244,13 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
     RolesEnum.CUSTOMER,
+    RolesEnum.STAFF,
   )
   @Get(':id/delivery-hours')
   deliveryHours(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -250,11 +258,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Put(':id/delivery-hours')
   updateDeliveryHours(
@@ -266,11 +275,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Patch(':id/temporary-closure')
   updateTemporaryClosure(
@@ -282,11 +292,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Patch(':id')
   update(
@@ -298,7 +309,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Patch(':id/suspend')
   suspend(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -306,7 +317,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Patch(':id/activate')
   activate(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -314,7 +325,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Post(':id/restore')
   restore(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -322,11 +333,12 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @Patch(':id/images')
   updateImages(
@@ -338,7 +350,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
@@ -346,7 +358,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.SUPER_ADMIN)
   @Post('orphans/:id/cleanup')
   cleanupOrphanedBranchResources(
@@ -358,7 +370,7 @@ export class BranchesController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Delete(':id/force')
   forceDelete(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {

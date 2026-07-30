@@ -702,7 +702,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchAccess(user, branch);
+    await this.assertBranchAccess(user, branch);
 
     const [address] = await this.branchesRepository.listBranchAddresses([id]);
 
@@ -734,7 +734,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchAccess(user, branch);
+    await this.assertBranchAccess(user, branch);
 
     return {
       data: this.readOpeningHours(branch.settings),
@@ -749,7 +749,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchAccess(user, branch);
+    await this.assertBranchAccess(user, branch);
 
     return {
       data: this.readHolidayOpeningHours(branch.settings),
@@ -807,7 +807,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchAccess(user, branch);
+    await this.assertBranchAccess(user, branch);
 
     return {
       data: {
@@ -887,7 +887,7 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
 
-    this.assertBranchAccess(user, branch);
+    await this.assertBranchAccess(user, branch);
 
     return {
       data: {
@@ -1513,7 +1513,7 @@ export class BranchesService {
     }
   }
 
-  private assertBranchAccess(
+  private async assertBranchAccess(
     user: AuthUserContext,
     branch: {
       tenantId: string;
@@ -1534,6 +1534,22 @@ export class BranchesService {
       if (branch.tenantId !== user.tid) {
         throw new ForbiddenException(
           'You cannot access resources outside your tenant restaurants',
+        );
+      }
+
+      return;
+    }
+
+    if (this.isStaff(user)) {
+      const staffAccess = await this.resolveStaffBranchAccess(user, 'read');
+      this.resolveStaffRestaurantId(staffAccess, branch.restaurantId);
+
+      if (
+        staffAccess.branchIds.length > 0 &&
+        !staffAccess.branchIds.includes(branch.id)
+      ) {
+        throw new ForbiddenException(
+          'Staff account is not assigned to this branch',
         );
       }
 

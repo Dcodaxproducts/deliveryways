@@ -24,4 +24,15 @@ describe('BranchesController branch admin permissions', () => {
   it('allows staff to list branches through staff-role permission checks', () => {
     expect(getRouteRoles('list')).toContain(RolesEnum.STAFF);
   });
+
+  it('allows staff to view and edit branches through permission checks', () => {
+    expect(getRouteRoles('details')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('update')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('openingHours')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('updateOpeningHours')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('deliveryTime')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('updateDeliveryTime')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('deliveryHours')).toContain(RolesEnum.STAFF);
+    expect(getRouteRoles('updateDeliveryHours')).toContain(RolesEnum.STAFF);
+  });
 });
