@@ -17,7 +17,7 @@ import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
   RolesGuard,
-  TenantAccessGuard,
+  TenantAccessGuard as TenantGuard,
 } from '../../common/guards';
 import {
   AdminEmailReportExportDto,
@@ -27,6 +27,7 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminGeneratedInvoicePdfQueryDto,
   AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
@@ -36,7 +37,7 @@ import { AdminReportsService } from './admin-reports.service';
 
 @ApiTags('Admin Reports')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
 @Controller('admin/reports')
 export class AdminReportsController {
   constructor(private readonly adminReportsService: AdminReportsService) {}
@@ -186,7 +187,7 @@ export class AdminReportsController {
   async downloadGeneratedInvoicePdf(
     @CurrentUser() user: AuthUserContext,
     @Param('invoiceId') invoiceId: string,
-    @Query() query: AdminReportsScopedQueryDto,
+    @Query() query: AdminGeneratedInvoicePdfQueryDto,
     @Res({ passthrough: true }) response: Response,
   ) {
     const file = await this.adminReportsService.downloadGeneratedInvoicePdf(

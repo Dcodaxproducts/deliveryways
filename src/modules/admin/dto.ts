@@ -495,6 +495,13 @@ export class AdminGeneratedInvoicesQueryDto extends AdminReportsScopedQueryDto {
   toDate?: string;
 }
 
+export class AdminGeneratedInvoicePdfQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional({ enum: GeneratedInvoiceKind })
+  @IsOptional()
+  @IsEnum(GeneratedInvoiceKind)
+  kind?: GeneratedInvoiceKind;
+}
+
 export class AdminInvoicesQueryDto extends AdminReportsScopedQueryDto {
   @ApiPropertyOptional({ enum: OrderStatus })
   @IsOptional()

@@ -577,6 +577,43 @@ describe('RolesGuard staff role permissions', () => {
     });
   });
 
+  it('recognizes legacy staff tokens by staff role id', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'menu-management', operations: ['read'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [
+        RolesEnum.SUPER_ADMIN,
+        RolesEnum.BUSINESS_ADMIN,
+        RolesEnum.BRANCH_ADMIN,
+      ],
+      controllerPath: 'admin/deals',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          {
+            uid: 'staff-1',
+            role: 'RESTAURANT_ADMIN',
+            staffRoleId: 'role-1',
+          },
+          { query: { restaurantId: 'restaurant-1' } },
+        ),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it('hydrates STAFF restaurant context for deal category menu items', async () => {
     const prisma: PrismaMock = {
       staffUser: {
@@ -624,16 +661,32 @@ describe('RolesGuard staff role permissions', () => {
       permission: 'reports-payouts',
       controllerPath: 'admin/reports',
       handlerPath: 'generated-invoices',
+      query: { restaurantId: 'restaurant-1' },
+    },
+    {
+      name: 'order invoice history',
+      permission: 'order-management',
+      controllerPath: 'admin/reports',
+      handlerPath: 'generated-invoices',
+      query: { restaurantId: 'restaurant-1', kind: 'ORDER' },
+    },
+    {
+      name: 'order invoice PDF',
+      permission: 'order-management',
+      controllerPath: 'admin/reports',
+      handlerPath: 'generated-invoices/:invoiceId/pdf',
+      query: { restaurantId: 'restaurant-1', kind: 'ORDER' },
     },
     {
       name: 'table reservations',
       permission: 'table-reservations',
       controllerPath: 'customer-app',
       handlerPath: 'admin/table-reservations',
+      query: { restaurantId: 'restaurant-1' },
     },
   ])(
     'hydrates selected restaurant tenant context for STAFF $name',
-    async ({ permission, controllerPath, handlerPath }) => {
+    async ({ permission, controllerPath, handlerPath, query }) => {
       const prisma: PrismaMock = {
         staffUser: {
           findUnique: jest
@@ -659,7 +712,7 @@ describe('RolesGuard staff role permissions', () => {
       await expect(
         guard.canActivate(
           createContext(user, {
-            query: { restaurantId: 'restaurant-1' },
+            query,
           }),
         ),
       ).resolves.toBe(true);

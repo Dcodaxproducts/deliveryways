@@ -156,7 +156,7 @@ export class RolesGuard implements CanActivate {
 
     this.attachStaffIdentityToRequestUser(user, staff);
 
-    const accessKeys = this.resolveRouteAccessKeys(context);
+    const accessKeys = this.resolveRouteAccessKeys(context, request);
     if (!accessKeys.length) {
       return false;
     }
@@ -326,6 +326,13 @@ export class RolesGuard implements CanActivate {
     request: StaffGuardRequest,
     key: 'restaurantId' | 'branchId',
   ): string | undefined {
+    return this.readRequestString(request, key);
+  }
+
+  private readRequestString(
+    request: StaffGuardRequest,
+    key: string,
+  ): string | undefined {
     const value =
       request.body?.[key] ?? request.query?.[key] ?? request.params?.[key];
     if (typeof value !== 'string') {
@@ -460,11 +467,22 @@ export class RolesGuard implements CanActivate {
     }
   }
 
-  private resolveRouteAccessKeys(context: ExecutionContext): string[] {
+  private resolveRouteAccessKeys(
+    context: ExecutionContext,
+    request: StaffGuardRequest,
+  ): string[] {
     const normalizedPath = this.resolveNormalizedRoutePath(context);
     const candidates = new Set<string>();
 
     this.addMappedAccessKeys(normalizedPath, candidates);
+    if (
+      (normalizedPath === 'admin/reports/generated-invoices' ||
+        normalizedPath.startsWith('admin/reports/generated-invoices/')) &&
+      this.readRequestString(request, 'kind')?.toUpperCase() === 'ORDER'
+    ) {
+      candidates.add('order-management');
+      candidates.add('orders');
+    }
 
     normalizedPath
       .split('/')
@@ -602,8 +620,12 @@ export class RolesGuard implements CanActivate {
     return path ?? '';
   }
 
-  private isStaffActor(user: { role?: string; actorType?: string }): boolean {
-    return user.role === RolesEnum.STAFF || user.actorType === RolesEnum.STAFF;
+  private isStaffActor(user: StaffRequestUser): boolean {
+    return (
+      user.role === RolesEnum.STAFF ||
+      user.actorType === RolesEnum.STAFF ||
+      !!user.staffRoleId
+    );
   }
 
   private normalizeAccess(value: unknown): string {

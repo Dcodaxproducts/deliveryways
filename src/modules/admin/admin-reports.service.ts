@@ -29,6 +29,7 @@ import {
   AdminExportMenuCsvQueryDto,
   AdminExportOrdersCsvQueryDto,
   AdminFinancialReportQueryDto,
+  AdminGeneratedInvoicePdfQueryDto,
   AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
   AdminOrdersReportQueryDto,
@@ -400,7 +401,7 @@ export class AdminReportsService {
   async downloadGeneratedInvoicePdf(
     user: AuthUserContext,
     invoiceId: string,
-    query: AdminReportsScopedQueryDto,
+    query: AdminGeneratedInvoicePdfQueryDto,
   ) {
     const scope = await this.resolveScope(
       user,
@@ -413,6 +414,9 @@ export class AdminReportsService {
     );
 
     if (!invoice) {
+      throw new NotFoundException('Generated invoice not found');
+    }
+    if (query.kind && invoice.kind !== query.kind) {
       throw new NotFoundException('Generated invoice not found');
     }
 

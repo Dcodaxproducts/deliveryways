@@ -489,6 +489,30 @@ describe('AdminReportsService', () => {
     );
   });
 
+  it('does not expose a generated invoice under a different requested kind', async () => {
+    const repository = {
+      findGeneratedInvoiceById: jest.fn().mockResolvedValue({
+        id: 'generated-1',
+        kind: 'SUBSCRIPTION',
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    await expect(
+      service.downloadGeneratedInvoicePdf(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'STAFF',
+          actorType: 'STAFF',
+        } as never,
+        'generated-1',
+        { kind: 'ORDER' } as never,
+      ),
+    ).rejects.toThrow('Generated invoice not found');
+  });
+
   it('returns generated invoice PDF content for download', async () => {
     const repository = {
       findInvoiceOrder: jest.fn().mockResolvedValue({
