@@ -282,4 +282,36 @@ describe('StorageService', () => {
     expect(result.items[1].imageUrl).toBe('https://signed-url.example');
     expect(resolveViewUrlSpy).toHaveBeenCalledTimes(4);
   });
+
+  it('resolves independent media fields concurrently', async () => {
+    const resolvers: Array<(value: string) => void> = [];
+    const resolveViewUrlSpy = jest
+      .spyOn(service, 'resolveViewUrl')
+      .mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            resolvers.push(resolve);
+          }),
+      );
+
+    const responsePromise = service.resolveMediaUrlsDeep({
+      imageUrl: 'uploads/items/pizza.webp',
+      category: {
+        imageUrl: 'uploads/categories/pizza.webp',
+      },
+    });
+
+    expect(resolveViewUrlSpy).toHaveBeenCalledTimes(2);
+
+    resolvers.forEach((resolve, index) =>
+      resolve(`https://signed-url.example/${index}`),
+    );
+
+    await expect(responsePromise).resolves.toEqual({
+      imageUrl: 'https://signed-url.example/0',
+      category: {
+        imageUrl: 'https://signed-url.example/1',
+      },
+    });
+  });
 });

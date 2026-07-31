@@ -38,6 +38,9 @@ interface S3Config {
 
 @Injectable()
 export class StorageService {
+  private s3Client: S3Client | null = null;
+  private s3ClientSignature = '';
+
   constructor(private readonly configService: ConfigService) {}
 
   async resolveMediaUrlsDeep<T>(value: T): Promise<T> {
@@ -52,18 +55,19 @@ export class StorageService {
         return input;
       }
 
-      const output: Record<string, unknown> = {};
+      const entries = await Promise.all(
+        Object.entries(input).map(
+          async ([key, nestedValue]) =>
+            [
+              key,
+              this.isMediaField(key)
+                ? await this.resolveMediaFieldValue(nestedValue, cache)
+                : await visit(nestedValue),
+            ] as const,
+        ),
+      );
 
-      for (const [key, nestedValue] of Object.entries(input)) {
-        if (this.isMediaField(key)) {
-          output[key] = await this.resolveMediaFieldValue(nestedValue, cache);
-          continue;
-        }
-
-        output[key] = await visit(nestedValue);
-      }
-
-      return output;
+      return Object.fromEntries(entries);
     };
 
     return (await visit(value)) as T;
@@ -253,13 +257,26 @@ export class StorageService {
       );
     }
 
-    return new S3Client({
+    const signature = [
+      config.accessKeyId,
+      config.secretAccessKey,
+      config.region,
+    ].join('\0');
+
+    if (this.s3Client && this.s3ClientSignature === signature) {
+      return this.s3Client;
+    }
+
+    this.s3Client = new S3Client({
       region: config.region,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
     });
+    this.s3ClientSignature = signature;
+
+    return this.s3Client;
   }
 
   private resolveUploadTarget(fileName: string, contentType: string) {

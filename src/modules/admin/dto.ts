@@ -37,6 +37,14 @@ export class AdminListCustomersDto extends AdminListQueryDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter registered or guest customer accounts',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isGuest?: boolean;
 }
 
 export class AdminCustomerDetailsQueryDto {

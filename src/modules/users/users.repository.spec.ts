@@ -48,6 +48,36 @@ describe('UsersRepository', () => {
     });
   });
 
+  it('filters registered POS customers before pagination', async () => {
+    type FindManyArgs = {
+      where: {
+        isGuest?: boolean;
+      };
+    };
+    const findMany = jest.fn((args: FindManyArgs): Promise<unknown[]> => {
+      void args;
+      return Promise.resolve([]);
+    });
+    const count = jest.fn().mockResolvedValue(0);
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    await repository.listCustomers('tenant-1', {
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      isGuest: false,
+    });
+
+    expect(findMany.mock.calls[0]?.[0].where.isGuest).toBe(false);
+  });
+
   const makeTransaction = () => {
     const calls: string[] = [];
     const modelMocks = new Map<string, Record<string, jest.Mock>>();

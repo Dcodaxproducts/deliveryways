@@ -1214,6 +1214,7 @@ describe('CustomerAppService', () => {
     couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
       {
         id: 'promo-1',
+        kind: 'PROMOTION',
         title: 'Burger Deal',
         description: 'Auto discount',
         imageUrl: 'promo-thumb.jpg',
@@ -1269,6 +1270,31 @@ describe('CustomerAppService', () => {
         scopeCategories: [],
       },
     ]);
+    couponsService.getActiveHappyHours.mockResolvedValue([
+      {
+        id: 'happy-1',
+        kind: 'HAPPY_HOUR',
+        title: 'Lunch happy hour',
+        description: 'Lunch discount',
+        imageUrl: 'happy-hour.jpg',
+        applyMode: 'ORDER_TOTAL',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(15),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        startsAt: new Date('2026-05-20T00:00:00.000Z'),
+        expiresAt: new Date('2026-05-25T00:00:00.000Z'),
+        activeDays: [1, 2, 3, 4, 5],
+        dailyStartTime: '12:00',
+        dailyEndTime: '14:00',
+        restaurant: null,
+        branch: null,
+        scopeMenuItem: null,
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
+      },
+    ]);
 
     const result = await service.listPromotions({
       restaurantId: 'restaurant-1',
@@ -1280,25 +1306,36 @@ describe('CustomerAppService', () => {
       undefined,
       true,
     );
-    expect(result.data).toEqual([
-      expect.objectContaining({
-        id: 'promo-1',
-        title: 'Burger Deal',
-        imageUrl: 'promo-thumb.jpg',
-        thumbnailUrl: 'promo-thumb.jpg',
-        discountType: 'PERCENTAGE',
-        discountValue: 10,
-        maxDiscountAmount: 100,
-        minOrderAmount: 500,
-        scopeMenuItems: [
-          { id: 'item-1', name: 'Zinger Burger', imageUrl: 'zinger.png' },
-        ],
-        scopeCategories: [
-          { id: 'category-1', name: 'Burgers', imageUrl: 'burgers.png' },
-        ],
-      }),
-    ]);
-    expect(result.data).toHaveLength(1);
+    expect(result.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'promo-1',
+          kind: 'PROMOTION',
+          title: 'Burger Deal',
+          imageUrl: 'promo-thumb.jpg',
+          thumbnailUrl: 'promo-thumb.jpg',
+          discountType: 'PERCENTAGE',
+          discountValue: 10,
+          maxDiscountAmount: 100,
+          minOrderAmount: 500,
+          scopeMenuItems: [
+            { id: 'item-1', name: 'Zinger Burger', imageUrl: 'zinger.png' },
+          ],
+          scopeCategories: [
+            { id: 'category-1', name: 'Burgers', imageUrl: 'burgers.png' },
+          ],
+        }),
+        expect.objectContaining({
+          id: 'happy-1',
+          kind: 'HAPPY_HOUR',
+          activeDays: [1, 2, 3, 4, 5],
+          dailyStartTime: '12:00',
+          dailyEndTime: '14:00',
+          isCurrentlyActive: true,
+        }),
+      ]),
+    );
+    expect(result.data).toHaveLength(2);
   });
 
   it('lists active customer coupon codes for browsing and copying', async () => {

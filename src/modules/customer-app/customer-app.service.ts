@@ -3803,6 +3803,7 @@ export class CustomerAppService {
 
     return {
       id: promotion.id,
+      kind: promotion.kind,
       title: translatedPromotion.title,
       description: translatedPromotion.description,
       imageUrl,
@@ -3821,6 +3822,10 @@ export class CustomerAppService {
         : null,
       startsAt: promotion.startsAt,
       expiresAt: promotion.expiresAt,
+      activeDays: this.readNumberArray(promotion.activeDays),
+      dailyStartTime: promotion.dailyStartTime,
+      dailyEndTime: promotion.dailyEndTime,
+      isCurrentlyActive: true,
       branch: promotion.branch
         ? {
             id: promotion.branch.id,

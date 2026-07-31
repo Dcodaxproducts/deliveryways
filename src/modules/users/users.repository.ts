@@ -103,6 +103,7 @@ export class UsersRepository {
       restaurantId?: string;
       isVerified?: boolean;
       isActive?: boolean;
+      isGuest?: boolean;
     },
     withDeleted = false,
   ) {
@@ -114,6 +115,7 @@ export class UsersRepository {
         ? { isVerified: query.isVerified }
         : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.isGuest !== undefined ? { isGuest: query.isGuest } : {}),
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(query.search
         ? {
