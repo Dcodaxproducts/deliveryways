@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AddressRefType,
+  CouponAudience,
   CouponDealSelectionMode,
   LocalizationEntityType,
   ModifierSelectionType,
@@ -75,6 +76,10 @@ import { ContactSubmissionsService } from '../contact-submissions/contact-submis
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
+>[number];
+
+type DisplayPromotion = Awaited<
+  ReturnType<CouponsService['getActiveAutoApplyPromotionsForDisplay']>
 >[number];
 
 type CustomerCoupon = Awaited<
@@ -1026,15 +1031,26 @@ export class CustomerAppService {
   ) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
     await this.getPublicContent(resolvedQuery, user);
-    const promotionContext = await this.loadPromotionContext(
-      resolvedQuery.restaurantId,
-      resolvedQuery.branchId,
-      user,
-    );
-    const promotions = [
-      ...promotionContext.promotions,
-      ...promotionContext.happyHours,
-    ]
+    const customerIsGuest = this.isGuestAudience(user);
+    const [displayPromotions, happyHours]: [
+      DisplayPromotion[],
+      ActiveHappyHour[],
+    ] = await Promise.all([
+      this.couponsService?.getActiveAutoApplyPromotionsForDisplay(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+      ) ?? Promise.resolve([]),
+      this.couponsService?.getActiveHappyHours(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+        customerIsGuest,
+      ) ?? Promise.resolve([]),
+    ]);
+    const visiblePromotions = displayPromotions.filter((promotion) => {
+      if (customerIsGuest) return true;
+      return promotion.audience !== CouponAudience.GUEST;
+    });
+    const promotions = [...visiblePromotions, ...happyHours]
       .filter((promotion) => promotion.discountType !== 'FIXED_PRICE')
       .slice(0, query.limit);
     const translationContext = await this.loadTranslationContext(
@@ -1046,7 +1062,13 @@ export class CustomerAppService {
     return {
       data: await Promise.all(
         promotions.map((promotion) =>
-          this.mapPublicPromotion(promotion, undefined, translationContext),
+          this.mapPublicPromotion(
+            promotion,
+            undefined,
+            translationContext,
+            !customerIsGuest ||
+              promotion.audience !== CouponAudience.REGISTERED,
+          ),
         ),
       ),
       message: 'Promotions fetched successfully',
@@ -1368,7 +1390,10 @@ export class CustomerAppService {
               email: branchContactInfo?.email ?? null,
               contacts: branchContactInfo,
               address: branchPublicAddress,
-              isOpen: this.isBranchOpenNow(translatedBranch.settings),
+              isOpen: this.isBranchOpenNow(
+                translatedBranch.settings,
+                timezone ?? 'UTC',
+              ),
               isOnlyBranch: activeBranchCount === 1,
               settings: {
                 allowedOrderTypes: this.readStringArrayValue(
@@ -3812,6 +3837,7 @@ export class CustomerAppService {
     promotion: AutoApplyPromotion,
     scopedMenuItemsById?: Map<string, PublicDealScopeMenuItem>,
     translationContext?: CustomerAppTranslationContext,
+    isEligible = true,
   ) {
     const imageUrl = await this.resolveMediaUrl(promotion.imageUrl);
     const translatedPromotion = this.applyEntityTranslation(
@@ -3829,6 +3855,9 @@ export class CustomerAppService {
       imageUrl,
       thumbnailUrl: imageUrl,
       audience: promotion.audience,
+      isEligible,
+      requiresRegistration:
+        !isEligible && promotion.audience === CouponAudience.REGISTERED,
       applyMode: promotion.applyMode,
       discountType: promotion.discountType,
       discountValue: Number(promotion.discountValue),
@@ -4857,13 +4886,13 @@ export class CustomerAppService {
     };
   }
 
-  private isBranchOpenNow(settings: unknown) {
+  private isBranchOpenNow(settings: unknown, timezone: string) {
     const hours = this.readBranchScheduleHours(settings, 'openingHours');
     if (!hours.length) {
       return true;
     }
 
-    const local = this.getKarachiLocalNow();
+    const local = this.getLocalNow(timezone);
     const today = hours.find(
       (entry) =>
         this.readStringValue(entry, [['dayOfWeek']]) === local.dayOfWeek,
@@ -4894,9 +4923,9 @@ export class CustomerAppService {
       : local.minutes >= openMinutes || local.minutes < closeMinutes;
   }
 
-  private getKarachiLocalNow() {
+  private getLocalNow(timezone: string) {
     const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Karachi',
+      timeZone: timezone,
       weekday: 'long',
       hour: '2-digit',
       minute: '2-digit',

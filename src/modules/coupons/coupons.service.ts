@@ -390,6 +390,16 @@ export class CouponsService {
     );
   }
 
+  async getActiveAutoApplyPromotionsForDisplay(
+    restaurantId: string,
+    branchId?: string,
+  ) {
+    return this.couponsRepository.findAutoApplyPromotions(
+      restaurantId,
+      branchId,
+    );
+  }
+
   async getActiveCustomerCoupons(
     restaurantId: string,
     branchId?: string,

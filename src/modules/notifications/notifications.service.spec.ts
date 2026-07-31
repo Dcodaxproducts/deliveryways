@@ -729,6 +729,63 @@ describe('NotificationsService', () => {
     );
   });
 
+  it('sends only one order email when customer and notification addresses match', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      status: 'PLACED',
+      orderType: 'DELIVERY',
+      subtotal: 10,
+      taxAmount: 0,
+      deliveryFee: 0,
+      discountAmount: 0,
+      totalAmount: 10,
+      paymentStatus: 'PENDING',
+      createdAt: new Date('2026-07-23T12:00:00.000Z'),
+      customer: {
+        email: 'Same@Example.com',
+        profile: { firstName: 'Bilal' },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+        settings: {
+          notificationSettings: {
+            emailAddress: ' same@example.com ',
+            notificationTypes: { newOrder: { email: true } },
+          },
+        },
+      },
+      restaurant: { settings: null },
+      items: [],
+    });
+    notificationsRepository.create.mockImplementation(
+      (input: { recipientEmail?: string | null }) =>
+        Promise.resolve({
+          id: `notification-${input.recipientEmail ?? 'admin'}`,
+          recipientEmail: input.recipientEmail ?? null,
+          subject: 'subject',
+          body: 'body',
+        }),
+    );
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+    mailerService.sendEmail.mockResolvedValue(undefined);
+
+    await service.notifyOrderPlaced('order-1');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(mailerService.sendEmail).toHaveBeenCalledTimes(1);
+    expect(notificationsRepository.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+      }),
+    );
+  });
+
   it('creates deliveryman in-app notification when assigned order status changes', async () => {
     notificationsRepository.findOrderForNotification.mockResolvedValue({
       id: 'order-1',

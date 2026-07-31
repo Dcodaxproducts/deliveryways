@@ -213,6 +213,23 @@ describe('CouponsService', () => {
     expect(promotions.map((promotion) => promotion.id)).toEqual(['both']);
   });
 
+  it('returns all active promotions for customer discovery without changing eligibility', async () => {
+    repository.findAutoApplyPromotions!.mockResolvedValue([
+      makeCoupon({ id: 'registered', audience: CouponAudience.REGISTERED }),
+      makeCoupon({ id: 'guest', audience: CouponAudience.GUEST }),
+    ]);
+
+    const promotions = await service.getActiveAutoApplyPromotionsForDisplay(
+      'rid-1',
+      'bid-1',
+    );
+
+    expect(promotions.map((promotion) => promotion.id)).toEqual([
+      'registered',
+      'guest',
+    ]);
+  });
+
   it('returns active fixed-price deals without making them auto promotions', async () => {
     repository.findActiveDeals!.mockResolvedValue([
       makeCoupon({

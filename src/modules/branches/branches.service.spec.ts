@@ -805,8 +805,19 @@ describe('BranchesService', () => {
       isMain: true,
       isActive: true,
       deletedAt: null,
-      managerId: null,
-      manager: null,
+      managerId: 'branch-admin-1',
+      manager: {
+        id: 'branch-admin-1',
+        email: 'branch.admin@example.com',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        isActive: true,
+        profile: {
+          firstName: 'Branch',
+          lastName: 'Admin',
+          phone: '+49123456789',
+          avatarUrl: null,
+        },
+      },
       restaurant: {
         id: 'restaurant-1',
         name: 'Restaurant',
@@ -842,6 +853,17 @@ describe('BranchesService', () => {
     expect(
       (result.data as { address?: { city: string } | null }).address?.city,
     ).toBe('Lahore');
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        branchAdmin: {
+          id: 'branch-admin-1',
+          email: 'branch.admin@example.com',
+          firstName: 'Branch',
+          lastName: 'Admin',
+          phone: '+49123456789',
+        },
+      }),
+    );
   });
 
   it('allows all-restaurant staff to fetch a selected branch for editing', async () => {

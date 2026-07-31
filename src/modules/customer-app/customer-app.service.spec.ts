@@ -1,5 +1,9 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { CouponDealSelectionMode, Prisma } from '@prisma/client';
+import {
+  CouponAudience,
+  CouponDealSelectionMode,
+  Prisma,
+} from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { CustomerAppService } from './customer-app.service';
 
@@ -181,6 +185,7 @@ describe('CustomerAppService', () => {
 
     const couponsService = {
       getActiveAutoApplyPromotions: jest.fn().mockResolvedValue([]),
+      getActiveAutoApplyPromotionsForDisplay: jest.fn().mockResolvedValue([]),
       getActiveCustomerCoupons: jest.fn().mockResolvedValue([]),
       getActiveCustomerDeals: jest.fn().mockResolvedValue([]),
       getActiveHappyHours: jest.fn().mockResolvedValue([]),
@@ -1212,7 +1217,7 @@ describe('CustomerAppService', () => {
       supportContact: null,
       settings: {},
     });
-    couponsService.getActiveAutoApplyPromotions.mockResolvedValue([
+    couponsService.getActiveAutoApplyPromotionsForDisplay.mockResolvedValue([
       {
         id: 'promo-1',
         kind: 'PROMOTION',
@@ -1250,6 +1255,27 @@ describe('CustomerAppService', () => {
             },
           },
         ],
+      },
+      {
+        id: 'registered-promo',
+        kind: 'PROMOTION',
+        title: 'Members save more',
+        description: 'Register to unlock',
+        imageUrl: null,
+        audience: CouponAudience.REGISTERED,
+        applyMode: 'ORDER_TOTAL',
+        discountType: 'PERCENTAGE',
+        discountValue: new Prisma.Decimal(20),
+        maxDiscountAmount: null,
+        minOrderAmount: null,
+        startsAt: new Date('2026-05-20T00:00:00.000Z'),
+        expiresAt: new Date('2026-05-25T00:00:00.000Z'),
+        restaurant: null,
+        branch: null,
+        scopeMenuItem: null,
+        scopeCategory: null,
+        scopeMenuItems: [],
+        scopeCategories: [],
       },
       {
         id: 'deal-1',
@@ -1302,11 +1328,9 @@ describe('CustomerAppService', () => {
       limit: 10,
     });
 
-    expect(couponsService.getActiveAutoApplyPromotions).toHaveBeenCalledWith(
-      'restaurant-1',
-      undefined,
-      true,
-    );
+    expect(
+      couponsService.getActiveAutoApplyPromotionsForDisplay,
+    ).toHaveBeenCalledWith('restaurant-1', undefined);
     expect(result.data).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1327,6 +1351,12 @@ describe('CustomerAppService', () => {
           ],
         }),
         expect.objectContaining({
+          id: 'registered-promo',
+          audience: CouponAudience.REGISTERED,
+          isEligible: false,
+          requiresRegistration: true,
+        }),
+        expect.objectContaining({
           id: 'happy-1',
           kind: 'HAPPY_HOUR',
           activeDays: [1, 2, 3, 4, 5],
@@ -1336,7 +1366,7 @@ describe('CustomerAppService', () => {
         }),
       ]),
     );
-    expect(result.data).toHaveLength(2);
+    expect(result.data).toHaveLength(3);
   });
 
   it('lists active customer coupon codes for browsing and copying', async () => {
@@ -2785,6 +2815,59 @@ describe('CustomerAppService', () => {
 
     expect(result.data.config.timezone).toBe('Europe/Berlin');
     expect(result.data.branch?.scheduleTimings.timezone).toBe('Europe/Berlin');
+  });
+
+  it('evaluates branch opening hours in the configured restaurant timezone', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-31T19:00:00.000Z'));
+    const { service, repository, globalSettingsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: null,
+      coverImage: null,
+      tagline: null,
+      bio: null,
+      supportContact: null,
+      branding: null,
+      settings: {},
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: {
+        openingHours: [
+          {
+            dayOfWeek: 'FRIDAY',
+            isClosed: false,
+            openTime: '09:00',
+            closeTime: '23:00',
+          },
+        ],
+        deliveryHours: [],
+      },
+    });
+    repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
+    repository.listPromotionalItems.mockResolvedValue([]);
+    globalSettingsService.getSettings.mockResolvedValue({
+      data: { timezone: 'Europe/Berlin' },
+    });
+
+    try {
+      const result = await service.getHomeScreen({
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        promotionLimit: 8,
+        cuisineLimit: 12,
+      });
+
+      expect(result.data.branch?.isOpen).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('falls back to global default currency on home screen', async () => {

@@ -375,7 +375,13 @@ export class NotificationsService {
       order.restaurant.settings,
     );
 
-    if (restaurantEmail) {
+    const normalizedCustomerEmail = order.customer.email.trim().toLowerCase();
+    const normalizedRestaurantEmail = restaurantEmail?.trim().toLowerCase();
+
+    if (
+      restaurantEmail &&
+      normalizedRestaurantEmail !== normalizedCustomerEmail
+    ) {
       emailTasks.push(
         this.createAndDispatchAdminEmail({
           tenantId: order.tenantId,

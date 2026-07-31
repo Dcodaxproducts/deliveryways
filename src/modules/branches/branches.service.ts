@@ -709,6 +709,15 @@ export class BranchesService {
     return {
       data: await this.withBranchDeletionState({
         ...this.withVisibleBranchSettings(user, branch),
+        branchAdmin: branch.manager
+          ? {
+              id: branch.manager.id,
+              email: branch.manager.email,
+              firstName: branch.manager.profile?.firstName ?? '',
+              lastName: branch.manager.profile?.lastName ?? '',
+              phone: branch.manager.profile?.phone ?? '',
+            }
+          : null,
         address: address
           ? {
               street: address.street,
