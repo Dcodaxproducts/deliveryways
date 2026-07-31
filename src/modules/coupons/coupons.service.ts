@@ -49,6 +49,7 @@ export interface CouponValidationInput {
   categoryIds: string[];
   lineItems?: CouponValidationLineInput[];
   ignoreMinOrderAmount?: boolean;
+  isScheduledOrder?: boolean;
 }
 
 export interface CouponValidationResult {
@@ -118,6 +119,11 @@ export class CouponsService {
       dto.scopeMenuItemId,
       dto.scopeCategoryId,
     );
+    await this.validateScopeReferenceLists(
+      restaurantId,
+      dto.scopeMenuItemIds,
+      dto.scopeCategoryIds,
+    );
 
     const data = await this.couponsRepository.create({
       tenant: { connect: { id: this.requireTenantId(user) } },
@@ -127,6 +133,11 @@ export class CouponsService {
       title: dto.title,
       description: dto.description,
       audience: dto.audience ?? CouponAudience.BOTH,
+      applyMode:
+        dto.applyMode ??
+        (dto.scopeMenuItemIds?.length || dto.scopeCategoryIds?.length
+          ? CouponApplyMode.SCOPED_ITEMS
+          : CouponApplyMode.ORDER_TOTAL),
       discountType: dto.discountType,
       discountValue: new Prisma.Decimal(dto.discountValue),
       maxDiscountAmount:
@@ -146,6 +157,20 @@ export class CouponsService {
         : undefined,
       scopeCategory: dto.scopeCategoryId
         ? { connect: { id: dto.scopeCategoryId } }
+        : undefined,
+      scopeMenuItems: dto.scopeMenuItemIds?.length
+        ? {
+            create: [...new Set(dto.scopeMenuItemIds)].map((menuItemId) => ({
+              menuItemId,
+            })),
+          }
+        : undefined,
+      scopeCategories: dto.scopeCategoryIds?.length
+        ? {
+            create: [...new Set(dto.scopeCategoryIds)].map(
+              (menuCategoryId) => ({ menuCategoryId }),
+            ),
+          }
         : undefined,
     });
 
@@ -195,11 +220,17 @@ export class CouponsService {
       dto.scopeMenuItemId,
       dto.scopeCategoryId,
     );
+    await this.validateScopeReferenceLists(
+      coupon.restaurantId,
+      dto.scopeMenuItemIds,
+      dto.scopeCategoryIds,
+    );
 
     const data = await this.couponsRepository.update(id, {
       title: dto.title,
       description: dto.description,
       audience: dto.audience,
+      applyMode: dto.applyMode,
       branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
       discountType: dto.discountType,
       discountValue:
@@ -226,6 +257,24 @@ export class CouponsService {
       scopeCategory: dto.scopeCategoryId
         ? { connect: { id: dto.scopeCategoryId } }
         : undefined,
+      scopeMenuItems:
+        dto.scopeMenuItemIds !== undefined
+          ? {
+              deleteMany: {},
+              create: [...new Set(dto.scopeMenuItemIds)].map((menuItemId) => ({
+                menuItemId,
+              })),
+            }
+          : undefined,
+      scopeCategories:
+        dto.scopeCategoryIds !== undefined
+          ? {
+              deleteMany: {},
+              create: [...new Set(dto.scopeCategoryIds)].map(
+                (menuCategoryId) => ({ menuCategoryId }),
+              ),
+            }
+          : undefined,
     });
 
     return {
@@ -790,6 +839,15 @@ export class CouponsService {
     }
 
     if (
+      coupon.kind === CouponCampaignKind.HAPPY_HOUR &&
+      input.isScheduledOrder
+    ) {
+      throw new BadRequestException(
+        'Happy Hour is not available for scheduled orders',
+      );
+    }
+
+    if (
       !this.isCouponWithinDateWindow(coupon.startsAt, coupon.expiresAt, now)
     ) {
       throw new BadRequestException('Coupon is not valid at this time');
@@ -866,7 +924,7 @@ export class CouponsService {
       discountAmount = eligibleSubtotal
         .mul(coupon.discountValue)
         .div(new Prisma.Decimal(100));
-      if (coupon.maxDiscountAmount) {
+      if (coupon.maxDiscountAmount && coupon.maxDiscountAmount.greaterThan(0)) {
         discountAmount = Prisma.Decimal.min(
           discountAmount,
           coupon.maxDiscountAmount,
@@ -1432,6 +1490,21 @@ export class CouponsService {
         );
       }
     }
+  }
+
+  private async validateScopeReferenceLists(
+    restaurantId: string,
+    menuItemIds: string[] = [],
+    categoryIds: string[] = [],
+  ): Promise<void> {
+    await Promise.all([
+      ...[...new Set(menuItemIds)].map((menuItemId) =>
+        this.validateScopeReferences(restaurantId, menuItemId),
+      ),
+      ...[...new Set(categoryIds)].map((categoryId) =>
+        this.validateScopeReferences(restaurantId, undefined, categoryId),
+      ),
+    ]);
   }
 
   private isAudienceEligible(

@@ -52,4 +52,28 @@ describe('NotificationsRealtimeService', () => {
       }),
     ).not.toThrow();
   });
+
+  it('emits order status updates to the same scoped rooms', () => {
+    const emit = jest.fn();
+    const branchTarget = { emit };
+    const restaurantTarget = {
+      to: jest.fn().mockReturnValue(branchTarget),
+    };
+    const server = {
+      to: jest.fn().mockReturnValue(restaurantTarget),
+    };
+    const service = new NotificationsRealtimeService();
+    const payload = {
+      id: 'order-1',
+      status: 'REJECTED',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      updatedAt: new Date('2026-07-31T07:00:00.000Z'),
+    };
+
+    service.registerServer(server as unknown as Server);
+    service.emitOrderStatusUpdated(payload);
+
+    expect(emit).toHaveBeenCalledWith('order.status.updated', payload);
+  });
 });

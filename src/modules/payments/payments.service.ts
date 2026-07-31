@@ -2232,6 +2232,12 @@ export class PaymentsService {
     restaurantId: string,
     dto: UpdateRestaurantPaymentMethodsDto,
   ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only Super Admin can update restaurant payment methods',
+      );
+    }
+
     const restaurant = await this.requireRestaurantForPayments(
       user,
       restaurantId,

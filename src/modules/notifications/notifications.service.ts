@@ -406,6 +406,14 @@ export class NotificationsService {
       throw new NotFoundException('Order not found');
     }
 
+    this.notificationsRealtimeService?.emitOrderStatusUpdated?.({
+      id: order.id,
+      status: order.status,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      updatedAt: order.updatedAt,
+    });
+
     const type =
       order.status === 'CANCELLED'
         ? NotificationType.ORDER_CANCELLED

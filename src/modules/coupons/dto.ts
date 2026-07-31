@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   CouponAudience,
+  CouponApplyMode,
   CouponDiscountType,
   CouponStatus,
 } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsArray,
   IsDateString,
   IsEnum,
   IsInt,
@@ -98,6 +100,23 @@ export class CouponInputDto {
   @IsOptional()
   @IsString()
   scopeCategoryId?: string;
+
+  @ApiPropertyOptional({ enum: CouponApplyMode })
+  @IsOptional()
+  @IsEnum(CouponApplyMode)
+  applyMode?: CouponApplyMode;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopeMenuItemIds?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopeCategoryIds?: string[];
 }
 
 export class CreateCouponDto extends CouponInputDto {

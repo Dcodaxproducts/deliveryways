@@ -230,6 +230,12 @@ type BranchLocationContext = {
   lng: Prisma.Decimal | null;
 };
 
+type DeliveryPolicySummary = {
+  fee: Prisma.Decimal;
+  minOrderAmount: number;
+  freeDeliveryThreshold: number | null;
+};
+
 type BuildQuoteOptions = {
   skipDeliveryAddressValidation?: boolean;
   enforceMinimumOrderAmount?: boolean;
@@ -1298,6 +1304,7 @@ export class OrdersService {
     );
 
     let deliveryFee = new Prisma.Decimal(0);
+    let deliveryPolicy: DeliveryPolicySummary | null = null;
     const branchMinOrderAmount = new Prisma.Decimal(
       settings.deliveryConfig.minOrderAmount,
     );
@@ -1314,7 +1321,7 @@ export class OrdersService {
 
       if (!options.skipDeliveryAddressValidation) {
         if (dto.deliveryAddressId) {
-          deliveryFee = await this.resolveDeliveryFeeForAddress(
+          deliveryPolicy = await this.resolveDeliveryFeeForAddress(
             customer.customerId,
             dto.deliveryAddressId,
             branch.id,
@@ -1322,14 +1329,16 @@ export class OrdersService {
             subtotal,
             enforceMinimumOrderAmount,
           );
+          deliveryFee = deliveryPolicy.fee;
         } else if (dto.guestDeliveryAddress) {
-          deliveryFee = await this.resolveDeliveryFeeForGuestAddress(
+          deliveryPolicy = await this.resolveDeliveryFeeForGuestAddress(
             dto.guestDeliveryAddress,
             branch.id,
             settings.deliveryConfig,
             subtotal,
             enforceMinimumOrderAmount,
           );
+          deliveryFee = deliveryPolicy.fee;
         }
       }
 
@@ -1342,6 +1351,11 @@ export class OrdersService {
           );
         }
         deliveryFee = new Prisma.Decimal(settings.deliveryConfig.deliveryFee);
+        deliveryPolicy = {
+          fee: deliveryFee,
+          minOrderAmount: settings.deliveryConfig.minOrderAmount,
+          freeDeliveryThreshold: null,
+        };
       }
 
       if (
@@ -1352,6 +1366,26 @@ export class OrdersService {
         )
       ) {
         deliveryFee = new Prisma.Decimal(0);
+      }
+
+      const branchFreeDeliveryThreshold =
+        settings.deliveryConfig.isFreeDelivery &&
+        settings.deliveryConfig.freeDeliveryThreshold > 0
+          ? settings.deliveryConfig.freeDeliveryThreshold
+          : null;
+      if (deliveryPolicy) {
+        deliveryPolicy = {
+          ...deliveryPolicy,
+          fee: deliveryFee,
+          freeDeliveryThreshold:
+            branchFreeDeliveryThreshold && deliveryPolicy.freeDeliveryThreshold
+              ? Math.min(
+                  branchFreeDeliveryThreshold,
+                  deliveryPolicy.freeDeliveryThreshold,
+                )
+              : (branchFreeDeliveryThreshold ??
+                deliveryPolicy.freeDeliveryThreshold),
+        };
       }
     }
 
@@ -1379,6 +1413,9 @@ export class OrdersService {
       branchId: branch.id,
       customerId: customer.customerId,
       customerIsGuest: customer.isGuest,
+      isScheduledOrder: orderTime
+        ? this.isScheduledOrderTime(orderTime)
+        : false,
       subtotal: Number(subtotal),
       menuItemIds: pricedLines.map((line) => line.menuItemId),
       categoryIds: [
@@ -1475,6 +1512,7 @@ export class OrdersService {
       subtotal: subtotal.toDecimalPlaces(2),
       taxAmount,
       deliveryFee: deliveryFee.toDecimalPlaces(2),
+      deliveryPolicy,
       serviceChargeType: serviceCharge.type,
       serviceChargeValue: serviceCharge.value,
       serviceChargeAmount: serviceCharge.amount,
@@ -2293,6 +2331,13 @@ export class OrdersService {
       subtotal: amountSummary.subtotal,
       taxAmount: amountSummary.taxAmount,
       deliveryFee: amountSummary.deliveryFee,
+      deliveryPolicy: quote.deliveryPolicy
+        ? {
+            deliveryFee: Number(quote.deliveryPolicy.fee.toDecimalPlaces(2)),
+            minOrderAmount: quote.deliveryPolicy.minOrderAmount,
+            freeDeliveryThreshold: quote.deliveryPolicy.freeDeliveryThreshold,
+          }
+        : null,
       serviceChargeType: quote.serviceChargeType,
       serviceChargeValue: quote.serviceChargeValue
         ? Number(quote.serviceChargeValue)
@@ -5827,12 +5872,16 @@ export class OrdersService {
             'branch',
           );
         }
-        return this.resolveRadiusDeliveryFee(
-          address,
-          branchAddress,
-          deliveryConfig.radiusKm,
-          deliveryConfig.deliveryFee,
-        );
+        return {
+          fee: this.resolveRadiusDeliveryFee(
+            address,
+            branchAddress,
+            deliveryConfig.radiusKm,
+            deliveryConfig.deliveryFee,
+          ),
+          minOrderAmount: deliveryConfig.minOrderAmount,
+          freeDeliveryThreshold: null,
+        };
     }
   }
 
@@ -5881,12 +5930,16 @@ export class OrdersService {
             'branch',
           );
         }
-        return this.resolveRadiusDeliveryFee(
-          address,
-          branchAddress,
-          deliveryConfig.radiusKm,
-          deliveryConfig.deliveryFee,
-        );
+        return {
+          fee: this.resolveRadiusDeliveryFee(
+            address,
+            branchAddress,
+            deliveryConfig.radiusKm,
+            deliveryConfig.deliveryFee,
+          ),
+          minOrderAmount: deliveryConfig.minOrderAmount,
+          freeDeliveryThreshold: null,
+        };
     }
   }
 
@@ -6092,10 +6145,21 @@ export class OrdersService {
       match.freeDeliveryThreshold > 0 &&
       subtotal.greaterThanOrEqualTo(match.freeDeliveryThreshold)
     ) {
-      return new Prisma.Decimal(0);
+      return {
+        fee: new Prisma.Decimal(0),
+        minOrderAmount: match.minOrderAmount ?? branchMinOrderAmount,
+        freeDeliveryThreshold: match.freeDeliveryThreshold,
+      };
     }
 
-    return new Prisma.Decimal(match.deliveryFee);
+    return {
+      fee: new Prisma.Decimal(match.deliveryFee),
+      minOrderAmount: match.minOrderAmount ?? branchMinOrderAmount,
+      freeDeliveryThreshold:
+        match.freeDeliveryThreshold && match.freeDeliveryThreshold > 0
+          ? match.freeDeliveryThreshold
+          : null,
+    };
   }
 
   private resolveZoneBandDeliveryFee(
@@ -6125,10 +6189,22 @@ export class OrdersService {
       matchedBand.freeDeliveryThreshold > 0 &&
       subtotal.greaterThanOrEqualTo(matchedBand.freeDeliveryThreshold)
     ) {
-      return new Prisma.Decimal(0);
+      return {
+        fee: new Prisma.Decimal(0),
+        minOrderAmount: matchedBand.minOrderAmount ?? branchMinOrderAmount,
+        freeDeliveryThreshold: matchedBand.freeDeliveryThreshold,
+      };
     }
 
-    return new Prisma.Decimal(matchedBand.deliveryFee);
+    return {
+      fee: new Prisma.Decimal(matchedBand.deliveryFee),
+      minOrderAmount: matchedBand.minOrderAmount ?? branchMinOrderAmount,
+      freeDeliveryThreshold:
+        matchedBand.freeDeliveryThreshold &&
+        matchedBand.freeDeliveryThreshold > 0
+          ? matchedBand.freeDeliveryThreshold
+          : null,
+    };
   }
 
   private assertAddressInDeliveryZone(
@@ -6252,10 +6328,22 @@ export class OrdersService {
       matchedRule.freeDeliveryThreshold > 0 &&
       subtotal.greaterThanOrEqualTo(matchedRule.freeDeliveryThreshold)
     ) {
-      return new Prisma.Decimal(0);
+      return {
+        fee: new Prisma.Decimal(0),
+        minOrderAmount: matchedRule.minOrderAmount ?? branchMinOrderAmount,
+        freeDeliveryThreshold: matchedRule.freeDeliveryThreshold,
+      };
     }
 
-    return new Prisma.Decimal(matchedRule.deliveryFee);
+    return {
+      fee: new Prisma.Decimal(matchedRule.deliveryFee),
+      minOrderAmount: matchedRule.minOrderAmount ?? branchMinOrderAmount,
+      freeDeliveryThreshold:
+        matchedRule.freeDeliveryThreshold &&
+        matchedRule.freeDeliveryThreshold > 0
+          ? matchedRule.freeDeliveryThreshold
+          : null,
+    };
   }
 
   private assertAddressPostalCodeServiceable(

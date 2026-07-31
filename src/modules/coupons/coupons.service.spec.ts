@@ -361,6 +361,33 @@ describe('CouponsService', () => {
     expect(Number(result.discountAmount)).toBe(200);
   });
 
+  it('treats a zero maximum discount as uncapped', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({ maxDiscountAmount: new Prisma.Decimal(0) }),
+    );
+
+    const result = await service.validateForCheckout({
+      ...baseInput,
+    });
+
+    expect(Number(result.discountAmount)).toBe(200);
+  });
+
+  it('rejects Happy Hour for scheduled orders', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({
+        kind: CouponCampaignKind.HAPPY_HOUR,
+      }),
+    );
+
+    await expect(
+      service.validateForCheckout({
+        ...baseInput,
+        isScheduledOrder: true,
+      }),
+    ).rejects.toThrow('Happy Hour is not available for scheduled orders');
+  });
+
   it('returns flat discount amount', async () => {
     repository.findByCode!.mockResolvedValue(
       makeCoupon({

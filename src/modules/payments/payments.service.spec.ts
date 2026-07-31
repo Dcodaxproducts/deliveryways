@@ -920,7 +920,7 @@ describe('PaymentsService', () => {
     ]);
   });
 
-  it('allows a restaurant admin to update payment methods for its tenant restaurant', async () => {
+  it('blocks a restaurant admin from updating payment methods', async () => {
     const { service, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
@@ -935,27 +935,24 @@ describe('PaymentsService', () => {
         }),
     );
 
-    const result = await service.updateRestaurantPaymentMethods(
-      {
-        uid: 'admin-1',
-        tid: 'tenant-1',
-        role: UserRoleEnum.BUSINESS_ADMIN,
-      } as never,
-      'restaurant-1',
-      {
-        allowedPaymentMethods: [PaymentMethod.COD],
-        walletEnabled: false,
-      },
-    );
-
-    expect(prisma.restaurant.findFirst).toHaveBeenCalled();
-    expect(result.data.methods.allowedPaymentMethods).toEqual([
-      PaymentMethod.COD,
-    ]);
-    expect(prisma.restaurant.update).toHaveBeenCalled();
+    await expect(
+      service.updateRestaurantPaymentMethods(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-1',
+        {
+          allowedPaymentMethods: [PaymentMethod.COD],
+          walletEnabled: false,
+        },
+      ),
+    ).rejects.toThrow('Only Super Admin can update restaurant payment methods');
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
   });
 
-  it('allows Payment Settings staff to update an assigned restaurant', async () => {
+  it('blocks Payment Settings staff from updating an assigned restaurant', async () => {
     const { service, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
@@ -970,25 +967,25 @@ describe('PaymentsService', () => {
         }),
     );
 
-    const result = await service.updateRestaurantPaymentMethods(
-      {
-        uid: 'staff-1',
-        tid: 'tenant-1',
-        role: UserRoleEnum.STAFF,
-        actorType: 'STAFF',
-        restaurantAccess: {
-          restaurantIds: ['restaurant-1'],
-          allRestaurants: false,
+    await expect(
+      service.updateRestaurantPaymentMethods(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            allRestaurants: false,
+          },
         },
-      },
-      'restaurant-1',
-      {
-        allowedPaymentMethods: [PaymentMethod.COD],
-        walletEnabled: false,
-      },
-    );
-
-    expect(result.data.restaurantId).toBe('restaurant-1');
+        'restaurant-1',
+        {
+          allowedPaymentMethods: [PaymentMethod.COD],
+          walletEnabled: false,
+        },
+      ),
+    ).rejects.toThrow('Only Super Admin can update restaurant payment methods');
   });
 
   it('blocks Payment Settings staff outside assigned restaurants', async () => {

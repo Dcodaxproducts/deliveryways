@@ -2146,6 +2146,7 @@ export class CartService {
       'subtotal',
       'taxAmount',
       'deliveryFee',
+      'deliveryPolicy',
       'serviceChargeAmount',
       'tipAmount',
       'discountAmount',

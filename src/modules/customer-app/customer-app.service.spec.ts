@@ -172,6 +172,7 @@ describe('CustomerAppService', () => {
       listCuisineMenuItems: jest.fn(),
       listPublicMenuItems: jest.fn(),
       listPromotionalItems: jest.fn(),
+      listPublicGiftCards: jest.fn().mockResolvedValue([]),
       listPublicDealScopeMenuItems: jest.fn(),
       findPublicMenuItemBySlug: jest.fn(),
       getBranchPublicStats: jest.fn(),
@@ -2085,7 +2086,7 @@ describe('CustomerAppService', () => {
     expect(result.data.items[0].id).toBe('item-1');
   });
 
-  it('returns slim cuisine cards without embedded menu items', async () => {
+  it('returns slim cuisine cards with schedule-aware item counts', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -2108,6 +2109,7 @@ describe('CustomerAppService', () => {
           imageUrl: 'https://cdn.example.com/category.png',
           sortOrder: 1,
           _count: { items: 1 },
+          items: [{ ...itemFixture, restaurantMenus: [] }],
         },
       ],
       total: 1,
@@ -2130,7 +2132,7 @@ describe('CustomerAppService', () => {
     expect(result.data[0]).not.toHaveProperty('items');
     expect(repository.listCuisineCategories).toHaveBeenCalledWith(
       expect.objectContaining({ restaurantId: 'restaurant-1' }),
-      { includeItems: false },
+      { includeItems: true },
     );
   });
 

@@ -618,10 +618,13 @@ export class AdminReportsService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
     });
+    const currency =
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'EUR';
 
     return {
       data: {
         ...data,
+        currency,
         filters: {
           restaurantId: scope.restaurantId ?? null,
           branchId: scope.branchId ?? null,
@@ -651,10 +654,13 @@ export class AdminReportsService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
     });
+    const currency =
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'EUR';
 
     return {
       data: {
         ...data,
+        currency,
         filters: {
           restaurantId: scope.restaurantId ?? null,
           branchId: scope.branchId ?? null,

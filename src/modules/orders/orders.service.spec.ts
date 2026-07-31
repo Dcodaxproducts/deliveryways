@@ -4376,7 +4376,11 @@ describe('OrdersService - branch address lookup', () => {
         },
         new Prisma.Decimal(500),
       ),
-    ).resolves.toEqual(new Prisma.Decimal(120));
+    ).resolves.toEqual({
+      fee: new Prisma.Decimal(120),
+      minOrderAmount: 0,
+      freeDeliveryThreshold: null,
+    });
 
     const secondCall = addressFindFirstCalls[1] as {
       where: {

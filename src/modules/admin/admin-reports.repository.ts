@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   CouponCampaignKind,
   CouponDiscountType,
+  OrderStatus,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -644,6 +645,9 @@ export class AdminReportsRepository {
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
       ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ?? {}),
+      status: {
+        notIn: [OrderStatus.CANCELLED, OrderStatus.REJECTED],
+      },
     };
     const paymentWhere: Prisma.PaymentTransactionWhereInput = {
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
