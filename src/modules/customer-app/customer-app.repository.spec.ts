@@ -33,6 +33,27 @@ type CompactMenuItemInclude = {
   };
 };
 
+type DetailMenuItemInclude = {
+  variationPriceOverrides: {
+    select: {
+      variation: {
+        select: {
+          modifierPriceOverrides: {
+            where: Prisma.MenuVariationModifierPriceOverrideWhereInput;
+          };
+        };
+      };
+    };
+  };
+  modifierPriceOverrides: {
+    select: {
+      modifier: {
+        select: Record<string, unknown>;
+      };
+    };
+  };
+};
+
 describe('CustomerAppRepository', () => {
   it('counts only active, non-deleted restaurant branches', async () => {
     const count = jest.fn().mockResolvedValue(1);
@@ -95,6 +116,53 @@ describe('CustomerAppRepository', () => {
     expect(groupModifierLinks.where).toEqual({
       modifier: { deletedAt: null, isActive: true },
     });
+  });
+
+  it('bounds public item detail pricing relations to the requested item', async () => {
+    const findFirst = jest
+      .fn<ReturnType<FindFirstMenuItem>, Parameters<FindFirstMenuItem>>()
+      .mockResolvedValue(null);
+    const repository = new CustomerAppRepository({
+      menuItem: { findFirst },
+    } as unknown as PrismaService);
+
+    await repository.findPublicMenuItemBySlug('pizza-salami', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    const include = findFirst.mock.calls[0]?.[0]
+      ?.include as unknown as DetailMenuItemInclude;
+    const currentMenuItemWhere = {
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      isActive: true,
+      OR: [
+        { id: 'pizza-salami' },
+        {
+          slug: {
+            equals: 'pizza-salami',
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+      ],
+    };
+    const scopedVariationModifierWhere = {
+      OR: [{ menuItemId: null }, { menuItem: { is: currentMenuItemWhere } }],
+    };
+
+    expect(
+      include.variationPriceOverrides.select.variation.select
+        .modifierPriceOverrides.where,
+    ).toEqual(scopedVariationModifierWhere);
+    const modifierSelect =
+      include.modifierPriceOverrides.select.modifier.select;
+    expect(modifierSelect).not.toHaveProperty('itemPriceOverrides');
+    expect(modifierSelect).not.toHaveProperty('variationPriceOverrides');
+
+    const serializedInclude = JSON.stringify(include);
+    expect(serializedInclude).not.toContain('"itemPriceOverrides":true');
+    expect(serializedInclude).not.toContain('"variationPriceOverrides":true');
   });
 
   it('keeps newly created categories after older categories with equal sort order', async () => {
