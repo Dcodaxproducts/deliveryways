@@ -36,6 +36,171 @@ const publicMenuItemVariationCardSelect = {
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  private buildPublicMenuItemDetailInclude(
+    identifier: string,
+    restaurantId: string,
+    branchId?: string,
+  ) {
+    const menuItemWhere: Prisma.MenuItemWhereInput = {
+      restaurantId,
+      deletedAt: null,
+      isActive: true,
+      OR: [
+        { id: identifier },
+        { slug: { equals: identifier, mode: Prisma.QueryMode.insensitive } },
+      ],
+    };
+    const variationModifierOverrideWhere: Prisma.MenuVariationModifierPriceOverrideWhereInput =
+      {
+        OR: [{ menuItemId: null }, { menuItem: { is: menuItemWhere } }],
+      };
+    const modifierSelect = {
+      id: true,
+      name: true,
+      priceDelta: true,
+      sortOrder: true,
+      isActive: true,
+    } satisfies Prisma.ModifierSelect;
+    const variationSelect = {
+      id: true,
+      name: true,
+      description: true,
+      price: true,
+      sortOrder: true,
+      isDefault: true,
+      isActive: true,
+      modifierPriceOverrides: {
+        where: variationModifierOverrideWhere,
+        select: {
+          id: true,
+          menuItemId: true,
+          variationId: true,
+          modifierId: true,
+          priceDelta: true,
+          modifier: { select: modifierSelect },
+        },
+      },
+    } satisfies Prisma.MenuItemVariationSelect;
+    const modifierLinksInclude = {
+      orderBy: [{ sortOrder: 'asc' as const }],
+      include: {
+        modifierGroup: {
+          include: {
+            modifierLinks: {
+              where: {
+                modifier: { deletedAt: null, isActive: true },
+              },
+              include: {
+                modifier: { select: modifierSelect },
+              },
+              orderBy: [
+                { sortOrder: 'asc' as const },
+                { modifier: { createdAt: 'asc' as const } },
+              ],
+            },
+          },
+        },
+      },
+    } satisfies Prisma.MenuItem$modifierLinksArgs;
+
+    return {
+      restaurant: {
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          tagline: true,
+          settings: true,
+          tenant: { select: { settings: true } },
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          imageUrl: true,
+          variations: {
+            where: { deletedAt: null, isActive: true },
+            select: variationSelect,
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          },
+          variationLinks: {
+            where: { isActive: true },
+            select: {
+              sortOrder: true,
+              isDefault: true,
+              isActive: true,
+              variation: { select: variationSelect },
+            },
+            orderBy: [{ sortOrder: 'asc' }],
+          },
+          modifierLinks: modifierLinksInclude,
+          menuLinks: {
+            include: {
+              restaurantMenu: {
+                select: restaurantMenuScheduleSelect,
+              },
+            },
+          },
+        },
+      },
+      modifierLinks: modifierLinksInclude,
+      modifierPriceOverrides: {
+        select: {
+          id: true,
+          menuItemId: true,
+          modifierId: true,
+          priceDelta: true,
+          isRequired: true,
+          modifier: { select: modifierSelect },
+        },
+        orderBy: [{ modifier: { sortOrder: 'asc' } }],
+      },
+      variationPriceOverrides: {
+        select: {
+          id: true,
+          menuItemId: true,
+          variationId: true,
+          price: true,
+          pickupPrice: true,
+          displayText: true,
+          variation: { select: variationSelect },
+        },
+        orderBy: [{ variation: { sortOrder: 'asc' } }],
+      },
+      categoryLinks: {
+        include: {
+          menuCategory: {
+            select: {
+              id: true,
+              menuLinks: {
+                include: {
+                  restaurantMenu: {
+                    select: restaurantMenuScheduleSelect,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      menuLinks: {
+        include: {
+          restaurantMenu: {
+            select: restaurantMenuScheduleSelect,
+          },
+        },
+      },
+      branchOverrides: branchId
+        ? {
+            where: { branchId },
+            select: { priceOverride: true, isAvailable: true },
+            take: 1,
+          }
+        : false,
+    } satisfies Prisma.MenuItemInclude;
+  }
+
   private buildPublicMenuItemInclude(branchId?: string) {
     return {
       restaurant: {
@@ -1568,6 +1733,7 @@ export class CustomerAppRepository {
     const restaurantId = query.restaurantId;
     const branchId = query.branchId;
     const now = new Date();
+    const identifier = slug.trim();
 
     return this.prisma.menuItem.findFirst({
       where: {
@@ -1577,8 +1743,8 @@ export class CustomerAppRepository {
         AND: [
           {
             OR: [
-              { id: slug.trim() },
-              { slug: { equals: slug.trim(), mode: 'insensitive' } },
+              { id: identifier },
+              { slug: { equals: identifier, mode: 'insensitive' } },
             ],
           },
           {
@@ -1593,183 +1759,11 @@ export class CustomerAppRepository {
           },
         ],
       },
-      include: {
-        restaurant: {
-          select: {
-            id: true,
-            name: true,
-            logoUrl: true,
-            tagline: true,
-            settings: true,
-            tenant: { select: { settings: true } },
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            imageUrl: true,
-            variations: {
-              where: { deletedAt: null, isActive: true },
-              include: {
-                modifierPriceOverrides: {
-                  include: {
-                    modifier: {
-                      include: {
-                        itemPriceOverrides: true,
-                        variationPriceOverrides: true,
-                      },
-                    },
-                  },
-                },
-                itemPriceOverrides: true,
-              },
-              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            },
-            variationLinks: {
-              where: { isActive: true },
-              include: {
-                variation: {
-                  include: {
-                    modifierPriceOverrides: {
-                      include: {
-                        modifier: {
-                          include: {
-                            itemPriceOverrides: true,
-                            variationPriceOverrides: true,
-                          },
-                        },
-                      },
-                    },
-                    itemPriceOverrides: true,
-                  },
-                },
-              },
-              orderBy: [{ sortOrder: 'asc' }],
-            },
-            modifierLinks: {
-              orderBy: [{ sortOrder: 'asc' }],
-              include: {
-                modifierGroup: {
-                  include: {
-                    modifierLinks: {
-                      where: {
-                        modifier: { deletedAt: null, isActive: true },
-                      },
-                      include: {
-                        modifier: {
-                          include: {
-                            itemPriceOverrides: true,
-                            variationPriceOverrides: true,
-                          },
-                        },
-                      },
-                      orderBy: [
-                        { sortOrder: 'asc' },
-                        { modifier: { createdAt: 'asc' } },
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-            menuLinks: {
-              include: {
-                restaurantMenu: {
-                  select: restaurantMenuScheduleSelect,
-                },
-              },
-            },
-          },
-        },
-        modifierLinks: {
-          orderBy: [{ sortOrder: 'asc' }],
-          include: {
-            modifierGroup: {
-              include: {
-                modifierLinks: {
-                  where: {
-                    modifier: { deletedAt: null, isActive: true },
-                  },
-                  include: {
-                    modifier: {
-                      include: {
-                        itemPriceOverrides: true,
-                        variationPriceOverrides: true,
-                      },
-                    },
-                  },
-                  orderBy: [
-                    { sortOrder: 'asc' },
-                    { modifier: { createdAt: 'asc' } },
-                  ],
-                },
-              },
-            },
-          },
-        },
-        modifierPriceOverrides: {
-          include: {
-            modifier: {
-              include: {
-                itemPriceOverrides: true,
-                variationPriceOverrides: true,
-              },
-            },
-          },
-          orderBy: [{ modifier: { sortOrder: 'asc' } }],
-        },
-        variationPriceOverrides: {
-          include: {
-            variation: {
-              include: {
-                modifierPriceOverrides: {
-                  include: {
-                    modifier: {
-                      include: {
-                        itemPriceOverrides: true,
-                        variationPriceOverrides: true,
-                      },
-                    },
-                  },
-                },
-                itemPriceOverrides: true,
-              },
-            },
-          },
-          orderBy: [{ variation: { sortOrder: 'asc' } }],
-        },
-        categoryLinks: {
-          include: {
-            menuCategory: {
-              select: {
-                id: true,
-                menuLinks: {
-                  include: {
-                    restaurantMenu: {
-                      select: restaurantMenuScheduleSelect,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        menuLinks: {
-          include: {
-            restaurantMenu: {
-              select: restaurantMenuScheduleSelect,
-            },
-          },
-        },
-        branchOverrides: branchId
-          ? {
-              where: { branchId },
-              select: { priceOverride: true, isAvailable: true },
-              take: 1,
-            }
-          : false,
-      },
+      include: this.buildPublicMenuItemDetailInclude(
+        identifier,
+        restaurantId,
+        branchId,
+      ),
     });
   }
 
