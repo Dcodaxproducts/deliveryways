@@ -2041,19 +2041,59 @@ describe('OrdersService - order time validation', () => {
     );
   });
 
-  it('requires global PayPal checkout credentials independently of restaurant payout settings', () => {
+  it('requires global platform checkout credentials', async () => {
     const assertCheckoutProviderConfigured = (
       service as unknown as {
-        assertCheckoutProviderConfigured: (method: PaymentMethodEnum) => void;
+        assertCheckoutProviderConfigured: (
+          method: PaymentMethodEnum,
+        ) => Promise<void>;
       }
     ).assertCheckoutProviderConfigured;
 
-    expect(() =>
+    await expect(
       assertCheckoutProviderConfigured.call(service, PaymentMethodEnum.PAYPAL),
-    ).toThrow('Global PayPal checkout is not configured');
-    expect(() =>
+    ).rejects.toThrow('Global PAYPAL checkout is not configured');
+    await expect(
       assertCheckoutProviderConfigured.call(service, PaymentMethodEnum.COD),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
+
+    const configuredService = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      undefined,
+      {
+        getPayoutProviderSettings: jest.fn().mockResolvedValue({
+          configurations: {
+            STRIPE: {
+              enabled: true,
+              encryptedCredentials: 'encrypted-stripe',
+            },
+            PAYPAL: {
+              enabled: true,
+              encryptedCredentials: 'encrypted-paypal',
+            },
+          },
+        }),
+      } as never,
+    );
+    const assertConfigured = (
+      configuredService as unknown as {
+        assertCheckoutProviderConfigured: (
+          method: PaymentMethodEnum,
+        ) => Promise<void>;
+      }
+    ).assertCheckoutProviderConfigured;
+    await expect(
+      assertConfigured.call(configuredService, PaymentMethodEnum.STRIPE),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertConfigured.call(configuredService, PaymentMethodEnum.PAYPAL),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -5674,7 +5714,17 @@ describe('OrdersService - wallet payment', () => {
       } as never,
       undefined,
       loyaltyWalletService as never,
-      { getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR') } as never,
+      {
+        getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR'),
+        getPayoutProviderSettings: jest.fn().mockResolvedValue({
+          configurations: {
+            STRIPE: {
+              enabled: true,
+              encryptedCredentials: 'encrypted-platform-stripe',
+            },
+          },
+        }),
+      } as never,
     );
 
     const quote = {

@@ -5,7 +5,6 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomInt } from 'crypto';
 import {
   AddressRefType,
@@ -256,7 +255,6 @@ export class OrdersService {
     private readonly storageService?: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly globalSettingsService?: GlobalSettingsService,
-    private readonly configService?: ConfigService,
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -356,7 +354,7 @@ export class OrdersService {
       dto.paymentMethod,
       quote,
     );
-    this.assertCheckoutProviderConfigured(dto.paymentMethod);
+    await this.assertCheckoutProviderConfigured(dto.paymentMethod);
 
     const data = await this.prisma.$transaction(async (tx) => {
       const processedAt =
@@ -2279,17 +2277,31 @@ export class OrdersService {
       : OrderStatus.PLACED;
   }
 
-  private assertCheckoutProviderConfigured(paymentMethod: PaymentMethodEnum) {
-    if (paymentMethod !== PaymentMethodEnum.PAYPAL) return;
-
-    const globalConfigured = Boolean(
-      this.configService?.get<string>('PAYPAL_CLIENT_ID')?.trim() &&
-      this.configService?.get<string>('PAYPAL_CLIENT_SECRET')?.trim(),
-    );
-
-    if (!globalConfigured) {
+  private async assertCheckoutProviderConfigured(
+    paymentMethod: PaymentMethodEnum,
+  ) {
+    if (
+      paymentMethod !== PaymentMethodEnum.STRIPE &&
+      paymentMethod !== PaymentMethodEnum.PAYPAL
+    ) {
+      return;
+    }
+    if (!this.globalSettingsService) {
       throw new ServiceUnavailableException(
-        'Global PayPal checkout is not configured',
+        `Global ${paymentMethod} checkout is not configured`,
+      );
+    }
+    const stored = await this.globalSettingsService.getPayoutProviderSettings();
+    const root = this.asRecord(stored);
+    const configurations = this.asRecord(root.configurations);
+    const provider = this.asRecord(configurations[paymentMethod]);
+    if (
+      provider.enabled !== true ||
+      typeof provider.encryptedCredentials !== 'string' ||
+      provider.encryptedCredentials.length === 0
+    ) {
+      throw new ServiceUnavailableException(
+        `Global ${paymentMethod} checkout is not configured or enabled`,
       );
     }
   }

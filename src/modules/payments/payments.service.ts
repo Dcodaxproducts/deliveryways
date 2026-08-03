@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   OrderStatus,
@@ -53,7 +54,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
-import { StripePaymentsService } from './stripe-payments.service';
+import {
+  StripePaymentsService,
+  type StripeCheckoutCredentials,
+} from './stripe-payments.service';
 import {
   CreateWalletTopUpDto,
   GuestPurchaseGiftCardDto,
@@ -62,7 +66,10 @@ import { MailerService } from '../mailer/mailer.service';
 import { PackagePlansService } from '../package-plans/package-plans.service';
 import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
-import { PaypalOrdersService } from './paypal-orders.service';
+import {
+  PaypalOrdersService,
+  type PaypalOrderCredentials,
+} from './paypal-orders.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -207,6 +214,8 @@ export class PaymentsService {
       subscription.tenantId,
       subscription.restaurantId,
     );
+    const stripeCredentials =
+      await this.resolveGlobalStripeCheckoutCredentials();
     const transaction = await this.paymentsRepository.createUnchecked({
       tenantId: subscription.tenantId,
       restaurantId: subscription.restaurantId,
@@ -228,24 +237,28 @@ export class PaymentsService {
       } as Prisma.InputJsonValue,
     });
 
-    const intent = await this.stripePaymentsService.createPaymentIntent({
-      amount: Number(amount),
-      currency,
-      description: `DeliveryWays subscription ${subscription.id}`,
-      metadata: {
-        paymentTransactionId: transaction.id,
-        orderId: null,
-        customerId: user.uid,
-        restaurantId: subscription.restaurantId,
-        subscriptionId: subscription.id,
-        tenantId: subscription.tenantId,
-        target: 'TENANT_SUBSCRIPTION',
+    const intent = await this.stripePaymentsService.createPaymentIntent(
+      {
+        amount: Number(amount),
+        currency,
+        description: `DeliveryWays subscription ${subscription.id}`,
+        metadata: {
+          paymentTransactionId: transaction.id,
+          orderId: null,
+          customerId: user.uid,
+          restaurantId: subscription.restaurantId,
+          subscriptionId: subscription.id,
+          tenantId: subscription.tenantId,
+          target: 'TENANT_SUBSCRIPTION',
+        },
       },
-    });
+      stripeCredentials,
+    );
     const paymentSession = {
       provider: 'stripe',
       clientSecret: intent.client_secret,
-      publishableKey: this.stripePaymentsService.getPublishableKey(),
+      publishableKey:
+        this.stripePaymentsService.getPublishableKey(stripeCredentials),
       paymentIntentId: intent.id,
     };
     const updated = await this.paymentsRepository.updateStatus(transaction.id, {
@@ -566,9 +579,12 @@ export class PaymentsService {
     for (const charge of refundCandidates) {
       let stripeRefund: Record<string, unknown> | undefined;
       if (charge.paymentMethod === PaymentMethod.STRIPE && charge.providerRef) {
+        const stripeCredentials =
+          await this.resolveGlobalStripeCheckoutCredentials();
         stripeRefund = (await this.stripePaymentsService.refundPaymentIntent(
           charge.providerRef,
           Number(charge.amount),
+          stripeCredentials,
         )) as unknown as Record<string, unknown>;
       }
 
@@ -714,6 +730,15 @@ export class PaymentsService {
       };
     }
 
+    const stripeCredentials =
+      paymentMethod === PaymentMethod.STRIPE
+        ? await this.resolveGlobalStripeCheckoutCredentials()
+        : undefined;
+    const paypalCredentials =
+      paymentMethod === PaymentMethod.PAYPAL
+        ? await this.resolveGlobalPaypalCheckoutCredentials()
+        : undefined;
+
     const data = existingPendingCharge
       ? await this.paymentsRepository.updateChargePaymentMethod(
           existingPendingCharge.id,
@@ -742,17 +767,20 @@ export class PaymentsService {
     let providerPayload: Record<string, unknown> | undefined;
 
     if (paymentMethod === PaymentMethod.STRIPE) {
-      const intent = await this.stripePaymentsService.createPaymentIntent({
-        amount: Number(order.totalAmount),
-        currency,
-        description: `DeliveryWays order ${order.id}`,
-        metadata: {
-          paymentTransactionId: data.id,
-          orderId: order.id,
-          customerId: order.customerId,
-          restaurantId: order.restaurantId,
+      const intent = await this.stripePaymentsService.createPaymentIntent(
+        {
+          amount: Number(order.totalAmount),
+          currency,
+          description: `DeliveryWays order ${order.id}`,
+          metadata: {
+            paymentTransactionId: data.id,
+            orderId: order.id,
+            customerId: order.customerId,
+            restaurantId: order.restaurantId,
+          },
         },
-      });
+        stripeCredentials,
+      );
 
       const updated = await this.paymentsRepository.updateStatus(data.id, {
         status: PaymentStatus.PENDING,
@@ -760,7 +788,8 @@ export class PaymentsService {
         providerData: {
           provider: 'stripe',
           clientSecret: intent.client_secret,
-          publishableKey: this.stripePaymentsService.getPublishableKey(),
+          publishableKey:
+            this.stripePaymentsService.getPublishableKey(stripeCredentials),
           paymentIntentId: intent.id,
         } as Prisma.InputJsonValue,
         note: dto.note,
@@ -769,7 +798,8 @@ export class PaymentsService {
       providerPayload = {
         provider: 'stripe',
         clientSecret: intent.client_secret,
-        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        publishableKey:
+          this.stripePaymentsService.getPublishableKey(stripeCredentials),
         paymentIntentId: intent.id,
       };
 
@@ -793,6 +823,7 @@ export class PaymentsService {
         orderId: order.id,
         returnUrl: this.paypalOrdersService.getReturnUrl(order.id),
         cancelUrl: this.paypalOrdersService.getCancelUrl(order.id),
+        credentials: paypalCredentials,
       });
       const updated = await this.paymentsRepository.updateStatus(data.id, {
         status: PaymentStatus.PENDING,
@@ -857,9 +888,11 @@ export class PaymentsService {
       throw new BadRequestException('PayPal payment is not pending');
     }
 
+    const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
     const captured = await this.paypalOrdersService.captureOrder({
       paypalOrderId: dto.paypalOrderId,
       paymentTransactionId: payment.id,
+      credentials,
     });
 
     if (
@@ -954,8 +987,11 @@ export class PaymentsService {
       existingPendingCharge?.paymentMethod === PaymentMethod.STRIPE &&
       existingPendingCharge.providerRef
     ) {
+      const stripeCredentials =
+        await this.resolveGlobalStripeCheckoutCredentials();
       await this.stripePaymentsService.cancelPaymentIntent(
         existingPendingCharge.providerRef,
+        stripeCredentials,
       );
     }
 
@@ -1076,6 +1112,8 @@ export class PaymentsService {
       context.restaurantId,
       dto.currency,
     );
+    const stripeCredentials =
+      await this.resolveGlobalStripeCheckoutCredentials();
     const data = await this.paymentsRepository.createUnchecked({
       tenantId: context.tenantId,
       restaurantId: context.restaurantId,
@@ -1092,18 +1130,21 @@ export class PaymentsService {
       } as Prisma.InputJsonValue,
     });
 
-    const intent = await this.stripePaymentsService.createPaymentIntent({
-      amount: dto.amount,
-      currency,
-      description: `DeliveryWays wallet top-up ${context.customerId}`,
-      metadata: {
-        paymentTransactionId: data.id,
-        orderId: null,
-        customerId: context.customerId,
-        restaurantId: context.restaurantId,
-        walletTopUp: 'true',
+    const intent = await this.stripePaymentsService.createPaymentIntent(
+      {
+        amount: dto.amount,
+        currency,
+        description: `DeliveryWays wallet top-up ${context.customerId}`,
+        metadata: {
+          paymentTransactionId: data.id,
+          orderId: null,
+          customerId: context.customerId,
+          restaurantId: context.restaurantId,
+          walletTopUp: 'true',
+        },
       },
-    });
+      stripeCredentials,
+    );
 
     const updated = await this.paymentsRepository.updateStatus(data.id, {
       status: PaymentStatus.PENDING,
@@ -1113,7 +1154,8 @@ export class PaymentsService {
         target: 'WALLET_TOP_UP',
         customerId: context.customerId,
         clientSecret: intent.client_secret,
-        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        publishableKey:
+          this.stripePaymentsService.getPublishableKey(stripeCredentials),
         paymentIntentId: intent.id,
       } as Prisma.InputJsonValue,
       note: dto.note,
@@ -1124,7 +1166,8 @@ export class PaymentsService {
       paymentSession: {
         provider: 'stripe',
         clientSecret: intent.client_secret,
-        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        publishableKey:
+          this.stripePaymentsService.getPublishableKey(stripeCredentials),
         paymentIntentId: intent.id,
       },
     };
@@ -1150,6 +1193,9 @@ export class PaymentsService {
       throw new BadRequestException('Gift card amount must be greater than 0');
     }
 
+    const stripeCredentials =
+      await this.resolveGlobalStripeCheckoutCredentials();
+
     const data = await this.paymentsRepository.createUnchecked({
       tenantId: context.tenantId,
       restaurantId: context.restaurantId,
@@ -1172,20 +1218,23 @@ export class PaymentsService {
       } as Prisma.InputJsonValue,
     });
 
-    const intent = await this.stripePaymentsService.createPaymentIntent({
-      amount: Number(amount),
-      currency,
-      description: `DeliveryWays guest gift card ${data.id}`,
-      metadata: {
-        paymentTransactionId: data.id,
-        orderId: null,
-        customerId: dto.buyerEmail,
-        restaurantId: context.restaurantId,
-        giftCardPurchase: 'true',
-        buyerEmail: dto.buyerEmail,
-        recipientEmail: dto.recipientEmail,
+    const intent = await this.stripePaymentsService.createPaymentIntent(
+      {
+        amount: Number(amount),
+        currency,
+        description: `DeliveryWays guest gift card ${data.id}`,
+        metadata: {
+          paymentTransactionId: data.id,
+          orderId: null,
+          customerId: dto.buyerEmail,
+          restaurantId: context.restaurantId,
+          giftCardPurchase: 'true',
+          buyerEmail: dto.buyerEmail,
+          recipientEmail: dto.recipientEmail,
+        },
       },
-    });
+      stripeCredentials,
+    );
 
     const updated = await this.paymentsRepository.updateStatus(data.id, {
       status: PaymentStatus.PENDING,
@@ -1200,7 +1249,8 @@ export class PaymentsService {
         expiresAt: dto.expiresAt ?? null,
         provider: 'stripe',
         clientSecret: intent.client_secret,
-        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        publishableKey:
+          this.stripePaymentsService.getPublishableKey(stripeCredentials),
         paymentIntentId: intent.id,
       } as Prisma.InputJsonValue,
       note: dto.message,
@@ -1211,7 +1261,8 @@ export class PaymentsService {
       paymentSession: {
         provider: 'stripe',
         clientSecret: intent.client_secret,
-        publishableKey: this.stripePaymentsService.getPublishableKey(),
+        publishableKey:
+          this.stripePaymentsService.getPublishableKey(stripeCredentials),
         paymentIntentId: intent.id,
       },
     };
@@ -1494,13 +1545,14 @@ export class PaymentsService {
       user,
       restaurantId,
     );
+    const platformStripe = await this.findGlobalStripeCheckoutCredentials();
 
     return {
       data: {
         restaurantId: restaurant.id,
         stripe: this.readRestaurantStripeSettings(restaurant.settings),
-        publishableKey: this.stripePaymentsService.getPublishableKey() ?? null,
-        configured: this.stripePaymentsService.isConfigured(),
+        publishableKey: platformStripe?.publishableKey ?? null,
+        configured: Boolean(platformStripe),
       },
       message: 'Restaurant Stripe account fetched successfully',
     };
@@ -1752,6 +1804,12 @@ export class PaymentsService {
           credentials.environment === 'SANDBOX'
             ? PaypalPayoutEnvironment.SANDBOX
             : PaypalPayoutEnvironment.LIVE,
+      });
+    } else {
+      await this.stripePaymentsService.verifyCredentials({
+        secretKey: credentials.secretKey,
+        publishableKey: credentials.publishableKey,
+        webhookSecret: credentials.webhookSecret,
       });
     }
 
@@ -2176,19 +2234,24 @@ export class PaymentsService {
       if (!accountId) {
         throw new BadRequestException('Approved Stripe account ID is missing');
       }
-      const transfer = await this.stripePaymentsService.createTransfer({
-        amount: Number(request.amount),
-        currency: request.currency,
-        destinationAccountId: accountId,
-        description,
-        idempotencyKey,
-        metadata: {
-          restaurantId: restaurant.id,
-          tenantId: restaurant.tenantId,
-          payoutRequestId: request.id,
-          actorId: user.uid,
+      const stripeCredentials =
+        await this.resolveGlobalStripeCheckoutCredentials();
+      const transfer = await this.stripePaymentsService.createTransfer(
+        {
+          amount: Number(request.amount),
+          currency: request.currency,
+          destinationAccountId: accountId,
+          description,
+          idempotencyKey,
+          metadata: {
+            restaurantId: restaurant.id,
+            tenantId: restaurant.tenantId,
+            payoutRequestId: request.id,
+            actorId: user.uid,
+          },
         },
-      });
+        stripeCredentials,
+      );
       providerReference = transfer.id;
     } else {
       const credentials = this.readPaypalCredentials(
@@ -2302,6 +2365,7 @@ export class PaymentsService {
       restaurantWallet,
       transactions,
       globalMethods,
+      platformStripe,
     ] = await Promise.all([
       this.paymentsRepository.summarizeRestaurantTransactions(
         restaurant.id,
@@ -2318,6 +2382,7 @@ export class PaymentsService {
         restaurantId: restaurant.id,
       }),
       this.getGlobalPaymentMethods(),
+      this.findGlobalStripeCheckoutCredentials(),
     ]);
     const stripe = this.readRestaurantStripeSettings(restaurant.settings);
     const paymentMethods = this.readRestaurantPaymentMethodSettings(
@@ -2337,9 +2402,8 @@ export class PaymentsService {
           },
           stripe: {
             ...stripe,
-            publishableKey:
-              this.stripePaymentsService.getPublishableKey() ?? null,
-            configured: this.stripePaymentsService.isConfigured(),
+            publishableKey: platformStripe?.publishableKey ?? null,
+            configured: Boolean(platformStripe),
           },
           payouts: {
             provider: 'stripe',
@@ -2667,7 +2731,12 @@ export class PaymentsService {
     }
 
     if (payment.paymentMethod === PaymentMethod.STRIPE && payment.providerRef) {
-      await this.stripePaymentsService.cancelPaymentIntent(payment.providerRef);
+      const stripeCredentials =
+        await this.resolveGlobalStripeCheckoutCredentials();
+      await this.stripePaymentsService.cancelPaymentIntent(
+        payment.providerRef,
+        stripeCredentials,
+      );
     }
 
     const data = await this.applyPaymentTerminalStatus(
@@ -2734,9 +2803,12 @@ export class PaymentsService {
     }
 
     if (payment.paymentMethod === PaymentMethod.STRIPE && payment.providerRef) {
+      const stripeCredentials =
+        await this.resolveGlobalStripeCheckoutCredentials();
       await this.stripePaymentsService.refundPaymentIntent(
         payment.providerRef,
         Number(refundAmount),
+        stripeCredentials,
       );
     }
 
@@ -2853,7 +2925,12 @@ export class PaymentsService {
       payment.paymentMethod === PaymentMethod.STRIPE &&
       payment.providerRef
     ) {
-      await this.stripePaymentsService.cancelPaymentIntent(payment.providerRef);
+      const stripeCredentials =
+        await this.resolveGlobalStripeCheckoutCredentials();
+      await this.stripePaymentsService.cancelPaymentIntent(
+        payment.providerRef,
+        stripeCredentials,
+      );
     }
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -2898,9 +2975,12 @@ export class PaymentsService {
       throw new BadRequestException('Stripe webhook payload is required');
     }
 
+    const stripeCredentials =
+      await this.resolveGlobalStripeCheckoutCredentials();
     const event = this.stripePaymentsService.constructWebhookEvent(
       rawBody,
       signature,
+      stripeCredentials,
     );
 
     switch (event.type) {
@@ -3995,6 +4075,72 @@ export class PaymentsService {
     return result;
   }
 
+  private async resolveGlobalStripeCheckoutCredentials(): Promise<StripeCheckoutCredentials> {
+    const credentials = await this.findGlobalStripeCheckoutCredentials();
+    if (!credentials) {
+      throw new ServiceUnavailableException(
+        'Global Stripe checkout is not configured or enabled',
+      );
+    }
+    return credentials;
+  }
+
+  private async findGlobalStripeCheckoutCredentials(): Promise<StripeCheckoutCredentials | null> {
+    const settings = await this.readGlobalPayoutProviders();
+    const configuration = settings.configurations.STRIPE;
+    if (!configuration?.enabled) {
+      return null;
+    }
+    const credentials = this.payoutCredentialsService.decrypt(
+      'GLOBAL',
+      RestaurantPayoutProvider.STRIPE,
+      configuration.encryptedCredentials,
+    );
+    const secretKey = this.readString(credentials.secretKey);
+    const publishableKey = this.readString(credentials.publishableKey);
+    const webhookSecret = this.readString(credentials.webhookSecret);
+    if (!secretKey || !publishableKey || !webhookSecret) {
+      return null;
+    }
+    return {
+      secretKey,
+      publishableKey,
+      webhookSecret,
+    };
+  }
+
+  private async resolveGlobalPaypalCheckoutCredentials(): Promise<PaypalOrderCredentials> {
+    const settings = await this.readGlobalPayoutProviders();
+    const configuration = settings.configurations.PAYPAL;
+    if (!configuration?.enabled) {
+      throw new ServiceUnavailableException(
+        'Global PayPal checkout is not configured or enabled',
+      );
+    }
+    const credentials = this.payoutCredentialsService.decrypt(
+      'GLOBAL',
+      RestaurantPayoutProvider.PAYPAL,
+      configuration.encryptedCredentials,
+    );
+    const clientId = this.readString(credentials.clientId);
+    const clientSecret = this.readString(credentials.clientSecret);
+    const environment = this.readString(credentials.environment);
+    if (
+      !clientId ||
+      !clientSecret ||
+      (environment !== 'SANDBOX' && environment !== 'LIVE')
+    ) {
+      throw new ServiceUnavailableException(
+        'Global PayPal checkout credentials are incomplete',
+      );
+    }
+    return {
+      clientId,
+      clientSecret,
+      environment: environment as PaypalPayoutEnvironment,
+    };
+  }
+
   private buildGlobalPayoutCredentials(
     dto: ConfigureGlobalPayoutProviderDto,
     existing?: GlobalPayoutProviderConfiguration,
@@ -4023,14 +4169,16 @@ export class PaymentsService {
           'Valid Stripe secret and publishable keys are required',
         );
       }
-      if (webhookSecret && !webhookSecret.startsWith('whsec_')) {
-        throw new BadRequestException('Stripe webhook secret is invalid');
+      if (!webhookSecret?.startsWith('whsec_')) {
+        throw new BadRequestException(
+          'A valid Stripe webhook secret is required',
+        );
       }
 
       return {
         secretKey,
         publishableKey,
-        ...(webhookSecret ? { webhookSecret } : {}),
+        webhookSecret,
       };
     }
 
@@ -4067,12 +4215,14 @@ export class PaymentsService {
         secretKeyLast4: credentials.secretKey.slice(-4),
         publishableKeyLast4: credentials.publishableKey.slice(-4),
         webhookConfigured: Boolean(credentials.webhookSecret),
+        webhookSecretLast4: credentials.webhookSecret?.slice(-4) ?? null,
         note,
       };
     }
 
     return {
       clientIdLast4: credentials.clientId.slice(-4),
+      clientSecretLast4: credentials.clientSecret.slice(-4),
       environment: credentials.environment,
       note,
     };

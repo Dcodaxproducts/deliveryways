@@ -15,6 +15,12 @@ export interface StripePaymentIntentMetadata {
   restaurantId: string;
 }
 
+export interface StripeCheckoutCredentials {
+  secretKey: string;
+  publishableKey: string;
+  webhookSecret: string;
+}
+
 @Injectable()
 export class StripePaymentsService {
   private readonly stripeSecretKey?: string;
@@ -47,8 +53,8 @@ export class StripePaymentsService {
     return Boolean(this.stripe && this.stripePublishableKey);
   }
 
-  getPublishableKey() {
-    return this.stripePublishableKey;
+  getPublishableKey(credentials?: StripeCheckoutCredentials) {
+    return credentials?.publishableKey ?? this.stripePublishableKey;
   }
 
   getWebhookSecret() {
@@ -59,13 +65,21 @@ export class StripePaymentsService {
     return this.defaultCurrency.toUpperCase();
   }
 
-  async createPaymentIntent(input: {
-    amount: number;
-    currency?: string;
-    metadata: StripePaymentIntentMetadata;
-    description: string;
-  }) {
-    const stripe = this.requireStripe();
+  async verifyCredentials(credentials: StripeCheckoutCredentials) {
+    const stripe = this.requireStripe(credentials);
+    await stripe.accounts.retrieveCurrent();
+  }
+
+  async createPaymentIntent(
+    input: {
+      amount: number;
+      currency?: string;
+      metadata: StripePaymentIntentMetadata;
+      description: string;
+    },
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    const stripe = this.requireStripe(credentials);
     const currency = (input.currency ?? this.defaultCurrency).toLowerCase();
 
     return stripe.paymentIntents.create({
@@ -79,13 +93,20 @@ export class StripePaymentsService {
     });
   }
 
-  async cancelPaymentIntent(paymentIntentId: string) {
-    const stripe = this.requireStripe();
+  async cancelPaymentIntent(
+    paymentIntentId: string,
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    const stripe = this.requireStripe(credentials);
     return stripe.paymentIntents.cancel(paymentIntentId);
   }
 
-  async refundPaymentIntent(paymentIntentId: string, amount?: number) {
-    const stripe = this.requireStripe();
+  async refundPaymentIntent(
+    paymentIntentId: string,
+    amount?: number,
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    const stripe = this.requireStripe(credentials);
 
     return stripe.refunds.create({
       payment_intent: paymentIntentId,
@@ -95,15 +116,18 @@ export class StripePaymentsService {
     });
   }
 
-  async createTransfer(input: {
-    amount: number;
-    currency?: string;
-    destinationAccountId: string;
-    description?: string;
-    metadata: Record<string, string>;
-    idempotencyKey?: string;
-  }) {
-    const stripe = this.requireStripe();
+  async createTransfer(
+    input: {
+      amount: number;
+      currency?: string;
+      destinationAccountId: string;
+      description?: string;
+      metadata: Record<string, string>;
+      idempotencyKey?: string;
+    },
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    const stripe = this.requireStripe(credentials);
     const currency = (input.currency ?? this.defaultCurrency).toLowerCase();
 
     return stripe.transfers.create(
@@ -118,26 +142,33 @@ export class StripePaymentsService {
     );
   }
 
-  constructWebhookEvent(payload: Buffer | string, signature?: string) {
-    const stripe = this.requireStripe();
+  constructWebhookEvent(
+    payload: Buffer | string,
+    signature?: string,
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    const stripe = this.requireStripe(credentials);
     if (!signature) {
       throw new BadRequestException('Missing Stripe signature header');
     }
 
-    if (!this.webhookSecret) {
+    const webhookSecret = credentials?.webhookSecret ?? this.webhookSecret;
+    if (!webhookSecret) {
       throw new InternalServerErrorException(
         'Stripe webhook secret is not configured',
       );
     }
 
-    return stripe.webhooks.constructEvent(
-      payload,
-      signature,
-      this.webhookSecret,
-    );
+    return stripe.webhooks.constructEvent(payload, signature, webhookSecret);
   }
 
-  private requireStripe() {
+  private requireStripe(credentials?: StripeCheckoutCredentials) {
+    if (credentials) {
+      return new Stripe(credentials.secretKey, {
+        apiVersion: '2026-03-25.dahlia',
+      });
+    }
+
     if (!this.stripe || !this.stripePublishableKey) {
       throw new InternalServerErrorException(
         'Stripe is not configured. Missing STRIPE_SECRET_KEY or STRIPE_PUBLISHABLE_KEY',

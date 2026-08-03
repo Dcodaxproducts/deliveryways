@@ -27,6 +27,7 @@ import {
 } from '../../common/guards';
 import {
   AdminUpdatePaymentStatusDto,
+  ConfigureGlobalPayoutProviderDto,
   CreateRestaurantPayoutRequestDto,
   CreateRestaurantPayoutProviderRequestDto,
   CreateRestaurantProviderPayoutDto,
@@ -57,6 +58,29 @@ import { PaymentsService } from './payments.service';
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Get('payout-providers/global')
+  @ApiOperation({ summary: 'Get redacted platform checkout credentials' })
+  getGlobalPayoutProviders(@CurrentUser() user: AuthUserContext) {
+    return this.paymentsService.getGlobalPayoutProviders(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('payout-providers/global/configuration')
+  @ApiOperation({
+    summary: 'Configure encrypted platform checkout credentials',
+  })
+  configureGlobalPayoutProvider(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: ConfigureGlobalPayoutProviderDto,
+  ) {
+    return this.paymentsService.configureGlobalPayoutProvider(user, dto);
+  }
 
   @Public()
   @Post('webhooks/stripe')

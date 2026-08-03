@@ -143,6 +143,7 @@ describe('PaymentsService', () => {
       getDefaultCurrency: jest.fn().mockReturnValue('PKR'),
       getPublishableKey: jest.fn().mockReturnValue('pk_test_123'),
       isConfigured: jest.fn().mockReturnValue(true),
+      verifyCredentials: jest.fn(),
       createPaymentIntent: jest.fn(),
       createTransfer: jest.fn(),
       constructWebhookEvent: jest.fn(),
@@ -163,7 +164,22 @@ describe('PaymentsService', () => {
     };
     const payoutCredentialsService = {
       encrypt: jest.fn().mockReturnValue('encrypted-credentials'),
-      decrypt: jest.fn(),
+      decrypt: jest.fn<
+        Record<string, string>,
+        [string, RestaurantPayoutProvider]
+      >((_scope: string, provider: RestaurantPayoutProvider) =>
+        provider === RestaurantPayoutProvider.STRIPE
+          ? ({
+              secretKey: 'sk_test_platform',
+              publishableKey: 'pk_test_123',
+              webhookSecret: 'whsec_platform',
+            } as Record<string, string>)
+          : ({
+              clientId: 'paypal-platform-client',
+              clientSecret: 'paypal-platform-secret',
+              environment: PaypalPayoutEnvironment.SANDBOX,
+            } as Record<string, string>),
+      ),
     };
 
     const loyaltyWalletService = {
@@ -174,7 +190,26 @@ describe('PaymentsService', () => {
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
-      getPayoutProviderSettings: jest.fn().mockResolvedValue(null),
+      getPayoutProviderSettings: jest.fn().mockResolvedValue({
+        configurations: {
+          STRIPE: {
+            provider: RestaurantPayoutProvider.STRIPE,
+            enabled: true,
+            publicDetails: {},
+            encryptedCredentials: 'encrypted-platform-stripe',
+            updatedAt: '2026-08-03T00:00:00.000Z',
+            updatedBy: 'super-admin-1',
+          },
+          PAYPAL: {
+            provider: RestaurantPayoutProvider.PAYPAL,
+            enabled: true,
+            publicDetails: {},
+            encryptedCredentials: 'encrypted-platform-paypal',
+            updatedAt: '2026-08-03T00:00:00.000Z',
+            updatedBy: 'super-admin-1',
+          },
+        },
+      }),
       updatePayoutProviderSettings: jest.fn(),
       getPaymentMethods: jest.fn().mockResolvedValue({
         data: [
@@ -221,8 +256,12 @@ describe('PaymentsService', () => {
   };
 
   it('stores and returns only redacted global Stripe credentials', async () => {
-    const { service, globalSettingsService, payoutCredentialsService } =
-      makeService();
+    const {
+      service,
+      globalSettingsService,
+      payoutCredentialsService,
+      stripePaymentsService,
+    } = makeService();
 
     payoutCredentialsService.encrypt.mockReturnValue('encrypted-stripe');
 
@@ -248,6 +287,11 @@ describe('PaymentsService', () => {
         webhookSecret: 'whsec_webhook9012',
       },
     );
+    expect(stripePaymentsService.verifyCredentials).toHaveBeenCalledWith({
+      secretKey: 'sk_test_secret1234',
+      publishableKey: 'pk_test_public5678',
+      webhookSecret: 'whsec_webhook9012',
+    });
     expect(
       globalSettingsService.updatePayoutProviderSettings,
     ).toHaveBeenCalled();
@@ -397,6 +441,7 @@ describe('PaymentsService', () => {
     );
     expect(stripePaymentsService.createPaymentIntent).toHaveBeenCalledWith(
       expect.objectContaining({ currency: 'PKR' }),
+      expect.objectContaining({ secretKey: 'sk_test_platform' }),
     );
     expect(result.paymentSession).toEqual({
       provider: 'stripe',
@@ -481,17 +526,15 @@ describe('PaymentsService', () => {
       paypalOrderId: 'paypal-order-1',
       approvalUrl: 'https://paypal.test/approve',
     });
-    const createOrderInput = (
-      paypalOrdersService.createOrder.mock.calls as Array<
-        [Record<string, unknown>]
-      >
-    )[0]?.[0];
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        createOrderInput ?? {},
-        'credentials',
-      ),
-    ).toBe(false);
+    expect(paypalOrdersService.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentials: {
+          clientId: 'paypal-platform-client',
+          clientSecret: 'paypal-platform-secret',
+          environment: PaypalPayoutEnvironment.SANDBOX,
+        },
+      }),
+    );
     expect(notificationsService.notifyOrderPlaced).not.toHaveBeenCalled();
     expect(
       notificationsService.notifyPaymentAttemptCreated,
@@ -566,17 +609,15 @@ describe('PaymentsService', () => {
     expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
       'order-1',
     );
-    const captureOrderInput = (
-      paypalOrdersService.captureOrder.mock.calls as Array<
-        [Record<string, unknown>]
-      >
-    )[0]?.[0];
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        captureOrderInput ?? {},
-        'credentials',
-      ),
-    ).toBe(false);
+    expect(paypalOrdersService.captureOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentials: {
+          clientId: 'paypal-platform-client',
+          clientSecret: 'paypal-platform-secret',
+          environment: PaypalPayoutEnvironment.SANDBOX,
+        },
+      }),
+    );
   });
 
   it('switches a payment-pending Stripe order to COD', async () => {
@@ -627,6 +668,7 @@ describe('PaymentsService', () => {
 
     expect(stripePaymentsService.cancelPaymentIntent).toHaveBeenCalledWith(
       'pi_123',
+      expect.objectContaining({ secretKey: 'sk_test_platform' }),
     );
     expect(paymentsRepository.updateChargePaymentMethod).toHaveBeenCalledWith(
       'payment-1',
@@ -799,6 +841,7 @@ describe('PaymentsService', () => {
         amount: 115,
         currency: 'USD',
       }),
+      expect.objectContaining({ secretKey: 'sk_test_platform' }),
     );
     const createPaymentIntentMock =
       stripePaymentsService.createPaymentIntent as jest.Mock<
@@ -1688,6 +1731,7 @@ describe('PaymentsService', () => {
           recipientEmail: 'recipient@example.com',
         }),
       }),
+      expect.objectContaining({ secretKey: 'sk_test_platform' }),
     );
     expect(result.paymentSession).toEqual({
       provider: 'stripe',
@@ -2248,6 +2292,7 @@ describe('PaymentsService', () => {
         destinationAccountId: 'acct_123',
         idempotencyKey: 'payout-1',
       }),
+      expect.objectContaining({ secretKey: 'sk_test_platform' }),
     );
     expect(prisma.restaurantWalletAccount.update).toHaveBeenCalledWith({
       where: { id: 'wallet-1' },
