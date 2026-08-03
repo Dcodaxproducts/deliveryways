@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AdminPrintingService } from './admin-printing.service';
 
 describe('AdminPrintingService', () => {
@@ -89,6 +89,7 @@ describe('AdminPrintingService', () => {
             printing: {
               enabled: true,
               autoPrintOnNewOrder: true,
+              connectionType: 'LAN',
               printerName: 'Kitchen LAN',
             },
           },
@@ -100,6 +101,7 @@ describe('AdminPrintingService', () => {
           printing: {
             enabled: true,
             autoPrintOnNewOrder: true,
+            connectionType: 'LAN',
             printerName: 'Kitchen LAN',
           },
         },
@@ -122,6 +124,7 @@ describe('AdminPrintingService', () => {
             dto: {
               enabled: boolean;
               autoPrintOnNewOrder: boolean;
+              connectionType: 'LAN';
               printerName: string;
             },
           ) => Promise<unknown>;
@@ -137,6 +140,7 @@ describe('AdminPrintingService', () => {
         {
           enabled: true,
           autoPrintOnNewOrder: true,
+          connectionType: 'LAN',
           printerName: 'Kitchen LAN',
         },
       ),
@@ -154,6 +158,7 @@ describe('AdminPrintingService', () => {
         printing: {
           enabled: true,
           autoPrintOnNewOrder: true,
+          connectionType: 'LAN',
           printerName: 'Kitchen LAN',
         },
       },
@@ -264,5 +269,70 @@ describe('AdminPrintingService', () => {
         { branchId: 'branch-2', limit: 20 },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects local printing settings without a selected printer', async () => {
+    const repository = {
+      getRestaurantWithSettings: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        settings: {},
+      }),
+      updateRestaurantSettings: jest.fn(),
+    };
+    const service = new AdminPrintingService(
+      repository as never,
+      { getIntegrationLogs: jest.fn() } as never,
+    );
+
+    await expect(
+      service.updateSettings(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {},
+        { connectionType: 'USB' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.updateRestaurantSettings).not.toHaveBeenCalled();
+  });
+
+  it('records scoped local printer test events', async () => {
+    const metrics = {
+      recordIntegrationLog: jest.fn(),
+    };
+    const service = new AdminPrintingService({} as never, metrics as never);
+
+    await service.reportEvent(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: 'BRANCH_ADMIN',
+      } as never,
+      {},
+      {
+        event: 'test_print',
+        status: 'success',
+        message: 'Test print completed',
+        printerName: 'Kitchen USB',
+      },
+    );
+
+    expect(metrics.recordIntegrationLog).toHaveBeenCalledWith('printer', {
+      status: 'success',
+      message: 'Test print completed',
+      meta: {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        event: 'test_print',
+        printerName: 'Kitchen USB',
+      },
+    });
   });
 });

@@ -12,6 +12,7 @@ import {
   AdminPrintingLogsQueryDto,
   AdminPrintingScopedQueryDto,
   AdminPrintingStatusQueryDto,
+  ReportAdminPrinterEventDto,
   UpdateAdminPrintingSettingsDto,
 } from './dto';
 import {
@@ -102,7 +103,17 @@ export class AdminPrintingService {
         throw new NotFoundException('Branch not found');
       }
 
+      const restaurant =
+        await this.adminPrintingRepository.getRestaurantWithSettings(
+          branch.restaurantId,
+        );
       const nextSettings = this.mergePrintingConfig(branch.settings, dto);
+      this.assertValidPrintingConfig(
+        this.extractPrintingConfig(
+          nextSettings,
+          this.extractPrintingConfig(restaurant?.settings),
+        ),
+      );
       await this.adminPrintingRepository.updateBranchSettings(
         branch.id,
         nextSettings,
@@ -117,6 +128,7 @@ export class AdminPrintingService {
       }
 
       const nextSettings = this.mergePrintingConfig(restaurant.settings, dto);
+      this.assertValidPrintingConfig(this.extractPrintingConfig(nextSettings));
       await this.adminPrintingRepository.updateRestaurantSettings(
         restaurant.id,
         nextSettings,
@@ -128,6 +140,37 @@ export class AdminPrintingService {
     }
 
     return this.getSettings(user, query);
+  }
+
+  async reportEvent(
+    user: AuthUserContext,
+    query: AdminPrintingScopedQueryDto,
+    dto: ReportAdminPrinterEventDto,
+  ) {
+    const scope = await this.resolveScope(
+      user,
+      query.restaurantId,
+      query.branchId,
+    );
+
+    this.systemHealthMetricsService.recordIntegrationLog('printer', {
+      status: dto.status,
+      message: dto.message.trim(),
+      meta: {
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        event: dto.event,
+        ...(dto.printerName?.trim()
+          ? { printerName: dto.printerName.trim() }
+          : {}),
+      },
+    });
+
+    return {
+      data: { recorded: true },
+      message: 'Admin printer event recorded successfully',
+    };
   }
 
   async getStatus(user: AuthUserContext, query: AdminPrintingStatusQueryDto) {
@@ -444,6 +487,32 @@ export class AdminPrintingService {
       queueName:
         this.readStringValue(printing.queueName) ?? fallback?.queueName ?? null,
     };
+  }
+
+  private assertValidPrintingConfig(config: PrintingConfig) {
+    if (!config.connectionType) {
+      if (config.enabled) {
+        throw new BadRequestException(
+          'connectionType is required when printing is enabled',
+        );
+      }
+      return;
+    }
+
+    if (config.connectionType === 'CLOUD') {
+      if (!config.queueName) {
+        throw new BadRequestException(
+          'queueName is required for cloud printing',
+        );
+      }
+      return;
+    }
+
+    if (!config.printerName) {
+      throw new BadRequestException(
+        'printerName is required for local printing',
+      );
+    }
   }
 
   private mergePrintingConfig(
