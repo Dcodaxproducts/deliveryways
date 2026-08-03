@@ -42,6 +42,12 @@ export class CreatePaymentAttemptDto {
   note?: string;
 }
 
+export class CapturePaypalOrderDto {
+  @ApiProperty()
+  @IsString()
+  paypalOrderId!: string;
+}
+
 export class CreateSubscriptionPaymentAttemptDto {
   @ApiPropertyOptional({ maxLength: 50 })
   @IsOptional()

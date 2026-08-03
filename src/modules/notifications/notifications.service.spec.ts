@@ -838,6 +838,11 @@ describe('NotificationsService', () => {
 
     await service.notifyOrderStatusChanged('order-1');
 
+    expect(notificationsRepository.markAllSeen).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      type: NotificationType.ORDER_PLACED,
+    });
+
     expect(notificationsRepository.create).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({

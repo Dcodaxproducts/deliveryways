@@ -3201,6 +3201,7 @@ export class CartService {
         (orderType === OrderTypeEnum.DELIVERY
           ? new Date().toISOString()
           : undefined),
+      isScheduled: Boolean(cart.orderTime),
       items: cart.items.map((item) => {
         const dealId = this.readDealId(item.modifiers);
 
@@ -3238,6 +3239,9 @@ export class CartService {
         (cart.orderType === OrderType.DELIVERY
           ? new Date().toISOString()
           : undefined),
+      isScheduled: Boolean(
+        dto.orderTime ?? dto.scheduledDeliveryAt ?? cart.orderTime,
+      ),
       paymentMethod: this.resolveCheckoutPaymentMethod(cart, dto),
       walletAmount: dto.walletAmount,
       loyaltyPoints: dto.loyaltyPoints,

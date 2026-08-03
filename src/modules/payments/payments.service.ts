@@ -30,6 +30,7 @@ import {
   CreateRestaurantProviderPayoutDto,
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
+  CapturePaypalOrderDto,
   CreateSubscriptionPaymentAttemptDto,
   ListRestaurantPayoutRequestsDto,
   MarkRestaurantPayoutPaidDto,
@@ -61,6 +62,10 @@ import { MailerService } from '../mailer/mailer.service';
 import { PackagePlansService } from '../package-plans/package-plans.service';
 import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
+import {
+  PaypalOrdersService,
+  type PaypalOrderCredentials,
+} from './paypal-orders.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -147,6 +152,7 @@ export class PaymentsService {
     private readonly globalSettingsService?: GlobalSettingsService,
     private readonly mailerService?: MailerService,
     private readonly packagePlansService?: PackagePlansService,
+    private readonly paypalOrdersService?: PaypalOrdersService,
   ) {}
 
   async createSubscriptionAttempt(
@@ -690,7 +696,10 @@ export class PaymentsService {
     const existingPendingCharge =
       await this.paymentsRepository.findLatestPendingChargeByOrderId(order.id);
 
-    if (paymentMethod !== PaymentMethod.STRIPE) {
+    if (
+      paymentMethod !== PaymentMethod.STRIPE &&
+      paymentMethod !== PaymentMethod.PAYPAL
+    ) {
       const data = await this.switchPendingOrderPaymentMethod(
         user,
         order,
@@ -776,12 +785,157 @@ export class PaymentsService {
       };
     }
 
+    if (paymentMethod === PaymentMethod.PAYPAL) {
+      if (!this.paypalOrdersService) {
+        throw new BadRequestException('PayPal checkout is unavailable');
+      }
+      const credentials = this.resolvePaypalCheckoutCredentials(
+        order.restaurant.settings,
+        order.restaurantId,
+      );
+      const paypalOrder = await this.paypalOrdersService.createOrder({
+        amount: Number(order.totalAmount),
+        currency,
+        paymentTransactionId: data.id,
+        orderId: order.id,
+        returnUrl: this.paypalOrdersService.getReturnUrl(order.id),
+        cancelUrl: this.paypalOrdersService.getCancelUrl(order.id),
+        credentials,
+      });
+      const updated = await this.paymentsRepository.updateStatus(data.id, {
+        status: PaymentStatus.PENDING,
+        providerRef: paypalOrder.id,
+        providerData: {
+          provider: 'paypal',
+          paypalOrderId: paypalOrder.id,
+          approvalUrl: paypalOrder.approvalUrl,
+        } as Prisma.InputJsonValue,
+        note: dto.note,
+      });
+
+      await this.notificationsService.notifyPaymentAttemptCreated(updated.id);
+
+      return {
+        data: updated,
+        paymentSession: {
+          provider: 'paypal',
+          paypalOrderId: paypalOrder.id,
+          approvalUrl: paypalOrder.approvalUrl,
+        },
+        message: 'PayPal order created successfully',
+      };
+    }
+
     await this.notificationsService.notifyPaymentAttemptCreated(data.id);
 
     return {
       data,
       message: 'Payment attempt created successfully',
     };
+  }
+
+  async capturePaypalOrder(
+    user: AuthUserContext,
+    orderId: string,
+    dto: CapturePaypalOrderDto,
+  ) {
+    if (!this.paypalOrdersService) {
+      throw new BadRequestException('PayPal checkout is unavailable');
+    }
+    const payment = await this.paymentsRepository.findByProviderRef(
+      dto.paypalOrderId,
+    );
+
+    if (!payment || payment.orderId !== orderId || !payment.order) {
+      throw new NotFoundException('PayPal payment attempt not found');
+    }
+    await this.assertOrderAccess(
+      user,
+      payment.order.restaurantId,
+      payment.order.customerId,
+    );
+
+    if (payment.status === PaymentStatus.PAID) {
+      return { data: payment, message: 'PayPal payment already captured' };
+    }
+    if (
+      payment.paymentMethod !== PaymentMethod.PAYPAL ||
+      payment.status !== PaymentStatus.PENDING
+    ) {
+      throw new BadRequestException('PayPal payment is not pending');
+    }
+
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: payment.order.restaurantId },
+      select: { settings: true },
+    });
+    const credentials = this.resolvePaypalCheckoutCredentials(
+      restaurant?.settings,
+      payment.order.restaurantId,
+    );
+    const captured = await this.paypalOrdersService.captureOrder({
+      paypalOrderId: dto.paypalOrderId,
+      paymentTransactionId: payment.id,
+      credentials,
+    });
+
+    if (
+      captured.status !== 'COMPLETED' ||
+      captured.customId !== payment.id ||
+      !captured.captureId ||
+      !captured.amount ||
+      !captured.currency ||
+      !new Prisma.Decimal(captured.amount).equals(payment.amount) ||
+      captured.currency.toUpperCase() !== payment.currency.toUpperCase()
+    ) {
+      throw new BadRequestException(
+        'PayPal capture could not be verified against the order payment',
+      );
+    }
+
+    const shouldPlaceOrder =
+      payment.order.status === OrderStatus.PAYMENT_PENDING;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const paid = await this.paymentsRepository.updateStatus(
+        payment.id,
+        {
+          status: PaymentStatus.PAID,
+          providerRef: dto.paypalOrderId,
+          providerData: captured.payload as Prisma.InputJsonValue,
+          processedAt: new Date(),
+        },
+        tx,
+      );
+      await this.paymentsRepository.updateOrderPaymentStatus(
+        orderId,
+        PaymentStatus.PAID,
+        tx,
+      );
+      if (shouldPlaceOrder) {
+        await this.paymentsRepository.updateOrderState(
+          orderId,
+          { status: OrderStatus.PLACED },
+          tx,
+        );
+      }
+      return paid;
+    });
+
+    await this.creditRestaurantWalletForPayment(
+      { ...payment, status: PaymentStatus.PAID },
+      'paypal:capture',
+    );
+    await this.loyaltyWalletService!.awardPointsForPaidOrder(
+      orderId,
+      payment.id,
+      'paypal:capture',
+    );
+    await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+    if (shouldPlaceOrder) {
+      await this.notificationsService.notifyOrderPlaced(orderId);
+    }
+
+    return { data: updated, message: 'PayPal payment captured successfully' };
   }
 
   private async switchPendingOrderPaymentMethod(
@@ -4018,6 +4172,24 @@ export class PaymentsService {
       clientSecret,
       recipientEmail,
       environment: environment as PaypalPayoutEnvironment,
+    };
+  }
+
+  private resolvePaypalCheckoutCredentials(
+    settings: Prisma.JsonValue | null | undefined,
+    restaurantId: string,
+  ): PaypalOrderCredentials | undefined {
+    const configuration = this.resolveRestaurantPayoutProviderConfiguration(
+      settings,
+      RestaurantPayoutProvider.PAYPAL,
+    );
+    if (!configuration?.enabled) return undefined;
+
+    const credentials = this.readPaypalCredentials(restaurantId, configuration);
+    return {
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+      environment: credentials.environment,
     };
   }
 

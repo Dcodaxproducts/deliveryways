@@ -292,8 +292,16 @@ export class NotificationsService {
     const currency =
       (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR';
 
-    const subject = `New order ${order.id}`;
-    const body = `${order.branch.name} received a new order for ${currency} ${Number(order.totalAmount).toFixed(2)}.`;
+    const restaurantLocale =
+      await this.mailerService.resolveTransactionalLocale();
+    const subject =
+      restaurantLocale === 'de'
+        ? `Neue Bestellung ${order.id}`
+        : `New order ${order.id}`;
+    const body =
+      restaurantLocale === 'de'
+        ? `${order.branch.name} hat eine neue Bestellung über ${Number(order.totalAmount).toFixed(2)} ${currency} erhalten.`
+        : `${order.branch.name} received a new order for ${Number(order.totalAmount).toFixed(2)} ${currency}.`;
     const payload = {
       orderId: order.id,
       branchName: order.branch.name,
@@ -419,6 +427,13 @@ export class NotificationsService {
       branchId: order.branchId,
       updatedAt: order.updatedAt,
     });
+
+    if (!['PAYMENT_PENDING', 'PLACED'].includes(order.status)) {
+      await this.notificationsRepository.markAllSeen({
+        orderId: order.id,
+        type: NotificationType.ORDER_PLACED,
+      });
+    }
 
     const type =
       order.status === 'CANCELLED'

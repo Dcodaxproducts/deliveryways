@@ -2022,6 +2022,24 @@ describe('OrdersService - order time validation', () => {
 
     expect(fn.call(service, '2020-03-24T19:30:00.000Z')).toBe(false);
   });
+
+  it('keeps both Stripe and PayPal orders pending until provider confirmation', () => {
+    const resolveInitialOrderStatus = (
+      service as unknown as {
+        resolveInitialOrderStatus: (method: PaymentMethodEnum) => OrderStatus;
+      }
+    ).resolveInitialOrderStatus;
+
+    expect(
+      resolveInitialOrderStatus.call(service, PaymentMethodEnum.STRIPE),
+    ).toBe(OrderStatus.PAYMENT_PENDING);
+    expect(
+      resolveInitialOrderStatus.call(service, PaymentMethodEnum.PAYPAL),
+    ).toBe(OrderStatus.PAYMENT_PENDING);
+    expect(resolveInitialOrderStatus.call(service, PaymentMethodEnum.COD)).toBe(
+      OrderStatus.PLACED,
+    );
+  });
 });
 
 describe('OrdersService - deliveryman order access', () => {

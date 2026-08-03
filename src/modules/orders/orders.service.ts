@@ -3,7 +3,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomInt } from 'crypto';
 import {
   AddressRefType,
@@ -254,6 +256,7 @@ export class OrdersService {
     private readonly storageService?: StorageService,
     private readonly loyaltyWalletService?: LoyaltyWalletService,
     private readonly globalSettingsService?: GlobalSettingsService,
+    private readonly configService?: ConfigService,
   ) {}
 
   async quote(user: AuthUserContext, dto: QuoteOrderDto) {
@@ -353,6 +356,10 @@ export class OrdersService {
       dto.paymentMethod,
       quote,
     );
+    this.assertCheckoutProviderConfigured(
+      dto.paymentMethod,
+      quote.branch.restaurant?.settings,
+    );
 
     const data = await this.prisma.$transaction(async (tx) => {
       const processedAt =
@@ -399,9 +406,7 @@ export class OrdersService {
           orderType: dto.orderType,
           paymentMethod: dto.paymentMethod,
           orderTime: quote.orderTime ? new Date(quote.orderTime) : null,
-          isScheduled: quote.orderTime
-            ? this.isScheduledOrderTime(quote.orderTime)
-            : false,
+          isScheduled: dto.isScheduled === true,
           status: this.resolveInitialOrderStatus(dto.paymentMethod),
           subtotal: quote.subtotal,
           taxAmount: quote.taxAmount,
@@ -1413,9 +1418,7 @@ export class OrdersService {
       branchId: branch.id,
       customerId: customer.customerId,
       customerIsGuest: customer.isGuest,
-      isScheduledOrder: orderTime
-        ? this.isScheduledOrderTime(orderTime)
-        : false,
+      isScheduledOrder: dto.isScheduled === true,
       subtotal: Number(subtotal),
       menuItemIds: pricedLines.map((line) => line.menuItemId),
       categoryIds: [
@@ -2272,9 +2275,49 @@ export class OrdersService {
   }
 
   private resolveInitialOrderStatus(paymentMethod: PaymentMethodEnum) {
-    return paymentMethod === PaymentMethodEnum.STRIPE
+    return [PaymentMethodEnum.STRIPE, PaymentMethodEnum.PAYPAL].includes(
+      paymentMethod,
+    )
       ? OrderStatus.PAYMENT_PENDING
       : OrderStatus.PLACED;
+  }
+
+  private assertCheckoutProviderConfigured(
+    paymentMethod: PaymentMethodEnum,
+    restaurantSettings: Prisma.JsonValue | null | undefined,
+  ) {
+    if (paymentMethod !== PaymentMethodEnum.PAYPAL) return;
+
+    const globalConfigured = Boolean(
+      this.configService?.get<string>('PAYPAL_CLIENT_ID')?.trim() &&
+      this.configService?.get<string>('PAYPAL_CLIENT_SECRET')?.trim(),
+    );
+    const root =
+      restaurantSettings &&
+      typeof restaurantSettings === 'object' &&
+      !Array.isArray(restaurantSettings)
+        ? (restaurantSettings as Record<string, unknown>)
+        : {};
+    const payments = this.toUnknownRecord(root.payments);
+    const payoutProviders = this.toUnknownRecord(payments.payoutProviders);
+    const configurations = this.toUnknownRecord(payoutProviders.configurations);
+    const paypal = this.toUnknownRecord(configurations.PAYPAL);
+    const restaurantConfigured =
+      paypal.enabled === true &&
+      typeof paypal.encryptedCredentials === 'string' &&
+      paypal.encryptedCredentials.length > 0;
+
+    if (!globalConfigured && !restaurantConfigured) {
+      throw new ServiceUnavailableException(
+        'PayPal checkout is not configured for this restaurant',
+      );
+    }
+  }
+
+  private toUnknownRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   }
 
   private resolveInitialPaymentStatus(
@@ -2325,9 +2368,7 @@ export class OrdersService {
       customerId: quote.customer.customerId,
       orderType: dto.orderType,
       orderTime: quote.orderTime,
-      isScheduled: quote.orderTime
-        ? this.isScheduledOrderTime(quote.orderTime)
-        : false,
+      isScheduled: dto.isScheduled === true,
       subtotal: amountSummary.subtotal,
       taxAmount: amountSummary.taxAmount,
       deliveryFee: amountSummary.deliveryFee,

@@ -2,6 +2,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  PaymentTransactionType,
   Prisma,
   RestaurantPayoutRequestStatus,
   RestaurantWalletTransactionType,
@@ -69,6 +70,17 @@ describe('PaymentsService', () => {
         update: jest.fn(),
       },
       coupon: {
+        create: jest.fn(),
+      },
+      restaurantWalletAccount: {
+        upsert: jest.fn().mockResolvedValue({
+          id: 'wallet-1',
+          balance: new Prisma.Decimal(0),
+        }),
+        update: jest.fn(),
+      },
+      restaurantWalletTransaction: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
       },
     };
@@ -141,6 +153,14 @@ describe('PaymentsService', () => {
       createPayout: jest.fn(),
       verifyCredentials: jest.fn(),
     };
+    const paypalOrdersService = {
+      createOrder: jest.fn(),
+      captureOrder: jest.fn(),
+      getReturnUrl: jest
+        .fn()
+        .mockReturnValue('https://shop.test/paypal/return'),
+      getCancelUrl: jest.fn().mockReturnValue('https://shop.test/checkout'),
+    };
     const payoutCredentialsService = {
       encrypt: jest.fn().mockReturnValue('encrypted-credentials'),
       decrypt: jest.fn(),
@@ -180,6 +200,8 @@ describe('PaymentsService', () => {
       loyaltyWalletService as never,
       globalSettingsService as never,
       mailerService as never,
+      undefined,
+      paypalOrdersService as never,
     );
 
     return {
@@ -189,6 +211,7 @@ describe('PaymentsService', () => {
       notificationsService,
       stripePaymentsService,
       paypalPayoutsService,
+      paypalOrdersService,
       payoutCredentialsService,
       loyaltyWalletService,
       globalSettingsService,
@@ -385,6 +408,142 @@ describe('PaymentsService', () => {
       notificationsService.notifyPaymentAttemptCreated,
     ).toHaveBeenCalledWith('payment-1');
     expect(paymentsRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a PayPal approval session without placing the pending order', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      paypalOrdersService,
+      notificationsService,
+      globalSettingsService,
+    } = makeService();
+
+    globalSettingsService.getPaymentMethods.mockResolvedValue({
+      data: [{ code: PaymentMethod.PAYPAL, label: 'PayPal', isActive: true }],
+    });
+
+    prisma.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      totalAmount: new Prisma.Decimal(25),
+      paymentMethod: PaymentMethod.PAYPAL,
+      paymentStatus: PaymentStatus.PENDING,
+      status: OrderStatus.PAYMENT_PENDING,
+      branch: { settings: { allowedPaymentMethods: [PaymentMethod.PAYPAL] } },
+      restaurant: { settings: {} },
+    });
+    prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
+    paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue(null);
+    paymentsRepository.create.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+    });
+    paypalOrdersService.createOrder.mockResolvedValue({
+      id: 'paypal-order-1',
+      approvalUrl: 'https://paypal.test/approve',
+    });
+    paymentsRepository.updateStatus.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      providerRef: 'paypal-order-1',
+    });
+
+    const result = await service.createAttempt(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      'order-1',
+      { paymentMethod: PaymentMethod.PAYPAL },
+    );
+
+    expect(result.paymentSession).toEqual({
+      provider: 'paypal',
+      paypalOrderId: 'paypal-order-1',
+      approvalUrl: 'https://paypal.test/approve',
+    });
+    expect(notificationsService.notifyOrderPlaced).not.toHaveBeenCalled();
+    expect(
+      notificationsService.notifyPaymentAttemptCreated,
+    ).toHaveBeenCalledWith('payment-1');
+  });
+
+  it('places and credits a PayPal order only after a verified capture', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      paypalOrdersService,
+      loyaltyWalletService,
+      notificationsService,
+    } = makeService();
+    const payment = {
+      id: 'payment-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.PAYPAL,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PENDING,
+      amount: new Prisma.Decimal(25),
+      currency: 'EUR',
+      providerRef: 'paypal-order-1',
+      order: {
+        id: 'order-1',
+        customerId: 'customer-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        totalAmount: new Prisma.Decimal(25),
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.PAYPAL,
+        status: OrderStatus.PAYMENT_PENDING,
+      },
+    };
+    paymentsRepository.findByProviderRef.mockResolvedValue(payment);
+    prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
+    paypalOrdersService.captureOrder.mockResolvedValue({
+      status: 'COMPLETED',
+      customId: 'payment-1',
+      captureId: 'capture-1',
+      amount: '25.00',
+      currency: 'EUR',
+      payload: { status: 'COMPLETED' },
+    });
+    paymentsRepository.updateStatus.mockResolvedValue({
+      ...payment,
+      status: PaymentStatus.PAID,
+    });
+
+    await service.capturePaypalOrder(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      'order-1',
+      { paypalOrderId: 'paypal-order-1' },
+    );
+
+    expect(paymentsRepository.updateOrderState).toHaveBeenCalledWith(
+      'order-1',
+      { status: OrderStatus.PLACED },
+      expect.anything(),
+    );
+    expect(loyaltyWalletService.awardPointsForPaidOrder).toHaveBeenCalledWith(
+      'order-1',
+      'payment-1',
+      'paypal:capture',
+    );
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
   });
 
   it('switches a payment-pending Stripe order to COD', async () => {

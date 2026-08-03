@@ -310,7 +310,7 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
-  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Patch(':id/suspend')
   suspend(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.suspend(user, id);
@@ -351,7 +351,7 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
-  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.remove(user, id);
@@ -371,7 +371,7 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
-  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN)
   @Delete(':id/force')
   forceDelete(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.forceDelete(user, id);

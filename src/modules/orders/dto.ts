@@ -291,6 +291,14 @@ export class QuoteOrderDto {
   @IsOptional()
   @IsDateString()
   orderTime?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'True only when orderTime was explicitly selected as a scheduled order.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isScheduled?: boolean;
 }
 
 export class CreateOrderDto extends QuoteOrderDto {

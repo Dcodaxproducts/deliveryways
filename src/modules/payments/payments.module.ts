@@ -10,6 +10,7 @@ import { PaymentsService } from './payments.service';
 import { StripePaymentsService } from './stripe-payments.service';
 import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
+import { PaypalOrdersService } from './paypal-orders.service';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { PayoutCredentialsService } from './payout-credentials.service';
     StripePaymentsService,
     PaypalPayoutsService,
     PayoutCredentialsService,
+    PaypalOrdersService,
   ],
   exports: [PaymentsService],
 })
