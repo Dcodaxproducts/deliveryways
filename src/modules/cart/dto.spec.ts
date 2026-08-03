@@ -1,5 +1,5 @@
 import { ArgumentMetadata, ValidationPipe } from '@nestjs/common';
-import { AddCartItemDto } from './dto';
+import { AddCartItemDto, AddCartItemsBatchDto } from './dto';
 
 describe('Cart DTO validation', () => {
   const validationPipe = new ValidationPipe({
@@ -40,5 +40,19 @@ describe('Cart DTO validation', () => {
         },
       ],
     });
+  });
+
+  it('rejects cart batches larger than 25 items', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          items: Array.from({ length: 26 }, (_, index) => ({
+            menuItemId: `menu-${index}`,
+            quantity: 1,
+          })),
+        },
+        { ...bodyMetadata, metatype: AddCartItemsBatchDto },
+      ),
+    ).rejects.toBeDefined();
   });
 });

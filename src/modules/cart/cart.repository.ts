@@ -11,6 +11,10 @@ export class CartRepository {
     return tx ?? this.prisma;
   }
 
+  transaction<T>(callback: (tx: PrismaTx) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(callback);
+  }
+
   async findByCustomerId(customerId: string) {
     return this.prisma.cart.findUnique({
       where: { customerId },
