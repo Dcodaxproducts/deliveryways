@@ -1140,6 +1140,27 @@ export class UpdateAdminPrintingSettingsDto {
 
 export class AdminPrintingStatusQueryDto extends AdminPrintingScopedQueryDto {}
 
+export class ReportAdminPrinterEventDto {
+  @ApiProperty({ enum: ['success', 'failed', 'warning'] })
+  @IsIn(['success', 'failed', 'warning'])
+  status!: 'success' | 'failed' | 'warning';
+
+  @ApiProperty({ enum: ['discovery', 'connection', 'test_print'] })
+  @IsIn(['discovery', 'connection', 'test_print'])
+  event!: 'discovery' | 'connection' | 'test_print';
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(500)
+  message!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  printerName?: string;
+}
+
 export class AdminPrintingLogsQueryDto extends AdminPrintingScopedQueryDto {
   @ApiPropertyOptional({ enum: ['success', 'failed', 'warning'] })
   @IsOptional()
