@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
@@ -11,6 +19,7 @@ import {
   AdminPrintingLogsQueryDto,
   AdminPrintingScopedQueryDto,
   AdminPrintingStatusQueryDto,
+  ReportAdminPrinterEventDto,
   UpdateAdminPrintingSettingsDto,
 } from './dto';
 import { AdminPrintingService } from './admin-printing.service';
@@ -49,6 +58,21 @@ export class AdminPrintingController {
     @Body() dto: UpdateAdminPrintingSettingsDto,
   ) {
     return this.adminPrintingService.updateSettings(user, query, dto);
+  }
+
+  @Post('events')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @ApiOperation({ summary: 'Report a local printer discovery or test event' })
+  reportEvent(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: AdminPrintingScopedQueryDto,
+    @Body() dto: ReportAdminPrinterEventDto,
+  ) {
+    return this.adminPrintingService.reportEvent(user, query, dto);
   }
 
   @Get('status')
