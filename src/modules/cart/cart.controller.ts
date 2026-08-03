@@ -20,6 +20,7 @@ import {
 import {
   AddCartItemDto,
   AddCartDealDto,
+  AddCartItemsBatchDto,
   CartCustomerScopeDto,
   CheckoutCartDto,
   QuoteCartDto,
@@ -159,6 +160,20 @@ export class CartController {
     return this.cartService.addItem(
       user,
       dto,
+      scope.customerId,
+      scope.restaurantId,
+    );
+  }
+
+  @Post('items/batch')
+  addItemsBatch(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: AddCartItemsBatchDto,
+    @Query() scope: CartCustomerScopeDto,
+  ) {
+    return this.cartService.addItemsBatch(
+      user,
+      dto.items,
       scope.customerId,
       scope.restaurantId,
     );

@@ -61,6 +61,19 @@ interface CartSnapshotItem {
   modifiers: Prisma.JsonValue | null;
 }
 
+interface CartSelectionIdentity {
+  menuItemId: string;
+  variationId: string | null;
+  note: string | null;
+  modifiers: Prisma.JsonValue | null | undefined;
+}
+
+interface PreparedCartBatchItem {
+  dto: AddCartItemDto;
+  selection: CartSelectionIdentity;
+  quantity: number;
+}
+
 interface CartSnapshot {
   id: string;
   tenantId: string;
@@ -681,6 +694,144 @@ export class CartService {
     return {
       data: await this.buildCartResponse(updatedCart, user),
       message: 'Deal added to cart successfully',
+    };
+  }
+
+  async addItemsBatch(
+    user: AuthUserContext,
+    items: AddCartItemDto[],
+    requestedCustomerId?: string,
+    requestedRestaurantId?: string,
+  ) {
+    const firstItem = items[0];
+    if (!firstItem) {
+      throw new BadRequestException('At least one cart item is required');
+    }
+
+    const cart = await this.getCartForAddItem(
+      user,
+      firstItem,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
+    const preparedItems: PreparedCartBatchItem[] = [];
+
+    for (const item of items) {
+      this.assertBatchItemScope(cart, item);
+      const validatedDto = await this.assertValidCartItem(
+        cart.restaurantId,
+        cart.branchId,
+        {
+          ...item,
+          restaurantMenuId: cart.restaurantMenuId ?? item.restaurantMenuId,
+        },
+      );
+      const packedSelections = this.packCartSelections(
+        this.resolveSelectedModifiers(validatedDto),
+        validatedDto.sections,
+        validatedDto.dealId,
+        validatedDto.modifierSelections,
+      ) as Prisma.JsonValue | null | undefined;
+      const selection: CartSelectionIdentity = {
+        menuItemId: validatedDto.menuItemId,
+        variationId: validatedDto.variationId ?? null,
+        note: this.resolveOptionalString(validatedDto.note) ?? null,
+        modifiers: packedSelections,
+      };
+      const existingPreparedItem = preparedItems.find((preparedItem) =>
+        this.isSameCartSelection(preparedItem.selection, selection),
+      );
+
+      if (existingPreparedItem) {
+        existingPreparedItem.quantity += validatedDto.quantity;
+        continue;
+      }
+
+      preparedItems.push({
+        dto: validatedDto,
+        selection,
+        quantity: validatedDto.quantity,
+      });
+    }
+
+    const writes = [] as Array<
+      | {
+          type: 'update';
+          id: string;
+          quantity: number;
+        }
+      | {
+          type: 'create';
+          item: PreparedCartBatchItem;
+        }
+    >;
+
+    for (const preparedItem of preparedItems) {
+      const matchingItem = cart.items.find((cartItem) =>
+        this.isSameCartSelection(cartItem, preparedItem.selection),
+      );
+      const finalQuantity =
+        (matchingItem?.quantity ?? 0) + preparedItem.quantity;
+
+      if (finalQuantity !== preparedItem.dto.quantity) {
+        await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
+          ...preparedItem.dto,
+          quantity: finalQuantity,
+          restaurantMenuId:
+            cart.restaurantMenuId ?? preparedItem.dto.restaurantMenuId,
+        });
+      }
+
+      if (matchingItem) {
+        writes.push({
+          type: 'update',
+          id: matchingItem.id,
+          quantity: finalQuantity,
+        });
+      } else {
+        writes.push({ type: 'create', item: preparedItem });
+      }
+    }
+
+    await this.cartRepository.transaction(async (tx) => {
+      for (const write of writes) {
+        if (write.type === 'update') {
+          await this.cartRepository.updateItem(
+            write.id,
+            { quantity: write.quantity },
+            tx,
+          );
+          continue;
+        }
+
+        await this.cartRepository.createItem(
+          {
+            cart: { connect: { id: cart.id } },
+            menuItemId: write.item.selection.menuItemId,
+            variationId: write.item.selection.variationId,
+            quantity: write.item.quantity,
+            note: write.item.selection.note,
+            ...(write.item.selection.modifiers !== undefined
+              ? {
+                  modifiers: write.item.selection
+                    .modifiers as Prisma.InputJsonValue,
+                }
+              : {}),
+          },
+          tx,
+        );
+      }
+    });
+
+    const updatedCart = await this.getExistingCartOrThrow(
+      user,
+      requestedCustomerId,
+      requestedRestaurantId,
+    );
+
+    return {
+      data: await this.buildCartResponse(updatedCart, user),
+      message: 'Items added to cart successfully',
     };
   }
 
@@ -3972,14 +4123,39 @@ export class CartService {
     return modifiers.length ? modifiers : undefined;
   }
 
+  private assertBatchItemScope(cart: CartSnapshot, item: AddCartItemDto) {
+    const requestedBranchId = this.resolveOptionalString(item.branchId);
+    if (requestedBranchId && requestedBranchId !== cart.branchId) {
+      throw new BadRequestException(
+        'All batch items must belong to the active cart branch',
+      );
+    }
+
+    const requestedRestaurantMenuId = this.resolveOptionalString(
+      item.restaurantMenuId,
+    );
+    if (
+      requestedRestaurantMenuId &&
+      requestedRestaurantMenuId !== cart.restaurantMenuId
+    ) {
+      throw new BadRequestException(
+        'All batch items must belong to the active cart menu',
+      );
+    }
+
+    if (
+      item.orderType &&
+      this.toOrderTypeModel(item.orderType) !== cart.orderType
+    ) {
+      throw new BadRequestException(
+        'All batch items must use the active cart order type',
+      );
+    }
+  }
+
   private isSameCartSelection(
-    existing: CartSnapshotItem,
-    incoming: {
-      menuItemId: string;
-      variationId: string | null;
-      note: string | null;
-      modifiers: Prisma.JsonValue | null | undefined;
-    },
+    existing: CartSelectionIdentity,
+    incoming: CartSelectionIdentity,
   ) {
     return (
       existing.menuItemId === incoming.menuItemId &&
