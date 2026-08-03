@@ -2040,6 +2040,21 @@ describe('OrdersService - order time validation', () => {
       OrderStatus.PLACED,
     );
   });
+
+  it('requires global PayPal checkout credentials independently of restaurant payout settings', () => {
+    const assertCheckoutProviderConfigured = (
+      service as unknown as {
+        assertCheckoutProviderConfigured: (method: PaymentMethodEnum) => void;
+      }
+    ).assertCheckoutProviderConfigured;
+
+    expect(() =>
+      assertCheckoutProviderConfigured.call(service, PaymentMethodEnum.PAYPAL),
+    ).toThrow('Global PayPal checkout is not configured');
+    expect(() =>
+      assertCheckoutProviderConfigured.call(service, PaymentMethodEnum.COD),
+    ).not.toThrow();
+  });
 });
 
 describe('OrdersService - deliveryman order access', () => {

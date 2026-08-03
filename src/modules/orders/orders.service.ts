@@ -356,10 +356,7 @@ export class OrdersService {
       dto.paymentMethod,
       quote,
     );
-    this.assertCheckoutProviderConfigured(
-      dto.paymentMethod,
-      quote.branch.restaurant?.settings,
-    );
+    this.assertCheckoutProviderConfigured(dto.paymentMethod);
 
     const data = await this.prisma.$transaction(async (tx) => {
       const processedAt =
@@ -2282,42 +2279,19 @@ export class OrdersService {
       : OrderStatus.PLACED;
   }
 
-  private assertCheckoutProviderConfigured(
-    paymentMethod: PaymentMethodEnum,
-    restaurantSettings: Prisma.JsonValue | null | undefined,
-  ) {
+  private assertCheckoutProviderConfigured(paymentMethod: PaymentMethodEnum) {
     if (paymentMethod !== PaymentMethodEnum.PAYPAL) return;
 
     const globalConfigured = Boolean(
       this.configService?.get<string>('PAYPAL_CLIENT_ID')?.trim() &&
       this.configService?.get<string>('PAYPAL_CLIENT_SECRET')?.trim(),
     );
-    const root =
-      restaurantSettings &&
-      typeof restaurantSettings === 'object' &&
-      !Array.isArray(restaurantSettings)
-        ? (restaurantSettings as Record<string, unknown>)
-        : {};
-    const payments = this.toUnknownRecord(root.payments);
-    const payoutProviders = this.toUnknownRecord(payments.payoutProviders);
-    const configurations = this.toUnknownRecord(payoutProviders.configurations);
-    const paypal = this.toUnknownRecord(configurations.PAYPAL);
-    const restaurantConfigured =
-      paypal.enabled === true &&
-      typeof paypal.encryptedCredentials === 'string' &&
-      paypal.encryptedCredentials.length > 0;
 
-    if (!globalConfigured && !restaurantConfigured) {
+    if (!globalConfigured) {
       throw new ServiceUnavailableException(
-        'PayPal checkout is not configured for this restaurant',
+        'Global PayPal checkout is not configured',
       );
     }
-  }
-
-  private toUnknownRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
   }
 
   private resolveInitialPaymentStatus(

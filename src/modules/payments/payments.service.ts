@@ -62,10 +62,7 @@ import { MailerService } from '../mailer/mailer.service';
 import { PackagePlansService } from '../package-plans/package-plans.service';
 import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
-import {
-  PaypalOrdersService,
-  type PaypalOrderCredentials,
-} from './paypal-orders.service';
+import { PaypalOrdersService } from './paypal-orders.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -789,10 +786,6 @@ export class PaymentsService {
       if (!this.paypalOrdersService) {
         throw new BadRequestException('PayPal checkout is unavailable');
       }
-      const credentials = this.resolvePaypalCheckoutCredentials(
-        order.restaurant.settings,
-        order.restaurantId,
-      );
       const paypalOrder = await this.paypalOrdersService.createOrder({
         amount: Number(order.totalAmount),
         currency,
@@ -800,7 +793,6 @@ export class PaymentsService {
         orderId: order.id,
         returnUrl: this.paypalOrdersService.getReturnUrl(order.id),
         cancelUrl: this.paypalOrdersService.getCancelUrl(order.id),
-        credentials,
       });
       const updated = await this.paymentsRepository.updateStatus(data.id, {
         status: PaymentStatus.PENDING,
@@ -865,18 +857,9 @@ export class PaymentsService {
       throw new BadRequestException('PayPal payment is not pending');
     }
 
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: payment.order.restaurantId },
-      select: { settings: true },
-    });
-    const credentials = this.resolvePaypalCheckoutCredentials(
-      restaurant?.settings,
-      payment.order.restaurantId,
-    );
     const captured = await this.paypalOrdersService.captureOrder({
       paypalOrderId: dto.paypalOrderId,
       paymentTransactionId: payment.id,
-      credentials,
     });
 
     if (
@@ -4172,24 +4155,6 @@ export class PaymentsService {
       clientSecret,
       recipientEmail,
       environment: environment as PaypalPayoutEnvironment,
-    };
-  }
-
-  private resolvePaypalCheckoutCredentials(
-    settings: Prisma.JsonValue | null | undefined,
-    restaurantId: string,
-  ): PaypalOrderCredentials | undefined {
-    const configuration = this.resolveRestaurantPayoutProviderConfiguration(
-      settings,
-      RestaurantPayoutProvider.PAYPAL,
-    );
-    if (!configuration?.enabled) return undefined;
-
-    const credentials = this.readPaypalCredentials(restaurantId, configuration);
-    return {
-      clientId: credentials.clientId,
-      clientSecret: credentials.clientSecret,
-      environment: credentials.environment,
     };
   }
 

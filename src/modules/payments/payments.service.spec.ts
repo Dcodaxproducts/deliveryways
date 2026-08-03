@@ -435,7 +435,20 @@ describe('PaymentsService', () => {
       paymentStatus: PaymentStatus.PENDING,
       status: OrderStatus.PAYMENT_PENDING,
       branch: { settings: { allowedPaymentMethods: [PaymentMethod.PAYPAL] } },
-      restaurant: { settings: {} },
+      restaurant: {
+        settings: {
+          payments: {
+            payoutProviders: {
+              configurations: {
+                PAYPAL: {
+                  enabled: true,
+                  encryptedCredentials: 'restaurant-payout-only',
+                },
+              },
+            },
+          },
+        },
+      },
     });
     prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
     paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue(null);
@@ -468,6 +481,17 @@ describe('PaymentsService', () => {
       paypalOrderId: 'paypal-order-1',
       approvalUrl: 'https://paypal.test/approve',
     });
+    const createOrderInput = (
+      paypalOrdersService.createOrder.mock.calls as Array<
+        [Record<string, unknown>]
+      >
+    )[0]?.[0];
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        createOrderInput ?? {},
+        'credentials',
+      ),
+    ).toBe(false);
     expect(notificationsService.notifyOrderPlaced).not.toHaveBeenCalled();
     expect(
       notificationsService.notifyPaymentAttemptCreated,
@@ -477,7 +501,6 @@ describe('PaymentsService', () => {
   it('places and credits a PayPal order only after a verified capture', async () => {
     const {
       service,
-      prisma,
       paymentsRepository,
       paypalOrdersService,
       loyaltyWalletService,
@@ -507,7 +530,6 @@ describe('PaymentsService', () => {
       },
     };
     paymentsRepository.findByProviderRef.mockResolvedValue(payment);
-    prisma.restaurant.findUnique.mockResolvedValue({ settings: {} });
     paypalOrdersService.captureOrder.mockResolvedValue({
       status: 'COMPLETED',
       customId: 'payment-1',
@@ -544,6 +566,17 @@ describe('PaymentsService', () => {
     expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
       'order-1',
     );
+    const captureOrderInput = (
+      paypalOrdersService.captureOrder.mock.calls as Array<
+        [Record<string, unknown>]
+      >
+    )[0]?.[0];
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        captureOrderInput ?? {},
+        'credentials',
+      ),
+    ).toBe(false);
   });
 
   it('switches a payment-pending Stripe order to COD', async () => {
