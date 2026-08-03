@@ -37,6 +37,9 @@ describe('CartService', () => {
       deleteItems: jest.fn(),
       deleteByCustomerId: jest.fn(),
       deleteExpiredBefore: jest.fn(),
+      transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) =>
+        callback({}),
+      ),
     };
 
     const ordersService = {
@@ -7157,5 +7160,108 @@ describe('CartService', () => {
         },
       }),
     );
+  });
+
+  describe('addItemsBatch', () => {
+    const user = {
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    };
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      restaurantMenuId: null,
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      tipAmount: new Prisma.Decimal(0),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+
+    const mockBatchInternals = (service: CartService) => {
+      const batchService = service as unknown as {
+        getCartForAddItem(...args: unknown[]): Promise<unknown>;
+        assertValidCartItem(...args: unknown[]): Promise<unknown>;
+        getExistingCartOrThrow(...args: unknown[]): Promise<unknown>;
+        buildCartResponse(...args: unknown[]): Promise<unknown>;
+      };
+      jest.spyOn(batchService, 'getCartForAddItem').mockResolvedValue(cart);
+      const validateSpy = jest
+        .spyOn(batchService, 'assertValidCartItem')
+        .mockImplementation((...args: unknown[]) => Promise.resolve(args[2]));
+      jest
+        .spyOn(batchService, 'getExistingCartOrThrow')
+        .mockResolvedValue(cart);
+      const responseSpy = jest
+        .spyOn(batchService, 'buildCartResponse')
+        .mockResolvedValue({ id: 'cart-1', items: [] });
+
+      return { validateSpy, responseSpy };
+    };
+
+    it('writes all validated items in one transaction and builds one response', async () => {
+      const { service, cartRepository } = makeService();
+      const { responseSpy } = mockBatchInternals(service);
+
+      await service.addItemsBatch(user, [
+        { branchId: 'branch-1', menuItemId: 'menu-1', quantity: 1 },
+        { branchId: 'branch-1', menuItemId: 'menu-2', quantity: 2 },
+      ]);
+
+      expect(cartRepository.transaction).toHaveBeenCalledTimes(1);
+      expect(cartRepository.createItem).toHaveBeenCalledTimes(2);
+      expect(responseSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not write any item when validation fails', async () => {
+      const { service, cartRepository } = makeService();
+      const { validateSpy } = mockBatchInternals(service);
+      validateSpy.mockImplementation((...args: unknown[]) => {
+        const dto = args[2] as { menuItemId: string };
+        if (dto.menuItemId === 'menu-2') {
+          return Promise.reject(
+            new BadRequestException('Menu item unavailable'),
+          );
+        }
+        return Promise.resolve(dto);
+      });
+
+      await expect(
+        service.addItemsBatch(user, [
+          { branchId: 'branch-1', menuItemId: 'menu-1', quantity: 1 },
+          { branchId: 'branch-1', menuItemId: 'menu-2', quantity: 1 },
+        ]),
+      ).rejects.toThrow('Menu item unavailable');
+
+      expect(cartRepository.transaction).not.toHaveBeenCalled();
+      expect(cartRepository.createItem).not.toHaveBeenCalled();
+      expect(cartRepository.updateItem).not.toHaveBeenCalled();
+    });
+
+    it('merges duplicate selections before writing', async () => {
+      const { service, cartRepository } = makeService();
+      mockBatchInternals(service);
+
+      await service.addItemsBatch(user, [
+        { branchId: 'branch-1', menuItemId: 'menu-1', quantity: 1 },
+        { branchId: 'branch-1', menuItemId: 'menu-1', quantity: 2 },
+      ]);
+
+      expect(cartRepository.createItem).toHaveBeenCalledTimes(1);
+      expect(cartRepository.createItem).toHaveBeenCalledWith(
+        expect.objectContaining({ quantity: 3 }),
+        expect.any(Object),
+      );
+    });
   });
 });

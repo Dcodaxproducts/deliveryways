@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
-  IsArray,
+  ArrayMaxSize,
   ArrayMinSize,
+  IsArray,
   IsDateString,
   IsEnum,
   IsIn,
@@ -139,6 +140,16 @@ export class AddCartDealDto {
   @ApiProperty({ type: [AddCartItemDto] })
   @IsArray()
   @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => AddCartItemDto)
+  items!: AddCartItemDto[];
+}
+
+export class AddCartItemsBatchDto {
+  @ApiProperty({ type: [AddCartItemDto], minItems: 1, maxItems: 25 })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(25)
   @ValidateNested({ each: true })
   @Type(() => AddCartItemDto)
   items!: AddCartItemDto[];
