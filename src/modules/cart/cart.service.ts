@@ -18,7 +18,9 @@ import {
   UserRoleEnum,
 } from '../../common/enums';
 import {
+  allocateIncludedModifierQuantities,
   isRestaurantMenuAvailableAt,
+  type ModifierQuantityAllocation,
   resolveAvailablePaymentMethods,
 } from '../../common/utils';
 import { ProfilesRepository } from '../profiles/profiles.repository';
@@ -103,6 +105,7 @@ interface CartModifierLink {
     name: string;
     minSelect: number;
     maxSelect: number;
+    includedSelect: number;
     isRequired: boolean;
     modifierLinks: Array<{
       sortOrder: number;
@@ -1574,6 +1577,12 @@ export class CartService {
           cartItem.modifiers,
         );
         const sections = this.readSections(cartItem.modifiers);
+        const modifierAllocationQueues = menuItem
+          ? this.buildModifierAllocationQueues(
+              menuItem,
+              modifierSelections ?? [],
+            )
+          : new Map<string, ModifierQuantityAllocation[]>();
         const selectedModifierDetails = menuItem
           ? selectedModifiers.map((selectedModifier) => {
               const modifier = this.findAvailableModifier(
@@ -1587,13 +1596,22 @@ export class CartService {
                     cartItem.variationId,
                   )
                 : new Prisma.Decimal(0);
+              const quantity = selectedModifier.quantity ?? 1;
+              const allocation = modifierAllocationQueues
+                .get(selectedModifier.modifierId)
+                ?.shift();
+              const includedQuantity = allocation?.includedQuantity ?? 0;
+              const chargedQuantity = allocation?.chargedQuantity ?? quantity;
 
               return {
                 modifierId: selectedModifier.modifierId,
                 name: modifier?.name ?? null,
-                quantity: selectedModifier.quantity ?? 1,
+                quantity,
                 unitPrice: Number(priceDelta),
-                total: Number(priceDelta.mul(selectedModifier.quantity ?? 1)),
+                ...(includedQuantity > 0
+                  ? { includedQuantity, chargedQuantity }
+                  : {}),
+                total: Number(priceDelta.mul(chargedQuantity)),
               };
             })
           : [];
@@ -3914,6 +3932,7 @@ export class CartService {
         selectionType: link.selectionType ?? 'SINGLE',
         minSelect: link.minSelect ?? link.modifierGroup.minSelect,
         maxSelect: link.maxSelect ?? link.modifierGroup.maxSelect,
+        includedSelect: link.modifierGroup.includedSelect,
         isRequired: (link.minSelect ?? link.modifierGroup.minSelect) > 0,
         sortOrder: link.sortOrder,
         modifiers: link.modifierGroup.modifierLinks.map(
@@ -3931,6 +3950,30 @@ export class CartService {
           }),
         ),
       }));
+  }
+
+  private buildModifierAllocationQueues(
+    item: CartModifierSource,
+    selections: CartItemModifierSelectionDto[],
+  ) {
+    const includedByGroupId = new Map(
+      this.getAvailableModifierLinks(item).map((link) => [
+        link.modifierGroup.id,
+        link.modifierGroup.includedSelect,
+      ]),
+    );
+    const queues = new Map<string, ModifierQuantityAllocation[]>();
+
+    for (const allocation of allocateIncludedModifierQuantities(
+      selections,
+      includedByGroupId,
+    )) {
+      const queue = queues.get(allocation.modifierId) ?? [];
+      queue.push(allocation);
+      queues.set(allocation.modifierId, queue);
+    }
+
+    return queues;
   }
 
   private resolveModifierPriceDelta(

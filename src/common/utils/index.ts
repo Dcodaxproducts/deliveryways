@@ -16,3 +16,8 @@ export {
 } from './customer-app-faq.util';
 export { isRestaurantMenuAvailableAt } from './restaurant-menu-context.util';
 export { resolveAvailablePaymentMethods } from './payment-methods.util';
+export {
+  allocateIncludedModifierQuantities,
+  type ModifierQuantityAllocation,
+  type ModifierQuantitySelection,
+} from './modifier-included-selection.util';

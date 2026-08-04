@@ -151,6 +151,7 @@ type PublicMenuItemModifierGroupLink = {
     description?: string | null;
     minSelect: number;
     maxSelect: number;
+    includedSelect: number;
     isRequired: boolean;
     sortOrder: number;
     isActive: boolean;
@@ -3330,6 +3331,7 @@ export class CustomerAppService {
         selectionType: ModifierSelectionType;
         minSelect: number;
         maxSelect: number;
+        includedSelect: number;
         isRequired: boolean;
         sortOrder: number;
         isActive: boolean;
@@ -3406,6 +3408,7 @@ export class CustomerAppService {
         selectionType: link.selectionType,
         minSelect,
         maxSelect,
+        includedSelect: group.includedSelect,
         isRequired: minSelect > 0,
         sortOrder: link.sortOrder,
         isActive: true,

@@ -26,7 +26,9 @@ import {
 } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
 import {
+  allocateIncludedModifierQuantities,
   buildPaginationMeta,
+  type ModifierQuantityAllocation,
   resolveAvailablePaymentMethods,
 } from '../../common/utils';
 import { isRestaurantMenuAvailableAt } from '../../common/utils';
@@ -66,6 +68,7 @@ interface OrderModifierLink {
     name: string;
     minSelect: number;
     maxSelect: number;
+    includedSelect: number;
     isRequired: boolean;
     modifierLinks: Array<{
       modifier: {
@@ -151,6 +154,8 @@ type QuoteLine = {
     name: string;
     quantity: number;
     unitPrice: number;
+    includedQuantity?: number;
+    chargedQuantity?: number;
   }[];
   snapshotSections?: {
     slot: 'LEFT' | 'RIGHT';
@@ -1045,6 +1050,10 @@ export class OrdersService {
 
       const snapshotModifiers: QuoteLine['snapshotModifiers'] = [];
       const snapshotSections: QuoteLine['snapshotSections'] = [];
+      const modifierAllocationQueues = this.buildModifierAllocationQueues(
+        menuItem,
+        requestedItem.modifierSelections ?? [],
+      );
 
       if (requestedModifiers.length) {
         for (const requestedModifier of requestedModifiers) {
@@ -1067,13 +1076,21 @@ export class OrdersService {
           }
 
           const modifierQty = requestedModifier.quantity ?? 1;
-          unitPrice = unitPrice.plus(found.priceDelta.mul(modifierQty));
+          const allocation = modifierAllocationQueues
+            .get(requestedModifier.modifierId)
+            ?.shift();
+          const includedQuantity = allocation?.includedQuantity ?? 0;
+          const chargedQuantity = allocation?.chargedQuantity ?? modifierQty;
+          unitPrice = unitPrice.plus(found.priceDelta.mul(chargedQuantity));
 
           snapshotModifiers.push({
             modifierId: found.id,
             name: found.name,
             quantity: modifierQty,
             unitPrice: Number(found.priceDelta),
+            ...(includedQuantity > 0
+              ? { includedQuantity, chargedQuantity }
+              : {}),
           });
         }
       }
@@ -1258,7 +1275,11 @@ export class OrdersService {
 
         unitPrice = Prisma.Decimal.max(...sectionUnitPrices).plus(
           snapshotModifiers.reduce(
-            (sum, modifier) => sum.plus(modifier.unitPrice * modifier.quantity),
+            (sum, modifier) =>
+              sum.plus(
+                modifier.unitPrice *
+                  (modifier.chargedQuantity ?? modifier.quantity),
+              ),
             new Prisma.Decimal(0),
           ),
         );
@@ -1831,9 +1852,37 @@ export class OrdersService {
   private sumQuoteLineModifierUnitTotal(line: QuoteLine) {
     return (line.snapshotModifiers ?? []).reduce(
       (sum, modifier) =>
-        sum.plus(new Prisma.Decimal(modifier.unitPrice).mul(modifier.quantity)),
+        sum.plus(
+          new Prisma.Decimal(modifier.unitPrice).mul(
+            modifier.chargedQuantity ?? modifier.quantity,
+          ),
+        ),
       new Prisma.Decimal(0),
     );
+  }
+
+  private buildModifierAllocationQueues(
+    menuItem: OrderModifierSource,
+    selections: OrderItemModifierSelectionDto[],
+  ) {
+    const includedByGroupId = new Map(
+      this.getAvailableModifierLinks(menuItem).map((link) => [
+        link.modifierGroup.id,
+        link.modifierGroup.includedSelect,
+      ]),
+    );
+    const queues = new Map<string, ModifierQuantityAllocation[]>();
+
+    for (const allocation of allocateIncludedModifierQuantities(
+      selections,
+      includedByGroupId,
+    )) {
+      const queue = queues.get(allocation.modifierId) ?? [];
+      queue.push(allocation);
+      queues.set(allocation.modifierId, queue);
+    }
+
+    return queues;
   }
 
   private findFixedDealQuoteLineGroups(

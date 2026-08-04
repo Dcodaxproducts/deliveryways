@@ -3282,7 +3282,7 @@ describe('CartService', () => {
     expect(firstItem.lineTotal).toBe(1500);
   });
 
-  it('prices selected group modifiers from modifier base price when direct item override also exists', async () => {
+  it('includes the configured group quantity and prices remaining units from the modifier base price', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
@@ -3305,7 +3305,15 @@ describe('CartService', () => {
           variationId: null,
           quantity: 1,
           note: null,
-          modifiers: [{ modifierId: 'modifier-gyros', quantity: 1 }],
+          modifiers: {
+            modifiers: [{ modifierId: 'modifier-gyros', quantity: 2 }],
+            modifierSelections: [
+              {
+                modifierGroupId: 'group-extras',
+                modifiers: [{ modifierId: 'modifier-gyros', quantity: 2 }],
+              },
+            ],
+          },
         },
       ],
     });
@@ -3338,6 +3346,7 @@ describe('CartService', () => {
               name: 'Extras (Pasta)',
               minSelect: 0,
               maxSelect: 3,
+              includedSelect: 1,
               isRequired: false,
               modifierLinks: [
                 {
@@ -3386,12 +3395,23 @@ describe('CartService', () => {
     });
 
     const firstItem = result.data.items[0] as {
-      selectedModifiers: Array<{ unitPrice: number; total: number }>;
+      selectedModifiers: Array<{
+        unitPrice: number;
+        total: number;
+        quantity: number;
+        includedQuantity?: number;
+        chargedQuantity?: number;
+      }>;
       modifiersTotal: number;
       unitPriceWithModifiers: number;
     };
     expect(firstItem.selectedModifiers[0].unitPrice).toBe(1.55);
     expect(firstItem.selectedModifiers[0].total).toBe(1.55);
+    expect(firstItem.selectedModifiers[0]).toMatchObject({
+      quantity: 2,
+      includedQuantity: 1,
+      chargedQuantity: 1,
+    });
     expect(firstItem.modifiersTotal).toBe(1.55);
     expect(firstItem.unitPriceWithModifiers).toBe(11.55);
   });

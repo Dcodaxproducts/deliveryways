@@ -930,18 +930,19 @@ model ModifierCategory {
 }
 
 model ModifierGroup {
-  id           String    @id @default(cuid())
-  restaurantId String    @map("restaurant_id")
-  name         String
-  description  String?
-  minSelect    Int       @default(0) @map("min_select")
-  maxSelect    Int       @default(1) @map("max_select")
-  isRequired   Boolean   @default(false) @map("is_required")
-  sortOrder    Int       @default(0) @map("sort_order")
-  isActive     Boolean   @default(true) @map("is_active")
-  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id             String    @id @default(cuid())
+  restaurantId   String    @map("restaurant_id")
+  name           String
+  description    String?
+  minSelect      Int       @default(0) @map("min_select")
+  maxSelect      Int       @default(1) @map("max_select")
+  includedSelect Int       @default(0) @map("included_select")
+  isRequired     Boolean   @default(false) @map("is_required")
+  sortOrder      Int       @default(0) @map("sort_order")
+  isActive       Boolean   @default(true) @map("is_active")
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   restaurant    Restaurant                  @relation(fields: [restaurantId], references: [id])
   modifierLinks ModifierGroupModifier[]

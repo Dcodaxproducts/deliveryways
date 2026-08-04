@@ -206,6 +206,7 @@ export class ModifierRepository {
                   description: true,
                   minSelect: true,
                   maxSelect: true,
+                  includedSelect: true,
                   isRequired: true,
                   sortOrder: true,
                   isActive: true,
