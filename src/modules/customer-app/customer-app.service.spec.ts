@@ -218,6 +218,9 @@ describe('CustomerAppService', () => {
           { code: 'STRIPE', label: 'Stripe', isActive: false },
         ],
       }),
+      getEffectiveCheckoutPaymentMethods: jest
+        .fn()
+        .mockResolvedValue(['COD', 'CARD_ON_DELIVERY', 'PAYPAL', 'WALLET']),
       getSettings: jest.fn().mockResolvedValue({
         data: { timezone: 'Europe/Berlin' },
       }),
@@ -432,6 +435,44 @@ describe('CustomerAppService', () => {
     expect(result.data[0]?.settings.allowedPaymentMethods).toEqual([
       'CARD_ON_DELIVERY',
       'PAYPAL',
+    ]);
+  });
+
+  it('hides global providers that are not checkout-ready', async () => {
+    const { service, repository, globalSettingsService } = makeService();
+    globalSettingsService.getEffectiveCheckoutPaymentMethods.mockResolvedValue([
+      'COD',
+      'WALLET',
+    ]);
+    repository.findRestaurantScope.mockResolvedValue({ id: 'restaurant-1' });
+    repository.listPublicBranches.mockResolvedValue({
+      items: [
+        {
+          id: 'branch-1',
+          restaurantId: 'restaurant-1',
+          name: 'Main Branch',
+          isMain: true,
+          isActive: true,
+          address: null,
+          settings: {
+            allowedPaymentMethods: ['COD', 'STRIPE', 'PAYPAL', 'WALLET'],
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listPublicBranches({
+      restaurantId: 'restaurant-1',
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    expect(result.data[0]?.settings.allowedPaymentMethods).toEqual([
+      'COD',
+      'WALLET',
     ]);
   });
 

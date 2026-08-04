@@ -43,7 +43,7 @@ describe('PaymentsService', () => {
     };
   };
 
-  const makeService = () => {
+  const makeService = (deploymentEnvironment = 'development') => {
     const paymentsRepository = {
       create: jest.fn(),
       createUnchecked: jest.fn(),
@@ -224,6 +224,15 @@ describe('PaymentsService', () => {
       sendEmail: jest.fn().mockResolvedValue(undefined),
       sendTransactionalEmail: jest.fn().mockResolvedValue(undefined),
     };
+    const configService = {
+      get: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          key === 'app.deploymentEnvironment'
+            ? deploymentEnvironment
+            : undefined,
+        ),
+    };
 
     const service = new PaymentsService(
       paymentsRepository as never,
@@ -237,6 +246,7 @@ describe('PaymentsService', () => {
       mailerService as never,
       undefined,
       paypalOrdersService as never,
+      configService as never,
     );
 
     return {
@@ -251,6 +261,7 @@ describe('PaymentsService', () => {
       loyaltyWalletService,
       globalSettingsService,
       mailerService,
+      configService,
       transactionTx,
     };
   };
@@ -304,7 +315,94 @@ describe('PaymentsService', () => {
         webhookConfigured: true,
       },
     });
+    expect(result.data.deploymentEnvironment).toBe('development');
     expect(JSON.stringify(result)).not.toContain('sk_test_secret1234');
+  });
+
+  it('rejects live Stripe keys outside production', async () => {
+    const { service, stripePaymentsService } = makeService('staging');
+
+    await expect(
+      service.configureGlobalPayoutProvider(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        {
+          provider: RestaurantPayoutProvider.STRIPE,
+          stripeSecretKey: 'sk_live_secret1234',
+          stripePublishableKey: 'pk_live_public5678',
+          stripeWebhookSecret: 'whsec_webhook9012',
+        },
+      ),
+    ).rejects.toThrow(
+      'staging requires Stripe test secret and publishable keys',
+    );
+    expect(stripePaymentsService.verifyCredentials).not.toHaveBeenCalled();
+  });
+
+  it('rejects Stripe test keys in production', async () => {
+    const { service } = makeService('production');
+
+    await expect(
+      service.configureGlobalPayoutProvider(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        {
+          provider: RestaurantPayoutProvider.STRIPE,
+          stripeSecretKey: 'sk_test_secret1234',
+          stripePublishableKey: 'pk_test_public5678',
+          stripeWebhookSecret: 'whsec_webhook9012',
+        },
+      ),
+    ).rejects.toThrow(
+      'Production requires Stripe live secret and publishable keys',
+    );
+  });
+
+  it('requires PayPal Sandbox credentials outside production', async () => {
+    const { service, paypalPayoutsService } = makeService('development');
+
+    await expect(
+      service.configureGlobalPayoutProvider(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        {
+          provider: RestaurantPayoutProvider.PAYPAL,
+          paypalClientId: 'live-client',
+          paypalClientSecret: 'live-secret',
+          paypalEnvironment: PaypalPayoutEnvironment.LIVE,
+        },
+      ),
+    ).rejects.toThrow('development requires PayPal SANDBOX credentials');
+    expect(paypalPayoutsService.verifyCredentials).not.toHaveBeenCalled();
+  });
+
+  it('accepts live global credentials in production', async () => {
+    const { service, stripePaymentsService } = makeService('production');
+
+    await service.configureGlobalPayoutProvider(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      {
+        provider: RestaurantPayoutProvider.STRIPE,
+        stripeSecretKey: 'sk_live_secret1234',
+        stripePublishableKey: 'pk_live_public5678',
+        stripeWebhookSecret: 'whsec_webhook9012',
+      },
+    );
+
+    expect(stripePaymentsService.verifyCredentials).toHaveBeenCalledWith({
+      secretKey: 'sk_live_secret1234',
+      publishableKey: 'pk_live_public5678',
+      webhookSecret: 'whsec_webhook9012',
+    });
   });
 
   it('preserves stored global PayPal credentials when masked fields stay blank', async () => {

@@ -637,6 +637,61 @@ describe('GlobalSettingsService', () => {
     expect(result.message).toBe('Payment methods fetched successfully');
   });
 
+  it('returns only checkout-ready Stripe and PayPal methods', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      paymentMethods: [
+        { code: PaymentMethod.COD, label: 'Cash', isActive: true },
+        {
+          code: PaymentMethod.CARD_ON_DELIVERY,
+          label: 'Card on delivery',
+          isActive: false,
+        },
+        { code: PaymentMethod.STRIPE, label: 'Stripe', isActive: true },
+        { code: PaymentMethod.PAYPAL, label: 'PayPal', isActive: true },
+        { code: PaymentMethod.WALLET, label: 'Wallet', isActive: false },
+      ],
+      payoutProviderSettings: {
+        configurations: {
+          STRIPE: {
+            enabled: true,
+            encryptedCredentials: 'encrypted-stripe',
+          },
+          PAYPAL: {
+            enabled: false,
+            encryptedCredentials: 'encrypted-paypal',
+          },
+        },
+      },
+    });
+
+    await expect(service.getEffectiveCheckoutPaymentMethods()).resolves.toEqual(
+      [PaymentMethod.COD, PaymentMethod.STRIPE],
+    );
+  });
+
+  it('hides configured digital methods when credentials are missing', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      paymentMethods: [
+        { code: PaymentMethod.COD, label: 'Cash', isActive: false },
+        {
+          code: PaymentMethod.CARD_ON_DELIVERY,
+          label: 'Card on delivery',
+          isActive: false,
+        },
+        { code: PaymentMethod.STRIPE, label: 'Stripe', isActive: true },
+        { code: PaymentMethod.PAYPAL, label: 'PayPal', isActive: true },
+        { code: PaymentMethod.WALLET, label: 'Wallet', isActive: false },
+      ],
+      payoutProviderSettings: null,
+    });
+
+    await expect(service.getEffectiveCheckoutPaymentMethods()).resolves.toEqual(
+      [],
+    );
+  });
+
   it('updates platform payment methods and rejects duplicate codes', async () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',

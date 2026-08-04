@@ -2095,6 +2095,32 @@ describe('OrdersService - order time validation', () => {
       assertConfigured.call(configuredService, PaymentMethodEnum.PAYPAL),
     ).resolves.toBeUndefined();
   });
+
+  it('uses only checkout-ready global payment methods', async () => {
+    const getEffectiveCheckoutPaymentMethods = jest
+      .fn()
+      .mockResolvedValue([PaymentMethod.COD, PaymentMethod.STRIPE]);
+    const configuredService = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      undefined,
+      { getEffectiveCheckoutPaymentMethods } as never,
+    );
+    const resolveActiveGlobalPaymentMethods = (
+      configuredService as unknown as {
+        resolveActiveGlobalPaymentMethods: () => Promise<PaymentMethod[]>;
+      }
+    ).resolveActiveGlobalPaymentMethods;
+
+    await expect(
+      resolveActiveGlobalPaymentMethods.call(configuredService),
+    ).resolves.toEqual([PaymentMethod.COD, PaymentMethod.STRIPE]);
+  });
 });
 
 describe('OrdersService - deliveryman order access', () => {
@@ -5575,6 +5601,9 @@ describe('OrdersService - wallet payment', () => {
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
+      getEffectiveCheckoutPaymentMethods: jest
+        .fn()
+        .mockResolvedValue([PaymentMethod.CARD_ON_DELIVERY]),
     };
     const service = new OrdersService(
       prisma as never,
@@ -5646,10 +5675,9 @@ describe('OrdersService - wallet payment', () => {
       },
     );
 
-    expect(prisma.globalSetting.findUnique).toHaveBeenCalledWith({
-      where: { scopeKey: 'GLOBAL' },
-      select: { paymentMethods: true },
-    });
+    expect(
+      globalSettingsService.getEffectiveCheckoutPaymentMethods,
+    ).toHaveBeenCalled();
     expect(ordersRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
@@ -5716,6 +5744,9 @@ describe('OrdersService - wallet payment', () => {
       loyaltyWalletService as never,
       {
         getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR'),
+        getEffectiveCheckoutPaymentMethods: jest
+          .fn()
+          .mockResolvedValue([PaymentMethod.STRIPE]),
         getPayoutProviderSettings: jest.fn().mockResolvedValue({
           configurations: {
             STRIPE: {

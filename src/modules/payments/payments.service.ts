@@ -3,8 +3,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   OrderStatus,
   PaymentMethod,
@@ -157,6 +159,7 @@ export class PaymentsService {
     private readonly mailerService?: MailerService,
     private readonly packagePlansService?: PackagePlansService,
     private readonly paypalOrdersService?: PaypalOrdersService,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   async createSubscriptionAttempt(
@@ -1793,6 +1796,7 @@ export class PaymentsService {
     const current = await this.readGlobalPayoutProviders();
     const existing = current.configurations[dto.provider];
     const credentials = this.buildGlobalPayoutCredentials(dto, existing);
+    this.assertGlobalCredentialsMatchEnvironment(dto.provider, credentials);
     const now = new Date().toISOString();
 
     if (dto.provider === RestaurantPayoutProvider.PAYPAL) {
@@ -4232,6 +4236,7 @@ export class PaymentsService {
     settings: GlobalPayoutProvidersSettings,
   ) {
     return {
+      deploymentEnvironment: this.resolveDeploymentEnvironment(),
       configurations: Object.values(settings.configurations)
         .filter(
           (configuration): configuration is GlobalPayoutProviderConfiguration =>
@@ -4246,6 +4251,52 @@ export class PaymentsService {
           updatedBy: configuration.updatedBy,
         })),
     };
+  }
+
+  private assertGlobalCredentialsMatchEnvironment(
+    provider: RestaurantPayoutProvider,
+    credentials: Record<string, string>,
+  ): void {
+    const environment = this.resolveDeploymentEnvironment();
+    const production = environment === 'production';
+
+    if (provider === RestaurantPayoutProvider.STRIPE) {
+      const testKeys =
+        credentials.secretKey.startsWith('sk_test_') &&
+        credentials.publishableKey.startsWith('pk_test_');
+      const liveKeys =
+        credentials.secretKey.startsWith('sk_live_') &&
+        credentials.publishableKey.startsWith('pk_live_');
+
+      if ((production && !liveKeys) || (!production && !testKeys)) {
+        throw new BadRequestException(
+          production
+            ? 'Production requires Stripe live secret and publishable keys'
+            : `${environment} requires Stripe test secret and publishable keys`,
+        );
+      }
+
+      return;
+    }
+
+    const paypalEnvironment = credentials.environment;
+    const expectedPaypalEnvironment = production ? 'LIVE' : 'SANDBOX';
+    if (paypalEnvironment !== expectedPaypalEnvironment) {
+      throw new BadRequestException(
+        production
+          ? 'Production requires PayPal LIVE credentials'
+          : `${environment} requires PayPal SANDBOX credentials`,
+      );
+    }
+  }
+
+  private resolveDeploymentEnvironment(): string {
+    return (
+      this.configService
+        ?.get<string>('app.deploymentEnvironment')
+        ?.trim()
+        .toLowerCase() || 'development'
+    );
   }
 
   private serializeRestaurantPayoutProviderRequest(

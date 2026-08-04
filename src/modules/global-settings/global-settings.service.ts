@@ -371,6 +371,34 @@ export class GlobalSettingsService {
     };
   }
 
+  async getEffectiveCheckoutPaymentMethods(): Promise<PaymentMethod[]> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+    const configurations = this.asObject(
+      this.asObject(data.payoutProviderSettings).configurations,
+    );
+
+    return this.extractPaymentMethods(data.paymentMethods)
+      .filter((method) => method.isActive)
+      .map((method) => method.code)
+      .filter((method) => {
+        if (
+          method !== PaymentMethod.STRIPE &&
+          method !== PaymentMethod.PAYPAL
+        ) {
+          return true;
+        }
+
+        const provider = this.asObject(configurations[method]);
+        return (
+          provider.enabled === true &&
+          typeof provider.encryptedCredentials === 'string' &&
+          provider.encryptedCredentials.length > 0
+        );
+      });
+  }
+
   async updatePaymentMethods(
     user: AuthUserContext,
     dto: UpdateGlobalPaymentMethodsDto,

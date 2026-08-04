@@ -367,12 +367,8 @@ export class CustomerAppService {
 
     const { items, total } =
       await this.customerAppRepository.listPublicBranches(query);
-    const platformMethodsResponse =
-      await this.globalSettingsService?.getPaymentMethods();
-    const activePlatformMethods = platformMethodsResponse
-      ? platformMethodsResponse.data
-          .filter((method) => method.isActive)
-          .map((method) => method.code)
+    const activePlatformMethods = this.globalSettingsService
+      ? await this.globalSettingsService.getEffectiveCheckoutPaymentMethods()
       : null;
 
     return {
@@ -1284,18 +1280,14 @@ export class CustomerAppService {
           restaurantContactInfo,
         )
       : null;
-    const [currency, timezone, platformMethodsResponse, activeBranchCount] =
+    const [currency, timezone, activePlatformMethods, activeBranchCount] =
       await Promise.all([
         this.resolveHomeCurrency(restaurant.settings),
         this.resolveHomeTimezone(),
-        this.globalSettingsService?.getPaymentMethods(),
+        this.globalSettingsService?.getEffectiveCheckoutPaymentMethods() ??
+          null,
         this.customerAppRepository.countActiveBranches(restaurant.id),
       ]);
-    const activePlatformMethods = platformMethodsResponse
-      ? platformMethodsResponse.data
-          .filter((method) => method.isActive)
-          .map((method) => method.code)
-      : null;
     const [
       restaurantLogoUrl,
       restaurantCoverImage,

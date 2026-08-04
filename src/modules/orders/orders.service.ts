@@ -3119,9 +3119,11 @@ export class OrdersService {
       order.sourceGroupOrder,
       order.branchId,
     );
-    const availablePaymentMethods = this.readBranchSettings(
-      order.branch.settings,
-    ).allowedPaymentMethods;
+    const availablePaymentMethods = resolveAvailablePaymentMethods({
+      platformMethods: await this.resolveActiveGlobalPaymentMethods(),
+      restaurantSettings: undefined,
+      branchSettings: order.branch.settings,
+    });
     const branch = {
       id: order.branch.id,
       name: order.branch.name,
@@ -4370,61 +4372,15 @@ export class OrdersService {
   private async resolveActiveGlobalPaymentMethods(): Promise<
     PaymentMethod[] | null
   > {
-    const globalSettingDelegate = (
-      this.prisma as unknown as {
-        globalSetting?: {
-          findUnique: (args: {
-            where: { scopeKey: string };
-            select: { paymentMethods: boolean };
-          }) => Promise<{ paymentMethods: Prisma.JsonValue | null } | null>;
-        };
-      }
-    ).globalSetting;
-
-    if (!globalSettingDelegate) {
-      return Object.values(PaymentMethod);
+    if (
+      !this.globalSettingsService ||
+      typeof this.globalSettingsService.getEffectiveCheckoutPaymentMethods !==
+        'function'
+    ) {
+      return null;
     }
 
-    const settings = await globalSettingDelegate.findUnique({
-      where: { scopeKey: 'GLOBAL' },
-      select: { paymentMethods: true },
-    });
-
-    if (!settings || !Array.isArray(settings.paymentMethods)) {
-      return Object.values(PaymentMethod);
-    }
-
-    return this.readActiveGlobalPaymentMethods(settings.paymentMethods).filter(
-      (method): method is PaymentMethod =>
-        Object.values(PaymentMethod).includes(method as PaymentMethod),
-    );
-  }
-
-  private readActiveGlobalPaymentMethods(
-    source: Prisma.JsonValue | null | undefined,
-  ): string[] {
-    if (!Array.isArray(source)) {
-      return [];
-    }
-
-    return source.flatMap((row) => {
-      if (!row || typeof row !== 'object' || Array.isArray(row)) {
-        return [];
-      }
-
-      const code = (row as { code?: unknown }).code;
-      const isActive = (row as { isActive?: unknown }).isActive;
-
-      if (
-        typeof code === 'string' &&
-        Object.values(PaymentMethod).includes(code as PaymentMethod) &&
-        isActive === true
-      ) {
-        return [code];
-      }
-
-      return [];
-    });
+    return this.globalSettingsService.getEffectiveCheckoutPaymentMethods();
   }
 
   private resolveItemVariations(item: {
