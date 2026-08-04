@@ -3608,7 +3608,32 @@ describe('OrdersService - coupon quote validation', () => {
             ],
           },
           variations: [],
-          modifierLinks: [],
+          modifierLinks: [
+            {
+              selectionType: 'MULTIPLE',
+              minSelect: 0,
+              maxSelect: 2,
+              modifierGroup: {
+                id: 'group-cheese',
+                name: 'Cheese',
+                minSelect: 0,
+                maxSelect: 2,
+                includedSelect: 1,
+                isRequired: false,
+                modifierLinks: [
+                  {
+                    modifier: {
+                      id: 'modifier-cheese',
+                      name: 'Extra Cheese',
+                      priceDelta: new Prisma.Decimal(25),
+                      itemPriceOverrides: [],
+                      variationPriceOverrides: [],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
           modifierPriceOverrides: [],
           branchOverrides: [],
         }),
@@ -3669,14 +3694,16 @@ describe('OrdersService - coupon quote validation', () => {
 
     expect(result.data.items[0].snapshotModifiers).toEqual([
       {
+        chargedQuantity: 1,
+        includedQuantity: 1,
         modifierId: 'modifier-cheese',
         name: 'Extra Cheese',
         quantity: 2,
         unitPrice: 25,
       },
     ]);
-    expect(result.data.items[0].unitPrice).toBe(150);
-    expect(result.data.subtotal).toBe(150);
+    expect(result.data.items[0].unitPrice).toBe(125);
+    expect(result.data.subtotal).toBe(125);
   });
 
   it('scopes grouped modifier limits per cart line when standalone and deal rows share the same item', async () => {

@@ -137,6 +137,8 @@ export class ModifierService {
 
   async createGroup(user: AuthUserContext, dto: CreateModifierGroupDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    const maxSelect = dto.maxSelect ?? 1;
+    const includedSelect = dto.includedSelect ?? 0;
 
     if (
       dto.minSelect !== undefined &&
@@ -146,12 +148,19 @@ export class ModifierService {
       throw new BadRequestException('maxSelect cannot be less than minSelect');
     }
 
+    if (includedSelect > maxSelect) {
+      throw new BadRequestException(
+        'includedSelect cannot be greater than maxSelect',
+      );
+    }
+
     const data = await this.modifierRepository.createGroup({
       restaurant: { connect: { id: restaurantId } },
       name: dto.name,
       description: dto.description,
       minSelect: dto.minSelect ?? 0,
-      maxSelect: dto.maxSelect ?? 1,
+      maxSelect,
+      includedSelect,
       isRequired: dto.isRequired ?? false,
       sortOrder: dto.sortOrder ?? 0,
       isActive: true,
@@ -211,9 +220,16 @@ export class ModifierService {
 
     const minSelect = dto.minSelect ?? group.minSelect;
     const maxSelect = dto.maxSelect ?? group.maxSelect;
+    const includedSelect = dto.includedSelect ?? group.includedSelect;
 
     if (maxSelect < minSelect) {
       throw new BadRequestException('maxSelect cannot be less than minSelect');
+    }
+
+    if (includedSelect > maxSelect) {
+      throw new BadRequestException(
+        'includedSelect cannot be greater than maxSelect',
+      );
     }
 
     const data = await this.modifierRepository.updateGroup(id, {
@@ -221,6 +237,7 @@ export class ModifierService {
       description: dto.description,
       minSelect: dto.minSelect,
       maxSelect: dto.maxSelect,
+      includedSelect: dto.includedSelect,
       isRequired: dto.isRequired,
       sortOrder: dto.sortOrder,
       isActive: dto.isActive,
@@ -681,6 +698,7 @@ export class ModifierService {
     description: string | null;
     minSelect: number;
     maxSelect: number;
+    includedSelect: number;
     isRequired: boolean;
     sortOrder: number;
     isActive: boolean;

@@ -102,6 +102,7 @@ describe('ModifierService', () => {
       description: null,
       minSelect: 2,
       maxSelect: 5,
+      includedSelect: 1,
       isRequired: false,
       sortOrder: 0,
       isActive: true,
@@ -114,6 +115,7 @@ describe('ModifierService', () => {
         name: 'Sauces',
         minSelect: 2,
         maxSelect: 5,
+        includedSelect: 1,
         isRequired: false,
       },
     );
@@ -122,6 +124,7 @@ describe('ModifierService', () => {
       expect.objectContaining({
         minSelect: 2,
         maxSelect: 5,
+        includedSelect: 1,
         isRequired: false,
       }),
     );
@@ -129,6 +132,7 @@ describe('ModifierService', () => {
       expect.objectContaining({
         minSelect: 2,
         maxSelect: 5,
+        includedSelect: 1,
         isRequired: false,
       }),
     );
@@ -149,6 +153,23 @@ describe('ModifierService', () => {
         },
       ),
     ).rejects.toThrow(BadRequestException);
+    expect(modifierRepository.createGroup).not.toHaveBeenCalled();
+  });
+
+  it('rejects included selections above maxSelect', async () => {
+    const { service, modifierRepository } = makeService();
+
+    await expect(
+      service.createGroup(
+        { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+        {
+          restaurantId: 'restaurant-1',
+          name: 'Dressings',
+          maxSelect: 2,
+          includedSelect: 3,
+        },
+      ),
+    ).rejects.toThrow('includedSelect cannot be greater than maxSelect');
     expect(modifierRepository.createGroup).not.toHaveBeenCalled();
   });
 

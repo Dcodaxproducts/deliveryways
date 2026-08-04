@@ -120,6 +120,16 @@ export class CreateModifierGroupDto {
   @Min(1)
   maxSelect?: number;
 
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'Number of selected modifier units included in the item price',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  includedSelect?: number;
+
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
@@ -157,6 +167,15 @@ export class UpdateModifierGroupDto {
   @IsInt()
   @Min(1)
   maxSelect?: number;
+
+  @ApiPropertyOptional({
+    description: 'Number of selected modifier units included in the item price',
+  })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  includedSelect?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
