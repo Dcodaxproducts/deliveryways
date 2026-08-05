@@ -137,6 +137,15 @@ export class OrdersIntegrationService implements OrdersIntegrationPort {
   ): OrderStatus[] {
     const target = requested as OrderStatus;
 
+    if (requested === 'COMPLETED') {
+      const lifecycle = this.lifecycleFor(orderType);
+      return this.resolveTransitionPath(
+        orderType,
+        current,
+        lifecycle[lifecycle.length - 1] as IntegrationOrderStatus,
+      );
+    }
+
     if (current === target) {
       return [];
     }

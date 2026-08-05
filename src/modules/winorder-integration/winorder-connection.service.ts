@@ -116,6 +116,14 @@ export class WinOrderConnectionService {
     };
   }
 
+  resolveAdminScope(
+    user: AuthUserContext,
+    branchId: string,
+    mutation = false,
+  ): Promise<WinOrderConnectionScope> {
+    return this.resolveAuthorizedScope(user, branchId, mutation);
+  }
+
   private async requireConnection(scope: WinOrderConnectionScope) {
     const connection = await this.repository.findByBranch(scope);
     if (!connection) {
