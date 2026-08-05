@@ -36,9 +36,9 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Prisma format/validate/generate pass.
-- [ ] Migration is additive, has a documented rollback surface, and does not contain restaurant-specific data.
-- [ ] Every WinOrder table has non-null tenant/restaurant/branch scope and tenant-first indexes.
+- [x] Prisma format/validate/generate pass.
+- [x] Migration is additive, has a documented rollback surface, and does not contain restaurant-specific data.
+- [x] Every WinOrder table has non-null tenant/restaurant/branch scope and tenant-first indexes.
 
 **Verify**: `npx prisma format && npx prisma validate && npx prisma generate`
 **Commit**: `feat(winorder): add integration persistence model`
@@ -52,11 +52,11 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] WinOrder can inject both ports only through module barrels/tokens.
-- [ ] Order export candidates are branch scoped and normalized from snapshots.
-- [ ] Status progression and ETA updates remain owned by Orders.
-- [ ] Catalog keys are listed/validated within Menu ownership.
-- [ ] Focused unit tests pass and every changed TypeScript file passes `verify_nestjs.sh`.
+- [x] WinOrder can inject both ports only through module barrels/tokens.
+- [x] Order export candidates are branch scoped and normalized from snapshots.
+- [x] Status progression and ETA updates remain owned by Orders.
+- [x] Catalog keys are listed/validated within Menu ownership.
+- [x] Focused unit tests, TypeScript, and targeted ESLint pass. The repository no longer contains `scripts/verify_nestjs.sh`, so its equivalent checks will be covered by available full-project verification in T11.
 
 **Commit**: `feat(winorder): expose order and catalog integration ports`
 
@@ -191,4 +191,3 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 ## Requirement Coverage
 
 10 requirements, 10 mapped to tasks, 0 unmapped.
-

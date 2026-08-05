@@ -3,12 +3,14 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  PaymentTransactionType,
   Prisma,
   PrismaClient,
 } from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 import { ListOrdersDto } from './dto';
+import { IntegrationScope } from './orders-integration.port';
 
 @Injectable()
 export class OrdersRepository {
@@ -66,6 +68,119 @@ export class OrdersRepository {
         items: true,
         coupon: true,
       },
+    });
+  }
+
+  async findIntegrationExportCandidates(
+    scope: IntegrationScope,
+    limit: number,
+  ) {
+    return this.prisma.order.findMany({
+      where: {
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+        status: OrderStatus.PLACED,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: limit,
+      include: {
+        customer: {
+          select: {
+            email: true,
+            profile: {
+              select: { firstName: true, lastName: true, phone: true },
+            },
+          },
+        },
+        deliveryAddress: {
+          select: {
+            street: true,
+            area: true,
+            postalCode: true,
+            city: true,
+            state: true,
+            country: true,
+          },
+        },
+        items: {
+          orderBy: [{ createdAt: 'asc' }],
+          include: {
+            menuItem: { select: { taxPercentage: true } },
+          },
+        },
+        transactions: {
+          where: { type: PaymentTransactionType.CHARGE },
+          orderBy: [{ createdAt: 'desc' }],
+          take: 1,
+          select: { providerRef: true, currency: true },
+        },
+      },
+    });
+  }
+
+  async findIntegrationOrder(id: string, scope: IntegrationScope) {
+    return this.prisma.order.findFirst({
+      where: {
+        id,
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+      select: { id: true, orderType: true, status: true, orderTime: true },
+    });
+  }
+
+  async updateIntegrationStatus(
+    id: string,
+    scope: IntegrationScope,
+    status: OrderStatus,
+    orderTime?: Date,
+  ) {
+    return this.prisma.order.updateMany({
+      where: {
+        id,
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+      data: {
+        status,
+        orderTime,
+        isScheduled: orderTime ? orderTime.getTime() > Date.now() : undefined,
+        deliveredAt:
+          status === OrderStatus.DELIVERED ||
+          status === OrderStatus.PICKED_UP ||
+          status === OrderStatus.SERVED
+            ? new Date()
+            : undefined,
+      },
+    });
+  }
+
+  async updateIntegrationEstimate(
+    id: string,
+    scope: IntegrationScope,
+    estimate: {
+      estimatedPreparationMinutes?: number;
+      estimatedCompletionAt?: Date;
+    },
+  ) {
+    if (
+      estimate.estimatedPreparationMinutes === undefined &&
+      estimate.estimatedCompletionAt === undefined
+    ) {
+      return;
+    }
+
+    await this.prisma.order.updateMany({
+      where: {
+        id,
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+      data: estimate,
     });
   }
 

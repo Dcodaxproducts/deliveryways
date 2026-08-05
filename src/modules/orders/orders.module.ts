@@ -12,6 +12,8 @@ import { OrderTrackingRealtimeService } from './order-tracking.realtime.service'
 import { OrdersController } from './orders.controller';
 import { OrdersRepository } from './orders.repository';
 import { OrdersService } from './orders.service';
+import { ORDERS_INTEGRATION_PORT } from './orders-integration.port';
+import { OrdersIntegrationService } from './orders-integration.service';
 
 @Module({
   imports: [
@@ -33,10 +35,15 @@ import { OrdersService } from './orders.service';
   controllers: [OrdersController],
   providers: [
     OrdersService,
+    OrdersIntegrationService,
+    {
+      provide: ORDERS_INTEGRATION_PORT,
+      useExisting: OrdersIntegrationService,
+    },
     OrdersRepository,
     OrderTrackingRealtimeService,
     OrderTrackingGateway,
   ],
-  exports: [OrdersService],
+  exports: [OrdersService, ORDERS_INTEGRATION_PORT],
 })
 export class OrdersModule {}

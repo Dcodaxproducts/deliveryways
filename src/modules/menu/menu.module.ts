@@ -23,6 +23,9 @@ import { RestaurantMenuRepository } from './restaurant-menu/restaurant-menu.repo
 import { StorageModule } from '../storage/storage.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { StaffMenuAccessService } from './staff-menu-access.service';
+import { MENU_INTEGRATION_CATALOG_PORT } from './menu-integration-catalog.port';
+import { MenuIntegrationCatalogRepository } from './menu-integration-catalog.repository';
+import { MenuIntegrationCatalogService } from './menu-integration-catalog.service';
 
 @Module({
   imports: [StorageModule, CouponsModule],
@@ -51,6 +54,12 @@ import { StaffMenuAccessService } from './staff-menu-access.service';
     RestaurantMenuService,
     RestaurantMenuRepository,
     StaffMenuAccessService,
+    MenuIntegrationCatalogRepository,
+    MenuIntegrationCatalogService,
+    {
+      provide: MENU_INTEGRATION_CATALOG_PORT,
+      useExisting: MenuIntegrationCatalogService,
+    },
   ],
   exports: [
     MenuCategoryService,
@@ -58,6 +67,7 @@ import { StaffMenuAccessService } from './staff-menu-access.service';
     MenuItemService,
     MenuVariationService,
     RestaurantMenuService,
+    MENU_INTEGRATION_CATALOG_PORT,
   ],
 })
 export class MenuModule {}
