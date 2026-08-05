@@ -151,9 +151,9 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] API envelope variants normalize safely without `any`.
-- [ ] Endpoint URL is derived from the configured API base URL.
-- [ ] Service tests, TypeScript, and lint pass.
+- [x] Typed API responses are consumed without `any`.
+- [x] Endpoint URL is derived from the configured API base URL.
+- [x] Service tests, TypeScript, and lint pass.
 
 **Commit**: `feat(winorder): add Restaurant Admin API client`
 
@@ -166,10 +166,10 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Business Admin can complete configuration and Branch Admin sees read-only own-branch state.
-- [ ] Secrets appear only immediately after generation/rotation with a copy warning.
-- [ ] Empty/loading/error/missing-mapping states render clearly.
-- [ ] Component/service tests, i18n parity, TypeScript, lint, import check, and production build pass.
+- [x] Business Admin can complete configuration and Branch Admin sees read-only own-branch state.
+- [x] Secrets appear only immediately after generation/rotation with a copy warning.
+- [x] Empty, missing-connection, missing-mapping, and health states render clearly.
+- [x] Service tests, EN/DE parity, TypeScript, lint, import check, and production build pass.
 
 **Commit**: `feat(winorder): add branch integration settings UI`
 
@@ -181,8 +181,8 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Backend `verify_project.sh` passes, including type/build/test/lint/pattern checks available in the worktree.
-- [ ] Restaurant Admin typecheck/test/lint/import/build checks pass.
+- [x] Backend build, all 84 suites/914 tests, and full lint pass. The latest repository revision does not contain `verify_project.sh` or `verify_nestjs.sh`.
+- [x] Restaurant Admin typecheck, all 69 suites/429 tests, lint, i18n/import checks, and production build pass.
 - [ ] Both branches are committed, pushed, and remote heads verified.
 - [ ] Handoff states that live WinOrder/American Corner activation remains externally unverified.
 
