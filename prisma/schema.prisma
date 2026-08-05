@@ -187,6 +187,26 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum WinOrderCatalogMappingType {
+  ITEM
+  MODIFIER
+  SERVICE_CHARGE
+}
+
+enum WinOrderExportState {
+  PENDING
+  LEASED
+  ACKNOWLEDGED
+  FAILED
+}
+
+enum WinOrderStatusEventResult {
+  PROCESSED
+  DUPLICATE
+  FAILED
+  IGNORED
+}
+
 enum ContactSubmissionStatus {
   NEW
   READ
@@ -1434,42 +1454,44 @@ model CartItem {
 }
 
 model Order {
-  id                    String             @id @default(cuid())
-  tenantId              String             @map("tenant_id")
-  restaurantId          String             @map("restaurant_id")
-  branchId              String             @map("branch_id")
-  customerId            String             @map("customer_id")
-  couponId              String?            @map("coupon_id")
-  deliveryAddressId     String?            @map("delivery_address_id")
-  deliverymanId         String?            @map("deliveryman_id")
-  orderType             OrderType          @map("order_type")
-  paymentMethod         PaymentMethod      @map("payment_method")
-  orderTime             DateTime?          @map("order_time") @db.Timestamptz
-  isScheduled           Boolean            @default(false) @map("is_scheduled")
-  status                OrderStatus        @default(PLACED)
-  subtotal              Decimal            @db.Decimal(10, 2)
-  taxAmount             Decimal            @default(0) @map("tax_amount") @db.Decimal(10, 2)
-  deliveryFee           Decimal            @default(0) @map("delivery_fee") @db.Decimal(10, 2)
-  serviceChargeType     ServiceChargeType? @map("service_charge_type")
-  serviceChargeValue    Decimal?           @map("service_charge_value") @db.Decimal(10, 2)
-  serviceChargeAmount   Decimal            @default(0) @map("service_charge_amount") @db.Decimal(10, 2)
-  tipAmount             Decimal            @default(0) @map("tip_amount") @db.Decimal(10, 2)
-  discountAmount        Decimal            @default(0) @map("discount_amount") @db.Decimal(10, 2)
-  walletAppliedAmount   Decimal            @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
-  loyaltyDiscountAmount Decimal            @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
-  loyaltyPointsRedeemed Int                @default(0) @map("loyalty_points_redeemed")
-  loyaltyPointsAwarded  Int                @default(0) @map("loyalty_points_awarded")
-  totalAmount           Decimal            @map("total_amount") @db.Decimal(10, 2)
-  paymentStatus         PaymentStatus      @default(PENDING) @map("payment_status")
-  paidAt                DateTime?          @map("paid_at") @db.Timestamptz
-  assignedAt            DateTime?          @map("assigned_at") @db.Timestamptz
-  deliveredAt           DateTime?          @map("delivered_at") @db.Timestamptz
-  deliveryOtp           String?            @map("delivery_otp") @db.VarChar(10)
-  customerNote          String?            @map("customer_note")
-  cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz
-  cancelledByUserId     String?            @map("cancelled_by_user_id")
-  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  id                          String             @id @default(cuid())
+  tenantId                    String             @map("tenant_id")
+  restaurantId                String             @map("restaurant_id")
+  branchId                    String             @map("branch_id")
+  customerId                  String             @map("customer_id")
+  couponId                    String?            @map("coupon_id")
+  deliveryAddressId           String?            @map("delivery_address_id")
+  deliverymanId               String?            @map("deliveryman_id")
+  orderType                   OrderType          @map("order_type")
+  paymentMethod               PaymentMethod      @map("payment_method")
+  orderTime                   DateTime?          @map("order_time") @db.Timestamptz
+  estimatedCompletionAt       DateTime?          @map("estimated_completion_at") @db.Timestamptz
+  estimatedPreparationMinutes Int?               @map("estimated_preparation_minutes")
+  isScheduled                 Boolean            @default(false) @map("is_scheduled")
+  status                      OrderStatus        @default(PLACED)
+  subtotal                    Decimal            @db.Decimal(10, 2)
+  taxAmount                   Decimal            @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  deliveryFee                 Decimal            @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  serviceChargeType           ServiceChargeType? @map("service_charge_type")
+  serviceChargeValue          Decimal?           @map("service_charge_value") @db.Decimal(10, 2)
+  serviceChargeAmount         Decimal            @default(0) @map("service_charge_amount") @db.Decimal(10, 2)
+  tipAmount                   Decimal            @default(0) @map("tip_amount") @db.Decimal(10, 2)
+  discountAmount              Decimal            @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  walletAppliedAmount         Decimal            @default(0) @map("wallet_applied_amount") @db.Decimal(10, 2)
+  loyaltyDiscountAmount       Decimal            @default(0) @map("loyalty_discount_amount") @db.Decimal(10, 2)
+  loyaltyPointsRedeemed       Int                @default(0) @map("loyalty_points_redeemed")
+  loyaltyPointsAwarded        Int                @default(0) @map("loyalty_points_awarded")
+  totalAmount                 Decimal            @map("total_amount") @db.Decimal(10, 2)
+  paymentStatus               PaymentStatus      @default(PENDING) @map("payment_status")
+  paidAt                      DateTime?          @map("paid_at") @db.Timestamptz
+  assignedAt                  DateTime?          @map("assigned_at") @db.Timestamptz
+  deliveredAt                 DateTime?          @map("delivered_at") @db.Timestamptz
+  deliveryOtp                 String?            @map("delivery_otp") @db.VarChar(10)
+  customerNote                String?            @map("customer_note")
+  cancelledAt                 DateTime?          @map("cancelled_at") @db.Timestamptz
+  cancelledByUserId           String?            @map("cancelled_by_user_id")
+  createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                   DateTime           @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
   restaurant          Restaurant           @relation(fields: [restaurantId], references: [id])
@@ -2226,4 +2248,132 @@ model PushDeviceToken {
   @@index([deliverymanId, isActive, platform])
   @@index([restaurantId, branchId, isActive, platform])
   @@map("push_device_tokens")
+}
+
+model WinOrderConnection {
+  id                       String    @id @default(cuid())
+  tenantId                 String    @map("tenant_id")
+  restaurantId             String    @map("restaurant_id")
+  branchId                 String    @unique @map("branch_id")
+  username                 String    @unique @db.VarChar(191)
+  passwordHash             String    @map("password_hash")
+  credentialVersion        Int       @default(1) @map("credential_version")
+  storeId                  Int?      @map("store_id")
+  storeName                String?   @map("store_name") @db.VarChar(191)
+  isEnabled                Boolean   @default(true) @map("is_enabled")
+  lastPollAt               DateTime? @map("last_poll_at") @db.Timestamptz
+  lastSuccessfulCallbackAt DateTime? @map("last_successful_callback_at") @db.Timestamptz
+  lastErrorAt              DateTime? @map("last_error_at") @db.Timestamptz
+  lastError                String?   @map("last_error")
+  createdBy                String?   @map("created_by")
+  updatedBy                String?   @map("updated_by")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  catalogMappings WinOrderCatalogMapping[]
+  paymentMappings WinOrderPaymentMapping[]
+  orderExports    WinOrderOrderExport[]
+  statusEvents    WinOrderStatusEvent[]
+
+  @@index([tenantId, restaurantId, branchId])
+  @@index([tenantId, isEnabled, updatedAt])
+  @@map("winorder_connections")
+}
+
+model WinOrderCatalogMapping {
+  id                  String                     @id @default(cuid())
+  tenantId            String                     @map("tenant_id")
+  restaurantId        String                     @map("restaurant_id")
+  branchId            String                     @map("branch_id")
+  connectionId        String                     @map("connection_id")
+  mappingType         WinOrderCatalogMappingType @map("mapping_type")
+  localKey            String                     @map("local_key") @db.VarChar(512)
+  localName           String?                    @map("local_name") @db.VarChar(255)
+  externalArticleNo   String                     @map("external_article_no") @db.VarChar(191)
+  externalArticleName String?                    @map("external_article_name") @db.VarChar(255)
+  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz
+
+  connection WinOrderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, mappingType, localKey])
+  @@index([tenantId, restaurantId, branchId])
+  @@index([tenantId, connectionId, mappingType])
+  @@map("winorder_catalog_mappings")
+}
+
+model WinOrderPaymentMapping {
+  id            String        @id @default(cuid())
+  tenantId      String        @map("tenant_id")
+  restaurantId  String        @map("restaurant_id")
+  branchId      String        @map("branch_id")
+  connectionId  String        @map("connection_id")
+  paymentMethod PaymentMethod @map("payment_method")
+  externalLabel String        @map("external_label") @db.VarChar(191)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  connection WinOrderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, paymentMethod])
+  @@index([tenantId, restaurantId, branchId])
+  @@index([tenantId, connectionId])
+  @@map("winorder_payment_mappings")
+}
+
+model WinOrderOrderExport {
+  id             String              @id @default(cuid())
+  tenantId       String              @map("tenant_id")
+  restaurantId   String              @map("restaurant_id")
+  branchId       String              @map("branch_id")
+  connectionId   String              @map("connection_id")
+  orderId        String              @map("order_id")
+  state          WinOrderExportState @default(PENDING)
+  leaseToken     String?             @map("lease_token") @db.VarChar(191)
+  leaseExpiresAt DateTime?           @map("lease_expires_at") @db.Timestamptz
+  attemptCount   Int                 @default(0) @map("attempt_count")
+  acknowledgedAt DateTime?           @map("acknowledged_at") @db.Timestamptz
+  failedAt       DateTime?           @map("failed_at") @db.Timestamptz
+  lastError      String?             @map("last_error")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  connection   WinOrderConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  statusEvents WinOrderStatusEvent[]
+
+  @@unique([connectionId, orderId])
+  @@index([tenantId, restaurantId, branchId])
+  @@index([tenantId, connectionId, state, leaseExpiresAt])
+  @@index([tenantId, orderId])
+  @@map("winorder_order_exports")
+}
+
+model WinOrderStatusEvent {
+  id             String                    @id @default(cuid())
+  tenantId       String                    @map("tenant_id")
+  restaurantId   String                    @map("restaurant_id")
+  branchId       String                    @map("branch_id")
+  connectionId   String                    @map("connection_id")
+  exportId       String?                   @map("export_id")
+  orderId        String                    @map("order_id")
+  fingerprint    String                    @db.VarChar(64)
+  trackingStatus String                    @map("tracking_status") @db.VarChar(20)
+  message        String?
+  deliverMinutes Int?                      @map("deliver_minutes")
+  deliverEta     DateTime?                 @map("deliver_eta") @db.Timestamptz
+  rejectReason   String?                   @map("reject_reason")
+  rawPayload     Json                      @map("raw_payload")
+  result         WinOrderStatusEventResult
+  errorMessage   String?                   @map("error_message")
+  processedAt    DateTime                  @default(now()) @map("processed_at") @db.Timestamptz
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+
+  connection  WinOrderConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  orderExport WinOrderOrderExport? @relation(fields: [exportId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, fingerprint])
+  @@index([tenantId, restaurantId, branchId])
+  @@index([tenantId, connectionId, processedAt])
+  @@index([tenantId, orderId, processedAt])
+  @@map("winorder_status_events")
 }
