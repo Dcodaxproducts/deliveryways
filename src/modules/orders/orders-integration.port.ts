@@ -1,6 +1,7 @@
 export const ORDERS_INTEGRATION_PORT = Symbol('ORDERS_INTEGRATION_PORT');
 
 export type IntegrationOrderStatus =
+  | 'COMPLETED'
   | 'CONFIRMED'
   | 'PREPARING'
   | 'READY_FOR_PICKUP'

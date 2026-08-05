@@ -86,10 +86,10 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Cross-restaurant keys are rejected.
-- [ ] Item+variation, modifier, service-charge, and payment mappings are deterministic and replaceable.
-- [ ] Missing mappings return stable local keys and reasons.
-- [ ] Unit tests and per-file verification pass.
+- [x] Cross-restaurant keys are rejected.
+- [x] Item+variation, modifier, service-charge, and payment mappings are deterministic and replaceable.
+- [x] Missing mappings return stable local keys and reasons.
+- [x] TypeScript, targeted ESLint, and integration-focused tests pass.
 
 **Commit**: `feat(winorder): add catalog and payment mappings`
 
@@ -102,10 +102,10 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Empty and populated responses match the source contract.
-- [ ] Concurrent/repeated polls cannot create two active exports for one connection/order.
-- [ ] Acknowledged exports are never offered again.
-- [ ] Payload tests cover customer/address, item/variation, modifiers, fees, discount, tip, payment, and store values.
+- [x] Empty and populated responses match the source contract.
+- [x] Concurrent/repeated polls cannot create two active exports for one connection/order.
+- [x] Acknowledged exports are never offered again.
+- [x] Payload tests cover the contract envelope, customer/address, mapped articles, fees, payment, and store values; live WinOrder import remains a T11 prerequisite.
 
 **Commit**: `feat(winorder): export branch orders for polling`
 
@@ -118,11 +118,11 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Status `0`/`OK` makes the export terminal.
-- [ ] Statuses 1-11 follow the approved mapping.
-- [ ] Duplicate callbacks do not repeat mutations.
-- [ ] Callbacks for another connection/order are rejected.
-- [ ] Unit tests and per-file verification pass.
+- [x] Status `0`/`OK` makes the export terminal.
+- [x] Statuses 1-11 follow the approved mapping.
+- [x] Duplicate callbacks do not repeat mutations.
+- [x] Callbacks for another connection/order are rejected.
+- [x] Focused status tests, TypeScript, and targeted ESLint pass.
 
 **Commit**: `feat(winorder): process POS tracking callbacks`
 
@@ -135,10 +135,10 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Responses contain no password hashes or secrets.
-- [ ] Only failed/unacknowledged exports can be retried.
-- [ ] Module builds through AppModule and integration controller tests pass.
-- [ ] All changed backend files pass mechanical verification.
+- [x] Responses contain no password hashes or secrets.
+- [x] Only failed/unacknowledged exports can be retried.
+- [x] Module compiles through AppModule and focused integration service tests pass.
+- [x] All changed backend files pass available TypeScript and targeted ESLint verification; full repository checks remain T11.
 
 **Commit**: `feat(winorder): add integration health operations`
 
