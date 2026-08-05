@@ -21,6 +21,7 @@ import {
 } from './admin-printing.repository';
 
 type PrintingConnectionType = 'USB' | 'LAN' | 'BLUETOOTH' | 'CLOUD';
+type PrintingPaperSize = 'A4' | 'A5' | '80MM' | '58MM';
 
 type PrintingConfig = {
   enabled: boolean;
@@ -29,6 +30,7 @@ type PrintingConfig = {
   printCustomerReceipt: boolean;
   printKitchenTicket: boolean;
   connectionType: PrintingConnectionType | null;
+  paperSize: PrintingPaperSize;
   printerName: string | null;
   printerTarget: string | null;
   deviceId: string | null;
@@ -472,6 +474,10 @@ export class AdminPrintingService {
         printing.connectionType,
         fallback?.connectionType ?? null,
       ),
+      paperSize: this.readPaperSize(
+        printing.paperSize,
+        fallback?.paperSize ?? '80MM',
+      ),
       printerName:
         this.readStringValue(printing.printerName) ??
         fallback?.printerName ??
@@ -542,6 +548,7 @@ export class AdminPrintingService {
         ...(dto.connectionType !== undefined
           ? { connectionType: dto.connectionType }
           : {}),
+        ...(dto.paperSize !== undefined ? { paperSize: dto.paperSize } : {}),
         ...(dto.printerName !== undefined
           ? { printerName: dto.printerName }
           : {}),
@@ -579,6 +586,22 @@ export class AdminPrintingService {
       value === 'LAN' ||
       value === 'BLUETOOTH' ||
       value === 'CLOUD'
+    ) {
+      return value;
+    }
+
+    return fallback;
+  }
+
+  private readPaperSize(
+    value: unknown,
+    fallback: PrintingPaperSize,
+  ): PrintingPaperSize {
+    if (
+      value === 'A4' ||
+      value === 'A5' ||
+      value === '80MM' ||
+      value === '58MM'
     ) {
       return value;
     }

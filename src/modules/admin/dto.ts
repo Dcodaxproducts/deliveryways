@@ -1181,6 +1181,11 @@ export class UpdateAdminPrintingSettingsDto {
   @IsIn(['USB', 'LAN', 'BLUETOOTH', 'CLOUD'])
   connectionType?: 'USB' | 'LAN' | 'BLUETOOTH' | 'CLOUD' | null;
 
+  @ApiPropertyOptional({ enum: ['A4', 'A5', '80MM', '58MM'], default: '80MM' })
+  @IsOptional()
+  @IsIn(['A4', 'A5', '80MM', '58MM'])
+  paperSize?: 'A4' | 'A5' | '80MM' | '58MM';
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -1214,9 +1219,11 @@ export class ReportAdminPrinterEventDto {
   @IsIn(['success', 'failed', 'warning'])
   status!: 'success' | 'failed' | 'warning';
 
-  @ApiProperty({ enum: ['discovery', 'connection', 'test_print'] })
-  @IsIn(['discovery', 'connection', 'test_print'])
-  event!: 'discovery' | 'connection' | 'test_print';
+  @ApiProperty({
+    enum: ['discovery', 'connection', 'test_print', 'order_print'],
+  })
+  @IsIn(['discovery', 'connection', 'test_print', 'order_print'])
+  event!: 'discovery' | 'connection' | 'test_print' | 'order_print';
 
   @ApiProperty()
   @IsString()

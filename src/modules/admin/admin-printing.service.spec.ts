@@ -60,6 +60,7 @@ describe('AdminPrintingService', () => {
           printCustomerReceipt: false,
           printKitchenTicket: true,
           connectionType: null,
+          paperSize: '80MM',
           printerName: 'Branch Printer',
           printerTarget: null,
           deviceId: null,
@@ -90,6 +91,7 @@ describe('AdminPrintingService', () => {
               enabled: true,
               autoPrintOnNewOrder: true,
               connectionType: 'LAN',
+              paperSize: '58MM',
               printerName: 'Kitchen LAN',
             },
           },
@@ -102,6 +104,7 @@ describe('AdminPrintingService', () => {
             enabled: true,
             autoPrintOnNewOrder: true,
             connectionType: 'LAN',
+            paperSize: '58MM',
             printerName: 'Kitchen LAN',
           },
         },
@@ -125,6 +128,7 @@ describe('AdminPrintingService', () => {
               enabled: boolean;
               autoPrintOnNewOrder: boolean;
               connectionType: 'LAN';
+              paperSize: '58MM';
               printerName: string;
             },
           ) => Promise<unknown>;
@@ -141,6 +145,7 @@ describe('AdminPrintingService', () => {
           enabled: true,
           autoPrintOnNewOrder: true,
           connectionType: 'LAN',
+          paperSize: '58MM',
           printerName: 'Kitchen LAN',
         },
       ),
@@ -159,6 +164,7 @@ describe('AdminPrintingService', () => {
           enabled: true,
           autoPrintOnNewOrder: true,
           connectionType: 'LAN',
+          paperSize: '58MM',
           printerName: 'Kitchen LAN',
         },
       },
