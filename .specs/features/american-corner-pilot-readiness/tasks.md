@@ -1,7 +1,7 @@
 # American Corner Pilot Readiness Tasks
 
 **Design:** `.specs/features/american-corner-pilot-readiness/design.md`
-**Status:** In Progress
+**Status:** Done
 
 ## Execution Plan
 
@@ -51,4 +51,3 @@
 - **Requirements:** REG-01
 - **Done when:** all repository checks pass, branches are pushed, and no deployment occurred.
 - **Verify:** backend/admin/superadmin full build, test, typecheck, lint, Prisma validation, and project enforcement surfaces where available.
-

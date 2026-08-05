@@ -72,12 +72,11 @@ Acceptance criteria:
 
 | Requirement ID | Story | Status |
 | --- | --- | --- |
-| PRINT-01 | Accepted-order auto-printing | Pending |
-| PRINT-02 | Duplicate prevention | Pending |
-| PRINT-03 | Failure reporting | Pending |
-| PAPER-01 | Supported sizes | Pending |
-| PAPER-02 | Size-specific layout | Pending |
-| DOMAIN-01 | DNS instructions | Pending |
-| DOMAIN-02 | Server-side verification | Pending |
-| REG-01 | Payment and WinOrder regression safety | Pending |
-
+| PRINT-01 | Accepted-order auto-printing | Verified |
+| PRINT-02 | Duplicate prevention | Verified |
+| PRINT-03 | Failure reporting | Verified |
+| PAPER-01 | Supported sizes | Verified |
+| PAPER-02 | Size-specific layout | Verified |
+| DOMAIN-01 | DNS instructions | Verified |
+| DOMAIN-02 | Server-side verification | Verified |
+| REG-01 | Payment and WinOrder regression safety | Verified |
