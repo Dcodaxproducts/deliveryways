@@ -69,11 +69,11 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 
 **Done when**:
 
-- [ ] Business/Super Admin can create, update, rotate, disable, and read scoped connections.
-- [ ] Branch Admin can read only its own connection.
-- [ ] Plain secrets are returned once and never persisted.
-- [ ] Old, invalid, cross-branch, and disabled credentials fail generically.
-- [ ] Unit tests and per-file verification pass.
+- [x] Business/Super Admin can create, update, rotate, disable, and read scoped connections.
+- [x] Branch Admin can read only its own connection.
+- [x] Plain secrets are returned once and never persisted.
+- [x] Old, invalid, cross-branch, and disabled credentials fail generically.
+- [x] Focused unit tests, TypeScript, and targeted ESLint pass; the unavailable repository verification script is tracked in T3/T11.
 
 **Commit**: `feat(winorder): add branch connection credentials`
 

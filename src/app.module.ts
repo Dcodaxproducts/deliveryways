@@ -44,6 +44,7 @@ import { SystemHealthModule } from './modules/system-health/system-health.module
 import { PackagePlansModule } from './modules/package-plans/package-plans.module';
 import { LocalizationsModule } from './modules/localizations';
 import { ContactSubmissionsModule } from './modules/contact-submissions/contact-submissions.module';
+import { WinOrderIntegrationModule } from './modules/winorder-integration/winorder-integration.module';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -114,6 +115,7 @@ import { AppController } from './app.controller';
     PackagePlansModule,
     LocalizationsModule,
     ContactSubmissionsModule,
+    WinOrderIntegrationModule,
   ],
   providers: [
     {
