@@ -32,6 +32,7 @@ import {
   UpdateRestaurantServiceChargeDto,
 } from './dto';
 import { randomUUID } from 'crypto';
+import { CustomDomainDnsService } from './custom-domain-dns.service';
 
 @Injectable()
 export class RestaurantsService {
@@ -46,6 +47,7 @@ export class RestaurantsService {
     private readonly restaurantsRepository: RestaurantsRepository,
     private readonly tenantsService: TenantsService,
     private readonly storageService: StorageService,
+    private readonly customDomainDnsService: CustomDomainDnsService,
     private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
@@ -198,6 +200,45 @@ export class RestaurantsService {
     return {
       data: await this.withDeletionState(restaurant),
       message: 'Restaurant fetched successfully',
+    };
+  }
+
+  async customDomainStatus(user: AuthUserContext, id: string) {
+    const restaurant = await this.requireCustomDomainRestaurant(user, id);
+    const instructions = this.customDomainDnsService.getInstructions(
+      restaurant.customDomain,
+    );
+
+    return {
+      data: {
+        customDomain: restaurant.customDomain,
+        verified: Boolean(restaurant.customDomainVerifiedAt),
+        verifiedAt: restaurant.customDomainVerifiedAt,
+        dns: instructions,
+      },
+      message: 'Custom domain status fetched successfully',
+    };
+  }
+
+  async verifyCustomDomain(user: AuthUserContext, id: string) {
+    const restaurant = await this.requireCustomDomainRestaurant(user, id);
+    const instructions = await this.customDomainDnsService.verify(
+      restaurant.customDomain,
+    );
+    const verifiedAt = new Date();
+    const updated = await this.restaurantsRepository.update(id, {
+      customDomainVerifiedAt: verifiedAt,
+    });
+
+    return {
+      data: {
+        customDomain: restaurant.customDomain,
+        verified: true,
+        verifiedAt,
+        dns: instructions,
+        restaurant: await this.resolveRestaurantMedia(updated),
+      },
+      message: 'Custom domain verified successfully',
     };
   }
 
@@ -1657,5 +1698,23 @@ export class RestaurantsService {
     }
 
     return customDomain;
+  }
+
+  private async requireCustomDomainRestaurant(
+    user: AuthUserContext,
+    id: string,
+  ) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+    await this.ensureRestaurantReadAccess(user, id);
+    if (!restaurant.customDomain) {
+      throw new BadRequestException(
+        'Restaurant custom domain is not configured',
+      );
+    }
+
+    return restaurant as typeof restaurant & { customDomain: string };
   }
 }

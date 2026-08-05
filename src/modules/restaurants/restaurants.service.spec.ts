@@ -6,6 +6,7 @@ import { RestaurantsService } from './restaurants.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
+import { CustomDomainDnsService } from './custom-domain-dns.service';
 
 describe('RestaurantsService notification settings', () => {
   let service: RestaurantsService;
@@ -22,6 +23,10 @@ describe('RestaurantsService notification settings', () => {
       [string, Record<string, unknown>, unknown?]
     >;
   };
+  let domainDnsService: {
+    getInstructions: jest.Mock;
+    verify: jest.Mock;
+  };
 
   beforeEach(async () => {
     repository = {
@@ -36,6 +41,10 @@ describe('RestaurantsService notification settings', () => {
         Promise<unknown>,
         [string, Record<string, unknown>, unknown?]
       >(),
+    };
+    domainDnsService = {
+      getInstructions: jest.fn(),
+      verify: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -59,6 +68,10 @@ describe('RestaurantsService notification settings', () => {
             ),
             resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
           },
+        },
+        {
+          provide: CustomDomainDnsService,
+          useValue: domainDnsService,
         },
         {
           provide: GlobalSettingsService,
@@ -151,6 +164,72 @@ describe('RestaurantsService notification settings', () => {
         { customDomain: 'Orders.Example.com' },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns DNS instructions without activating an unverified domain', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      customDomain: 'order.american-corner.de',
+      customDomainVerifiedAt: null,
+      deletedAt: null,
+    });
+    domainDnsService.getInstructions.mockReturnValue({
+      type: 'CNAME',
+      host: 'order.american-corner.de',
+      hostLabel: 'order',
+      target: 'storefront.delivery-way.de',
+    });
+
+    await expect(
+      service.customDomainStatus(
+        { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'restaurant-1',
+      ),
+    ).resolves.toMatchObject({
+      data: {
+        verified: false,
+        dns: { target: 'storefront.delivery-way.de' },
+      },
+    });
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('persists the verification timestamp only after DNS verification', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      customDomain: 'order.american-corner.de',
+      customDomainVerifiedAt: null,
+      deletedAt: null,
+    });
+    domainDnsService.verify.mockResolvedValue({
+      type: 'CNAME',
+      host: 'order.american-corner.de',
+      hostLabel: 'order',
+      target: 'storefront.delivery-way.de',
+    });
+    repository.update.mockImplementation(
+      (_id: string, data: Record<string, unknown>) =>
+        Promise.resolve({
+          id: 'restaurant-1',
+          customDomain: 'order.american-corner.de',
+          deletedAt: null,
+          ...data,
+        }),
+    );
+
+    const result = await service.verifyCustomDomain(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+    );
+
+    expect(domainDnsService.verify).toHaveBeenCalledWith(
+      'order.american-corner.de',
+    );
+    const updateData = repository.update.mock.calls[0]?.[1];
+    expect(updateData?.customDomainVerifiedAt).toBeInstanceOf(Date);
+    expect(result.data.verified).toBe(true);
   });
 
   it('filters STAFF restaurant lists to assigned restaurantAccess ids', async () => {

@@ -116,6 +116,30 @@ export class RestaurantsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get(':id/custom-domain-status')
+  @ApiOperation({ summary: 'Get custom-domain DNS status and instructions' })
+  customDomainStatus(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.customDomainStatus(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post(':id/custom-domain-verification')
+  @ApiOperation({ summary: 'Verify custom-domain DNS and activate routing' })
+  verifyCustomDomain(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.verifyCustomDomain(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Patch(':id/notification-settings')
   @ApiOperation({ summary: 'Update restaurant notification settings' })
   updateNotificationSettings(
