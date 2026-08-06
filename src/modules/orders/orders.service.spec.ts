@@ -4956,6 +4956,9 @@ describe('OrdersService - response mapping', () => {
         type: 'ITEM',
         dealId: null,
         menuItemId: 'menu-1',
+        menuItem: {
+          category: { id: 'cat-1', name: 'Burgers', imageUrl: null },
+        },
       }),
     ]);
   });

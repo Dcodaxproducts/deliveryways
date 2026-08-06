@@ -172,7 +172,14 @@ type OrderDisplayItemSource = {
   lineTotal: Prisma.Decimal;
   note: string | null;
   snapshotModifiers: Prisma.JsonValue | null;
-  menuItem?: { imageUrl: string | null } | null;
+  menuItem?: {
+    imageUrl: string | null;
+    category?: {
+      id: string;
+      name: string;
+      imageUrl: string | null;
+    } | null;
+  } | null;
 };
 
 type OrderDisplayItemResponse = {
@@ -180,6 +187,13 @@ type OrderDisplayItemResponse = {
   menuItemId: string;
   menuItemName: string;
   imageUrl: string | null;
+  menuItem: {
+    category: {
+      id: string;
+      name: string;
+      imageUrl: string | null;
+    } | null;
+  } | null;
   variationId: string | null;
   variationName: string | null;
   quantity: number;
@@ -4936,6 +4950,11 @@ export class OrdersService {
       menuItemId: item.menuItemId,
       menuItemName: item.menuItemName,
       imageUrl: item.menuItem?.imageUrl ?? null,
+      menuItem: item.menuItem
+        ? {
+            category: item.menuItem.category ?? null,
+          }
+        : null,
       variationId: item.variationId,
       variationName: item.variationName,
       quantity: item.quantity,
