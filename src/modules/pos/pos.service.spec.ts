@@ -197,6 +197,51 @@ describe('PosService', () => {
     );
   });
 
+  it('creates a branch-scoped walk-in customer without exposing guest lists', async () => {
+    const { service, posRepository, usersService } = makeService();
+    posRepository.findActiveBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+      settings: null,
+    });
+    usersService.create.mockResolvedValue({ id: 'guest-customer-1' });
+    posRepository.findScopedCustomer.mockResolvedValue({
+      id: 'guest-customer-1',
+      email: 'pos-walk-in@deliveryways.local',
+      isGuest: true,
+      profile: {
+        firstName: 'Walk-in',
+        lastName: 'Customer',
+        phone: null,
+        avatarUrl: null,
+      },
+    });
+
+    const result = await service.createWalkInCustomer(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      { branchId: 'branch-1' },
+    );
+
+    expect(usersService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 'branch-1',
+        isGuest: true,
+      }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({ id: 'guest-customer-1', isGuest: true }),
+    );
+    expect(result.message).toBe('POS walk-in customer created successfully');
+  });
+
   it('blocks POS walk-in reservation when branch reservations are disabled', async () => {
     const { service, posRepository } = makeService();
     posRepository.findActiveBranch.mockResolvedValue({

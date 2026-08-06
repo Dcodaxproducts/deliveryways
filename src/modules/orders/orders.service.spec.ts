@@ -5281,14 +5281,77 @@ describe('OrdersService - admin customer resolution', () => {
       (
         service as unknown as {
           assertGuestContactForOrder: (
+            user: { role: UserRoleEnum },
             customer: { customerId: string; isGuest: boolean },
             guestContact?: unknown,
+            orderType?: string,
           ) => void;
         }
-      ).assertGuestContactForOrder({
-        customerId: 'guest-1',
-        isGuest: true,
-      }),
+      ).assertGuestContactForOrder(
+        { role: UserRoleEnum.CUSTOMER },
+        {
+          customerId: 'guest-1',
+          isGuest: true,
+        },
+      ),
+    ).toThrow('guestContact is required for guest orders');
+  });
+
+  it('allows internal staff to place takeaway walk-in orders without contact', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      (
+        service as unknown as {
+          assertGuestContactForOrder: (
+            user: { role: UserRoleEnum },
+            customer: { customerId: string; isGuest: boolean },
+            guestContact?: unknown,
+            orderType?: string,
+          ) => void;
+        }
+      ).assertGuestContactForOrder(
+        { role: UserRoleEnum.BRANCH_ADMIN },
+        { customerId: 'guest-1', isGuest: true },
+        undefined,
+        'TAKEAWAY',
+      ),
+    ).not.toThrow();
+  });
+
+  it('still requires contact for internal guest delivery orders', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      (
+        service as unknown as {
+          assertGuestContactForOrder: (
+            user: { role: UserRoleEnum },
+            customer: { customerId: string; isGuest: boolean },
+            guestContact?: unknown,
+            orderType?: string,
+          ) => void;
+        }
+      ).assertGuestContactForOrder(
+        { role: UserRoleEnum.BRANCH_ADMIN },
+        { customerId: 'guest-1', isGuest: true },
+        undefined,
+        'DELIVERY',
+      ),
     ).toThrow('guestContact is required for guest orders');
   });
 
@@ -5306,11 +5369,14 @@ describe('OrdersService - admin customer resolution', () => {
       (
         service as unknown as {
           assertGuestContactForOrder: (
+            user: { role: UserRoleEnum },
             customer: { customerId: string; isGuest: boolean },
             guestContact?: unknown,
+            orderType?: string,
           ) => void;
         }
       ).assertGuestContactForOrder(
+        { role: UserRoleEnum.CUSTOMER },
         {
           customerId: 'guest-1',
           isGuest: true,

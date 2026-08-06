@@ -22,6 +22,7 @@ import { StorageService } from '../storage/storage.service';
 import {
   CreatePosDraftItemDto,
   CreatePosOrderDto,
+  CreatePosWalkInCustomerDto,
   CreatePosWalkInReservationDto,
   ListPosOrdersDto,
   UpdatePosDraftItemDto,
@@ -183,6 +184,43 @@ export class PosService {
         customerId,
       },
       message: 'Walk-in table reservation created successfully',
+    };
+  }
+
+  async createWalkInCustomer(
+    user: AuthUserContext,
+    dto: CreatePosWalkInCustomerDto,
+  ) {
+    this.assertPosActor(user);
+
+    const effectiveBranchId = this.resolveRequestedBranchId(user, dto.branchId);
+    if (!effectiveBranchId) {
+      throw new BadRequestException('branchId is required');
+    }
+
+    const branch = await this.posRepository.findActiveBranch(effectiveBranchId);
+    if (!branch) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    this.assertBranchAccess(user, branch);
+    const customerId = await this.createGuestCustomerForBranch(branch, {
+      guestName: dto.guestName,
+      guestPhone: dto.guestPhone,
+    });
+    const customer = await this.posRepository.findScopedCustomer(
+      customerId,
+      branch.tenantId,
+      branch.restaurantId,
+    );
+
+    if (!customer) {
+      throw new BadRequestException('Walk-in customer could not be created');
+    }
+
+    return {
+      data: customer,
+      message: 'POS walk-in customer created successfully',
     };
   }
 

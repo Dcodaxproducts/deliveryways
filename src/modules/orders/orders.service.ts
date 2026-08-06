@@ -331,7 +331,12 @@ export class OrdersService {
     const currency = await this.resolveRestaurantCurrency(
       quote.branch.restaurantId,
     );
-    this.assertGuestContactForOrder(quote.customer, dto.guestContact);
+    this.assertGuestContactForOrder(
+      user,
+      quote.customer,
+      dto.guestContact,
+      dto.orderType,
+    );
 
     const branchSettings = this.readBranchSettings(quote.branch.settings);
     const activeGlobalPaymentMethods =
@@ -3883,8 +3888,10 @@ export class OrdersService {
   }
 
   private assertGuestContactForOrder(
+    user: AuthUserContext,
     customer: QuoteCustomerContext,
     guestContact?: GuestOrderContactDto,
+    orderType?: OrderTypeEnum,
   ) {
     if (!customer.isGuest) {
       if (guestContact) {
@@ -3893,6 +3900,17 @@ export class OrdersService {
         );
       }
 
+      return;
+    }
+
+    const isInternalWalkIn =
+      orderType !== OrderTypeEnum.DELIVERY &&
+      (user.role === UserRoleEnum.SUPER_ADMIN ||
+        user.role === UserRoleEnum.BUSINESS_ADMIN ||
+        user.role === UserRoleEnum.BRANCH_ADMIN ||
+        user.role === UserRoleEnum.STAFF);
+
+    if (!guestContact && isInternalWalkIn) {
       return;
     }
 

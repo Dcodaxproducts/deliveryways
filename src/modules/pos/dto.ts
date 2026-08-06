@@ -176,6 +176,26 @@ export class CreatePosOrderDto {
   note?: string;
 }
 
+export class CreatePosWalkInCustomerDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional for branch-scoped actors; token branch scope is used automatically',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  guestName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  guestPhone?: string;
+}
+
 export class UpdatePosOrderDto {
   @ApiPropertyOptional({ enum: OrderTypeEnum })
   @IsOptional()
