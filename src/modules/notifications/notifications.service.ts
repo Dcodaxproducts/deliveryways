@@ -374,7 +374,10 @@ export class NotificationsService {
               template: 'orderConfirmation',
               locale: customerLocale,
               variables: {
-                customerName: order.customer.profile?.firstName ?? '',
+                customerName: this.resolveCustomerGreetingName(
+                  order.customer,
+                  customerLocale,
+                ),
                 orderNumber: order.id,
                 branchName: order.branch.name,
                 orderType: this.localizeOrderType(
@@ -528,7 +531,10 @@ export class NotificationsService {
       template: 'orderStatus',
       locale: customerLocale,
       variables: {
-        customerName: order.customer.profile?.firstName ?? '',
+        customerName: this.resolveCustomerGreetingName(
+          order.customer,
+          customerLocale,
+        ),
         orderNumber: order.id,
         branchName: order.branch.name,
         status: this.localizeOrderStatus(order.status, customerLocale),
@@ -617,7 +623,10 @@ export class NotificationsService {
       template: 'paymentStatus',
       locale: customerLocale,
       variables: {
-        customerName: payment.order.customer.profile?.firstName ?? '',
+        customerName: this.resolveCustomerGreetingName(
+          payment.order.customer,
+          customerLocale,
+        ),
         orderNumber: payment.orderId,
         branchName: payment.order.branch.name,
         status: this.localizePaymentStatus('PENDING', customerLocale),
@@ -672,7 +681,10 @@ export class NotificationsService {
       template: 'paymentStatus',
       locale: customerLocale,
       variables: {
-        customerName: payment.order.customer.profile?.firstName ?? '',
+        customerName: this.resolveCustomerGreetingName(
+          payment.order.customer,
+          customerLocale,
+        ),
         orderNumber: payment.orderId,
         branchName: payment.order.branch.name,
         status: this.localizePaymentStatus(payment.status, customerLocale),
@@ -1197,6 +1209,25 @@ export class NotificationsService {
     return typeof email === 'string' && email.trim()
       ? email.trim().toLowerCase()
       : accountEmail;
+  }
+
+  private resolveCustomerGreetingName(
+    customer: {
+      isGuest: boolean;
+      profile: { firstName: string | null } | null;
+    },
+    locale: 'de' | 'en',
+  ): string {
+    if (customer.isGuest) {
+      return locale === 'de' ? 'Kunde' : 'Customer';
+    }
+
+    const firstName = customer.profile?.firstName?.trim();
+    if (!firstName || /^(walk[ -]?in|guest|gast)$/i.test(firstName)) {
+      return locale === 'de' ? 'Kunde' : 'Customer';
+    }
+
+    return firstName;
   }
 
   private isDeliverableEmail(email: string) {

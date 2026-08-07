@@ -657,6 +657,23 @@ describe('NotificationsService', () => {
   });
 
   it('keeps POS-created orders quiet for restaurant staff while emailing the customer', async () => {
+    mailerService.renderTransactionalEmail.mockImplementation(
+      ({
+        template,
+        variables,
+      }: {
+        template: string;
+        variables: Record<string, unknown>;
+      }) => {
+        const customerName = variables.customerName;
+
+        return Promise.resolve({
+          locale: 'de',
+          subject: `${template} subject`,
+          body: typeof customerName === 'string' ? customerName : '',
+        });
+      },
+    );
     notificationsRepository.findOrderForNotification.mockResolvedValue({
       id: 'pos-order-1',
       tenantId: 'tenant-1',
@@ -718,6 +735,11 @@ describe('NotificationsService', () => {
     );
     expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'pos-order-1', source: 'POS' }),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'pos.customer@example.com',
+      expect.any(String),
+      'Kunde',
     );
   });
 

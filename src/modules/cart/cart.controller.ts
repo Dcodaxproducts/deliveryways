@@ -19,6 +19,7 @@ import {
 } from '../../common/guards';
 import {
   AddCartItemDto,
+  AddCartItemScopeDto,
   AddCartDealDto,
   AddCartItemsBatchDto,
   CartCustomerScopeDto,
@@ -155,13 +156,14 @@ export class CartController {
   addItem(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: AddCartItemDto,
-    @Query() scope: CartCustomerScopeDto,
+    @Query() scope: AddCartItemScopeDto,
   ) {
     return this.cartService.addItem(
       user,
       dto,
       scope.customerId,
       scope.restaurantId,
+      scope.compact === true,
     );
   }
 

@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsIn,
@@ -296,6 +297,18 @@ export class CartCustomerScopeDto {
   @IsOptional()
   @IsString()
   restaurantId?: string;
+}
+
+export class AddCartItemScopeDto extends CartCustomerScopeDto {
+  @ApiPropertyOptional({
+    description:
+      'Return only mutation confirmation after validation instead of rebuilding the full cart quote.',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  compact?: boolean;
 }
 
 export class QuoteCartDto {
