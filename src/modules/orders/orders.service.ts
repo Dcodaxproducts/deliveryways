@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -259,6 +260,8 @@ type BuildQuoteOptions = {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ordersRepository: OrdersRepository,
@@ -514,24 +517,51 @@ export class OrdersService {
       return order;
     });
 
-    if (initialPaymentStatus === PaymentStatus.PAID) {
-      await this.loyaltyWalletService!.awardPointsForPaidOrder(
-        data.id,
-        undefined,
-        user.uid,
-      );
-    } else if (data.status === OrderStatus.PLACED) {
-      await this.loyaltyWalletService!.awardPointsForPaidOrder(
-        data.id,
-        undefined,
-        user.uid,
-        { allowUnpaid: true },
+    try {
+      if (initialPaymentStatus === PaymentStatus.PAID) {
+        await this.loyaltyWalletService!.awardPointsForPaidOrder(
+          data.id,
+          undefined,
+          user.uid,
+        );
+      } else if (data.status === OrderStatus.PLACED) {
+        await this.loyaltyWalletService!.awardPointsForPaidOrder(
+          data.id,
+          undefined,
+          user.uid,
+          { allowUnpaid: true },
+        );
+      }
+    } catch (error: unknown) {
+      this.logger.error(
+        `Order ${data.id} was created, but loyalty processing failed`,
+        error instanceof Error ? error.stack : String(error),
       );
     }
 
     if (data.status === OrderStatus.PLACED) {
-      await this.notificationsService.notifyOrderPlaced(data.id);
-      await this.emitTrackingUpdate(data.id);
+      const placedFromPos = user.role !== UserRoleEnum.CUSTOMER;
+
+      try {
+        await this.notificationsService.notifyOrderPlaced(data.id, {
+          source: placedFromPos ? 'POS' : 'STOREFRONT',
+          notifyRestaurant: !placedFromPos,
+        });
+      } catch (error: unknown) {
+        this.logger.error(
+          `Order ${data.id} was created, but notifications failed`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+
+      try {
+        await this.emitTrackingUpdate(data.id);
+      } catch (error: unknown) {
+        this.logger.error(
+          `Order ${data.id} was created, but tracking update failed`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     }
 
     return {
@@ -3939,6 +3969,10 @@ export class OrdersService {
         'privacyPolicyAccepted is required for guest orders',
       );
     }
+
+    if (!isInternalWalkIn && !guestContact.phone?.trim()) {
+      throw new BadRequestException('phone is required for guest orders');
+    }
   }
 
   private async createGuestDeliveryAddress(
@@ -3987,15 +4021,15 @@ export class OrdersService {
       where: { userId: customerId },
       update: {
         firstName: dto.firstName?.trim() || 'Guest',
-        lastName: dto.lastName?.trim() || 'Customer',
-        phone: dto.phone,
+        lastName: this.normalizeGuestLastName(dto.lastName),
+        phone: dto.phone ?? null,
         metadata,
       },
       create: {
         userId: customerId,
         firstName: dto.firstName?.trim() || 'Guest',
-        lastName: dto.lastName?.trim() || 'Customer',
-        phone: dto.phone,
+        lastName: this.normalizeGuestLastName(dto.lastName),
+        phone: dto.phone ?? null,
         metadata,
       },
     });
@@ -4017,12 +4051,17 @@ export class OrdersService {
       ...metadata,
       guestContact: {
         email: dto.email.trim().toLowerCase(),
-        phone: dto.phone,
+        ...(dto.phone ? { phone: dto.phone } : {}),
         privacyPolicyAccepted: true,
         privacyPolicyAcceptedAt: new Date().toISOString(),
         privacyPolicyLink: this.buildPrivacyPolicyLink(restaurantId),
       },
     };
+  }
+
+  private normalizeGuestLastName(lastName?: string) {
+    const normalized = lastName?.trim() ?? '';
+    return normalized.toLowerCase() === 'customer' ? '' : normalized;
   }
 
   private buildPrivacyPolicyLink(restaurantId: string) {

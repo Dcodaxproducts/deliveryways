@@ -10,6 +10,7 @@ export interface OrderCreatedRealtimePayload {
   paymentStatus: string;
   totalAmount: number;
   createdAt: Date;
+  source?: 'STOREFRONT' | 'POS';
 }
 
 export interface OrderStatusRealtimePayload {

@@ -548,6 +548,9 @@ describe('NotificationsService', () => {
       expect.objectContaining({
         audience: NotificationAudience.CUSTOMER,
         channel: NotificationChannel.EMAIL,
+        subject: '[VORBESTELLUNG] orderConfirmation subject',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        body: expect.stringContaining('========== VORBESTELLUNG =========='),
         type: NotificationType.ORDER_PLACED,
       }),
     );
@@ -559,7 +562,7 @@ describe('NotificationsService', () => {
         type: NotificationType.ORDER_PLACED,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         body: expect.stringMatching(
-          /\*\*\* VORBESTELLUNG \*\*\*[\s\S]*Geplant für:[\s\S]*Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30\.00 PKR[\s\S]*Servicegebühr: 10\.00 PKR[\s\S]*Zahlungsart: COD[\s\S]*Hinweis: Bitte klingeln/,
+          /VORBESTELLUNG[\s\S]*Geplant für:[\s\S]*Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30,00 PKR[\s\S]*Servicegebühr: 10,00 PKR[\s\S]*Zahlungsart: COD[\s\S]*Hinweis: Bitte klingeln/,
         ),
       }),
     );
@@ -570,9 +573,9 @@ describe('NotificationsService', () => {
         locale: 'de',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         variables: expect.objectContaining({
-          items: '2 × Pizza (Groß) — 400.00 PKR',
-          subtotal: '400.00',
-          totalAmount: '450.00',
+          items: '2 × Pizza (Groß) — 400,00 PKR',
+          subtotal: '400,00',
+          totalAmount: '450,00',
         }),
       }),
     );
@@ -585,6 +588,7 @@ describe('NotificationsService', () => {
       paymentStatus: 'PENDING',
       totalAmount: 450,
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
+      source: 'STOREFRONT',
     });
   });
 
@@ -649,6 +653,71 @@ describe('NotificationsService', () => {
       'guest.customer@example.com',
       expect.any(String),
       expect.any(String),
+    );
+  });
+
+  it('keeps POS-created orders quiet for restaurant staff while emailing the customer', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'pos-order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'guest-1',
+      status: 'PLACED',
+      orderType: 'PICKUP',
+      subtotal: 12,
+      taxAmount: 0,
+      deliveryFee: 0,
+      discountAmount: 0,
+      totalAmount: 12,
+      paymentStatus: 'PENDING',
+      createdAt: new Date('2026-08-07T09:00:00.000Z'),
+      customer: {
+        email: 'guest-1@guest.deliveryways.local',
+        isGuest: true,
+        profile: {
+          firstName: 'Walk-in',
+          metadata: {
+            guestContact: { email: 'pos.customer@example.com' },
+          },
+        },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+        settings: { newOrderNotificationEmail: 'orders@example.com' },
+      },
+      restaurant: { settings: null },
+      items: [],
+    });
+    notificationsRepository.create.mockImplementation(
+      (input: { recipientEmail?: string | null }) =>
+        Promise.resolve({
+          id: 'pos-customer-email-1',
+          recipientEmail: input.recipientEmail ?? null,
+          subject: 'subject',
+          body: 'body',
+        }),
+    );
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+    mailerService.sendEmail.mockResolvedValue(undefined);
+
+    await service.notifyOrderPlaced('pos-order-1', {
+      source: 'POS',
+      notifyRestaurant: false,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(notificationsRepository.create).toHaveBeenCalledTimes(1);
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'pos.customer@example.com',
+      }),
+    );
+    expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'pos-order-1', source: 'POS' }),
     );
   });
 

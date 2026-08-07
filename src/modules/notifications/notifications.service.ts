@@ -285,7 +285,13 @@ export class NotificationsService {
     });
   }
 
-  async notifyOrderPlaced(orderId: string): Promise<void> {
+  async notifyOrderPlaced(
+    orderId: string,
+    options: {
+      source?: 'STOREFRONT' | 'POS';
+      notifyRestaurant?: boolean;
+    } = {},
+  ): Promise<void> {
     const order =
       await this.notificationsRepository.findOrderForNotification(orderId);
 
@@ -298,10 +304,17 @@ export class NotificationsService {
 
     const restaurantLocale =
       await this.mailerService.resolveTransactionalLocale();
+    const subjectPrefix = order.isScheduled
+      ? restaurantLocale === 'de'
+        ? 'VORBESTELLUNG'
+        : 'PRE-ORDER'
+      : restaurantLocale === 'de'
+        ? 'SOFORT'
+        : 'ASAP';
     const subject =
       restaurantLocale === 'de'
-        ? `Neue Bestellung ${order.id}`
-        : `New order ${order.id}`;
+        ? `[${subjectPrefix}] Neue Bestellung ${order.id}`
+        : `[${subjectPrefix}] New order ${order.id}`;
     const summaryBody =
       restaurantLocale === 'de'
         ? `${order.branch.name} hat eine neue Bestellung über ${Number(order.totalAmount).toFixed(2)} ${currency} erhalten.`
@@ -318,16 +331,18 @@ export class NotificationsService {
       totalAmount: Number(order.totalAmount),
       customerId: order.customerId,
     };
-    await this.createAdminInAppNotification({
-      tenantId: order.tenantId,
-      restaurantId: order.restaurantId,
-      branchId: order.branchId,
-      orderId: order.id,
-      type: NotificationType.ORDER_PLACED,
-      subject,
-      body: summaryBody,
-      payload,
-    });
+    if (options.notifyRestaurant !== false) {
+      await this.createAdminInAppNotification({
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
+        orderId: order.id,
+        type: NotificationType.ORDER_PLACED,
+        subject,
+        body: summaryBody,
+        payload,
+      });
+    }
 
     this.notificationsRealtimeService?.emitOrderCreated({
       id: order.id,
@@ -338,56 +353,112 @@ export class NotificationsService {
       paymentStatus: order.paymentStatus,
       totalAmount: Number(order.totalAmount),
       createdAt: order.createdAt,
+      source: options.source ?? 'STOREFRONT',
     });
 
-    const customerEmailTask = (async () => {
-      const customerLocale =
-        await this.mailerService.resolveTransactionalLocale(
-          this.mailerService.resolveProfileLocale(
-            order.customer.profile?.metadata,
-          ),
-        );
-      const customerEmail = await this.mailerService.renderTransactionalEmail({
-        template: 'orderConfirmation',
-        locale: customerLocale,
-        variables: {
-          customerName: order.customer.profile?.firstName ?? '',
-          orderNumber: order.id,
-          branchName: order.branch.name,
-          orderType: this.localizeOrderType(order.orderType, customerLocale),
-          items: (order.items ?? [])
-            .map(
-              (item) =>
-                `${item.quantity} × ${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} — ${Number(item.lineTotal).toFixed(2)} ${currency}`,
-            )
-            .join('\n'),
-          subtotal: Number(order.subtotal).toFixed(2),
-          taxAmount: Number(order.taxAmount).toFixed(2),
-          deliveryFee: Number(order.deliveryFee).toFixed(2),
-          discountAmount: Number(order.discountAmount).toFixed(2),
-          totalAmount: Number(order.totalAmount).toFixed(2),
-          currency,
-        },
-      });
+    const customerEmailTask = this.isDeliverableEmail(customerRecipientEmail)
+      ? (async () => {
+          const customerLocale =
+            await this.mailerService.resolveTransactionalLocale(
+              this.mailerService.resolveProfileLocale(
+                order.customer.profile?.metadata,
+              ),
+            );
+          const formatCustomerAmount = (value: unknown) =>
+            new Intl.NumberFormat(customerLocale === 'de' ? 'de-DE' : 'en-GB', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }).format(Number(value ?? 0));
+          const customerEmail =
+            await this.mailerService.renderTransactionalEmail({
+              template: 'orderConfirmation',
+              locale: customerLocale,
+              variables: {
+                customerName: order.customer.profile?.firstName ?? '',
+                orderNumber: order.id,
+                branchName: order.branch.name,
+                orderType: this.localizeOrderType(
+                  order.orderType,
+                  customerLocale,
+                ),
+                items: (order.items ?? [])
+                  .map(
+                    (item) =>
+                      `${item.quantity} × ${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} — ${formatCustomerAmount(item.lineTotal)} ${currency}`,
+                  )
+                  .join('\n'),
+                subtotal: formatCustomerAmount(order.subtotal),
+                taxAmount: formatCustomerAmount(order.taxAmount),
+                deliveryFee: formatCustomerAmount(order.deliveryFee),
+                discountAmount: formatCustomerAmount(order.discountAmount),
+                totalAmount: formatCustomerAmount(order.totalAmount),
+                currency,
+              },
+            });
+          const customerSubjectPrefix = order.isScheduled
+            ? customerLocale === 'de'
+              ? 'VORBESTELLUNG'
+              : 'PRE-ORDER'
+            : customerLocale === 'de'
+              ? 'SOFORT'
+              : 'ASAP';
+          const scheduledFor = order.orderTime
+            ? new Intl.DateTimeFormat(
+                customerLocale === 'de' ? 'de-DE' : 'en-GB',
+                { dateStyle: 'short', timeStyle: 'short' },
+              ).format(order.orderTime)
+            : null;
+          const customerBanner = order.isScheduled
+            ? `========== ${customerSubjectPrefix} ==========\n${customerLocale === 'de' ? 'Geplant für' : 'Scheduled for'}: ${scheduledFor ?? '-'}`
+            : `========== ${customerSubjectPrefix} ==========`;
+          const customerBody = [
+            customerBanner,
+            '',
+            ...customerEmail.body.split('\n').filter((line) => {
+              const normalizedLine = line.trim();
+              if (
+                Number(order.taxAmount ?? 0) === 0 &&
+                /^(Steuern|Tax):/i.test(normalizedLine)
+              ) {
+                return false;
+              }
+              if (
+                Number(order.deliveryFee ?? 0) === 0 &&
+                /^(Liefergebühr|Delivery fee):/i.test(normalizedLine)
+              ) {
+                return false;
+              }
+              if (
+                Number(order.discountAmount ?? 0) === 0 &&
+                /^(Rabatt|Discount):/i.test(normalizedLine)
+              ) {
+                return false;
+              }
+              return true;
+            }),
+          ].join('\n');
 
-      await this.createAndDispatchCustomerEmail({
-        tenantId: order.tenantId,
-        restaurantId: order.restaurantId,
-        branchId: order.branchId,
-        orderId: order.id,
-        recipientUserId: order.customerId,
-        recipientEmail: customerRecipientEmail,
-        type: NotificationType.ORDER_PLACED,
-        subject: customerEmail.subject,
-        body: customerEmail.body,
-        payload: {
-          orderId: order.id,
-          branchName: order.branch.name,
-          totalAmount: Number(order.totalAmount),
-        },
-      });
-    })();
-    const emailTasks: Array<Promise<unknown>> = [customerEmailTask];
+          await this.createAndDispatchCustomerEmail({
+            tenantId: order.tenantId,
+            restaurantId: order.restaurantId,
+            branchId: order.branchId,
+            orderId: order.id,
+            recipientUserId: order.customerId,
+            recipientEmail: customerRecipientEmail,
+            type: NotificationType.ORDER_PLACED,
+            subject: `[${customerSubjectPrefix}] ${customerEmail.subject}`,
+            body: customerBody,
+            payload: {
+              orderId: order.id,
+              branchName: order.branch.name,
+              totalAmount: Number(order.totalAmount),
+            },
+          });
+        })()
+      : null;
+    const emailTasks: Array<Promise<unknown>> = customerEmailTask
+      ? [customerEmailTask]
+      : [];
     const restaurantEmail = this.resolveNewOrderRestaurantEmail(
       order.branch.settings,
       order.restaurant.settings,
@@ -397,6 +468,7 @@ export class NotificationsService {
     const normalizedRestaurantEmail = restaurantEmail?.trim().toLowerCase();
 
     if (
+      options.notifyRestaurant !== false &&
       restaurantEmail &&
       normalizedRestaurantEmail !== normalizedCustomerEmail
     ) {
@@ -970,7 +1042,10 @@ export class NotificationsService {
     const label = (english: string, german: string) =>
       isGerman ? german : english;
     const money = (value: unknown) =>
-      `${Number(value ?? 0).toFixed(2)} ${currency}`;
+      `${new Intl.NumberFormat('de-DE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(value ?? 0))} ${currency}`;
     const formatDate = (value: Date | null | undefined) =>
       value
         ? new Intl.DateTimeFormat(isGerman ? 'de-DE' : 'en-GB', {
@@ -978,10 +1053,12 @@ export class NotificationsService {
             timeStyle: 'short',
           }).format(value)
         : label('Not scheduled', 'Nicht vorbestellt');
-    const customerName = [
-      order.customer.profile?.firstName,
-      order.customer.profile?.lastName,
-    ]
+    const customerLastName =
+      order.customer.isGuest &&
+      order.customer.profile?.lastName?.trim().toLowerCase() === 'customer'
+        ? null
+        : order.customer.profile?.lastName;
+    const customerName = [order.customer.profile?.firstName, customerLastName]
       .filter(Boolean)
       .join(' ');
     const address = order.deliveryAddress
@@ -1012,22 +1089,52 @@ export class NotificationsService {
       ];
     });
     const feeLines = [
-      `${label('Subtotal', 'Zwischensumme')}: ${money(order.subtotal)}`,
-      `${label('Tax', 'Steuer')}: ${money(order.taxAmount)}`,
-      `${label('Delivery fee', 'Liefergebühr')}: ${money(order.deliveryFee)}`,
-      `${label('Service charge', 'Servicegebühr')}: ${money(order.serviceChargeAmount)}`,
-      `${label('Tip', 'Trinkgeld')}: ${money(order.tipAmount)}`,
-      `${label('Discount', 'Rabatt')}: -${money(order.discountAmount)}`,
-      `${label('Loyalty discount', 'Treuerabatt')}: -${money(order.loyaltyDiscountAmount)}`,
-      `${label('Wallet applied', 'Wallet-Guthaben')}: -${money(order.walletAppliedAmount)}`,
-    ];
+      {
+        label: label('Subtotal', 'Zwischensumme'),
+        value: order.subtotal,
+        always: true,
+      },
+      { label: label('Tax', 'Steuer'), value: order.taxAmount },
+      {
+        label: label('Delivery fee', 'Liefergebühr'),
+        value: order.deliveryFee,
+      },
+      {
+        label: label('Service charge', 'Servicegebühr'),
+        value: order.serviceChargeAmount,
+      },
+      { label: label('Tip', 'Trinkgeld'), value: order.tipAmount },
+      {
+        label: label('Discount', 'Rabatt'),
+        value: order.discountAmount,
+        subtract: true,
+      },
+      {
+        label: label('Loyalty discount', 'Treuerabatt'),
+        value: order.loyaltyDiscountAmount,
+        subtract: true,
+      },
+      {
+        label: label('Wallet applied', 'Wallet-Guthaben'),
+        value: order.walletAppliedAmount,
+        subtract: true,
+      },
+    ]
+      .filter((line) => line.always || Number(line.value ?? 0) !== 0)
+      .map(
+        (line) =>
+          `${line.label}: ${line.subtract ? '-' : ''}${money(line.value)}`,
+      );
     const fulfillmentBanner = order.isScheduled
       ? [
-          `*** ${label('PRE-ORDER', 'VORBESTELLUNG')} ***`,
+          `========== ${label('PRE-ORDER', 'VORBESTELLUNG')} ==========`,
           `${label('Scheduled for', 'Geplant für')}: ${formatDate(order.orderTime)}`,
           '',
         ]
-      : [`*** ${label('IMMEDIATE ORDER', 'SOFORTBESTELLUNG')} ***`, ''];
+      : [
+          `========== ${label('ASAP / IMMEDIATE ORDER', 'SOFORTBESTELLUNG')} ==========`,
+          '',
+        ];
 
     return [
       ...fulfillmentBanner,
@@ -1090,6 +1197,10 @@ export class NotificationsService {
     return typeof email === 'string' && email.trim()
       ? email.trim().toLowerCase()
       : accountEmail;
+  }
+
+  private isDeliverableEmail(email: string) {
+    return !/@guest\.deliveryways?(?:\.local)?$/i.test(email.trim());
   }
 
   private readModifierLines(value: Prisma.JsonValue | null): string[] {

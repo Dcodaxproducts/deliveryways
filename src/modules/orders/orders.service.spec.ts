@@ -5628,6 +5628,7 @@ describe('OrdersService - wallet payment', () => {
       create: jest.fn().mockResolvedValue({
         id: 'order-1',
         tenantId: 'tenant-1',
+        status: OrderStatus.PLACED,
         subtotal: new Prisma.Decimal(500),
         taxAmount: new Prisma.Decimal(0),
         deliveryFee: new Prisma.Decimal(0),
@@ -5666,7 +5667,9 @@ describe('OrdersService - wallet payment', () => {
     };
     const loyaltyWalletService = {
       applyOrderBenefits: jest.fn(),
-      awardPointsForPaidOrder: jest.fn(),
+      awardPointsForPaidOrder: jest
+        .fn()
+        .mockRejectedValue(new Error('loyalty database unavailable')),
     };
     const globalSettingsService = {
       getDefaultCurrencyCode: jest.fn().mockResolvedValue('PKR'),
@@ -5674,11 +5677,12 @@ describe('OrdersService - wallet payment', () => {
         .fn()
         .mockResolvedValue([PaymentMethod.CARD_ON_DELIVERY]),
     };
+    const notifyOrderPlaced = jest.fn();
     const service = new OrdersService(
       prisma as never,
       ordersRepository as never,
       { registerUsage: jest.fn() } as never,
-      { notifyOrderPlaced: jest.fn() } as never,
+      { notifyOrderPlaced } as never,
       {} as never,
       {
         emitOrderCreated: jest.fn(),
@@ -5688,6 +5692,14 @@ describe('OrdersService - wallet payment', () => {
       loyaltyWalletService as never,
       globalSettingsService as never,
     );
+    jest
+      .spyOn(
+        service as unknown as {
+          emitTrackingUpdate: (orderId: string) => Promise<void>;
+        },
+        'emitTrackingUpdate',
+      )
+      .mockResolvedValue(undefined);
 
     jest
       .spyOn(
@@ -5728,7 +5740,7 @@ describe('OrdersService - wallet payment', () => {
         couponId: undefined,
       });
 
-    await service.create(
+    const result = await service.create(
       {
         uid: 'customer-1',
         tid: 'tenant-1',
@@ -5744,6 +5756,8 @@ describe('OrdersService - wallet payment', () => {
       },
     );
 
+    expect(result.data.id).toBe('order-1');
+
     expect(
       globalSettingsService.getEffectiveCheckoutPaymentMethods,
     ).toHaveBeenCalled();
@@ -5753,6 +5767,10 @@ describe('OrdersService - wallet payment', () => {
       }),
       expect.anything(),
     );
+    expect(notifyOrderPlaced).toHaveBeenCalledWith('order-1', {
+      source: 'STOREFRONT',
+      notifyRestaurant: true,
+    });
   });
 
   it('keeps online card orders payment-pending until Stripe succeeds', async () => {

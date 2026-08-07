@@ -141,13 +141,13 @@ export class GuestOrderContactDto {
   @Matches(/^(?!.*@guest\.deliveryways?(?:\.local)?$).+$/i)
   email!: string;
 
-  @ApiProperty({ example: '+49 151 23456789' })
+  @ApiPropertyOptional({ example: '+49 151 23456789' })
+  @IsOptional()
   @Transform(({ value }) => trimStringValue(value as unknown))
   @IsString()
-  @IsNotEmpty()
   @MaxLength(30)
   @Matches(/^(?=(?:\D*\d){7,15}\D*$)[+()\d\s./-]+$/)
-  phone!: string;
+  phone?: string;
 
   @ApiProperty({
     description:
