@@ -20,3 +20,4 @@ export {
 export { UpdateBranchDeliveryTimeDto } from './delivery-time.dto';
 export { CleanupOrphanBranchDto } from './cleanup-orphan-branch.dto';
 export { UpdateBranchTemporaryClosureDto } from './temporary-closure.dto';
+export { UpdateBranchNotificationSettingsDto } from './branch-notification-settings.dto';

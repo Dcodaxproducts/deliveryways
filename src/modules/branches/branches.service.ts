@@ -28,6 +28,7 @@ import {
   UpdateBranchDeliveryTimeDto,
   UpdateBranchImagesDto,
   UpdateBranchHolidayOpeningHoursDto,
+  UpdateBranchNotificationSettingsDto,
   UpdateBranchOpeningHoursDto,
   UpdateBranchTemporaryClosureDto,
 } from './dto';
@@ -1127,6 +1128,59 @@ export class BranchesService {
         this.withVisibleBranchSettings(user, data),
       ),
       message: 'Branch updated successfully',
+    };
+  }
+
+  async updateNotificationSettings(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateBranchNotificationSettingsDto,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    await this.assertBranchWriteAccess(user, branch);
+
+    const emailAddress = dto.emailAddress?.trim().toLowerCase();
+    if (dto.enabled && !emailAddress) {
+      throw new BadRequestException(
+        'Order notification email is required when notifications are enabled',
+      );
+    }
+
+    const settings = this.readSettings(branch.settings);
+    const notificationSettings = this.readSettings(
+      settings.notificationSettings,
+    );
+    const notificationTypes = this.readSettings(
+      notificationSettings.notificationTypes,
+    );
+    const newOrder = this.readSettings(notificationTypes.newOrder);
+    const nextSettings = {
+      ...settings,
+      notificationSettings: {
+        ...notificationSettings,
+        ...(emailAddress !== undefined ? { emailAddress } : {}),
+        notificationTypes: {
+          ...notificationTypes,
+          newOrder: {
+            ...newOrder,
+            email: dto.enabled,
+          },
+        },
+      },
+    };
+
+    const data = await this.branchesRepository.update(id, {
+      settings: nextSettings as unknown as Prisma.InputJsonValue,
+    });
+
+    return {
+      data: this.withVisibleBranchSettings(user, data),
+      message: 'Branch notification settings updated successfully',
     };
   }
 

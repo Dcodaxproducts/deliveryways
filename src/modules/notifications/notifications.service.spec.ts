@@ -448,18 +448,36 @@ describe('NotificationsService', () => {
       customerId: 'user-1',
       status: 'PLACED',
       orderType: 'DELIVERY',
+      paymentMethod: 'COD',
+      orderTime: new Date('2026-07-24T18:30:00.000Z'),
+      isScheduled: true,
       subtotal: 400,
       taxAmount: 20,
       deliveryFee: 30,
+      serviceChargeAmount: 10,
+      tipAmount: 5,
       discountAmount: 0,
+      loyaltyDiscountAmount: 0,
+      walletAppliedAmount: 0,
       totalAmount: 450,
+      customerNote: 'Bitte klingeln',
       paymentStatus: 'PENDING',
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
       customer: {
         email: 'customer@example.com',
         profile: {
           firstName: 'Bilal',
+          lastName: 'Shah',
+          phone: '+49 123',
         },
+      },
+      deliveryAddress: {
+        street: 'Hauptstraße 1',
+        area: null,
+        postalCode: '10115',
+        city: 'Berlin',
+        state: 'Berlin',
+        country: 'DE',
       },
       branch: {
         id: 'branch-1',
@@ -484,6 +502,10 @@ describe('NotificationsService', () => {
           variationName: 'Groß',
           quantity: 2,
           lineTotal: 400,
+          note: 'Ohne Zwiebeln',
+          snapshotModifiers: {
+            modifiers: [{ name: 'Extra Käse', quantity: 2 }],
+          },
         },
       ],
     });
@@ -535,6 +557,10 @@ describe('NotificationsService', () => {
         channel: NotificationChannel.EMAIL,
         recipientEmail: 'orders@restaurant.example',
         type: NotificationType.ORDER_PLACED,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        body: expect.stringMatching(
+          /Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30\.00 PKR[\s\S]*Servicegebühr: 10\.00 PKR[\s\S]*Zahlungsart: COD[\s\S]*Hinweis: Bitte klingeln/,
+        ),
       }),
     );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);

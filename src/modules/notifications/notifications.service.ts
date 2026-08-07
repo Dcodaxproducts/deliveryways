@@ -57,6 +57,10 @@ const DELIVERYMAN_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.ORDER_CANCELLED,
 ];
 
+type OrderForNotification = NonNullable<
+  Awaited<ReturnType<NotificationsRepository['findOrderForNotification']>>
+>;
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -298,10 +302,15 @@ export class NotificationsService {
       restaurantLocale === 'de'
         ? `Neue Bestellung ${order.id}`
         : `New order ${order.id}`;
-    const body =
+    const summaryBody =
       restaurantLocale === 'de'
         ? `${order.branch.name} hat eine neue Bestellung über ${Number(order.totalAmount).toFixed(2)} ${currency} erhalten.`
         : `${order.branch.name} received a new order for ${Number(order.totalAmount).toFixed(2)} ${currency}.`;
+    const restaurantEmailBody = this.buildRestaurantOrderEmail(
+      order,
+      restaurantLocale,
+      currency,
+    );
     const payload = {
       orderId: order.id,
       branchName: order.branch.name,
@@ -315,7 +324,7 @@ export class NotificationsService {
       orderId: order.id,
       type: NotificationType.ORDER_PLACED,
       subject,
-      body,
+      body: summaryBody,
       payload,
     });
 
@@ -398,7 +407,7 @@ export class NotificationsService {
           recipientEmail: restaurantEmail,
           type: NotificationType.ORDER_PLACED,
           subject,
-          body,
+          body: restaurantEmailBody,
           payload,
         }),
       );
@@ -949,6 +958,130 @@ export class NotificationsService {
       this.readNewOrderEmail(branchSettings) ??
       this.readNewOrderEmail(restaurantSettings)
     );
+  }
+
+  private buildRestaurantOrderEmail(
+    order: OrderForNotification,
+    locale: 'de' | 'en',
+    currency: string,
+  ): string {
+    const isGerman = locale === 'de';
+    const label = (english: string, german: string) =>
+      isGerman ? german : english;
+    const money = (value: unknown) =>
+      `${Number(value ?? 0).toFixed(2)} ${currency}`;
+    const formatDate = (value: Date | null | undefined) =>
+      value
+        ? new Intl.DateTimeFormat(isGerman ? 'de-DE' : 'en-GB', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }).format(value)
+        : label('Not scheduled', 'Nicht vorbestellt');
+    const customerName = [
+      order.customer.profile?.firstName,
+      order.customer.profile?.lastName,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const address = order.deliveryAddress
+      ? [
+          order.deliveryAddress.street,
+          order.deliveryAddress.area,
+          [order.deliveryAddress.postalCode, order.deliveryAddress.city]
+            .filter(Boolean)
+            .join(' '),
+          order.deliveryAddress.state,
+          order.deliveryAddress.country,
+        ]
+          .filter(Boolean)
+          .join(', ')
+      : label('Not provided', 'Nicht angegeben');
+    const itemLines = (order.items ?? []).flatMap((item) => {
+      const variation = item.variationName ? ` (${item.variationName})` : '';
+      const modifiers = this.readModifierLines(item.snapshotModifiers);
+
+      return [
+        `${item.quantity} × ${item.menuItemName}${variation} — ${money(item.lineTotal)}`,
+        ...modifiers.map((modifier) => `  + ${modifier}`),
+        ...(item.note
+          ? [
+              `  ${label('Special instructions', 'Sonderwünsche')}: ${item.note}`,
+            ]
+          : []),
+      ];
+    });
+    const feeLines = [
+      `${label('Subtotal', 'Zwischensumme')}: ${money(order.subtotal)}`,
+      `${label('Tax', 'Steuer')}: ${money(order.taxAmount)}`,
+      `${label('Delivery fee', 'Liefergebühr')}: ${money(order.deliveryFee)}`,
+      `${label('Service charge', 'Servicegebühr')}: ${money(order.serviceChargeAmount)}`,
+      `${label('Tip', 'Trinkgeld')}: ${money(order.tipAmount)}`,
+      `${label('Discount', 'Rabatt')}: -${money(order.discountAmount)}`,
+      `${label('Loyalty discount', 'Treuerabatt')}: -${money(order.loyaltyDiscountAmount)}`,
+      `${label('Wallet applied', 'Wallet-Guthaben')}: -${money(order.walletAppliedAmount)}`,
+    ];
+
+    return [
+      `${label('New order', 'Neue Bestellung')} ${order.id}`,
+      `${label('Branch', 'Filiale')}: ${order.branch.name}`,
+      `${label('Order type', 'Bestellart')}: ${this.localizeOrderType(order.orderType, locale)}`,
+      '',
+      label('Customer details', 'Kundendaten'),
+      `${label('Name', 'Name')}: ${customerName || label('Not provided', 'Nicht angegeben')}`,
+      `${label('Email', 'E-Mail')}: ${order.customer.email}`,
+      `${label('Phone', 'Telefon')}: ${order.customer.profile?.phone || label('Not provided', 'Nicht angegeben')}`,
+      `${label('Delivery address', 'Lieferadresse')}: ${address}`,
+      '',
+      `${label('Order date and time', 'Bestelldatum und -zeit')}: ${formatDate(order.createdAt)}`,
+      `${label('Pre-order date and time', 'Vorbestelldatum und -zeit')}: ${order.isScheduled ? formatDate(order.orderTime) : label('Not scheduled', 'Nicht vorbestellt')}`,
+      '',
+      label('Ordered items', 'Bestellte Artikel'),
+      ...(itemLines.length
+        ? itemLines
+        : [
+            label(
+              'No item details available',
+              'Keine Artikeldetails verfügbar',
+            ),
+          ]),
+      '',
+      ...feeLines,
+      `${label('Total amount', 'Gesamtbetrag')}: ${money(order.totalAmount)}`,
+      `${label('Payment method', 'Zahlungsart')}: ${order.paymentMethod}`,
+      `${label('Payment status', 'Zahlungsstatus')}: ${order.paymentStatus}`,
+      `${label('Note', 'Hinweis')}: ${order.customerNote || label('None', 'Keine')}`,
+    ].join('\n');
+  }
+
+  private readModifierLines(value: Prisma.JsonValue | null): string[] {
+    const values = Array.isArray(value)
+      ? value
+      : value && typeof value === 'object'
+        ? Object.values(value)
+        : [];
+
+    return values.flatMap((entry) => {
+      if (Array.isArray(entry)) {
+        return this.readModifierLines(entry);
+      }
+
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return [];
+      }
+
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      const quantity =
+        typeof entry.quantity === 'number' && entry.quantity > 1
+          ? ` × ${entry.quantity}`
+          : '';
+      const nested = Object.values(entry).flatMap((nestedValue) =>
+        nestedValue && typeof nestedValue === 'object'
+          ? this.readModifierLines(nestedValue as Prisma.JsonValue)
+          : [],
+      );
+
+      return [...(name ? [`${name}${quantity}`] : []), ...nested];
+    });
   }
 
   private readNewOrderEmail(settings: Prisma.JsonValue | null): string | null {

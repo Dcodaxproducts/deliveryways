@@ -29,6 +29,7 @@ import {
   UpdateBranchDeliveryHoursDto,
   UpdateBranchDeliveryTimeDto,
   UpdateBranchHolidayOpeningHoursDto,
+  UpdateBranchNotificationSettingsDto,
   UpdateBranchImagesDto,
   UpdateBranchOpeningHoursDto,
   UpdateBranchTemporaryClosureDto,
@@ -289,6 +290,23 @@ export class BranchesController {
     @Body() dto: UpdateBranchTemporaryClosureDto,
   ) {
     return this.branchesService.updateTemporaryClosure(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
+  )
+  @Patch(':id/notification-settings')
+  updateNotificationSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchNotificationSettingsDto,
+  ) {
+    return this.branchesService.updateNotificationSettings(user, id, dto);
   }
 
   @ApiBearerAuth()

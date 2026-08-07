@@ -130,6 +130,104 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
+  it('updates order notification settings without validating unrelated branch fields', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {
+        deliveryConfig: {
+          mode: 'POSTAL_CODE',
+          postalCodeRules: [],
+        },
+        notificationSettings: {
+          notificationTypes: {
+            newOrder: { sms: true },
+          },
+        },
+      },
+    });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      settings: {
+        notificationSettings: {
+          emailAddress: 'info@webandco.de',
+          notificationTypes: {
+            newOrder: { email: true, sms: true },
+          },
+        },
+      },
+    });
+
+    await expect(
+      service.updateNotificationSettings(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'branch-1',
+        {
+          emailAddress: ' Info@WebAndCo.de ',
+          enabled: true,
+        },
+      ),
+    ).resolves.toMatchObject({
+      data: {
+        settings: {
+          notificationSettings: {
+            emailAddress: 'info@webandco.de',
+          },
+        },
+      },
+    });
+
+    expect(repository.update).toHaveBeenCalledWith('branch-1', {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      settings: expect.objectContaining({
+        deliveryConfig: {
+          mode: 'POSTAL_CODE',
+          postalCodeRules: [],
+        },
+        notificationSettings: {
+          emailAddress: 'info@webandco.de',
+          notificationTypes: {
+            newOrder: { email: true, sms: true },
+          },
+        },
+      }),
+    });
+  });
+
+  it('rejects enabling order notifications without an email address', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {},
+    });
+
+    await expect(
+      service.updateNotificationSettings(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'branch-1',
+        { enabled: true },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
   it('allows branch admin to update assigned branch details', async () => {
     const { service, repository, prisma } = makeService();
     repository.findById.mockResolvedValue({

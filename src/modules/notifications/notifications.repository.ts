@@ -84,6 +84,7 @@ export class NotificationsRepository {
             profile: true,
           },
         },
+        deliveryAddress: true,
         deliveryman: {
           select: {
             id: true,
@@ -107,8 +108,11 @@ export class NotificationsRepository {
           select: {
             menuItemName: true,
             variationName: true,
+            unitPrice: true,
             quantity: true,
             lineTotal: true,
+            note: true,
+            snapshotModifiers: true,
           },
           orderBy: {
             createdAt: 'asc',
