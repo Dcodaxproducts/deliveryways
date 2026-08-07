@@ -559,7 +559,7 @@ describe('NotificationsService', () => {
         type: NotificationType.ORDER_PLACED,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         body: expect.stringMatching(
-          /Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30\.00 PKR[\s\S]*Servicegebühr: 10\.00 PKR[\s\S]*Zahlungsart: COD[\s\S]*Hinweis: Bitte klingeln/,
+          /\*\*\* VORBESTELLUNG \*\*\*[\s\S]*Geplant für:[\s\S]*Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30\.00 PKR[\s\S]*Servicegebühr: 10\.00 PKR[\s\S]*Zahlungsart: COD[\s\S]*Hinweis: Bitte klingeln/,
         ),
       }),
     );
@@ -586,6 +586,70 @@ describe('NotificationsService', () => {
       totalAmount: 450,
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
     });
+  });
+
+  it('sends a guest order confirmation to the checkout email', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'guest-order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'guest-1',
+      status: 'PLACED',
+      orderType: 'PICKUP',
+      subtotal: 12,
+      taxAmount: 0,
+      deliveryFee: 0,
+      discountAmount: 0,
+      totalAmount: 12,
+      paymentStatus: 'PENDING',
+      createdAt: new Date('2026-08-07T09:00:00.000Z'),
+      customer: {
+        email: 'guest-1@guest.local',
+        isGuest: true,
+        profile: {
+          firstName: 'Guest',
+          metadata: {
+            guestContact: { email: ' Guest.Customer@Example.com ' },
+          },
+        },
+      },
+      branch: {
+        id: 'branch-1',
+        name: 'Main Branch',
+        settings: null,
+      },
+      restaurant: { settings: null },
+      items: [],
+    });
+    notificationsRepository.create.mockImplementation(
+      (input: { recipientEmail?: string | null }) =>
+        Promise.resolve({
+          id: 'guest-confirmation-1',
+          recipientEmail: input.recipientEmail ?? null,
+          subject: 'subject',
+          body: 'body',
+        }),
+    );
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+    mailerService.sendEmail.mockResolvedValue(undefined);
+
+    await service.notifyOrderPlaced('guest-order-1');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'guest.customer@example.com',
+        type: NotificationType.ORDER_PLACED,
+      }),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'guest.customer@example.com',
+      expect.any(String),
+      expect.any(String),
+    );
   });
 
   it('returns from order placement notification without waiting for SMTP', async () => {

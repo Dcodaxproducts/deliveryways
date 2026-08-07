@@ -311,6 +311,7 @@ export class NotificationsService {
       restaurantLocale,
       currency,
     );
+    const customerRecipientEmail = this.resolveCustomerEmail(order.customer);
     const payload = {
       orderId: order.id,
       branchName: order.branch.name,
@@ -375,7 +376,7 @@ export class NotificationsService {
         branchId: order.branchId,
         orderId: order.id,
         recipientUserId: order.customerId,
-        recipientEmail: order.customer.email,
+        recipientEmail: customerRecipientEmail,
         type: NotificationType.ORDER_PLACED,
         subject: customerEmail.subject,
         body: customerEmail.body,
@@ -392,7 +393,7 @@ export class NotificationsService {
       order.restaurant.settings,
     );
 
-    const normalizedCustomerEmail = order.customer.email.trim().toLowerCase();
+    const normalizedCustomerEmail = customerRecipientEmail.toLowerCase();
     const normalizedRestaurantEmail = restaurantEmail?.trim().toLowerCase();
 
     if (
@@ -468,7 +469,7 @@ export class NotificationsService {
       branchId: order.branchId,
       orderId: order.id,
       recipientUserId: order.customerId,
-      recipientEmail: order.customer.email,
+      recipientEmail: this.resolveCustomerEmail(order.customer),
       type,
       subject: customerEmail.subject,
       body: customerEmail.body,
@@ -559,7 +560,7 @@ export class NotificationsService {
       orderId: payment.orderId,
       paymentTransactionId: payment.id,
       recipientUserId: payment.order.customerId,
-      recipientEmail: payment.order.customer.email,
+      recipientEmail: this.resolveCustomerEmail(payment.order.customer),
       type: NotificationType.PAYMENT_ATTEMPT_CREATED,
       subject: customerEmail.subject,
       body: customerEmail.body,
@@ -615,7 +616,7 @@ export class NotificationsService {
       orderId: payment.orderId,
       paymentTransactionId: payment.id,
       recipientUserId: payment.order.customerId,
-      recipientEmail: payment.order.customer.email,
+      recipientEmail: this.resolveCustomerEmail(payment.order.customer),
       type,
       subject: customerEmail.subject,
       body: customerEmail.body,
@@ -1020,15 +1021,23 @@ export class NotificationsService {
       `${label('Loyalty discount', 'Treuerabatt')}: -${money(order.loyaltyDiscountAmount)}`,
       `${label('Wallet applied', 'Wallet-Guthaben')}: -${money(order.walletAppliedAmount)}`,
     ];
+    const fulfillmentBanner = order.isScheduled
+      ? [
+          `*** ${label('PRE-ORDER', 'VORBESTELLUNG')} ***`,
+          `${label('Scheduled for', 'Geplant für')}: ${formatDate(order.orderTime)}`,
+          '',
+        ]
+      : [`*** ${label('IMMEDIATE ORDER', 'SOFORTBESTELLUNG')} ***`, ''];
 
     return [
+      ...fulfillmentBanner,
       `${label('New order', 'Neue Bestellung')} ${order.id}`,
       `${label('Branch', 'Filiale')}: ${order.branch.name}`,
       `${label('Order type', 'Bestellart')}: ${this.localizeOrderType(order.orderType, locale)}`,
       '',
       label('Customer details', 'Kundendaten'),
       `${label('Name', 'Name')}: ${customerName || label('Not provided', 'Nicht angegeben')}`,
-      `${label('Email', 'E-Mail')}: ${order.customer.email}`,
+      `${label('Email', 'E-Mail')}: ${this.resolveCustomerEmail(order.customer)}`,
       `${label('Phone', 'Telefon')}: ${order.customer.profile?.phone || label('Not provided', 'Nicht angegeben')}`,
       `${label('Delivery address', 'Lieferadresse')}: ${address}`,
       '',
@@ -1051,6 +1060,36 @@ export class NotificationsService {
       `${label('Payment status', 'Zahlungsstatus')}: ${order.paymentStatus}`,
       `${label('Note', 'Hinweis')}: ${order.customerNote || label('None', 'Keine')}`,
     ].join('\n');
+  }
+
+  private resolveCustomerEmail(customer: {
+    email: string;
+    isGuest: boolean;
+    profile: { metadata: Prisma.JsonValue | null } | null;
+  }): string {
+    const accountEmail = customer.email.trim().toLowerCase();
+    if (!customer.isGuest) {
+      return accountEmail;
+    }
+
+    const metadata = customer.profile?.metadata;
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return accountEmail;
+    }
+
+    const guestContact = (metadata as { guestContact?: unknown }).guestContact;
+    if (
+      !guestContact ||
+      typeof guestContact !== 'object' ||
+      Array.isArray(guestContact)
+    ) {
+      return accountEmail;
+    }
+
+    const email = (guestContact as { email?: unknown }).email;
+    return typeof email === 'string' && email.trim()
+      ? email.trim().toLowerCase()
+      : accountEmail;
   }
 
   private readModifierLines(value: Prisma.JsonValue | null): string[] {
