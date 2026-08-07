@@ -3184,6 +3184,14 @@ export class CustomerAppService {
         happyHour: variationHappyHour ?? null,
       };
     });
+    const supportsSplitPizza = this.readStringArray(item.dietaryFlags).includes(
+      '__SPLIT_PIZZA_ENABLED__',
+    );
+    const hasCustomizations =
+      variations.length > 0 ||
+      (item.modifierLinks?.length ?? 0) > 0 ||
+      (item.modifierPriceOverrides?.length ?? 0) > 0 ||
+      supportsSplitPizza;
 
     return {
       id: item.id,
@@ -3209,6 +3217,8 @@ export class CustomerAppService {
           }
         : null,
       variations,
+      hasCustomizations,
+      supportsSplitPizza,
       isActive: true,
       isAvailable: branchOverride?.isAvailable ?? true,
     };

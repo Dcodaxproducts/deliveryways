@@ -1142,6 +1142,10 @@ describe('CustomerAppService', () => {
         price: new Prisma.Decimal(899),
       }),
     ]);
+    expect(result.data[0]).toMatchObject({
+      hasCustomizations: true,
+      supportsSplitPizza: false,
+    });
   });
 
   it('returns compact public item cards for menu browsing', async () => {
