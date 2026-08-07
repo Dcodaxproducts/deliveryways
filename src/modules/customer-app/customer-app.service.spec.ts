@@ -1208,6 +1208,50 @@ describe('CustomerAppService', () => {
     ]);
   });
 
+  it('marks inherited category modifiers as customization on compact cards', async () => {
+    const { service, repository } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'DeliveryWays Kitchen',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      coverImage: null,
+      tagline: 'Fresh food fast',
+      bio: null,
+      supportContact: null,
+      settings: {},
+    });
+    repository.listPublicMenuItems.mockResolvedValue({
+      items: [
+        {
+          ...itemFixture,
+          variationPriceOverrides: [],
+          modifierLinks: [],
+          modifierPriceOverrides: [],
+          category: {
+            ...itemFixture.category,
+            _count: { modifierLinks: 1 },
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await service.listItems({
+      restaurantId: 'restaurant-1',
+      categoryId: 'category-1',
+      page: 1,
+      limit: 12,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(result.data[0]).toMatchObject({
+      id: 'item-1',
+      hasCustomizations: true,
+    });
+  });
+
   it('omits exhausted auto-apply promotions from public item promotion payloads', async () => {
     const { service, repository, couponsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({

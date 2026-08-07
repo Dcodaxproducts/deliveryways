@@ -389,6 +389,9 @@ export class CustomerAppRepository {
             },
             orderBy: [{ sortOrder: 'asc' }],
           },
+          _count: {
+            select: { modifierLinks: true },
+          },
           menuLinks: {
             include: {
               restaurantMenu: {
@@ -396,6 +399,12 @@ export class CustomerAppRepository {
               },
             },
           },
+        },
+      },
+      _count: {
+        select: {
+          modifierLinks: true,
+          modifierPriceOverrides: true,
         },
       },
       categoryLinks: {

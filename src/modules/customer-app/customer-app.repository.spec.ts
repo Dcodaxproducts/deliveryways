@@ -22,7 +22,13 @@ type CompactMenuItemInclude = {
       variations: {
         select: Record<string, boolean>;
       };
+      _count: {
+        select: Record<string, boolean>;
+      };
     };
+  };
+  _count: {
+    select: Record<string, boolean>;
   };
   variationPriceOverrides: {
     select: {
@@ -299,7 +305,7 @@ describe('CustomerAppRepository', () => {
     ]);
   });
 
-  it('loads variation summaries without modifier relation graphs', async () => {
+  it('loads lightweight customization signals without modifier relation graphs', async () => {
     const findMany = jest
       .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
       .mockResolvedValue([]);
@@ -341,7 +347,14 @@ describe('CustomerAppRepository', () => {
         price: true,
       }),
     );
-    expect(include).not.toHaveProperty('modifierLinks');
-    expect(include).not.toHaveProperty('modifierPriceOverrides');
+    expect(include.category.select._count).toEqual({
+      select: { modifierLinks: true },
+    });
+    expect(include._count).toEqual({
+      select: {
+        modifierLinks: true,
+        modifierPriceOverrides: true,
+      },
+    });
   });
 });

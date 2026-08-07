@@ -2935,6 +2935,9 @@ export class CustomerAppService {
         id: string;
         name: string;
         imageUrl?: string | null;
+        _count?: {
+          modifierLinks: number;
+        };
         variations?: PublicMenuItemVariation[];
         variationLinks?: Array<{
           sortOrder: number;
@@ -2962,6 +2965,10 @@ export class CustomerAppService {
         modifier: PublicMenuItemModifier;
       }>;
       modifierLinks?: PublicMenuItemModifierGroupLink[];
+      _count?: {
+        modifierLinks: number;
+        modifierPriceOverrides: number;
+      };
       branchOverrides?: Array<{
         priceOverride: Prisma.Decimal | null;
         isAvailable: boolean;
@@ -3190,7 +3197,11 @@ export class CustomerAppService {
     const hasCustomizations =
       variations.length > 0 ||
       (item.modifierLinks?.length ?? 0) > 0 ||
+      (item.category?.modifierLinks?.length ?? 0) > 0 ||
       (item.modifierPriceOverrides?.length ?? 0) > 0 ||
+      (item._count?.modifierLinks ?? 0) > 0 ||
+      (item._count?.modifierPriceOverrides ?? 0) > 0 ||
+      (item.category?._count?.modifierLinks ?? 0) > 0 ||
       supportsSplitPizza;
 
     return {
