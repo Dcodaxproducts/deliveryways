@@ -4,10 +4,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { resolveCname } from 'node:dns/promises';
+import { resolve4 } from 'node:dns/promises';
+import { isIP } from 'node:net';
 
 export type CustomDomainDnsInstructions = {
-  type: 'CNAME';
+  type: 'A';
   host: string;
   hostLabel: string;
   target: string;
@@ -18,21 +19,18 @@ export class CustomDomainDnsService {
   constructor(private readonly configService: ConfigService) {}
 
   getInstructions(customDomain: string): CustomDomainDnsInstructions {
-    const target = this.normalizeHostname(
-      this.configService.get<string>('CUSTOM_DOMAIN_CNAME_TARGET') ??
-        this.configService.get<string>('CUSTOMER_APP_BASE_DOMAIN') ??
-        '',
-    );
-    if (!target) {
+    const target =
+      this.configService.get<string>('CUSTOM_DOMAIN_A_TARGET')?.trim() ?? '';
+    if (isIP(target) !== 4) {
       throw new ServiceUnavailableException(
-        'Custom-domain DNS target is not configured',
+        'Custom-domain public IPv4 target is not configured',
       );
     }
 
     return {
-      type: 'CNAME',
+      type: 'A',
       host: customDomain,
-      hostLabel: customDomain.split('.')[0] ?? customDomain,
+      hostLabel: '@',
       target,
     };
   }
@@ -42,35 +40,20 @@ export class CustomDomainDnsService {
 
     let records: string[];
     try {
-      records = await resolveCname(customDomain);
+      records = await resolve4(customDomain);
     } catch {
       throw new ConflictException(
-        `DNS is not ready. Add CNAME ${instructions.host} to ${instructions.target} and try again after propagation.`,
+        `DNS is not ready. Add A record ${instructions.hostLabel} pointing to ${instructions.target} and try again after propagation.`,
       );
     }
 
-    const matches = records.some(
-      (record) => this.normalizeHostname(record) === instructions.target,
-    );
+    const matches = records.some((record) => record === instructions.target);
     if (!matches) {
       throw new ConflictException(
-        `DNS CNAME does not point to ${instructions.target}`,
+        `DNS A record does not point to ${instructions.target}`,
       );
     }
 
     return instructions;
-  }
-
-  private normalizeHostname(value: string): string {
-    const trimmed = value.trim().toLowerCase().replace(/\.$/, '');
-    if (!trimmed) return '';
-
-    try {
-      return new URL(
-        trimmed.includes('://') ? trimmed : `https://${trimmed}`,
-      ).hostname.replace(/\.$/, '');
-    } catch {
-      return '';
-    }
   }
 }

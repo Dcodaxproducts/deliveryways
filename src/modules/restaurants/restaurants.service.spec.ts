@@ -170,15 +170,15 @@ describe('RestaurantsService notification settings', () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      customDomain: 'order.american-corner.de',
+      customDomain: 'american-corner.de',
       customDomainVerifiedAt: null,
       deletedAt: null,
     });
     domainDnsService.getInstructions.mockReturnValue({
-      type: 'CNAME',
-      host: 'order.american-corner.de',
-      hostLabel: 'order',
-      target: 'storefront.delivery-way.de',
+      type: 'A',
+      host: 'american-corner.de',
+      hostLabel: '@',
+      target: '203.0.113.10',
     });
 
     await expect(
@@ -189,7 +189,7 @@ describe('RestaurantsService notification settings', () => {
     ).resolves.toMatchObject({
       data: {
         verified: false,
-        dns: { target: 'storefront.delivery-way.de' },
+        dns: { target: '203.0.113.10' },
       },
     });
     expect(repository.update).not.toHaveBeenCalled();
@@ -199,21 +199,21 @@ describe('RestaurantsService notification settings', () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      customDomain: 'order.american-corner.de',
+      customDomain: 'american-corner.de',
       customDomainVerifiedAt: null,
       deletedAt: null,
     });
     domainDnsService.verify.mockResolvedValue({
-      type: 'CNAME',
-      host: 'order.american-corner.de',
-      hostLabel: 'order',
-      target: 'storefront.delivery-way.de',
+      type: 'A',
+      host: 'american-corner.de',
+      hostLabel: '@',
+      target: '203.0.113.10',
     });
     repository.update.mockImplementation(
       (_id: string, data: Record<string, unknown>) =>
         Promise.resolve({
           id: 'restaurant-1',
-          customDomain: 'order.american-corner.de',
+          customDomain: 'american-corner.de',
           deletedAt: null,
           ...data,
         }),
@@ -224,9 +224,7 @@ describe('RestaurantsService notification settings', () => {
       'restaurant-1',
     );
 
-    expect(domainDnsService.verify).toHaveBeenCalledWith(
-      'order.american-corner.de',
-    );
+    expect(domainDnsService.verify).toHaveBeenCalledWith('american-corner.de');
     const updateData = repository.update.mock.calls[0]?.[1];
     expect(updateData?.customDomainVerifiedAt).toBeInstanceOf(Date);
     expect(result.data.verified).toBe(true);
