@@ -3,13 +3,16 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { Branch, Prisma } from '@prisma/client';
+import { Branch, PaymentMethod, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
-import { buildPaginationMeta } from '../../common/utils';
+import {
+  buildPaginationMeta,
+  resolveAvailablePaymentMethods,
+} from '../../common/utils';
 import { UsersService } from '../users/users.service';
 import { StorageService } from '../storage/storage.service';
 import { BranchesRepository } from './branches.repository';
@@ -118,6 +121,11 @@ export class BranchesService {
     }
 
     this.assertValidDeliveryConfiguration(dto.settings);
+    await this.assertRestaurantPaymentMethods(
+      dto.restaurantId,
+      dto.settings?.allowedPaymentMethods,
+      tx,
+    );
 
     return this.branchesRepository.create(
       {
@@ -1057,6 +1065,11 @@ export class BranchesService {
       updateDto.settings,
     );
     this.assertValidDeliveryConfiguration(sanitizedSettings);
+    await this.assertRestaurantPaymentMethods(
+      branch.restaurantId,
+      this.readSettings(sanitizedSettings).allowedPaymentMethods,
+      tx,
+    );
     const mergedSettings =
       sanitizedSettings === undefined
         ? undefined
@@ -2009,6 +2022,44 @@ export class BranchesService {
     }
 
     return this.omitServiceCharge(settings);
+  }
+
+  private async assertRestaurantPaymentMethods(
+    restaurantId: string,
+    branchMethods: unknown,
+    tx?: PrismaTx,
+  ) {
+    if (!Array.isArray(branchMethods)) {
+      return;
+    }
+
+    const restaurant =
+      await this.branchesRepository.findRestaurantPaymentSettings(
+        restaurantId,
+        tx,
+      );
+    if (!restaurant) {
+      throw new BadRequestException('Restaurant not found');
+    }
+
+    const allowedMethods = resolveAvailablePaymentMethods({
+      platformMethods: Object.values(PaymentMethod),
+      restaurantSettings: restaurant.settings,
+      branchSettings: {},
+    });
+    const invalidMethods = branchMethods.filter(
+      (method): method is string =>
+        typeof method === 'string' &&
+        !allowedMethods.includes(method as PaymentMethod),
+    );
+
+    if (invalidMethods.length > 0) {
+      throw new BadRequestException(
+        `Payment methods are not assigned to this restaurant: ${[
+          ...new Set(invalidMethods),
+        ].join(', ')}`,
+      );
+    }
   }
 
   private omitServiceCharge<T>(settings: T): T {

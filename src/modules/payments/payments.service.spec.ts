@@ -1253,6 +1253,28 @@ describe('PaymentsService', () => {
     ]);
   });
 
+  it('rejects restaurant payment methods that are inactive globally', async () => {
+    const { service, prisma } = makeService();
+
+    await expect(
+      service.updateRestaurantPaymentMethods(
+        {
+          uid: 'super-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'restaurant-1',
+        {
+          allowedPaymentMethods: [PaymentMethod.BANK_TRANSFER],
+          walletEnabled: false,
+        },
+      ),
+    ).rejects.toThrow(
+      'Payment methods are not active on the platform: BANK_TRANSFER',
+    );
+    expect(prisma.restaurant.findFirst).not.toHaveBeenCalled();
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
+  });
+
   it('blocks a restaurant admin from updating payment methods', async () => {
     const { service, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({

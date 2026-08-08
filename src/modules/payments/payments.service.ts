@@ -2443,6 +2443,22 @@ export class PaymentsService {
       );
     }
 
+    const globalMethods = await this.getGlobalPaymentMethods();
+    const activePlatformMethods = globalMethods
+      .filter((method) => method.isActive)
+      .map((method) => method.code);
+    const invalidMethods = dto.allowedPaymentMethods.filter(
+      (method) =>
+        globalMethods.length > 0 && !activePlatformMethods.includes(method),
+    );
+    if (invalidMethods.length > 0) {
+      throw new BadRequestException(
+        `Payment methods are not active on the platform: ${[
+          ...new Set(invalidMethods),
+        ].join(', ')}`,
+      );
+    }
+
     const restaurant = await this.requireRestaurantForPayments(
       user,
       restaurantId,
