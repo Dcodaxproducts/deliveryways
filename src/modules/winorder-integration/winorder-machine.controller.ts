@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  Param,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -14,32 +15,40 @@ import {
   WinOrderMachineContext,
 } from './winorder-machine-context';
 import { WinOrderPollingService } from './winorder-polling.service';
-import { WinOrderTrackingStatusDto } from './dto';
+import { WinOrderStoreRouteDto, WinOrderTrackingStatusDto } from './dto';
+import { WinOrderConnectionService } from './winorder-connection.service';
 import { WinOrderStatusService } from './winorder-status.service';
 
 @Public()
 @ApiTags('WinOrder Machine API')
 @ApiBasicAuth()
-@Controller('winorder')
+@Controller(['winorder', 'winorder/:storeId'])
 @UseGuards(WinOrderBasicAuthGuard)
 export class WinOrderMachineController {
   constructor(
     private readonly pollingService: WinOrderPollingService,
     private readonly statusService: WinOrderStatusService,
+    private readonly connectionService: WinOrderConnectionService,
   ) {}
 
   @Get('GetNewOrders')
-  getNewOrders(@WinOrderMachine() machine: WinOrderMachineContext) {
+  getNewOrders(
+    @WinOrderMachine() machine: WinOrderMachineContext,
+    @Param() route: WinOrderStoreRouteDto,
+  ) {
+    this.connectionService.assertStoreRoute(machine, route.storeId);
     return this.pollingService.getNewOrders(machine);
   }
 
   @Post('SendTrackingStatus')
   sendTrackingStatus(
     @WinOrderMachine() machine: WinOrderMachineContext,
+    @Param() route: WinOrderStoreRouteDto,
     @Headers('username') username: string | undefined,
     @Headers('password') password: string | undefined,
     @Body() dto: WinOrderTrackingStatusDto,
   ) {
+    this.connectionService.assertStoreRoute(machine, route.storeId);
     return this.statusService.process(machine, username, password, dto);
   }
 }

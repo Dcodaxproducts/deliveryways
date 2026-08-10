@@ -12,11 +12,10 @@ export class CreateWinOrderConnectionDto {
   @IsString()
   branchId!: string;
 
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  storeId?: number;
+  storeId!: number;
 
   @IsOptional()
   @IsString()
@@ -39,4 +38,12 @@ export class UpdateWinOrderConnectionDto {
   @IsOptional()
   @IsBoolean()
   isEnabled?: boolean;
+}
+
+export class WinOrderStoreRouteDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  storeId?: number;
 }

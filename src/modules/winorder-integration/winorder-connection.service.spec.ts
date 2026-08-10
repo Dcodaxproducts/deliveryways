@@ -35,6 +35,7 @@ describe('WinOrderConnectionService', () => {
       id: 'connection-1',
       branchId: 'branch-1',
       username: 'wo_user',
+      storeId: 41,
       isEnabled: true,
     });
 
@@ -51,7 +52,7 @@ describe('WinOrderConnectionService', () => {
     expect(result.data).toEqual(
       expect.objectContaining({
         username: 'wo_user',
-        endpointPath: '/winorder',
+        endpointPath: '/winorder/41',
       }),
     );
   });
@@ -85,6 +86,7 @@ describe('WinOrderConnectionService', () => {
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
+      storeId: 41,
       passwordHash: 'stored-hash',
     });
     jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
@@ -94,7 +96,56 @@ describe('WinOrderConnectionService', () => {
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
+      storeId: 41,
     });
+  });
+
+  it('accepts a matching store-specific machine route', () => {
+    const { service } = makeService();
+
+    expect(() =>
+      service.assertStoreRoute(
+        {
+          connectionId: 'connection-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+          storeId: 41,
+        },
+        41,
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a store-specific route for another authenticated store', () => {
+    const { service } = makeService();
+
+    expect(() =>
+      service.assertStoreRoute(
+        {
+          connectionId: 'connection-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+          storeId: 41,
+        },
+        99,
+      ),
+    ).toThrow(UnauthorizedException);
+  });
+
+  it('keeps the legacy machine route available during migration', () => {
+    const { service } = makeService();
+
+    expect(() =>
+      service.assertStoreRoute({
+        connectionId: 'connection-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        storeId: null,
+      }),
+    ).not.toThrow();
   });
 
   it('uses a generic error for unknown credentials', async () => {

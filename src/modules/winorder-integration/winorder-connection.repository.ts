@@ -34,6 +34,7 @@ export class WinOrderConnectionRepository {
         tenantId: true,
         restaurantId: true,
         branchId: true,
+        storeId: true,
         passwordHash: true,
       },
     });
@@ -44,7 +45,7 @@ export class WinOrderConnectionRepository {
     data: {
       username: string;
       passwordHash: string;
-      storeId?: number;
+      storeId: number;
       storeName?: string;
       actorId: string;
     },

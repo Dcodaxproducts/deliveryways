@@ -113,7 +113,18 @@ export class WinOrderConnectionService {
       tenantId: connection.tenantId,
       restaurantId: connection.restaurantId,
       branchId: connection.branchId,
+      storeId: connection.storeId,
     };
+  }
+
+  assertStoreRoute(machine: WinOrderMachineContext, requestedStoreId?: number) {
+    if (requestedStoreId === undefined) {
+      return;
+    }
+
+    if (machine.storeId === null || machine.storeId !== requestedStoreId) {
+      throw new UnauthorizedException('Invalid integration credentials');
+    }
   }
 
   resolveAdminScope(
@@ -193,7 +204,13 @@ export class WinOrderConnectionService {
     };
   }
 
-  private withEndpoint<T>(connection: T) {
-    return { ...connection, endpointPath: '/winorder' };
+  private withEndpoint<T extends { storeId: number | null }>(connection: T) {
+    return {
+      ...connection,
+      endpointPath:
+        connection.storeId === null
+          ? '/winorder'
+          : `/winorder/${connection.storeId}`,
+    };
   }
 }

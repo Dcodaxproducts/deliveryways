@@ -8,6 +8,7 @@ describe('WinOrderPollingService', () => {
     tenantId: 'tenant-1',
     restaurantId: 'restaurant-1',
     branchId: 'branch-1',
+    storeId: 41,
   };
 
   it('emits the official OrderList envelope with mapped articles', async () => {

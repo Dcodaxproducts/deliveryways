@@ -5,6 +5,7 @@ export interface WinOrderMachineContext {
   tenantId: string;
   restaurantId: string;
   branchId: string;
+  storeId: number | null;
 }
 
 export const WinOrderMachine = createParamDecorator(
