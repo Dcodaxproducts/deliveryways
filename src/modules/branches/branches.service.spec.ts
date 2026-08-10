@@ -224,15 +224,17 @@ describe('BranchesService', () => {
       },
     );
 
-    expect(repository.update).toHaveBeenCalledWith(
-      'branch-1',
-      expect.objectContaining({
-        settings: expect.objectContaining({
-          allowedPaymentMethods: ['STRIPE'],
-        }),
-      }),
-      expect.any(Object),
-    );
+    const updateCalls = repository.update.mock.calls as Array<
+      [
+        string,
+        { settings?: { allowedPaymentMethods?: PaymentMethodEnum[] } },
+        unknown,
+      ]
+    >;
+    expect(updateCalls[0]?.[0]).toBe('branch-1');
+    expect(updateCalls[0]?.[1].settings?.allowedPaymentMethods).toEqual([
+      PaymentMethodEnum.STRIPE,
+    ]);
   });
 
   it('updates order notification settings without validating unrelated branch fields', async () => {
