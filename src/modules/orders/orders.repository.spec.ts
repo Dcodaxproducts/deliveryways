@@ -272,9 +272,7 @@ describe('OrdersRepository', () => {
     expect(countCalls[0][0].where?.NOT).toBeUndefined();
   });
 
-  it('persists branch-provided order time when updating status', async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-03-24T18:00:00.000Z'));
-
+  it('persists branch-provided order time without changing ASAP scheduling', async () => {
     const prisma = {
       order: {
         update: jest.fn().mockResolvedValue({ id: 'order-1' }),
@@ -294,8 +292,47 @@ describe('OrdersRepository', () => {
       data: {
         status: 'CONFIRMED',
         orderTime,
-        isScheduled: true,
       },
     });
+    expect(updateCalls[0][0].data).not.toHaveProperty('isScheduled');
+  });
+
+  it('preserves scheduling when an integration updates status and ready time', async () => {
+    const prisma = {
+      order: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const repository = new OrdersRepository(prisma as never);
+    const orderTime = new Date('2026-03-24T19:30:00.000Z');
+
+    await repository.updateIntegrationStatus(
+      'order-1',
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      'CONFIRMED' as never,
+      orderTime,
+    );
+
+    const updateCalls = prisma.order.updateMany.mock.calls as Array<
+      [OrderUpdateArgs]
+    >;
+
+    expect(updateCalls[0][0]).toMatchObject({
+      where: {
+        id: 'order-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      data: {
+        status: 'CONFIRMED',
+        orderTime,
+      },
+    });
+    expect(updateCalls[0][0].data).not.toHaveProperty('isScheduled');
   });
 });

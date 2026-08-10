@@ -147,7 +147,6 @@ export class OrdersRepository {
       data: {
         status,
         orderTime,
-        isScheduled: orderTime ? orderTime.getTime() > Date.now() : undefined,
         deliveredAt:
           status === OrderStatus.DELIVERED ||
           status === OrderStatus.PICKED_UP ||
@@ -606,7 +605,6 @@ export class OrdersRepository {
       data: {
         status,
         orderTime,
-        isScheduled: orderTime ? orderTime.getTime() > Date.now() : undefined,
         deliveredAt:
           status === OrderStatus.DELIVERED ||
           status === OrderStatus.PICKED_UP ||
