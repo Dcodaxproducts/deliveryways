@@ -25,10 +25,10 @@ describe('WinOrderMachineController', () => {
     };
   };
 
-  it('validates the Store ID before polling orders', () => {
+  it('validates the Store ID before polling orders', async () => {
     const { controller, pollingService, connectionService } = makeController();
 
-    controller.getNewOrders(machine, { storeId: 41 });
+    await controller.getNewOrders(machine, { storeId: 41 });
 
     expect(connectionService.assertStoreRoute).toHaveBeenCalledWith(
       machine,
@@ -37,11 +37,11 @@ describe('WinOrderMachineController', () => {
     expect(pollingService.getNewOrders).toHaveBeenCalledWith(machine);
   });
 
-  it('validates the Store ID before processing a tracking callback', () => {
+  it('validates the Store ID before processing a tracking callback', async () => {
     const { controller, statusService, connectionService } = makeController();
     const dto = { ordersid: 'order-1', trackingstatus: '1' };
 
-    controller.sendTrackingStatus(
+    await controller.sendTrackingStatus(
       machine,
       { storeId: 41 },
       'wo_user',
