@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { UserRoleEnum } from '../../common/enums';
+import { PaymentMethodEnum, UserRoleEnum } from '../../common/enums';
 import { BranchScheduleDayEnum } from './dto';
 import { BranchesService } from './branches.service';
 
@@ -31,6 +31,9 @@ describe('BranchesService', () => {
       findBranchTenant: jest.fn(),
       findBranchRestaurant: jest.fn(),
       findRestaurantInTenant: jest.fn(),
+      findRestaurantPaymentSettings: jest.fn().mockResolvedValue({
+        settings: {},
+      }),
     };
 
     const usersService = {
@@ -128,6 +131,110 @@ describe('BranchesService', () => {
     );
     expect(repository.createBranchAddress).not.toHaveBeenCalled();
     expect(result.message).toBe('Branch updated successfully');
+  });
+
+  it('rejects branch payment methods not assigned to the restaurant', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: {},
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.findRestaurantPaymentSettings.mockResolvedValue({
+      settings: {
+        payments: {
+          methods: { allowedPaymentMethods: ['COD', 'STRIPE'] },
+        },
+      },
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'branch-1',
+        {
+          settings: {
+            allowedOrderTypes: [],
+            allowedPaymentMethods: [PaymentMethodEnum.PAYPAL],
+            deliveryConfig: {
+              radiusKm: 5,
+              minOrderAmount: 0,
+              deliveryFee: 0,
+              isFreeDelivery: false,
+            },
+            automation: { autoAcceptOrders: false, estimatedPrepTime: 20 },
+            taxation: { taxPercentage: 0 },
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      'Payment methods are not assigned to this restaurant: PAYPAL',
+    );
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a branch subset of restaurant-assigned payment methods', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: {},
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.findRestaurantPaymentSettings.mockResolvedValue({
+      settings: {
+        payments: {
+          methods: { allowedPaymentMethods: ['COD', 'STRIPE'] },
+        },
+      },
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1', settings: {} });
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        settings: {
+          allowedOrderTypes: [],
+          allowedPaymentMethods: [PaymentMethodEnum.STRIPE],
+          deliveryConfig: {
+            radiusKm: 5,
+            minOrderAmount: 0,
+            deliveryFee: 0,
+            isFreeDelivery: false,
+          },
+          automation: { autoAcceptOrders: false, estimatedPrepTime: 20 },
+          taxation: { taxPercentage: 0 },
+        },
+      },
+    );
+
+    const updateCalls = repository.update.mock.calls as Array<
+      [
+        string,
+        { settings?: { allowedPaymentMethods?: PaymentMethodEnum[] } },
+        unknown,
+      ]
+    >;
+    expect(updateCalls[0]?.[0]).toBe('branch-1');
+    expect(updateCalls[0]?.[1].settings?.allowedPaymentMethods).toEqual([
+      PaymentMethodEnum.STRIPE,
+    ]);
   });
 
   it('updates order notification settings without validating unrelated branch fields', async () => {

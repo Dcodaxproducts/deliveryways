@@ -58,6 +58,13 @@ export class BranchesRepository {
     });
   }
 
+  findRestaurantPaymentSettings(id: string, tx?: PrismaTx) {
+    return this.client(tx).restaurant.findFirst({
+      where: { id, deletedAt: null },
+      select: { settings: true },
+    });
+  }
+
   async create(
     payload: {
       tenantId: string;
