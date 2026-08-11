@@ -806,8 +806,6 @@ export class PaymentsService {
         paymentIntentId: intent.id,
       };
 
-      await this.notificationsService.notifyPaymentAttemptCreated(updated.id);
-
       return {
         data: updated,
         paymentSession: providerPayload,
@@ -838,8 +836,6 @@ export class PaymentsService {
         } as Prisma.InputJsonValue,
         note: dto.note,
       });
-
-      await this.notificationsService.notifyPaymentAttemptCreated(updated.id);
 
       return {
         data: updated,

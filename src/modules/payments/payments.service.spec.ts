@@ -549,7 +549,7 @@ describe('PaymentsService', () => {
     });
     expect(
       notificationsService.notifyPaymentAttemptCreated,
-    ).toHaveBeenCalledWith('payment-1');
+    ).not.toHaveBeenCalled();
     expect(paymentsRepository.create).not.toHaveBeenCalled();
   });
 
@@ -636,7 +636,7 @@ describe('PaymentsService', () => {
     expect(notificationsService.notifyOrderPlaced).not.toHaveBeenCalled();
     expect(
       notificationsService.notifyPaymentAttemptCreated,
-    ).toHaveBeenCalledWith('payment-1');
+    ).not.toHaveBeenCalled();
   });
 
   it('places and credits a PayPal order only after a verified capture', async () => {
