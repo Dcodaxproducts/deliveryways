@@ -133,7 +133,7 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
-  it('rejects branch payment methods not assigned to the restaurant', async () => {
+  it('removes legacy branch payment methods because checkout is restaurant-wide', async () => {
     const { service, repository } = makeService();
     repository.findById.mockResolvedValue({
       id: 'branch-1',
@@ -142,61 +142,6 @@ describe('BranchesService', () => {
       settings: {},
       isActive: true,
       deletedAt: null,
-    });
-    repository.findRestaurantPaymentSettings.mockResolvedValue({
-      settings: {
-        payments: {
-          methods: { allowedPaymentMethods: ['COD', 'STRIPE'] },
-        },
-      },
-    });
-
-    await expect(
-      service.update(
-        {
-          uid: 'admin-1',
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          role: UserRoleEnum.BUSINESS_ADMIN,
-        },
-        'branch-1',
-        {
-          settings: {
-            allowedOrderTypes: [],
-            allowedPaymentMethods: [PaymentMethodEnum.PAYPAL],
-            deliveryConfig: {
-              radiusKm: 5,
-              minOrderAmount: 0,
-              deliveryFee: 0,
-              isFreeDelivery: false,
-            },
-            automation: { autoAcceptOrders: false, estimatedPrepTime: 20 },
-            taxation: { taxPercentage: 0 },
-          },
-        },
-      ),
-    ).rejects.toThrow(
-      'Payment methods are not assigned to this restaurant: PAYPAL',
-    );
-    expect(repository.update).not.toHaveBeenCalled();
-  });
-
-  it('allows a branch subset of restaurant-assigned payment methods', async () => {
-    const { service, repository } = makeService();
-    repository.findById.mockResolvedValue({
-      id: 'branch-1',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      settings: {},
-      isActive: true,
-      deletedAt: null,
-    });
-    repository.findRestaurantPaymentSettings.mockResolvedValue({
-      settings: {
-        payments: {
-          methods: { allowedPaymentMethods: ['COD', 'STRIPE'] },
-        },
-      },
     });
     repository.update.mockResolvedValue({ id: 'branch-1', settings: {} });
 
@@ -211,7 +156,7 @@ describe('BranchesService', () => {
       {
         settings: {
           allowedOrderTypes: [],
-          allowedPaymentMethods: [PaymentMethodEnum.STRIPE],
+          allowedPaymentMethods: [PaymentMethodEnum.PAYPAL],
           deliveryConfig: {
             radiusKm: 5,
             minOrderAmount: 0,
@@ -232,9 +177,8 @@ describe('BranchesService', () => {
       ]
     >;
     expect(updateCalls[0]?.[0]).toBe('branch-1');
-    expect(updateCalls[0]?.[1].settings?.allowedPaymentMethods).toEqual([
-      PaymentMethodEnum.STRIPE,
-    ]);
+    expect(updateCalls[0]?.[1].settings?.allowedPaymentMethods).toBeUndefined();
+    expect(repository.findRestaurantPaymentSettings).not.toHaveBeenCalled();
   });
 
   it('updates order notification settings without validating unrelated branch fields', async () => {

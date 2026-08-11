@@ -35,7 +35,6 @@ const readPaymentMethods = (value: unknown): PaymentMethod[] | null => {
 export const resolveAvailablePaymentMethods = ({
   platformMethods,
   restaurantSettings,
-  branchSettings,
 }: PaymentMethodScope): PaymentMethod[] => {
   const platform =
     platformMethods === null
@@ -47,12 +46,13 @@ export const resolveAvailablePaymentMethods = ({
   const restaurantMethods = readPaymentMethods(
     restaurantMethodSettings.allowedPaymentMethods,
   );
-  const branch = asObject(branchSettings);
-  const branchMethods = readPaymentMethods(branch.allowedPaymentMethods);
+  const customerMethods = readPaymentMethods(
+    restaurantMethodSettings.customerPaymentMethods,
+  );
 
   return platform.filter(
     (method) =>
       (!restaurantMethods || restaurantMethods.includes(method)) &&
-      (!branchMethods || branchMethods.includes(method)),
+      (!customerMethods || customerMethods.includes(method)),
   );
 };

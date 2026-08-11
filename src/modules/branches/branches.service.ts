@@ -3,16 +3,13 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { Branch, PaymentMethod, Prisma } from '@prisma/client';
+import { Branch, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { PrismaTx } from '../../common/types';
-import {
-  buildPaginationMeta,
-  resolveAvailablePaymentMethods,
-} from '../../common/utils';
+import { buildPaginationMeta } from '../../common/utils';
 import { UsersService } from '../users/users.service';
 import { StorageService } from '../storage/storage.service';
 import { BranchesRepository } from './branches.repository';
@@ -121,12 +118,6 @@ export class BranchesService {
     }
 
     this.assertValidDeliveryConfiguration(dto.settings);
-    await this.assertRestaurantPaymentMethods(
-      dto.restaurantId,
-      dto.settings?.allowedPaymentMethods,
-      tx,
-    );
-
     return this.branchesRepository.create(
       {
         tenantId,
@@ -144,7 +135,9 @@ export class BranchesService {
         logoUrl: this.normalizeMediaUrl(dto.logoUrl),
         coverImage: this.normalizeMediaUrl(dto.coverImage),
         description: dto.description,
-        settings: dto.settings as unknown as Prisma.InputJsonValue,
+        settings: this.omitBranchPaymentMethods(
+          dto.settings,
+        ) as unknown as Prisma.InputJsonValue,
       },
       tx,
     );
@@ -1060,23 +1053,17 @@ export class BranchesService {
 
     await this.assertBranchWriteAccess(user, branch);
     const updateDto = this.resolveBranchUpdateDto(user, dto);
-    const sanitizedSettings = this.sanitizeBranchSettingsInput(
-      user,
-      updateDto.settings,
+    const sanitizedSettings = this.omitBranchPaymentMethods(
+      this.sanitizeBranchSettingsInput(user, updateDto.settings),
     );
     this.assertValidDeliveryConfiguration(sanitizedSettings);
-    await this.assertRestaurantPaymentMethods(
-      branch.restaurantId,
-      this.readSettings(sanitizedSettings).allowedPaymentMethods,
-      tx,
-    );
     const mergedSettings =
       sanitizedSettings === undefined
         ? undefined
-        : ({
+        : (this.omitBranchPaymentMethods({
             ...this.readSettings(branch.settings),
-            ...sanitizedSettings,
-          } as unknown as Prisma.InputJsonValue);
+            ...this.readSettings(sanitizedSettings),
+          }) as unknown as Prisma.InputJsonValue);
 
     const operation = async (trx: PrismaTx) => {
       const data = await this.branchesRepository.update(
@@ -2024,42 +2011,14 @@ export class BranchesService {
     return this.omitServiceCharge(settings);
   }
 
-  private async assertRestaurantPaymentMethods(
-    restaurantId: string,
-    branchMethods: unknown,
-    tx?: PrismaTx,
-  ) {
-    if (!Array.isArray(branchMethods)) {
-      return;
+  private omitBranchPaymentMethods<T>(settings: T): T {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return settings;
     }
 
-    const restaurant =
-      await this.branchesRepository.findRestaurantPaymentSettings(
-        restaurantId,
-        tx,
-      );
-    if (!restaurant) {
-      throw new BadRequestException('Restaurant not found');
-    }
-
-    const allowedMethods = resolveAvailablePaymentMethods({
-      platformMethods: Object.values(PaymentMethod),
-      restaurantSettings: restaurant.settings,
-      branchSettings: {},
-    });
-    const invalidMethods = branchMethods.filter(
-      (method): method is string =>
-        typeof method === 'string' &&
-        !allowedMethods.includes(method as PaymentMethod),
-    );
-
-    if (invalidMethods.length > 0) {
-      throw new BadRequestException(
-        `Payment methods are not assigned to this restaurant: ${[
-          ...new Set(invalidMethods),
-        ].join(', ')}`,
-      );
-    }
+    const sanitized = { ...(settings as Record<string, unknown>) };
+    delete sanitized.allowedPaymentMethods;
+    return sanitized as T;
   }
 
   private omitServiceCharge<T>(settings: T): T {

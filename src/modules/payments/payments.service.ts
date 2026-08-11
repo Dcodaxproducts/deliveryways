@@ -48,6 +48,7 @@ import {
   UpdateRestaurantPayoutProviderConfigurationDto,
   RestaurantPayoutProvider,
   UpdateRestaurantPaymentMethodsDto,
+  UpdateRestaurantCustomerPaymentMethodsDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
   SendSubscriptionPaymentRequestDto,
@@ -87,6 +88,7 @@ export interface RestaurantStripeSettings {
 
 export interface RestaurantPaymentMethodSettings {
   allowedPaymentMethods: PaymentMethod[];
+  customerPaymentMethods: PaymentMethod[];
   walletEnabled: boolean;
   note: string | null;
   updatedAt: string | null;
@@ -1601,11 +1603,10 @@ export class PaymentsService {
       },
     );
 
-    const updated = await this.prisma.restaurant.update({
-      where: { id: restaurant.id },
-      data: { settings: nextSettings as Prisma.InputJsonValue },
-      select: { id: true, settings: true },
-    });
+    const updated = await this.paymentsRepository.updateRestaurantSettings(
+      restaurant.id,
+      nextSettings as Prisma.InputJsonValue,
+    );
 
     return {
       data: {
@@ -2459,6 +2460,12 @@ export class PaymentsService {
       user,
       restaurantId,
     );
+    const current = this.readRestaurantPaymentMethodSettings(
+      restaurant.settings,
+    );
+    const retainedCustomerMethods = current.customerPaymentMethods.filter(
+      (method) => dto.allowedPaymentMethods.includes(method),
+    );
     const nextSettings = this.writeRestaurantPaymentMethodSettings(
       restaurant.settings,
       {
@@ -2468,21 +2475,23 @@ export class PaymentsService {
         walletEnabled:
           dto.walletEnabled ??
           dto.allowedPaymentMethods.includes(PaymentMethod.WALLET),
+        customerPaymentMethods:
+          retainedCustomerMethods.length > 0
+            ? retainedCustomerMethods
+            : this.dedupePaymentMethods(dto.allowedPaymentMethods),
         note:
           dto.note !== undefined
             ? (this.resolveOptionalString(dto.note) ?? null)
-            : this.readRestaurantPaymentMethodSettings(restaurant.settings)
-                .note,
+            : current.note,
         updatedAt: new Date().toISOString(),
         updatedBy: user.uid,
       },
     );
 
-    const updated = await this.prisma.restaurant.update({
-      where: { id: restaurant.id },
-      data: { settings: nextSettings as Prisma.InputJsonValue },
-      select: { id: true, settings: true },
-    });
+    const updated = await this.paymentsRepository.updateRestaurantSettings(
+      restaurant.id,
+      nextSettings as Prisma.InputJsonValue,
+    );
 
     return {
       data: {
@@ -2490,6 +2499,55 @@ export class PaymentsService {
         methods: this.readRestaurantPaymentMethodSettings(updated.settings),
       },
       message: 'Restaurant payment methods updated successfully',
+    };
+  }
+
+  async updateRestaurantCustomerPaymentMethods(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: UpdateRestaurantCustomerPaymentMethodsDto,
+  ) {
+    const restaurant = await this.requireRestaurantForPayments(
+      user,
+      restaurantId,
+    );
+    const current = this.readRestaurantPaymentMethodSettings(
+      restaurant.settings,
+    );
+    const unavailableMethods = dto.customerPaymentMethods.filter(
+      (method) => !current.allowedPaymentMethods.includes(method),
+    );
+
+    if (unavailableMethods.length > 0) {
+      throw new BadRequestException(
+        `Payment methods are not available to this restaurant: ${[
+          ...new Set(unavailableMethods),
+        ].join(', ')}`,
+      );
+    }
+
+    const nextSettings = this.writeRestaurantPaymentMethodSettings(
+      restaurant.settings,
+      {
+        ...current,
+        customerPaymentMethods: this.dedupePaymentMethods(
+          dto.customerPaymentMethods,
+        ),
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+      },
+    );
+    const updated = await this.paymentsRepository.updateRestaurantSettings(
+      restaurant.id,
+      nextSettings as Prisma.InputJsonValue,
+    );
+
+    return {
+      data: {
+        restaurantId: updated.id,
+        methods: this.readRestaurantPaymentMethodSettings(updated.settings),
+      },
+      message: 'Customer payment methods updated successfully',
     };
   }
 
@@ -3668,26 +3726,6 @@ export class PaymentsService {
     );
   }
 
-  private readBranchAllowedPaymentMethods(
-    settings: Prisma.JsonValue | null | undefined,
-  ) {
-    const root = this.asJsonObject(settings);
-    const methods = Array.isArray(root.allowedPaymentMethods)
-      ? root.allowedPaymentMethods.filter(
-          (method): method is PaymentMethod =>
-            typeof method === 'string' &&
-            Object.values(PaymentMethod).includes(method as PaymentMethod),
-        )
-      : [
-          PaymentMethod.COD,
-          PaymentMethod.CARD_ON_DELIVERY,
-          PaymentMethod.PAYPAL,
-          PaymentMethod.WALLET,
-        ];
-
-    return this.dedupePaymentMethods(methods);
-  }
-
   private serializeRestaurantPaymentSummary(summary: {
     paidCharges: {
       _sum: { amount: Prisma.Decimal | null };
@@ -3769,9 +3807,20 @@ export class PaymentsService {
           PaymentMethod.PAYPAL,
           PaymentMethod.WALLET,
         ];
+    const customerPaymentMethods = Array.isArray(methods.customerPaymentMethods)
+      ? this.dedupePaymentMethods(
+          methods.customerPaymentMethods.filter(
+            (method): method is PaymentMethod =>
+              typeof method === 'string' &&
+              Object.values(PaymentMethod).includes(method as PaymentMethod) &&
+              allowedPaymentMethods.includes(method as PaymentMethod),
+          ),
+        )
+      : allowedPaymentMethods;
 
     return {
       allowedPaymentMethods,
+      customerPaymentMethods,
       walletEnabled: this.readBoolean(
         methods.walletEnabled,
         allowedPaymentMethods.includes(PaymentMethod.WALLET),
@@ -3795,6 +3844,7 @@ export class PaymentsService {
         ...payments,
         methods: {
           allowedPaymentMethods: methodSettings.allowedPaymentMethods,
+          customerPaymentMethods: methodSettings.customerPaymentMethods,
           walletEnabled: methodSettings.walletEnabled,
           note: methodSettings.note,
           updatedAt: methodSettings.updatedAt,

@@ -34,6 +34,7 @@ describe('PaymentsService', () => {
           };
           methods?: {
             allowedPaymentMethods?: string[];
+            customerPaymentMethods?: string[];
             walletEnabled?: boolean;
             note?: string | null;
             updatedBy?: string | null;
@@ -60,6 +61,11 @@ describe('PaymentsService', () => {
       summarizeRestaurantWallets: jest.fn(),
       sumSuccessfulRefunds: jest.fn(),
       findRestaurantScope: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
+      updateRestaurantSettings: jest
+        .fn()
+        .mockImplementation((id: string, settings: Prisma.InputJsonValue) =>
+          Promise.resolve({ id, settings }),
+        ),
     };
 
     const transactionTx = {
@@ -964,7 +970,8 @@ describe('PaymentsService', () => {
   });
 
   it('updates restaurant Stripe account settings', async () => {
-    const { service, prisma, stripePaymentsService } = makeService();
+    const { service, prisma, paymentsRepository, stripePaymentsService } =
+      makeService();
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -1014,13 +1021,17 @@ describe('PaymentsService', () => {
       where: { id: 'restaurant-1', deletedAt: null },
       select: { id: true, tenantId: true, settings: true },
     });
-    const restaurantUpdate = prisma.restaurant.update as jest.Mock<
-      unknown,
-      [RestaurantStripeSettingsUpdateArgs]
-    >;
-    const updateArgs = restaurantUpdate.mock.calls[0]?.[0];
-    expect(updateArgs?.where).toEqual({ id: 'restaurant-1' });
-    expect(updateArgs?.data.settings.payments.stripe).toEqual(
+    const updateCall = paymentsRepository.updateRestaurantSettings.mock
+      .calls[0] as unknown as [
+      string,
+      RestaurantStripeSettingsUpdateArgs['data']['settings'],
+    ];
+    const settings = updateCall[1];
+    expect(paymentsRepository.updateRestaurantSettings).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.any(Object),
+    );
+    expect(settings.payments.stripe).toEqual(
       expect.objectContaining({
         accountId: 'acct_new',
         payoutsEnabled: true,
@@ -1185,7 +1196,7 @@ describe('PaymentsService', () => {
   });
 
   it('updates restaurant payment method settings without clearing stripe settings', async () => {
-    const { service, prisma } = makeService();
+    const { service, prisma, paymentsRepository } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -1203,13 +1214,6 @@ describe('PaymentsService', () => {
         },
       },
     });
-    prisma.restaurant.update.mockImplementation(
-      (args: RestaurantStripeSettingsUpdateArgs) =>
-        Promise.resolve({
-          id: args.where.id,
-          settings: args.data.settings,
-        }),
-    );
 
     const result = await service.updateRestaurantPaymentMethods(
       {
@@ -1228,20 +1232,22 @@ describe('PaymentsService', () => {
       },
     );
 
-    const restaurantUpdate = prisma.restaurant.update as jest.Mock<
-      unknown,
-      [RestaurantStripeSettingsUpdateArgs]
-    >;
-    const updateArgs = restaurantUpdate.mock.calls[0]?.[0];
-    expect(updateArgs?.data.settings.payments.stripe).toEqual(
+    const updateCall = paymentsRepository.updateRestaurantSettings.mock
+      .calls[0] as unknown as [
+      string,
+      RestaurantStripeSettingsUpdateArgs['data']['settings'],
+    ];
+    const settings = updateCall[1];
+    expect(settings.payments.stripe).toEqual(
       expect.objectContaining({
         accountId: 'acct_123',
         payoutsEnabled: true,
       }),
     );
-    expect(updateArgs?.data.settings.payments.methods).toEqual(
+    expect(settings.payments.methods).toEqual(
       expect.objectContaining({
         allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+        customerPaymentMethods: [PaymentMethod.COD],
         walletEnabled: false,
         note: 'Use cash and card',
         updatedBy: 'super-1',
@@ -1251,6 +1257,70 @@ describe('PaymentsService', () => {
       PaymentMethod.COD,
       PaymentMethod.STRIPE,
     ]);
+    expect(result.data.methods.customerPaymentMethods).toEqual([
+      PaymentMethod.COD,
+    ]);
+  });
+
+  it('lets a business admin choose the restaurant-wide customer methods', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          methods: {
+            allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+          },
+        },
+      },
+    });
+
+    const result = await service.updateRestaurantCustomerPaymentMethods(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { customerPaymentMethods: [PaymentMethod.STRIPE] },
+    );
+
+    expect(result.data.methods.allowedPaymentMethods).toEqual([
+      PaymentMethod.COD,
+      PaymentMethod.STRIPE,
+    ]);
+    expect(result.data.methods.customerPaymentMethods).toEqual([
+      PaymentMethod.STRIPE,
+    ]);
+  });
+
+  it('rejects customer methods not assigned by Super Admin', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          methods: { allowedPaymentMethods: [PaymentMethod.COD] },
+        },
+      },
+    });
+
+    await expect(
+      service.updateRestaurantCustomerPaymentMethods(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-1',
+        { customerPaymentMethods: [PaymentMethod.PAYPAL] },
+      ),
+    ).rejects.toThrow(
+      'Payment methods are not available to this restaurant: PAYPAL',
+    );
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
   });
 
   it('rejects restaurant payment methods that are inactive globally', async () => {

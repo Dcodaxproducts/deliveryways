@@ -46,6 +46,7 @@ import {
   ReviewRestaurantPayoutProviderRequestDto,
   RestaurantPayoutProvider,
   UpdateRestaurantPaymentMethodsDto,
+  UpdateRestaurantCustomerPaymentMethodsDto,
   UpdateRestaurantPayoutProviderConfigurationDto,
   UpdateRestaurantStripeAccountDto,
   UpdatePaymentStatusDto,
@@ -226,6 +227,25 @@ export class PaymentsController {
     @Body() dto: UpdateRestaurantPaymentMethodsDto,
   ) {
     return this.paymentsService.updateRestaurantPaymentMethods(
+      user,
+      restaurantId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Patch('restaurants/:restaurantId/customer-methods')
+  @ApiOperation({
+    summary: 'Choose restaurant-wide payment methods shown at checkout',
+  })
+  updateRestaurantCustomerPaymentMethods(
+    @CurrentUser() user: AuthUserContext,
+    @Param('restaurantId') restaurantId: string,
+    @Body() dto: UpdateRestaurantCustomerPaymentMethodsDto,
+  ) {
+    return this.paymentsService.updateRestaurantCustomerPaymentMethods(
       user,
       restaurantId,
       dto,

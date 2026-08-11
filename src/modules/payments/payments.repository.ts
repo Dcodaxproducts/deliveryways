@@ -408,4 +408,15 @@ export class PaymentsRepository {
 
     return result._sum.amount ?? new Prisma.Decimal(0);
   }
+
+  async updateRestaurantSettings(
+    restaurantId: string,
+    settings: Prisma.InputJsonValue,
+  ) {
+    return this.prisma.restaurant.update({
+      where: { id: restaurantId },
+      data: { settings },
+      select: { id: true, settings: true },
+    });
+  }
 }

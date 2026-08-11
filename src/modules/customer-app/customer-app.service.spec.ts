@@ -301,7 +301,17 @@ describe('CustomerAppService', () => {
 
   it('lists sanitized active branches for anonymous ordering', async () => {
     const { service, repository } = makeService();
-    repository.findRestaurantScope.mockResolvedValue({ id: 'restaurant-1' });
+    repository.findRestaurantScope.mockResolvedValue({
+      id: 'restaurant-1',
+      settings: {
+        payments: {
+          methods: {
+            allowedPaymentMethods: ['COD', 'WALLET'],
+            customerPaymentMethods: ['COD', 'WALLET'],
+          },
+        },
+      },
+    });
     repository.listPublicBranches.mockResolvedValue({
       items: [
         {

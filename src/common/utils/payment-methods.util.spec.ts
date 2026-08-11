@@ -2,7 +2,7 @@ import { PaymentMethod } from '@prisma/client';
 import { resolveAvailablePaymentMethods } from './payment-methods.util';
 
 describe('resolveAvailablePaymentMethods', () => {
-  it('intersects platform, restaurant, and branch payment scopes', () => {
+  it('uses the restaurant-wide customer selection for every branch', () => {
     expect(
       resolveAvailablePaymentMethods({
         platformMethods: [
@@ -14,17 +14,35 @@ describe('resolveAvailablePaymentMethods', () => {
           payments: {
             methods: {
               allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+              customerPaymentMethods: [PaymentMethod.STRIPE],
             },
           },
         },
         branchSettings: {
-          allowedPaymentMethods: [PaymentMethod.STRIPE, PaymentMethod.PAYPAL],
+          allowedPaymentMethods: [PaymentMethod.COD],
         },
       }),
     ).toEqual([PaymentMethod.STRIPE]);
   });
 
-  it('treats missing restaurant and branch lists as no restriction', () => {
+  it('ignores legacy branch payment restrictions', () => {
+    expect(
+      resolveAvailablePaymentMethods({
+        platformMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+        restaurantSettings: {
+          payments: {
+            methods: {
+              allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+              customerPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
+            },
+          },
+        },
+        branchSettings: { allowedPaymentMethods: [PaymentMethod.COD] },
+      }),
+    ).toEqual([PaymentMethod.COD, PaymentMethod.STRIPE]);
+  });
+
+  it('treats missing restaurant lists as no restriction', () => {
     expect(
       resolveAvailablePaymentMethods({
         platformMethods: [PaymentMethod.STRIPE, PaymentMethod.JAZZCASH],

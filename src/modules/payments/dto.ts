@@ -228,6 +228,14 @@ export class UpdateRestaurantPaymentMethodsDto {
   note?: string;
 }
 
+export class UpdateRestaurantCustomerPaymentMethodsDto {
+  @ApiProperty({ enum: PaymentMethod, isArray: true })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(PaymentMethod, { each: true })
+  customerPaymentMethods!: PaymentMethod[];
+}
+
 export class UpdateRestaurantStripeAccountDto {
   @ApiPropertyOptional({ maxLength: 191 })
   @IsOptional()

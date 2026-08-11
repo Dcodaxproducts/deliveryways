@@ -96,7 +96,7 @@ describe('CartService', () => {
     };
   };
 
-  it('returns only platform, restaurant, and branch enabled POS methods', async () => {
+  it('returns the platform and restaurant-wide customer methods for every branch', async () => {
     const { service, cartRepository, globalSettingsService } = makeService();
     cartRepository.findPaymentSettingsForBranch.mockResolvedValue({
       settings: {
@@ -113,6 +113,7 @@ describe('CartService', () => {
                 PaymentMethodEnum.COD,
                 PaymentMethodEnum.PAYPAL,
               ],
+              customerPaymentMethods: [PaymentMethodEnum.COD],
             },
           },
         },
