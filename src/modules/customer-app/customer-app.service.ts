@@ -716,16 +716,17 @@ export class CustomerAppService {
     user?: AuthUserContext,
   ) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
-    await this.getPublicContent(resolvedQuery, user);
-    const promotionContext = await this.loadPromotionContext(
-      resolvedQuery.restaurantId,
-      resolvedQuery.branchId,
-      user,
-    );
-    const { items, total } =
-      await this.customerAppRepository.listMenuCategories(resolvedQuery, {
+    const [, promotionContext, { items, total }] = await Promise.all([
+      this.getPublicContent(resolvedQuery, user),
+      this.loadPromotionContext(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+        user,
+      ),
+      this.customerAppRepository.listMenuCategories(resolvedQuery, {
         includeItems: false,
-      });
+      }),
+    ]);
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
       resolvedQuery.locale,
@@ -930,18 +931,19 @@ export class CustomerAppService {
 
   async listItems(query: ListPublicMenuItemsQueryDto, user?: AuthUserContext) {
     const resolvedQuery = this.resolvePublicRestaurantQuery(query, user);
-    await this.getPublicContent(resolvedQuery, user);
-    const { items, total } =
-      await this.customerAppRepository.listPublicMenuItems(resolvedQuery);
+    const [, { items, total }, promotionContext] = await Promise.all([
+      this.getPublicContent(resolvedQuery, user),
+      this.customerAppRepository.listPublicMenuItems(resolvedQuery),
+      this.loadPromotionContext(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+        user,
+      ),
+    ]);
     const visibleItems = items.filter((item) =>
       this.isMenuItemAvailableForCurrentSchedule(
         item as PublicMenuItemScheduleCarrier,
       ),
-    );
-    const promotionContext = await this.loadPromotionContext(
-      resolvedQuery.restaurantId,
-      resolvedQuery.branchId,
-      user,
     );
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
