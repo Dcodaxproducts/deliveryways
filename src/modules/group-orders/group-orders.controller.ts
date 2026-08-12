@@ -83,8 +83,9 @@ export class GroupOrdersController {
     @CurrentUser() user: AuthUserContext,
     @Param('id') id: string,
     @Body() dto: AddGroupOrderItemDto,
+    @Query('compact') compact?: string,
   ) {
-    return this.groupOrdersService.addItem(user, id, dto);
+    return this.groupOrdersService.addItem(user, id, dto, compact === 'true');
   }
 
   @Roles(RolesEnum.CUSTOMER)

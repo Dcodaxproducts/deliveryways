@@ -21,6 +21,7 @@ describe('NotificationsService', () => {
     countSummary: jest.Mock;
     markSeen: jest.Mock;
     markAllSeen: jest.Mock;
+    claimPendingOrderNotifications: jest.Mock;
     listAdminEmailRecipients: jest.Mock;
     upsertPushToken: jest.Mock;
     deactivatePushToken: jest.Mock;
@@ -54,6 +55,7 @@ describe('NotificationsService', () => {
       countSummary: jest.fn(),
       markSeen: jest.fn(),
       markAllSeen: jest.fn(),
+      claimPendingOrderNotifications: jest.fn(),
       listAdminEmailRecipients: jest.fn(),
       upsertPushToken: jest.fn(),
       deactivatePushToken: jest.fn(),
@@ -86,6 +88,47 @@ describe('NotificationsService', () => {
       undefined,
       notificationsRealtimeService as never,
     );
+  });
+
+  it('claims pending restaurant orders for only the first logged-in admin', async () => {
+    notificationsRepository.claimPendingOrderNotifications.mockResolvedValue([
+      {
+        id: 'notification-1',
+        audience: NotificationAudience.ADMIN,
+        type: NotificationType.ORDER_PLACED,
+        subject: 'New order',
+        body: 'Order waiting',
+        payload: { orderId: 'order-1' },
+        seenAt: null,
+        createdAt: new Date('2026-08-12T08:00:00.000Z'),
+        order: {
+          id: 'order-1',
+          status: 'PLACED',
+          paymentStatus: 'PAID',
+        },
+        paymentTransaction: null,
+      },
+    ]);
+
+    const result = await service.claimPendingOrders(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      { restaurantId: 'restaurant-1' } as never,
+    );
+
+    expect(
+      notificationsRepository.claimPendingOrderNotifications,
+    ).toHaveBeenCalledWith({
+      userId: 'business-admin-1',
+      restaurantId: 'restaurant-1',
+      branchId: undefined,
+    });
+    expect(result.data[0]?.id).toBe('notification-1');
+    expect(result.data[0]?.order?.id).toBe('order-1');
   });
 
   it('lists simplified customer notifications for the logged-in customer only', async () => {

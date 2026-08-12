@@ -172,6 +172,28 @@ export class NotificationsService {
     };
   }
 
+  async claimPendingOrders(user: AuthUserContext, query: ListNotificationsDto) {
+    const scope = this.resolveFeedScope(user, query);
+
+    if (scope.audience !== NotificationAudience.ADMIN || !scope.restaurantId) {
+      throw new ForbiddenException('Admin restaurant scope is required');
+    }
+
+    const notifications =
+      await this.notificationsRepository.claimPendingOrderNotifications({
+        userId: user.uid,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      });
+
+    return {
+      data: notifications.map((notification) =>
+        this.toFeedItem(notification, NotificationAudience.ADMIN),
+      ),
+      message: 'Pending order notifications claimed successfully',
+    };
+  }
+
   async retry(user: AuthUserContext, id: string) {
     const notification = await this.notificationsRepository.findById(id);
 

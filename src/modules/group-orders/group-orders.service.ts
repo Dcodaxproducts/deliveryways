@@ -306,7 +306,42 @@ export class GroupOrdersService {
     };
   }
 
-  async addItem(user: AuthUserContext, id: string, dto: AddGroupOrderItemDto) {
+  async addItem(
+    user: AuthUserContext,
+    id: string,
+    dto: AddGroupOrderItemDto,
+  ): Promise<{
+    data: Awaited<
+      ReturnType<GroupOrdersService['buildSessionResponseOrThrow']>
+    >;
+    message: string;
+  }>;
+  async addItem(
+    user: AuthUserContext,
+    id: string,
+    dto: AddGroupOrderItemDto,
+    compact: true,
+  ): Promise<{
+    data: { id: string; sessionId: string };
+    message: string;
+  }>;
+  async addItem(
+    user: AuthUserContext,
+    id: string,
+    dto: AddGroupOrderItemDto,
+    compact: boolean,
+  ): Promise<{
+    data:
+      | Awaited<ReturnType<GroupOrdersService['buildSessionResponseOrThrow']>>
+      | { id: string; sessionId: string };
+    message: string;
+  }>;
+  async addItem(
+    user: AuthUserContext,
+    id: string,
+    dto: AddGroupOrderItemDto,
+    compact = false,
+  ) {
     const session = await this.pruneInvalidActiveItems(
       user,
       await this.getSessionForMemberOrThrow(user, id),
@@ -331,7 +366,7 @@ export class GroupOrdersService {
       ),
     );
 
-    await this.groupOrdersRepository.createItem({
+    const createdItem = await this.groupOrdersRepository.createItem({
       session: { connect: { id } },
       participant: { connect: { id: participant.id } },
       menuItemId: itemSelection.menuItemId,
@@ -345,7 +380,9 @@ export class GroupOrdersService {
     });
 
     return {
-      data: await this.buildSessionResponseOrThrow(user, id),
+      data: compact
+        ? { id: createdItem.id, sessionId: id }
+        : await this.buildSessionResponseOrThrow(user, id),
       message: 'Group order item added successfully',
     };
   }

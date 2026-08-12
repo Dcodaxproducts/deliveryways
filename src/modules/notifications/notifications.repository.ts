@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import {
   Notification,
   NotificationAudience,
+  NotificationChannel,
   NotificationStatus,
   NotificationType,
+  OrderStatus,
   Prisma,
   PrismaClient,
   PushPlatform,
@@ -271,6 +273,71 @@ export class NotificationsRepository {
       data: {
         seenAt: new Date(),
       },
+    });
+  }
+
+  async claimPendingOrderNotifications(input: {
+    userId: string;
+    restaurantId: string;
+    branchId?: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const candidates = await tx.notification.findMany({
+        where: {
+          audience: NotificationAudience.ADMIN,
+          channel: NotificationChannel.IN_APP,
+          type: NotificationType.ORDER_PLACED,
+          restaurantId: input.restaurantId,
+          ...(input.branchId ? { branchId: input.branchId } : {}),
+          recipientUserId: null,
+          seenAt: null,
+          order: {
+            status: {
+              in: [OrderStatus.PAYMENT_PENDING, OrderStatus.PLACED],
+            },
+          },
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+        take: 20,
+      });
+      const ids = candidates.map(({ id }) => id);
+
+      if (!ids.length) return [];
+
+      await tx.notification.updateMany({
+        where: { id: { in: ids }, recipientUserId: null },
+        data: { recipientUserId: input.userId },
+      });
+
+      return tx.notification.findMany({
+        where: { id: { in: ids }, recipientUserId: input.userId },
+        include: {
+          order: {
+            select: {
+              id: true,
+              customerId: true,
+              restaurantId: true,
+              branchId: true,
+              deliverymanId: true,
+              status: true,
+              paymentStatus: true,
+              totalAmount: true,
+            },
+          },
+          paymentTransaction: {
+            select: {
+              id: true,
+              orderId: true,
+              status: true,
+              type: true,
+              amount: true,
+              currency: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
     });
   }
 

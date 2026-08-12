@@ -80,6 +80,17 @@ export class NotificationsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN, RolesEnum.STAFF)
+  @Post('claim-pending-orders')
+  claimPendingOrders(
+    @CurrentUser() user: AuthUserContext,
+    @Query() query: ListNotificationsDto,
+  ) {
+    return this.notificationsService.claimPendingOrders(user, query);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,

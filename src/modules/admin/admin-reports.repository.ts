@@ -662,6 +662,8 @@ export class AdminReportsRepository {
       paidRefunds,
       failedPayments,
       paidOrders,
+      paidChargesByMethod,
+      paidRefundsByMethod,
     ] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
         where: orderWhere,
@@ -699,7 +701,45 @@ export class AdminReportsRepository {
       this.prisma.order.count({
         where: { ...orderWhere, paymentStatus: PaymentStatus.PAID },
       }),
+      this.prisma.paymentTransaction.groupBy({
+        by: ['paymentMethod'],
+        orderBy: { paymentMethod: 'asc' },
+        where: {
+          ...paymentWhere,
+          type: PaymentTransactionType.CHARGE,
+          status: PaymentStatus.PAID,
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.paymentTransaction.groupBy({
+        by: ['paymentMethod'],
+        orderBy: { paymentMethod: 'asc' },
+        where: {
+          ...paymentWhere,
+          type: PaymentTransactionType.REFUND,
+          status: PaymentStatus.PAID,
+        },
+        _sum: { amount: true },
+      }),
     ]);
+
+    const refundedByMethod = new Map(
+      paidRefundsByMethod.map((entry) => [
+        entry.paymentMethod,
+        Number(entry._sum?.amount ?? 0),
+      ]),
+    );
+    const paymentMethodRevenue = paidChargesByMethod.map((entry) => {
+      const received = Number(entry._sum?.amount ?? 0);
+      const refunded = refundedByMethod.get(entry.paymentMethod) ?? 0;
+
+      return {
+        paymentMethod: entry.paymentMethod,
+        received,
+        refunded,
+        netReceived: Number((received - refunded).toFixed(2)),
+      };
+    });
 
     return {
       totalOrders: ordersAggregate._count.id,
@@ -712,6 +752,7 @@ export class AdminReportsRepository {
       totalTax: Number(ordersAggregate._sum.taxAmount ?? 0),
       totalDeliveryFee: Number(ordersAggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(ordersAggregate._sum.discountAmount ?? 0),
+      paymentMethodRevenue,
       netRevenue: Number(
         (
           Number(paidCharges._sum.amount ?? 0) -
