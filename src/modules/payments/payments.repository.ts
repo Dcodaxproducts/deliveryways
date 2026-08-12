@@ -99,6 +99,20 @@ export class PaymentsRepository {
     });
   }
 
+  findRestaurantCheckoutDomain(restaurantId: string) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        subdomain: true,
+        customDomain: true,
+        customDomainVerifiedAt: true,
+      },
+    });
+  }
+
   findRestaurantScope(restaurantId: string, tenantId: string) {
     return this.prisma.restaurant.findFirst({
       where: {

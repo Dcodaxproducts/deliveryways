@@ -13,7 +13,7 @@ describe('PaypalOrdersService', () => {
 
   it('fails closed when global PayPal credentials are missing', async () => {
     const service = makeService({
-      PUBLIC_CUSTOMER_URL: 'https://shop.example.com',
+      PUBLIC_API_BASE_URL: 'https://api.example.com/api/v1',
     });
 
     await expect(
@@ -49,7 +49,7 @@ describe('PaypalOrdersService', () => {
       PAYPAL_CLIENT_ID: 'client-id',
       PAYPAL_CLIENT_SECRET: 'client-secret',
       PAYPAL_ENVIRONMENT: 'SANDBOX',
-      PUBLIC_CUSTOMER_URL: 'https://shop.example.com',
+      PUBLIC_API_BASE_URL: 'https://api.example.com/api/v1',
     });
 
     const result = await service.createOrder({
@@ -65,6 +65,12 @@ describe('PaypalOrdersService', () => {
       id: 'paypal-order-1',
       approvalUrl: 'https://paypal.test/approve',
     });
+    expect(service.getReturnUrl('payment-1')).toBe(
+      'https://api.example.com/api/v1/payments/paypal/return?paymentId=payment-1',
+    );
+    expect(service.getCancelUrl('payment-1')).toBe(
+      'https://api.example.com/api/v1/payments/paypal/cancel?paymentId=payment-1',
+    );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       'https://api-m.sandbox.paypal.com/v2/checkout/orders',

@@ -21,15 +21,15 @@ export class PaypalOrdersService {
     return Boolean(credentials ?? this.readGlobalCredentials());
   }
 
-  getReturnUrl(orderId: string) {
-    return this.checkoutUrl(
-      `/checkout/paypal/return?orderId=${encodeURIComponent(orderId)}`,
+  getReturnUrl(paymentTransactionId: string) {
+    return this.callbackUrl(
+      `/payments/paypal/return?paymentId=${encodeURIComponent(paymentTransactionId)}`,
     );
   }
 
-  getCancelUrl(orderId: string) {
-    return this.checkoutUrl(
-      `/checkout?paypal=cancelled&orderId=${encodeURIComponent(orderId)}`,
+  getCancelUrl(paymentTransactionId: string) {
+    return this.callbackUrl(
+      `/payments/paypal/cancel?paymentId=${encodeURIComponent(paymentTransactionId)}`,
     );
   }
 
@@ -213,17 +213,17 @@ export class PaypalOrdersService {
       : 'https://api-m.paypal.com';
   }
 
-  private checkoutUrl(path: string) {
-    const appUrl = this.configService
-      .get<string>('PUBLIC_CUSTOMER_URL')
+  private callbackUrl(path: string) {
+    const apiUrl = this.configService
+      .get<string>('PUBLIC_API_BASE_URL')
       ?.trim()
       .replace(/\/$/, '');
-    if (!appUrl) {
+    if (!apiUrl) {
       throw new InternalServerErrorException(
-        'PayPal checkout is not configured. Missing PUBLIC_CUSTOMER_URL',
+        'PayPal checkout is not configured. Missing PUBLIC_API_BASE_URL',
       );
     }
-    return `${appUrl}${path}`;
+    return `${apiUrl}${path}`;
   }
 
   private readApprovalUrl(value: unknown) {

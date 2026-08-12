@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   ServiceUnavailableException,
@@ -147,8 +148,14 @@ interface GlobalPayoutProvidersSettings {
   >;
 }
 
+type PaypalPaymentRecord = NonNullable<
+  Awaited<ReturnType<PaymentsRepository['findByProviderRef']>>
+>;
+
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly paymentsRepository: PaymentsRepository,
     private readonly prisma: PrismaService,
@@ -824,8 +831,8 @@ export class PaymentsService {
         currency,
         paymentTransactionId: data.id,
         orderId: order.id,
-        returnUrl: this.paypalOrdersService.getReturnUrl(order.id),
-        cancelUrl: this.paypalOrdersService.getCancelUrl(order.id),
+        returnUrl: this.paypalOrdersService.getReturnUrl(data.id),
+        cancelUrl: this.paypalOrdersService.getCancelUrl(data.id),
         credentials: paypalCredentials,
       });
       const updated = await this.paymentsRepository.updateStatus(data.id, {
@@ -879,8 +886,83 @@ export class PaymentsService {
       payment.order.customerId,
     );
 
+    const updated = await this.capturePendingPaypalPayment(
+      payment,
+      dto.paypalOrderId,
+    );
+
+    return { data: updated, message: 'PayPal payment captured successfully' };
+  }
+
+  async handlePaypalReturn(input: {
+    paypalOrderId?: string;
+    paymentId?: string;
+    orderId?: string;
+    cancelled?: boolean;
+  }) {
+    const payment = input.paypalOrderId
+      ? await this.paymentsRepository.findByProviderRef(input.paypalOrderId)
+      : input.paymentId
+        ? await this.paymentsRepository.findById(input.paymentId)
+        : null;
+    const fallbackUrl = this.buildPublicCustomerUrl(
+      `/checkout?paypal=${input.cancelled ? 'cancelled' : 'failed'}`,
+    );
+
+    if (
+      !payment?.order ||
+      (input.paymentId && payment.id !== input.paymentId) ||
+      (input.orderId && payment.orderId !== input.orderId)
+    ) {
+      this.logger.warn('Rejected unmatched PayPal return callback');
+      return fallbackUrl;
+    }
+
+    if (input.cancelled) {
+      return this.buildRestaurantCustomerUrl(
+        payment.restaurantId,
+        `/checkout?paypal=cancelled&orderId=${encodeURIComponent(payment.orderId ?? '')}`,
+      );
+    }
+
+    if (!input.paypalOrderId) {
+      this.logger.warn(`PayPal return omitted token for payment ${payment.id}`);
+      return this.buildRestaurantCustomerUrl(
+        payment.restaurantId,
+        `/checkout?paypal=failed&orderId=${encodeURIComponent(payment.orderId ?? '')}`,
+      );
+    }
+
+    try {
+      await this.capturePendingPaypalPayment(payment, input.paypalOrderId);
+      return this.buildRestaurantCustomerUrl(
+        payment.restaurantId,
+        `/order?success=true&orderId=${encodeURIComponent(payment.orderId ?? '')}`,
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        `PayPal return capture failed for payment ${payment.id}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return this.buildRestaurantCustomerUrl(
+        payment.restaurantId,
+        `/checkout?paypal=failed&orderId=${encodeURIComponent(payment.orderId ?? '')}`,
+      );
+    }
+  }
+
+  private async capturePendingPaypalPayment(
+    payment: PaypalPaymentRecord,
+    paypalOrderId: string,
+  ) {
+    if (!this.paypalOrdersService) {
+      throw new BadRequestException('PayPal checkout is unavailable');
+    }
+    if (!payment.order) {
+      throw new NotFoundException('PayPal payment order not found');
+    }
     if (payment.status === PaymentStatus.PAID) {
-      return { data: payment, message: 'PayPal payment already captured' };
+      return payment;
     }
     if (
       payment.paymentMethod !== PaymentMethod.PAYPAL ||
@@ -891,7 +973,7 @@ export class PaymentsService {
 
     const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
     const captured = await this.paypalOrdersService.captureOrder({
-      paypalOrderId: dto.paypalOrderId,
+      paypalOrderId,
       paymentTransactionId: payment.id,
       credentials,
     });
@@ -910,6 +992,7 @@ export class PaymentsService {
       );
     }
 
+    const orderId = payment.order.id;
     const shouldPlaceOrder =
       payment.order.status === OrderStatus.PAYMENT_PENDING;
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -917,7 +1000,7 @@ export class PaymentsService {
         payment.id,
         {
           status: PaymentStatus.PAID,
-          providerRef: dto.paypalOrderId,
+          providerRef: paypalOrderId,
           providerData: captured.payload as Prisma.InputJsonValue,
           processedAt: new Date(),
         },
@@ -952,7 +1035,43 @@ export class PaymentsService {
       await this.notificationsService.notifyOrderPlaced(orderId);
     }
 
-    return { data: updated, message: 'PayPal payment captured successfully' };
+    return updated;
+  }
+
+  private async buildRestaurantCustomerUrl(restaurantId: string, path: string) {
+    const restaurant =
+      await this.paymentsRepository.findRestaurantCheckoutDomain(restaurantId);
+    if (!restaurant) {
+      return this.buildPublicCustomerUrl(path);
+    }
+
+    const url = new URL(this.buildPublicCustomerUrl(path));
+    if (restaurant.customDomain && restaurant.customDomainVerifiedAt) {
+      url.hostname = restaurant.customDomain;
+      url.port = '';
+      return url.toString();
+    }
+
+    const baseDomain = this.configService
+      ?.get<string>('CUSTOMER_APP_BASE_DOMAIN')
+      ?.trim()
+      .replace(/^\.+|\.+$/g, '');
+    if (restaurant.subdomain && baseDomain) {
+      url.hostname = `${restaurant.subdomain}.${baseDomain}`;
+    }
+    return url.toString();
+  }
+
+  private buildPublicCustomerUrl(path: string) {
+    const publicCustomerUrl = this.configService
+      ?.get<string>('PUBLIC_CUSTOMER_URL')
+      ?.trim();
+    if (!publicCustomerUrl) {
+      throw new ServiceUnavailableException(
+        'Customer application URL is not configured',
+      );
+    }
+    return new URL(path, publicCustomerUrl).toString();
   }
 
   private async switchPendingOrderPaymentMethod(

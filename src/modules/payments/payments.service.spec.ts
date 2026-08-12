@@ -60,6 +60,11 @@ describe('PaymentsService', () => {
       summarizeRestaurantTransactions: jest.fn(),
       summarizeRestaurantWallets: jest.fn(),
       sumSuccessfulRefunds: jest.fn(),
+      findRestaurantCheckoutDomain: jest.fn().mockResolvedValue({
+        subdomain: 'american-corner',
+        customDomain: null,
+        customDomainVerifiedAt: null,
+      }),
       findRestaurantScope: jest.fn().mockResolvedValue({ id: 'restaurant-1' }),
       updateRestaurantSettings: jest
         .fn()
@@ -231,13 +236,12 @@ describe('PaymentsService', () => {
       sendTransactionalEmail: jest.fn().mockResolvedValue(undefined),
     };
     const configService = {
-      get: jest
-        .fn()
-        .mockImplementation((key: string) =>
-          key === 'app.deploymentEnvironment'
-            ? deploymentEnvironment
-            : undefined,
-        ),
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'app.deploymentEnvironment') return deploymentEnvironment;
+        if (key === 'PUBLIC_CUSTOMER_URL') return 'https://delivery-way.de';
+        if (key === 'CUSTOMER_APP_BASE_DOMAIN') return 'delivery-way.de';
+        return undefined;
+      }),
     };
 
     const service = new PaymentsService(
@@ -639,6 +643,8 @@ describe('PaymentsService', () => {
         },
       }),
     );
+    expect(paypalOrdersService.getReturnUrl).toHaveBeenCalledWith('payment-1');
+    expect(paypalOrdersService.getCancelUrl).toHaveBeenCalledWith('payment-1');
     expect(notificationsService.notifyOrderPlaced).not.toHaveBeenCalled();
     expect(
       notificationsService.notifyPaymentAttemptCreated,
@@ -722,6 +728,88 @@ describe('PaymentsService', () => {
         },
       }),
     );
+  });
+
+  it('captures a shared PayPal callback and returns to the restaurant subdomain', async () => {
+    const {
+      service,
+      paymentsRepository,
+      paypalOrdersService,
+      notificationsService,
+    } = makeService();
+    const payment = {
+      id: 'payment-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.PAYPAL,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PENDING,
+      amount: new Prisma.Decimal(25),
+      currency: 'EUR',
+      providerRef: 'paypal-order-1',
+      order: {
+        id: 'order-1',
+        customerId: 'customer-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        totalAmount: new Prisma.Decimal(25),
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.PAYPAL,
+        status: OrderStatus.PAYMENT_PENDING,
+      },
+    };
+    paymentsRepository.findByProviderRef.mockResolvedValue(payment);
+    paymentsRepository.updateStatus.mockResolvedValue({
+      ...payment,
+      status: PaymentStatus.PAID,
+    });
+    paypalOrdersService.captureOrder.mockResolvedValue({
+      status: 'COMPLETED',
+      customId: 'payment-1',
+      captureId: 'capture-1',
+      amount: '25.00',
+      currency: 'EUR',
+      payload: { status: 'COMPLETED' },
+    });
+
+    const redirectUrl = await service.handlePaypalReturn({
+      paypalOrderId: 'paypal-order-1',
+      paymentId: 'payment-1',
+    });
+
+    expect(redirectUrl).toBe(
+      'https://american-corner.delivery-way.de/order?success=true&orderId=order-1',
+    );
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
+  });
+
+  it('redirects PayPal cancellation to a verified custom domain without capture', async () => {
+    const { service, paymentsRepository, paypalOrdersService } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-1',
+      restaurantId: 'restaurant-1',
+      orderId: 'order-1',
+      order: { id: 'order-1' },
+    });
+    paymentsRepository.findRestaurantCheckoutDomain.mockResolvedValue({
+      subdomain: 'american-corner',
+      customDomain: 'orders.american-corner.de',
+      customDomainVerifiedAt: new Date(),
+    });
+
+    const redirectUrl = await service.handlePaypalReturn({
+      paymentId: 'payment-1',
+      cancelled: true,
+    });
+
+    expect(redirectUrl).toBe(
+      'https://orders.american-corner.de/checkout?paypal=cancelled&orderId=order-1',
+    );
+    expect(paypalOrdersService.captureOrder).not.toHaveBeenCalled();
   });
 
   it('switches a payment-pending Stripe order to COD', async () => {

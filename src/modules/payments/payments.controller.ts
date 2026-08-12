@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -52,7 +53,7 @@ import {
   UpdatePaymentStatusDto,
   SendSubscriptionPaymentRequestDto,
 } from './dto';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { PaymentsService } from './payments.service';
 
 @ApiTags('Payments')
@@ -91,6 +92,37 @@ export class PaymentsController {
     @Headers('stripe-signature') signature?: string,
   ) {
     return this.paymentsService.handleStripeWebhook(request.rawBody, signature);
+  }
+
+  @Public()
+  @Get('paypal/return')
+  @ApiOperation({ summary: 'Handle the shared PayPal checkout return' })
+  async handlePaypalReturn(
+    @Query('token') paypalOrderId: string | undefined,
+    @Query('paymentId') paymentId: string | undefined,
+    @Query('orderId') orderId: string | undefined,
+    @Res() response: Response,
+  ) {
+    const redirectUrl = await this.paymentsService.handlePaypalReturn({
+      paypalOrderId,
+      paymentId,
+      orderId,
+    });
+    return response.redirect(303, redirectUrl);
+  }
+
+  @Public()
+  @Get('paypal/cancel')
+  @ApiOperation({ summary: 'Handle the shared PayPal checkout cancellation' })
+  async handlePaypalCancel(
+    @Query('paymentId') paymentId: string | undefined,
+    @Res() response: Response,
+  ) {
+    const redirectUrl = await this.paymentsService.handlePaypalReturn({
+      paymentId,
+      cancelled: true,
+    });
+    return response.redirect(303, redirectUrl);
   }
 
   @ApiBearerAuth()
