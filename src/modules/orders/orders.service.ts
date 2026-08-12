@@ -578,15 +578,12 @@ export class OrdersService {
     const customerId =
       user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
     const deliverymanId = isDeliveryman ? user.uid : undefined;
-    const excludeUnpaidStripePending =
-      user.role === UserRoleEnum.BUSINESS_ADMIN ||
-      user.role === UserRoleEnum.BRANCH_ADMIN;
     const { items, total } = await this.ordersRepository.list(
       restaurantId,
       query,
       customerId,
       deliverymanId,
-      excludeUnpaidStripePending,
+      false,
     );
 
     return {

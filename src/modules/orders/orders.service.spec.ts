@@ -2205,7 +2205,7 @@ describe('OrdersService - deliveryman order access', () => {
     expect(result.message).toBe('Orders fetched successfully');
   });
 
-  it('excludes unpaid Stripe pending orders from business admin lists', async () => {
+  it('keeps unpaid online-payment orders visible in business admin lists', async () => {
     const query = {
       page: 1,
       limit: 10,
@@ -2226,11 +2226,11 @@ describe('OrdersService - deliveryman order access', () => {
       query,
       undefined,
       undefined,
-      true,
+      false,
     );
   });
 
-  it('excludes unpaid Stripe pending orders from branch admin lists', async () => {
+  it('keeps unpaid online-payment orders visible in branch admin lists', async () => {
     const query = {
       page: 1,
       limit: 10,
@@ -2251,7 +2251,7 @@ describe('OrdersService - deliveryman order access', () => {
       query,
       undefined,
       undefined,
-      true,
+      false,
     );
   });
 
