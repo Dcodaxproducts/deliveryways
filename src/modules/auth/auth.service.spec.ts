@@ -81,6 +81,33 @@ describe('AuthService checkEmailRole', () => {
   });
 });
 
+describe('AuthService deleteAccount', () => {
+  it('prevents a Super Admin from scheduling deletion of their own account', async () => {
+    const usersService = {
+      softDeleteUser: jest.fn(),
+    };
+    const service = new AuthService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      usersService as unknown as UsersService,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.deleteAccount({
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+        actorType: 'USER',
+      }),
+    ).rejects.toThrow('Super Admin accounts cannot be self-deleted');
+    expect(usersService.softDeleteUser).not.toHaveBeenCalled();
+  });
+});
+
 describe('AuthService registerTenant duplicate email checks', () => {
   let service: AuthService;
   let usersService: Partial<Record<keyof UsersService, jest.Mock>>;

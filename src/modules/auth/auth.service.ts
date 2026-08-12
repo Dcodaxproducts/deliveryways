@@ -2214,6 +2214,12 @@ export class AuthService {
   }
 
   async deleteAccount(user: AuthUserContext) {
+    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Super Admin accounts cannot be self-deleted',
+      );
+    }
+
     if (user.actorType === 'STAFF') {
       await this.staffManagementRepository.softDelete(user.uid);
       return {
