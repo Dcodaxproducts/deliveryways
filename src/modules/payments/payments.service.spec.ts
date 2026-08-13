@@ -1360,6 +1360,7 @@ describe('PaymentsService', () => {
           },
           methods: {
             allowedPaymentMethods: ['COD'],
+            customerPaymentMethods: [PaymentMethod.STRIPE],
             walletEnabled: false,
             note: 'Old note',
           },
@@ -1399,7 +1400,7 @@ describe('PaymentsService', () => {
     expect(settings.payments.methods).toEqual(
       expect.objectContaining({
         allowedPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
-        customerPaymentMethods: [PaymentMethod.COD],
+        customerPaymentMethods: [PaymentMethod.COD, PaymentMethod.STRIPE],
         walletEnabled: false,
         note: 'Use cash and card',
         updatedBy: 'super-1',
@@ -1411,6 +1412,7 @@ describe('PaymentsService', () => {
     ]);
     expect(result.data.methods.customerPaymentMethods).toEqual([
       PaymentMethod.COD,
+      PaymentMethod.STRIPE,
     ]);
   });
 

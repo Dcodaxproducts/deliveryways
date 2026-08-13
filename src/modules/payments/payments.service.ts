@@ -2617,22 +2617,17 @@ export class PaymentsService {
     const current = this.readRestaurantPaymentMethodSettings(
       restaurant.settings,
     );
-    const retainedCustomerMethods = current.customerPaymentMethods.filter(
-      (method) => dto.allowedPaymentMethods.includes(method),
+    const allowedPaymentMethods = this.dedupePaymentMethods(
+      dto.allowedPaymentMethods,
     );
     const nextSettings = this.writeRestaurantPaymentMethodSettings(
       restaurant.settings,
       {
-        allowedPaymentMethods: this.dedupePaymentMethods(
-          dto.allowedPaymentMethods,
-        ),
+        allowedPaymentMethods,
         walletEnabled:
           dto.walletEnabled ??
           dto.allowedPaymentMethods.includes(PaymentMethod.WALLET),
-        customerPaymentMethods:
-          retainedCustomerMethods.length > 0
-            ? retainedCustomerMethods
-            : this.dedupePaymentMethods(dto.allowedPaymentMethods),
+        customerPaymentMethods: allowedPaymentMethods,
         note:
           dto.note !== undefined
             ? (this.resolveOptionalString(dto.note) ?? null)
