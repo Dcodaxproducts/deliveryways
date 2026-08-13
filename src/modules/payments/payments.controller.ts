@@ -35,6 +35,7 @@ import {
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   CapturePaypalOrderDto,
+  ReconcileStripeOrderDto,
   CreateSubscriptionPaymentAttemptDto,
   ListPaymentsDto,
   ListRestaurantPayoutRequestsDto,
@@ -140,6 +141,23 @@ export class PaymentsController {
     @Body() dto: CreatePaymentAttemptDto,
   ) {
     return this.paymentsService.createAttempt(user, orderId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Post('orders/:orderId/stripe/reconcile')
+  reconcileStripeOrder(
+    @CurrentUser() user: AuthUserContext,
+    @Param('orderId') orderId: string,
+    @Body() dto: ReconcileStripeOrderDto,
+  ) {
+    return this.paymentsService.reconcileStripeOrder(user, orderId, dto);
   }
 
   @ApiBearerAuth()

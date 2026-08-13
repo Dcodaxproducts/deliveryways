@@ -101,6 +101,14 @@ export class StripePaymentsService {
     return stripe.paymentIntents.cancel(paymentIntentId);
   }
 
+  async retrievePaymentIntent(
+    paymentIntentId: string,
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    const stripe = this.requireStripe(credentials);
+    return stripe.paymentIntents.retrieve(paymentIntentId);
+  }
+
   async refundPaymentIntent(
     paymentIntentId: string,
     amount?: number,

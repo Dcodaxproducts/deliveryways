@@ -48,6 +48,13 @@ export class CapturePaypalOrderDto {
   paypalOrderId!: string;
 }
 
+export class ReconcileStripeOrderDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(255)
+  paymentIntentId!: string;
+}
+
 export class CreateSubscriptionPaymentAttemptDto {
   @ApiPropertyOptional({ maxLength: 50 })
   @IsOptional()

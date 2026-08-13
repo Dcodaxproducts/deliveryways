@@ -36,6 +36,7 @@ import {
   CreateRestaurantStripeTransferDto,
   CreatePaymentAttemptDto,
   CapturePaypalOrderDto,
+  ReconcileStripeOrderDto,
   CreateSubscriptionPaymentAttemptDto,
   ListRestaurantPayoutRequestsDto,
   MarkRestaurantPayoutPaidDto,
@@ -723,6 +724,8 @@ export class PaymentsService {
     const existingPendingCharge =
       await this.paymentsRepository.findLatestPendingChargeByOrderId(order.id);
 
+    await this.closePendingStripeIntentBeforeReplacement(existingPendingCharge);
+
     if (
       paymentMethod !== PaymentMethod.STRIPE &&
       paymentMethod !== PaymentMethod.PAYPAL
@@ -895,6 +898,104 @@ export class PaymentsService {
     );
 
     return { data: updated, message: 'PayPal payment captured successfully' };
+  }
+
+  async reconcileStripeOrder(
+    user: AuthUserContext,
+    orderId: string,
+    dto: ReconcileStripeOrderDto,
+  ) {
+    const payment = await this.paymentsRepository.findByProviderRef(
+      dto.paymentIntentId,
+    );
+    if (
+      !payment ||
+      payment.orderId !== orderId ||
+      payment.paymentMethod !== PaymentMethod.STRIPE ||
+      !payment.order
+    ) {
+      throw new NotFoundException('Stripe payment attempt not found');
+    }
+
+    await this.assertOrderAccess(
+      user,
+      payment.order.restaurantId,
+      payment.order.customerId,
+    );
+
+    if (payment.status !== PaymentStatus.PAID) {
+      const credentials = await this.resolveGlobalStripeCheckoutCredentials();
+      const intent = await this.stripePaymentsService.retrievePaymentIntent(
+        dto.paymentIntentId,
+        credentials,
+      );
+
+      if (intent.status !== 'succeeded') {
+        return {
+          data: {
+            orderId,
+            orderStatus: payment.order.status,
+            paymentStatus: payment.status,
+            providerStatus: intent.status,
+          },
+          message: 'Stripe payment is still pending confirmation',
+        };
+      }
+
+      await this.handleStripePaymentIntentSucceeded(
+        intent as unknown as Record<string, unknown>,
+      );
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, paymentStatus: true },
+    });
+
+    return {
+      data: {
+        orderId,
+        orderStatus: order?.status ?? payment.order.status,
+        paymentStatus: order?.paymentStatus ?? PaymentStatus.PAID,
+        providerStatus: 'succeeded',
+      },
+      message: 'Stripe payment reconciled successfully',
+    };
+  }
+
+  private async closePendingStripeIntentBeforeReplacement(
+    payment: Awaited<
+      ReturnType<PaymentsRepository['findLatestPendingChargeByOrderId']>
+    > | null,
+  ) {
+    if (
+      payment?.paymentMethod !== PaymentMethod.STRIPE ||
+      !payment.providerRef
+    ) {
+      return;
+    }
+
+    const credentials = await this.resolveGlobalStripeCheckoutCredentials();
+    const intent = await this.stripePaymentsService.retrievePaymentIntent(
+      payment.providerRef,
+      credentials,
+    );
+
+    if (intent.status === 'succeeded') {
+      await this.handleStripePaymentIntentSucceeded(
+        intent as unknown as Record<string, unknown>,
+      );
+      throw new BadRequestException(
+        'Stripe payment already succeeded and the order was reconciled',
+      );
+    }
+
+    if (intent.status !== 'canceled') {
+      await this.stripePaymentsService.cancelPaymentIntent(
+        payment.providerRef,
+        credentials,
+      );
+    }
   }
 
   async handlePaypalReturn(input: {
@@ -3349,19 +3450,51 @@ export class PaymentsService {
       }
     });
 
-    await this.creditRestaurantWalletForPayment(
-      { ...payment, status: PaymentStatus.PAID },
-      'stripe:webhook',
-    );
-    await this.loyaltyWalletService!.awardPointsForPaidOrder(
-      orderId,
-      payment.id,
-      'stripe:webhook',
-    );
-    await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+    const completionEffects: Array<{
+      name: string;
+      run: () => Promise<unknown>;
+    }> = [
+      {
+        name: 'restaurant wallet credit',
+        run: () =>
+          this.creditRestaurantWalletForPayment(
+            { ...payment, status: PaymentStatus.PAID },
+            'stripe:webhook',
+          ),
+      },
+      {
+        name: 'loyalty points',
+        run: () =>
+          this.loyaltyWalletService!.awardPointsForPaidOrder(
+            orderId,
+            payment.id,
+            'stripe:webhook',
+          ),
+      },
+      {
+        name: 'payment notification',
+        run: () =>
+          this.notificationsService.notifyPaymentStatusChanged(payment.id),
+      },
+    ];
     if (shouldPlaceOrder) {
-      await this.notificationsService.notifyOrderPlaced(orderId);
+      completionEffects.push({
+        name: 'new order notification',
+        run: () => this.notificationsService.notifyOrderPlaced(orderId),
+      });
     }
+
+    const effectResults = await Promise.allSettled(
+      completionEffects.map((effect) => effect.run()),
+    );
+    effectResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        this.logger.error(
+          `Stripe payment ${payment.id} completed but ${completionEffects[index]?.name ?? 'post-processing'} failed`,
+          result.reason instanceof Error ? result.reason.stack : undefined,
+        );
+      }
+    });
   }
 
   private async handleStripePaymentIntentFailed(

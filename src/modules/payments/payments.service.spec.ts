@@ -1,5 +1,6 @@
 import {
   OrderStatus,
+  OrderType,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -158,6 +159,10 @@ describe('PaymentsService', () => {
       createPaymentIntent: jest.fn(),
       createTransfer: jest.fn(),
       constructWebhookEvent: jest.fn(),
+      retrievePaymentIntent: jest.fn().mockResolvedValue({
+        id: 'pi_pending',
+        status: 'requires_payment_method',
+      }),
       cancelPaymentIntent: jest.fn(),
       refundPaymentIntent: jest.fn(),
     };
@@ -588,7 +593,7 @@ describe('PaymentsService', () => {
       orderType: 'TAKEAWAY',
       paymentStatus: PaymentStatus.PENDING,
       status: OrderStatus.PAYMENT_PENDING,
-      branch: { settings: { allowedPaymentMethods: [PaymentMethod.PAYPAL] } },
+      branch: { settings: { allowedPaymentMethods: [PaymentMethod.COD] } },
       restaurant: {
         settings: {
           payments: {
@@ -651,6 +656,130 @@ describe('PaymentsService', () => {
     expect(
       notificationsService.notifyPaymentAttemptCreated,
     ).not.toHaveBeenCalled();
+  });
+
+  it('reconciles a succeeded Stripe intent immediately after client confirmation', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      stripePaymentsService,
+      notificationsService,
+    } = makeService();
+
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      status: PaymentStatus.PENDING,
+      amount: new Prisma.Decimal(31),
+      currency: 'EUR',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        customerId: 'customer-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        totalAmount: new Prisma.Decimal(31),
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.STRIPE,
+        status: OrderStatus.PAYMENT_PENDING,
+      },
+    });
+    stripePaymentsService.retrievePaymentIntent.mockResolvedValue({
+      id: 'pi_succeeded',
+      status: 'succeeded',
+    });
+    prisma.order.findFirst.mockResolvedValue({ id: 'order-1' });
+    prisma.order.findUnique.mockResolvedValue({
+      status: OrderStatus.PLACED,
+      paymentStatus: PaymentStatus.PAID,
+    });
+
+    const result = await service.reconcileStripeOrder(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      } as never,
+      'order-1',
+      { paymentIntentId: 'pi_succeeded' },
+    );
+
+    expect(paymentsRepository.updateStatus).toHaveBeenCalledWith(
+      'payment-1',
+      expect.objectContaining({ status: PaymentStatus.PAID }),
+      expect.anything(),
+    );
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        orderStatus: OrderStatus.PLACED,
+        paymentStatus: PaymentStatus.PAID,
+        providerStatus: 'succeeded',
+      }),
+    );
+  });
+
+  it('reconciles a completed Stripe intent instead of overwriting it when switching methods', async () => {
+    const { service, prisma, paymentsRepository, stripePaymentsService } =
+      makeService();
+
+    prisma.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      totalAmount: new Prisma.Decimal(31),
+      paymentMethod: PaymentMethod.STRIPE,
+      orderType: OrderType.TAKEAWAY,
+      paymentStatus: PaymentStatus.PENDING,
+      status: OrderStatus.PAYMENT_PENDING,
+      branch: { settings: { allowedPaymentMethods: [PaymentMethod.PAYPAL] } },
+      restaurant: { settings: {} },
+    });
+    paymentsRepository.findLatestPendingChargeByOrderId.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      providerRef: 'pi_succeeded',
+    });
+    stripePaymentsService.retrievePaymentIntent.mockResolvedValue({
+      id: 'pi_succeeded',
+      status: 'succeeded',
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue({
+      id: 'payment-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      status: PaymentStatus.PENDING,
+      providerData: {},
+    });
+    prisma.order.findFirst.mockResolvedValue({ id: 'order-1' });
+
+    await expect(
+      service.createAttempt(
+        {
+          uid: 'customer-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        } as never,
+        'order-1',
+        { paymentMethod: PaymentMethod.COD },
+      ),
+    ).rejects.toThrow(
+      'Stripe payment already succeeded and the order was reconciled',
+    );
+
+    expect(paymentsRepository.updateStatus).toHaveBeenCalledWith(
+      'payment-1',
+      expect.objectContaining({ status: PaymentStatus.PAID }),
+      expect.anything(),
+    );
+    expect(paymentsRepository.updateChargePaymentMethod).not.toHaveBeenCalled();
   });
 
   it('places and credits a PayPal order only after a verified capture', async () => {
