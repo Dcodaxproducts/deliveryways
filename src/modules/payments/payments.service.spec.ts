@@ -585,6 +585,7 @@ describe('PaymentsService', () => {
       customerId: 'customer-1',
       totalAmount: new Prisma.Decimal(25),
       paymentMethod: PaymentMethod.PAYPAL,
+      orderType: 'TAKEAWAY',
       paymentStatus: PaymentStatus.PENDING,
       status: OrderStatus.PAYMENT_PENDING,
       branch: { settings: { allowedPaymentMethods: [PaymentMethod.PAYPAL] } },
@@ -636,6 +637,7 @@ describe('PaymentsService', () => {
     });
     expect(paypalOrdersService.createOrder).toHaveBeenCalledWith(
       expect.objectContaining({
+        collectShippingAddress: false,
         credentials: {
           clientId: 'paypal-platform-client',
           clientSecret: 'paypal-platform-secret',

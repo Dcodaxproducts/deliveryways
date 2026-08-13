@@ -38,6 +38,7 @@ export class PaypalOrdersService {
     currency: string;
     paymentTransactionId: string;
     orderId: string;
+    collectShippingAddress: boolean;
     returnUrl: string;
     cancelUrl: string;
     credentials?: PaypalOrderCredentials;
@@ -66,6 +67,9 @@ export class PaypalOrdersService {
           paypal: {
             experience_context: {
               user_action: 'PAY_NOW',
+              shipping_preference: input.collectShippingAddress
+                ? 'GET_FROM_FILE'
+                : 'NO_SHIPPING',
               return_url: input.returnUrl,
               cancel_url: input.cancelUrl,
             },

@@ -22,6 +22,7 @@ describe('PaypalOrdersService', () => {
         currency: 'EUR',
         paymentTransactionId: 'payment-1',
         orderId: 'order-1',
+        collectShippingAddress: false,
         returnUrl: service.getReturnUrl('order-1'),
         cancelUrl: service.getCancelUrl('order-1'),
       }),
@@ -57,6 +58,7 @@ describe('PaypalOrdersService', () => {
       currency: 'EUR',
       paymentTransactionId: 'payment-1',
       orderId: 'order-1',
+      collectShippingAddress: false,
       returnUrl: service.getReturnUrl('order-1'),
       cancelUrl: service.getCancelUrl('order-1'),
     });
@@ -83,9 +85,15 @@ describe('PaypalOrdersService', () => {
     const parsed: unknown = JSON.parse(request.body);
     const body = parsed as {
       purchase_units: Array<{ custom_id: string; amount: { value: string } }>;
+      payment_source: {
+        paypal: { experience_context: { shipping_preference: string } };
+      };
     };
     expect(body.purchase_units[0]?.custom_id).toBe('payment-1');
     expect(body.purchase_units[0]?.amount.value).toBe('25.00');
+    expect(
+      body.payment_source.paypal.experience_context.shipping_preference,
+    ).toBe('NO_SHIPPING');
   });
 
   it('recovers an already captured PayPal order after a lost capture response', async () => {

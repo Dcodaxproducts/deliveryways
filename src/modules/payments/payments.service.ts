@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   OrderStatus,
+  OrderType,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -688,6 +689,7 @@ export class PaymentsService {
         paymentMethod: true,
         paymentStatus: true,
         status: true,
+        orderType: true,
         branch: {
           select: {
             settings: true,
@@ -831,6 +833,7 @@ export class PaymentsService {
         currency,
         paymentTransactionId: data.id,
         orderId: order.id,
+        collectShippingAddress: order.orderType === OrderType.DELIVERY,
         returnUrl: this.paypalOrdersService.getReturnUrl(data.id),
         cancelUrl: this.paypalOrdersService.getCancelUrl(data.id),
         credentials: paypalCredentials,
