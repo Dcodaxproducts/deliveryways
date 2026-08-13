@@ -3,6 +3,9 @@ import {
   NotificationChannel,
   NotificationStatus,
   NotificationType,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
   PushPlatform,
 } from '@prisma/client';
 import { ForbiddenException } from '@nestjs/common';
@@ -633,6 +636,72 @@ describe('NotificationsService', () => {
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
       source: 'STOREFRONT',
     });
+  });
+
+  it('suppresses new-order notifications until an online payment is paid', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-pending-payment',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      status: OrderStatus.PLACED,
+      orderType: 'DELIVERY',
+      paymentMethod: PaymentMethod.PAYPAL,
+      paymentStatus: PaymentStatus.PENDING,
+      totalAmount: 25,
+      createdAt: new Date('2026-08-13T05:00:00.000Z'),
+      customer: { email: 'customer@example.com', profile: null },
+      branch: { id: 'branch-1', name: 'Main Branch', settings: null },
+      restaurant: { settings: null },
+      items: [],
+    });
+
+    await service.notifyOrderPlaced('order-pending-payment');
+
+    expect(notificationsRepository.create).not.toHaveBeenCalled();
+    expect(
+      notificationsRealtimeService.emitOrderCreated,
+    ).not.toHaveBeenCalled();
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('emits the new-order event after an online payment is paid', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'order-paid',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      status: OrderStatus.PLACED,
+      orderType: 'DELIVERY',
+      paymentMethod: PaymentMethod.STRIPE,
+      paymentStatus: PaymentStatus.PAID,
+      totalAmount: 25,
+      createdAt: new Date('2026-08-13T05:05:00.000Z'),
+      customer: { email: 'customer@example.com', profile: null },
+      branch: { id: 'branch-1', name: 'Main Branch', settings: null },
+      restaurant: { settings: null },
+      items: [],
+    });
+    notificationsRepository.create.mockResolvedValue({
+      id: 'paid-order-email',
+      recipientEmail: 'customer@example.com',
+      subject: 'subject',
+      body: 'body',
+    });
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+
+    await service.notifyOrderPlaced('order-paid', {
+      notifyRestaurant: false,
+    });
+
+    expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'order-paid',
+        paymentStatus: PaymentStatus.PAID,
+      }),
+    );
   });
 
   it('sends a guest order confirmation to the checkout email', async () => {

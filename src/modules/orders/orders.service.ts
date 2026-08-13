@@ -577,6 +577,13 @@ export class OrdersService {
 
   async list(user: AuthUserContext, query: ListOrdersDto) {
     const isDeliveryman = user.role === 'DELIVERYMAN';
+    const isRestaurantOperator = [
+      UserRoleEnum.BUSINESS_ADMIN,
+      UserRoleEnum.BRANCH_ADMIN,
+      UserRoleEnum.STAFF,
+    ].includes(user.role as UserRoleEnum);
+    const excludeUnpaidOnlineOrders =
+      isRestaurantOperator && query.status !== OrderStatus.PAYMENT_PENDING;
     const restaurantId = isDeliveryman
       ? undefined
       : await this.resolveRestaurantId(user, query.restaurantId);
@@ -588,7 +595,7 @@ export class OrdersService {
       query,
       customerId,
       deliverymanId,
-      false,
+      excludeUnpaidOnlineOrders,
     );
 
     return {

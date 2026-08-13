@@ -2205,7 +2205,7 @@ describe('OrdersService - deliveryman order access', () => {
     expect(result.message).toBe('Orders fetched successfully');
   });
 
-  it('keeps unpaid online-payment orders visible in business admin lists', async () => {
+  it('hides unpaid online-payment orders from business admin all-orders lists', async () => {
     const query = {
       page: 1,
       limit: 10,
@@ -2226,11 +2226,11 @@ describe('OrdersService - deliveryman order access', () => {
       query,
       undefined,
       undefined,
-      false,
+      true,
     );
   });
 
-  it('keeps unpaid online-payment orders visible in branch admin lists', async () => {
+  it('hides unpaid online-payment orders from branch admin all-orders lists', async () => {
     const query = {
       page: 1,
       limit: 10,
@@ -2248,6 +2248,32 @@ describe('OrdersService - deliveryman order access', () => {
 
     expect(ordersRepository.list).toHaveBeenCalledWith(
       'restaurant-1',
+      query,
+      undefined,
+      undefined,
+      true,
+    );
+  });
+
+  it('keeps unpaid online-payment orders in the pending-payments list', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      status: OrderStatus.PAYMENT_PENDING,
+    };
+    const businessAdminUser = {
+      uid: 'owner-1',
+      role: 'BUSINESS_ADMIN' as const,
+      actorType: 'USER' as const,
+      tid: 'tenant-1',
+    };
+
+    await service.list(businessAdminUser as never, query as never);
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      undefined,
       query,
       undefined,
       undefined,
@@ -2281,7 +2307,7 @@ describe('OrdersService - deliveryman order access', () => {
       query,
       undefined,
       undefined,
-      false,
+      true,
     );
   });
 

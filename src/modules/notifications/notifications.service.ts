@@ -9,6 +9,9 @@ import {
   NotificationChannel,
   NotificationStatus,
   NotificationType,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
   Prisma,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
@@ -319,6 +322,17 @@ export class NotificationsService {
 
     if (!order) {
       throw new NotFoundException('Order not found');
+    }
+
+    const requiresOnlinePayment =
+      order.paymentMethod === PaymentMethod.STRIPE ||
+      order.paymentMethod === PaymentMethod.PAYPAL;
+    if (
+      requiresOnlinePayment &&
+      (order.status === OrderStatus.PAYMENT_PENDING ||
+        order.paymentStatus !== PaymentStatus.PAID)
+    ) {
+      return;
     }
 
     const currency =

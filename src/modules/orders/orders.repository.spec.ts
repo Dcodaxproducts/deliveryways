@@ -4,7 +4,7 @@ import { OrdersRepository } from './orders.repository';
 type OrderSearchWhere = {
   restaurantId?: string;
   NOT?: {
-    paymentMethod: PaymentMethod;
+    paymentMethod: { in: PaymentMethod[] };
     status: OrderStatus;
     paymentStatus: PaymentStatus;
   };
@@ -200,7 +200,7 @@ describe('OrdersRepository', () => {
     );
   });
 
-  it('excludes unpaid Stripe pending orders when requested', async () => {
+  it('excludes unpaid Stripe and PayPal pending orders when requested', async () => {
     const prisma = {
       $transaction: jest.fn().mockResolvedValue([[], 0]),
       order: {
@@ -232,12 +232,16 @@ describe('OrdersRepository', () => {
     const countCalls = prisma.order.count.mock.calls as Array<[OrderCountArgs]>;
 
     expect(findManyCalls[0][0].where?.NOT).toEqual({
-      paymentMethod: PaymentMethod.STRIPE,
+      paymentMethod: {
+        in: [PaymentMethod.STRIPE, PaymentMethod.PAYPAL],
+      },
       status: OrderStatus.PAYMENT_PENDING,
       paymentStatus: PaymentStatus.PENDING,
     });
     expect(countCalls[0][0].where?.NOT).toEqual({
-      paymentMethod: PaymentMethod.STRIPE,
+      paymentMethod: {
+        in: [PaymentMethod.STRIPE, PaymentMethod.PAYPAL],
+      },
       status: OrderStatus.PAYMENT_PENDING,
       paymentStatus: PaymentStatus.PENDING,
     });

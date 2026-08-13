@@ -431,7 +431,7 @@ export class OrdersRepository {
     query: ListOrdersDto,
     customerId?: string,
     deliverymanId?: string,
-    excludeUnpaidStripePending = false,
+    excludeUnpaidOnlinePending = false,
   ) {
     const where: Prisma.OrderWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
@@ -440,10 +440,12 @@ export class OrdersRepository {
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(customerId ? { customerId } : {}),
       ...(deliverymanId ? { deliverymanId } : {}),
-      ...(excludeUnpaidStripePending
+      ...(excludeUnpaidOnlinePending
         ? {
             NOT: {
-              paymentMethod: PaymentMethod.STRIPE,
+              paymentMethod: {
+                in: [PaymentMethod.STRIPE, PaymentMethod.PAYPAL],
+              },
               status: OrderStatus.PAYMENT_PENDING,
               paymentStatus: PaymentStatus.PENDING,
             },
