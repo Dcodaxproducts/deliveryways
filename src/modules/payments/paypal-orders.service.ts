@@ -133,7 +133,9 @@ export class PaypalOrdersService {
 
     return {
       status: this.readString(payload, ['status']),
-      customId: this.readString(purchaseUnit, ['custom_id']),
+      customId:
+        this.readString(purchaseUnit, ['custom_id']) ??
+        this.readString(capture, ['custom_id']),
       captureId: this.readString(capture, ['id']),
       amount: this.readString(capture, ['amount', 'value']),
       currency: this.readString(capture, ['amount', 'currency_code']),

@@ -153,4 +153,54 @@ describe('PaypalOrdersService', () => {
       }),
     );
   });
+
+  it('reads the transaction ID from a completed capture when PayPal omits it from the purchase unit', async () => {
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ access_token: 'capture-token' }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status: 'COMPLETED',
+            purchase_units: [
+              {
+                payments: {
+                  captures: [
+                    {
+                      id: 'capture-1',
+                      custom_id: 'payment-1',
+                      amount: { value: '16.00', currency_code: 'EUR' },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+      } as Response);
+    const service = makeService();
+
+    await expect(
+      service.captureOrder({
+        paypalOrderId: 'paypal-order-1',
+        paymentTransactionId: 'payment-1',
+        credentials: {
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+          environment: 'SANDBOX' as never,
+        },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: 'COMPLETED',
+        customId: 'payment-1',
+        captureId: 'capture-1',
+        amount: '16.00',
+        currency: 'EUR',
+      }),
+    );
+  });
 });
