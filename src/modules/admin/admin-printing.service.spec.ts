@@ -61,6 +61,7 @@ describe('AdminPrintingService', () => {
           printKitchenTicket: true,
           connectionType: null,
           paperSize: '80MM',
+          printMode: 'PIXEL_HTML',
           printerName: 'Branch Printer',
           printerTarget: null,
           deviceId: null,
@@ -92,6 +93,7 @@ describe('AdminPrintingService', () => {
               autoPrintOnNewOrder: true,
               connectionType: 'LAN',
               paperSize: '58MM',
+              printMode: 'ESC_POS',
               printerName: 'Kitchen LAN',
             },
           },
@@ -105,6 +107,7 @@ describe('AdminPrintingService', () => {
             autoPrintOnNewOrder: true,
             connectionType: 'LAN',
             paperSize: '58MM',
+            printMode: 'ESC_POS',
             printerName: 'Kitchen LAN',
           },
         },
@@ -129,6 +132,7 @@ describe('AdminPrintingService', () => {
               autoPrintOnNewOrder: boolean;
               connectionType: 'LAN';
               paperSize: '58MM';
+              printMode: 'ESC_POS';
               printerName: string;
             },
           ) => Promise<unknown>;
@@ -146,6 +150,7 @@ describe('AdminPrintingService', () => {
           autoPrintOnNewOrder: true,
           connectionType: 'LAN',
           paperSize: '58MM',
+          printMode: 'ESC_POS',
           printerName: 'Kitchen LAN',
         },
       ),
@@ -165,6 +170,7 @@ describe('AdminPrintingService', () => {
           autoPrintOnNewOrder: true,
           connectionType: 'LAN',
           paperSize: '58MM',
+          printMode: 'ESC_POS',
           printerName: 'Kitchen LAN',
         },
       },
@@ -253,6 +259,38 @@ describe('AdminPrintingService', () => {
     expect(result.data.health.totalEvents).toBe(2);
     expect(result.data.health.latest?.id).toBe('log-1');
     expect(result.data.health.latestErrorMessage).toBe('Printer offline');
+  });
+
+  it('rejects ESC/POS printing with sheet paper', async () => {
+    const repository = {
+      getRestaurantWithSettings: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        settings: {},
+      }),
+    };
+    const service = new AdminPrintingService(
+      repository as never,
+      {
+        getIntegrationLogs: jest.fn().mockReturnValue({ items: [] }),
+      } as never,
+    );
+
+    await expect(
+      service.updateSettings(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {},
+        {
+          printMode: 'ESC_POS',
+          paperSize: 'A4',
+        },
+      ),
+    ).rejects.toThrow('ESC/POS printing requires 58MM or 80MM paper');
   });
 
   it('forbids branch admin from querying another branch logs', async () => {

@@ -22,6 +22,7 @@ import {
 
 type PrintingConnectionType = 'USB' | 'LAN' | 'BLUETOOTH' | 'CLOUD';
 type PrintingPaperSize = 'A4' | 'A5' | '80MM' | '58MM';
+type PrintingMode = 'PIXEL_HTML' | 'ESC_POS';
 
 type PrintingConfig = {
   enabled: boolean;
@@ -31,6 +32,7 @@ type PrintingConfig = {
   printKitchenTicket: boolean;
   connectionType: PrintingConnectionType | null;
   paperSize: PrintingPaperSize;
+  printMode: PrintingMode;
   printerName: string | null;
   printerTarget: string | null;
   deviceId: string | null;
@@ -478,6 +480,10 @@ export class AdminPrintingService {
         printing.paperSize,
         fallback?.paperSize ?? '80MM',
       ),
+      printMode: this.readPrintMode(
+        printing.printMode,
+        fallback?.printMode ?? 'PIXEL_HTML',
+      ),
       printerName:
         this.readStringValue(printing.printerName) ??
         fallback?.printerName ??
@@ -496,6 +502,16 @@ export class AdminPrintingService {
   }
 
   private assertValidPrintingConfig(config: PrintingConfig) {
+    if (
+      config.printMode === 'ESC_POS' &&
+      config.paperSize !== '58MM' &&
+      config.paperSize !== '80MM'
+    ) {
+      throw new BadRequestException(
+        'ESC/POS printing requires 58MM or 80MM paper',
+      );
+    }
+
     if (!config.connectionType) {
       if (config.enabled) {
         throw new BadRequestException(
@@ -549,6 +565,7 @@ export class AdminPrintingService {
           ? { connectionType: dto.connectionType }
           : {}),
         ...(dto.paperSize !== undefined ? { paperSize: dto.paperSize } : {}),
+        ...(dto.printMode !== undefined ? { printMode: dto.printMode } : {}),
         ...(dto.printerName !== undefined
           ? { printerName: dto.printerName }
           : {}),
@@ -607,6 +624,10 @@ export class AdminPrintingService {
     }
 
     return fallback;
+  }
+
+  private readPrintMode(value: unknown, fallback: PrintingMode): PrintingMode {
+    return value === 'PIXEL_HTML' || value === 'ESC_POS' ? value : fallback;
   }
 
   private readPath(value: Prisma.JsonValue | null | undefined, path: string[]) {

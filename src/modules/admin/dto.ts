@@ -1186,6 +1186,14 @@ export class UpdateAdminPrintingSettingsDto {
   @IsIn(['A4', 'A5', '80MM', '58MM'])
   paperSize?: 'A4' | 'A5' | '80MM' | '58MM';
 
+  @ApiPropertyOptional({
+    enum: ['PIXEL_HTML', 'ESC_POS'],
+    default: 'PIXEL_HTML',
+  })
+  @IsOptional()
+  @IsIn(['PIXEL_HTML', 'ESC_POS'])
+  printMode?: 'PIXEL_HTML' | 'ESC_POS';
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
