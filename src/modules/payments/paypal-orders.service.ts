@@ -91,17 +91,35 @@ export class PaypalOrdersService {
     credentials?: PaypalOrderCredentials;
   }) {
     const credentials = this.requireCredentials(input.credentials);
-    const payload = await this.request(
-      credentials,
-      `/v2/checkout/orders/${encodeURIComponent(input.paypalOrderId)}/capture`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'PayPal-Request-Id': `capture-${input.paymentTransactionId}`,
+    let payload: unknown;
+    try {
+      payload = await this.request(
+        credentials,
+        `/v2/checkout/orders/${encodeURIComponent(input.paypalOrderId)}/capture`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'PayPal-Request-Id': `capture-${input.paymentTransactionId}`,
+          },
         },
-      },
-    );
+      );
+    } catch (captureError: unknown) {
+      const recovered = await this.request(
+        credentials,
+        `/v2/checkout/orders/${encodeURIComponent(input.paypalOrderId)}`,
+        { method: 'GET' },
+      ).catch(() => null);
+      if (this.readString(recovered, ['status']) !== 'COMPLETED') {
+        throw captureError;
+      }
+      payload = recovered;
+    }
+
+    return this.readCaptureResult(payload);
+  }
+
+  private readCaptureResult(payload: unknown) {
     const purchaseUnits = this.readValue(payload, ['purchase_units']);
     const purchaseUnit = Array.isArray(purchaseUnits)
       ? (purchaseUnits as unknown[])[0]

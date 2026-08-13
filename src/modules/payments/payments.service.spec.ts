@@ -787,6 +787,68 @@ describe('PaymentsService', () => {
     );
   });
 
+  it('returns PayPal success after core settlement when one follow-up effect fails', async () => {
+    const {
+      service,
+      paymentsRepository,
+      paypalOrdersService,
+      loyaltyWalletService,
+      notificationsService,
+    } = makeService();
+    const payment = {
+      id: 'payment-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.PAYPAL,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PENDING,
+      amount: new Prisma.Decimal(25),
+      currency: 'EUR',
+      providerRef: 'paypal-order-1',
+      order: {
+        id: 'order-1',
+        customerId: 'customer-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        totalAmount: new Prisma.Decimal(25),
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.PAYPAL,
+        status: OrderStatus.PAYMENT_PENDING,
+      },
+    };
+    paymentsRepository.findByProviderRef.mockResolvedValue(payment);
+    paymentsRepository.updateStatus.mockResolvedValue({
+      ...payment,
+      status: PaymentStatus.PAID,
+    });
+    paypalOrdersService.captureOrder.mockResolvedValue({
+      status: 'COMPLETED',
+      customId: 'payment-1',
+      captureId: 'capture-1',
+      amount: '25.00',
+      currency: 'EUR',
+      payload: { status: 'COMPLETED' },
+    });
+    loyaltyWalletService.awardPointsForPaidOrder.mockRejectedValue(
+      new Error('temporary loyalty failure'),
+    );
+
+    await expect(
+      service.handlePaypalReturn({
+        paypalOrderId: 'paypal-order-1',
+        paymentId: 'payment-1',
+      }),
+    ).resolves.toBe(
+      'https://american-corner.delivery-way.de/order?success=true&orderId=order-1',
+    );
+    expect(notificationsService.notifyPaymentStatusChanged).toHaveBeenCalled();
+    expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
+      'order-1',
+    );
+  });
+
   it('redirects PayPal cancellation to a verified custom domain without capture', async () => {
     const { service, paymentsRepository, paypalOrdersService } = makeService();
     paymentsRepository.findById.mockResolvedValue({

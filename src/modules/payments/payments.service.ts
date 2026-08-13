@@ -1021,19 +1021,51 @@ export class PaymentsService {
       return paid;
     });
 
-    await this.creditRestaurantWalletForPayment(
-      { ...payment, status: PaymentStatus.PAID },
-      'paypal:capture',
-    );
-    await this.loyaltyWalletService!.awardPointsForPaidOrder(
-      orderId,
-      payment.id,
-      'paypal:capture',
-    );
-    await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+    const completionEffects: Array<{
+      name: string;
+      run: () => Promise<unknown>;
+    }> = [
+      {
+        name: 'restaurant wallet credit',
+        run: () =>
+          this.creditRestaurantWalletForPayment(
+            { ...payment, status: PaymentStatus.PAID },
+            'paypal:capture',
+          ),
+      },
+      {
+        name: 'loyalty points',
+        run: () =>
+          this.loyaltyWalletService!.awardPointsForPaidOrder(
+            orderId,
+            payment.id,
+            'paypal:capture',
+          ),
+      },
+      {
+        name: 'payment notification',
+        run: () =>
+          this.notificationsService.notifyPaymentStatusChanged(payment.id),
+      },
+    ];
     if (shouldPlaceOrder) {
-      await this.notificationsService.notifyOrderPlaced(orderId);
+      completionEffects.push({
+        name: 'new order notification',
+        run: () => this.notificationsService.notifyOrderPlaced(orderId),
+      });
     }
+
+    const effectResults = await Promise.allSettled(
+      completionEffects.map((effect) => effect.run()),
+    );
+    effectResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        this.logger.error(
+          `PayPal payment ${payment.id} completed but ${completionEffects[index]?.name ?? 'post-processing'} failed`,
+          result.reason instanceof Error ? result.reason.stack : undefined,
+        );
+      }
+    });
 
     return updated;
   }
