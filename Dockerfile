@@ -30,8 +30,8 @@ FROM dependencies AS migration
 
 ENV NODE_ENV=production
 
-COPY prisma.config.ts ./
-COPY prisma ./prisma
+COPY --chown=node:node prisma.config.ts ./
+COPY --chown=node:node prisma ./prisma
 
 USER node
 
