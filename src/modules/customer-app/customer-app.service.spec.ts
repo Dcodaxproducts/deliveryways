@@ -299,6 +299,38 @@ describe('CustomerAppService', () => {
     });
   });
 
+  it('preserves www when resolving a verified custom domain', async () => {
+    const { service, repository, configService } = makeService();
+    configService.get.mockReturnValue('delivery-way.de');
+    repository.findRestaurantDomainContext.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'American Corner',
+      slug: 'american-corner',
+      subdomain: 'american-corner',
+      customDomain: 'www.american-corner.de',
+      customDomainVerifiedAt: new Date('2026-08-14T07:04:16.637Z'),
+      logoUrl: null,
+      branding: null,
+      branches: [{ id: 'branch-1', name: 'Main Branch', isMain: true }],
+    });
+
+    const result = await service.resolveDomainContext(
+      'https://WWW.American-Corner.de/menu',
+    );
+
+    expect(repository.findRestaurantDomainContext).toHaveBeenCalledWith(
+      'www.american-corner.de',
+      undefined,
+    );
+    expect(result.data).toMatchObject({
+      restaurantId: 'restaurant-1',
+      host: 'www.american-corner.de',
+      customDomain: 'www.american-corner.de',
+      customDomainVerified: true,
+    });
+  });
+
   it('lists sanitized active branches for anonymous ordering', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantScope.mockResolvedValue({

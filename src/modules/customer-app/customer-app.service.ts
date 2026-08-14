@@ -2228,12 +2228,9 @@ export class CustomerAppService {
       const url = trimmed.includes('://')
         ? new URL(trimmed)
         : new URL(`https://${trimmed}`);
-      return url.hostname.replace(/^www\./, '');
+      return url.hostname;
     } catch {
-      return trimmed
-        .split('/')[0]
-        .split(':')[0]
-        .replace(/^www\./, '');
+      return trimmed.split('/')[0].split(':')[0];
     }
   }
 
