@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/2 * * * * root /opt/deliveryway/source/deliveryways/scripts/provision-custom-domains.sh >> /var/log/deliveryway-custom-domains.log 2>&1
