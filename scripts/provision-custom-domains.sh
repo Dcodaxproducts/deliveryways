@@ -84,43 +84,6 @@ NGINX
   plesk sbin httpdmng --reconfigure-domain "$hostname"
 }
 
-write_redirect_config() {
-  local hostname="$1"
-  local canonical_hostname="$2"
-  local config_dir="$PLESK_SYSTEM_DIR/$hostname/conf"
-  local config_file="$config_dir/vhost_nginx.conf"
-  local candidate
-
-  [[ -d "$config_dir" ]] || {
-    log "ERROR [$hostname] Plesk did not create $config_dir"
-    return 1
-  }
-
-  candidate="$(mktemp)"
-  cat >"$candidate" <<NGINX
-# Managed by DeliveryWays custom-domain provisioner.
-# Redirect the paired apex hostname to the verified canonical www hostname.
-location ~ ^/(?!\\.well-known/acme-challenge/) {
-    return 301 https://$canonical_hostname\$request_uri;
-}
-NGINX
-
-  if [[ -e "$config_file" ]] && ! grep -Fq 'Managed by DeliveryWays custom-domain provisioner.' "$config_file"; then
-    log "ERROR [$hostname] refusing to replace unmanaged Plesk nginx configuration"
-    rm -f "$candidate"
-    return 1
-  fi
-
-  if [[ -e "$config_file" ]] && cmp -s "$candidate" "$config_file"; then
-    rm -f "$candidate"
-    return 0
-  fi
-
-  install -m 0644 "$candidate" "$config_file"
-  rm -f "$candidate"
-  plesk sbin httpdmng --reconfigure-domain "$hostname"
-}
-
 ensure_plesk_site() {
   local hostname="$1"
 
@@ -129,7 +92,7 @@ ensure_plesk_site() {
   fi
 
   log "INFO [$hostname] creating Plesk site"
-  plesk bin site --create "$hostname" \
+  if ! plesk bin site --create "$hostname" \
     -webspace-name "$PLESK_WEBSPACE" \
     -hosting true \
     -hst_type phys \
@@ -143,7 +106,41 @@ ensure_plesk_site() {
     -ssl-redirect true \
     -mail_service false \
     -dns false \
-    -notify false
+    -notify false; then
+    log "ERROR [$hostname] Plesk site creation failed"
+    return 1
+  fi
+
+  if ! plesk bin site --info "$hostname" >/dev/null 2>&1; then
+    log "ERROR [$hostname] Plesk did not register the site after creation"
+    return 1
+  fi
+}
+
+ensure_plesk_alias() {
+  local alias_hostname="$1"
+  local canonical_hostname="$2"
+
+  if plesk bin domalias --info "$alias_hostname" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "INFO [$alias_hostname] creating Plesk alias for $canonical_hostname"
+  if ! plesk bin domalias --create "$alias_hostname" \
+    -domain "$canonical_hostname" \
+    -mail false \
+    -web true \
+    -dns false \
+    -status enabled \
+    -seo-redirect true; then
+    log "ERROR [$alias_hostname] Plesk alias creation failed"
+    return 1
+  fi
+
+  if ! plesk bin domalias --info "$alias_hostname" >/dev/null 2>&1; then
+    log "ERROR [$alias_hostname] Plesk did not register the alias after creation"
+    return 1
+  fi
 }
 
 https_is_ready() {
@@ -168,12 +165,15 @@ provision_domain() {
     return 0
   fi
 
-  ensure_plesk_site "$hostname"
-  write_proxy_config "$hostname"
+  ensure_plesk_site "$hostname" || return 1
+  write_proxy_config "$hostname" || return 1
 
   if ! https_is_ready "$hostname"; then
     log "INFO [$hostname] issuing SSL certificate"
-    plesk ext sslit --certificate -issue -domain "$hostname" -secure-domain
+    if ! plesk ext sslit --certificate -issue -domain "$hostname" -secure-domain; then
+      log "ERROR [$hostname] SSL certificate issuance failed"
+      return 1
+    fi
   fi
 
   if ! https_is_ready "$hostname"; then
@@ -201,12 +201,17 @@ provision_apex_redirect() {
     return 0
   fi
 
-  ensure_plesk_site "$apex_hostname"
-  write_redirect_config "$apex_hostname" "$canonical_hostname"
+  ensure_plesk_alias "$apex_hostname" "$canonical_hostname" || return 1
 
   if ! https_is_ready "$apex_hostname"; then
     log "INFO [$apex_hostname] issuing SSL certificate"
-    plesk ext sslit --certificate -issue -domain "$apex_hostname" -secure-domain
+    if ! plesk ext sslit --certificate -issue \
+      -domain "$canonical_hostname" \
+      -secure-domain \
+      -aliases "$apex_hostname"; then
+      log "ERROR [$apex_hostname] SSL certificate issuance failed"
+      return 1
+    fi
   fi
 
   if ! https_is_ready "$apex_hostname"; then
