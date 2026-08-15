@@ -84,6 +84,43 @@ NGINX
   plesk sbin httpdmng --reconfigure-domain "$hostname"
 }
 
+write_redirect_config() {
+  local hostname="$1"
+  local canonical_hostname="$2"
+  local config_dir="$PLESK_SYSTEM_DIR/$hostname/conf"
+  local config_file="$config_dir/vhost_nginx.conf"
+  local candidate
+
+  [[ -d "$config_dir" ]] || {
+    log "ERROR [$hostname] Plesk did not create $config_dir"
+    return 1
+  }
+
+  candidate="$(mktemp)"
+  cat >"$candidate" <<NGINX
+# Managed by DeliveryWays custom-domain provisioner.
+# Redirect the paired apex hostname to the verified canonical www hostname.
+location ~ ^/(?!\\.well-known/acme-challenge/) {
+    return 301 https://$canonical_hostname\$request_uri;
+}
+NGINX
+
+  if [[ -e "$config_file" ]] && ! grep -Fq 'Managed by DeliveryWays custom-domain provisioner.' "$config_file"; then
+    log "ERROR [$hostname] refusing to replace unmanaged Plesk nginx configuration"
+    rm -f "$candidate"
+    return 1
+  fi
+
+  if [[ -e "$config_file" ]] && cmp -s "$candidate" "$config_file"; then
+    rm -f "$candidate"
+    return 0
+  fi
+
+  install -m 0644 "$candidate" "$config_file"
+  rm -f "$candidate"
+  plesk sbin httpdmng --reconfigure-domain "$hostname"
+}
+
 ensure_plesk_site() {
   local hostname="$1"
 
@@ -147,6 +184,39 @@ provision_domain() {
   log "ACTIVE [$hostname] Plesk proxy and HTTPS verified"
 }
 
+provision_apex_redirect() {
+  local canonical_hostname="$1"
+  local apex_hostname
+
+  [[ "$canonical_hostname" == www.* ]] || return 0
+  apex_hostname="${canonical_hostname#www.}"
+
+  if ! is_valid_hostname "$apex_hostname"; then
+    log "ERROR [$apex_hostname] invalid paired apex hostname; skipping"
+    return 1
+  fi
+
+  if ! dns_points_to_server "$apex_hostname"; then
+    log "PENDING [$apex_hostname] DNS does not resolve to $EXPECTED_IPV4"
+    return 0
+  fi
+
+  ensure_plesk_site "$apex_hostname"
+  write_redirect_config "$apex_hostname" "$canonical_hostname"
+
+  if ! https_is_ready "$apex_hostname"; then
+    log "INFO [$apex_hostname] issuing SSL certificate"
+    plesk ext sslit --certificate -issue -domain "$apex_hostname" -secure-domain
+  fi
+
+  if ! https_is_ready "$apex_hostname"; then
+    log "ERROR [$apex_hostname] HTTPS redirect smoke test failed"
+    return 1
+  fi
+
+  log "ACTIVE [$apex_hostname] redirects to https://$canonical_hostname"
+}
+
 main() {
   if [[ "$EUID" -ne 0 && "$ALLOW_NON_ROOT" != "true" ]]; then
     log "ERROR this provisioner must run as root"
@@ -169,6 +239,7 @@ main() {
   while IFS= read -r hostname; do
     [[ -n "$hostname" ]] || continue
     provision_domain "$hostname" || failed=1
+    provision_apex_redirect "$hostname" || failed=1
   done < <(list_verified_domains)
 
   exit "$failed"
