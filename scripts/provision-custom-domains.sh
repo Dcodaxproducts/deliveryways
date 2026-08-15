@@ -38,6 +38,7 @@ list_verified_domains() {
 
 write_proxy_config() {
   local hostname="$1"
+  local redirect_hostname="${2:-}"
   local config_dir="$PLESK_SYSTEM_DIR/$hostname/conf"
   local config_file="$config_dir/vhost_nginx.conf"
   local candidate
@@ -53,6 +54,17 @@ write_proxy_config() {
 # Plesk defines its own prefix location; this regex wins for storefront routes
 # while leaving the ACME challenge path to Plesk/SSL It.
 location ~ ^/(?!\.well-known/acme-challenge/) {
+NGINX
+
+  if [[ -n "$redirect_hostname" ]]; then
+    cat >>"$candidate" <<NGINX
+    if (\$host = $redirect_hostname) {
+        return 301 https://$hostname\$request_uri;
+    }
+NGINX
+  fi
+
+  cat >>"$candidate" <<'NGINX'
     proxy_pass http://127.0.0.1:5053;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -122,19 +134,28 @@ ensure_plesk_alias() {
   local canonical_hostname="$2"
 
   if plesk bin domalias --info "$alias_hostname" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  log "INFO [$alias_hostname] creating Plesk alias for $canonical_hostname"
-  if ! plesk bin domalias --create "$alias_hostname" \
-    -domain "$canonical_hostname" \
-    -mail false \
-    -web true \
-    -dns false \
-    -status enabled \
-    -seo-redirect true; then
-    log "ERROR [$alias_hostname] Plesk alias creation failed"
-    return 1
+    log "INFO [$alias_hostname] disabling Plesk SEO redirect for ACME compatibility"
+    if ! plesk bin domalias --update "$alias_hostname" \
+      -mail false \
+      -web true \
+      -dns false \
+      -status enabled \
+      -seo-redirect false; then
+      log "ERROR [$alias_hostname] Plesk alias update failed"
+      return 1
+    fi
+  else
+    log "INFO [$alias_hostname] creating Plesk alias for $canonical_hostname"
+    if ! plesk bin domalias --create "$alias_hostname" \
+      -domain "$canonical_hostname" \
+      -mail false \
+      -web true \
+      -dns false \
+      -status enabled \
+      -seo-redirect false; then
+      log "ERROR [$alias_hostname] Plesk alias creation failed"
+      return 1
+    fi
   fi
 
   if ! plesk bin domalias --info "$alias_hostname" >/dev/null 2>&1; then
@@ -154,6 +175,7 @@ https_is_ready() {
 
 provision_domain() {
   local hostname="$1"
+  local redirect_hostname=""
 
   if ! is_valid_hostname "$hostname"; then
     log "ERROR [$hostname] invalid hostname; skipping"
@@ -165,8 +187,12 @@ provision_domain() {
     return 0
   fi
 
+  if [[ "$hostname" == www.* ]] && dns_points_to_server "${hostname#www.}"; then
+    redirect_hostname="${hostname#www.}"
+  fi
+
   ensure_plesk_site "$hostname" || return 1
-  write_proxy_config "$hostname" || return 1
+  write_proxy_config "$hostname" "$redirect_hostname" || return 1
 
   if ! https_is_ready "$hostname"; then
     log "INFO [$hostname] issuing SSL certificate"

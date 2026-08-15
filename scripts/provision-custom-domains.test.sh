@@ -31,6 +31,8 @@ elif [[ "$1 $2 $3" == "bin domalias --info" ]]; then
   [[ -f "$MOCK_STATE/alias-$4" ]]
 elif [[ "$1 $2 $3" == "bin domalias --create" ]]; then
   [[ "${MOCK_ALIAS_CREATE_NOOP:-false}" == "true" ]] || touch "$MOCK_STATE/alias-$4"
+elif [[ "$1 $2 $3" == "bin domalias --update" ]]; then
+  [[ -f "$MOCK_STATE/alias-$4" ]]
 elif [[ "$1 $2 $3" == "ext sslit --certificate" ]]; then
   domain=""
   aliases=""
@@ -86,15 +88,19 @@ grep -Fq 'location ~ ^/(?!\.well-known/acme-challenge/)' "$TEST_ROOT/vhosts/orde
 
 MOCK_DOMAINS=www.restaurant.example run_provisioner
 grep -Fq 'bin site --create www.restaurant.example' "$TEST_ROOT/state/plesk.log"
-grep -Fq 'bin domalias --create restaurant.example -domain www.restaurant.example -mail false -web true -dns false -status enabled -seo-redirect true' "$TEST_ROOT/state/plesk.log"
+grep -Fq 'bin domalias --create restaurant.example -domain www.restaurant.example -mail false -web true -dns false -status enabled -seo-redirect false' "$TEST_ROOT/state/plesk.log"
 grep -Fq 'ext sslit --certificate -issue -domain www.restaurant.example -secure-domain -aliases restaurant.example' "$TEST_ROOT/state/plesk.log"
 [[ ! -d "$TEST_ROOT/vhosts/restaurant.example" ]]
 grep -Fq 'proxy_pass http://127.0.0.1:5053;' "$TEST_ROOT/vhosts/www.restaurant.example/conf/vhost_nginx.conf"
+grep -Fq 'if ($host = restaurant.example)' "$TEST_ROOT/vhosts/www.restaurant.example/conf/vhost_nginx.conf"
+grep -Fq 'return 301 https://www.restaurant.example$request_uri;' "$TEST_ROOT/vhosts/www.restaurant.example/conf/vhost_nginx.conf"
+grep -B1 -F 'if ($host = restaurant.example)' "$TEST_ROOT/vhosts/www.restaurant.example/conf/vhost_nginx.conf" | grep -Fq 'location ~ ^/(?!\.well-known/acme-challenge/)'
 
 issue_count_before="$(grep -Fc 'ext sslit --certificate -issue' "$TEST_ROOT/state/plesk.log")"
 MOCK_DOMAINS=www.restaurant.example run_provisioner
 issue_count_after="$(grep -Fc 'ext sslit --certificate -issue' "$TEST_ROOT/state/plesk.log")"
 [[ "$issue_count_before" == "$issue_count_after" ]]
+grep -Fq 'bin domalias --update restaurant.example -mail false -web true -dns false -status enabled -seo-redirect false' "$TEST_ROOT/state/plesk.log"
 
 MOCK_DOMAINS=broken.example MOCK_SITE_CREATE_NOOP=true run_provisioner && {
   printf '%s\n' 'expected missing Plesk site registration to fail' >&2
