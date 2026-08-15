@@ -1375,6 +1375,128 @@ describe('PaymentsService', () => {
     });
   });
 
+  it('debits the restaurant wallet when a platform-collected order is refunded', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+    } = makeService();
+
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_123',
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    paymentsRepository.sumSuccessfulRefunds.mockResolvedValue(
+      new Prisma.Decimal(0),
+    );
+    paymentsRepository.create.mockResolvedValue({
+      id: 'refund-1',
+      status: PaymentStatus.REFUNDED,
+    });
+    transactionTx.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(23),
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockImplementation(
+      (args: { where: { paymentTransactionId: string } }) =>
+        Promise.resolve(
+          args.where.paymentTransactionId === 'payment-1'
+            ? { id: 'wallet-credit-1' }
+            : null,
+        ),
+    );
+
+    await service.refund(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'payment-1',
+      { amount: 10 },
+    );
+
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledWith(
+      'pi_123',
+      10,
+      expect.objectContaining({ secretKey: 'sk_test_platform' }),
+    );
+    expect(transactionTx.restaurantWalletAccount.update).toHaveBeenCalledWith({
+      where: { id: 'wallet-1' },
+      data: { balance: new Prisma.Decimal(13) },
+    });
+    expect(
+      transactionTx.restaurantWalletTransaction.create,
+    ).toHaveBeenCalledWith({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: expect.objectContaining({
+        paymentTransactionId: 'refund-1',
+        type: RestaurantWalletTransactionType.REFUND_DEBIT,
+        amount: new Prisma.Decimal(10),
+        balanceAfter: new Prisma.Decimal(13),
+        currency: 'EUR',
+      }),
+    });
+  });
+
+  it('does not debit the restaurant wallet for cash order refunds', async () => {
+    const { service, paymentsRepository, transactionTx } = makeService();
+
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-cash-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.COD,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: null,
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    paymentsRepository.sumSuccessfulRefunds.mockResolvedValue(
+      new Prisma.Decimal(0),
+    );
+    paymentsRepository.create.mockResolvedValue({
+      id: 'refund-cash-1',
+      status: PaymentStatus.REFUNDED,
+    });
+
+    await service.refund(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'payment-cash-1',
+      { amount: 10 },
+    );
+
+    expect(transactionTx.restaurantWalletAccount.upsert).not.toHaveBeenCalled();
+    expect(
+      transactionTx.restaurantWalletTransaction.create,
+    ).not.toHaveBeenCalled();
+  });
+
   it('fetches restaurant payment management summary', async () => {
     const { service, prisma, paymentsRepository, stripePaymentsService } =
       makeService();

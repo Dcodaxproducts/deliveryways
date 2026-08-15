@@ -1,0 +1,1 @@
+ALTER TYPE "RestaurantWalletTransactionType" ADD VALUE 'REFUND_DEBIT' AFTER 'ORDER_CREDIT';

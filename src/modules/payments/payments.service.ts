@@ -3158,6 +3158,22 @@ export class PaymentsService {
         tx,
       );
 
+      await this.debitRestaurantWalletForRefund(
+        {
+          sourcePaymentTransactionId: payment.id,
+          refundTransactionId: refundTransaction.id,
+          tenantId: payment.tenantId,
+          restaurantId: payment.restaurantId,
+          branchId: payment.branchId,
+          orderId,
+          paymentMethod: payment.paymentMethod,
+          amount: refundAmount,
+          currency,
+          actorId: user.uid,
+        },
+        tx,
+      );
+
       const updatedStatus = refundedSoFar
         .plus(refundAmount)
         .equals(payment.amount)
@@ -5048,6 +5064,86 @@ export class PaymentsService {
           createdBy: actorId,
         },
       });
+    });
+  }
+
+  private async debitRestaurantWalletForRefund(
+    input: {
+      sourcePaymentTransactionId: string;
+      refundTransactionId: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      orderId: string;
+      paymentMethod: PaymentMethod;
+      amount: Prisma.Decimal;
+      currency: string;
+      actorId: string;
+    },
+    tx: Prisma.TransactionClient,
+  ) {
+    if (
+      (
+        [
+          PaymentMethod.COD,
+          PaymentMethod.CARD_ON_DELIVERY,
+          PaymentMethod.WALLET,
+        ] as PaymentMethod[]
+      ).includes(input.paymentMethod)
+    ) {
+      return;
+    }
+
+    const sourceCredit = await tx.restaurantWalletTransaction.findUnique({
+      where: { paymentTransactionId: input.sourcePaymentTransactionId },
+      select: { id: true },
+    });
+
+    if (!sourceCredit) {
+      return;
+    }
+
+    const wallet = await tx.restaurantWalletAccount.upsert({
+      where: { restaurantId: input.restaurantId },
+      create: {
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        currency: input.currency,
+      },
+      update: {},
+    });
+    const existing = await tx.restaurantWalletTransaction.findUnique({
+      where: { paymentTransactionId: input.refundTransactionId },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return;
+    }
+
+    const nextBalance = wallet.balance.minus(input.amount);
+    await tx.restaurantWalletAccount.update({
+      where: { id: wallet.id },
+      data: { balance: nextBalance },
+    });
+    await tx.restaurantWalletTransaction.create({
+      data: {
+        walletAccountId: wallet.id,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+        orderId: input.orderId,
+        paymentTransactionId: input.refundTransactionId,
+        type: RestaurantWalletTransactionType.REFUND_DEBIT,
+        amount: input.amount,
+        balanceAfter: nextBalance,
+        currency: input.currency,
+        note: 'Refunded platform-collected order debited from restaurant wallet',
+        metadata: {
+          paymentMethod: input.paymentMethod,
+        },
+        createdBy: input.actorId,
+      },
     });
   }
 

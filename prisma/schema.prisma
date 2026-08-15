@@ -236,6 +236,7 @@ enum WalletTransactionType {
 
 enum RestaurantWalletTransactionType {
   ORDER_CREDIT
+  REFUND_DEBIT
   PAYOUT_DEBIT
   ADJUSTMENT
 }
