@@ -192,6 +192,12 @@ provision_domain() {
   fi
 
   ensure_plesk_site "$hostname" || return 1
+
+  if [[ -n "$redirect_hostname" ]] && \
+    plesk bin domalias --info "$redirect_hostname" >/dev/null 2>&1; then
+    ensure_plesk_alias "$redirect_hostname" "$hostname" || return 1
+  fi
+
   write_proxy_config "$hostname" "$redirect_hostname" || return 1
 
   if ! https_is_ready "$hostname"; then

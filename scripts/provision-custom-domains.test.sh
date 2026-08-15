@@ -97,10 +97,13 @@ grep -Fq 'return 301 https://www.restaurant.example$request_uri;' "$TEST_ROOT/vh
 grep -B1 -F 'if ($host = restaurant.example)' "$TEST_ROOT/vhosts/www.restaurant.example/conf/vhost_nginx.conf" | grep -Fq 'location ~ ^/(?!\.well-known/acme-challenge/)'
 
 issue_count_before="$(grep -Fc 'ext sslit --certificate -issue' "$TEST_ROOT/state/plesk.log")"
+line_count_before_recovery="$(wc -l <"$TEST_ROOT/state/plesk.log")"
 MOCK_DOMAINS=www.restaurant.example run_provisioner
 issue_count_after="$(grep -Fc 'ext sslit --certificate -issue' "$TEST_ROOT/state/plesk.log")"
 [[ "$issue_count_before" == "$issue_count_after" ]]
-grep -Fq 'bin domalias --update restaurant.example -mail false -web true -dns false -status enabled -seo-redirect false' "$TEST_ROOT/state/plesk.log"
+recovery_log="$(tail -n "+$((line_count_before_recovery + 1))" "$TEST_ROOT/state/plesk.log")"
+update_count="$(grep -Fc 'bin domalias --update restaurant.example -mail false -web true -dns false -status enabled -seo-redirect false' <<<"$recovery_log")"
+[[ "$update_count" == "2" ]]
 
 MOCK_DOMAINS=broken.example MOCK_SITE_CREATE_NOOP=true run_provisioner && {
   printf '%s\n' 'expected missing Plesk site registration to fail' >&2
