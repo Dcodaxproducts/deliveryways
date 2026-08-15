@@ -8,6 +8,8 @@ PLESK_WEBSPACE="${PLESK_WEBSPACE:-delivery-way.de}"
 PLESK_SYSTEM_DIR="${PLESK_SYSTEM_DIR:-/var/www/vhosts/system}"
 LOCK_FILE="${LOCK_FILE:-/run/lock/deliveryway-custom-domains.lock}"
 ALLOW_NON_ROOT="${ALLOW_NON_ROOT:-false}"
+HTTPS_WAIT_ATTEMPTS="${HTTPS_WAIT_ATTEMPTS:-24}"
+HTTPS_WAIT_DELAY_SECONDS="${HTTPS_WAIT_DELAY_SECONDS:-5}"
 
 log() {
   printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -173,6 +175,23 @@ https_is_ready() {
     "https://$hostname/"
 }
 
+wait_for_https() {
+  local hostname="$1"
+  local attempt
+
+  for ((attempt = 1; attempt <= HTTPS_WAIT_ATTEMPTS; attempt += 1)); do
+    if https_is_ready "$hostname"; then
+      return 0
+    fi
+
+    if ((attempt < HTTPS_WAIT_ATTEMPTS)); then
+      sleep "$HTTPS_WAIT_DELAY_SECONDS"
+    fi
+  done
+
+  return 1
+}
+
 provision_domain() {
   local hostname="$1"
   local redirect_hostname=""
@@ -208,7 +227,7 @@ provision_domain() {
     fi
   fi
 
-  if ! https_is_ready "$hostname"; then
+  if ! wait_for_https "$hostname"; then
     log "ERROR [$hostname] HTTPS smoke test failed"
     return 1
   fi
@@ -246,7 +265,7 @@ provision_apex_redirect() {
     fi
   fi
 
-  if ! https_is_ready "$apex_hostname"; then
+  if ! wait_for_https "$apex_hostname"; then
     log "ERROR [$apex_hostname] HTTPS redirect smoke test failed"
     return 1
   fi

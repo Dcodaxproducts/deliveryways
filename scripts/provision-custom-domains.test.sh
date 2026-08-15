@@ -64,7 +64,14 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift
 done
-[[ -f "$MOCK_STATE/ssl-$hostname" ]]
+[[ -f "$MOCK_STATE/ssl-$hostname" ]] || exit 1
+
+counter_file="$MOCK_STATE/curl-$hostname"
+count=0
+[[ ! -f "$counter_file" ]] || count="$(cat "$counter_file")"
+count=$((count + 1))
+printf '%s\n' "$count" >"$counter_file"
+((count > ${MOCK_TLS_DELAY_CALLS:-0}))
 MOCK
 
 chmod +x "$TEST_ROOT/bin/"*
@@ -76,6 +83,7 @@ run_provisioner() {
   MOCK_LOG="$TEST_ROOT/state/plesk.log" \
   MOCK_STATE="$TEST_ROOT/state" \
   PLESK_SYSTEM_DIR="$TEST_ROOT/vhosts" \
+  HTTPS_WAIT_DELAY_SECONDS=0 \
   "$PROVISIONER"
 }
 
@@ -104,6 +112,10 @@ issue_count_after="$(grep -Fc 'ext sslit --certificate -issue' "$TEST_ROOT/state
 recovery_log="$(tail -n "+$((line_count_before_recovery + 1))" "$TEST_ROOT/state/plesk.log")"
 update_count="$(grep -Fc 'bin domalias --update restaurant.example -mail false -web true -dns false -status enabled -seo-redirect false' <<<"$recovery_log")"
 [[ "$update_count" == "2" ]]
+
+MOCK_DOMAINS=delayed.example.com MOCK_TLS_DELAY_CALLS=2 HTTPS_WAIT_ATTEMPTS=3 run_provisioner
+grep -Fq 'ext sslit --certificate -issue -domain delayed.example.com -secure-domain' "$TEST_ROOT/state/plesk.log"
+[[ "$(cat "$TEST_ROOT/state/curl-delayed.example.com")" == "3" ]]
 
 MOCK_DOMAINS=broken.example MOCK_SITE_CREATE_NOOP=true run_provisioner && {
   printf '%s\n' 'expected missing Plesk site registration to fail' >&2
