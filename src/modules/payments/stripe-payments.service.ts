@@ -85,9 +85,7 @@ export class StripePaymentsService {
     return stripe.paymentIntents.create({
       amount: this.toMinorUnitAmount(input.amount),
       currency,
-      automatic_payment_methods: {
-        enabled: true,
-      },
+      payment_method_types: ['card'],
       metadata: input.metadata,
       description: input.description,
     });
