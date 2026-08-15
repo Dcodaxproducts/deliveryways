@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import Stripe = require('stripe');
+import { PaymentsRepository } from './payments.repository';
 
 export interface StripePaymentIntentMetadata {
   [key: string]: string | number | null;
@@ -23,13 +25,18 @@ export interface StripeCheckoutCredentials {
 
 @Injectable()
 export class StripePaymentsService {
+  private readonly logger = new Logger(StripePaymentsService.name);
+  private readonly registeredPaymentMethodDomains = new Set<string>();
   private readonly stripeSecretKey?: string;
   private readonly stripePublishableKey?: string;
   private readonly webhookSecret?: string;
   private readonly defaultCurrency: string;
   private readonly stripe?: InstanceType<typeof Stripe>;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly paymentsRepository: PaymentsRepository,
+  ) {
     this.stripeSecretKey = this.configService.get<string>('STRIPE_SECRET_KEY');
     this.stripePublishableKey = this.configService.get<string>(
       'STRIPE_PUBLISHABLE_KEY',
@@ -81,6 +88,11 @@ export class StripePaymentsService {
   ) {
     const stripe = this.requireStripe(credentials);
     const currency = (input.currency ?? this.defaultCurrency).toLowerCase();
+
+    await this.ensureRestaurantPaymentMethodDomain(
+      input.metadata.restaurantId,
+      stripe,
+    );
 
     return stripe.paymentIntents.create({
       amount: this.toMinorUnitAmount(input.amount),
@@ -166,6 +178,66 @@ export class StripePaymentsService {
     }
 
     return stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+  }
+
+  private async ensureRestaurantPaymentMethodDomain(
+    restaurantId: string,
+    stripe: InstanceType<typeof Stripe>,
+  ) {
+    try {
+      const restaurant =
+        await this.paymentsRepository.findRestaurantCheckoutDomain(
+          restaurantId,
+        );
+      const domainName = restaurant?.customDomain?.trim().toLowerCase();
+
+      if (
+        !domainName ||
+        !restaurant?.customDomainVerifiedAt ||
+        this.registeredPaymentMethodDomains.has(domainName)
+      ) {
+        return;
+      }
+
+      const domains = await stripe.paymentMethodDomains.list({
+        domain_name: domainName,
+        limit: 1,
+      });
+      let domain = domains.data.find(
+        (candidate) => candidate.domain_name === domainName,
+      );
+
+      if (!domain) {
+        domain = await stripe.paymentMethodDomains.create({
+          domain_name: domainName,
+          enabled: true,
+        });
+      } else if (!domain.enabled) {
+        domain = await stripe.paymentMethodDomains.update(domain.id, {
+          enabled: true,
+        });
+      }
+
+      if (
+        domain.apple_pay.status !== 'active' ||
+        domain.google_pay.status !== 'active'
+      ) {
+        domain = await stripe.paymentMethodDomains.validate(domain.id);
+      }
+
+      if (
+        domain.enabled &&
+        domain.apple_pay.status === 'active' &&
+        domain.google_pay.status === 'active'
+      ) {
+        this.registeredPaymentMethodDomains.add(domainName);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Stripe payment-method domain registration failed for restaurant ${restaurantId}: ${message}`,
+      );
+    }
   }
 
   private requireStripe(credentials?: StripeCheckoutCredentials) {
