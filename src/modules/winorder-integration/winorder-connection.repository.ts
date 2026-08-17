@@ -45,7 +45,7 @@ export class WinOrderConnectionRepository {
     data: {
       username: string;
       passwordHash: string;
-      storeId: number;
+      storeId: number | null;
       storeName?: string;
       actorId: string;
     },
@@ -67,7 +67,7 @@ export class WinOrderConnectionRepository {
   update(
     scope: WinOrderConnectionScope,
     data: {
-      storeId?: number;
+      storeId?: number | null;
       storeName?: string;
       isEnabled?: boolean;
       actorId: string;

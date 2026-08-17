@@ -47,7 +47,16 @@ export class WinOrderMappingService {
         catalog,
         ...mappings,
         missingCatalogKeys: [
-          ...catalog.items.map((item) => item.key),
+          ...catalog.items
+            .filter(
+              (item) =>
+                !mappedKeys.has(item.key) &&
+                !(
+                  item.variationId &&
+                  mappedKeys.has(`item:${item.menuItemId}:base`)
+                ),
+            )
+            .map((item) => item.key),
           ...catalog.modifiers.map((modifier) => modifier.key),
         ].filter((key) => !mappedKeys.has(key)),
       },

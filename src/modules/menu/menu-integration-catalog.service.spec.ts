@@ -21,7 +21,7 @@ describe('MenuIntegrationCatalogService', () => {
     };
   };
 
-  it('creates unambiguous item and variation mapping keys', async () => {
+  it('creates base and variation mapping keys for variation-priced items', async () => {
     const { service, repository } = makeService();
     repository.branchExists.mockResolvedValue(true);
     repository.listItems.mockResolvedValue([
@@ -29,7 +29,7 @@ describe('MenuIntegrationCatalogService', () => {
         id: 'item-1',
         name: 'Pizza',
         sku: 'PIZZA',
-        pricingMode: MenuItemPricingMode.SINGLE,
+        pricingMode: MenuItemPricingMode.MULTIPLE,
         basePrice: new Prisma.Decimal(10),
         branchOverrides: [{ priceOverride: new Prisma.Decimal(12) }],
         variationPriceOverrides: [

@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MenuItemPricingMode } from '@prisma/client';
 import {
   MenuIntegrationCatalog,
   MenuIntegrationCatalogPort,
@@ -28,23 +27,18 @@ export class MenuIntegrationCatalogService implements MenuIntegrationCatalogPort
       items: items.flatMap((item) => {
         const basePrice =
           item.branchOverrides[0]?.priceOverride ?? item.basePrice;
-        const base: MenuIntegrationItemOption[] =
-          item.pricingMode === MenuItemPricingMode.SINGLE
-            ? [
-                {
-                  key: `item:${item.id}:base`,
-                  menuItemId: item.id,
-                  menuItemName: item.name,
-                  variationId: null,
-                  variationName: null,
-                  sku: item.sku,
-                  price: basePrice.toNumber(),
-                },
-              ]
-            : [];
+        const base: MenuIntegrationItemOption = {
+          key: `item:${item.id}:base`,
+          menuItemId: item.id,
+          menuItemName: item.name,
+          variationId: null,
+          variationName: null,
+          sku: item.sku,
+          price: basePrice.toNumber(),
+        };
 
         return [
-          ...base,
+          base,
           ...item.variationPriceOverrides.map((override) => ({
             key: `item:${item.id}:variation:${override.variation.id}`,
             menuItemId: item.id,

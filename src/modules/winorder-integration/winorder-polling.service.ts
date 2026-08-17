@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { WinOrderCatalogMappingType } from '@prisma/client';
+import { PaymentMethod, WinOrderCatalogMappingType } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import {
   IntegrationOrder,
@@ -15,6 +15,14 @@ type CatalogMapping = {
   externalArticleNo: string;
   externalArticleName: string | null;
 };
+
+const WINORDER_CASH_PAYMENT_TYPE = 'Barzahlung';
+const WINORDER_ONLINE_PAYMENT_TYPE = 'Über DeliveryWay online bezahlt';
+const WINORDER_ONLINE_PAYMENT_METHODS: ReadonlySet<string> = new Set([
+  PaymentMethod.STRIPE,
+  PaymentMethod.PAYPAL,
+  PaymentMethod.WALLET,
+]);
 
 @Injectable()
 export class WinOrderPollingService {
@@ -94,19 +102,22 @@ export class WinOrderPollingService {
     catalogMappings: Map<string, CatalogMapping>,
     paymentMappings: Map<string, string>,
   ) {
-    const paymentType = paymentMappings.get(order.paymentMethod);
-    if (!paymentType) {
-      throw new Error(`Missing payment mapping: ${order.paymentMethod}`);
-    }
+    const paymentType = this.resolvePaymentType(order, paymentMappings);
     const articles = order.items.map((item) => {
       const localKey = item.variationId
         ? `item:${item.menuItemId}:variation:${item.variationId}`
         : `item:${item.menuItemId}:base`;
-      const mapping = this.requireMapping(
-        catalogMappings,
-        WinOrderCatalogMappingType.ITEM,
-        localKey,
+      const exactMapping = catalogMappings.get(
+        `${WinOrderCatalogMappingType.ITEM}:${localKey}`,
       );
+      const mapping =
+        exactMapping ??
+        (item.variationId
+          ? catalogMappings.get(
+              `${WinOrderCatalogMappingType.ITEM}:item:${item.menuItemId}:base`,
+            )
+          : undefined);
+      if (!mapping) throw new Error(`Missing catalog mapping: ${localKey}`);
       const subArticles = item.modifiers.map((modifier) => {
         const modifierMapping = this.requireMapping(
           catalogMappings,
@@ -202,6 +213,24 @@ export class WinOrderPollingService {
     const mapping = mappings.get(`${type}:${key}`);
     if (!mapping) throw new Error(`Missing catalog mapping: ${key}`);
     return mapping;
+  }
+
+  private resolvePaymentType(
+    order: IntegrationOrder,
+    paymentMappings: Map<string, string>,
+  ): string {
+    if (order.paymentMethod === PaymentMethod.COD) {
+      return WINORDER_CASH_PAYMENT_TYPE;
+    }
+
+    const configured = paymentMappings.get(order.paymentMethod);
+    if (configured) return configured;
+
+    if (WINORDER_ONLINE_PAYMENT_METHODS.has(order.paymentMethod)) {
+      return WINORDER_ONLINE_PAYMENT_TYPE;
+    }
+
+    throw new Error(`Missing payment mapping: ${order.paymentMethod}`);
   }
 
   private deliveryType(orderType: IntegrationOrder['orderType']) {

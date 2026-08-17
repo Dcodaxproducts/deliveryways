@@ -46,7 +46,7 @@ export class WinOrderConnectionService {
     const connection = await this.repository.create(scope, {
       ...credentials,
       passwordHash: await bcrypt.hash(credentials.password, 12),
-      storeId: dto.storeId,
+      storeId: dto.storeId ?? null,
       storeName: dto.storeName,
       actorId: user.uid,
     });
@@ -207,10 +207,9 @@ export class WinOrderConnectionService {
   private withEndpoint<T extends { storeId: number | null }>(connection: T) {
     return {
       ...connection,
-      endpointPath:
-        connection.storeId === null
-          ? '/winorder'
-          : `/winorder/${connection.storeId}`,
+      endpointPath: '/winorder',
+      storeSpecificEndpointPath:
+        connection.storeId === null ? null : `/winorder/${connection.storeId}`,
     };
   }
 }

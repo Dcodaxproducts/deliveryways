@@ -52,8 +52,72 @@ describe('WinOrderConnectionService', () => {
     expect(result.data).toEqual(
       expect.objectContaining({
         username: 'wo_user',
-        endpointPath: '/winorder/41',
+        endpointPath: '/winorder',
+        storeSpecificEndpointPath: '/winorder/41',
       }),
+    );
+  });
+
+  it('creates a fixed-endpoint connection without a Store ID', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+    });
+    repository.findByBranch.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      id: 'connection-1',
+      branchId: 'branch-1',
+      username: 'wo_user',
+      storeId: null,
+      isEnabled: true,
+    });
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('stored-hash' as never);
+
+    const result = await service.create(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      { branchId: 'branch-1' },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 'branch-1' }),
+      expect.objectContaining({ storeId: null, actorId: 'admin-1' }),
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        endpointPath: '/winorder',
+        storeSpecificEndpointPath: null,
+      }),
+    );
+  });
+
+  it('allows an optional Store ID to be cleared', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+    });
+    repository.findByBranch.mockResolvedValue({
+      id: 'connection-1',
+      branchId: 'branch-1',
+      username: 'wo_user',
+      storeId: null,
+      isEnabled: true,
+    });
+
+    await service.update(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      'branch-1',
+      { storeId: null },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 'branch-1' }),
+      expect.objectContaining({ storeId: null, actorId: 'admin-1' }),
     );
   });
 

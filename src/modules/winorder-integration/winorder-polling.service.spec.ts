@@ -11,57 +11,58 @@ describe('WinOrderPollingService', () => {
     storeId: 41,
   };
 
+  const order: IntegrationOrder = {
+    id: 'order-1',
+    orderType: 'DELIVERY',
+    paymentMethod: PaymentMethod.COD,
+    paymentStatus: 'PENDING',
+    orderTime: null,
+    createdAt: new Date('2026-08-05T06:00:00Z'),
+    subtotal: 10,
+    taxAmount: 1,
+    deliveryFee: 2,
+    serviceChargeAmount: 1,
+    tipAmount: 1,
+    discountAmount: 0,
+    totalAmount: 15,
+    customerNote: 'Ring bell',
+    customer: {
+      email: 'guest@example.test',
+      firstName: 'Guest',
+      lastName: 'User',
+      phone: '123',
+    },
+    deliveryAddress: {
+      street: 'Main Street 1',
+      area: null,
+      postalCode: '12345',
+      city: 'Bremen',
+      state: 'Bremen',
+      country: 'DE',
+    },
+    paymentReference: null,
+    currency: 'EUR',
+    items: [
+      {
+        id: 'line-1',
+        menuItemId: 'pizza',
+        menuItemName: 'Pizza',
+        variationId: null,
+        variationName: null,
+        quantity: 1,
+        unitPrice: 10,
+        depositAmount: 0,
+        lineTotal: 10,
+        taxPercentage: 7,
+        note: null,
+        dealId: null,
+        modifiers: [],
+        sections: [],
+      },
+    ],
+  };
+
   it('emits the official OrderList envelope with mapped articles', async () => {
-    const order: IntegrationOrder = {
-      id: 'order-1',
-      orderType: 'DELIVERY',
-      paymentMethod: PaymentMethod.COD,
-      paymentStatus: 'PENDING',
-      orderTime: null,
-      createdAt: new Date('2026-08-05T06:00:00Z'),
-      subtotal: 10,
-      taxAmount: 1,
-      deliveryFee: 2,
-      serviceChargeAmount: 1,
-      tipAmount: 1,
-      discountAmount: 0,
-      totalAmount: 15,
-      customerNote: 'Ring bell',
-      customer: {
-        email: 'guest@example.test',
-        firstName: 'Guest',
-        lastName: 'User',
-        phone: '123',
-      },
-      deliveryAddress: {
-        street: 'Main Street 1',
-        area: null,
-        postalCode: '12345',
-        city: 'Bremen',
-        state: 'Bremen',
-        country: 'DE',
-      },
-      paymentReference: null,
-      currency: 'EUR',
-      items: [
-        {
-          id: 'line-1',
-          menuItemId: 'pizza',
-          menuItemName: 'Pizza',
-          variationId: null,
-          variationName: null,
-          quantity: 1,
-          unitPrice: 10,
-          depositAmount: 0,
-          lineTotal: 10,
-          taxPercentage: 7,
-          note: null,
-          dealId: null,
-          modifiers: [],
-          sections: [],
-        },
-      ],
-    };
     const orders = {
       listExportCandidates: jest.fn().mockResolvedValue([order]),
     };
@@ -87,7 +88,7 @@ describe('WinOrderPollingService', () => {
           },
         ],
         paymentMappings: [
-          { paymentMethod: PaymentMethod.COD, externalLabel: 'Barzahlung' },
+          { paymentMethod: PaymentMethod.COD, externalLabel: 'Cash' },
         ],
       }),
     };
@@ -119,12 +120,72 @@ describe('WinOrderPollingService', () => {
     ]);
   });
 
-  it('keeps unmapped leased orders retryable instead of returning them', async () => {
+  it('uses the online default and base article for a new variation', async () => {
+    const onlineOrder: IntegrationOrder = {
+      ...order,
+      id: 'order-2',
+      paymentMethod: PaymentMethod.PAYPAL,
+      paymentStatus: 'PAID',
+      serviceChargeAmount: 0,
+      items: [
+        {
+          ...order.items[0],
+          variationId: 'large',
+          variationName: 'Large',
+        },
+      ],
+    };
+    const orders = {
+      listExportCandidates: jest.fn().mockResolvedValue([onlineOrder]),
+    };
+    const connections = {
+      findByBranch: jest.fn().mockResolvedValue({ storeId: null }),
+    };
+    const mappings = {
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [
+          {
+            mappingType: WinOrderCatalogMappingType.ITEM,
+            localKey: 'item:pizza:base',
+            externalArticleNo: 'P1',
+            externalArticleName: 'Pizza',
+          },
+        ],
+        paymentMappings: [],
+      }),
+    };
+    const exports = {
+      lease: jest.fn().mockResolvedValue(new Set(['order-2'])),
+      markFailed: jest.fn(),
+    };
+    const service = new WinOrderPollingService(
+      orders as never,
+      connections as never,
+      mappings as never,
+      exports as never,
+    );
+
+    const result = await service.getNewOrders(machine);
+
+    const payload = result.OrderList.Order[0] as {
+      AddInfo: { PaymentType: string };
+      ArticleList: {
+        Article: Array<{ ArticleNo: string; ArticleSize?: string }>;
+      };
+    };
+    expect(payload.AddInfo.PaymentType).toBe('Über DeliveryWay online bezahlt');
+    expect(payload.ArticleList.Article).toEqual([
+      expect.objectContaining({ ArticleNo: 'P1', ArticleSize: 'Large' }),
+    ]);
+    expect(exports.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('keeps unsupported unmapped payments retryable', async () => {
     const orders = {
       listExportCandidates: jest.fn().mockResolvedValue([
         {
           id: 'order-1',
-          paymentMethod: PaymentMethod.COD,
+          paymentMethod: PaymentMethod.BANK_TRANSFER,
           items: [],
         },
       ]),
@@ -153,7 +214,7 @@ describe('WinOrderPollingService', () => {
     expect(exports.markFailed).toHaveBeenCalledWith(
       machine,
       'order-1',
-      'Missing payment mapping: COD',
+      'Missing payment mapping: BANK_TRANSFER',
     );
   });
 });
