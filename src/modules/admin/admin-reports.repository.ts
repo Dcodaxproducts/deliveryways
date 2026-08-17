@@ -688,7 +688,7 @@ export class AdminReportsRepository {
         where: {
           ...paymentWhere,
           type: PaymentTransactionType.REFUND,
-          status: PaymentStatus.PAID,
+          status: PaymentStatus.REFUNDED,
         },
         _sum: { amount: true },
       }),
@@ -717,7 +717,7 @@ export class AdminReportsRepository {
         where: {
           ...paymentWhere,
           type: PaymentTransactionType.REFUND,
-          status: PaymentStatus.PAID,
+          status: PaymentStatus.REFUNDED,
         },
         _sum: { amount: true },
       }),

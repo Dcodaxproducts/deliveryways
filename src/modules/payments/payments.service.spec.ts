@@ -45,7 +45,15 @@ describe('PaymentsService', () => {
     };
   };
 
-  const makeService = (deploymentEnvironment = 'development') => {
+  const makeService = (
+    deploymentEnvironment = 'development',
+    payoutBalanceSummary?: {
+      grossAmount: number;
+      platformCommissionAmount: number;
+      restaurantPayoutAmount: number;
+      currency: string;
+    },
+  ) => {
     const paymentsRepository = {
       create: jest.fn(),
       createUnchecked: jest.fn(),
@@ -240,6 +248,13 @@ describe('PaymentsService', () => {
       sendEmail: jest.fn().mockResolvedValue(undefined),
       sendTransactionalEmail: jest.fn().mockResolvedValue(undefined),
     };
+    const packagePlansService = payoutBalanceSummary
+      ? {
+          getRestaurantPayoutBalanceSummary: jest
+            .fn()
+            .mockResolvedValue(payoutBalanceSummary),
+        }
+      : undefined;
     const configService = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'app.deploymentEnvironment') return deploymentEnvironment;
@@ -259,7 +274,7 @@ describe('PaymentsService', () => {
       loyaltyWalletService as never,
       globalSettingsService as never,
       mailerService as never,
-      undefined,
+      packagePlansService as never,
       paypalOrdersService as never,
       configService as never,
     );
@@ -276,6 +291,7 @@ describe('PaymentsService', () => {
       loyaltyWalletService,
       globalSettingsService,
       mailerService,
+      packagePlansService,
       configService,
       transactionTx,
     };
@@ -1499,7 +1515,12 @@ describe('PaymentsService', () => {
 
   it('fetches restaurant payment management summary', async () => {
     const { service, prisma, paymentsRepository, stripePaymentsService } =
-      makeService();
+      makeService('development', {
+        grossAmount: 900,
+        platformCommissionAmount: 90,
+        restaurantPayoutAmount: 810,
+        currency: 'PKR',
+      });
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -1577,6 +1598,10 @@ describe('PaymentsService', () => {
     expect(result.data.payments.wallet).toEqual({
       type: 'RESTAURANT_WALLET',
       balance: 900,
+      ledgerBalance: 900,
+      grossCollectedAmount: 900,
+      commissionLiabilityAmount: 90,
+      availablePayoutBalance: 810,
       currency: 'PKR',
       customerWalletExposure: {
         accountCount: 3,
@@ -2528,7 +2553,52 @@ describe('PaymentsService', () => {
           },
         },
       ),
-    ).rejects.toThrow('Requested amount exceeds wallet balance');
+    ).rejects.toThrow(
+      'Requested amount exceeds available payout balance after commission',
+    );
+  });
+
+  it('rejects a payout above the balance available after commission', async () => {
+    const { service, prisma } = makeService('development', {
+      grossAmount: 100,
+      platformCommissionAmount: 20,
+      restaurantPayoutAmount: 80,
+      currency: 'PKR',
+    });
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {},
+    });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      balance: new Prisma.Decimal(100),
+      currency: 'PKR',
+    });
+
+    await expect(
+      service.createRestaurantPayoutRequest(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        'restaurant-1',
+        {
+          amount: 90,
+          bankDetails: {
+            bankName: 'HBL',
+            accountTitle: 'Pizza House',
+            accountNumber: '123456',
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      'Requested amount exceeds available payout balance after commission',
+    );
+    expect(prisma.restaurantPayoutRequest.create).not.toHaveBeenCalled();
   });
 
   it('rejects manual bank requests when an automated provider is active', async () => {

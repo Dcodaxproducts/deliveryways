@@ -15,6 +15,7 @@ import {
   GeneratedInvoiceStatus,
   PaymentMethod,
   PaymentStatus,
+  PaymentTransactionType,
   Prisma,
   SubscriptionAdjustmentDirection,
   SubscriptionAdjustmentSource,
@@ -599,6 +600,72 @@ export class PackagePlansService {
     return {
       data: invoice,
       message: 'Payout invoice fetched successfully',
+    };
+  }
+
+  async getRestaurantPayoutBalanceSummary(restaurantId: string) {
+    const restaurant =
+      await this.packagePlansRepository.findRestaurantPayoutScope(restaurantId);
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+    const subscription =
+      await this.packagePlansRepository.findActiveRestaurantSubscription(
+        restaurant.id,
+      );
+    const plan = subscription
+      ? this.resolveSubscriptionInvoicePlan(subscription)
+      : null;
+    const [orders, specialPayouts, currency] = await Promise.all([
+      this.packagePlansRepository.listRestaurantWalletPayoutOrders(
+        restaurant.id,
+      ),
+      this.listSpecialPayoutAmountsByOrder(restaurant.id),
+      this.resolveDefaultCurrency(),
+    ]);
+    const lineItems = orders
+      .map((order) => {
+        const netCollectedAmount = order.transactions.reduce(
+          (sum, transaction) =>
+            transaction.type === PaymentTransactionType.REFUND
+              ? sum.minus(transaction.amount)
+              : sum.plus(transaction.amount),
+          new Prisma.Decimal(0),
+        );
+
+        return this.toWeeklyPayoutOrderLine(
+          { ...order, totalAmount: netCollectedAmount },
+          plan,
+          currency,
+          specialPayouts.get(order.id) ?? new Prisma.Decimal(0),
+        );
+      })
+      .filter(
+        (item) =>
+          item.grossAmount.greaterThan(0) &&
+          item.restaurantPayoutAmount.greaterThan(0),
+      );
+    const grossAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.grossAmount),
+      new Prisma.Decimal(0),
+    );
+    const platformCommissionAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.platformCommissionAmount),
+      new Prisma.Decimal(0),
+    );
+    const restaurantPayoutAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.restaurantPayoutAmount),
+      new Prisma.Decimal(0),
+    );
+
+    return {
+      ordersCount: lineItems.length,
+      grossAmount: Number(grossAmount.toDecimalPlaces(2)),
+      platformCommissionAmount: Number(
+        platformCommissionAmount.toDecimalPlaces(2),
+      ),
+      restaurantPayoutAmount: Number(restaurantPayoutAmount.toDecimalPlaces(2)),
+      currency,
     };
   }
 

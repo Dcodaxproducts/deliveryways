@@ -7,6 +7,7 @@ import {
   PackagePayoutCycle,
   PaymentMethod,
   PaymentStatus,
+  PaymentTransactionType,
   Prisma,
   SubscriptionAdjustmentDirection,
   SubscriptionAdjustmentSource,
@@ -383,6 +384,59 @@ describe('PackagePlansService', () => {
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
     );
+  });
+
+  it('calculates wallet payout balance from platform-collected orders only', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          transactions: [
+            {
+              id: 'charge-1',
+              type: PaymentTransactionType.CHARGE,
+              amount: new Prisma.Decimal(1000),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 'pi_123',
+              processedAt: new Date('2026-06-09T10:00:00.000Z'),
+            },
+            {
+              id: 'refund-1',
+              type: PaymentTransactionType.REFUND,
+              amount: new Prisma.Decimal(200),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 're_123',
+              processedAt: new Date('2026-06-10T10:00:00.000Z'),
+            },
+          ],
+        }),
+      ]),
+      listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await expect(
+      service.getRestaurantPayoutBalanceSummary('restaurant-1'),
+    ).resolves.toMatchObject({
+      ordersCount: 1,
+      grossAmount: 800,
+      platformCommissionAmount: 40,
+      restaurantPayoutAmount: 760,
+      currency: 'PKR',
+    });
   });
 
   it('includes paid order breakdown and only applies online orders as credit', async () => {

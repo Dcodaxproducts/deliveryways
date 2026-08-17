@@ -1905,11 +1905,16 @@ export class PaymentsService {
         take: 20,
       },
     );
+    const balanceSummary = await this.resolveRestaurantWalletBalanceSummary(
+      restaurant.id,
+      wallet.balance,
+    );
 
     return {
       data: {
         ...wallet,
         balance: Number(wallet.balance),
+        ...balanceSummary,
         transactions: transactions.map((item) => ({
           ...item,
           amount: Number(item.amount),
@@ -1979,9 +1984,11 @@ export class PaymentsService {
     );
     const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
 
-    if (amount.greaterThan(wallet.balance)) {
-      throw new BadRequestException('Requested amount exceeds wallet balance');
-    }
+    await this.assertRestaurantPayoutAvailable(
+      restaurant.id,
+      amount,
+      wallet.balance,
+    );
 
     const data = await this.prisma.restaurantPayoutRequest.create({
       data: {
@@ -2431,9 +2438,11 @@ export class PaymentsService {
       dto.currency ?? (await this.resolvePreferredCurrency(restaurant.id)),
     );
     const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
-    if (amount.greaterThan(wallet.balance)) {
-      throw new BadRequestException('Payout amount exceeds wallet balance');
-    }
+    await this.assertRestaurantPayoutAvailable(
+      restaurant.id,
+      amount,
+      wallet.balance,
+    );
 
     const idempotencyKey = dto.idempotencyKey.trim();
     const pendingReference = `AUTO:${dto.provider}:${idempotencyKey}`;
@@ -2589,6 +2598,25 @@ export class PaymentsService {
     id: string,
     dto: MarkRestaurantPayoutPaidDto,
   ) {
+    const request = await this.prisma.restaurantPayoutRequest.findUnique({
+      where: { id },
+      select: {
+        restaurantId: true,
+        amount: true,
+        status: true,
+        walletAccount: { select: { balance: true } },
+      },
+    });
+    if (!request) {
+      throw new NotFoundException('Restaurant payout request not found');
+    }
+    if (request.status === RestaurantPayoutRequestStatus.APPROVED) {
+      await this.assertRestaurantPayoutAvailable(
+        request.restaurantId,
+        request.amount,
+        request.walletAccount.balance,
+      );
+    }
     const completion = await this.completeRestaurantPayoutRequest(
       user,
       id,
@@ -2644,6 +2672,10 @@ export class PaymentsService {
     const paymentMethods = this.readRestaurantPaymentMethodSettings(
       restaurant.settings,
     );
+    const balanceSummary = await this.resolveRestaurantWalletBalanceSummary(
+      restaurant.id,
+      restaurantWallet.balance,
+    );
 
     return {
       data: {
@@ -2669,6 +2701,7 @@ export class PaymentsService {
           wallet: {
             type: 'RESTAURANT_WALLET',
             balance: Number(restaurantWallet.balance),
+            ...balanceSummary,
             currency: restaurantWallet.currency,
             customerWalletExposure: {
               accountCount: walletSummary.accountCount,
@@ -4836,6 +4869,52 @@ export class PaymentsService {
       },
       update: {},
     });
+  }
+
+  private async resolveRestaurantWalletBalanceSummary(
+    restaurantId: string,
+    ledgerBalance: Prisma.Decimal,
+  ) {
+    const payoutSummary =
+      await this.packagePlansService?.getRestaurantPayoutBalanceSummary(
+        restaurantId,
+      );
+    const normalizedLedgerBalance = Prisma.Decimal.max(
+      ledgerBalance.toDecimalPlaces(2),
+      new Prisma.Decimal(0),
+    );
+    const calculatedAvailablePayout = payoutSummary
+      ? new Prisma.Decimal(payoutSummary.restaurantPayoutAmount)
+      : normalizedLedgerBalance;
+    const availablePayoutBalance = Prisma.Decimal.max(
+      Prisma.Decimal.min(normalizedLedgerBalance, calculatedAvailablePayout),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+
+    return {
+      ledgerBalance: Number(normalizedLedgerBalance),
+      grossCollectedAmount: payoutSummary?.grossAmount ?? null,
+      commissionLiabilityAmount:
+        payoutSummary?.platformCommissionAmount ?? null,
+      availablePayoutBalance: Number(availablePayoutBalance),
+    };
+  }
+
+  private async assertRestaurantPayoutAvailable(
+    restaurantId: string,
+    amount: Prisma.Decimal,
+    ledgerBalance: Prisma.Decimal,
+  ) {
+    const summary = await this.resolveRestaurantWalletBalanceSummary(
+      restaurantId,
+      ledgerBalance,
+    );
+
+    if (amount.greaterThan(summary.availablePayoutBalance)) {
+      throw new BadRequestException(
+        'Requested amount exceeds available payout balance after commission',
+      );
+    }
   }
 
   private normalizePayoutBankDetails(

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
   GeneratedInvoiceKind,
+  PaymentMethod,
   PaymentStatus,
+  PaymentTransactionType,
   Prisma,
   RestaurantWalletTransactionType,
   SubscriptionDeductionStatus,
@@ -563,6 +565,71 @@ export class PackagePlansRepository {
           orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
           select: {
             id: true,
+            amount: true,
+            currency: true,
+            paymentMethod: true,
+            providerRef: true,
+            processedAt: true,
+          },
+        },
+      },
+    });
+  }
+
+  listRestaurantWalletPayoutOrders(restaurantId: string) {
+    return this.prisma.order.findMany({
+      where: {
+        restaurantId,
+        paymentMethod: {
+          notIn: [
+            PaymentMethod.COD,
+            PaymentMethod.CARD_ON_DELIVERY,
+            PaymentMethod.WALLET,
+          ],
+        },
+        transactions: {
+          some: {
+            type: PaymentTransactionType.CHARGE,
+            status: PaymentStatus.PAID,
+          },
+        },
+      },
+      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        branchId: true,
+        orderType: true,
+        paymentMethod: true,
+        paymentStatus: true,
+        subtotal: true,
+        taxAmount: true,
+        deliveryFee: true,
+        serviceChargeAmount: true,
+        tipAmount: true,
+        discountAmount: true,
+        walletAppliedAmount: true,
+        loyaltyDiscountAmount: true,
+        totalAmount: true,
+        paidAt: true,
+        createdAt: true,
+        branch: { select: { id: true, name: true } },
+        transactions: {
+          where: {
+            OR: [
+              {
+                type: PaymentTransactionType.CHARGE,
+                status: PaymentStatus.PAID,
+              },
+              {
+                type: PaymentTransactionType.REFUND,
+                status: PaymentStatus.REFUNDED,
+              },
+            ],
+          },
+          orderBy: [{ processedAt: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            type: true,
             amount: true,
             currency: true,
             paymentMethod: true,
