@@ -172,16 +172,6 @@ export class WinOrderConnectionService {
       throw new ForbiddenException('WinOrder administration access denied');
     }
 
-    const restaurantAccess = user.restaurantAccess;
-    const canAccessRestaurant =
-      user.rid === branch.restaurantId ||
-      restaurantAccess?.allRestaurants === true ||
-      restaurantAccess?.hasAllRestaurantsAccess === true ||
-      restaurantAccess?.restaurantIds?.includes(branch.restaurantId) === true;
-    if (!canAccessRestaurant) {
-      throw new ForbiddenException('Restaurant access denied');
-    }
-
     return this.toScope(branch);
   }
 

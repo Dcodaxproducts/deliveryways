@@ -93,6 +93,67 @@ describe('WinOrderConnectionService', () => {
     );
   });
 
+  it('allows a business admin to create a connection for another restaurant in its tenant', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-2',
+      name: 'Main',
+    });
+    repository.findByBranch.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      id: 'connection-1',
+      branchId: 'branch-2',
+      username: 'wo_user',
+      storeId: null,
+      isEnabled: true,
+    });
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('stored-hash' as never);
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      { branchId: 'branch-2' },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-2',
+        branchId: 'branch-2',
+      }),
+      expect.objectContaining({ actorId: 'admin-1' }),
+    );
+  });
+
+  it('blocks a business admin from creating a connection outside its tenant', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-2',
+      restaurantId: 'restaurant-2',
+      name: 'Main',
+    });
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        { branchId: 'branch-2' },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
   it('allows an optional Store ID to be cleared', async () => {
     const { service, repository } = makeService();
     repository.findBranch.mockResolvedValue({
