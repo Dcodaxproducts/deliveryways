@@ -32,7 +32,6 @@ describe('MenuItemService', () => {
       softDelete: jest.fn(),
       hardDelete: jest.fn(),
       reorderRestaurantItems: jest.fn(),
-      reorderRestaurantItems: jest.fn(),
     };
 
     const tx = {

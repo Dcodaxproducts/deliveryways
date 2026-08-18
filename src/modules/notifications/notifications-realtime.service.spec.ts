@@ -3,7 +3,6 @@ import {
   NotificationsRealtimeService,
   OrderCreatedRealtimePayload,
   OrderUpdatedRealtimePayload,
-  OrderUpdatedRealtimePayload,
 } from './notifications-realtime.service';
 
 describe('NotificationsRealtimeService', () => {
