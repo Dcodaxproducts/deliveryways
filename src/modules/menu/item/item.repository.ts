@@ -251,7 +251,7 @@ export class MenuItemRepository {
                   ...(query.includeInactive ? {} : { isActive: true }),
                 },
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: { where: { menuItemId: null } },
                   itemPriceOverrides: true,
                 },
                 orderBy: { sortOrder: 'asc' },
@@ -261,7 +261,7 @@ export class MenuItemRepository {
                 include: {
                   variation: {
                     include: {
-                      modifierPriceOverrides: true,
+                      modifierPriceOverrides: { where: { menuItemId: null } },
                       itemPriceOverrides: true,
                     },
                   },
@@ -377,13 +377,14 @@ export class MenuItemRepository {
             include: {
               variation: {
                 include: {
-                  modifierPriceOverrides: true,
+                  modifierPriceOverrides: { where: { menuItemId: null } },
                   itemPriceOverrides: true,
                 },
               },
             },
             orderBy: [{ variation: { sortOrder: 'asc' } }],
           },
+          variationModifierPriceOverrides: true,
           _count: {
             select: {
               modifierLinks: true,
@@ -410,7 +411,11 @@ export class MenuItemRepository {
                 isActive: link.isActive,
               }))
             : item.category.variations;
-        const variations = this.resolveItemVariations(item.id, itemVariations);
+        const variations = this.resolveItemVariations(
+          item.id,
+          itemVariations,
+          item.variationModifierPriceOverrides,
+        );
         const modifiers = this.resolveItemModifiers(
           item.modifierPriceOverrides,
         );
@@ -528,7 +533,13 @@ export class MenuItemRepository {
   private resolveItemVariations(
     menuItemId: string,
     variations: Array<{
+      id: string;
       price: Prisma.Decimal;
+      modifierPriceOverrides?: Array<{
+        modifierId: string;
+        menuItemId: string | null;
+        priceDelta: Prisma.Decimal;
+      }>;
       itemPriceOverrides?: Array<{
         menuItemId: string;
         price: Prisma.Decimal;
@@ -536,17 +547,43 @@ export class MenuItemRepository {
         displayText: string | null;
       }>;
     }>,
+    variationModifierPriceOverrides: Array<{
+      variationId: string;
+      modifierId: string;
+      menuItemId: string | null;
+      priceDelta: Prisma.Decimal;
+    }> = [],
   ) {
     return variations.map((variation) => {
       const override = variation.itemPriceOverrides?.find(
         (itemOverride) => itemOverride.menuItemId === menuItemId,
       );
+      const modifierPriceOverrides = new Map(
+        (variation.modifierPriceOverrides ?? []).map((modifierOverride) => [
+          modifierOverride.modifierId,
+          modifierOverride,
+        ]),
+      );
+
+      variationModifierPriceOverrides
+        .filter(
+          (modifierOverride) =>
+            modifierOverride.variationId === variation.id &&
+            modifierOverride.menuItemId === menuItemId,
+        )
+        .forEach((modifierOverride) => {
+          modifierPriceOverrides.set(
+            modifierOverride.modifierId,
+            modifierOverride,
+          );
+        });
 
       return {
         ...variation,
         price: override?.price ?? variation.price,
         pickupPrice: override?.pickupPrice ?? null,
         displayText: override?.displayText ?? null,
+        modifierPriceOverrides: Array.from(modifierPriceOverrides.values()),
       };
     });
   }
