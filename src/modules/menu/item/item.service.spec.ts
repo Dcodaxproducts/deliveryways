@@ -31,6 +31,8 @@ describe('MenuItemService', () => {
       clearCouponScopes: jest.fn(),
       softDelete: jest.fn(),
       hardDelete: jest.fn(),
+      reorderRestaurantItems: jest.fn(),
+      reorderRestaurantItems: jest.fn(),
     };
 
     const tx = {
@@ -1671,19 +1673,13 @@ describe('MenuItemService', () => {
   });
 
   it('persists a partial drag operation without disturbing unloaded items', async () => {
-    const { service, prisma } = makeService();
+    const { service, itemRepository, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
-    prisma.menuItem.findMany
-      .mockResolvedValueOnce([
-        { id: 'item-1', restaurantId: 'restaurant-1' },
-        { id: 'item-2', restaurantId: 'restaurant-1' },
-      ])
-      .mockResolvedValueOnce([
-        { id: 'item-1' },
-        { id: 'item-2' },
-        { id: 'item-3' },
-      ]);
-    prisma.menuItem.update.mockResolvedValue({});
+    prisma.menuItem.findMany.mockResolvedValue([
+      { id: 'item-1', restaurantId: 'restaurant-1' },
+      { id: 'item-2', restaurantId: 'restaurant-1' },
+    ]);
+    itemRepository.reorderRestaurantItems.mockResolvedValue(3);
 
     await service.reorder(
       {
@@ -1699,11 +1695,49 @@ describe('MenuItemService', () => {
       },
     );
 
-    expect(prisma.menuItem.update.mock.calls).toEqual([
-      [{ where: { id: 'item-2' }, data: { sortOrder: 0 } }],
-      [{ where: { id: 'item-1' }, data: { sortOrder: 1 } }],
-      [{ where: { id: 'item-3' }, data: { sortOrder: 2 } }],
+    expect(itemRepository.reorderRestaurantItems).toHaveBeenCalledWith(
+      'restaurant-1',
+      [
+        { id: 'item-2', sortOrder: 1 },
+        { id: 'item-1', sortOrder: 2 },
+      ],
+      undefined,
+    );
+  });
+
+  it('normalizes legacy sort orders when reordering category items', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuItem.findMany.mockResolvedValue([
+      { id: 'item-2', restaurantId: 'restaurant-1' },
+      { id: 'item-1', restaurantId: 'restaurant-1' },
     ]);
+    itemRepository.reorderRestaurantItems.mockResolvedValue(5);
+
+    const result = await service.reorder(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        categoryId: 'category-1',
+        items: [
+          { id: 'item-2', sortOrder: 1 },
+          { id: 'item-1', sortOrder: 2 },
+        ],
+      },
+    );
+
+    expect(itemRepository.reorderRestaurantItems).toHaveBeenCalledWith(
+      'restaurant-1',
+      [
+        { id: 'item-2', sortOrder: 1 },
+        { id: 'item-1', sortOrder: 2 },
+      ],
+      'category-1',
+    );
+    expect(result.data.count).toBe(2);
   });
 
   it('reorders a single menu item inside a restaurant menu', async () => {

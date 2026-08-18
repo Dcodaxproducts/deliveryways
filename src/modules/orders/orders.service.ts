@@ -761,11 +761,20 @@ export class OrdersService {
     const acceptedOrderTime = this.resolveAcceptedOrderTime(order, dto);
     this.assertDeliveryOtpForCompletion(order, dto);
 
-    const data = await this.ordersRepository.updateStatus(
-      id,
-      dto.status,
-      acceptedOrderTime,
-    );
+    const shouldSettlePendingPayment =
+      this.isCompletedOrder(order.orderType, dto.status) &&
+      order.paymentStatus === PaymentStatus.PENDING;
+    const data = shouldSettlePendingPayment
+      ? await this.ordersRepository.completeStatusAndSettlePendingPayment(
+          id,
+          dto.status,
+          acceptedOrderTime,
+        )
+      : await this.ordersRepository.updateStatus(
+          id,
+          dto.status,
+          acceptedOrderTime,
+        );
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
     await this.chatService.syncDeliveryThreadForOrderLifecycle(
@@ -802,7 +811,13 @@ export class OrdersService {
       OrderStatus.CANCELLED,
       OrderStatus.REJECTED,
     ];
-    if (terminalStatuses.includes(order.status)) {
+    const canSuperAdminCancelCompletedOrder =
+      user.role === UserRoleEnum.SUPER_ADMIN &&
+      this.isCompletedOrder(order.orderType, order.status);
+    if (
+      terminalStatuses.includes(order.status) &&
+      !canSuperAdminCancelCompletedOrder
+    ) {
       throw new BadRequestException(
         'Order cannot be cancelled in current state',
       );

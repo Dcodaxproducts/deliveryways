@@ -69,6 +69,60 @@ export class MenuItemRepository {
     });
   }
 
+  async reorderRestaurantItems(
+    restaurantId: string,
+    items: Array<{ id: string; sortOrder: number }>,
+    categoryId?: string,
+  ) {
+    const requestedIds = items
+      .slice()
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map((item) => item.id);
+    const requestedIdSet = new Set(requestedIds);
+
+    return this.prisma.$transaction(async (tx) => {
+      const currentItems = await tx.menuItem.findMany({
+        where: {
+          restaurantId,
+          deletedAt: null,
+          ...(categoryId
+            ? {
+                OR: [
+                  { categoryId },
+                  { categoryLinks: { some: { menuCategoryId: categoryId } } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      });
+      const currentIdSet = new Set(currentItems.map((item) => item.id));
+
+      if (requestedIds.some((id) => !currentIdSet.has(id))) {
+        return null;
+      }
+
+      const orderedIds = [
+        ...requestedIds,
+        ...currentItems
+          .map((item) => item.id)
+          .filter((id) => !requestedIdSet.has(id)),
+      ];
+
+      await Promise.all(
+        orderedIds.map((id, index) =>
+          tx.menuItem.update({
+            where: { id },
+            data: { sortOrder: index + 1 },
+          }),
+        ),
+      );
+
+      return orderedIds.length;
+    });
+  }
+
   async list(restaurantId: string | undefined, query: ListMenuItemsDto) {
     const menuId = query.menuId ?? query.menu_id;
     const andFilters: Prisma.MenuItemWhereInput[] = [];

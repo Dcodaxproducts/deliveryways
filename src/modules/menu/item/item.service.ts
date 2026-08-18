@@ -1300,31 +1300,17 @@ export class MenuItemService {
         'write',
       );
 
-      const requestedOrder = [...dto.items]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((item) => item.id);
-      const requestedIdSet = new Set(requestedOrder);
-      const allItems = await this.prisma.menuItem.findMany({
-        where: {
-          restaurantId: [...restaurantIds][0],
-          deletedAt: null,
-        },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-        select: { id: true },
-      });
-      let requestedIndex = 0;
-      const completeOrder = allItems.map(({ id }) =>
-        requestedIdSet.has(id) ? requestedOrder[requestedIndex++] : id,
+      const reorderedCount = await this.itemRepository.reorderRestaurantItems(
+        [...restaurantIds][0],
+        dto.items,
+        dto.categoryId,
       );
 
-      await this.prisma.$transaction(
-        completeOrder.map((id, sortOrder) =>
-          this.prisma.menuItem.update({
-            where: { id },
-            data: { sortOrder },
-          }),
-        ),
-      );
+      if (reorderedCount === null) {
+        throw new BadRequestException(
+          'All items must belong to the selected category',
+        );
+      }
     }
 
     return {

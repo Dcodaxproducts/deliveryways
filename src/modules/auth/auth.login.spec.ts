@@ -72,7 +72,7 @@ describe('AuthService login', () => {
       {} as never,
       {} as never,
       usersService as unknown as UsersService,
-      {} as never,
+      { sendEmail: jest.fn().mockResolvedValue(undefined) } as never,
       staffManagementRepository as never,
     );
 

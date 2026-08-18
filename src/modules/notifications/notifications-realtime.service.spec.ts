@@ -2,6 +2,8 @@ import type { Server } from 'socket.io';
 import {
   NotificationsRealtimeService,
   OrderCreatedRealtimePayload,
+  OrderUpdatedRealtimePayload,
+  OrderUpdatedRealtimePayload,
 } from './notifications-realtime.service';
 
 describe('NotificationsRealtimeService', () => {
@@ -75,5 +77,34 @@ describe('NotificationsRealtimeService', () => {
     service.emitOrderStatusUpdated(payload);
 
     expect(emit).toHaveBeenCalledWith('order.status.updated', payload);
+  });
+
+  it('emits order updates to the restaurant and branch rooms', () => {
+    const emit = jest.fn();
+    const branchTarget = { emit };
+    const restaurantTarget = {
+      to: jest.fn().mockReturnValue(branchTarget),
+    };
+    const server = {
+      to: jest.fn().mockReturnValue(restaurantTarget),
+    };
+    const service = new NotificationsRealtimeService();
+    const payload: OrderUpdatedRealtimePayload = {
+      id: 'order-1',
+      status: 'CONFIRMED',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      paymentStatus: 'PAID',
+      updatedAt: new Date('2026-08-18T09:00:00.000Z'),
+    };
+
+    service.registerServer(server as unknown as Server);
+    service.emitOrderUpdated(payload);
+
+    expect(server.to).toHaveBeenCalledWith('orders:restaurant:restaurant-1');
+    expect(restaurantTarget.to).toHaveBeenCalledWith(
+      'orders:restaurant:restaurant-1:branch:branch-1',
+    );
+    expect(emit).toHaveBeenCalledWith('order.updated', payload);
   });
 });

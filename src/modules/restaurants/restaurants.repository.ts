@@ -51,6 +51,11 @@ export class RestaurantsRepository {
     includeInactive = false,
     restaurantIds?: string[],
   ) {
+    const normalizedSearch = query.search?.replace(/^#/, '');
+    const numericSearch =
+      normalizedSearch && /^\d+$/.test(normalizedSearch)
+        ? Number.parseInt(normalizedSearch, 10)
+        : Number.NaN;
     const where: Prisma.RestaurantWhereInput = {
       ...(tenantId ? { tenantId } : {}),
       ...(restaurantIds?.length ? { id: { in: restaurantIds } } : {}),
@@ -60,6 +65,9 @@ export class RestaurantsRepository {
       ...(query.search
         ? {
             OR: [
+              ...(Number.isSafeInteger(numericSearch)
+                ? [{ displayNumber: numericSearch }]
+                : []),
               { name: { contains: query.search, mode: 'insensitive' } },
               { slug: { contains: query.search, mode: 'insensitive' } },
               { subdomain: { contains: query.search, mode: 'insensitive' } },

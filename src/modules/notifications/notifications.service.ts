@@ -626,6 +626,15 @@ export class NotificationsService {
         },
       });
     }
+
+    this.notificationsRealtimeService?.emitOrderUpdated({
+      id: order.id,
+      status: order.status,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      paymentStatus: order.paymentStatus,
+      updatedAt: order.updatedAt,
+    });
   }
 
   async notifyPaymentAttemptCreated(
@@ -736,6 +745,15 @@ export class NotificationsService {
         status: payment.status,
         type: payment.type,
       },
+    });
+
+    this.notificationsRealtimeService?.emitOrderUpdated({
+      id: payment.order.id,
+      status: payment.order.status,
+      restaurantId: payment.order.restaurantId,
+      branchId: payment.order.branchId,
+      paymentStatus: payment.order.paymentStatus,
+      updatedAt: payment.order.updatedAt,
     });
 
     if (ADMIN_NOTIFICATION_TYPES.includes(type)) {

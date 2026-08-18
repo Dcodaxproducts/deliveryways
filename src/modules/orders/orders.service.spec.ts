@@ -2129,6 +2129,8 @@ describe('OrdersService - deliveryman order access', () => {
     list: jest.Mock;
     findById: jest.Mock;
     updateStatus: jest.Mock;
+    completeStatusAndSettlePendingPayment: jest.Mock;
+    cancel: jest.Mock;
     assignDeliveryman: jest.Mock;
   };
   let notificationsService: { notifyOrderStatusChanged: jest.Mock };
@@ -2151,6 +2153,8 @@ describe('OrdersService - deliveryman order access', () => {
         .mockResolvedValue({ items: [{ id: 'order-1' }], total: 1 }),
       findById: jest.fn(),
       updateStatus: jest.fn(),
+      completeStatusAndSettlePendingPayment: jest.fn(),
+      cancel: jest.fn(),
       assignDeliveryman: jest.fn(),
     };
 
@@ -2466,6 +2470,7 @@ describe('OrdersService - deliveryman order access', () => {
       deliveryOtp: '123456',
       orderType: 'DELIVERY',
       status: 'OUT_FOR_DELIVERY',
+      paymentStatus: PaymentStatus.PAID,
     });
     ordersRepository.updateStatus = jest.fn().mockResolvedValue({
       id: 'order-1',
@@ -2496,6 +2501,83 @@ describe('OrdersService - deliveryman order access', () => {
       undefined,
     );
     expect(result.message).toBe('Order status updated successfully');
+  });
+
+  it('atomically settles a pending payment when delivery succeeds', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      deliverymanId: 'dm-1',
+      deliveryOtp: '123456',
+      orderType: OrderType.DELIVERY,
+      status: OrderStatus.OUT_FOR_DELIVERY,
+      paymentStatus: PaymentStatus.PENDING,
+    });
+    ordersRepository.completeStatusAndSettlePendingPayment.mockResolvedValue({
+      id: 'order-1',
+      orderType: OrderType.DELIVERY,
+      status: OrderStatus.DELIVERED,
+      paymentStatus: PaymentStatus.PAID,
+    });
+
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    await service.updateStatus(deliverymanUser as never, 'order-1', {
+      status: OrderStatus.DELIVERED,
+      deliveryOtp: '123456',
+    });
+
+    expect(
+      ordersRepository.completeStatusAndSettlePendingPayment,
+    ).toHaveBeenCalledWith('order-1', OrderStatus.DELIVERED, undefined);
+    expect(ordersRepository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('allows only a super admin to cancel a completed order', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderType: OrderType.DELIVERY,
+      status: OrderStatus.DELIVERED,
+    });
+    ordersRepository.cancel.mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.CANCELLED,
+    });
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    await expect(
+      service.cancel(
+        {
+          uid: 'customer-1',
+          role: UserRoleEnum.CUSTOMER,
+        } as never,
+        'order-1',
+        {} as never,
+      ),
+    ).rejects.toThrow('Order cannot be cancelled in current state');
+
+    await expect(
+      service.cancel(
+        {
+          uid: 'super-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'order-1',
+        {} as never,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ message: 'Order cancelled successfully' }),
+    );
+    expect(ordersRepository.cancel).toHaveBeenCalledWith('order-1', 'super-1');
   });
 
   it('requires branch-set order time when accepting a placed order', async () => {
