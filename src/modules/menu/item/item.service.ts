@@ -1255,17 +1255,17 @@ export class MenuItemService {
         'write',
       );
 
-      const sortOrderById = new Map(
-        dto.items.map((item) => [item.id, item.sortOrder]),
+      const reorderedCount = await this.itemRepository.reorderRestaurantItems(
+        [...restaurantIds][0],
+        dto.items,
+        dto.categoryId,
       );
-      await this.prisma.$transaction(
-        items.map((item) =>
-          this.prisma.menuItem.update({
-            where: { id: item.id },
-            data: { sortOrder: sortOrderById.get(item.id) ?? 0 },
-          }),
-        ),
-      );
+
+      if (reorderedCount === null) {
+        throw new BadRequestException(
+          'All items must belong to the selected category',
+        );
+      }
     }
 
     return {

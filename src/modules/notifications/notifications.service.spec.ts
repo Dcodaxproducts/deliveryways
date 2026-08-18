@@ -34,6 +34,7 @@ describe('NotificationsService', () => {
   };
   let notificationsRealtimeService: {
     emitOrderCreated: jest.Mock;
+    emitOrderUpdated: jest.Mock;
   };
 
   beforeEach(() => {
@@ -64,6 +65,7 @@ describe('NotificationsService', () => {
     };
     notificationsRealtimeService = {
       emitOrderCreated: jest.fn(),
+      emitOrderUpdated: jest.fn(),
     };
 
     service = new NotificationsService(

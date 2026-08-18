@@ -841,8 +841,16 @@ export class ReorderMenuItemsDto {
   @IsString()
   menuId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Optional category scope for the reordered item list',
+  })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
   @ApiProperty({ type: [ReorderMenuEntryDto] })
   @IsArray()
+  @ArrayUnique((entry: ReorderMenuEntryDto) => entry.id)
   @ValidateNested({ each: true })
   @Type(() => ReorderMenuEntryDto)
   items!: ReorderMenuEntryDto[];

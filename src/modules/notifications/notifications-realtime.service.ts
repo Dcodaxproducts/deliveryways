@@ -12,6 +12,15 @@ export interface OrderCreatedRealtimePayload {
   createdAt: Date;
 }
 
+export interface OrderUpdatedRealtimePayload {
+  id: string;
+  status: string;
+  restaurantId: string;
+  branchId: string;
+  paymentStatus: string;
+  updatedAt: Date;
+}
+
 @Injectable()
 export class NotificationsRealtimeService {
   private readonly logger = new Logger(NotificationsRealtimeService.name);
@@ -41,6 +50,21 @@ export class NotificationsRealtimeService {
 
     this.logger.debug(
       `Emitted new order ${payload.id} for restaurant ${payload.restaurantId}`,
+    );
+  }
+
+  emitOrderUpdated(payload: OrderUpdatedRealtimePayload) {
+    if (!this.server) {
+      return;
+    }
+
+    this.server
+      .to(this.getRestaurantOrdersRoom(payload.restaurantId))
+      .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
+      .emit('order.updated', payload);
+
+    this.logger.debug(
+      `Emitted order update ${payload.id} for restaurant ${payload.restaurantId}`,
     );
   }
 }

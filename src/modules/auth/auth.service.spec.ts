@@ -291,7 +291,10 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       restaurantsService as never,
       branchesService as never,
       usersService as unknown as UsersService,
-      {} as never,
+      {
+        verifyConnection: jest.fn().mockResolvedValue(undefined),
+        sendEmail: jest.fn().mockResolvedValue(undefined),
+      } as never,
       {} as never,
     );
   });

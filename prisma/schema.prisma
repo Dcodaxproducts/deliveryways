@@ -404,6 +404,7 @@ model Tenant {
 
 model Restaurant {
   id                     String    @id @default(cuid())
+  displayNumber          Int       @unique @default(autoincrement()) @map("display_number")
   tenantId               String    @map("tenant_id")
   name                   String
   slug                   String    @unique

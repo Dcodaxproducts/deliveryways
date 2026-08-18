@@ -31,6 +31,7 @@ describe('MenuItemService', () => {
       clearCouponScopes: jest.fn(),
       softDelete: jest.fn(),
       hardDelete: jest.fn(),
+      reorderRestaurantItems: jest.fn(),
     };
 
     const tx = {
@@ -67,6 +68,7 @@ describe('MenuItemService', () => {
     const prisma = {
       menuItem: {
         count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
       },
@@ -1573,6 +1575,41 @@ describe('MenuItemService', () => {
       data: { id: 'item-1', sortOrder: 4 },
       message: 'Menu item reordered successfully',
     });
+  });
+
+  it('normalizes legacy sort orders when reordering category items', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuItem.findMany.mockResolvedValue([
+      { id: 'item-2', restaurantId: 'restaurant-1' },
+      { id: 'item-1', restaurantId: 'restaurant-1' },
+    ]);
+    itemRepository.reorderRestaurantItems.mockResolvedValue(5);
+
+    const result = await service.reorder(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        categoryId: 'category-1',
+        items: [
+          { id: 'item-2', sortOrder: 1 },
+          { id: 'item-1', sortOrder: 2 },
+        ],
+      },
+    );
+
+    expect(itemRepository.reorderRestaurantItems).toHaveBeenCalledWith(
+      'restaurant-1',
+      [
+        { id: 'item-2', sortOrder: 1 },
+        { id: 'item-1', sortOrder: 2 },
+      ],
+      'category-1',
+    );
+    expect(result.data.count).toBe(2);
   });
 
   it('reorders a single menu item inside a restaurant menu', async () => {

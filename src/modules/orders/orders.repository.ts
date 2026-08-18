@@ -502,6 +502,42 @@ export class OrdersRepository {
     });
   }
 
+  async completeStatusAndSettlePendingPayment(
+    id: string,
+    status: OrderStatus,
+    orderTime?: Date,
+  ) {
+    const settledAt = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.update({
+        where: { id },
+        data: {
+          status,
+          orderTime,
+          isScheduled: orderTime ? orderTime.getTime() > Date.now() : undefined,
+          deliveredAt: settledAt,
+          paymentStatus: PaymentStatus.PAID,
+          paidAt: settledAt,
+        },
+      });
+
+      await tx.paymentTransaction.updateMany({
+        where: {
+          orderId: id,
+          type: 'CHARGE',
+          status: PaymentStatus.PENDING,
+        },
+        data: {
+          status: PaymentStatus.PAID,
+          processedAt: settledAt,
+        },
+      });
+
+      return order;
+    });
+  }
+
   async assignDeliveryman(id: string, deliverymanId: string, tx?: PrismaTx) {
     return this.client(tx).order.update({
       where: { id },
