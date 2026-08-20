@@ -235,6 +235,16 @@ export class AdminReportsScopedQueryDto {
   branchId?: string;
 }
 
+export class SignQzChallengeDto {
+  @ApiProperty({
+    description: 'Exact QZ Tray challenge payload to sign',
+    maxLength: 16384,
+  })
+  @IsString()
+  @MaxLength(16384)
+  challenge!: string;
+}
+
 export class AdminExportMenuCsvQueryDto extends AdminReportsScopedQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

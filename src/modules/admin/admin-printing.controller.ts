@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -20,16 +21,52 @@ import {
   AdminPrintingScopedQueryDto,
   AdminPrintingStatusQueryDto,
   ReportAdminPrinterEventDto,
+  SignQzChallengeDto,
   UpdateAdminPrintingSettingsDto,
 } from './dto';
 import { AdminPrintingService } from './admin-printing.service';
+import { QzSigningService } from './qz-signing.service';
 
 @ApiTags('Admin Printing')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
 @Controller('admin/printing')
 export class AdminPrintingController {
-  constructor(private readonly adminPrintingService: AdminPrintingService) {}
+  constructor(
+    private readonly adminPrintingService: AdminPrintingService,
+    private readonly qzSigningService: QzSigningService,
+  ) {}
+
+  @Get('qz/certificate')
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
+  )
+  @ApiOperation({ summary: 'Get the QZ Tray trusted signing certificate' })
+  getQzCertificate() {
+    return {
+      data: { certificate: this.qzSigningService.getCertificate() },
+      message: 'QZ certificate fetched successfully',
+    };
+  }
+
+  @Post('qz/signature')
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
+  )
+  @ApiOperation({ summary: 'Sign a QZ Tray challenge for silent printing' })
+  signQzChallenge(@Body() dto: SignQzChallengeDto) {
+    return {
+      data: { signature: this.qzSigningService.signChallenge(dto.challenge) },
+      message: 'QZ challenge signed successfully',
+    };
+  }
 
   @Get('settings')
   @Roles(
