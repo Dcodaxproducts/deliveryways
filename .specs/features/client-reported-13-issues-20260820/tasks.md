@@ -28,4 +28,4 @@
 ## Verification and release
 
 - [x] T17: run touched-file enforcement, focused tests, typecheck, lint, full tests, production builds, Prisma validation, and Docker/project verification where available.
-- [ ] T18: commit atomically, push all changed repository branches, verify remote commits, and capture durable handoff context.
+- [x] T18: commit atomically, push all changed repository branches, verify remote commits, and capture durable handoff context.
