@@ -620,9 +620,19 @@ export class PackagePlansService {
       this.packagePlansRepository.listRestaurantWalletPayoutOrders(
         restaurant.id,
       ),
-      this.listSpecialPayoutAmountsByOrder(restaurant.id),
+      this.listSpecialPayoutSummary(restaurant.id),
       this.resolveDefaultCurrency(),
     ]);
+    let remainingCommissionCap =
+      plan?.commissionCapAmount !== null &&
+      plan?.commissionCapAmount !== undefined
+        ? Prisma.Decimal.max(
+            new Prisma.Decimal(plan.commissionCapAmount).minus(
+              specialPayouts.commissionAmount,
+            ),
+            new Prisma.Decimal(0),
+          )
+        : null;
     const lineItems = orders
       .map((order) => {
         const netCollectedAmount = order.transactions.reduce(
@@ -633,12 +643,23 @@ export class PackagePlansService {
           new Prisma.Decimal(0),
         );
 
-        return this.toWeeklyPayoutOrderLine(
+        const line = this.toWeeklyPayoutOrderLine(
           { ...order, totalAmount: netCollectedAmount },
           plan,
           currency,
-          specialPayouts.get(order.id) ?? new Prisma.Decimal(0),
+          specialPayouts.payoutAmountsByOrder.get(order.id) ??
+            new Prisma.Decimal(0),
+          remainingCommissionCap,
         );
+
+        if (remainingCommissionCap !== null) {
+          remainingCommissionCap = Prisma.Decimal.max(
+            remainingCommissionCap.minus(line.platformCommissionAmount),
+            new Prisma.Decimal(0),
+          );
+        }
+
+        return line;
       })
       .filter(
         (item) =>
@@ -1046,19 +1067,38 @@ export class PackagePlansService {
       period.from,
       period.to,
     );
-    const specialPayouts = await this.listSpecialPayoutAmountsByOrder(
-      restaurant.id,
-    );
+    const specialPayouts = await this.listSpecialPayoutSummary(restaurant.id);
     const defaultCurrency = await this.resolveDefaultCurrency();
+    let remainingCommissionCap =
+      plan?.commissionCapAmount !== null &&
+      plan?.commissionCapAmount !== undefined
+        ? Prisma.Decimal.max(
+            new Prisma.Decimal(plan.commissionCapAmount).minus(
+              specialPayouts.commissionAmount,
+            ),
+            new Prisma.Decimal(0),
+          )
+        : null;
     const lineItems = orders
-      .map((order) =>
-        this.toWeeklyPayoutOrderLine(
+      .map((order) => {
+        const line = this.toWeeklyPayoutOrderLine(
           order,
           plan,
           defaultCurrency,
-          specialPayouts.get(order.id) ?? new Prisma.Decimal(0),
-        ),
-      )
+          specialPayouts.payoutAmountsByOrder.get(order.id) ??
+            new Prisma.Decimal(0),
+          remainingCommissionCap,
+        );
+
+        if (remainingCommissionCap !== null) {
+          remainingCommissionCap = Prisma.Decimal.max(
+            remainingCommissionCap.minus(line.platformCommissionAmount),
+            new Prisma.Decimal(0),
+          );
+        }
+
+        return line;
+      })
       .filter((item) => item.restaurantPayoutAmount.greaterThan(0));
     const grossAmount = lineItems.reduce(
       (sum, item) => sum.plus(item.grossAmount),
@@ -1125,6 +1165,7 @@ export class PackagePlansService {
     > | null,
     defaultCurrency: string,
     previouslyPaidAmount = new Prisma.Decimal(0),
+    remainingCommissionCap: Prisma.Decimal | null = null,
   ) {
     const grossAmount = new Prisma.Decimal(order.totalAmount).toDecimalPlaces(
       2,
@@ -1132,6 +1173,7 @@ export class PackagePlansService {
     const platformCommissionAmount = this.calculateOrderCommission(
       grossAmount,
       plan,
+      remainingCommissionCap,
     );
     const calculatedRestaurantPayoutAmount = Prisma.Decimal.max(
       grossAmount.minus(platformCommissionAmount),
@@ -1161,12 +1203,13 @@ export class PackagePlansService {
     };
   }
 
-  private async listSpecialPayoutAmountsByOrder(restaurantId: string) {
+  private async listSpecialPayoutSummary(restaurantId: string) {
     const invoices =
       await this.packagePlansRepository.listRestaurantSpecialPayoutInvoices?.(
         restaurantId,
       );
-    const amounts = new Map<string, Prisma.Decimal>();
+    const payoutAmountsByOrder = new Map<string, Prisma.Decimal>();
+    let commissionAmount = new Prisma.Decimal(0);
 
     for (const invoice of invoices ?? []) {
       const snapshot = this.asJsonObject(invoice.snapshot);
@@ -1184,14 +1227,22 @@ export class PackagePlansService {
           continue;
         }
         const amount = this.readDecimal(line.restaurantPayoutAmount);
-        amounts.set(
+        payoutAmountsByOrder.set(
           orderId,
-          (amounts.get(orderId) ?? new Prisma.Decimal(0)).plus(amount),
+          (payoutAmountsByOrder.get(orderId) ?? new Prisma.Decimal(0)).plus(
+            amount,
+          ),
+        );
+        commissionAmount = commissionAmount.plus(
+          this.readDecimal(line.platformCommissionAmount),
         );
       }
     }
 
-    return amounts;
+    return {
+      payoutAmountsByOrder,
+      commissionAmount: commissionAmount.toDecimalPlaces(2),
+    };
   }
 
   private calculateOrderCommission(
@@ -1199,6 +1250,7 @@ export class PackagePlansService {
     plan: ReturnType<
       PackagePlansService['resolveSubscriptionInvoicePlan']
     > | null,
+    remainingCommissionCap: Prisma.Decimal | null = null,
   ) {
     if (!plan) {
       return new Prisma.Decimal(0);
@@ -1209,11 +1261,14 @@ export class PackagePlansService {
         ? new Prisma.Decimal(plan.commissionFixedAmount)
         : grossAmount.mul(plan.commissionPercentage).div(100);
 
-    if (plan.commissionCapAmount !== null) {
-      commission = Prisma.Decimal.min(
-        commission,
-        new Prisma.Decimal(plan.commissionCapAmount),
-      );
+    const cap =
+      remainingCommissionCap ??
+      (plan.commissionCapAmount !== null
+        ? new Prisma.Decimal(plan.commissionCapAmount)
+        : null);
+
+    if (cap !== null) {
+      commission = Prisma.Decimal.min(commission, cap);
     }
 
     return Prisma.Decimal.min(commission, grossAmount).toDecimalPlaces(2);
@@ -1421,17 +1476,10 @@ export class PackagePlansService {
     const offlinePaidOrders = paidOrders.filter(
       (order) => !this.isOnlinePaymentOrder(order),
     );
-    const transactionFeeAmount = onlinePaidOrders
-      .reduce(
-        (sum, order) =>
-          sum.plus(
-            this.calculateOrderCommission(
-              new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2),
-              plan,
-            ),
-          ),
-        new Prisma.Decimal(0),
-      )
+    const transactionFeeAmount = this.calculateOrdersCommission(
+      paidOrders,
+      plan,
+    )
       .toDecimalPlaces(2)
       .toNumber();
     const onlinePaymentCreditAmount = onlinePaidOrders
@@ -1490,8 +1538,8 @@ export class PackagePlansService {
 
     if (transactionFeeAmount > 0 || this.isTransactionFeePlan(plan)) {
       lineItems.push({
-        description: `Online payment processing fee for ${onlinePaidOrders.length} paid order${onlinePaidOrders.length === 1 ? '' : 's'}`,
-        quantity: onlinePaidOrders.length,
+        description: `Order commission for ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
+        quantity: paidOrders.length,
         unitPrice: transactionFeeAmount,
         amount: transactionFeeAmount,
       });
@@ -1558,7 +1606,7 @@ export class PackagePlansService {
       servicePeriod,
       lineItems,
       transactionFee: {
-        ordersCount: onlinePaidOrders.length,
+        ordersCount: paidOrders.length,
         amount: transactionFeeAmount,
       },
       adjustments: adjustmentItems,
@@ -1592,6 +1640,29 @@ export class PackagePlansService {
       },
       note: subscription.note,
     };
+  }
+
+  private calculateOrdersCommission(
+    orders: RestaurantPayoutOrder[],
+    plan: ReturnType<PackagePlansService['resolveSubscriptionInvoicePlan']>,
+  ) {
+    const grossAmount = orders.reduce(
+      (sum, order) => sum.plus(order.totalAmount),
+      new Prisma.Decimal(0),
+    );
+    let commission =
+      plan.commissionType === PackageCommissionType.FIXED
+        ? new Prisma.Decimal(plan.commissionFixedAmount).mul(orders.length)
+        : grossAmount.mul(plan.commissionPercentage).div(100);
+
+    if (plan.commissionCapAmount !== null) {
+      commission = Prisma.Decimal.min(
+        commission,
+        new Prisma.Decimal(plan.commissionCapAmount),
+      );
+    }
+
+    return Prisma.Decimal.min(commission, grossAmount).toDecimalPlaces(2);
   }
 
   private buildSubscriptionOrderBreakdown(
@@ -2384,23 +2455,35 @@ export class PackagePlansService {
     payoutCycle: PackagePayoutCycle,
     now: Date,
   ) {
-    const to = new Date(
+    const startOfToday = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
-    const from = new Date(to);
+    let to = new Date(startOfToday);
+    let from = new Date(to);
 
     switch (payoutCycle) {
       case PackagePayoutCycle.DAILY:
         from.setUTCDate(from.getUTCDate() - 1);
         break;
       case PackagePayoutCycle.BIWEEKLY:
-        from.setUTCDate(from.getUTCDate() - 14);
+        {
+          const anchor = Date.UTC(1970, 0, 5);
+          const cycleMilliseconds = 14 * 24 * 60 * 60 * 1000;
+          const completedCycles = Math.floor(
+            (startOfToday.getTime() - anchor) / cycleMilliseconds,
+          );
+          to = new Date(anchor + completedCycles * cycleMilliseconds);
+          from = new Date(to.getTime() - cycleMilliseconds);
+        }
         break;
       case PackagePayoutCycle.MONTHLY:
-        from.setUTCMonth(from.getUTCMonth() - 1);
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+        from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth() - 1, 1));
         break;
       case PackagePayoutCycle.WEEKLY:
       default:
+        to.setUTCDate(to.getUTCDate() - ((to.getUTCDay() + 6) % 7));
+        from = new Date(to);
         from.setUTCDate(from.getUTCDate() - 7);
         break;
     }

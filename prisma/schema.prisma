@@ -137,12 +137,15 @@ enum GeneratedInvoiceKind {
 enum GeneratedInvoiceStatus {
   ISSUED
   SENT
+  CANCELLED
 }
 
 enum GeneratedInvoiceEventType {
   GENERATED
   DOWNLOADED
   EMAILED
+  CANCELLED
+  RECREATED
 }
 
 enum SubscriptionDeductionType {

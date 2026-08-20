@@ -47,6 +47,8 @@ const ACCESS_KEY_ALIASES: Record<string, string> = {
   payments: 'payment-settings',
   settings: 'storefront-settings',
   chat: 'notifications',
+  winorder: 'winorder-integration',
+  'winorder-integration': 'winorder-integration',
 };
 
 @Injectable()

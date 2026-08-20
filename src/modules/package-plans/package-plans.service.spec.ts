@@ -460,7 +460,7 @@ describe('PackagePlansService', () => {
     );
 
     expect(result.data.totals.onlinePaymentCreditAmount).toBe(1000);
-    expect(result.data.transactionFee.ordersCount).toBe(1);
+    expect(result.data.transactionFee).toEqual({ ordersCount: 2, amount: 75 });
     expect(result.data.orderBreakdown).toMatchObject({
       summary: {
         offlineOrdersCount: 1,
@@ -481,6 +481,34 @@ describe('PackagePlansService', () => {
         }),
       ],
     });
+  });
+
+  it('applies the commission cap once across all paid orders in the subscription period', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({ totalAmount: new Prisma.Decimal(4000) }),
+        makePaidOrder({
+          id: 'order-cash-1',
+          paymentMethod: PaymentMethod.COD,
+          totalAmount: new Prisma.Decimal(4000),
+          transactions: [],
+        }),
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.transactionFee).toEqual({
+      ordersCount: 2,
+      amount: 250,
+    });
+    expect(result.data.totals.transactionFeeAmount).toBe(250);
+    expect(result.data.totals.onlinePaymentCreditAmount).toBe(4000);
   });
 
   it('returns a credit note when online payment credit covers subscription fees', async () => {
@@ -1114,7 +1142,10 @@ describe('PackagePlansService', () => {
     };
     const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
     const invoiceRecordsService = {
-      hasRecord: jest.fn().mockResolvedValue(false),
+      hasRecord: jest
+        .fn()
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true),
       hasEmailed: jest.fn().mockResolvedValue(false),
       persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
     };
@@ -1132,12 +1163,12 @@ describe('PackagePlansService', () => {
     expect(result).toEqual({ sent: 1, skipped: 0 });
     expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
       'restaurant-1',
-      new Date('2026-07-01T00:00:00.000Z'),
-      new Date('2026-07-08T00:00:00.000Z'),
+      new Date('2026-06-29T00:00:00.000Z'),
+      new Date('2026-07-06T00:00:00.000Z'),
     );
     expect(invoiceRecordsService.hasRecord).toHaveBeenCalledWith(
       'WEEKLY_PAYOUT',
-      'restaurant-1:2026-07-01T00:00:00.000Z:2026-07-08T00:00:00.000Z',
+      'restaurant-1:2026-06-29T00:00:00.000Z:2026-07-06T00:00:00.000Z',
     );
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
@@ -1145,6 +1176,15 @@ describe('PackagePlansService', () => {
       expect.any(String),
       expect.any(Object),
     );
+
+    await expect(
+      service.emailDuePayoutInvoices(new Date('2026-07-10T10:00:00.000Z')),
+    ).resolves.toEqual({ sent: 0, skipped: 1 });
+    expect(invoiceRecordsService.hasRecord).toHaveBeenLastCalledWith(
+      'WEEKLY_PAYOUT',
+      'restaurant-1:2026-06-29T00:00:00.000Z:2026-07-06T00:00:00.000Z',
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledTimes(1);
   });
 
   it('uses restaurant subscription payout cycle override for automated payout periods', async () => {
@@ -1190,8 +1230,8 @@ describe('PackagePlansService', () => {
 
     expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
       'restaurant-1',
-      new Date('2026-06-08T00:00:00.000Z'),
-      new Date('2026-07-08T00:00:00.000Z'),
+      new Date('2026-06-01T00:00:00.000Z'),
+      new Date('2026-07-01T00:00:00.000Z'),
     );
   });
 

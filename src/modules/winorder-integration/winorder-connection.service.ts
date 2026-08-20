@@ -168,6 +168,23 @@ export class WinOrderConnectionService {
       return this.toScope(branch);
     }
 
+    if (user.role === UserRoleEnum.STAFF) {
+      const hasBranchAccess =
+        (user.bid ?? user.branchId) === branch.id ||
+        user.restaurantAccess?.branchIds?.includes(branch.id) === true;
+      const hasRestaurantAccess =
+        user.rid === branch.restaurantId ||
+        user.restaurantAccess?.restaurantIds?.includes(branch.restaurantId) ===
+          true ||
+        user.restaurantAccess?.allRestaurants === true ||
+        user.restaurantAccess?.hasAllRestaurantsAccess === true;
+
+      if (!hasBranchAccess || !hasRestaurantAccess) {
+        throw new ForbiddenException('Branch access denied');
+      }
+      return this.toScope(branch);
+    }
+
     if (user.role !== UserRoleEnum.BUSINESS_ADMIN) {
       throw new ForbiddenException('WinOrder administration access denied');
     }

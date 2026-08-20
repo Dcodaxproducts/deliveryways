@@ -1204,6 +1204,50 @@ describe('NotificationsService', () => {
     );
   });
 
+  it('does not create an admin feed notification for a paid payment', async () => {
+    notificationsRepository.findPaymentForNotification.mockResolvedValue({
+      id: 'payment-paid-1',
+      orderId: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      amount: 600,
+      currency: 'EUR',
+      status: 'PAID',
+      type: 'CHARGE',
+      order: {
+        id: 'order-1',
+        customerId: 'user-1',
+        status: 'PLACED',
+        paymentStatus: 'PAID',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        updatedAt: new Date('2026-08-20T00:00:00.000Z'),
+        customer: {
+          email: 'customer@example.com',
+          profile: { firstName: 'Bilal' },
+        },
+        branch: { id: 'branch-1', name: 'Main Branch' },
+      },
+    });
+    notificationsRepository.create.mockResolvedValue({
+      id: 'customer-payment-notification',
+      recipientEmail: 'customer@example.com',
+      subject: 'Payment paid',
+      body: 'body',
+    });
+
+    await service.notifyPaymentStatusChanged('payment-paid-1');
+
+    expect(notificationsRepository.create).toHaveBeenCalledTimes(1);
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        type: NotificationType.PAYMENT_PAID,
+      }),
+    );
+  });
+
   it('creates admin in-app and email notifications on table reservation request', async () => {
     notificationsRepository.listAdminEmailRecipients.mockResolvedValue([
       {

@@ -177,6 +177,28 @@ export class AdminReportsController {
     return this.adminReportsService.listGeneratedInvoices(user, query);
   }
 
+  @Post('generated-invoices/:invoiceId/cancel')
+  @HttpCode(200)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Cancel a generated invoice' })
+  cancelGeneratedInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.adminReportsService.cancelGeneratedInvoice(user, invoiceId);
+  }
+
+  @Post('generated-invoices/:invoiceId/recreate')
+  @HttpCode(200)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Recreate a cancelled generated invoice' })
+  recreateGeneratedInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.adminReportsService.recreateGeneratedInvoice(user, invoiceId);
+  }
+
   @Get('generated-invoices/:invoiceId/pdf')
   @Roles(
     RolesEnum.SUPER_ADMIN,

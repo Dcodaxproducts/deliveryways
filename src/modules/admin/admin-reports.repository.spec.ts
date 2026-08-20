@@ -35,6 +35,12 @@ describe('AdminReportsRepository', () => {
           _avg: { totalAmount: 100 },
         }),
         count: jest.fn().mockResolvedValue(1),
+        groupBy: jest.fn().mockResolvedValue([
+          {
+            paymentMethod: PaymentMethod.COD,
+            _sum: { totalAmount: 50 },
+          },
+        ]),
       },
       paymentTransaction,
       $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
@@ -50,6 +56,10 @@ describe('AdminReportsRepository', () => {
 
     expect(result.refundedAmount).toBe(25);
     expect(result.netRevenue).toBe(75);
+    expect(result.codAmount).toBe(50);
+    expect(result.onlineAmount).toBe(75);
+    expect(result.stripeAmount).toBe(75);
+    expect(result.paypalAmount).toBe(0);
     expect(result.paymentMethodRevenue).toEqual([
       {
         paymentMethod: PaymentMethod.STRIPE,

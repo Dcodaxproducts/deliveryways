@@ -58,6 +58,40 @@ describe('WinOrderConnectionService', () => {
     );
   });
 
+  it('allows scoped staff to read its assigned WinOrder connection', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+    });
+    repository.findByBranch.mockResolvedValue({
+      id: 'connection-1',
+      branchId: 'branch-1',
+      username: 'wo_user',
+      storeId: 41,
+      isEnabled: true,
+    });
+
+    await service.get(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.STAFF,
+        restaurantAccess: {
+          restaurantIds: ['restaurant-1'],
+          branchIds: ['branch-1'],
+        },
+      },
+      'branch-1',
+    );
+
+    expect(repository.findByBranch).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 'branch-1' }),
+    );
+  });
+
   it('creates a fixed-endpoint connection without a Store ID', async () => {
     const { service, repository } = makeService();
     repository.findBranch.mockResolvedValue({

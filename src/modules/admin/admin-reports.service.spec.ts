@@ -241,6 +241,107 @@ describe('AdminReportsService', () => {
     );
   });
 
+  it('lets a super admin cancel an issued generated invoice', async () => {
+    const issued = {
+      id: 'generated-1',
+      invoiceNumber: 'WPO-INV-1',
+      kind: 'WEEKLY_PAYOUT',
+      status: 'ISSUED',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      customerId: null,
+      orderId: null,
+      subscriptionId: null,
+      periodFrom: new Date('2026-08-03T00:00:00.000Z'),
+      periodTo: new Date('2026-08-10T00:00:00.000Z'),
+      currency: 'EUR',
+      totalAmount: 100,
+      sentCount: 0,
+      downloadedCount: 0,
+      lastSentAt: null,
+      lastSentTo: null,
+      createdAt: new Date('2026-08-10T00:30:00.000Z'),
+      updatedAt: new Date('2026-08-10T00:30:00.000Z'),
+      snapshot: { restaurant: { name: 'Pizza House' } },
+    };
+    const repository = {
+      findGeneratedInvoiceByIdUnscoped: jest.fn().mockResolvedValue(issued),
+      cancelGeneratedInvoice: jest
+        .fn()
+        .mockResolvedValue({ ...issued, status: 'CANCELLED' }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.cancelGeneratedInvoice(
+      { uid: 'super-1', role: 'SUPER_ADMIN' } as never,
+      issued.id,
+    );
+
+    expect(repository.cancelGeneratedInvoice).toHaveBeenCalledWith(
+      issued.id,
+      'super-1',
+    );
+    expect(result.data.status).toBe('CANCELLED');
+  });
+
+  it('recreates a cancelled generated invoice as a new immutable record', async () => {
+    const cancelled = {
+      id: 'generated-1',
+      invoiceNumber: 'WPO-INV-1',
+      sourceKey: 'weekly:restaurant-1:2026-08-03',
+      kind: 'WEEKLY_PAYOUT',
+      status: 'CANCELLED',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      customerId: null,
+      orderId: null,
+      subscriptionId: null,
+      periodFrom: new Date('2026-08-03T00:00:00.000Z'),
+      periodTo: new Date('2026-08-10T00:00:00.000Z'),
+      currency: 'EUR',
+      totalAmount: 100,
+      sentCount: 0,
+      downloadedCount: 0,
+      lastSentAt: null,
+      lastSentTo: null,
+      createdAt: new Date('2026-08-10T00:30:00.000Z'),
+      updatedAt: new Date('2026-08-10T00:30:00.000Z'),
+      snapshot: { restaurant: { name: 'Pizza House' } },
+    };
+    const repository = {
+      findGeneratedInvoiceByIdUnscoped: jest.fn().mockResolvedValue(cancelled),
+      recreateGeneratedInvoice: jest
+        .fn()
+        .mockImplementation(
+          (input: { invoiceNumber: string; sourceKey: string }) =>
+            Promise.resolve({
+              ...cancelled,
+              id: 'generated-2',
+              invoiceNumber: input.invoiceNumber,
+              sourceKey: input.sourceKey,
+              status: 'ISSUED',
+            }),
+        ),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.recreateGeneratedInvoice(
+      { uid: 'super-1', role: 'SUPER_ADMIN' } as never,
+      cancelled.id,
+    );
+
+    expect(repository.recreateGeneratedInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cancelledInvoiceId: cancelled.id,
+        actorId: 'super-1',
+      }),
+    );
+    expect(result.data.id).toBe('generated-2');
+    expect(result.data.invoiceNumber).toMatch(/^WPO-INV-1-R-/);
+  });
+
   it('lists generated invoice history for permission-authorized staff scope', async () => {
     const repository = {
       listGeneratedInvoices: jest.fn().mockResolvedValue([]),

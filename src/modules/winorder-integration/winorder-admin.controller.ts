@@ -29,7 +29,12 @@ import { WinOrderHealthService } from './winorder-health.service';
 @ApiBearerAuth()
 @Controller('admin/integrations/winorder')
 @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
-@Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN)
+@Roles(
+  RolesEnum.SUPER_ADMIN,
+  RolesEnum.BUSINESS_ADMIN,
+  RolesEnum.BRANCH_ADMIN,
+  RolesEnum.STAFF,
+)
 export class WinOrderAdminController {
   constructor(
     private readonly connectionService: WinOrderConnectionService,
@@ -46,7 +51,7 @@ export class WinOrderAdminController {
   }
 
   @Post('connections')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   create(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: CreateWinOrderConnectionDto,
@@ -55,7 +60,7 @@ export class WinOrderAdminController {
   }
 
   @Patch('connections/:branchId')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   update(
     @CurrentUser() user: AuthUserContext,
     @Param('branchId') branchId: string,
@@ -65,7 +70,7 @@ export class WinOrderAdminController {
   }
 
   @Post('connections/:branchId/rotate')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   rotate(
     @CurrentUser() user: AuthUserContext,
     @Param('branchId') branchId: string,
@@ -82,7 +87,7 @@ export class WinOrderAdminController {
   }
 
   @Patch('mappings/:branchId/catalog')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   replaceCatalogMappings(
     @CurrentUser() user: AuthUserContext,
     @Param('branchId') branchId: string,
@@ -92,7 +97,7 @@ export class WinOrderAdminController {
   }
 
   @Patch('mappings/:branchId/payments')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   replacePaymentMappings(
     @CurrentUser() user: AuthUserContext,
     @Param('branchId') branchId: string,
@@ -110,7 +115,7 @@ export class WinOrderAdminController {
   }
 
   @Post('health/:branchId/retry-failed')
-  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN)
+  @Roles(RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF)
   retryFailed(
     @CurrentUser() user: AuthUserContext,
     @Param('branchId') branchId: string,

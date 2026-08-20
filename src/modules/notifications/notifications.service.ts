@@ -49,7 +49,6 @@ const ADMIN_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.TABLE_RESERVATION_CREATED,
   NotificationType.TABLE_RESERVATION_ACCEPTED,
   NotificationType.TABLE_RESERVATION_STATUS_CHANGED,
-  NotificationType.PAYMENT_PAID,
   NotificationType.PAYMENT_FAILED,
   NotificationType.PAYMENT_CANCELLED,
   NotificationType.PAYMENT_REFUNDED,

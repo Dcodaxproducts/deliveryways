@@ -180,6 +180,38 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
+  it('allows STAFF to read WinOrder with the WinOrder permission', async () => {
+    const baseStaffRole = activeStaffRole([
+      { access: 'winorder-integration', operations: ['read'] },
+    ]);
+    const staffRole = {
+      ...baseStaffRole,
+      restaurantAccess: {
+        ...baseStaffRole.restaurantAccess,
+        branchIds: ['branch-1'],
+      },
+    };
+    const prisma: PrismaMock = {
+      staffUser: { findUnique: jest.fn().mockResolvedValue(staffRole) },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.SUPER_ADMIN, RolesEnum.BUSINESS_ADMIN, RolesEnum.STAFF],
+      controllerPath: 'admin/integrations/winorder',
+      handlerPath: ':branchId',
+      method: RequestMethod.GET,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { params: { branchId: 'branch-1' } },
+        ),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it('allows STAFF to read order summary stats with order permission', async () => {
     const prisma: PrismaMock = {
       staffUser: {

@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   GeneratedInvoiceEventType,
   GeneratedInvoiceKind,
@@ -395,6 +396,62 @@ export class AdminReportsService {
     return {
       data: invoices.map((invoice) => this.toGeneratedInvoiceSummary(invoice)),
       message: 'Generated invoices fetched successfully',
+    };
+  }
+
+  async cancelGeneratedInvoice(user: AuthUserContext, invoiceId: string) {
+    this.ensureSuperAdmin(user);
+    const invoice =
+      await this.adminReportsRepository.findGeneratedInvoiceByIdUnscoped(
+        invoiceId,
+      );
+    if (!invoice) {
+      throw new NotFoundException('Generated invoice not found');
+    }
+    if (invoice.status === GeneratedInvoiceStatus.CANCELLED) {
+      throw new BadRequestException('Generated invoice is already cancelled');
+    }
+
+    const cancelled = await this.adminReportsRepository.cancelGeneratedInvoice(
+      invoiceId,
+      user.uid,
+    );
+    if (!cancelled) {
+      throw new BadRequestException('Generated invoice cannot be cancelled');
+    }
+
+    return {
+      data: this.toGeneratedInvoiceSummary(cancelled),
+      message: 'Generated invoice cancelled successfully',
+    };
+  }
+
+  async recreateGeneratedInvoice(user: AuthUserContext, invoiceId: string) {
+    this.ensureSuperAdmin(user);
+    const cancelled =
+      await this.adminReportsRepository.findGeneratedInvoiceByIdUnscoped(
+        invoiceId,
+      );
+    if (!cancelled) {
+      throw new NotFoundException('Generated invoice not found');
+    }
+    if (cancelled.status !== GeneratedInvoiceStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Only a cancelled generated invoice can be recreated',
+      );
+    }
+
+    const version = randomUUID().slice(0, 8).toUpperCase();
+    const invoice = await this.adminReportsRepository.recreateGeneratedInvoice({
+      cancelledInvoiceId: cancelled.id,
+      invoiceNumber: `${cancelled.invoiceNumber.slice(0, 89)}-R-${version}`,
+      sourceKey: `${cancelled.sourceKey.slice(0, 244)}:R:${version}`,
+      actorId: user.uid,
+    });
+
+    return {
+      data: this.toGeneratedInvoiceSummary(invoice),
+      message: 'Generated invoice recreated successfully',
     };
   }
 
@@ -920,6 +977,12 @@ export class AdminReportsService {
 
   private formatDate(value: Date | null) {
     return value ? value.toISOString().slice(0, 10) : 'N/A';
+  }
+
+  private ensureSuperAdmin(user: AuthUserContext) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Super admin access is required');
+    }
   }
 
   private formatMoney(value: number) {

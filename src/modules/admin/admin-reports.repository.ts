@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import {
   CouponCampaignKind,
   CouponDiscountType,
+  GeneratedInvoiceEventType,
+  GeneratedInvoiceStatus,
   OrderStatus,
+  PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -438,6 +441,99 @@ export class AdminReportsRepository {
     });
   }
 
+  findGeneratedInvoiceByIdUnscoped(invoiceId: string) {
+    return this.prisma.generatedInvoice.findUnique({
+      where: { id: invoiceId },
+    });
+  }
+
+  async cancelGeneratedInvoice(invoiceId: string, actorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.generatedInvoice.updateMany({
+        where: {
+          id: invoiceId,
+          status: { not: GeneratedInvoiceStatus.CANCELLED },
+        },
+        data: { status: GeneratedInvoiceStatus.CANCELLED },
+      });
+
+      if (updated.count === 0) {
+        return null;
+      }
+
+      const invoice = await tx.generatedInvoice.findUniqueOrThrow({
+        where: { id: invoiceId },
+      });
+      await tx.generatedInvoiceEvent.create({
+        data: {
+          generatedInvoiceId: invoiceId,
+          eventType: GeneratedInvoiceEventType.CANCELLED,
+          actorId,
+          metadata: {
+            sourceKey: invoice.sourceKey,
+            invoiceNumber: invoice.invoiceNumber,
+          },
+        },
+      });
+
+      return invoice;
+    });
+  }
+
+  async recreateGeneratedInvoice(input: {
+    cancelledInvoiceId: string;
+    invoiceNumber: string;
+    sourceKey: string;
+    actorId: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const cancelled = await tx.generatedInvoice.findFirstOrThrow({
+        where: {
+          id: input.cancelledInvoiceId,
+          status: GeneratedInvoiceStatus.CANCELLED,
+        },
+      });
+      const invoice = await tx.generatedInvoice.create({
+        data: {
+          invoiceNumber: input.invoiceNumber,
+          kind: cancelled.kind,
+          status: GeneratedInvoiceStatus.ISSUED,
+          tenantId: cancelled.tenantId,
+          restaurantId: cancelled.restaurantId,
+          branchId: cancelled.branchId,
+          customerId: cancelled.customerId,
+          orderId: cancelled.orderId,
+          subscriptionId: cancelled.subscriptionId,
+          sourceKey: input.sourceKey,
+          periodFrom: cancelled.periodFrom,
+          periodTo: cancelled.periodTo,
+          currency: cancelled.currency,
+          totalAmount: cancelled.totalAmount,
+          snapshot:
+            cancelled.snapshot === null
+              ? Prisma.JsonNull
+              : (cancelled.snapshot as Prisma.InputJsonValue),
+          generatedById: input.actorId,
+        },
+      });
+      await tx.generatedInvoiceEvent.create({
+        data: {
+          generatedInvoiceId: invoice.id,
+          eventType: GeneratedInvoiceEventType.RECREATED,
+          actorId: input.actorId,
+          metadata: {
+            recreatedFromInvoiceId: cancelled.id,
+            recreatedFromInvoiceNumber: cancelled.invoiceNumber,
+            sourceKey: input.sourceKey,
+            invoiceNumber: input.invoiceNumber,
+          },
+        },
+      });
+
+      return invoice;
+    });
+  }
+
   async listInvoices(scope: AdminReportsScope, query: AdminInvoicesQueryDto) {
     return this.prisma.order.findMany({
       where: this.buildOrderWhere(scope, query),
@@ -664,6 +760,7 @@ export class AdminReportsRepository {
       paidOrders,
       paidChargesByMethod,
       paidRefundsByMethod,
+      paidOrdersByMethod,
     ] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
         where: orderWhere,
@@ -721,6 +818,12 @@ export class AdminReportsRepository {
         },
         _sum: { amount: true },
       }),
+      this.prisma.order.groupBy({
+        by: ['paymentMethod'],
+        orderBy: { paymentMethod: 'asc' },
+        where: { ...orderWhere, paymentStatus: PaymentStatus.PAID },
+        _sum: { totalAmount: true },
+      }),
     ]);
 
     const refundedByMethod = new Map(
@@ -737,9 +840,20 @@ export class AdminReportsRepository {
         paymentMethod: entry.paymentMethod,
         received,
         refunded,
-        netReceived: Number((received - refunded).toFixed(2)),
+        netReceived: Number(Math.max(received - refunded, 0).toFixed(2)),
       };
     });
+    const netAmountFor = (paymentMethod: PaymentMethod) =>
+      paymentMethodRevenue.find(
+        (entry) => entry.paymentMethod === paymentMethod,
+      )?.netReceived ?? 0;
+    const codAmount = Number(
+      (paidOrdersByMethod ?? []).find(
+        (entry) => entry.paymentMethod === PaymentMethod.COD,
+      )?._sum?.totalAmount ?? 0,
+    );
+    const stripeAmount = netAmountFor(PaymentMethod.STRIPE);
+    const paypalAmount = netAmountFor(PaymentMethod.PAYPAL);
 
     return {
       totalOrders: ordersAggregate._count.id,
@@ -752,6 +866,10 @@ export class AdminReportsRepository {
       totalTax: Number(ordersAggregate._sum.taxAmount ?? 0),
       totalDeliveryFee: Number(ordersAggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(ordersAggregate._sum.discountAmount ?? 0),
+      codAmount,
+      onlineAmount: Number((stripeAmount + paypalAmount).toFixed(2)),
+      stripeAmount,
+      paypalAmount,
       paymentMethodRevenue,
       netRevenue: Number(
         (
