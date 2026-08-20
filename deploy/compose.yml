@@ -70,6 +70,14 @@ services:
       start_period: 60s
     volumes:
       - api-storage:/app/storage
+      - type: bind
+        source: ${QZ_CERTIFICATE_HOST_PATH:-/dev/null}
+        target: /run/secrets/qz_certificate
+        read_only: true
+      - type: bind
+        source: ${QZ_PRIVATE_KEY_HOST_PATH:-/dev/null}
+        target: /run/secrets/qz_private_key
+        read_only: true
     networks:
       - application
       - database

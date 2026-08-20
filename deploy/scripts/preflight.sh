@@ -119,6 +119,29 @@ for key in "${REQUIRED_KEYS[@]}"; do
 done
 pass "required environment values"
 
+if [[ "$(read_env QZ_SIGNING_ENABLED)" == "true" ]]; then
+  require_env QZ_CERTIFICATE_PATH
+  require_env QZ_PRIVATE_KEY_PATH
+  require_env QZ_CERTIFICATE_HOST_PATH
+  require_env QZ_PRIVATE_KEY_HOST_PATH
+
+  [[ "$(read_env QZ_CERTIFICATE_PATH)" == "/run/secrets/qz_certificate" ]] \
+    || fail "QZ_CERTIFICATE_PATH must equal /run/secrets/qz_certificate"
+  [[ "$(read_env QZ_PRIVATE_KEY_PATH)" == "/run/secrets/qz_private_key" ]] \
+    || fail "QZ_PRIVATE_KEY_PATH must equal /run/secrets/qz_private_key"
+
+  readonly QZ_CERTIFICATE_SOURCE="$(read_env QZ_CERTIFICATE_HOST_PATH)"
+  readonly QZ_PRIVATE_KEY_SOURCE="$(read_env QZ_PRIVATE_KEY_HOST_PATH)"
+
+  [[ -s "${QZ_CERTIFICATE_SOURCE}" ]] || fail "QZ certificate is missing or empty: ${QZ_CERTIFICATE_SOURCE}"
+  [[ -s "${QZ_PRIVATE_KEY_SOURCE}" ]] || fail "QZ private key is missing or empty: ${QZ_PRIVATE_KEY_SOURCE}"
+  [[ "$(stat -c '%u:%g:%a' "${QZ_CERTIFICATE_SOURCE}")" == "0:0:644" ]] \
+    || fail "QZ certificate must be owned by root:root with mode 0644"
+  [[ "$(stat -c '%u:%g:%a' "${QZ_PRIVATE_KEY_SOURCE}")" == "0:1000:640" ]] \
+    || fail "QZ private key must be owned by root:1000 with mode 0640"
+  pass "QZ signing secret files and container paths"
+fi
+
 [[ "$(read_env DELIVERYWAY_ENV_FILE)" == "${ENV_FILE}" ]] || fail "DELIVERYWAY_ENV_FILE must equal ${ENV_FILE}"
 [[ "$(read_env DATABASE_URL)" == *"@postgres:5432/"* ]] || fail "DATABASE_URL must use the private postgres:5432 service"
 [[ "$(read_env CORS_ORIGINS)" != *'*'* ]] || fail "CORS_ORIGINS must not contain a wildcard"
