@@ -20,6 +20,7 @@ import { AdminReportsService } from './admin-reports.service';
 import { AdminPrintingController } from './admin-printing.controller';
 import { AdminPrintingRepository } from './admin-printing.repository';
 import { AdminPrintingService } from './admin-printing.service';
+import { QzSigningService } from './qz-signing.service';
 import { AdminDashboardController } from './admin-dashboard.controller';
 import { AdminDashboardRepository } from './admin-dashboard.repository';
 import { AdminDashboardService } from './admin-dashboard.service';
@@ -63,6 +64,7 @@ import { AdminImportsService } from './admin-imports.service';
     AdminPromotionsService,
     AdminPromotionsRepository,
     AdminPrintingService,
+    QzSigningService,
     AdminPrintingRepository,
     AdminImportSamplesService,
     AdminImportsService,
