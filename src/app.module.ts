@@ -48,6 +48,7 @@ import { WinOrderIntegrationModule } from './modules/winorder-integration/winord
 import {
   JwtAuthGuard,
   RolesGuard,
+  SubscriptionFeaturesGuard,
   TenantAccessGuard,
   VerifiedUserGuard,
 } from './common/guards';
@@ -133,6 +134,10 @@ import { AppController } from './app.controller';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: SubscriptionFeaturesGuard,
     },
     {
       provide: APP_GUARD,
