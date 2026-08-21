@@ -9,11 +9,17 @@ import { AdminReportsRepository } from './admin-reports.repository';
 describe('AdminReportsRepository', () => {
   it('applies excluded status and schedule dates to order report aggregation', async () => {
     const order = {
-      aggregate: jest.fn().mockResolvedValue({
-        _count: { id: 0 },
-        _sum: { totalAmount: 0, deliveryFee: 0, discountAmount: 0 },
-        _avg: { totalAmount: 0 },
-      }),
+      aggregate: jest
+        .fn()
+        .mockResolvedValueOnce({
+          _count: { id: 0 },
+          _sum: { deliveryFee: 0, discountAmount: 0 },
+        })
+        .mockResolvedValueOnce({
+          _sum: { totalAmount: 0 },
+          _avg: { totalAmount: 0 },
+        }),
+      groupBy: jest.fn().mockResolvedValue([]),
       findMany: jest.fn().mockResolvedValue([]),
     };
     const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
@@ -51,14 +57,78 @@ describe('AdminReportsRepository', () => {
       },
       isScheduled: true,
     };
-    expect(order.aggregate).toHaveBeenCalledWith(
+    expect(order.aggregate).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({ where: expectedWhere }),
+    );
+    expect(order.aggregate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ...expectedWhere,
+          status: {
+            in: expect.arrayContaining([
+              OrderStatus.CONFIRMED,
+              OrderStatus.DELIVERED,
+            ]),
+          },
+        }),
+      }),
     );
     expect(order.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expectedWhere }),
     );
     expect(orderItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { order: expectedWhere } }),
+    );
+  });
+
+  it('recognizes full confirmed order totals by cash and digital method', async () => {
+    const prisma = {
+      order: {
+        aggregate: jest
+          .fn()
+          .mockResolvedValueOnce({
+            _count: { id: 3 },
+            _sum: { deliveryFee: 6, discountAmount: 2 },
+          })
+          .mockResolvedValueOnce({
+            _sum: { totalAmount: 75 },
+            _avg: { totalAmount: 25 },
+          }),
+        groupBy: jest.fn().mockResolvedValue([
+          { paymentMethod: PaymentMethod.COD, _sum: { totalAmount: 30 } },
+          { paymentMethod: PaymentMethod.STRIPE, _sum: { totalAmount: 25 } },
+          { paymentMethod: PaymentMethod.WALLET, _sum: { totalAmount: 20 } },
+        ]),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      orderItem: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
+        Promise.all(queries),
+      ),
+    };
+    const repository = new AdminReportsRepository(prisma as never);
+
+    const result = await repository.getOrdersReport(
+      { restaurantId: 'restaurant-1' },
+      { excludeStatus: OrderStatus.PAYMENT_PENDING },
+    );
+
+    expect(result).toMatchObject({
+      totalOrders: 3,
+      totalRevenue: 75,
+      averageOrderValue: 25,
+      codAmount: 30,
+      digitalAmount: 45,
+    });
+    expect(prisma.order.aggregate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: expect.arrayContaining([OrderStatus.CONFIRMED]) },
+        }),
+      }),
     );
   });
 

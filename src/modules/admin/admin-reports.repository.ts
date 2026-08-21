@@ -30,6 +30,26 @@ export interface AdminReportsScope {
   branchId?: string;
 }
 
+const RECOGNIZED_ORDER_REVENUE_STATUSES: OrderStatus[] = [
+  OrderStatus.CONFIRMED,
+  OrderStatus.PREPARING,
+  OrderStatus.READY_FOR_PICKUP,
+  OrderStatus.PICKED_UP,
+  OrderStatus.READY_TO_SERVE,
+  OrderStatus.SERVED,
+  OrderStatus.OUT_FOR_DELIVERY,
+  OrderStatus.DELIVERED,
+];
+
+const DIGITAL_PAYMENT_METHODS: PaymentMethod[] = [
+  PaymentMethod.STRIPE,
+  PaymentMethod.PAYPAL,
+  PaymentMethod.EASYPAISA,
+  PaymentMethod.JAZZCASH,
+  PaymentMethod.BANK_TRANSFER,
+  PaymentMethod.WALLET,
+];
+
 @Injectable()
 export class AdminReportsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -691,38 +711,70 @@ export class AdminReportsRepository {
     query: AdminOrdersReportQueryDto,
   ) {
     const where = this.buildOrderWhere(scope, query);
-    const [aggregate, orders, items] = await this.prisma.$transaction([
-      this.prisma.order.aggregate({
-        where,
-        _count: { id: true },
-        _sum: { totalAmount: true, deliveryFee: true, discountAmount: true },
-        _avg: { totalAmount: true },
-      }),
-      this.prisma.order.findMany({
-        where,
-        select: {
-          status: true,
-          orderType: true,
-          paymentStatus: true,
-        },
-      }),
-      this.prisma.orderItem.findMany({
-        where: {
-          order: where,
-        },
-        select: {
-          menuItemId: true,
-          menuItemName: true,
-          quantity: true,
-          lineTotal: true,
-        },
-      }),
-    ]);
+    const recognizedWhere: Prisma.OrderWhereInput = {
+      ...where,
+      status: query.status
+        ? RECOGNIZED_ORDER_REVENUE_STATUSES.includes(query.status)
+          ? query.status
+          : { in: [] }
+        : { in: RECOGNIZED_ORDER_REVENUE_STATUSES },
+    };
+    const [aggregate, recognizedAggregate, paymentMethodTotals, orders, items] =
+      await this.prisma.$transaction([
+        this.prisma.order.aggregate({
+          where,
+          _count: { id: true },
+          _sum: { deliveryFee: true, discountAmount: true },
+        }),
+        this.prisma.order.aggregate({
+          where: recognizedWhere,
+          _sum: { totalAmount: true },
+          _avg: { totalAmount: true },
+        }),
+        this.prisma.order.groupBy({
+          by: ['paymentMethod'],
+          orderBy: { paymentMethod: 'asc' },
+          where: recognizedWhere,
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.findMany({
+          where,
+          select: {
+            status: true,
+            orderType: true,
+            paymentStatus: true,
+          },
+        }),
+        this.prisma.orderItem.findMany({
+          where: {
+            order: where,
+          },
+          select: {
+            menuItemId: true,
+            menuItemName: true,
+            quantity: true,
+            lineTotal: true,
+          },
+        }),
+      ]);
+
+    const amountFor = (methods: PaymentMethod[]) =>
+      Number(
+        paymentMethodTotals
+          .filter((entry) => methods.includes(entry.paymentMethod))
+          .reduce(
+            (total, entry) => total + Number(entry._sum?.totalAmount ?? 0),
+            0,
+          )
+          .toFixed(2),
+      );
 
     return {
       totalOrders: aggregate._count.id,
-      totalRevenue: Number(aggregate._sum.totalAmount ?? 0),
-      averageOrderValue: Number(aggregate._avg.totalAmount ?? 0),
+      totalRevenue: Number(recognizedAggregate._sum.totalAmount ?? 0),
+      averageOrderValue: Number(recognizedAggregate._avg.totalAmount ?? 0),
+      codAmount: amountFor([PaymentMethod.COD]),
+      digitalAmount: amountFor(DIGITAL_PAYMENT_METHODS),
       totalDeliveryFee: Number(aggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(aggregate._sum.discountAmount ?? 0),
       statusBreakdown: this.countByField(orders, 'status'),
@@ -890,9 +942,7 @@ export class AdminReportsRepository {
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
-      ...(query.excludeStatus
-        ? { status: { not: query.excludeStatus } }
-        : {}),
+      ...(query.excludeStatus ? { status: { not: query.excludeStatus } } : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
       ...(query.kind === 'group-orders'
