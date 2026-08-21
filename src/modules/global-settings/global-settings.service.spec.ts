@@ -830,6 +830,48 @@ describe('GlobalSettingsService', () => {
     ).rejects.toThrow('Duplicate tax type code');
   });
 
+  it('persists a newly selected tax default over the previous default', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      globalTaxPercentage: new Prisma.Decimal(19),
+      taxTypes: [
+        {
+          code: 'STANDARD',
+          label: 'Standard VAT',
+          percentage: 19,
+          isActive: true,
+          isDefault: true,
+        },
+        {
+          code: 'REDUCED',
+          label: 'Reduced VAT',
+          percentage: 7,
+          isActive: true,
+          isDefault: false,
+        },
+      ],
+    });
+
+    await service.updateTaxTypes(
+      { uid: 'user-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        taxTypes: [
+          {
+            code: 'REDUCED',
+            percentage: 7,
+            isDefault: true,
+          },
+        ],
+      },
+    );
+
+    const [updateData] = updateSingletonSpy.mock.calls[0];
+    expect(updateData.taxTypes).toEqual([
+      expect.objectContaining({ code: 'STANDARD', isDefault: false }),
+      expect.objectContaining({ code: 'REDUCED', isDefault: true }),
+    ]);
+  });
+
   it('ignores deprecated global service charge update fields', async () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',
