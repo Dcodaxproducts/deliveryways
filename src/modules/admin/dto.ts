@@ -259,6 +259,11 @@ export class AdminExportOrdersCsvQueryDto extends AdminReportsScopedQueryDto {
   @IsEnum(OrderStatus)
   status?: OrderStatus;
 
+  @ApiPropertyOptional({ enum: OrderStatus })
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  excludeStatus?: OrderStatus;
+
   @ApiPropertyOptional({ enum: OrderTypeEnum })
   @IsOptional()
   @IsEnum(OrderTypeEnum)
@@ -283,6 +288,22 @@ export class AdminExportOrdersCsvQueryDto extends AdminReportsScopedQueryDto {
   @IsOptional()
   @IsDateString()
   toDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  orderTimeFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  orderTimeTo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isScheduled?: boolean;
 }
 
 export class AdminExportCustomersCsvQueryDto extends AdminReportsScopedQueryDto {
