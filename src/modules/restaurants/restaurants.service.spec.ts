@@ -1243,15 +1243,17 @@ describe('RestaurantsService notification settings', () => {
       isActive: true,
       settings: null,
     });
-    repository.update.mockImplementation(async (_id, data) => ({
-      id: 'restaurant-1',
-      tenantId: 'tenant-1',
-      deletedAt: null,
-      logoUrl: null,
-      coverImage: null,
-      isActive: true,
-      settings: data.settings,
-    }));
+    repository.update.mockImplementation((_id, data) =>
+      Promise.resolve({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        deletedAt: null,
+        logoUrl: null,
+        coverImage: null,
+        isActive: true,
+        settings: data.settings,
+      }),
+    );
 
     const result = await service.updatePaymentProcessingFee(
       { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,

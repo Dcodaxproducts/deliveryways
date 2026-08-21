@@ -437,9 +437,7 @@ export class OrdersRepository {
       ...(restaurantId ? { restaurantId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
-      ...(query.excludeStatus
-        ? { status: { not: query.excludeStatus } }
-        : {}),
+      ...(query.excludeStatus ? { status: { not: query.excludeStatus } } : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(query.createdFrom || query.createdTo
         ? {

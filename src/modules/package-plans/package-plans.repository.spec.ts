@@ -103,7 +103,9 @@ describe('PackagePlansRepository wallet settlement', () => {
 
 describe('PackagePlansRepository commission order recognition', () => {
   it('filters confirmed fulfillment states by order creation period', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
+    const findMany = jest
+      .fn<Promise<unknown[]>, [Prisma.OrderFindManyArgs]>()
+      .mockResolvedValue([]);
     const repository = new PackagePlansRepository({
       order: { findMany },
     } as never);
@@ -117,24 +119,19 @@ describe('PackagePlansRepository commission order recognition', () => {
       true,
     );
 
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          restaurantId: 'restaurant-1',
-          status: {
-            in: expect.arrayContaining([
-              OrderStatus.CONFIRMED,
-              OrderStatus.DELIVERED,
-            ]),
-          },
-          createdAt: { gte: fromDate, lt: toDate },
-        }),
-        orderBy: [{ createdAt: 'asc' }],
-      }),
-    );
-    expect(findMany.mock.calls[0]?.[0].where).not.toHaveProperty(
-      'paymentStatus',
-    );
-    expect(findMany.mock.calls[0]?.[0].where).not.toHaveProperty('paidAt');
+    const findManyArgs = findMany.mock.calls[0]?.[0];
+    expect(findManyArgs?.where?.restaurantId).toBe('restaurant-1');
+    const recognizedStatuses = (
+      findManyArgs?.where?.status as { in?: OrderStatus[] } | undefined
+    )?.in;
+    expect(recognizedStatuses).toContain(OrderStatus.CONFIRMED);
+    expect(recognizedStatuses).toContain(OrderStatus.DELIVERED);
+    expect(findManyArgs?.where?.createdAt).toEqual({
+      gte: fromDate,
+      lt: toDate,
+    });
+    expect(findManyArgs?.orderBy).toEqual([{ createdAt: 'asc' }]);
+    expect(findManyArgs?.where).not.toHaveProperty('paymentStatus');
+    expect(findManyArgs?.where).not.toHaveProperty('paidAt');
   });
 });

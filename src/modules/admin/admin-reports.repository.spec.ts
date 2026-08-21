@@ -57,23 +57,24 @@ describe('AdminReportsRepository', () => {
       },
       isScheduled: true,
     };
-    expect(order.aggregate).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ where: expectedWhere }),
-    );
-    expect(order.aggregate).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        where: expect.objectContaining({
-          ...expectedWhere,
-          status: {
-            in: expect.arrayContaining([
-              OrderStatus.CONFIRMED,
-              OrderStatus.DELIVERED,
-            ]),
-          },
-        }),
-      }),
+    const aggregateCalls = order.aggregate.mock.calls as Array<
+      [
+        {
+          where?: Omit<typeof expectedWhere, 'status'> & {
+            status?: { not?: OrderStatus; in?: OrderStatus[] };
+          };
+        },
+      ]
+    >;
+    const firstAggregate = aggregateCalls[0]?.[0];
+    const secondAggregate = aggregateCalls[1]?.[0];
+
+    expect(firstAggregate?.where).toEqual(expectedWhere);
+    const { status: _excludedStatus, ...sharedWhere } = expectedWhere;
+    void _excludedStatus;
+    expect(secondAggregate?.where).toMatchObject(sharedWhere);
+    expect(secondAggregate?.where?.status?.in).toEqual(
+      expect.arrayContaining([OrderStatus.CONFIRMED, OrderStatus.DELIVERED]),
     );
     expect(order.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expectedWhere }),
@@ -122,13 +123,12 @@ describe('AdminReportsRepository', () => {
       codAmount: 30,
       digitalAmount: 45,
     });
-    expect(prisma.order.aggregate).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        where: expect.objectContaining({
-          status: { in: expect.arrayContaining([OrderStatus.CONFIRMED]) },
-        }),
-      }),
+    const aggregateCalls = prisma.order.aggregate.mock.calls as Array<
+      [{ where?: { status?: { in?: OrderStatus[] } } }]
+    >;
+    const recognizedRevenueAggregate = aggregateCalls[1]?.[0];
+    expect(recognizedRevenueAggregate?.where?.status?.in).toEqual(
+      expect.arrayContaining([OrderStatus.CONFIRMED]),
     );
   });
 
