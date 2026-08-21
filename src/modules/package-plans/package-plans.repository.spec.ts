@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
 
 type CreateWalletTransactionCall = {
@@ -98,5 +98,43 @@ describe('PackagePlansRepository wallet settlement', () => {
     expect(createCall?.data.amount).toEqual(new Prisma.Decimal(-75));
     expect(createCall?.data.balanceAfter).toEqual(new Prisma.Decimal(25));
     expect(result.balanceAfter).toEqual(new Prisma.Decimal(25));
+  });
+});
+
+describe('PackagePlansRepository commission order recognition', () => {
+  it('filters confirmed fulfillment states by order creation period', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PackagePlansRepository({
+      order: { findMany },
+    } as never);
+    const fromDate = new Date('2026-06-01T00:00:00.000Z');
+    const toDate = new Date('2026-07-01T00:00:00.000Z');
+
+    await repository.listPaidRestaurantOrders(
+      'restaurant-1',
+      fromDate,
+      toDate,
+      true,
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          restaurantId: 'restaurant-1',
+          status: {
+            in: expect.arrayContaining([
+              OrderStatus.CONFIRMED,
+              OrderStatus.DELIVERED,
+            ]),
+          },
+          createdAt: { gte: fromDate, lt: toDate },
+        }),
+        orderBy: [{ createdAt: 'asc' }],
+      }),
+    );
+    expect(findMany.mock.calls[0]?.[0].where).not.toHaveProperty(
+      'paymentStatus',
+    );
+    expect(findMany.mock.calls[0]?.[0].where).not.toHaveProperty('paidAt');
   });
 });
