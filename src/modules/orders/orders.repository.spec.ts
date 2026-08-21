@@ -34,6 +34,8 @@ type OrderSearchWhere = {
 
 type OrderFindManyArgs = {
   where?: OrderSearchWhere;
+  skip?: number;
+  take?: number;
 };
 
 type OrderCountArgs = {
@@ -303,7 +305,7 @@ describe('OrdersRepository', () => {
       isScheduled: true,
     } as never);
 
-    const expectedWhere = expect.objectContaining({
+    const expectedWhere: OrderSearchWhere = {
       restaurantId: 'restaurant-1',
       status: { not: OrderStatus.PAYMENT_PENDING },
       createdAt: {
@@ -315,11 +317,18 @@ describe('OrdersRepository', () => {
         lte: new Date('2026-08-22T23:59:59.999Z'),
       },
       isScheduled: true,
-    });
-    expect(prisma.order.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expectedWhere, skip: 10, take: 10 }),
-    );
-    expect(prisma.order.count).toHaveBeenCalledWith({ where: expectedWhere });
+    };
+    const findManyCalls = prisma.order.findMany.mock.calls as Array<
+      [OrderFindManyArgs]
+    >;
+    const countCalls = prisma.order.count.mock.calls as Array<[OrderCountArgs]>;
+    const findManyCall = findManyCalls[0]?.[0];
+    const countCall = countCalls[0]?.[0];
+
+    expect(findManyCall?.where).toEqual(expectedWhere);
+    expect(findManyCall?.skip).toBe(10);
+    expect(findManyCall?.take).toBe(10);
+    expect(countCall?.where).toEqual(expectedWhere);
   });
 
   it('persists branch-provided order time without changing ASAP scheduling', async () => {

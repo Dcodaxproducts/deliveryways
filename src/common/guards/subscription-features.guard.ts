@@ -89,7 +89,7 @@ export class SubscriptionFeaturesGuard implements CanActivate {
 
   private asObject(value: Prisma.JsonValue | null | undefined) {
     return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Prisma.JsonObject)
+      ? value
       : {};
   }
 }

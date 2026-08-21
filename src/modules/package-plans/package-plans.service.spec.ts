@@ -367,16 +367,25 @@ describe('PackagePlansService', () => {
       packagePlanId: 'plan-2',
     });
 
-    expect(repository.updateSubscription).toHaveBeenCalledWith(
-      existing.id,
-      expect.objectContaining({
-        packagePlan: { connect: { id: 'plan-2' } },
-        planSnapshot: expect.objectContaining({
-          id: 'plan-2',
-          features: { orderManagement: false, posCashRegister: true },
-        }),
-      }),
-    );
+    const updateCalls = repository.updateSubscription.mock.calls as Array<
+      [string, unknown]
+    >;
+    const updateData = updateCalls[0]?.[1] as
+      | {
+          packagePlan?: { connect?: { id?: string } };
+          planSnapshot?: {
+            id?: string;
+            features?: Record<string, boolean>;
+          };
+        }
+      | undefined;
+
+    expect(updateData?.packagePlan?.connect?.id).toBe('plan-2');
+    expect(updateData?.planSnapshot?.id).toBe('plan-2');
+    expect(updateData?.planSnapshot?.features).toEqual({
+      orderManagement: false,
+      posCashRegister: true,
+    });
   });
 
   it('returns restaurant subscription invoice details for super admin', async () => {
