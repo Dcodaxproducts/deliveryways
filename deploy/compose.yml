@@ -44,12 +44,12 @@ services:
 
   api:
     <<: *runtime-service
-    image: ${API_IMAGE:-deliveryway-api:local}
+    image: ${API_IMAGE:-feastflow-api:local}
     build:
       context: ..
       target: production
     env_file:
-      - ${DELIVERYWAY_ENV_FILE:?DELIVERYWAY_ENV_FILE is required}
+      - ${FEASTFLOW_ENV_FILE:?FEASTFLOW_ENV_FILE is required}
     environment:
       NODE_ENV: production
       APP_ENV: ${APP_ENV:-unspecified}
@@ -75,14 +75,14 @@ services:
       - database
 
   migration:
-    image: ${MIGRATION_IMAGE:-deliveryway-migration:local}
+    image: ${MIGRATION_IMAGE:-feastflow-migration:local}
     build:
       context: ..
       target: migration
     profiles:
       - tools
     env_file:
-      - ${DELIVERYWAY_ENV_FILE:?DELIVERYWAY_ENV_FILE is required}
+      - ${FEASTFLOW_ENV_FILE:?FEASTFLOW_ENV_FILE is required}
     environment:
       NODE_ENV: production
     depends_on:
@@ -94,9 +94,9 @@ services:
 
   restaurant-admin:
     <<: *runtime-service
-    image: ${RESTAURANT_ADMIN_IMAGE:-deliveryway-restaurant-admin:local}
+    image: ${RESTAURANT_ADMIN_IMAGE:-feastflow-restaurant-admin:local}
     build:
-      context: ../../deliveryway-restaurant-admin
+      context: ../../feastflow-restaurant-admin
       target: production
       args:
         NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
@@ -121,18 +121,20 @@ services:
 
   superadmin:
     <<: *runtime-service
-    image: ${SUPERADMIN_IMAGE:-deliveryway-superadmin:local}
+    image: ${SUPERADMIN_IMAGE:-feastflow-superadmin:local}
     build:
-      context: ../../deliveryway-superadmin
+      context: ../../feastflow-superadmin
       target: production
       args:
         NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
         NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+        NEXT_PUBLIC_CUSTOMER_APP_BASE_DOMAIN: ${CUSTOMER_APP_BASE_DOMAIN:?CUSTOMER_APP_BASE_DOMAIN is required}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
         NEXT_PUBLIC_RESTAURANT_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
       NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
+      NEXT_PUBLIC_CUSTOMER_APP_BASE_DOMAIN: ${CUSTOMER_APP_BASE_DOMAIN:?CUSTOMER_APP_BASE_DOMAIN is required}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       NEXT_PUBLIC_RESTAURANT_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}
     depends_on:
@@ -150,9 +152,9 @@ services:
 
   customer:
     <<: *runtime-service
-    image: ${CUSTOMER_IMAGE:-deliveryway-customer:local}
+    image: ${CUSTOMER_IMAGE:-feastflow-customer:local}
     build:
-      context: ../../deliveryway-customer-website
+      context: ../../feastflow-customer-website
       target: production
       args:
         NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
@@ -181,9 +183,9 @@ services:
 
   landing:
     <<: *runtime-service
-    image: ${LANDING_IMAGE:-deliveryway-landing:local}
+    image: ${LANDING_IMAGE:-feastflow-landing:local}
     build:
-      context: ../../Deliveryway-landing-page
+      context: ../../feastflow-landing-page
       target: production
       args:
         NEXT_PUBLIC_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}

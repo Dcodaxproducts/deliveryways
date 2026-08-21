@@ -1,4 +1,4 @@
-name: deliveryway-prod
+name: feastflow-prod
 
 services:
   api:

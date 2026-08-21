@@ -9,27 +9,23 @@ dw_init() {
   DW_ENVIRONMENT="${1:-}"
 
   case "${DW_ENVIRONMENT}" in
-    development)
-      DW_PROJECT_NAME="deliveryway-development"
-      DW_OVERRIDE_FILE="${DW_DEPLOY_DIR}/compose.development.yml"
-      ;;
     staging)
-      DW_PROJECT_NAME="deliveryway-staging"
+      DW_PROJECT_NAME="feastflow-staging"
       DW_OVERRIDE_FILE="${DW_DEPLOY_DIR}/compose.staging.yml"
       ;;
     production)
-      DW_PROJECT_NAME="deliveryway-prod"
+      DW_PROJECT_NAME="feastflow-prod"
       DW_OVERRIDE_FILE="${DW_DEPLOY_DIR}/compose.production.yml"
       ;;
     *)
-      dw_fail "environment must be development, staging, or production"
+      dw_fail "environment must be staging or production"
       ;;
   esac
 
-  DW_ENV_FILE="${2:-/opt/deliveryway/env/.env.${DW_ENVIRONMENT}}"
+  DW_ENV_FILE="${2:-/opt/feastflow/env/.env.${DW_ENVIRONMENT}}"
   DW_COMPOSE_FILE="${DW_DEPLOY_DIR}/compose.yml"
-  DW_BACKUP_ROOT="${DELIVERYWAY_BACKUP_ROOT:-/opt/deliveryway/backups}"
-  DW_RELEASE_ROOT="${DELIVERYWAY_RELEASE_ROOT:-/opt/deliveryway/releases}"
+  DW_BACKUP_ROOT="${FEASTFLOW_BACKUP_ROOT:-/opt/feastflow/backups}"
+  DW_RELEASE_ROOT="${FEASTFLOW_RELEASE_ROOT:-/opt/feastflow/releases}"
 }
 
 dw_read_env() {

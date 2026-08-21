@@ -10,11 +10,11 @@ readonly ENVIRONMENT="${1:-}"
 readonly ORDER_ID="${3:-}"
 readonly EXPECTED_STATE="${4:-paid}"
 
-if [[ "${ENVIRONMENT}" != "development" && "${ENVIRONMENT}" != "staging" ]]; then
-  dw_fail "payment acceptance verification is limited to development or staging"
+if [[ "${ENVIRONMENT}" != "staging" ]]; then
+  dw_fail "payment acceptance verification is limited to staging"
 fi
 
-dw_init "${ENVIRONMENT}" "${2:-/opt/deliveryway/env/.env.${ENVIRONMENT}}"
+dw_init "${ENVIRONMENT}" "${2:-/opt/feastflow/env/.env.${ENVIRONMENT}}"
 
 [[ "${ORDER_ID}" =~ ^[A-Za-z0-9_-]{10,64}$ ]] \
   || dw_fail "a valid order ID is required as the third argument"

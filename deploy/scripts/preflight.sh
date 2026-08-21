@@ -38,27 +38,23 @@ require_env() {
 }
 
 case "${ENVIRONMENT}" in
-  development)
-    readonly PROJECT_NAME="deliveryway-development"
-    readonly OVERRIDE_FILE="${DEPLOY_DIR}/compose.development.yml"
-    ;;
   staging)
-    readonly PROJECT_NAME="deliveryway-staging"
+    readonly PROJECT_NAME="feastflow-staging"
     readonly OVERRIDE_FILE="${DEPLOY_DIR}/compose.staging.yml"
     ;;
   production)
-    readonly PROJECT_NAME="deliveryway-prod"
+    readonly PROJECT_NAME="feastflow-prod"
     readonly OVERRIDE_FILE="${DEPLOY_DIR}/compose.production.yml"
     ;;
   *)
-    fail "usage: $0 <development|staging|production> [env-file]"
+    fail "usage: $0 <staging|production> [env-file]"
     ;;
 esac
 
-readonly ENV_FILE="${2:-/opt/deliveryway/env/.env.${ENVIRONMENT}}"
+readonly ENV_FILE="${2:-/opt/feastflow/env/.env.${ENVIRONMENT}}"
 readonly COMPOSE_FILE="${DEPLOY_DIR}/compose.yml"
 
-printf 'DeliveryWay %s preflight (read-only)\n' "${ENVIRONMENT}"
+printf 'FeastFlow %s preflight (read-only)\n' "${ENVIRONMENT}"
 
 [[ -f "${ENV_FILE}" ]] || fail "environment file not found: ${ENV_FILE}"
 [[ -r "${ENV_FILE}" ]] || fail "environment file is not readable by $(id -un)"
@@ -75,7 +71,7 @@ fi
 pass "no placeholder values"
 
 REQUIRED_KEYS=(
-  DELIVERYWAY_ENV_FILE
+  FEASTFLOW_ENV_FILE
   EXPECTED_HOSTNAME
   EXPECTED_SERVER_IPV4
   POSTGRES_DB
@@ -101,17 +97,15 @@ REQUIRED_KEYS=(
   STRIPE_WEBHOOK_SECRET
 )
 
-if [[ "${ENVIRONMENT}" != "development" ]]; then
-  REQUIRED_KEYS+=(
-    GOOGLE_CLIENT_ID
-    GOOGLE_MAPS_API_KEY
-    AWS_ACCESS_KEY_ID
-    AWS_SECRET_ACCESS_KEY
-    AWS_REGION
-    AWS_BUCKET_NAME
-    FIREBASE_SERVICE_ACCOUNT_JSON
-  )
-fi
+REQUIRED_KEYS+=(
+  GOOGLE_CLIENT_ID
+  GOOGLE_MAPS_API_KEY
+  AWS_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY
+  AWS_REGION
+  AWS_BUCKET_NAME
+  FIREBASE_SERVICE_ACCOUNT_JSON
+)
 readonly REQUIRED_KEYS
 
 for key in "${REQUIRED_KEYS[@]}"; do
@@ -119,7 +113,7 @@ for key in "${REQUIRED_KEYS[@]}"; do
 done
 pass "required environment values"
 
-[[ "$(read_env DELIVERYWAY_ENV_FILE)" == "${ENV_FILE}" ]] || fail "DELIVERYWAY_ENV_FILE must equal ${ENV_FILE}"
+[[ "$(read_env FEASTFLOW_ENV_FILE)" == "${ENV_FILE}" ]] || fail "FEASTFLOW_ENV_FILE must equal ${ENV_FILE}"
 [[ "$(read_env DATABASE_URL)" == *"@postgres:5432/"* ]] || fail "DATABASE_URL must use the private postgres:5432 service"
 [[ "$(read_env CORS_ORIGINS)" != *'*'* ]] || fail "CORS_ORIGINS must not contain a wildcard"
 pass "private database URL and explicit CORS origins"
@@ -133,7 +127,7 @@ for key in "${IMAGE_KEYS[@]}"; do
 done
 pass "immutable application image references"
 
-if [[ "${ENVIRONMENT}" == "development" || "${ENVIRONMENT}" == "staging" ]]; then
+if [[ "${ENVIRONMENT}" == "staging" ]]; then
   [[ "$(read_env STRIPE_SECRET_KEY)" == sk_test_* ]] || fail "${ENVIRONMENT} must use a Stripe test secret key"
   [[ "$(read_env STRIPE_PUBLISHABLE_KEY)" == pk_test_* ]] || fail "${ENVIRONMENT} must use a Stripe test publishable key"
 else
@@ -154,10 +148,10 @@ pass "Docker Engine and Compose"
 
 readonly REQUIRED_FILES=(
   "${DEPLOY_DIR}/../Dockerfile"
-  "${DEPLOY_DIR}/../../deliveryway-restaurant-admin/Dockerfile"
-  "${DEPLOY_DIR}/../../deliveryway-superadmin/Dockerfile"
-  "${DEPLOY_DIR}/../../deliveryway-customer-website/Dockerfile"
-  "${DEPLOY_DIR}/../../Deliveryway-landing-page/Dockerfile"
+  "${DEPLOY_DIR}/../../feastflow-restaurant-admin/Dockerfile"
+  "${DEPLOY_DIR}/../../feastflow-superadmin/Dockerfile"
+  "${DEPLOY_DIR}/../../feastflow-customer-website/Dockerfile"
+  "${DEPLOY_DIR}/../../feastflow-landing-page/Dockerfile"
   "${COMPOSE_FILE}"
   "${OVERRIDE_FILE}"
 )

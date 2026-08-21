@@ -12,13 +12,6 @@ dw_preflight
 command -v curl >/dev/null 2>&1 || dw_fail "curl is required for smoke tests"
 
 case "${DW_ENVIRONMENT}" in
-  development)
-    readonly API_PORT=7050
-    readonly RESTAURANT_ADMIN_PORT=7051
-    readonly SUPERADMIN_PORT=7052
-    readonly CUSTOMER_PORT=7053
-    readonly LANDING_PORT=7054
-    ;;
   staging)
     readonly API_PORT=6050
     readonly RESTAURANT_ADMIN_PORT=6051

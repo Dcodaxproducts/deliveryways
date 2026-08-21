@@ -1,4 +1,4 @@
-name: deliveryway-staging
+name: feastflow-staging
 
 services:
   api:

@@ -31,7 +31,7 @@ fi
 printf 'Starting PostgreSQL and waiting for health...\n'
 dw_compose up --detach --no-build --wait postgres
 
-backup_output="$(env DELIVERYWAY_BACKUP_ROOT="${DW_BACKUP_ROOT}" \
+backup_output="$(env FEASTFLOW_BACKUP_ROOT="${DW_BACKUP_ROOT}" \
   "${SCRIPT_DIR}/backup-db.sh" "${DW_ENVIRONMENT}" "${DW_ENV_FILE}")"
 printf '%s\n' "${backup_output}"
 backup_file="$(printf '%s\n' "${backup_output}" | sed -n 's/^Backup verified: //p' | tail -n 1)"
