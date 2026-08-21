@@ -920,6 +920,15 @@ export class GlobalSettingsService {
       ),
     );
     const seen = new Set<string>();
+    const requestedDefaultCode = updates.find(
+      (update) => update.isDefault === true,
+    )?.code;
+
+    if (requestedDefaultCode !== undefined) {
+      for (const [code, taxType] of merged) {
+        merged.set(code, { ...taxType, isDefault: false });
+      }
+    }
 
     for (const update of updates) {
       const code = update.code.trim().toUpperCase();
@@ -1012,20 +1021,16 @@ export class GlobalSettingsService {
   }
 
   private normalizeTaxTypeDefaults(taxTypes: TaxTypeSettingsShape[]) {
-    let defaultAssigned = false;
+    const requestedDefaultIndex = taxTypes.findIndex(
+      (taxType) => taxType.isDefault,
+    );
+    const defaultIndex = requestedDefaultIndex >= 0 ? requestedDefaultIndex : 0;
 
     return taxTypes.map((taxType, index) => {
-      const shouldBeDefault =
-        (taxType.isDefault && !defaultAssigned) ||
-        (!defaultAssigned && index === 0);
-      if (shouldBeDefault) {
-        defaultAssigned = true;
-      }
-
       return {
         ...taxType,
         percentage: Number(taxType.percentage.toFixed(2)),
-        isDefault: shouldBeDefault,
+        isDefault: index === defaultIndex,
       };
     });
   }
