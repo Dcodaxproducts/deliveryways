@@ -225,6 +225,11 @@ export class QuoteOrderDto {
   @IsEnum(OrderTypeEnum)
   orderType!: OrderTypeEnum;
 
+  @ApiPropertyOptional({ enum: PaymentMethodEnum })
+  @IsOptional()
+  @IsEnum(PaymentMethodEnum)
+  paymentMethod?: PaymentMethodEnum;
+
   @ApiProperty({ type: [OrderItemDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -304,7 +309,7 @@ export class QuoteOrderDto {
 export class CreateOrderDto extends QuoteOrderDto {
   @ApiProperty({ enum: PaymentMethodEnum })
   @IsEnum(PaymentMethodEnum)
-  paymentMethod!: PaymentMethodEnum;
+  declare paymentMethod: PaymentMethodEnum;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -7,6 +7,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { CustomDomainDnsService } from './custom-domain-dns.service';
+import { PaymentFeePayer } from '@prisma/client';
 
 describe('RestaurantsService notification settings', () => {
   let service: RestaurantsService;
@@ -1229,6 +1230,45 @@ describe('RestaurantsService notification settings', () => {
       isEnabled: true,
       type: 'PERCENTAGE',
       value: 7.5,
+    });
+  });
+
+  it('allows super admin to configure who pays the online payment fee', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: null,
+    });
+    repository.update.mockImplementation(async (_id, data) => ({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      logoUrl: null,
+      coverImage: null,
+      isActive: true,
+      settings: data.settings,
+    }));
+
+    const result = await service.updatePaymentProcessingFee(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+      {
+        isEnabled: true,
+        type: 'PERCENTAGE',
+        value: 2.9,
+        payer: PaymentFeePayer.CUSTOMER,
+      },
+    );
+
+    expect(result.data.paymentProcessingFee).toEqual({
+      isEnabled: true,
+      type: 'PERCENTAGE',
+      value: 2.9,
+      payer: PaymentFeePayer.CUSTOMER,
     });
   });
 

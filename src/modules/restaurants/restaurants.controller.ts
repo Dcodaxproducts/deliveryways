@@ -34,6 +34,7 @@ import {
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
+  UpdateRestaurantPaymentFeeDto,
   UpdateRestaurantServiceChargeDto,
 } from './dto';
 
@@ -180,6 +181,18 @@ export class RestaurantsController {
     @Body() dto: UpdateRestaurantServiceChargeDto,
   ) {
     return this.restaurantsService.updateServiceCharge(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Patch(':id/payment-processing-fee')
+  updatePaymentProcessingFee(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantPaymentFeeDto,
+  ) {
+    return this.restaurantsService.updatePaymentProcessingFee(user, id, dto);
   }
 
   @ApiBearerAuth()
