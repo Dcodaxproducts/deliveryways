@@ -340,10 +340,41 @@ export class ListOrdersDto extends QueryDto {
   @IsEnum(OrderStatus)
   status?: OrderStatus;
 
+  @ApiPropertyOptional({ enum: OrderStatus })
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  excludeStatus?: OrderStatus;
+
   @ApiPropertyOptional({ enum: OrderTypeEnum })
   @IsOptional()
   @IsEnum(OrderTypeEnum)
   orderType?: OrderTypeEnum;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  orderTimeFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  orderTimeTo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isScheduled?: boolean;
 
   @ApiPropertyOptional({
     enum: ORDER_LIST_KIND_VALUES,

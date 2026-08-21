@@ -3,6 +3,10 @@ import { OrdersRepository } from './orders.repository';
 
 type OrderSearchWhere = {
   restaurantId?: string;
+  status?: { not: OrderStatus };
+  createdAt?: { gte?: Date; lte?: Date };
+  orderTime?: { gte?: Date; lte?: Date };
+  isScheduled?: boolean;
   NOT?: {
     paymentMethod: { in: PaymentMethod[] };
     status: OrderStatus;
@@ -274,6 +278,48 @@ describe('OrdersRepository', () => {
 
     expect(findManyCalls[0][0].where?.NOT).toBeUndefined();
     expect(countCalls[0][0].where?.NOT).toBeUndefined();
+  });
+
+  it('applies status and date filters before both pagination and count', async () => {
+    const prisma = {
+      $transaction: jest.fn().mockResolvedValue([[], 0]),
+      order: {
+        findMany: jest.fn().mockReturnValue('findManyResult'),
+        count: jest.fn().mockReturnValue('countResult'),
+      },
+    };
+    const repository = new OrdersRepository(prisma as never);
+
+    await repository.list('restaurant-1', {
+      page: 2,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      excludeStatus: OrderStatus.PAYMENT_PENDING,
+      createdFrom: '2026-08-21T00:00:00.000Z',
+      createdTo: '2026-08-21T23:59:59.999Z',
+      orderTimeFrom: '2026-08-22T00:00:00.000Z',
+      orderTimeTo: '2026-08-22T23:59:59.999Z',
+      isScheduled: true,
+    } as never);
+
+    const expectedWhere = expect.objectContaining({
+      restaurantId: 'restaurant-1',
+      status: { not: OrderStatus.PAYMENT_PENDING },
+      createdAt: {
+        gte: new Date('2026-08-21T00:00:00.000Z'),
+        lte: new Date('2026-08-21T23:59:59.999Z'),
+      },
+      orderTime: {
+        gte: new Date('2026-08-22T00:00:00.000Z'),
+        lte: new Date('2026-08-22T23:59:59.999Z'),
+      },
+      isScheduled: true,
+    });
+    expect(prisma.order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expectedWhere, skip: 10, take: 10 }),
+    );
+    expect(prisma.order.count).toHaveBeenCalledWith({ where: expectedWhere });
   });
 
   it('persists branch-provided order time without changing ASAP scheduling', async () => {

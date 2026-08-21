@@ -1,4 +1,5 @@
 import {
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -6,6 +7,61 @@ import {
 import { AdminReportsRepository } from './admin-reports.repository';
 
 describe('AdminReportsRepository', () => {
+  it('applies excluded status and schedule dates to order report aggregation', async () => {
+    const order = {
+      aggregate: jest.fn().mockResolvedValue({
+        _count: { id: 0 },
+        _sum: { totalAmount: 0, deliveryFee: 0, discountAmount: 0 },
+        _avg: { totalAmount: 0 },
+      }),
+      findMany: jest.fn().mockResolvedValue([]),
+    };
+    const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
+    const prisma = {
+      order,
+      orderItem,
+      $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
+        Promise.all(queries),
+      ),
+    };
+    const repository = new AdminReportsRepository(prisma as never);
+
+    await repository.getOrdersReport(
+      { restaurantId: 'restaurant-1' },
+      {
+        excludeStatus: OrderStatus.PAYMENT_PENDING,
+        fromDate: '2026-08-21T00:00:00.000Z',
+        toDate: '2026-08-21T23:59:59.999Z',
+        orderTimeFrom: '2026-08-22T00:00:00.000Z',
+        orderTimeTo: '2026-08-22T23:59:59.999Z',
+        isScheduled: true,
+      },
+    );
+
+    const expectedWhere = {
+      restaurantId: 'restaurant-1',
+      status: { not: OrderStatus.PAYMENT_PENDING },
+      createdAt: {
+        gte: new Date('2026-08-21T00:00:00.000Z'),
+        lte: new Date('2026-08-21T23:59:59.999Z'),
+      },
+      orderTime: {
+        gte: new Date('2026-08-22T00:00:00.000Z'),
+        lte: new Date('2026-08-22T23:59:59.999Z'),
+      },
+      isScheduled: true,
+    };
+    expect(order.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expectedWhere }),
+    );
+    expect(order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expectedWhere }),
+    );
+    expect(orderItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { order: expectedWhere } }),
+    );
+  });
+
   it('counts successful REFUNDED transactions in refunded and net revenue', async () => {
     const paymentTransaction = {
       aggregate: jest

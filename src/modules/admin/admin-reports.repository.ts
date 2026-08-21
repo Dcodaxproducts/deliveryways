@@ -890,6 +890,9 @@ export class AdminReportsRepository {
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.excludeStatus
+        ? { status: { not: query.excludeStatus } }
+        : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
       ...(query.kind === 'group-orders'
@@ -898,6 +901,14 @@ export class AdminReportsRepository {
           ? { sourceGroupOrder: { is: null } }
           : {}),
       ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ?? {}),
+      ...(this.buildDateRange(
+        query.orderTimeFrom,
+        query.orderTimeTo,
+        'orderTime',
+      ) ?? {}),
+      ...(query.isScheduled !== undefined
+        ? { isScheduled: query.isScheduled }
+        : {}),
     } satisfies Prisma.OrderWhereInput;
   }
 

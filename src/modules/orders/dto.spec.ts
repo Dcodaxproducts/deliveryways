@@ -1,7 +1,12 @@
 import { ArgumentMetadata, ValidationPipe } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
-import { CreateOrderDto, QuoteOrderDto, UpdateOrderStatusDto } from './dto';
+import {
+  CreateOrderDto,
+  ListOrdersDto,
+  QuoteOrderDto,
+  UpdateOrderStatusDto,
+} from './dto';
 
 describe('Order DTO validation', () => {
   const validationPipe = new ValidationPipe({
@@ -69,6 +74,27 @@ describe('Order DTO validation', () => {
     ).resolves.toMatchObject({
       status: OrderStatus.CONFIRMED,
       orderTime: '2026-03-24T19:30:00.000Z',
+    });
+  });
+
+  it('validates and transforms authoritative order list filters', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          excludeStatus: OrderStatus.PAYMENT_PENDING,
+          createdFrom: '2026-08-21T00:00:00.000Z',
+          createdTo: '2026-08-21T23:59:59.999Z',
+          orderTimeFrom: '2026-08-22T00:00:00.000Z',
+          isScheduled: 'true',
+        },
+        { type: 'query', metatype: ListOrdersDto },
+      ),
+    ).resolves.toMatchObject({
+      excludeStatus: OrderStatus.PAYMENT_PENDING,
+      createdFrom: '2026-08-21T00:00:00.000Z',
+      createdTo: '2026-08-21T23:59:59.999Z',
+      orderTimeFrom: '2026-08-22T00:00:00.000Z',
+      isScheduled: true,
     });
   });
 
