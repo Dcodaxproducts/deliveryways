@@ -346,6 +346,39 @@ describe('PackagePlansService', () => {
     expect(result.message).toBe('Tenant subscription assigned successfully');
   });
 
+  it('refreshes plan features when switching an existing subscription', async () => {
+    const existing = makeSubscription();
+    const nextPlan = makePlan({
+      id: 'plan-2',
+      name: 'POS Plan',
+      features: { orderManagement: false, posCashRegister: true },
+    });
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(existing),
+      findPlanById: jest.fn().mockResolvedValue(nextPlan),
+      updateSubscription: jest.fn().mockResolvedValue({
+        ...existing,
+        packagePlanId: 'plan-2',
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await service.updateSubscription(superAdmin, existing.id, {
+      packagePlanId: 'plan-2',
+    });
+
+    expect(repository.updateSubscription).toHaveBeenCalledWith(
+      existing.id,
+      expect.objectContaining({
+        packagePlan: { connect: { id: 'plan-2' } },
+        planSnapshot: expect.objectContaining({
+          id: 'plan-2',
+          features: { orderManagement: false, posCashRegister: true },
+        }),
+      }),
+    );
+  });
+
   it('returns restaurant subscription invoice details for super admin', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),

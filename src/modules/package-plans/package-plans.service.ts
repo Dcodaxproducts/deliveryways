@@ -372,11 +372,11 @@ export class PackagePlansService {
       throw new NotFoundException('Tenant subscription not found');
     }
 
+    const nextPlan = dto.packagePlanId
+      ? await this.packagePlansRepository.findPlanById(dto.packagePlanId)
+      : null;
     if (dto.packagePlanId) {
-      const plan = await this.packagePlansRepository.findPlanById(
-        dto.packagePlanId,
-      );
-      if (!plan || !plan.isActive) {
+      if (!nextPlan || !nextPlan.isActive) {
         throw new BadRequestException('Active package plan is required');
       }
     }
@@ -390,6 +390,7 @@ export class PackagePlansService {
       packagePlan: dto.packagePlanId
         ? { connect: { id: dto.packagePlanId } }
         : undefined,
+      planSnapshot: nextPlan ? this.buildPlanSnapshot(nextPlan) : undefined,
       status: dto.status,
       paymentStatus: dto.paymentStatus,
       payoutCycleOverride: dto.payoutCycleOverride,
