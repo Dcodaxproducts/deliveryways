@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, ServiceChargeType } from '@prisma/client';
+import { PaymentFeePayer, Prisma, ServiceChargeType } from '@prisma/client';
 import { AdminListQueryDto, QueryDto } from '../../common/dto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -29,6 +29,7 @@ import {
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
+  UpdateRestaurantPaymentFeeDto,
   UpdateRestaurantServiceChargeDto,
 } from './dto';
 import { randomUUID } from 'crypto';
@@ -331,6 +332,44 @@ export class RestaurantsService {
     return {
       data: await this.withDeletionState(data),
       message: 'Restaurant service charge updated successfully',
+    };
+  }
+
+  async updatePaymentProcessingFee(
+    user: AuthUserContext,
+    id: string,
+    dto: UpdateRestaurantPaymentFeeDto,
+    tx?: PrismaTx,
+  ) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can manage restaurant payment processing fees',
+      );
+    }
+
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const paymentProcessingFee = this.normalizePaymentProcessingFee(
+      dto,
+      this.extractRestaurantPaymentProcessingFee(restaurant.settings),
+    );
+    const data = await this.restaurantsRepository.update(
+      id,
+      {
+        settings: this.writeRestaurantPaymentProcessingFee(
+          restaurant.settings,
+          paymentProcessingFee,
+        ) as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+
+    return {
+      data: await this.withDeletionState(data),
+      message: 'Restaurant payment processing fee updated successfully',
     };
   }
 
@@ -781,10 +820,14 @@ export class RestaurantsService {
     const serviceCharge = this.extractRestaurantServiceCharge(
       entity.settings ?? null,
     );
+    const paymentProcessingFee = this.extractRestaurantPaymentProcessingFee(
+      entity.settings ?? null,
+    );
 
     return {
       ...entity,
       serviceCharge,
+      paymentProcessingFee,
     };
   }
 
@@ -822,6 +865,67 @@ export class RestaurantsService {
     return next;
   }
 
+  private extractRestaurantPaymentProcessingFee(
+    settings: Prisma.JsonValue | null,
+  ) {
+    const fee = this.asObject(
+      this.readPath(settings, ['paymentProcessingFee']),
+    );
+
+    return {
+      isEnabled: Boolean(fee.isEnabled),
+      type:
+        fee.type === ServiceChargeType.AMOUNT
+          ? ServiceChargeType.AMOUNT
+          : ServiceChargeType.PERCENTAGE,
+      value: this.toNumber(fee.value ?? 0),
+      payer:
+        fee.payer === PaymentFeePayer.RESTAURANT
+          ? PaymentFeePayer.RESTAURANT
+          : PaymentFeePayer.CUSTOMER,
+    };
+  }
+
+  private normalizePaymentProcessingFee(
+    dto: UpdateRestaurantPaymentFeeDto,
+    current: {
+      isEnabled: boolean;
+      type: ServiceChargeType;
+      value: number;
+      payer: PaymentFeePayer;
+    },
+  ) {
+    const next = {
+      isEnabled: dto.isEnabled ?? current.isEnabled,
+      type: dto.type ?? current.type,
+      value: dto.value ?? current.value,
+      payer: dto.payer ?? current.payer,
+    };
+
+    if (next.type === ServiceChargeType.PERCENTAGE && next.value > 100) {
+      throw new BadRequestException(
+        'paymentProcessingFee.value cannot exceed 100 for percentage fees',
+      );
+    }
+
+    return next;
+  }
+
+  private writeRestaurantPaymentProcessingFee(
+    settings: Prisma.JsonValue | null,
+    paymentProcessingFee: {
+      isEnabled: boolean;
+      type: ServiceChargeType;
+      value: number;
+      payer: PaymentFeePayer;
+    },
+  ) {
+    return {
+      ...this.asObject(settings),
+      paymentProcessingFee,
+    };
+  }
+
   private writeRestaurantServiceCharge(
     settings: Prisma.JsonValue | null,
     serviceCharge: {
@@ -849,6 +953,8 @@ export class RestaurantsService {
     const protectedServiceCharge = this.extractRestaurantServiceCharge(
       currentSettings ?? null,
     );
+    const protectedPaymentProcessingFee =
+      this.extractRestaurantPaymentProcessingFee(currentSettings ?? null);
 
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       const rawServiceCharge = this.asObject(
@@ -874,17 +980,20 @@ export class RestaurantsService {
       );
       const restNext = { ...next };
       delete restNext.transactionFee;
+      delete restNext.paymentProcessingFee;
       delete restNext.legalProfile;
 
       return {
         ...current,
         ...restNext,
         serviceCharge,
+        paymentProcessingFee: protectedPaymentProcessingFee,
       };
     }
 
     const rest = { ...next };
     delete rest.transactionFee;
+    delete rest.paymentProcessingFee;
     delete rest.serviceCharge;
     delete rest.legalProfile;
 
@@ -892,6 +1001,7 @@ export class RestaurantsService {
       ...current,
       ...rest,
       serviceCharge: protectedServiceCharge,
+      paymentProcessingFee: protectedPaymentProcessingFee,
     };
   }
 

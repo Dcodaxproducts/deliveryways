@@ -11,6 +11,7 @@ import {
   AddressRefType,
   OrderStatus,
   OrderType,
+  PaymentFeePayer,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -378,7 +379,7 @@ export class OrdersService {
 
     const customerId = quote.customer.customerId;
     const initialPaymentStatus = this.resolveInitialPaymentStatus(
-      dto.paymentMethod,
+      dto.paymentMethod ?? PaymentMethodEnum.COD,
       quote,
     );
     await this.assertCheckoutProviderConfigured(dto.paymentMethod);
@@ -436,6 +437,10 @@ export class OrdersService {
           serviceChargeType: quote.serviceChargeType,
           serviceChargeValue: quote.serviceChargeValue,
           serviceChargeAmount: quote.serviceChargeAmount,
+          transactionFeeType: quote.transactionFeeType,
+          transactionFeeValue: quote.transactionFeeValue,
+          transactionFeeAmount: quote.transactionFeeAmount,
+          transactionFeePayer: quote.transactionFeePayer,
           tipAmount: quote.tipAmount,
           discountAmount: quote.discountAmount,
           walletAppliedAmount: quote.walletAppliedAmount,
@@ -1491,6 +1496,8 @@ export class OrdersService {
       subtotal,
     );
     const tipAmount = this.resolveTipAmount(dto.tipAmount);
+    const paymentProcessingFeeConfig =
+      this.resolveRestaurantPaymentProcessingFee(branch.restaurant?.settings);
 
     let discountAmount = new Prisma.Decimal(0);
     let couponId: string | undefined;
@@ -1568,9 +1575,19 @@ export class OrdersService {
       }
     }
 
+    const paymentProcessingFee = this.resolvePaymentProcessingFee(
+      paymentProcessingFeeConfig,
+      subtotal
+        .plus(deliveryFee)
+        .plus(serviceCharge.amount)
+        .plus(tipAmount)
+        .minus(discountAmount),
+      dto.paymentMethod ?? PaymentMethodEnum.COD,
+    );
     let totalBeforeBenefits = subtotal
       .plus(deliveryFee)
       .plus(serviceCharge.amount)
+      .plus(paymentProcessingFee.customerAmount)
       .plus(tipAmount)
       .minus(discountAmount);
 
@@ -1603,11 +1620,16 @@ export class OrdersService {
       serviceChargeType: serviceCharge.type,
       serviceChargeValue: serviceCharge.value,
       serviceChargeAmount: serviceCharge.amount,
+      transactionFeeType: paymentProcessingFee.type,
+      transactionFeeValue: paymentProcessingFee.value,
+      transactionFeeAmount: paymentProcessingFee.amount,
+      transactionFeePayer: paymentProcessingFee.payer,
       chargeBreakdown: await this.buildChargeBreakdown(
         pricedLines,
         settings.taxation.taxPercentage,
         taxAmount,
         serviceCharge,
+        paymentProcessingFee,
       ),
       tipAmount,
       discountAmount: discountAmount.toDecimalPlaces(2),
@@ -2336,6 +2358,7 @@ export class OrdersService {
     taxAmount: Prisma.Decimal;
     deliveryFee: Prisma.Decimal;
     serviceChargeAmount?: Prisma.Decimal;
+    transactionFeeAmount?: Prisma.Decimal;
     tipAmount?: Prisma.Decimal;
     discountAmount: Prisma.Decimal;
     loyaltyDiscountAmount?: Prisma.Decimal;
@@ -2348,6 +2371,8 @@ export class OrdersService {
       amounts.walletAppliedAmount ?? new Prisma.Decimal(0);
     const serviceChargeAmount =
       amounts.serviceChargeAmount ?? new Prisma.Decimal(0);
+    const transactionFeeAmount =
+      amounts.transactionFeeAmount ?? new Prisma.Decimal(0);
     const tipAmount = amounts.tipAmount ?? new Prisma.Decimal(0);
 
     return {
@@ -2355,7 +2380,7 @@ export class OrdersService {
       taxAmount: Number(amounts.taxAmount),
       deliveryFee: Number(amounts.deliveryFee),
       serviceChargeAmount: Number(serviceChargeAmount),
-      transactionFeeAmount: 0,
+      transactionFeeAmount: Number(transactionFeeAmount),
       tipAmount: Number(tipAmount),
       discountAmount: Number(amounts.discountAmount),
       hasDiscount: amounts.discountAmount.greaterThan(0),
@@ -2458,6 +2483,7 @@ export class OrdersService {
       taxAmount: quote.taxAmount,
       deliveryFee: quote.deliveryFee,
       serviceChargeAmount: quote.serviceChargeAmount,
+      transactionFeeAmount: quote.transactionFeeAmount,
       tipAmount: quote.tipAmount,
       discountAmount: quote.discountAmount,
       loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
@@ -2487,9 +2513,12 @@ export class OrdersService {
         ? Number(quote.serviceChargeValue)
         : null,
       serviceChargeAmount: amountSummary.serviceChargeAmount,
-      transactionFeeType: null,
-      transactionFeeValue: null,
-      transactionFeeAmount: 0,
+      transactionFeeType: quote.transactionFeeType,
+      transactionFeeValue: quote.transactionFeeValue
+        ? Number(quote.transactionFeeValue)
+        : null,
+      transactionFeeAmount: amountSummary.transactionFeeAmount,
+      transactionFeePayer: quote.transactionFeePayer,
       chargeBreakdown: quote.chargeBreakdown,
       tipAmount: amountSummary.tipAmount,
       discountAmount: amountSummary.discountAmount,
@@ -2903,6 +2932,10 @@ export class OrdersService {
     serviceChargeType?: ServiceChargeType | null;
     serviceChargeValue?: Prisma.Decimal | null;
     serviceChargeAmount: Prisma.Decimal;
+    transactionFeeType?: ServiceChargeType | null;
+    transactionFeeValue?: Prisma.Decimal | null;
+    transactionFeeAmount: Prisma.Decimal;
+    transactionFeePayer?: PaymentFeePayer | null;
     tipAmount: Prisma.Decimal;
     discountAmount: Prisma.Decimal;
     walletAppliedAmount: Prisma.Decimal;
@@ -3028,6 +3061,7 @@ export class OrdersService {
         taxAmount: order.taxAmount,
         deliveryFee: order.deliveryFee,
         serviceChargeAmount: order.serviceChargeAmount,
+        transactionFeeAmount: order.transactionFeeAmount,
         tipAmount: order.tipAmount,
         discountAmount: order.discountAmount,
         loyaltyDiscountAmount: order.loyaltyDiscountAmount,
@@ -3038,8 +3072,11 @@ export class OrdersService {
       serviceChargeValue: order.serviceChargeValue
         ? Number(order.serviceChargeValue)
         : null,
-      transactionFeeType: null,
-      transactionFeeValue: null,
+      transactionFeeType: order.transactionFeeType ?? null,
+      transactionFeeValue: order.transactionFeeValue
+        ? Number(order.transactionFeeValue)
+        : null,
+      transactionFeePayer: order.transactionFeePayer ?? null,
       customerNote: order.customerNote,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -3103,6 +3140,10 @@ export class OrdersService {
       serviceChargeType?: ServiceChargeType | null;
       serviceChargeValue?: Prisma.Decimal | null;
       serviceChargeAmount: Prisma.Decimal;
+      transactionFeeType?: ServiceChargeType | null;
+      transactionFeeValue?: Prisma.Decimal | null;
+      transactionFeeAmount: Prisma.Decimal;
+      transactionFeePayer?: PaymentFeePayer | null;
       tipAmount: Prisma.Decimal;
       discountAmount: Prisma.Decimal;
       walletAppliedAmount: Prisma.Decimal;
@@ -3270,6 +3311,7 @@ export class OrdersService {
         taxAmount: order.taxAmount,
         deliveryFee: order.deliveryFee,
         serviceChargeAmount: order.serviceChargeAmount,
+        transactionFeeAmount: order.transactionFeeAmount,
         tipAmount: order.tipAmount,
         discountAmount: order.discountAmount,
         loyaltyDiscountAmount: order.loyaltyDiscountAmount,
@@ -3280,8 +3322,11 @@ export class OrdersService {
       serviceChargeValue: order.serviceChargeValue
         ? Number(order.serviceChargeValue)
         : null,
-      transactionFeeType: null,
-      transactionFeeValue: null,
+      transactionFeeType: order.transactionFeeType ?? null,
+      transactionFeeValue: order.transactionFeeValue
+        ? Number(order.transactionFeeValue)
+        : null,
+      transactionFeePayer: order.transactionFeePayer ?? null,
       customerNote: order.customerNote,
       assignedAt: order.assignedAt,
       deliveredAt: order.deliveredAt,
@@ -5379,6 +5424,59 @@ export class OrdersService {
     };
   }
 
+  private resolveRestaurantPaymentProcessingFee(
+    restaurantSettingsInput: unknown,
+  ) {
+    const restaurantSettings = this.asRecord(restaurantSettingsInput);
+    const fee = this.asRecord(restaurantSettings.paymentProcessingFee);
+
+    return {
+      isEnabled: Boolean(fee.isEnabled),
+      type:
+        fee.type === ServiceChargeType.AMOUNT
+          ? ServiceChargeType.AMOUNT
+          : ServiceChargeType.PERCENTAGE,
+      value: this.toFiniteNumber(fee.value, 0),
+      payer:
+        fee.payer === PaymentFeePayer.RESTAURANT
+          ? PaymentFeePayer.RESTAURANT
+          : PaymentFeePayer.CUSTOMER,
+    };
+  }
+
+  private resolvePaymentProcessingFee(
+    config: {
+      isEnabled: boolean;
+      type: ServiceChargeType;
+      value: number;
+      payer: PaymentFeePayer;
+    },
+    feeBase: Prisma.Decimal,
+    paymentMethod: PaymentMethodEnum,
+  ) {
+    const onlinePayment = [
+      PaymentMethodEnum.STRIPE,
+      PaymentMethodEnum.PAYPAL,
+    ].includes(paymentMethod);
+    const value = new Prisma.Decimal(config.value).toDecimalPlaces(2);
+    const enabled = config.isEnabled && onlinePayment && value.greaterThan(0);
+    const amount = enabled
+      ? config.type === ServiceChargeType.PERCENTAGE
+        ? Prisma.Decimal.max(feeBase, 0).mul(value).div(100).toDecimalPlaces(2)
+        : value
+      : new Prisma.Decimal(0);
+    const payer = enabled ? config.payer : null;
+
+    return {
+      type: enabled ? config.type : null,
+      value: enabled ? value : null,
+      amount,
+      payer,
+      customerAmount:
+        payer === PaymentFeePayer.CUSTOMER ? amount : new Prisma.Decimal(0),
+    };
+  }
+
   private asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -5420,6 +5518,13 @@ export class OrdersService {
       type: ServiceChargeType | null;
       value: Prisma.Decimal | null;
       amount: Prisma.Decimal;
+    },
+    transactionFee: {
+      type: ServiceChargeType | null;
+      value: Prisma.Decimal | null;
+      amount: Prisma.Decimal;
+      payer: PaymentFeePayer | null;
+      customerAmount: Prisma.Decimal;
     },
   ) {
     const taxTypes = await this.resolveGlobalTaxTypes(fallbackTaxPercentage);
@@ -5478,8 +5583,19 @@ export class OrdersService {
           ]
         : [],
       totalServiceChargeAmount: Number(serviceCharge.amount.toDecimalPlaces(2)),
-      transactionFees: [],
-      totalTransactionFeeAmount: 0,
+      transactionFees: transactionFee.customerAmount.greaterThan(0)
+        ? [
+            {
+              code: 'PAYMENT_PROCESSING_FEE',
+              label: 'Online payment fee',
+              type: transactionFee.type,
+              value: transactionFee.value ? Number(transactionFee.value) : null,
+              amount: Number(transactionFee.customerAmount),
+              payer: transactionFee.payer,
+            },
+          ]
+        : [],
+      totalTransactionFeeAmount: Number(transactionFee.customerAmount),
     };
   }
 
