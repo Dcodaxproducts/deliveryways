@@ -214,14 +214,15 @@ describe('WinOrderPollingService', () => {
 
     const result = await service.getNewOrders(machine);
 
-    expect(result.OrderList.Order).toEqual([
+    const payload = result.OrderList.Order[0] as {
+      AddInfo: { PaymentType: string; PaymentFee?: number };
+    };
+    expect(payload.AddInfo).toEqual(
       expect.objectContaining({
-        AddInfo: expect.objectContaining({
-          PaymentType: 'Über DeliveryWay online bezahlt',
-          PaymentFee: 1.25,
-        }),
+        PaymentType: 'Über DeliveryWay online bezahlt',
+        PaymentFee: 1.25,
       }),
-    ]);
+    );
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 
