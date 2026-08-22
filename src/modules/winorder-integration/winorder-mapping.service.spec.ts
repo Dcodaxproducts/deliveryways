@@ -10,7 +10,7 @@ describe('WinOrderMappingService', () => {
     branchId: 'branch-1',
   };
 
-  it('treats a mapped base item as coverage for its variants', async () => {
+  it('does not require manual mappings for name-based catalog matching', async () => {
     const connectionService = {
       resolveAdminScope: jest.fn().mockResolvedValue(scope),
     };
@@ -73,7 +73,8 @@ describe('WinOrderMappingService', () => {
       'branch-1',
     );
 
-    expect(result.data.missingCatalogKeys).toEqual(['modifier:cheese']);
+    expect(result.data.matchingMode).toBe('ARTICLE_NAME');
+    expect(result.data.missingCatalogKeys).toEqual([]);
   });
 
   it('persists a name-only catalog override', async () => {

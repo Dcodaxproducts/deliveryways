@@ -63,10 +63,10 @@ As an operator, I want mappings only for exceptions and a catalog comparison too
 
 | ID | Requirement | Status |
 | --- | --- | --- |
-| WNM-01 | Default main-item name export | In Tasks |
-| WNM-02 | Default modifier name export | In Tasks |
-| WNM-03 | Base-name plus `ArticleSize` variations | In Tasks |
-| WNM-04 | Optional name/number overrides | In Tasks |
+| WNM-01 | Default main-item name export | Verified |
+| WNM-02 | Default modifier name export | Verified |
+| WNM-03 | Base-name plus `ArticleSize` variations | Verified |
+| WNM-04 | Optional name/number overrides | Verified |
 | WNM-05 | Customer-paid `PaymentFee` | In Tasks |
 | WNM-06 | CSV/XML readiness comparison | In Tasks |
 | WNM-07 | No generic/comment production fallback | In Tasks |

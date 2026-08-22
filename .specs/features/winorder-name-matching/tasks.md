@@ -9,13 +9,13 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ## Tasks
 
-### T1: Allow optional article numbers
+### T1: Allow optional article numbers ✅
 
 **Where**: Prisma schema/migration, mapping DTO/repository/service and focused tests  
 **Requirements**: WNM-04  
 **Done when**: name-only and number-only overrides persist; empty overrides fail; Prisma validation and focused tests pass.
 
-### T2: Export items and modifiers by name
+### T2: Export items and modifiers by name ✅
 
 **Where**: `winorder-polling.service.ts` and spec  
 **Depends on**: T1  

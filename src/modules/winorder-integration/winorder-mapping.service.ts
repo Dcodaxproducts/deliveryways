@@ -38,27 +38,12 @@ export class WinOrderMappingService {
       this.menuCatalog.getCatalog(scope),
       this.mappingRepository.list(scope, connection.id),
     ]);
-    const mappedKeys = new Set(
-      mappings.catalogMappings.map((mapping) => mapping.localKey),
-    );
-
     return {
       data: {
         catalog,
         ...mappings,
-        missingCatalogKeys: [
-          ...catalog.items
-            .filter(
-              (item) =>
-                !mappedKeys.has(item.key) &&
-                !(
-                  item.variationId &&
-                  mappedKeys.has(`item:${item.menuItemId}:base`)
-                ),
-            )
-            .map((item) => item.key),
-          ...catalog.modifiers.map((modifier) => modifier.key),
-        ].filter((key) => !mappedKeys.has(key)),
+        matchingMode: 'ARTICLE_NAME' as const,
+        missingCatalogKeys: [],
       },
       message: 'WinOrder mappings fetched successfully',
     };
