@@ -437,7 +437,33 @@ export class OrdersRepository {
       ...(restaurantId ? { restaurantId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.excludeStatus ? { status: { not: query.excludeStatus } } : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
+      ...(query.createdFrom || query.createdTo
+        ? {
+            createdAt: {
+              ...(query.createdFrom
+                ? { gte: new Date(query.createdFrom) }
+                : {}),
+              ...(query.createdTo ? { lte: new Date(query.createdTo) } : {}),
+            },
+          }
+        : {}),
+      ...(query.orderTimeFrom || query.orderTimeTo
+        ? {
+            orderTime: {
+              ...(query.orderTimeFrom
+                ? { gte: new Date(query.orderTimeFrom) }
+                : {}),
+              ...(query.orderTimeTo
+                ? { lte: new Date(query.orderTimeTo) }
+                : {}),
+            },
+          }
+        : {}),
+      ...(query.isScheduled !== undefined
+        ? { isScheduled: query.isScheduled }
+        : {}),
       ...(customerId ? { customerId } : {}),
       ...(deliverymanId ? { deliverymanId } : {}),
       ...(excludeUnpaidOnlinePending

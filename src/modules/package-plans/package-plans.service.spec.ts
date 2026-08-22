@@ -346,6 +346,48 @@ describe('PackagePlansService', () => {
     expect(result.message).toBe('Tenant subscription assigned successfully');
   });
 
+  it('refreshes plan features when switching an existing subscription', async () => {
+    const existing = makeSubscription();
+    const nextPlan = makePlan({
+      id: 'plan-2',
+      name: 'POS Plan',
+      features: { orderManagement: false, posCashRegister: true },
+    });
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(existing),
+      findPlanById: jest.fn().mockResolvedValue(nextPlan),
+      updateSubscription: jest.fn().mockResolvedValue({
+        ...existing,
+        packagePlanId: 'plan-2',
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await service.updateSubscription(superAdmin, existing.id, {
+      packagePlanId: 'plan-2',
+    });
+
+    const updateCalls = repository.updateSubscription.mock.calls as Array<
+      [string, unknown]
+    >;
+    const updateData = updateCalls[0]?.[1] as
+      | {
+          packagePlan?: { connect?: { id?: string } };
+          planSnapshot?: {
+            id?: string;
+            features?: Record<string, boolean>;
+          };
+        }
+      | undefined;
+
+    expect(updateData?.packagePlan?.connect?.id).toBe('plan-2');
+    expect(updateData?.planSnapshot?.id).toBe('plan-2');
+    expect(updateData?.planSnapshot?.features).toEqual({
+      orderManagement: false,
+      posCashRegister: true,
+    });
+  });
+
   it('returns restaurant subscription invoice details for super admin', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
@@ -383,6 +425,7 @@ describe('PackagePlansService', () => {
       'restaurant-1',
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
+      true,
     );
   });
 
@@ -480,6 +523,43 @@ describe('PackagePlansService', () => {
           paidBy: PaymentMethod.COD,
         }),
       ],
+    });
+  });
+
+  it('charges commission at confirmation without crediting unpaid online funds', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          id: 'order-confirmed-cash',
+          paymentMethod: PaymentMethod.COD,
+          paymentStatus: PaymentStatus.PENDING,
+          paidAt: null,
+          totalAmount: new Prisma.Decimal(600),
+          transactions: [],
+        }),
+        makePaidOrder({
+          id: 'order-confirmed-online',
+          paymentStatus: PaymentStatus.PENDING,
+          paidAt: null,
+          totalAmount: new Prisma.Decimal(400),
+          transactions: [],
+        }),
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.transactionFee).toEqual({ ordersCount: 2, amount: 50 });
+    expect(result.data.totals.onlinePaymentCreditAmount).toBe(0);
+    expect(result.data.orderBreakdown.summary).toMatchObject({
+      offlineTotalAmount: 600,
+      onlineTotalAmount: 400,
+      totalOrdersAmount: 1000,
     });
   });
 

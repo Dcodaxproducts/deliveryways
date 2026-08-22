@@ -4,6 +4,7 @@ import {
   CouponDealSelectionMode,
   OrderStatus,
   OrderType,
+  PaymentFeePayer,
   PaymentMethod,
   PaymentStatus,
   Prisma,
@@ -275,6 +276,66 @@ describe('OrdersService - delivery radius', () => {
     expect(summary.tipAmount).toBe(150);
     expect(summary.totalAmount).toBe(1300);
     expect(summary.payableAmount).toBe(1100);
+  });
+
+  it('charges online payment fees only when the customer is configured to pay', () => {
+    const resolvePaymentProcessingFee = (
+      service as unknown as {
+        resolvePaymentProcessingFee: (
+          config: {
+            isEnabled: boolean;
+            type: 'PERCENTAGE';
+            value: number;
+            payer: PaymentFeePayer;
+          },
+          feeBase: Prisma.Decimal,
+          paymentMethod: PaymentMethodEnum,
+        ) => {
+          amount: Prisma.Decimal;
+          customerAmount: Prisma.Decimal;
+        };
+      }
+    ).resolvePaymentProcessingFee;
+
+    const customerFee = resolvePaymentProcessingFee.call(
+      service,
+      {
+        isEnabled: true,
+        type: 'PERCENTAGE',
+        value: 3,
+        payer: PaymentFeePayer.CUSTOMER,
+      },
+      new Prisma.Decimal(1000),
+      PaymentMethodEnum.STRIPE,
+    );
+    const restaurantFee = resolvePaymentProcessingFee.call(
+      service,
+      {
+        isEnabled: true,
+        type: 'PERCENTAGE',
+        value: 3,
+        payer: PaymentFeePayer.RESTAURANT,
+      },
+      new Prisma.Decimal(1000),
+      PaymentMethodEnum.PAYPAL,
+    );
+    const cashFee = resolvePaymentProcessingFee.call(
+      service,
+      {
+        isEnabled: true,
+        type: 'PERCENTAGE',
+        value: 3,
+        payer: PaymentFeePayer.CUSTOMER,
+      },
+      new Prisma.Decimal(1000),
+      PaymentMethodEnum.COD,
+    );
+
+    expect(Number(customerFee.amount)).toBe(30);
+    expect(Number(customerFee.customerAmount)).toBe(30);
+    expect(Number(restaurantFee.amount)).toBe(30);
+    expect(Number(restaurantFee.customerAmount)).toBe(0);
+    expect(Number(cashFee.amount)).toBe(0);
   });
 
   it('allows delivery only inside configured delivery hours', () => {

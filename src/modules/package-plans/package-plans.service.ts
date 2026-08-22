@@ -372,11 +372,11 @@ export class PackagePlansService {
       throw new NotFoundException('Tenant subscription not found');
     }
 
+    const nextPlan = dto.packagePlanId
+      ? await this.packagePlansRepository.findPlanById(dto.packagePlanId)
+      : null;
     if (dto.packagePlanId) {
-      const plan = await this.packagePlansRepository.findPlanById(
-        dto.packagePlanId,
-      );
-      if (!plan || !plan.isActive) {
+      if (!nextPlan || !nextPlan.isActive) {
         throw new BadRequestException('Active package plan is required');
       }
     }
@@ -390,6 +390,7 @@ export class PackagePlansService {
       packagePlan: dto.packagePlanId
         ? { connect: { id: dto.packagePlanId } }
         : undefined,
+      planSnapshot: nextPlan ? this.buildPlanSnapshot(nextPlan) : undefined,
       status: dto.status,
       paymentStatus: dto.paymentStatus,
       payoutCycleOverride: dto.payoutCycleOverride,
@@ -1433,11 +1434,12 @@ export class PackagePlansService {
     const subscription = await this.getSubscriptionOrThrow(id);
     const plan = this.resolveSubscriptionInvoicePlan(subscription);
     const servicePeriod = this.resolveSubscriptionInvoicePeriod(subscription);
-    const paidOrders = subscription.restaurantId
+    const commissionOrders = subscription.restaurantId
       ? await this.packagePlansRepository.listPaidRestaurantOrders(
           subscription.restaurantId,
           servicePeriod.from,
           servicePeriod.to,
+          true,
         )
       : [];
     const deductions = this.packagePlansRepository.listApplicableDeductions
@@ -1455,7 +1457,7 @@ export class PackagePlansService {
       subscription,
       plan,
       servicePeriod,
-      paidOrders,
+      commissionOrders,
       deductions,
     );
   }
@@ -1464,20 +1466,23 @@ export class PackagePlansService {
     subscription: TenantSubscriptionDetails,
     plan: ReturnType<PackagePlansService['resolveSubscriptionInvoicePlan']>,
     servicePeriod: { from: Date; to: Date },
-    paidOrders: RestaurantPayoutOrder[],
+    commissionOrders: RestaurantPayoutOrder[],
     deductions: SubscriptionDeduction[],
   ) {
     const subscriptionFeeAmount = new Prisma.Decimal(plan.planPrice)
       .toDecimalPlaces(2)
       .toNumber();
-    const onlinePaidOrders = paidOrders.filter((order) =>
+    const onlineOrders = commissionOrders.filter((order) =>
       this.isOnlinePaymentOrder(order),
     );
-    const offlinePaidOrders = paidOrders.filter(
+    const onlinePaidOrders = onlineOrders.filter(
+      (order) => order.paymentStatus === PaymentStatus.PAID,
+    );
+    const offlineOrders = commissionOrders.filter(
       (order) => !this.isOnlinePaymentOrder(order),
     );
     const transactionFeeAmount = this.calculateOrdersCommission(
-      paidOrders,
+      commissionOrders,
       plan,
     )
       .toDecimalPlaces(2)
@@ -1538,8 +1543,8 @@ export class PackagePlansService {
 
     if (transactionFeeAmount > 0 || this.isTransactionFeePlan(plan)) {
       lineItems.push({
-        description: `Order commission for ${paidOrders.length} paid order${paidOrders.length === 1 ? '' : 's'}`,
-        quantity: paidOrders.length,
+        description: `Order commission for ${commissionOrders.length} confirmed order${commissionOrders.length === 1 ? '' : 's'}`,
+        quantity: commissionOrders.length,
         unitPrice: transactionFeeAmount,
         amount: transactionFeeAmount,
       });
@@ -1606,7 +1611,7 @@ export class PackagePlansService {
       servicePeriod,
       lineItems,
       transactionFee: {
-        ordersCount: paidOrders.length,
+        ordersCount: commissionOrders.length,
         amount: transactionFeeAmount,
       },
       adjustments: adjustmentItems,
@@ -1617,9 +1622,9 @@ export class PackagePlansService {
         (item) => item.direction === SubscriptionAdjustmentDirection.CREDIT,
       ),
       orderBreakdown: this.buildSubscriptionOrderBreakdown(
-        paidOrders,
-        onlinePaidOrders,
-        offlinePaidOrders,
+        commissionOrders,
+        onlineOrders,
+        offlineOrders,
         plan.currency,
       ),
       totals: {

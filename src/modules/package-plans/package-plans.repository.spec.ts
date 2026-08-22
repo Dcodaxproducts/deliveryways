@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
 
 type CreateWalletTransactionCall = {
@@ -98,5 +98,40 @@ describe('PackagePlansRepository wallet settlement', () => {
     expect(createCall?.data.amount).toEqual(new Prisma.Decimal(-75));
     expect(createCall?.data.balanceAfter).toEqual(new Prisma.Decimal(25));
     expect(result.balanceAfter).toEqual(new Prisma.Decimal(25));
+  });
+});
+
+describe('PackagePlansRepository commission order recognition', () => {
+  it('filters confirmed fulfillment states by order creation period', async () => {
+    const findMany = jest
+      .fn<Promise<unknown[]>, [Prisma.OrderFindManyArgs]>()
+      .mockResolvedValue([]);
+    const repository = new PackagePlansRepository({
+      order: { findMany },
+    } as never);
+    const fromDate = new Date('2026-06-01T00:00:00.000Z');
+    const toDate = new Date('2026-07-01T00:00:00.000Z');
+
+    await repository.listPaidRestaurantOrders(
+      'restaurant-1',
+      fromDate,
+      toDate,
+      true,
+    );
+
+    const findManyArgs = findMany.mock.calls[0]?.[0];
+    expect(findManyArgs?.where?.restaurantId).toBe('restaurant-1');
+    const recognizedStatuses = (
+      findManyArgs?.where?.status as { in?: OrderStatus[] } | undefined
+    )?.in;
+    expect(recognizedStatuses).toContain(OrderStatus.CONFIRMED);
+    expect(recognizedStatuses).toContain(OrderStatus.DELIVERED);
+    expect(findManyArgs?.where?.createdAt).toEqual({
+      gte: fromDate,
+      lt: toDate,
+    });
+    expect(findManyArgs?.orderBy).toEqual([{ createdAt: 'asc' }]);
+    expect(findManyArgs?.where).not.toHaveProperty('paymentStatus');
+    expect(findManyArgs?.where).not.toHaveProperty('paidAt');
   });
 });

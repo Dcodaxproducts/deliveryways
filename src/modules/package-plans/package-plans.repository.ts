@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   GeneratedInvoiceKind,
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -531,17 +532,39 @@ export class PackagePlansRepository {
     });
   }
 
-  listPaidRestaurantOrders(restaurantId: string, fromDate: Date, toDate: Date) {
+  listPaidRestaurantOrders(
+    restaurantId: string,
+    fromDate: Date,
+    toDate: Date,
+    recognizeConfirmedOrders = false,
+  ) {
     return this.prisma.order.findMany({
       where: {
         restaurantId,
-        paymentStatus: PaymentStatus.PAID,
-        paidAt: {
-          gte: fromDate,
-          lt: toDate,
-        },
+        ...(recognizeConfirmedOrders
+          ? {
+              status: {
+                in: [
+                  OrderStatus.CONFIRMED,
+                  OrderStatus.PREPARING,
+                  OrderStatus.READY_FOR_PICKUP,
+                  OrderStatus.PICKED_UP,
+                  OrderStatus.READY_TO_SERVE,
+                  OrderStatus.SERVED,
+                  OrderStatus.OUT_FOR_DELIVERY,
+                  OrderStatus.DELIVERED,
+                ],
+              },
+              createdAt: { gte: fromDate, lt: toDate },
+            }
+          : {
+              paymentStatus: PaymentStatus.PAID,
+              paidAt: { gte: fromDate, lt: toDate },
+            }),
       },
-      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+      orderBy: recognizeConfirmedOrders
+        ? [{ createdAt: 'asc' }]
+        : [{ paidAt: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
         branchId: true,
