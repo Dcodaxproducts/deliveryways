@@ -77,7 +77,7 @@ describe('WinOrderMappingService', () => {
     expect(result.data.missingCatalogKeys).toEqual([]);
   });
 
-  it('persists a name-only catalog override', async () => {
+  it('persists name-only and number-only catalog overrides', async () => {
     const connectionService = {
       resolveAdminScope: jest.fn().mockResolvedValue(scope),
     };
@@ -104,7 +104,14 @@ describe('WinOrderMappingService', () => {
             price: 10,
           },
         ],
-        modifiers: [],
+        modifiers: [
+          {
+            key: 'modifier:cheese',
+            modifierId: 'cheese',
+            name: 'Cheese',
+            priceDelta: 1,
+          },
+        ],
       }),
     };
     const service = new WinOrderMappingService(
@@ -124,6 +131,11 @@ describe('WinOrderMappingService', () => {
             localKey: 'item:pizza:base',
             externalArticleName: 'Pizza Spezial',
           },
+          {
+            mappingType: WinOrderCatalogMappingType.MODIFIER,
+            localKey: 'modifier:cheese',
+            externalArticleNo: 'E1',
+          },
         ],
       },
     );
@@ -138,6 +150,13 @@ describe('WinOrderMappingService', () => {
           localName: 'Pizza',
           externalArticleNo: null,
           externalArticleName: 'Pizza Spezial',
+        },
+        {
+          mappingType: WinOrderCatalogMappingType.MODIFIER,
+          localKey: 'modifier:cheese',
+          localName: 'Cheese',
+          externalArticleNo: 'E1',
+          externalArticleName: null,
         },
       ],
     );

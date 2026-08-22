@@ -6,11 +6,11 @@ DeliveryWay currently blocks WinOrder exports unless every item and modifier has
 
 ## Goals
 
-- [ ] Export main items and modifiers by their DeliveryWay names without mandatory mappings.
-- [ ] Preserve optional per-branch name and article-number overrides.
-- [ ] Export variations as the base article name plus `ArticleSize`.
-- [ ] Export customer-paid online payment fees through `PaymentFee`.
-- [ ] Compare documented WinOrder CSV/XML exports with the branch catalog before activation.
+- [x] Export main items and modifiers by their DeliveryWay names without mandatory mappings.
+- [x] Preserve optional per-branch name and article-number overrides.
+- [x] Export variations as the base article name plus `ArticleSize`.
+- [x] Export customer-paid online payment fees through `PaymentFee`.
+- [x] Compare documented WinOrder CSV/XML exports with the branch catalog before activation.
 
 ## Out of Scope
 
@@ -68,11 +68,11 @@ As an operator, I want mappings only for exceptions and a catalog comparison too
 | WNM-03 | Base-name plus `ArticleSize` variations | Verified |
 | WNM-04 | Optional name/number overrides | Verified |
 | WNM-05 | Customer-paid `PaymentFee` | Verified |
-| WNM-06 | CSV/XML readiness comparison | In Tasks |
-| WNM-07 | No generic/comment production fallback | In Tasks |
+| WNM-06 | CSV/XML readiness comparison | Verified |
+| WNM-07 | No generic/comment production fallback | Verified |
 
 ## Success Criteria
 
-- [ ] Focused backend and admin tests cover all requirements.
-- [ ] Full backend and Restaurant Admin verification gates pass.
-- [ ] Both release branches are cumulative from deployed API `698af95` and Admin `3b495b4`.
+- [x] Focused backend and admin tests cover all requirements.
+- [x] Full backend and Restaurant Admin verification gates pass.
+- [x] Both release branches are cumulative from deployed API `698af95` and Admin `3b495b4`.
