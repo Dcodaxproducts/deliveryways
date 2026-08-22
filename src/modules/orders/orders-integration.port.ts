@@ -61,6 +61,7 @@ export interface IntegrationOrder {
   taxAmount: number;
   deliveryFee: number;
   serviceChargeAmount: number;
+  paymentFeeAmount: number;
   tipAmount: number;
   discountAmount: number;
   totalAmount: number;

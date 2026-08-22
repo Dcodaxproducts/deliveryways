@@ -172,6 +172,7 @@ export class WinOrderPollingService {
         DeliveryType: this.deliveryType(order.orderType),
         Comment: order.customerNote ?? undefined,
         PaymentType: paymentType,
+        PaymentFee: order.paymentFeeAmount || undefined,
         Tip: order.tipAmount || undefined,
         TransactionID: order.paymentReference ?? undefined,
         Total: order.totalAmount,

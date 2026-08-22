@@ -22,7 +22,7 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 **Requirements**: WNM-01, WNM-02, WNM-03, WNM-07  
 **Done when**: unmapped items/modifiers export by name, variations use base name plus size, overrides win, and service-charge safety remains.
 
-### T3: Export customer-paid payment fee
+### T3: Export customer-paid payment fee ✅
 
 **Where**: order integration port/service/spec and WinOrder polling service/spec  
 **Depends on**: T2  

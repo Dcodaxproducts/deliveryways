@@ -22,6 +22,7 @@ describe('WinOrderPollingService', () => {
     taxAmount: 1,
     deliveryFee: 2,
     serviceChargeAmount: 1,
+    paymentFeeAmount: 0,
     tipAmount: 1,
     discountAmount: 0,
     totalAmount: 15,
@@ -107,13 +108,14 @@ describe('WinOrderPollingService', () => {
 
     const payload = result.OrderList.Order[0] as {
       OrderID: string;
-      AddInfo: { PaymentType: string; Total: number };
+      AddInfo: { PaymentType: string; PaymentFee?: number; Total: number };
       ArticleList: { Article: Array<{ ArticleNo: string; Price: number }> };
     };
     expect(payload.OrderID).toBe('order-1');
     expect(payload.AddInfo).toEqual(
       expect.objectContaining({ PaymentType: 'Barzahlung', Total: 15 }),
     );
+    expect(payload.AddInfo.PaymentFee).toBeUndefined();
     expect(payload.ArticleList.Article).toEqual([
       expect.objectContaining({ ArticleNo: 'P1', Price: 10 }),
       expect.objectContaining({ ArticleNo: 'SC', Price: 1 }),
@@ -176,6 +178,49 @@ describe('WinOrderPollingService', () => {
     expect(payload.AddInfo.PaymentType).toBe('Über DeliveryWay online bezahlt');
     expect(payload.ArticleList.Article).toEqual([
       expect.objectContaining({ ArticleNo: 'P1', ArticleSize: 'Large' }),
+    ]);
+    expect(exports.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('exports a customer-paid online fee through PaymentFee', async () => {
+    const feeOrder: IntegrationOrder = {
+      ...order,
+      id: 'order-fee',
+      paymentMethod: PaymentMethod.STRIPE,
+      paymentStatus: 'PAID',
+      serviceChargeAmount: 0,
+      paymentFeeAmount: 1.25,
+    };
+    const orders = {
+      listExportCandidates: jest.fn().mockResolvedValue([feeOrder]),
+    };
+    const connections = { findByBranch: jest.fn().mockResolvedValue({}) };
+    const mappings = {
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const exports = {
+      lease: jest.fn().mockResolvedValue(new Set(['order-fee'])),
+      markFailed: jest.fn(),
+    };
+    const service = new WinOrderPollingService(
+      orders as never,
+      connections as never,
+      mappings as never,
+      exports as never,
+    );
+
+    const result = await service.getNewOrders(machine);
+
+    expect(result.OrderList.Order).toEqual([
+      expect.objectContaining({
+        AddInfo: expect.objectContaining({
+          PaymentType: 'Über DeliveryWay online bezahlt',
+          PaymentFee: 1.25,
+        }),
+      }),
     ]);
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
