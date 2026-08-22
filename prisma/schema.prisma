@@ -2316,7 +2316,7 @@ model WinOrderCatalogMapping {
   mappingType         WinOrderCatalogMappingType @map("mapping_type")
   localKey            String                     @map("local_key") @db.VarChar(512)
   localName           String?                    @map("local_name") @db.VarChar(255)
-  externalArticleNo   String                     @map("external_article_no") @db.VarChar(191)
+  externalArticleNo   String?                    @map("external_article_no") @db.VarChar(191)
   externalArticleName String?                    @map("external_article_name") @db.VarChar(255)
   createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz

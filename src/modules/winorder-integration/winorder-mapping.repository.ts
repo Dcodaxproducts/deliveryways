@@ -28,8 +28,8 @@ export class WinOrderMappingRepository {
       mappingType: WinOrderCatalogMappingType;
       localKey: string;
       localName: string;
-      externalArticleNo: string;
-      externalArticleName: string;
+      externalArticleNo: string | null;
+      externalArticleName: string | null;
     }>,
   ) {
     await this.prisma.$transaction(async (tx) => {

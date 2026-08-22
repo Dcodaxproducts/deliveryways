@@ -1,13 +1,16 @@
+import { BadRequestException } from '@nestjs/common';
+import { WinOrderCatalogMappingType } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { WinOrderMappingService } from './winorder-mapping.service';
 
 describe('WinOrderMappingService', () => {
+  const scope = {
+    tenantId: 'tenant-1',
+    restaurantId: 'restaurant-1',
+    branchId: 'branch-1',
+  };
+
   it('treats a mapped base item as coverage for its variants', async () => {
-    const scope = {
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-    };
     const connectionService = {
       resolveAdminScope: jest.fn().mockResolvedValue(scope),
     };
@@ -71,5 +74,121 @@ describe('WinOrderMappingService', () => {
     );
 
     expect(result.data.missingCatalogKeys).toEqual(['modifier:cheese']);
+  });
+
+  it('persists a name-only catalog override', async () => {
+    const connectionService = {
+      resolveAdminScope: jest.fn().mockResolvedValue(scope),
+    };
+    const connectionRepository = {
+      findByBranch: jest.fn().mockResolvedValue({ id: 'connection-1' }),
+    };
+    const mappingRepository = {
+      replaceCatalog: jest.fn(),
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const menuCatalog = {
+      getCatalog: jest.fn().mockResolvedValue({
+        items: [
+          {
+            key: 'item:pizza:base',
+            menuItemId: 'pizza',
+            menuItemName: 'Pizza',
+            variationId: null,
+            variationName: null,
+            sku: null,
+            price: 10,
+          },
+        ],
+        modifiers: [],
+      }),
+    };
+    const service = new WinOrderMappingService(
+      connectionService as never,
+      connectionRepository as never,
+      mappingRepository as never,
+      menuCatalog as never,
+    );
+
+    await service.replaceCatalog(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      'branch-1',
+      {
+        mappings: [
+          {
+            mappingType: WinOrderCatalogMappingType.ITEM,
+            localKey: 'item:pizza:base',
+            externalArticleName: 'Pizza Spezial',
+          },
+        ],
+      },
+    );
+
+    expect(mappingRepository.replaceCatalog).toHaveBeenCalledWith(
+      scope,
+      'connection-1',
+      [
+        {
+          mappingType: WinOrderCatalogMappingType.ITEM,
+          localKey: 'item:pizza:base',
+          localName: 'Pizza',
+          externalArticleNo: null,
+          externalArticleName: 'Pizza Spezial',
+        },
+      ],
+    );
+  });
+
+  it('rejects an empty catalog override', async () => {
+    const connectionService = {
+      resolveAdminScope: jest.fn().mockResolvedValue(scope),
+    };
+    const connectionRepository = {
+      findByBranch: jest.fn().mockResolvedValue({ id: 'connection-1' }),
+    };
+    const mappingRepository = { replaceCatalog: jest.fn() };
+    const menuCatalog = {
+      getCatalog: jest.fn().mockResolvedValue({
+        items: [
+          {
+            key: 'item:pizza:base',
+            menuItemId: 'pizza',
+            menuItemName: 'Pizza',
+            variationId: null,
+            variationName: null,
+            sku: null,
+            price: 10,
+          },
+        ],
+        modifiers: [],
+      }),
+    };
+    const service = new WinOrderMappingService(
+      connectionService as never,
+      connectionRepository as never,
+      mappingRepository as never,
+      menuCatalog as never,
+    );
+
+    await expect(
+      service.replaceCatalog(
+        { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+        'branch-1',
+        {
+          mappings: [
+            {
+              mappingType: WinOrderCatalogMappingType.ITEM,
+              localKey: 'item:pizza:base',
+              externalArticleNo: ' ',
+              externalArticleName: '',
+            },
+          ],
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(mappingRepository.replaceCatalog).not.toHaveBeenCalled();
   });
 });

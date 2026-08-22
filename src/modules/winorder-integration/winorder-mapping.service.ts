@@ -107,10 +107,20 @@ export class WinOrderMappingService {
           `Invalid or duplicate catalog mapping key: ${mapping.localKey}`,
         );
       }
+      const externalArticleNo = mapping.externalArticleNo?.trim() || null;
+      const externalArticleName = mapping.externalArticleName?.trim() || null;
+      if (!externalArticleNo && !externalArticleName) {
+        throw new BadRequestException(
+          `Catalog mapping requires a WinOrder name or article number: ${mapping.localKey}`,
+        );
+      }
       uniqueKeys.add(`${mapping.mappingType}:${mapping.localKey}`);
       return {
-        ...mapping,
+        mappingType: mapping.mappingType,
+        localKey: mapping.localKey,
         localName: names.get(mapping.localKey)!,
+        externalArticleNo,
+        externalArticleName,
       };
     });
 
