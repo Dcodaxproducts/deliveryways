@@ -12,7 +12,7 @@ import { WinOrderMachineContext } from './winorder-machine-context';
 import { WinOrderMappingRepository } from './winorder-mapping.repository';
 
 type CatalogMapping = {
-  externalArticleNo: string;
+  externalArticleNo: string | null;
   externalArticleName: string | null;
 };
 
@@ -117,23 +117,20 @@ export class WinOrderPollingService {
               `${WinOrderCatalogMappingType.ITEM}:item:${item.menuItemId}:base`,
             )
           : undefined);
-      if (!mapping) throw new Error(`Missing catalog mapping: ${localKey}`);
       const subArticles = item.modifiers.map((modifier) => {
-        const modifierMapping = this.requireMapping(
-          catalogMappings,
-          WinOrderCatalogMappingType.MODIFIER,
-          `modifier:${modifier.modifierId}`,
+        const modifierMapping = catalogMappings.get(
+          `${WinOrderCatalogMappingType.MODIFIER}:modifier:${modifier.modifierId}`,
         );
         return {
-          ArticleNo: modifierMapping.externalArticleNo,
-          ArticleName: modifierMapping.externalArticleName ?? modifier.name,
+          ArticleNo: modifierMapping?.externalArticleNo ?? undefined,
+          ArticleName: modifierMapping?.externalArticleName || modifier.name,
           Count: modifier.quantity,
           Price: modifier.unitPrice,
         };
       });
       return {
-        ArticleNo: mapping.externalArticleNo,
-        ArticleName: mapping.externalArticleName ?? item.menuItemName,
+        ArticleNo: mapping?.externalArticleNo ?? undefined,
+        ArticleName: mapping?.externalArticleName || item.menuItemName,
         ArticleSize: item.variationName ?? undefined,
         Count: item.quantity,
         Price: item.unitPrice,
@@ -152,7 +149,7 @@ export class WinOrderPollingService {
         'service_charge',
       );
       articles.push({
-        ArticleNo: mapping.externalArticleNo,
+        ArticleNo: mapping.externalArticleNo ?? undefined,
         ArticleName: mapping.externalArticleName ?? 'Service charge',
         ArticleSize: undefined,
         Count: 1,

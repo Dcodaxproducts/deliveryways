@@ -180,6 +180,117 @@ describe('WinOrderPollingService', () => {
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 
+  it('exports unmapped items and modifiers by name', async () => {
+    const nameMatchedOrder: IntegrationOrder = {
+      ...order,
+      id: 'order-3',
+      serviceChargeAmount: 0,
+      items: [
+        {
+          ...order.items[0],
+          variationId: 'large',
+          variationName: 'Large',
+          modifiers: [
+            {
+              modifierId: 'cheese',
+              name: 'Extra Cheese',
+              quantity: 2,
+              unitPrice: 1.5,
+            },
+          ],
+        },
+      ],
+    };
+    const orders = {
+      listExportCandidates: jest.fn().mockResolvedValue([nameMatchedOrder]),
+    };
+    const connections = {
+      findByBranch: jest.fn().mockResolvedValue({ storeId: null }),
+    };
+    const mappings = {
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const exports = {
+      lease: jest.fn().mockResolvedValue(new Set(['order-3'])),
+      markFailed: jest.fn(),
+    };
+    const service = new WinOrderPollingService(
+      orders as never,
+      connections as never,
+      mappings as never,
+      exports as never,
+    );
+
+    const result = await service.getNewOrders(machine);
+
+    const payload = result.OrderList.Order[0] as {
+      ArticleList: {
+        Article: Array<{
+          ArticleNo?: string;
+          ArticleName: string;
+          ArticleSize?: string;
+          SubArticleList?: {
+            SubArticle: Array<{
+              ArticleNo?: string;
+              ArticleName: string;
+            }>;
+          };
+        }>;
+      };
+    };
+    expect(payload.ArticleList.Article).toEqual([
+      expect.objectContaining({
+        ArticleNo: undefined,
+        ArticleName: 'Pizza',
+        ArticleSize: 'Large',
+        SubArticleList: {
+          SubArticle: [
+            expect.objectContaining({
+              ArticleNo: undefined,
+              ArticleName: 'Extra Cheese',
+            }),
+          ],
+        },
+      }),
+    ]);
+    expect(exports.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('keeps a positive generic service charge retryable without a mapping', async () => {
+    const orders = {
+      listExportCandidates: jest.fn().mockResolvedValue([order]),
+    };
+    const connections = { findByBranch: jest.fn().mockResolvedValue({}) };
+    const mappings = {
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const exports = {
+      lease: jest.fn().mockResolvedValue(new Set(['order-1'])),
+      markFailed: jest.fn(),
+    };
+    const service = new WinOrderPollingService(
+      orders as never,
+      connections as never,
+      mappings as never,
+      exports as never,
+    );
+
+    const result = await service.getNewOrders(machine);
+
+    expect(result.OrderList.Order).toEqual([]);
+    expect(exports.markFailed).toHaveBeenCalledWith(
+      machine,
+      'order-1',
+      'Missing catalog mapping: service_charge',
+    );
+  });
+
   it('keeps unsupported unmapped payments retryable', async () => {
     const orders = {
       listExportCandidates: jest.fn().mockResolvedValue([
