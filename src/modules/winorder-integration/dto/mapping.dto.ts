@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
+  IsOptional,
   IsString,
   MaxLength,
   ValidateNested,
@@ -17,13 +18,15 @@ export class WinOrderCatalogMappingDto {
   @MaxLength(512)
   localKey!: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(191)
-  externalArticleNo!: string;
+  externalArticleNo?: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(255)
-  externalArticleName!: string;
+  externalArticleName?: string;
 }
 
 export class ReplaceWinOrderCatalogMappingsDto {
