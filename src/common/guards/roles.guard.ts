@@ -484,6 +484,13 @@ export class RolesGuard implements CanActivate {
       candidates.add('orders');
     }
     if (
+      normalizedPath === 'admin/reports/orders' &&
+      this.resolveRequiredOperation(context) === 'read'
+    ) {
+      candidates.add('order-management');
+      candidates.add('orders');
+    }
+    if (
       this.resolveRequiredOperation(context) === 'read' &&
       (normalizedPath === 'admin/users/customers' ||
         normalizedPath === 'admin/users/customers/:id')
