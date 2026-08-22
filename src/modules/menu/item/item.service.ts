@@ -1138,6 +1138,10 @@ export class MenuItemService {
     await this.assertUniqueFields(item.restaurantId, { sku });
 
     const created = await this.prisma.$transaction(async (tx) => {
+      const sortOrder = await this.itemRepository.getNextRestaurantSortOrder(
+        item.restaurantId,
+        tx,
+      );
       const copy = await this.itemRepository.create(
         {
           restaurant: { connect: { id: item.restaurantId } },
@@ -1150,7 +1154,7 @@ export class MenuItemService {
           nutritionalInformation: item.nutritionalInformation,
           imageUrl: item.imageUrl,
           sku,
-          sortOrder: item.sortOrder + 1,
+          sortOrder,
           pricingMode: item.pricingMode,
           basePrice: item.basePrice,
           deliveryPriceAdjustment: item.deliveryPriceAdjustment,

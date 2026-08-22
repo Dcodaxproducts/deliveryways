@@ -688,6 +688,23 @@ export class PackagePlansService {
       ),
       restaurantPayoutAmount: Number(restaurantPayoutAmount.toDecimalPlaces(2)),
       currency,
+      activePlan:
+        subscription && plan
+          ? {
+              subscriptionId: subscription.id,
+              id: plan.id,
+              name: plan.name,
+              billingModel: plan.billingModel,
+              commissionType: plan.commissionType,
+              commissionPercentage: Number(plan.commissionPercentage),
+              commissionFixedAmount: Number(plan.commissionFixedAmount),
+              commissionCapAmount:
+                plan.commissionCapAmount === null
+                  ? null
+                  : Number(plan.commissionCapAmount),
+              payoutCycle: plan.payoutCycle,
+            }
+          : null,
     };
   }
 

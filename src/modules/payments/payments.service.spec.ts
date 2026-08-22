@@ -52,6 +52,17 @@ describe('PaymentsService', () => {
       platformCommissionAmount: number;
       restaurantPayoutAmount: number;
       currency: string;
+      activePlan?: {
+        subscriptionId: string;
+        id: string;
+        name: string;
+        billingModel: string;
+        commissionType: string;
+        commissionPercentage: number;
+        commissionFixedAmount: number;
+        commissionCapAmount: number | null;
+        payoutCycle: string;
+      };
     },
   ) => {
     const paymentsRepository = {
@@ -1520,6 +1531,17 @@ describe('PaymentsService', () => {
         platformCommissionAmount: 90,
         restaurantPayoutAmount: 810,
         currency: 'PKR',
+        activePlan: {
+          subscriptionId: 'subscription-1',
+          id: 'plan-1',
+          name: 'Commission Plan',
+          billingModel: 'COMMISSION',
+          commissionType: 'PERCENTAGE',
+          commissionPercentage: 10,
+          commissionFixedAmount: 0,
+          commissionCapAmount: null,
+          payoutCycle: 'WEEKLY',
+        },
       });
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
@@ -1602,6 +1624,17 @@ describe('PaymentsService', () => {
       grossCollectedAmount: 900,
       commissionLiabilityAmount: 90,
       availablePayoutBalance: 810,
+      activePlan: {
+        subscriptionId: 'subscription-1',
+        id: 'plan-1',
+        name: 'Commission Plan',
+        billingModel: 'COMMISSION',
+        commissionType: 'PERCENTAGE',
+        commissionPercentage: 10,
+        commissionFixedAmount: 0,
+        commissionCapAmount: null,
+        payoutCycle: 'WEEKLY',
+      },
       currency: 'PKR',
       customerWalletExposure: {
         accountCount: 3,

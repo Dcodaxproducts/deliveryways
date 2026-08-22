@@ -4897,6 +4897,7 @@ export class PaymentsService {
       commissionLiabilityAmount:
         payoutSummary?.platformCommissionAmount ?? null,
       availablePayoutBalance: Number(availablePayoutBalance),
+      activePlan: payoutSummary?.activePlan ?? null,
     };
   }
 

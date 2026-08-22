@@ -407,7 +407,9 @@ export class AdminReportsRepository {
       where: {
         ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
         ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
-        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(scope.branchId
+          ? { OR: [{ branchId: scope.branchId }, { branchId: null }] }
+          : {}),
         ...(query.kind ? { kind: query.kind } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.subscriptionId
@@ -456,7 +458,9 @@ export class AdminReportsRepository {
         id: invoiceId,
         ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
         ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
-        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(scope.branchId
+          ? { OR: [{ branchId: scope.branchId }, { branchId: null }] }
+          : {}),
       },
     });
   }

@@ -32,6 +32,7 @@ describe('MenuItemService', () => {
       softDelete: jest.fn(),
       hardDelete: jest.fn(),
       reorderRestaurantItems: jest.fn(),
+      getNextRestaurantSortOrder: jest.fn().mockResolvedValue(99),
     };
 
     const tx = {
@@ -1176,6 +1177,14 @@ describe('MenuItemService', () => {
     );
 
     expect(tx.modifierGroup.create).not.toHaveBeenCalled();
+    expect(itemRepository.getNextRestaurantSortOrder).toHaveBeenCalledWith(
+      'restaurant-1',
+      tx,
+    );
+    expect(itemRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sortOrder: 99 }),
+      tx,
+    );
     expect(tx.modifierGroupModifier.createMany).not.toHaveBeenCalled();
     expect(tx.menuItemModifierGroup.create).toHaveBeenCalledWith({
       data: {

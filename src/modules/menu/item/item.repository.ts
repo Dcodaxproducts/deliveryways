@@ -18,12 +18,13 @@ export class MenuItemRepository {
     const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
 
     if (query.sortBy === 'sortOrder') {
-      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+      return [{ sortOrder: direction }, { createdAt: 'desc' }, { id: 'asc' }];
     }
 
     return [
       { sortOrder: 'asc' },
       { [query.sortBy]: direction },
+      { id: 'asc' },
     ] as Prisma.MenuItemOrderByWithRelationInput[];
   }
 
@@ -33,6 +34,16 @@ export class MenuItemRepository {
 
   async createMany(data: Prisma.MenuItemCreateManyInput[]) {
     return this.prisma.menuItem.createMany({ data });
+  }
+
+  async getNextRestaurantSortOrder(restaurantId: string, tx?: PrismaTx) {
+    const lastItem = await this.client(tx).menuItem.findFirst({
+      where: { restaurantId, deletedAt: null },
+      orderBy: [{ sortOrder: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
+      select: { sortOrder: true },
+    });
+
+    return (lastItem?.sortOrder ?? 0) + 1;
   }
 
   async findById(id: string) {

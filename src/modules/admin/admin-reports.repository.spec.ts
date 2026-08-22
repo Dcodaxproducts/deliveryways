@@ -7,6 +7,58 @@ import {
 import { AdminReportsRepository } from './admin-reports.repository';
 
 describe('AdminReportsRepository', () => {
+  it('includes restaurant-level billing invoices for an authorized branch scope', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new AdminReportsRepository({
+      generatedInvoice: { findMany },
+    } as never);
+
+    await repository.listGeneratedInvoices(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      { kind: 'SUBSCRIPTION' } as never,
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          OR: [{ branchId: 'branch-1' }, { branchId: null }],
+          kind: 'SUBSCRIPTION',
+        }),
+      }),
+    );
+  });
+
+  it('allows an authorized branch to view a restaurant-level billing PDF', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const repository = new AdminReportsRepository({
+      generatedInvoice: { findFirst },
+    } as never);
+
+    await repository.findGeneratedInvoiceById(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      'invoice-1',
+    );
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'invoice-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        OR: [{ branchId: 'branch-1' }, { branchId: null }],
+      },
+    });
+  });
+
   it('applies excluded status and schedule dates to order report aggregation', async () => {
     const order = {
       aggregate: jest

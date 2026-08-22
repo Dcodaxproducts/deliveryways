@@ -479,6 +479,17 @@ describe('PackagePlansService', () => {
       platformCommissionAmount: 40,
       restaurantPayoutAmount: 760,
       currency: 'PKR',
+      activePlan: {
+        subscriptionId: 'subscription-12345678',
+        id: 'plan-1',
+        name: 'Hybrid Growth',
+        billingModel: PackageBillingModel.HYBRID,
+        commissionType: PackageCommissionType.PERCENTAGE,
+        commissionPercentage: 5,
+        commissionFixedAmount: 0,
+        commissionCapAmount: 250,
+        payoutCycle: PackagePayoutCycle.WEEKLY,
+      },
     });
   });
 
