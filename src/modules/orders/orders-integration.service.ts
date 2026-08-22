@@ -3,7 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, OrderType, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  OrderType,
+  PaymentFeePayer,
+  Prisma,
+} from '@prisma/client';
 import { ChatService } from '../chat/chat.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
@@ -49,6 +54,10 @@ export class OrdersIntegrationService implements OrdersIntegrationPort {
       taxAmount: order.taxAmount.toNumber(),
       deliveryFee: order.deliveryFee.toNumber(),
       serviceChargeAmount: order.serviceChargeAmount.toNumber(),
+      paymentFeeAmount:
+        order.transactionFeePayer === PaymentFeePayer.CUSTOMER
+          ? order.transactionFeeAmount.toNumber()
+          : 0,
       tipAmount: order.tipAmount.toNumber(),
       discountAmount: order.discountAmount.toNumber(),
       totalAmount: order.totalAmount.toNumber(),

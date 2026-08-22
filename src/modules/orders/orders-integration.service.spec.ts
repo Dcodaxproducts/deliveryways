@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   OrderStatus,
   OrderType,
+  PaymentFeePayer,
   PaymentMethod,
   PaymentStatus,
   Prisma,
@@ -49,6 +50,8 @@ describe('OrdersIntegrationService', () => {
         taxAmount: new Prisma.Decimal(2),
         deliveryFee: new Prisma.Decimal(3),
         serviceChargeAmount: new Prisma.Decimal(1),
+        transactionFeeAmount: new Prisma.Decimal(1.5),
+        transactionFeePayer: PaymentFeePayer.CUSTOMER,
         tipAmount: new Prisma.Decimal(0),
         discountAmount: new Prisma.Decimal(0),
         totalAmount: new Prisma.Decimal(26),
@@ -88,7 +91,11 @@ describe('OrdersIntegrationService', () => {
     const result = await service.listExportCandidates(scope, 25);
 
     expect(result[0]).toEqual(
-      expect.objectContaining({ id: 'order-1', totalAmount: 26 }),
+      expect.objectContaining({
+        id: 'order-1',
+        totalAmount: 26,
+        paymentFeeAmount: 1.5,
+      }),
     );
     expect(result[0].items[0]).toEqual(
       expect.objectContaining({
@@ -103,6 +110,41 @@ describe('OrdersIntegrationService', () => {
         ],
       }),
     );
+  });
+
+  it('omits a transaction fee paid by the restaurant', async () => {
+    const { service, repository } = makeService();
+    repository.findIntegrationExportCandidates.mockResolvedValue([
+      {
+        id: 'order-restaurant-fee',
+        orderType: OrderType.TAKEAWAY,
+        paymentMethod: PaymentMethod.STRIPE,
+        paymentStatus: PaymentStatus.PAID,
+        orderTime: null,
+        createdAt: new Date('2026-08-22T06:00:00Z'),
+        subtotal: new Prisma.Decimal(20),
+        taxAmount: new Prisma.Decimal(2),
+        deliveryFee: new Prisma.Decimal(0),
+        serviceChargeAmount: new Prisma.Decimal(0),
+        transactionFeeAmount: new Prisma.Decimal(1.5),
+        transactionFeePayer: PaymentFeePayer.RESTAURANT,
+        tipAmount: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        totalAmount: new Prisma.Decimal(22),
+        customerNote: null,
+        customer: {
+          email: 'guest@example.test',
+          profile: null,
+        },
+        deliveryAddress: null,
+        transactions: [],
+        items: [],
+      },
+    ]);
+
+    const result = await service.listExportCandidates(scope, 25);
+
+    expect(result[0].paymentFeeAmount).toBe(0);
   });
 
   it('advances through missing delivery lifecycle states', async () => {
