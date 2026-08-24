@@ -1,4 +1,4 @@
-# Tasks — DeliveryWay client regression follow-up
+# Tasks — FeastFlow client regression follow-up
 
 - [x] REG-01 Remove the fixed-deal selector helper while preserving validation.
 - [x] REG-02 Preserve nested category IDs during deal item detail hydration and add a regression test.

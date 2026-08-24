@@ -1,4 +1,4 @@
-# Auth Module — DeliveryWays
+# Auth Module — FeastFlow
 
 ## Purpose
 Handles authentication, token lifecycle, account registration, email verification, password reset, current-user profile access, and account deletion flows.

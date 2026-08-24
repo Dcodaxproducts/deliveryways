@@ -1,14 +1,14 @@
-# American Corner Pilot Readiness Specification
+# Sample Bistro Pilot Readiness Specification
 
 ## Problem Statement
 
-The American Corner pilot requires production-shaped printing and domain setup instead of configuration-only placeholders. Payment and WinOrder behavior must remain intact while the missing printing and DNS workflows are completed.
+The Sample Bistro pilot requires production-shaped printing and domain setup instead of configuration-only placeholders. Payment and WinOrder behavior must remain intact while the missing printing and DNS workflows are completed.
 
 ## Goals
 
 - Print an accepted order automatically through the configured QZ Tray printer without duplicate tickets.
 - Support explicit A4, A5, 80 mm, and 58 mm order-ticket layouts.
-- Let an authorized administrator verify a configured custom domain against the DeliveryWays DNS target before activation.
+- Let an authorized administrator verify a configured custom domain against the FeastFlow DNS target before activation.
 - Preserve verified Stripe, PayPal, and WinOrder contracts.
 
 ## Out of Scope
@@ -44,7 +44,7 @@ Acceptance criteria:
 
 ### P1: Custom-domain verification
 
-As an authorized platform administrator, I want exact DNS instructions and a verification action so that a custom storefront domain is activated only after it points to DeliveryWays.
+As an authorized platform administrator, I want exact DNS instructions and a verification action so that a custom storefront domain is activated only after it points to FeastFlow.
 
 Acceptance criteria:
 

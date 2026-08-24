@@ -1,4 +1,4 @@
-# Deliverymen Module — DeliveryWays
+# Deliverymen Module — FeastFlow
 
 ## Purpose
 Manages rider records for restaurant branches and assigns delivery orders to available deliverymen.

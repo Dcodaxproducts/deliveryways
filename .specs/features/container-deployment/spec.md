@@ -1,8 +1,8 @@
-# DeliveryWay Container Deployment Specification
+# FeastFlow Container Deployment Specification
 
 ## Problem Statement
 
-DeliveryWay currently has a PostgreSQL-only local Compose file and a host Node/PM2 deployment script. The complete platform needs a repeatable Docker deployment that keeps staging and production isolated, preserves PostgreSQL data, protects secrets, and supports verified rollback on the Plesk server.
+FeastFlow currently has a PostgreSQL-only local Compose file and a host Node/PM2 deployment script. The complete platform needs a repeatable Docker deployment that keeps staging and production isolated, preserves PostgreSQL data, protects secrets, and supports verified rollback on the Plesk server.
 
 ## Goals
 

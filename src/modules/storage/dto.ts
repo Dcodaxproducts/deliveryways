@@ -69,7 +69,7 @@ export class CreatePresignedViewUrlDto {
   @ApiPropertyOptional({
     description: 'Public file URL previously returned by storage upload API',
     example:
-      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/2026-03-16/file.png',
+      'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/2026-03-16/file.png',
   })
   @ValidateIf((dto: CreatePresignedViewUrlDto) => !dto.key)
   @IsString()
@@ -103,7 +103,7 @@ export class DeleteStoredFileDto {
   @ApiPropertyOptional({
     description: 'Public file URL previously returned by storage upload API',
     example:
-      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/user-1/2026-03-16/file.png',
+      'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/user-1/2026-03-16/file.png',
   })
   @ValidateIf((dto: DeleteStoredFileDto) => !dto.key)
   @IsString()

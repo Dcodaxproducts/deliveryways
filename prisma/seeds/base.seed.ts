@@ -3,7 +3,7 @@ import { PrismaClient, UserRole } from '@prisma/client';
 
 export async function seedBase(prisma: PrismaClient): Promise<void> {
   const superAdminEmail =
-    process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@deliveryways.local';
+    process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@feastflow.local';
   const superAdminPassword =
     process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'Admin@123';
 

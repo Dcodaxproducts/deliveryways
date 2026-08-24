@@ -717,8 +717,8 @@ describe('PackagePlansService', () => {
 
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
-      'DeliveryWays invoice SUB-INV-12345678-20260701',
-      expect.stringContaining('Please find attached DeliveryWays invoice'),
+      'FeastFlow invoice SUB-INV-12345678-20260701',
+      expect.stringContaining('Please find attached FeastFlow invoice'),
       expect.objectContaining({
         attachments: [
           expect.objectContaining({
@@ -889,7 +889,7 @@ describe('PackagePlansService', () => {
     expect(result).toEqual({ sent: 1, skipped: 0 });
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
-      'DeliveryWays invoice SUB-INV-12345678-20260701',
+      'FeastFlow invoice SUB-INV-12345678-20260701',
       expect.any(String),
       expect.any(Object),
     );

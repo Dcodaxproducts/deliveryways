@@ -1,4 +1,4 @@
-# DeliveryWays Backend
+# FeastFlow Backend
 
 Multi-tenant modular monolith backend (NestJS + Prisma + PostgreSQL).
 
@@ -144,7 +144,7 @@ npm run db:doctor
 npm run prisma:generate
 npm run prisma:migrate:deploy
 npm run build
-pm2 restart deliveryways-server --update-env
+pm2 restart feastflow-server --update-env
 ```
 
 If DB auth/schema looks broken, run one-time repair:
@@ -189,7 +189,7 @@ FORCE_RESTORE=yes npm run db:restore -- backups/db/<file>.sql
 ### Cron (every 6 hours)
 
 ```bash
-0 */6 * * * cd /var/www/html/deliveryways/server && npm run db:backup >> /var/log/deliveryways-backup.log 2>&1
+0 */6 * * * cd /var/www/html/feastflow/server && npm run db:backup >> /var/log/feastflow-backup.log 2>&1
 ```
 
 ## CI/CD Automation (Develop)
@@ -225,7 +225,7 @@ npm run db:reset
 Default local connection:
 
 ```env
-DATABASE_URL=postgresql://deliveryways:deliveryways@127.0.0.1:5434/deliveryways
+DATABASE_URL=postgresql://feastflow:feastflow@127.0.0.1:5434/feastflow
 ```
 
 Swagger: `http://localhost:3000/docs`

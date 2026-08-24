@@ -422,7 +422,7 @@ describe('NotificationsService', () => {
     notificationsRepository.upsertPushToken.mockResolvedValue({
       id: 'push-token-1',
       platform: PushPlatform.ANDROID,
-      appPackageName: 'com.dcodax.deliveryway_driver',
+      appPackageName: 'com.dcodax.feastflow_driver',
       isActive: true,
       lastSeenAt: new Date('2026-06-18T10:00:00.000Z'),
     });
@@ -438,7 +438,7 @@ describe('NotificationsService', () => {
       {
         token: 'fcm-token',
         platform: PushPlatform.ANDROID,
-        appPackageName: 'com.dcodax.deliveryway_driver',
+        appPackageName: 'com.dcodax.feastflow_driver',
       },
     );
 
@@ -451,7 +451,7 @@ describe('NotificationsService', () => {
       userId: undefined,
       deliverymanId: 'dm-1',
       deviceId: undefined,
-      appPackageName: 'com.dcodax.deliveryway_driver',
+      appPackageName: 'com.dcodax.feastflow_driver',
     });
     expect(result.data).toEqual(
       expect.objectContaining({
@@ -787,7 +787,7 @@ describe('NotificationsService', () => {
       paymentStatus: 'PENDING',
       createdAt: new Date('2026-08-07T09:00:00.000Z'),
       customer: {
-        email: 'guest-1@guest.deliveryways.local',
+        email: 'guest-1@guest.feastflow.local',
         isGuest: true,
         profile: {
           firstName: 'Walk-in',

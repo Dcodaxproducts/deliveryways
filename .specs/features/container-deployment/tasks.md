@@ -1,4 +1,4 @@
-# DeliveryWay Container Deployment Tasks
+# FeastFlow Container Deployment Tasks
 
 **Design**: `.specs/features/container-deployment/design.md`
 **Status**: In Progress
@@ -43,7 +43,7 @@
 - [x] API runs with `node dist/src/main.js` as a non-root user.
 - [x] Secrets, Git metadata, backups, storage, tests, and local dependencies are excluded.
 
-**Verify**: `docker build --target production -t deliveryways-api:test .` and inspect image user/entrypoint.
+**Verify**: `docker build --target production -t feastflow-api:test .` and inspect image user/entrypoint.
 
 **Commit**: `build(deploy): add backend container image`
 
@@ -127,7 +127,7 @@
 - [x] API waits for PostgreSQL health; web applications wait for API health.
 - [x] Named data volumes, restart policies, stop grace periods, and log rotation render correctly.
 
-**Commit**: `build(deploy): define deliveryway compose stack`
+**Commit**: `build(deploy): define feastflow compose stack`
 
 ### T7: Add environment overrides and templates
 
@@ -143,8 +143,8 @@
 
 **Verification**:
 
-- [x] Staging renders as project `deliveryway-staging` on localhost ports 6050-6054.
-- [x] Production renders as project `deliveryway-prod` on localhost ports 5050-5054.
+- [x] Staging renders as project `feastflow-staging` on localhost ports 5210-5214.
+- [x] Production renders as project `feastflow-prod` on localhost ports 5200-5204.
 - [x] Both environments keep PostgreSQL un-published on an internal-only network.
 - [x] Only placeholder templates are versioned; completed environment files remain ignored.
 - [x] T8 preflight rejects every `REPLACE_WITH` placeholder before mutation.
@@ -246,7 +246,7 @@
 ### T13: Deploy isolated staging stack
 
 **What**: Install server secrets, pull immutable images, create staging DB/volume, migrate, and start services.
-**Where**: `/opt/deliveryway` on the Plesk server
+**Where**: `/opt/feastflow` on the Plesk server
 **Depends on**: T12
 **Requirement**: DEP-04-DEP-08
 
@@ -280,7 +280,7 @@
 
 **Done when**:
 
-- [x] Development renders as project `deliveryway-development` on localhost ports 7050-7054.
+- [x] Development renders as project `feastflow-development` on localhost ports 7050-7054.
 - [x] PostgreSQL remains unpublished on an internal-only network.
 - [x] The template contains no deployable secrets.
 
@@ -303,7 +303,7 @@
 ### T18: Restore and validate legacy development
 
 **What**: Install transformed secrets, restore the verified legacy dump, start development services, and prove staging isolation.
-**Where**: `/opt/deliveryway` on the Plesk server
+**Where**: `/opt/feastflow` on the Plesk server
 **Depends on**: T17
 **Requirement**: DEP-04-DEP-09, DEP-13
 

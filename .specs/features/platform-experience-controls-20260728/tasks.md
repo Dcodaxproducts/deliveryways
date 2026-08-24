@@ -1,4 +1,4 @@
-# DeliveryWay Platform Experience Controls Tasks
+# FeastFlow Platform Experience Controls Tasks
 
 ## 1. Fast order placement and branch email
 

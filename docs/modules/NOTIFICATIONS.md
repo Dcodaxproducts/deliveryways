@@ -1,4 +1,4 @@
-# Notifications Module — DeliveryWays
+# Notifications Module — FeastFlow
 
 ## Purpose
 Tracks customer-facing order/payment email notifications with delivery status.

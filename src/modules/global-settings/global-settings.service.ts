@@ -679,13 +679,13 @@ export class GlobalSettingsService {
 
   private defaultLandingPageSettings(): LandingPageSettingsShape {
     return {
-      businessName: 'DeliveryWay',
+      businessName: 'FeastFlow',
       logoUrl: null,
       footerDescription: null,
       supportEmail: null,
       supportPhone: null,
       address: null,
-      copyrightText: `© ${new Date().getFullYear()} DeliveryWay. All rights reserved.`,
+      copyrightText: `© ${new Date().getFullYear()} FeastFlow. All rights reserved.`,
       socialLinks: {
         facebook: null,
         twitter: null,
@@ -1136,7 +1136,7 @@ export class GlobalSettingsService {
     const merged = {
       businessName:
         updates.businessName !== undefined
-          ? this.resolveOptionalString(updates.businessName) || 'DeliveryWay'
+          ? this.resolveOptionalString(updates.businessName) || 'FeastFlow'
           : current.businessName,
       logoUrl:
         updates.logoUrl !== undefined

@@ -150,7 +150,7 @@ describe('Order DTO validation', () => {
           paymentMethod: PaymentMethodEnum.COD,
           guestContact: {
             firstName: 'G',
-            email: 'guest+restaurant-1@guest.deliveryways.local',
+            email: 'guest+restaurant-1@guest.feastflow.local',
             phone: '123',
             privacyPolicyAccepted: true,
           },

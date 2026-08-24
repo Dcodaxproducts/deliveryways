@@ -68,8 +68,8 @@ async function bootstrap(): Promise<void> {
     // Swagger
     if (configService.get<string>('NODE_ENV') !== 'production') {
       const swaggerConfig = new DocumentBuilder()
-        .setTitle('DeliveryWays API')
-        .setDescription('DeliveryWays Backend API Documentation')
+        .setTitle('FeastFlow API')
+        .setDescription('FeastFlow Backend API Documentation')
         .setVersion('1.0')
         .addBearerAuth()
         .build();

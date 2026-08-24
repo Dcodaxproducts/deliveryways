@@ -1,4 +1,4 @@
-# Design — DeliveryWay client regression follow-up
+# Design — FeastFlow client regression follow-up
 
 ## Customer storefront
 

@@ -51,7 +51,7 @@ describe('AuthService registerGuestCustomer', () => {
     prisma.restaurant.findFirst.mockResolvedValue({ tenantId: 'tenant-1' });
     usersService.create!.mockResolvedValue({
       id: 'guest-1',
-      email: 'guest+restaurant-1@guest.deliveryways.local',
+      email: 'guest+restaurant-1@guest.feastflow.local',
       role: 'CUSTOMER',
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',

@@ -17,9 +17,9 @@ describe('CustomDomainDnsService', () => {
       }),
     );
 
-    expect(service.getInstructions('american-corner.de')).toEqual({
+    expect(service.getInstructions('sample-bistro.example')).toEqual({
       type: 'A',
-      host: 'american-corner.de',
+      host: 'sample-bistro.example',
       hostLabel: '@',
       target: '203.0.113.10',
     });
@@ -33,7 +33,9 @@ describe('CustomDomainDnsService', () => {
       }),
     );
 
-    await expect(service.verify('american-corner.de')).resolves.toMatchObject({
+    await expect(
+      service.verify('sample-bistro.example'),
+    ).resolves.toMatchObject({
       type: 'A',
       target: '203.0.113.10',
     });
@@ -46,14 +48,14 @@ describe('CustomDomainDnsService', () => {
       }),
     );
     mockedResolve4.mockResolvedValueOnce(['203.0.113.20']);
-    await expect(service.verify('american-corner.de')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      service.verify('sample-bistro.example'),
+    ).rejects.toBeInstanceOf(ConflictException);
 
     mockedResolve4.mockRejectedValueOnce(new Error('ENOTFOUND'));
-    await expect(service.verify('american-corner.de')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      service.verify('sample-bistro.example'),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('does not provide instructions without a configured public IPv4 target', () => {
@@ -65,10 +67,10 @@ describe('CustomDomainDnsService', () => {
     );
 
     expect(() =>
-      missingTargetService.getInstructions('american-corner.de'),
+      missingTargetService.getInstructions('sample-bistro.example'),
     ).toThrow(ServiceUnavailableException);
     expect(() =>
-      invalidTargetService.getInstructions('american-corner.de'),
+      invalidTargetService.getInstructions('sample-bistro.example'),
     ).toThrow(ServiceUnavailableException);
   });
 });

@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-DB_CONTAINER="${DB_CONTAINER:-deliveryways-postgres}"
-DB_USER="${DB_USER:-deliveryways}"
-DB_PASSWORD="${DB_PASSWORD:-deliveryways}"
-DB_NAME="${DB_NAME:-deliveryways}"
+DB_CONTAINER="${DB_CONTAINER:-feastflow-postgres}"
+DB_USER="${DB_USER:-feastflow}"
+DB_PASSWORD="${DB_PASSWORD:-feastflow}"
+DB_NAME="${DB_NAME:-feastflow}"
 DB_PORT="${DB_PORT:-5434}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
 

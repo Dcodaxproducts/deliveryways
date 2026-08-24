@@ -3,18 +3,18 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly DW_DEPLOY_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+readonly FF_DEPLOY_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/common.sh"
 
-dw_init "${1:-}" "${2:-}"
+ff_init "${1:-}" "${2:-}"
 readonly BACKUP_FILE="${3:-}"
 
-[[ -n "${BACKUP_FILE}" ]] || dw_fail "usage: $0 <staging|production> <env-file> <backup-file>"
+[[ -n "${BACKUP_FILE}" ]] || ff_fail "usage: $0 <staging|production> <env-file> <backup-file>"
 
-dw_preflight
-dw_verify_backup "${BACKUP_FILE}"
+ff_preflight
+ff_verify_backup "${BACKUP_FILE}"
 
-readonly VERIFY_CONTAINER="feastflow-restore-${DW_ENVIRONMENT}-$$"
+readonly VERIFY_CONTAINER="feastflow-restore-${FF_ENVIRONMENT}-$$"
 
 cleanup() {
   docker rm --force "${VERIFY_CONTAINER}" >/dev/null 2>&1 || true
@@ -44,7 +44,7 @@ for _ in $(seq 1 45); do
   sleep 1
 done
 
-[[ "${ready_checks}" -ge 2 ]] || dw_fail "disposable restore database did not become stably ready"
+[[ "${ready_checks}" -ge 2 ]] || ff_fail "disposable restore database did not become stably ready"
 
 docker exec --interactive "${VERIFY_CONTAINER}" \
   pg_restore \

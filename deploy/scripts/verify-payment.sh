@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly DW_DEPLOY_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+readonly FF_DEPLOY_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/common.sh"
 
 readonly ENVIRONMENT="${1:-}"
@@ -11,17 +11,17 @@ readonly ORDER_ID="${3:-}"
 readonly EXPECTED_STATE="${4:-paid}"
 
 if [[ "${ENVIRONMENT}" != "staging" ]]; then
-  dw_fail "payment acceptance verification is limited to staging"
+  ff_fail "payment acceptance verification is limited to staging"
 fi
 
-dw_init "${ENVIRONMENT}" "${2:-/opt/feastflow/env/.env.${ENVIRONMENT}}"
+ff_init "${ENVIRONMENT}" "${2:-/opt/feastflow/env/.env.${ENVIRONMENT}}"
 
 [[ "${ORDER_ID}" =~ ^[A-Za-z0-9_-]{10,64}$ ]] \
-  || dw_fail "a valid order ID is required as the third argument"
+  || ff_fail "a valid order ID is required as the third argument"
 [[ "${EXPECTED_STATE}" == "paid" || "${EXPECTED_STATE}" == "pending" ]] \
-  || dw_fail "expected state must be paid or pending"
+  || ff_fail "expected state must be paid or pending"
 
-dw_preflight
+ff_preflight
 
 readonly SQL="
 SELECT concat_ws(E'\\t',
@@ -62,10 +62,10 @@ WHERE o.id = '${ORDER_ID}';
 
 result="$({
   printf '%s\n' "${SQL}"
-} | dw_compose exec -T postgres sh -lc \
+} | ff_compose exec -T postgres sh -lc \
   'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At')"
 
-[[ -n "${result}" ]] || dw_fail "order not found: ${ORDER_ID}"
+[[ -n "${result}" ]] || ff_fail "order not found: ${ORDER_ID}"
 
 IFS=$'\t' read -r \
   order_status \
@@ -77,32 +77,32 @@ IFS=$'\t' read -r \
   new_order_notification_count <<< "${result}"
 
 [[ "${payment_method}" == "STRIPE" || "${payment_method}" == "PAYPAL" ]] \
-  || dw_fail "order uses ${payment_method}, not Stripe or PayPal"
+  || ff_fail "order uses ${payment_method}, not Stripe or PayPal"
 
 if [[ "${EXPECTED_STATE}" == "paid" ]]; then
   [[ "${order_status}" == "PLACED" ]] \
-    || dw_fail "order status is ${order_status}, expected PLACED"
+    || ff_fail "order status is ${order_status}, expected PLACED"
   [[ "${payment_status}" == "PAID" ]] \
-    || dw_fail "payment status is ${payment_status}, expected PAID"
+    || ff_fail "payment status is ${payment_status}, expected PAID"
   [[ "${has_paid_at}" == "true" ]] \
-    || dw_fail "paid_at is missing"
+    || ff_fail "paid_at is missing"
   [[ "${paid_charge_count}" == "1" ]] \
-    || dw_fail "found ${paid_charge_count} paid provider charges, expected exactly 1"
+    || ff_fail "found ${paid_charge_count} paid provider charges, expected exactly 1"
   [[ "${complete_charge_count}" == "1" ]] \
-    || dw_fail "paid provider charge is missing its reference or processed timestamp"
+    || ff_fail "paid provider charge is missing its reference or processed timestamp"
   [[ "${new_order_notification_count}" == "1" ]] \
-    || dw_fail "found ${new_order_notification_count} new-order admin notifications, expected exactly 1"
+    || ff_fail "found ${new_order_notification_count} new-order admin notifications, expected exactly 1"
 else
   [[ "${order_status}" == "PAYMENT_PENDING" ]] \
-    || dw_fail "order status is ${order_status}, expected PAYMENT_PENDING"
+    || ff_fail "order status is ${order_status}, expected PAYMENT_PENDING"
   [[ "${payment_status}" == "PENDING" ]] \
-    || dw_fail "payment status is ${payment_status}, expected PENDING"
+    || ff_fail "payment status is ${payment_status}, expected PENDING"
   [[ "${has_paid_at}" == "false" ]] \
-    || dw_fail "unpaid order unexpectedly has paid_at"
+    || ff_fail "unpaid order unexpectedly has paid_at"
   [[ "${paid_charge_count}" == "0" ]] \
-    || dw_fail "unpaid order has ${paid_charge_count} paid provider charges"
+    || ff_fail "unpaid order has ${paid_charge_count} paid provider charges"
   [[ "${new_order_notification_count}" == "0" ]] \
-    || dw_fail "unpaid order has ${new_order_notification_count} new-order admin notifications"
+    || ff_fail "unpaid order has ${new_order_notification_count} new-order admin notifications"
 fi
 
 printf 'Payment acceptance passed.\n'

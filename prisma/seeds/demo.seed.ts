@@ -7,7 +7,7 @@ export async function seedDemo(prisma: PrismaClient): Promise<void> {
     process.env.SEED_DEMO_RESTAURANT_SLUG ?? 'demo-restaurant';
   const businessAdminEmail =
     process.env.SEED_DEMO_BUSINESS_ADMIN_EMAIL ??
-    'owner@demo.deliveryways.local';
+    'owner@demo.feastflow.local';
   const businessAdminPassword =
     process.env.SEED_DEMO_BUSINESS_ADMIN_PASSWORD ?? 'Owner@123';
 

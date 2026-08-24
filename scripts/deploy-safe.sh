@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-APP_NAME="${APP_NAME:-deliveryways-server}"
+APP_NAME="${APP_NAME:-feastflow-server}"
 BRANCH="${BRANCH:-develop}"
 
 if [[ "${SKIP_PULL:-no}" != "yes" ]]; then

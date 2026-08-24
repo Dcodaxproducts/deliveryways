@@ -2,7 +2,7 @@
 
 ## Goal
 
-Allow Superadmin to manage the public DeliveryWay marketing-site content in English and German without changing frontend source code.
+Allow Superadmin to manage the public FeastFlow marketing-site content in English and German without changing frontend source code.
 
 ## Requirements
 

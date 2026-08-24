@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class DevBootstrapSuperAdminDto {
-  @ApiPropertyOptional({ example: 'superadmin@deliveryways.dev' })
+  @ApiPropertyOptional({ example: 'superadmin@feastflow.dev' })
   @IsOptional()
   @IsEmail()
   email?: string;

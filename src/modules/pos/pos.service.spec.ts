@@ -209,7 +209,7 @@ describe('PosService', () => {
     usersService.create.mockResolvedValue({ id: 'guest-customer-1' });
     posRepository.findScopedCustomer.mockResolvedValue({
       id: 'guest-customer-1',
-      email: 'pos-walk-in@deliveryways.local',
+      email: 'pos-walk-in@feastflow.local',
       isGuest: true,
       profile: {
         firstName: 'Walk-in',

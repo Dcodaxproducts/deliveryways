@@ -1253,7 +1253,7 @@ export class NotificationsService {
   }
 
   private isDeliverableEmail(email: string) {
-    return !/@guest\.deliveryways?(?:\.local)?$/i.test(email.trim());
+    return !/@guest\.feastflow?(?:\.local)?$/i.test(email.trim());
   }
 
   private readModifierLines(value: Prisma.JsonValue | null): string[] {

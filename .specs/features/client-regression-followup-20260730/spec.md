@@ -1,4 +1,4 @@
-# DeliveryWay client regression follow-up — 2026-07-30
+# FeastFlow client regression follow-up — 2026-07-30
 
 ## Scope
 

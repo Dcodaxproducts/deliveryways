@@ -81,7 +81,7 @@ describe('PaymentsService', () => {
       summarizeRestaurantWallets: jest.fn(),
       sumSuccessfulRefunds: jest.fn(),
       findRestaurantCheckoutDomain: jest.fn().mockResolvedValue({
-        subdomain: 'american-corner',
+        subdomain: 'sample-bistro',
         customDomain: null,
         customDomainVerifiedAt: null,
       }),
@@ -269,8 +269,9 @@ describe('PaymentsService', () => {
     const configService = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'app.deploymentEnvironment') return deploymentEnvironment;
-        if (key === 'PUBLIC_CUSTOMER_URL') return 'https://delivery-way.de';
-        if (key === 'CUSTOMER_APP_BASE_DOMAIN') return 'delivery-way.de';
+        if (key === 'PUBLIC_CUSTOMER_URL')
+          return 'https://platform.feastflow.co';
+        if (key === 'CUSTOMER_APP_BASE_DOMAIN') return 'platform.feastflow.co';
         return undefined;
       }),
     };
@@ -938,7 +939,7 @@ describe('PaymentsService', () => {
     });
 
     expect(redirectUrl).toBe(
-      'https://american-corner.delivery-way.de/order?success=true&orderId=order-1',
+      'https://sample-bistro.platform.feastflow.co/order?success=true&orderId=order-1',
     );
     expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
       'order-1',
@@ -999,7 +1000,7 @@ describe('PaymentsService', () => {
         paymentId: 'payment-1',
       }),
     ).resolves.toBe(
-      'https://american-corner.delivery-way.de/order?success=true&orderId=order-1',
+      'https://sample-bistro.platform.feastflow.co/order?success=true&orderId=order-1',
     );
     expect(notificationsService.notifyPaymentStatusChanged).toHaveBeenCalled();
     expect(notificationsService.notifyOrderPlaced).toHaveBeenCalledWith(
@@ -1016,8 +1017,8 @@ describe('PaymentsService', () => {
       order: { id: 'order-1' },
     });
     paymentsRepository.findRestaurantCheckoutDomain.mockResolvedValue({
-      subdomain: 'american-corner',
-      customDomain: 'orders.american-corner.de',
+      subdomain: 'sample-bistro',
+      customDomain: 'orders.sample-bistro.example',
       customDomainVerifiedAt: new Date(),
     });
 
@@ -1027,7 +1028,7 @@ describe('PaymentsService', () => {
     });
 
     expect(redirectUrl).toBe(
-      'https://orders.american-corner.de/checkout?paypal=cancelled&orderId=order-1',
+      'https://orders.sample-bistro.example/checkout?paypal=cancelled&orderId=order-1',
     );
     expect(paypalOrdersService.captureOrder).not.toHaveBeenCalled();
   });

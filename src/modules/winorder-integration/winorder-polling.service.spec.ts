@@ -175,7 +175,7 @@ describe('WinOrderPollingService', () => {
         Article: Array<{ ArticleNo: string; ArticleSize?: string }>;
       };
     };
-    expect(payload.AddInfo.PaymentType).toBe('Über DeliveryWay online bezahlt');
+    expect(payload.AddInfo.PaymentType).toBe('Über FeastFlow online bezahlt');
     expect(payload.ArticleList.Article).toEqual([
       expect.objectContaining({ ArticleNo: 'P1', ArticleSize: 'Large' }),
     ]);
@@ -219,7 +219,7 @@ describe('WinOrderPollingService', () => {
     };
     expect(payload.AddInfo).toEqual(
       expect.objectContaining({
-        PaymentType: 'Über DeliveryWay online bezahlt',
+        PaymentType: 'Über FeastFlow online bezahlt',
         PaymentFee: 1.25,
       }),
     );

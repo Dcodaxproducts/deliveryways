@@ -153,13 +153,13 @@ describe('GlobalSettingsService', () => {
         scopeKey: 'GLOBAL',
         defaultCurrency: 'PKR',
         landingPageSettings: {
-          businessName: 'DeliveryWay',
+          businessName: 'FeastFlow',
           logoUrl: null,
           footerDescription: null,
           supportEmail: null,
           supportPhone: null,
           address: null,
-          copyrightText: `© ${new Date().getFullYear()} DeliveryWay. All rights reserved.`,
+          copyrightText: `© ${new Date().getFullYear()} FeastFlow. All rights reserved.`,
           socialLinks: {
             facebook: null,
             twitter: null,
@@ -376,9 +376,9 @@ describe('GlobalSettingsService', () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',
       landingPageSettings: {
-        businessName: 'DeliveryWay Germany',
+        businessName: 'FeastFlow Germany',
         logoUrl: 'https://cdn.example.com/logo.png',
-        socialLinks: { instagram: 'https://instagram.com/deliveryway' },
+        socialLinks: { instagram: 'https://instagram.com/feastflow' },
         faqs: [
           {
             id: 'faq-second',
@@ -405,11 +405,11 @@ describe('GlobalSettingsService', () => {
     await expect(service.getPublicLandingPageSettings()).resolves.toEqual({
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({
-        businessName: 'DeliveryWay Germany',
+        businessName: 'FeastFlow Germany',
         logoUrl: 'https://signed.example.com/logo.png',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         socialLinks: expect.objectContaining({
-          instagram: 'https://instagram.com/deliveryway',
+          instagram: 'https://instagram.com/feastflow',
           facebook: null,
         }),
         faqs: [expect.objectContaining({ id: 'faq-first', isActive: true })],
@@ -428,7 +428,7 @@ describe('GlobalSettingsService', () => {
       paymentMethods: null,
       taxTypes: null,
       landingPageSettings: {
-        businessName: 'DeliveryWay',
+        businessName: 'FeastFlow',
         supportEmail: 'old@example.com',
         socialLinks: { facebook: 'https://facebook.com/old' },
         faqs: [
@@ -458,7 +458,7 @@ describe('GlobalSettingsService', () => {
     const [update] = updateSingletonSpy.mock.calls[0];
     expect(update).toMatchObject({
       landingPageSettings: {
-        businessName: 'DeliveryWay',
+        businessName: 'FeastFlow',
         supportEmail: 'new@example.com',
         socialLinks: {
           facebook: 'https://facebook.com/old',
@@ -563,8 +563,8 @@ describe('GlobalSettingsService', () => {
         pages: {
           about: {
             hero: {
-              headingEn: 'About DeliveryWay',
-              headingDe: 'Über DeliveryWay',
+              headingEn: 'About FeastFlow',
+              headingDe: 'Über FeastFlow',
             },
             contentEn:
               '<h2 onclick="alert(1)">Story</h2><script>alert(1)</script>',
@@ -582,8 +582,8 @@ describe('GlobalSettingsService', () => {
         pages: {
           about: {
             hero: {
-              headingEn: 'About DeliveryWay',
-              headingDe: 'Über DeliveryWay',
+              headingEn: 'About FeastFlow',
+              headingDe: 'Über FeastFlow',
             },
             contentEn: '<h2>Story</h2>',
             contentDe: '<p>Unsere Geschichte</p>',

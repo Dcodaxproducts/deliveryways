@@ -1,4 +1,4 @@
-# Menus Module — DeliveryWays
+# Menus Module — FeastFlow
 
 ## Purpose
 Adds a restaurant-level menu layer on top of existing categories/items/variations/modifiers.

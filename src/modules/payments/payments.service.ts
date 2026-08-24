@@ -255,7 +255,7 @@ export class PaymentsService {
       {
         amount: Number(amount),
         currency,
-        description: `DeliveryWays subscription ${subscription.id}`,
+        description: `FeastFlow subscription ${subscription.id}`,
         metadata: {
           paymentTransactionId: transaction.id,
           orderId: null,
@@ -338,7 +338,7 @@ export class PaymentsService {
     } else {
       await this.mailerService.sendEmail(
         recipientEmail,
-        'DeliveryWays subscription payment request',
+        'FeastFlow subscription payment request',
         this.buildSubscriptionPaymentRequestEmail({
           subscriptionId,
           paymentIntentId: attempt.paymentSession.paymentIntentId,
@@ -788,7 +788,7 @@ export class PaymentsService {
         {
           amount: Number(order.totalAmount),
           currency,
-          description: `DeliveryWays order ${order.id}`,
+          description: `FeastFlow order ${order.id}`,
           metadata: {
             paymentTransactionId: data.id,
             orderId: order.id,
@@ -1390,7 +1390,7 @@ export class PaymentsService {
       {
         amount: dto.amount,
         currency,
-        description: `DeliveryWays wallet top-up ${context.customerId}`,
+        description: `FeastFlow wallet top-up ${context.customerId}`,
         metadata: {
           paymentTransactionId: data.id,
           orderId: null,
@@ -1478,7 +1478,7 @@ export class PaymentsService {
       {
         amount: Number(amount),
         currency,
-        description: `DeliveryWays guest gift card ${data.id}`,
+        description: `FeastFlow guest gift card ${data.id}`,
         metadata: {
           paymentTransactionId: data.id,
           orderId: null,
@@ -1652,7 +1652,7 @@ export class PaymentsService {
     const lines = [
       'Hello,',
       '',
-      'Your DeliveryWays subscription is waiting for payment.',
+      'Your FeastFlow subscription is waiting for payment.',
       `Subscription ID: ${input.subscriptionId}`,
       `Stripe payment intent: ${input.paymentIntentId}`,
     ];
@@ -1663,9 +1663,9 @@ export class PaymentsService {
 
     lines.push(
       '',
-      'If you have already paid by bank transfer or cash, please share the receipt with DeliveryWays support so a super admin can settle it manually.',
+      'If you have already paid by bank transfer or cash, please share the receipt with FeastFlow support so a super admin can settle it manually.',
       '',
-      'DeliveryWays',
+      'FeastFlow',
     );
 
     return lines.join('\n');
@@ -2062,7 +2062,7 @@ export class PaymentsService {
       await this.paypalPayoutsService.verifyCredentials({
         clientId: credentials.clientId,
         clientSecret: credentials.clientSecret,
-        recipientEmail: 'credential-verification@deliveryways.app',
+        recipientEmail: 'credential-verification@feastflow.app',
         environment:
           credentials.environment === 'SANDBOX'
             ? PaypalPayoutEnvironment.SANDBOX
@@ -2491,7 +2491,7 @@ export class PaymentsService {
 
     const description =
       this.resolveOptionalString(dto.description) ??
-      `DeliveryWays restaurant payout ${restaurant.id}`;
+      `FeastFlow restaurant payout ${restaurant.id}`;
     let providerReference: string;
 
     if (dto.provider === RestaurantPayoutProvider.STRIPE) {

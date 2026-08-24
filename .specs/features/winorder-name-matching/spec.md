@@ -2,11 +2,11 @@
 
 ## Problem Statement
 
-DeliveryWay currently blocks WinOrder exports unless every item and modifier has a manual article-number mapping. WinOrder support has confirmed that the normal productive model is name matching, with sizes in `ArticleSize`, optional article-number overrides, and comment fallback reserved for exceptions.
+FeastFlow currently blocks WinOrder exports unless every item and modifier has a manual article-number mapping. WinOrder support has confirmed that the normal productive model is name matching, with sizes in `ArticleSize`, optional article-number overrides, and comment fallback reserved for exceptions.
 
 ## Goals
 
-- [x] Export main items and modifiers by their DeliveryWay names without mandatory mappings.
+- [x] Export main items and modifiers by their FeastFlow names without mandatory mappings.
 - [x] Preserve optional per-branch name and article-number overrides.
 - [x] Export variations as the base article name plus `ArticleSize`.
 - [x] Export customer-paid online payment fees through `PaymentFee`.
@@ -25,12 +25,12 @@ DeliveryWay currently blocks WinOrder exports unless every item and modifier has
 
 ### Name-based order export
 
-As a restaurant operator, I want DeliveryWay items and extras to match WinOrder by name so that I do not manually map every menu position.
+As a restaurant operator, I want FeastFlow items and extras to match WinOrder by name so that I do not manually map every menu position.
 
-1. WHEN a main item has no saved mapping THEN the exporter SHALL send its DeliveryWay menu name and omit `ArticleNo`.
-2. WHEN a modifier has no saved mapping THEN the exporter SHALL send its DeliveryWay modifier name in `SubArticleList` and omit `ArticleNo`.
+1. WHEN a main item has no saved mapping THEN the exporter SHALL send its FeastFlow menu name and omit `ArticleNo`.
+2. WHEN a modifier has no saved mapping THEN the exporter SHALL send its FeastFlow modifier name in `SubArticleList` and omit `ArticleNo`.
 3. WHEN an override exists THEN the exporter SHALL prefer the override name and/or article number.
-4. WHEN a variation has no exact override THEN the exporter SHALL use its base-item override when present, otherwise its DeliveryWay base name, and SHALL send the variation name in `ArticleSize`.
+4. WHEN a variation has no exact override THEN the exporter SHALL use its base-item override when present, otherwise its FeastFlow base name, and SHALL send the variation name in `ArticleSize`.
 5. WHEN no item/modifier override exists THEN the order SHALL remain exportable.
 
 ### Dedicated payment-fee export
@@ -47,7 +47,7 @@ As an operator, I want mappings only for exceptions and a catalog comparison too
 
 1. WHEN an override is saved THEN at least a WinOrder name or article number SHALL be present.
 2. Article-number fields SHALL be optional in the API and database.
-3. WHEN a documented WinOrder CSV or XML export is selected THEN the admin SHALL compare its article names with DeliveryWay base-item and modifier names.
+3. WHEN a documented WinOrder CSV or XML export is selected THEN the admin SHALL compare its article names with FeastFlow base-item and modifier names.
 4. The comparison SHALL identify missing and duplicate WinOrder names without uploading the file to the API.
 5. Variation rows SHALL not be required as separate WinOrder articles.
 

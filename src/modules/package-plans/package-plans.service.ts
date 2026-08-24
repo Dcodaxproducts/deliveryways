@@ -2012,7 +2012,7 @@ export class PackagePlansService {
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant?.name ?? invoice.tenant.name,
-      headerLines: this.deliveryWaysCompanyHeaderLines(),
+      headerLines: this.feastFlowCompanyHeaderLines(),
       meta: [
         { label: 'Due Date', value: this.formatInvoiceDate(invoice.dueAt) },
         {
@@ -2054,7 +2054,7 @@ export class PackagePlansService {
           ],
           rows: [
             invoice.documentType === 'CREDIT_NOTE'
-              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
+              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after FeastFlow fees are deducted.`
               : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
             `Subscription Status: ${invoice.status}`,
             invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
@@ -2168,7 +2168,7 @@ export class PackagePlansService {
     return [
       `Hi ${invoice.restaurant?.name ?? invoice.tenant.name},`,
       '',
-      `Please find attached DeliveryWays ${this.formatSubscriptionDocumentType(invoice.documentType).toLowerCase()} ${invoice.invoiceNumber}.`,
+      `Please find attached FeastFlow ${this.formatSubscriptionDocumentType(invoice.documentType).toLowerCase()} ${invoice.invoiceNumber}.`,
       '',
       `Package: ${invoice.packagePlan.name}`,
       `Service Period: ${this.formatInvoiceDate(invoice.servicePeriod.from)} - ${this.formatInvoiceDate(invoice.servicePeriod.to)}`,
@@ -2179,11 +2179,11 @@ export class PackagePlansService {
       `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
       `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
       invoice.documentType === 'CREDIT_NOTE'
-        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
+        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after FeastFlow fees are deducted.`
         : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
       '',
-      'DeliveryWays',
+      'FeastFlow',
     ].join('\n');
   }
 
@@ -2198,7 +2198,7 @@ export class PackagePlansService {
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant.name,
-      headerLines: this.deliveryWaysCompanyHeaderLines(),
+      headerLines: this.feastFlowCompanyHeaderLines(),
       meta: [
         {
           label: 'Payout Cycle',
@@ -2271,14 +2271,14 @@ export class PackagePlansService {
     return [
       `Hi ${invoice.restaurant.name},`,
       '',
-      `Please find attached DeliveryWays payout invoice ${invoice.invoiceNumber}.`,
+      `Please find attached FeastFlow payout invoice ${invoice.invoiceNumber}.`,
       '',
       `Payout Period: ${this.formatInvoiceDate(invoice.period.from)} - ${this.formatInvoiceDate(invoice.period.to)}`,
       `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
       `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
       `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
       '',
-      'DeliveryWays',
+      'FeastFlow',
     ].join('\n');
   }
 
@@ -2317,7 +2317,7 @@ export class PackagePlansService {
     const content = this.generateSubscriptionInvoicePdf(invoice);
     await this.mailerService.sendEmail(
       recipientEmail,
-      `DeliveryWays ${this.formatSubscriptionDocumentType(
+      `FeastFlow ${this.formatSubscriptionDocumentType(
         invoice.documentType,
       ).toLowerCase()} ${invoice.invoiceNumber}`,
       this.buildSubscriptionInvoiceEmailBody(invoice),
@@ -2356,7 +2356,7 @@ export class PackagePlansService {
     const content = this.generateWeeklyPayoutInvoicePdf(invoice);
     await this.mailerService.sendEmail(
       recipientEmail,
-      `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
+      `FeastFlow payout invoice ${invoice.invoiceNumber}`,
       this.buildWeeklyPayoutInvoiceEmailBody(invoice),
       {
         attachments: [
@@ -2589,9 +2589,9 @@ export class PackagePlansService {
     return null;
   }
 
-  private deliveryWaysCompanyHeaderLines() {
+  private feastFlowCompanyHeaderLines() {
     return [
-      'DeliveryWays company address: configure legal address',
+      'FeastFlow company address: configure legal address',
       'DATEV account mapping: revenue/debtor/tax placeholders',
     ];
   }
@@ -2665,8 +2665,8 @@ export class PackagePlansService {
     const restaurant = this.asJsonObject(snapshot.restaurant ?? null);
     const restaurantName = this.readStringValue(restaurant.name);
     return restaurantName
-      ? `DeliveryWays ${invoiceNumber} ${restaurantName}`
-      : `DeliveryWays ${invoiceNumber}`;
+      ? `FeastFlow ${invoiceNumber} ${restaurantName}`
+      : `FeastFlow ${invoiceNumber}`;
   }
 
   private csvEscape(value: string) {

@@ -1,4 +1,4 @@
-# DeliveryWays Localization / Translation Spec
+# FeastFlow Localization / Translation Spec
 
 ## Scope
 Add restaurant/catalog localization without breaking existing request payloads, stored default data, or customer/admin response flows.

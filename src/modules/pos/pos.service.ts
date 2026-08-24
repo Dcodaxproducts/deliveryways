@@ -660,7 +660,7 @@ export class PosService {
 
   private generateGuestEmail(restaurantId: string, branchId: string) {
     const token = randomBytes(6).toString('hex');
-    return `pos-guest-${restaurantId}-${branchId}-${Date.now()}-${token}@deliveryways.local`;
+    return `pos-guest-${restaurantId}-${branchId}-${Date.now()}-${token}@feastflow.local`;
   }
 
   private parseFutureReservationDate(value: string) {

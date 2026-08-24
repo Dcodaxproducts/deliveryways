@@ -10,7 +10,7 @@ describe('AppController', () => {
         data: {
           status: 'ok',
         },
-        message: 'DeliveryWays API is live',
+        message: 'FeastFlow API is live',
       });
     });
 

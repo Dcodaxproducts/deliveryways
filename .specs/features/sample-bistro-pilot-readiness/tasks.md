@@ -1,6 +1,6 @@
-# American Corner Pilot Readiness Tasks
+# Sample Bistro Pilot Readiness Tasks
 
-**Design:** `.specs/features/american-corner-pilot-readiness/design.md`
+**Design:** `.specs/features/sample-bistro-pilot-readiness/design.md`
 **Status:** Done
 
 ## Execution Plan

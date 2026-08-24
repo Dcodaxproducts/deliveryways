@@ -1,7 +1,7 @@
 {
-  "name": "deliveryways",
+  "name": "feastflow",
   "version": "0.1.0",
-  "description": "DeliveryWays - Modular Monolith Backend",
+  "description": "FeastFlow - Modular Monolith Backend",
   "author": "Dcodax Technologies",
   "private": true,
   "license": "MIT",

@@ -184,7 +184,7 @@ The shared Prisma contract and public module ports make the backend tasks sequen
 - [x] Backend build, all 84 suites/914 tests, and full lint pass. The latest repository revision does not contain `verify_project.sh` or `verify_nestjs.sh`.
 - [x] Restaurant Admin typecheck, all 69 suites/429 tests, lint, i18n/import checks, and production build pass.
 - [x] Both branches are committed, pushed, and remote heads verified.
-- [x] Handoff states that live WinOrder/American Corner activation remains externally unverified.
+- [x] Handoff states that live WinOrder/Sample Bistro activation remains externally unverified.
 
 **Commit**: only verification-driven fixes or docs; no unverified code batching.
 

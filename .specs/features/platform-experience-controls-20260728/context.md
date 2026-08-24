@@ -1,4 +1,4 @@
-# DeliveryWay Platform Experience Controls Context
+# FeastFlow Platform Experience Controls Context
 
 **Gathered:** 2026-07-28
 **Spec:** `.specs/features/platform-experience-controls-20260728/spec.md`

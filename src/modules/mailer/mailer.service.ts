@@ -30,7 +30,7 @@ export class MailerService {
   ) {
     this.fromAddress = this.configService.get<string>(
       'MAIL_FROM_ADDRESS',
-      'no-reply@deliveryways.app',
+      'no-reply@feastflow.app',
     );
 
     const emailEnabled = this.isEmailEnabled();

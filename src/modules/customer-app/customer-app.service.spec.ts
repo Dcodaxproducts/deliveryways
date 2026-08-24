@@ -26,7 +26,7 @@ describe('CustomerAppService', () => {
     allergenFlags: ['A', '1'],
     restaurant: {
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       tagline: 'Fresh food fast',
       settings: {},
@@ -267,7 +267,7 @@ describe('CustomerAppService', () => {
 
   it('resolves the explicit restaurant subdomain from the request host', async () => {
     const { service, repository, configService } = makeService();
-    configService.get.mockReturnValue('delivery-way.de');
+    configService.get.mockReturnValue('platform.feastflow.co');
     repository.findRestaurantDomainContext.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -282,11 +282,11 @@ describe('CustomerAppService', () => {
     });
 
     const result = await service.resolveDomainContext(
-      'Burger-House.delivery-way.de:443',
+      'Burger-House.platform.feastflow.co:443',
     );
 
     expect(repository.findRestaurantDomainContext).toHaveBeenCalledWith(
-      'burger-house.delivery-way.de',
+      'burger-house.platform.feastflow.co',
       'burger-house',
     );
     expect(result.data).toMatchObject({
@@ -301,14 +301,14 @@ describe('CustomerAppService', () => {
 
   it('preserves www when resolving a verified custom domain', async () => {
     const { service, repository, configService } = makeService();
-    configService.get.mockReturnValue('delivery-way.de');
+    configService.get.mockReturnValue('platform.feastflow.co');
     repository.findRestaurantDomainContext.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'American Corner',
-      slug: 'american-corner',
-      subdomain: 'american-corner',
-      customDomain: 'www.american-corner.de',
+      name: 'Sample Bistro',
+      slug: 'sample-bistro',
+      subdomain: 'sample-bistro',
+      customDomain: 'www.sample-bistro.example',
       customDomainVerifiedAt: new Date('2026-08-14T07:04:16.637Z'),
       logoUrl: null,
       branding: null,
@@ -316,17 +316,17 @@ describe('CustomerAppService', () => {
     });
 
     const result = await service.resolveDomainContext(
-      'https://WWW.American-Corner.de/menu',
+      'https://WWW.Sample-Bistro.example/menu',
     );
 
     expect(repository.findRestaurantDomainContext).toHaveBeenCalledWith(
-      'www.american-corner.de',
+      'www.sample-bistro.example',
       undefined,
     );
     expect(result.data).toMatchObject({
       restaurantId: 'restaurant-1',
-      host: 'www.american-corner.de',
-      customDomain: 'www.american-corner.de',
+      host: 'www.sample-bistro.example',
+      customDomain: 'www.sample-bistro.example',
       customDomainVerified: true,
     });
   });
@@ -916,7 +916,7 @@ describe('CustomerAppService', () => {
     const { service, repository, mailerService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: null,
       supportContact: { email: 'support@restaurant.test' },
       settings: {},
@@ -967,7 +967,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: null,
       supportContact: { email: 'support@restaurant.test' },
       settings: {},
@@ -1016,12 +1016,12 @@ describe('CustomerAppService', () => {
     const { service, repository, mailerService, configService } = makeService();
     configService.get.mockImplementation((key: string) =>
       key === 'CONTACT_FORM_SUPERADMIN_EMAILS'
-        ? 'superadmin@deliveryways.test, support@restaurant.test'
+        ? 'superadmin@feastflow.test, support@restaurant.test'
         : undefined,
     );
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: null,
       supportContact: { email: 'support@restaurant.test' },
       settings: {},
@@ -1041,12 +1041,12 @@ describe('CustomerAppService', () => {
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'support@restaurant.test',
       'Contact form: Delivery question',
-      expect.stringContaining('Restaurant: DeliveryWays Kitchen'),
+      expect.stringContaining('Restaurant: FeastFlow Kitchen'),
     );
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
-      'superadmin@deliveryways.test',
+      'superadmin@feastflow.test',
       'Contact form: Delivery question',
-      expect.stringContaining('Restaurant: DeliveryWays Kitchen'),
+      expect.stringContaining('Restaurant: FeastFlow Kitchen'),
     );
     expect(result.data.notifiedRecipients).toBe(2);
   });
@@ -1055,12 +1055,12 @@ describe('CustomerAppService', () => {
     const { service, repository, mailerService, configService } = makeService();
     configService.get.mockImplementation((key: string) =>
       key === 'CONTACT_FORM_SUPPORT_EMAILS'
-        ? 'support@deliveryways.test'
+        ? 'support@feastflow.test'
         : undefined,
     );
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: null,
       supportContact: null,
       settings: {},
@@ -1077,7 +1077,7 @@ describe('CustomerAppService', () => {
     );
 
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
-      'support@deliveryways.test',
+      'support@feastflow.test',
       'Contact form: Delivery question',
       expect.stringContaining('Email: jane@example.com'),
     );
@@ -1088,7 +1088,7 @@ describe('CustomerAppService', () => {
     const { service, repository, mailerService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: null,
       supportContact: null,
       settings: {},
@@ -1113,7 +1113,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       tagline: 'Fresh food fast',
@@ -1195,7 +1195,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -1255,7 +1255,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -1299,7 +1299,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       tagline: 'Fresh food fast',
@@ -1340,7 +1340,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'restaurant-logo.png',
       coverImage: 'restaurant-cover.png',
       tagline: 'Fresh food fast',
@@ -1364,8 +1364,8 @@ describe('CustomerAppService', () => {
         expiresAt: new Date('2026-05-25T00:00:00.000Z'),
         restaurant: {
           id: 'restaurant-1',
-          name: 'DeliveryWays Kitchen',
-          slug: 'deliveryways-kitchen',
+          name: 'FeastFlow Kitchen',
+          slug: 'feastflow-kitchen',
           logoUrl: 'restaurant-logo.png',
           coverImage: 'restaurant-cover.png',
         },
@@ -1510,7 +1510,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'restaurant-logo.png',
       coverImage: 'restaurant-cover.png',
       tagline: 'Fresh food fast',
@@ -1544,8 +1544,8 @@ describe('CustomerAppService', () => {
         expiresAt: new Date('2026-05-25T00:00:00.000Z'),
         restaurant: {
           id: 'restaurant-1',
-          name: 'DeliveryWays Kitchen',
-          slug: 'deliveryways-kitchen',
+          name: 'FeastFlow Kitchen',
+          slug: 'feastflow-kitchen',
           logoUrl: 'restaurant-logo.png',
           coverImage: 'restaurant-cover.png',
         },
@@ -1593,7 +1593,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'restaurant-logo.png',
       coverImage: 'restaurant-cover.png',
       tagline: 'Fresh food fast',
@@ -1741,7 +1741,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -1829,7 +1829,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -1905,7 +1905,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -1969,7 +1969,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -2084,7 +2084,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -2197,7 +2197,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -2252,7 +2252,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: null,
       tagline: 'Fresh food fast',
@@ -2382,18 +2382,18 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       tagline: 'Fresh food fast',
       bio: 'Test bio',
       socialMedia: {
-        instagram: 'https://instagram.example/deliveryways',
+        instagram: 'https://instagram.example/feastflow',
       },
       supportContact: {
         phone: '+923001111111',
         whatsapp: '+923002222222',
-        email: 'support@deliveryways.test',
+        email: 'support@feastflow.test',
       },
       branding: {
         primaryColor: '#FF0000',
@@ -2412,7 +2412,7 @@ describe('CustomerAppService', () => {
       settings: {
         contact: {
           phone: '+923003333333',
-          email: 'branch@deliveryways.test',
+          email: 'branch@feastflow.test',
         },
         deliveryIntervalMinutes: 20,
         pickupIntervalMinutes: 10,
@@ -2477,12 +2477,12 @@ describe('CustomerAppService', () => {
       'https://cdn.example.com/restaurant-cover.png',
     );
     expect(result.data.restaurant.socialMediaLinks).toEqual({
-      instagram: 'https://instagram.example/deliveryways',
+      instagram: 'https://instagram.example/feastflow',
     });
     expect(result.data.restaurant.contactInfo).toEqual({
       phone: '+923001111111',
       whatsapp: '+923002222222',
-      email: 'support@deliveryways.test',
+      email: 'support@feastflow.test',
     });
     expect(result.data.restaurant.address).toEqual({
       street: 'Restaurant Street',
@@ -2514,11 +2514,11 @@ describe('CustomerAppService', () => {
       contactInfo: {
         phone: '+923003333333',
         whatsapp: '+923002222222',
-        email: 'branch@deliveryways.test',
+        email: 'branch@feastflow.test',
       },
       phone: '+923003333333',
       whatsapp: '+923002222222',
-      email: 'branch@deliveryways.test',
+      email: 'branch@feastflow.test',
       address: {
         street: 'Branch Street',
         shopNumber: 'Shop 8',
@@ -2577,7 +2577,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -2674,7 +2674,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -2768,7 +2768,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -2827,7 +2827,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -2876,7 +2876,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -2911,7 +2911,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -2954,7 +2954,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -3006,7 +3006,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       tagline: null,
@@ -3037,7 +3037,7 @@ describe('CustomerAppService', () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       settings: {},
@@ -3082,7 +3082,7 @@ describe('CustomerAppService', () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: null,
       coverImage: null,
       settings: {},
@@ -3154,7 +3154,7 @@ describe('CustomerAppService', () => {
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       tenant: { id: 'tenant-1', name: 'Tenant Kitchen Group' },
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       settings: {
         privacyPolicy: 'Privacy text',
@@ -3184,7 +3184,7 @@ describe('CustomerAppService', () => {
       'restaurant-1',
     );
     expect(result.data.content).toBe('Privacy text');
-    expect(result.data.restaurantName).toBe('DeliveryWays Kitchen');
+    expect(result.data.restaurantName).toBe('FeastFlow Kitchen');
     expect(result.data.tenantId).toBe('tenant-1');
     expect(result.data.tenantName).toBe('Tenant Kitchen Group');
     expect(result.data.legalProfile).toEqual({
@@ -3212,7 +3212,7 @@ describe('CustomerAppService', () => {
       id: 'restaurant-1',
       tenantId: 'tenant-1',
       tenant: { id: 'tenant-1', name: 'Tenant Kitchen Group' },
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       settings: {
         customerApp: {
@@ -3229,7 +3229,7 @@ describe('CustomerAppService', () => {
     expect(result).toEqual({
       data: {
         restaurantId: 'restaurant-1',
-        restaurantName: 'DeliveryWays Kitchen',
+        restaurantName: 'FeastFlow Kitchen',
         tenantId: 'tenant-1',
         tenantName: 'Tenant Kitchen Group',
         restaurantCoverImage: 'https://cdn.example.com/restaurant-cover.png',
@@ -3245,7 +3245,7 @@ describe('CustomerAppService', () => {
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      name: 'DeliveryWays Kitchen',
+      name: 'FeastFlow Kitchen',
       logoUrl: 'https://cdn.example.com/logo.png',
       coverImage: 'https://cdn.example.com/restaurant-cover.png',
       tagline: 'Fresh food fast',

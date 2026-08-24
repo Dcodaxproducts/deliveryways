@@ -171,13 +171,13 @@ describe('RestaurantsService notification settings', () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      customDomain: 'american-corner.de',
+      customDomain: 'sample-bistro.example',
       customDomainVerifiedAt: null,
       deletedAt: null,
     });
     domainDnsService.getInstructions.mockReturnValue({
       type: 'A',
-      host: 'american-corner.de',
+      host: 'sample-bistro.example',
       hostLabel: '@',
       target: '203.0.113.10',
     });
@@ -200,13 +200,13 @@ describe('RestaurantsService notification settings', () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
-      customDomain: 'american-corner.de',
+      customDomain: 'sample-bistro.example',
       customDomainVerifiedAt: null,
       deletedAt: null,
     });
     domainDnsService.verify.mockResolvedValue({
       type: 'A',
-      host: 'american-corner.de',
+      host: 'sample-bistro.example',
       hostLabel: '@',
       target: '203.0.113.10',
     });
@@ -214,7 +214,7 @@ describe('RestaurantsService notification settings', () => {
       (_id: string, data: Record<string, unknown>) =>
         Promise.resolve({
           id: 'restaurant-1',
-          customDomain: 'american-corner.de',
+          customDomain: 'sample-bistro.example',
           deletedAt: null,
           ...data,
         }),
@@ -225,7 +225,9 @@ describe('RestaurantsService notification settings', () => {
       'restaurant-1',
     );
 
-    expect(domainDnsService.verify).toHaveBeenCalledWith('american-corner.de');
+    expect(domainDnsService.verify).toHaveBeenCalledWith(
+      'sample-bistro.example',
+    );
     const updateData = repository.update.mock.calls[0]?.[1];
     expect(updateData?.customDomainVerifiedAt).toBeInstanceOf(Date);
     expect(result.data.verified).toBe(true);
@@ -467,7 +469,7 @@ describe('RestaurantsService notification settings', () => {
           privacyPolicy: 'Privacy text',
         },
         legalProfile: {
-          legalBusinessName: 'DeliveryWays Kitchen LLC',
+          legalBusinessName: 'FeastFlow Kitchen LLC',
           ownerName: 'Ali Khan',
           taxNumber: 'VAT-123',
           businessAddress: {
@@ -488,7 +490,7 @@ describe('RestaurantsService notification settings', () => {
       'restaurant-1',
       {
         ownerName: 'Ali Khan',
-        legalBusinessName: 'DeliveryWays Kitchen LLC',
+        legalBusinessName: 'FeastFlow Kitchen LLC',
         taxNumber: 'VAT-123',
         businessAddress: {
           city: 'Lahore',
@@ -506,7 +508,7 @@ describe('RestaurantsService notification settings', () => {
             privacyPolicy: 'Privacy text',
           },
           legalProfile: {
-            legalBusinessName: 'DeliveryWays Kitchen LLC',
+            legalBusinessName: 'FeastFlow Kitchen LLC',
             ownerName: 'Ali Khan',
             taxNumber: 'VAT-123',
             businessAddress: {
@@ -521,7 +523,7 @@ describe('RestaurantsService notification settings', () => {
     );
     expect(result.data.legalProfile).toEqual({
       ownerName: 'Ali Khan',
-      legalBusinessName: 'DeliveryWays Kitchen LLC',
+      legalBusinessName: 'FeastFlow Kitchen LLC',
       taxNumber: 'VAT-123',
       businessAddress: {
         city: 'Lahore',

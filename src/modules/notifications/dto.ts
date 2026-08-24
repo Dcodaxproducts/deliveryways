@@ -86,7 +86,7 @@ export class RegisterPushTokenDto {
   deviceId?: string;
 
   @ApiPropertyOptional({
-    example: 'com.dcodax.deliveryway_driver',
+    example: 'com.dcodax.feastflow_driver',
   })
   @IsOptional()
   @IsString()

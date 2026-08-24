@@ -19,7 +19,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd /var/www/html/deliveryways/server
+            cd /var/www/html/feastflow/server
             git fetch origin develop
             git checkout develop
             git pull origin develop

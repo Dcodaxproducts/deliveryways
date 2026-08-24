@@ -1,4 +1,4 @@
-# DeliveryWay Platform Experience Controls — 2026-07-28
+# FeastFlow Platform Experience Controls — 2026-07-28
 
 ## Problem Statement
 
@@ -93,7 +93,7 @@ Order placement is coupled to slow email delivery, important marketing content i
 
 **Acceptance Criteria**:
 
-1. WHEN Restaurant Admin pages render THEN the browser/application title SHALL omit `DeliveryWay`.
+1. WHEN Restaurant Admin pages render THEN the browser/application title SHALL omit `FeastFlow`.
 2. WHEN the Orders table renders THEN the Customer Info column SHALL not appear.
 3. WHEN order details render THEN customer information SHALL remain available.
 

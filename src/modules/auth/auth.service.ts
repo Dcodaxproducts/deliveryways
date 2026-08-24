@@ -1583,7 +1583,7 @@ export class AuthService {
     const email =
       dto.email ??
       process.env.DEV_SUPER_ADMIN_EMAIL ??
-      'superadmin@deliveryways.dev';
+      'superadmin@feastflow.dev';
     const password =
       dto.password ?? process.env.DEV_SUPER_ADMIN_PASSWORD ?? 'Admin@123456';
 
@@ -2794,7 +2794,7 @@ export class AuthService {
   }
 
   private generateGuestEmail(restaurantId: string): string {
-    return `guest+${restaurantId}+${Date.now()}-${randomBytes(4).toString('hex')}@guest.deliveryways.local`;
+    return `guest+${restaurantId}+${Date.now()}-${randomBytes(4).toString('hex')}@guest.feastflow.local`;
   }
 
   private mergeProfileLocale(

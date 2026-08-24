@@ -781,10 +781,10 @@ describe('AdminReportsService', () => {
       .slice(0, 10)}.csv`;
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'manager@test.com',
-      'DeliveryWays orders export',
+      'FeastFlow orders export',
       'Hi,\n\nYour orders export is attached.\nRows: 1\nFile: ' +
         expectedFileName +
-        '\n\nDeliveryWays',
+        '\n\nFeastFlow',
       {
         attachments: [
           {

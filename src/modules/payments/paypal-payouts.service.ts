@@ -43,7 +43,7 @@ export class PaypalPayoutsService {
       body: JSON.stringify({
         sender_batch_header: {
           sender_batch_id: input.idempotencyKey,
-          email_subject: 'DeliveryWays restaurant payout',
+          email_subject: 'FeastFlow restaurant payout',
           email_message: input.description,
         },
         items: [

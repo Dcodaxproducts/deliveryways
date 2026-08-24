@@ -577,7 +577,7 @@ describe('BranchesService', () => {
     });
     repository.update.mockResolvedValue({
       id: 'branch-1',
-      name: 'American Corner',
+      name: 'Sample Bistro',
     });
     prisma.$transaction.mockImplementation(
       async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
@@ -591,7 +591,7 @@ describe('BranchesService', () => {
       },
       'branch-1',
       {
-        name: 'American Corner',
+        name: 'Sample Bistro',
         branchAdmin: {
           email: 'americancorner@yopmail.com',
           firstName: 'Rames',
@@ -603,7 +603,7 @@ describe('BranchesService', () => {
 
     expect(repository.update).toHaveBeenCalledWith(
       'branch-1',
-      expect.objectContaining({ name: 'American Corner' }),
+      expect.objectContaining({ name: 'Sample Bistro' }),
       expect.any(Object),
     );
     expect(usersService.update).not.toHaveBeenCalled();

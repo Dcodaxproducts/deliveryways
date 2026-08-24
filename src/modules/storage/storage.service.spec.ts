@@ -18,8 +18,8 @@ describe('StorageService', () => {
       AWS_ACCESS_KEY_ID: 'access-key',
       AWS_SECRET_ACCESS_KEY: 'secret-key',
       AWS_REGION: 'eu-west-2',
-      AWS_BUCKET_NAME: 'deliveryway',
-      AWS_PUBLIC_BASE_URL: 'https://deliveryway.s3.eu-west-2.amazonaws.com',
+      AWS_BUCKET_NAME: 'feastflow',
+      AWS_PUBLIC_BASE_URL: 'https://feastflow.s3.eu-west-2.amazonaws.com',
       AWS_PRESIGNED_UPLOAD_EXPIRY_SECONDS: 300,
     };
 
@@ -46,7 +46,7 @@ describe('StorageService', () => {
 
   it('creates signed view URL from stored S3 file url', async () => {
     const result = await service.resolveViewUrl(
-      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/user-1/2026-03-16/burger.png',
+      'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/user-1/2026-03-16/burger.png',
       180,
     );
 
@@ -218,7 +218,7 @@ describe('StorageService', () => {
       },
       {
         fileUrl:
-          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
+          'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
         expiresIn: 180,
       },
     );
@@ -253,24 +253,24 @@ describe('StorageService', () => {
     const result = await service.resolveMediaUrlsDeep({
       profile: {
         avatarUrl:
-          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/user-1/avatar.png',
+          'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/user-1/avatar.png',
       },
       restaurant: {
         logoUrl:
-          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/logo.png',
+          'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/logo.png',
       },
       deal: {
         thumbnailUrl:
-          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/deals/combo.png',
+          'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/deals/combo.png',
       },
       items: [
         {
           imageUrl:
-            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/menu-items/burger.png',
+            'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/menu-items/burger.png',
         },
         {
           imageUrl:
-            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/menu-items/burger.png',
+            'https://feastflow.s3.eu-west-2.amazonaws.com/uploads/tenant-1/menu-items/burger.png',
         },
       ],
     });

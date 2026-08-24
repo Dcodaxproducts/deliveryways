@@ -1,4 +1,4 @@
-# Global Settings Module — DeliveryWays
+# Global Settings Module — FeastFlow
 
 ## Purpose
 Provides a single platform-level settings record for Super Admin configuration.

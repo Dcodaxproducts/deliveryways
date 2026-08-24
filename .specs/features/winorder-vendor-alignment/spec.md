@@ -23,7 +23,7 @@ The deployed WinOrder integration predates PixelPlanet's final onboarding and ex
 
 ### Fixed URL onboarding
 
-As a restaurant operator, I want to configure WinOrder with one fixed DeliveryWay URL and branch credentials so that Store ID is optional.
+As a restaurant operator, I want to configure WinOrder with one fixed FeastFlow URL and branch credentials so that Store ID is optional.
 
 Acceptance criteria:
 
@@ -38,7 +38,7 @@ As a restaurant operator, I want WinOrder orders to import without unnecessary m
 Acceptance criteria:
 
 1. WHEN the payment method is `COD` THEN the exporter SHALL send `PaymentType=Barzahlung` regardless of configured mappings.
-2. WHEN the payment method is Stripe, PayPal, or Wallet and no explicit mapping exists THEN the exporter SHALL send `PaymentType=Über DeliveryWay online bezahlt`.
+2. WHEN the payment method is Stripe, PayPal, or Wallet and no explicit mapping exists THEN the exporter SHALL send `PaymentType=Über FeastFlow online bezahlt`.
 3. WHEN another non-cash method has no explicit mapping THEN the exporter SHALL keep the order retryable with a missing-mapping error.
 4. WHEN a variation has an exact mapping THEN the exporter SHALL use it.
 5. WHEN a variation lacks an exact mapping but its base item is mapped THEN the exporter SHALL reuse the base article and send the variation name in `ArticleSize`.

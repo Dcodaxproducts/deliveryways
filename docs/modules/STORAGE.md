@@ -1,4 +1,4 @@
-# Storage Module — DeliveryWays
+# Storage Module — FeastFlow
 
 ## Purpose
 Provides S3 presigned upload/view URLs so the frontend can upload images directly to AWS S3, optionally request a signed GET URL for private viewing, and delete stored files through the backend.
@@ -81,7 +81,7 @@ Example response payload:
   "method": "PUT",
   "uploadUrl": "https://...signed-url...",
   "key": "menu-items/<scope>/2026-03-16/<uuid>-burger.png",
-  "fileUrl": "https://deliveryway.s3.<region>.amazonaws.com/menu-items/<scope>/2026-03-16/<uuid>-burger.png",
+  "fileUrl": "https://feastflow.s3.<region>.amazonaws.com/menu-items/<scope>/2026-03-16/<uuid>-burger.png",
   "expiresIn": 300,
   "headers": {
     "Content-Type": "image/png"
@@ -104,7 +104,7 @@ Body:
 Example request:
 ```json
 {
-  "fileUrl": "https://deliveryway.s3.eu-west-2.amazonaws.com/avatars/tenant-1/restaurant-1/branch-1/user-1/2026-03-16/avatar.png",
+  "fileUrl": "https://feastflow.s3.eu-west-2.amazonaws.com/avatars/tenant-1/restaurant-1/branch-1/user-1/2026-03-16/avatar.png",
   "expiresIn": 180
 }
 ```
@@ -115,7 +115,7 @@ Example response payload:
   "method": "GET",
   "url": "https://...signed-get-url...",
   "key": "avatars/tenant-1/restaurant-1/branch-1/user-1/2026-03-16/avatar.png",
-  "fileUrl": "https://deliveryway.s3.eu-west-2.amazonaws.com/avatars/tenant-1/restaurant-1/branch-1/user-1/2026-03-16/avatar.png",
+  "fileUrl": "https://feastflow.s3.eu-west-2.amazonaws.com/avatars/tenant-1/restaurant-1/branch-1/user-1/2026-03-16/avatar.png",
   "expiresIn": 180
 }
 ```
@@ -139,7 +139,7 @@ Example response payload:
 {
   "data": {
     "key": "restaurant-logos/tenant-1/restaurant-1/user-9/2026-03-16/logo.png",
-    "fileUrl": "https://deliveryway.s3.eu-west-2.amazonaws.com/restaurant-logos/tenant-1/restaurant-1/user-9/2026-03-16/logo.png"
+    "fileUrl": "https://feastflow.s3.eu-west-2.amazonaws.com/restaurant-logos/tenant-1/restaurant-1/user-9/2026-03-16/logo.png"
   },
   "message": "File deleted successfully"
 }

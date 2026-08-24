@@ -569,7 +569,7 @@ class LandingHomeSettingsDto {
 }
 
 export class LandingPageSettingsDto {
-  @ApiPropertyOptional({ example: 'DeliveryWay' })
+  @ApiPropertyOptional({ example: 'FeastFlow' })
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsString()
@@ -587,7 +587,7 @@ export class LandingPageSettingsDto {
   @IsString()
   footerDescription?: string;
 
-  @ApiPropertyOptional({ example: 'support@delivery-way.de' })
+  @ApiPropertyOptional({ example: 'support@platform.feastflow.co' })
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsString()

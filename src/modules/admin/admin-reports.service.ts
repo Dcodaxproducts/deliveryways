@@ -342,7 +342,7 @@ export class AdminReportsService {
 
     await this.mailerService.sendEmail(
       dto.email,
-      `DeliveryWays ${this.getReportExportLabel(dto.type)} export`,
+      `FeastFlow ${this.getReportExportLabel(dto.type)} export`,
       [
         `Hi,`,
         '',
@@ -350,7 +350,7 @@ export class AdminReportsService {
         `Rows: ${rowCount}`,
         `File: ${fileName}`,
         '',
-        'DeliveryWays',
+        'FeastFlow',
       ].join('\n'),
       {
         attachments: [
@@ -486,7 +486,7 @@ export class AdminReportsService {
     const tenant = this.asObject(snapshot.tenant);
     const totals = this.asObject(snapshot.totals);
     const content = this.buildSimplePdf([
-      'DeliveryWay Generated Invoice',
+      'FeastFlow Generated Invoice',
       '',
       `Invoice: ${invoice.invoiceNumber}`,
       `Type: ${invoice.kind.replaceAll('_', ' ')}`,
@@ -922,7 +922,7 @@ export class AdminReportsService {
       `Branch: ${invoice.branch.name}`,
       `Total: ${this.formatMoney(Number(invoice.totalAmount))} ${currency}`,
       '',
-      'Thank you for ordering with DeliveryWays.',
+      'Thank you for ordering with FeastFlow.',
     ].join('\n');
   }
 

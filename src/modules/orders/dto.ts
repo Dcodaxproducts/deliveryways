@@ -138,7 +138,7 @@ export class GuestOrderContactDto {
   @Transform(({ value }) => normalizeEmailValue(value as unknown))
   @IsEmail()
   @MaxLength(254)
-  @Matches(/^(?!.*@guest\.deliveryways?(?:\.local)?$).+$/i)
+  @Matches(/^(?!.*@guest\.feastflow?(?:\.local)?$).+$/i)
   email!: string;
 
   @ApiPropertyOptional({ example: '+49 151 23456789' })

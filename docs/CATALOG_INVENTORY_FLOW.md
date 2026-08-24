@@ -1,4 +1,4 @@
-# DeliveryWays Catalog & Inventory Flow
+# FeastFlow Catalog & Inventory Flow
 
 ## Objective
 Define a restaurant-first module design for menu/catalog and inventory with clear role ownership, branch-level overrides, and scalable API boundaries.

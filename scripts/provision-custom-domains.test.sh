@@ -16,7 +16,7 @@ MOCK
 
 cat >"$TEST_ROOT/bin/dig" <<'MOCK'
 #!/usr/bin/env bash
-printf '%s\n' "${MOCK_DNS_IP:-116.203.179.120}"
+printf '%s\n' "${MOCK_DNS_IP:-192.0.2.10}"
 MOCK
 
 cat >"$TEST_ROOT/bin/plesk" <<'MOCK'
@@ -24,7 +24,11 @@ cat >"$TEST_ROOT/bin/plesk" <<'MOCK'
 set -eu
 printf '%s\n' "$*" >>"$MOCK_LOG"
 if [[ "$1 $2 $3" == "bin site --info" ]]; then
-  [[ -d "$PLESK_SYSTEM_DIR/$4/conf" ]]
+  if [[ -d "$PLESK_SYSTEM_DIR/$4/conf" ]]; then
+    printf 'Webspace: %s\n' "${MOCK_EXISTING_WEBSPACE:-$PLESK_WEBSPACE}"
+  else
+    exit 1
+  fi
 elif [[ "$1 $2 $3" == "bin site --create" ]]; then
   mkdir -p "$PLESK_SYSTEM_DIR/$4/conf"
 fi
@@ -45,6 +49,9 @@ run_provisioner() {
   PATH="$TEST_ROOT/bin:$PATH" \
   ALLOW_NON_ROOT=true \
   LOCK_FILE="$TEST_ROOT/provisioner.lock" \
+  EXPECTED_IPV4=192.0.2.10 \
+  PLESK_WEBSPACE=platform.feastflow.co \
+  CUSTOMER_PORT=5203 \
   MOCK_CURL_COUNT="$TEST_ROOT/state/curl-count" \
   MOCK_LOG="$TEST_ROOT/state/plesk.log" \
   PLESK_SYSTEM_DIR="$TEST_ROOT/vhosts" \
@@ -55,7 +62,7 @@ run_provisioner
 grep -Fq 'bin site --create orders.example.com' "$TEST_ROOT/state/plesk.log"
 grep -Fq 'sbin httpdmng --reconfigure-domain orders.example.com' "$TEST_ROOT/state/plesk.log"
 grep -Fq 'ext sslit --certificate -issue -domain orders.example.com -secure-domain' "$TEST_ROOT/state/plesk.log"
-grep -Fq 'proxy_pass http://127.0.0.1:5053;' "$TEST_ROOT/vhosts/orders.example.com/conf/vhost_nginx.conf"
+grep -Fq 'proxy_pass http://127.0.0.1:5203;' "$TEST_ROOT/vhosts/orders.example.com/conf/vhost_nginx.conf"
 grep -Fq 'location ~ ^/(?!\.well-known/acme-challenge/)' "$TEST_ROOT/vhosts/orders.example.com/conf/vhost_nginx.conf"
 
 issue_count_before="$(grep -Fc 'ext sslit --certificate -issue' "$TEST_ROOT/state/plesk.log")"
@@ -72,5 +79,12 @@ MOCK_DOMAINS='bad;hostname' run_provisioner && {
   printf '%s\n' 'expected invalid hostname run to fail' >&2
   exit 1
 }
+
+mkdir -p "$TEST_ROOT/vhosts/foreign.example.com/conf"
+MOCK_DOMAINS=foreign.example.com MOCK_EXISTING_WEBSPACE=unrelated.example run_provisioner && {
+  printf '%s\n' 'expected foreign Plesk webspace run to fail' >&2
+  exit 1
+}
+[[ ! -e "$TEST_ROOT/vhosts/foreign.example.com/conf/vhost_nginx.conf" ]]
 
 printf '%s\n' 'custom-domain provisioner tests passed'

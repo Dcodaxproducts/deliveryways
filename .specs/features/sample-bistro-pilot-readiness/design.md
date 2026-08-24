@@ -1,6 +1,6 @@
-# American Corner Pilot Readiness Design
+# Sample Bistro Pilot Readiness Design
 
-**Spec:** `.specs/features/american-corner-pilot-readiness/spec.md`
+**Spec:** `.specs/features/sample-bistro-pilot-readiness/spec.md`
 **Status:** Approved by implementation request
 
 ## Architecture

@@ -24,7 +24,7 @@ Allow Super Admin to create monetization plans that restaurants purchase. Plans 
 - PB-010 All Super Admin management endpoints are protected by `SUPER_ADMIN` role.
 
 ## Existing Implementation Baseline
-DeliveryWays already has `PackagePlan` and `TenantSubscription` with:
+FeastFlow already has `PackagePlan` and `TenantSubscription` with:
 - `billingModel`: `COMMISSION | PLAN | HYBRID`
 - `billingInterval`: `MONTHLY | YEARLY`
 - `planPrice`, `commissionPercentage`, `currency`, `trialDays`, `features`, active/default flags

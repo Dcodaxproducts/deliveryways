@@ -440,7 +440,7 @@ export class PackagePlansRepository {
                 amount: appliedAmount.negated(),
                 balanceAfter,
                 currency: input.currency,
-                note: 'DeliveryWays subscription invoice settled from restaurant wallet',
+                note: 'FeastFlow subscription invoice settled from restaurant wallet',
                 metadata: {
                   target: 'TENANT_SUBSCRIPTION',
                   subscriptionId: input.subscriptionId,

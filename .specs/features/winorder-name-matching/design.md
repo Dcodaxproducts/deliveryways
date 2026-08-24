@@ -53,7 +53,7 @@ type IntegrationOrder = {
 
 | Decision | Choice | Reason |
 | --- | --- | --- |
-| Default match key | DeliveryWay base item/modifier name | WinOrder's recommended productive setup. |
+| Default match key | FeastFlow base item/modifier name | WinOrder's recommended productive setup. |
 | Variation representation | Base name + `ArticleSize` | Vendor-confirmed; avoids per-size mappings. |
 | Catalog comparison location | Browser | Avoids storing/uploading POS master data and requires no new API. |
 | Service charge | Retain explicit article mapping | No documented generic service-charge field exists. |

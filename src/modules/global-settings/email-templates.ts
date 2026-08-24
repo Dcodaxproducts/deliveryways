@@ -160,8 +160,7 @@ export const DEFAULT_CUSTOMER_EMAIL_TEMPLATES: CustomerEmailTemplates = {
   },
   giftCard: {
     de: {
-      subject:
-        '{{buyerName}} hat Ihnen eine DeliveryWay-Geschenkkarte gesendet',
+      subject: '{{buyerName}} hat Ihnen eine FeastFlow-Geschenkkarte gesendet',
       body: [
         '{{title}}',
         '',
@@ -172,11 +171,11 @@ export const DEFAULT_CUSTOMER_EMAIL_TEMPLATES: CustomerEmailTemplates = {
         '',
         '{{message}}',
         '',
-        'Verwenden Sie den Code beim Bezahlen oder in Ihrer DeliveryWay-Wallet.',
+        'Verwenden Sie den Code beim Bezahlen oder in Ihrer FeastFlow-Wallet.',
       ].join('\n'),
     },
     en: {
-      subject: '{{buyerName}} sent you a DeliveryWay gift card',
+      subject: '{{buyerName}} sent you a FeastFlow gift card',
       body: [
         '{{title}}',
         '',
@@ -187,7 +186,7 @@ export const DEFAULT_CUSTOMER_EMAIL_TEMPLATES: CustomerEmailTemplates = {
         '',
         '{{message}}',
         '',
-        'Use the code at checkout or in your DeliveryWay wallet.',
+        'Use the code at checkout or in your FeastFlow wallet.',
       ].join('\n'),
     },
   },

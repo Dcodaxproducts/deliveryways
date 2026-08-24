@@ -99,7 +99,7 @@ describe('MailerService', () => {
       template: 'orderStatus',
       locale: 'en-US',
       variables: {
-        orderNumber: 'DW-42',
+        orderNumber: 'FF-42',
         status: 'Ready',
         branchName: 'Central',
       },
@@ -107,7 +107,7 @@ describe('MailerService', () => {
 
     expect(rendered).toEqual({
       locale: 'en',
-      subject: 'Order DW-42',
+      subject: 'Order FF-42',
       body: 'Ready at Central',
     });
   });

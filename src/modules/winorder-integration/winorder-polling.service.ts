@@ -17,7 +17,7 @@ type CatalogMapping = {
 };
 
 const WINORDER_CASH_PAYMENT_TYPE = 'Barzahlung';
-const WINORDER_ONLINE_PAYMENT_TYPE = 'Über DeliveryWay online bezahlt';
+const WINORDER_ONLINE_PAYMENT_TYPE = 'Über FeastFlow online bezahlt';
 const WINORDER_ONLINE_PAYMENT_METHODS: ReadonlySet<string> = new Set([
   PaymentMethod.STRIPE,
   PaymentMethod.PAYPAL,
@@ -183,9 +183,9 @@ export class WinOrderPollingService {
         StoreName: storeName ?? undefined,
       },
       ServerData: {
-        Agent: 'DeliveryWays',
+        Agent: 'FeastFlow',
         CreateDateTime: order.createdAt.toISOString(),
-        Referer: 'DeliveryWays',
+        Referer: 'FeastFlow',
       },
       Customer: {
         DeliveryAddress: {

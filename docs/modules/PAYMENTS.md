@@ -1,4 +1,4 @@
-# Payments Module — DeliveryWays
+# Payments Module — FeastFlow
 
 ## Purpose
 Provides transaction tracking and operational payment lifecycle for orders.

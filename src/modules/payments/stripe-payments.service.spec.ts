@@ -59,7 +59,7 @@ describe('StripePaymentsService', () => {
         customerId: 'customer-1',
         restaurantId: 'restaurant-1',
       },
-      description: 'DeliveryWay order order-1',
+      description: 'FeastFlow order order-1',
     });
 
     expect(createPaymentIntent).toHaveBeenCalledWith({
@@ -72,13 +72,13 @@ describe('StripePaymentsService', () => {
         customerId: 'customer-1',
         restaurantId: 'restaurant-1',
       },
-      description: 'DeliveryWay order order-1',
+      description: 'FeastFlow order order-1',
     });
   });
 
   it('registers a verified custom domain once for Apple Pay and Google Pay', async () => {
     const { service, paymentMethodDomains } = createService(
-      'www.american-corner.de',
+      'www.sample-bistro.example',
     );
     const input = {
       amount: 12.5,
@@ -89,7 +89,7 @@ describe('StripePaymentsService', () => {
         customerId: 'customer-1',
         restaurantId: 'restaurant-1',
       },
-      description: 'DeliveryWay order order-1',
+      description: 'FeastFlow order order-1',
     };
 
     await service.createPaymentIntent(input);
@@ -97,20 +97,20 @@ describe('StripePaymentsService', () => {
 
     expect(paymentMethodDomains.list).toHaveBeenCalledTimes(1);
     expect(paymentMethodDomains.create).toHaveBeenCalledWith({
-      domain_name: 'www.american-corner.de',
+      domain_name: 'www.sample-bistro.example',
       enabled: true,
     });
   });
 
   it('validates an existing domain when either wallet is inactive', async () => {
     const { service, paymentMethodDomains } = createService(
-      'www.american-corner.de',
+      'www.sample-bistro.example',
     );
     paymentMethodDomains.list.mockResolvedValue({
       data: [
         {
           id: 'pmd_existing',
-          domain_name: 'www.american-corner.de',
+          domain_name: 'www.sample-bistro.example',
           enabled: true,
           apple_pay: { status: 'inactive' },
           google_pay: { status: 'active' },
@@ -119,7 +119,7 @@ describe('StripePaymentsService', () => {
     });
     paymentMethodDomains.validate.mockResolvedValue({
       id: 'pmd_existing',
-      domain_name: 'www.american-corner.de',
+      domain_name: 'www.sample-bistro.example',
       enabled: true,
       apple_pay: { status: 'active' },
       google_pay: { status: 'active' },
@@ -134,7 +134,7 @@ describe('StripePaymentsService', () => {
         customerId: 'customer-1',
         restaurantId: 'restaurant-1',
       },
-      description: 'DeliveryWay order order-1',
+      description: 'FeastFlow order order-1',
     });
 
     expect(paymentMethodDomains.validate).toHaveBeenCalledWith('pmd_existing');
@@ -142,7 +142,7 @@ describe('StripePaymentsService', () => {
 
   it('keeps card checkout available when domain registration is temporarily unavailable', async () => {
     const { service, createPaymentIntent, paymentMethodDomains } =
-      createService('www.american-corner.de');
+      createService('www.sample-bistro.example');
     paymentMethodDomains.list.mockRejectedValue(
       new Error('Stripe domain API unavailable'),
     );
@@ -157,7 +157,7 @@ describe('StripePaymentsService', () => {
           customerId: 'customer-1',
           restaurantId: 'restaurant-1',
         },
-        description: 'DeliveryWay order order-1',
+        description: 'FeastFlow order order-1',
       }),
     ).resolves.toEqual({ id: 'pi_test' });
 

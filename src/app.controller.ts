@@ -10,7 +10,7 @@ export class AppController {
       data: {
         status: 'ok',
       },
-      message: 'DeliveryWays API is live',
+      message: 'FeastFlow API is live',
     };
   }
 
@@ -19,12 +19,12 @@ export class AppController {
   root() {
     return {
       data: {
-        name: 'DeliveryWays API',
+        name: 'FeastFlow API',
         status: 'online',
         docsUrl: '/docs',
         apiBasePath: '/api/v1',
       },
-      message: 'DeliveryWays server is running',
+      message: 'FeastFlow server is running',
     };
   }
 }

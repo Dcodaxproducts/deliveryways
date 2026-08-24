@@ -22,10 +22,10 @@ describe('sanitizeLandingContentHtml', () => {
   it('keeps safe links and editor font formatting', () => {
     expect(
       sanitizeLandingContentHtml(
-        '<font color="#C1121F" size="5">Text</font><a href="https://delivery-way.de">Site</a>',
+        '<font color="#C1121F" size="5">Text</font><a href="https://platform.feastflow.co">Site</a>',
       ),
     ).toBe(
-      '<font color="#C1121F" size="5">Text</font><a href="https://delivery-way.de" target="_blank" rel="noopener noreferrer">Site</a>',
+      '<font color="#C1121F" size="5">Text</font><a href="https://platform.feastflow.co" target="_blank" rel="noopener noreferrer">Site</a>',
     );
   });
 });

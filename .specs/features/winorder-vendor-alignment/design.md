@@ -21,7 +21,7 @@ No new module, table, or endpoint is introduced. The existing WinOrder bounded c
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | Cash label | Always `Barzahlung` for COD | Vendor requires blank or this exact string. |
-| Online default | Stripe/PayPal/Wallet default to `Über DeliveryWay online bezahlt` | These are DeliveryWay-paid online methods confirmed by the vendor. |
+| Online default | Stripe/PayPal/Wallet default to `Über FeastFlow online bezahlt` | These are FeastFlow-paid online methods confirmed by the vendor. |
 | Other non-cash methods | Require explicit mapping | Avoid falsely labeling payment-at-delivery or transfer methods as already paid online. |
 | Variation fallback | Exact variation mapping, then base item mapping | Preserves operator overrides while using WinOrder's automatic variant creation. |
 | Modifiers/service charge | Continue requiring mappings | Vendor behavior is not confirmed. |

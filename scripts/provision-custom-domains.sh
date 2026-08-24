@@ -2,11 +2,12 @@
 
 set -Eeuo pipefail
 
-EXPECTED_IPV4="${EXPECTED_IPV4:-116.203.179.120}"
-DB_CONTAINER="${DB_CONTAINER:-deliveryway-prod-postgres-1}"
-PLESK_WEBSPACE="${PLESK_WEBSPACE:-delivery-way.de}"
+EXPECTED_IPV4="${EXPECTED_IPV4:?EXPECTED_IPV4 is required}"
+DB_CONTAINER="${DB_CONTAINER:-feastflow-prod-postgres-1}"
+PLESK_WEBSPACE="${PLESK_WEBSPACE:?PLESK_WEBSPACE is required}"
 PLESK_SYSTEM_DIR="${PLESK_SYSTEM_DIR:-/var/www/vhosts/system}"
-LOCK_FILE="${LOCK_FILE:-/run/lock/deliveryway-custom-domains.lock}"
+LOCK_FILE="${LOCK_FILE:-/run/lock/feastflow-custom-domains.lock}"
+CUSTOMER_PORT="${CUSTOMER_PORT:-5203}"
 ALLOW_NON_ROOT="${ALLOW_NON_ROOT:-false}"
 
 log() {
@@ -49,11 +50,11 @@ write_proxy_config() {
 
   candidate="$(mktemp)"
   cat >"$candidate" <<'NGINX'
-# Managed by DeliveryWays custom-domain provisioner.
+# Managed by FeastFlow custom-domain provisioner.
 # Plesk defines its own prefix location; this regex wins for storefront routes
 # while leaving the ACME challenge path to Plesk/SSL It.
 location ~ ^/(?!\.well-known/acme-challenge/) {
-    proxy_pass http://127.0.0.1:5053;
+    proxy_pass http://127.0.0.1:__CUSTOMER_PORT__;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -67,8 +68,9 @@ location ~ ^/(?!\.well-known/acme-challenge/) {
     proxy_buffering off;
 }
 NGINX
+  sed -i "s/__CUSTOMER_PORT__/${CUSTOMER_PORT}/" "$candidate"
 
-  if [[ -e "$config_file" ]] && ! grep -Fq 'Managed by DeliveryWays custom-domain provisioner.' "$config_file"; then
+  if [[ -e "$config_file" ]] && ! grep -Fq 'Managed by FeastFlow custom-domain provisioner.' "$config_file"; then
     log "ERROR [$hostname] refusing to replace unmanaged Plesk nginx configuration"
     rm -f "$candidate"
     return 1
@@ -86,8 +88,15 @@ NGINX
 
 ensure_plesk_site() {
   local hostname="$1"
+  local current_webspace
+  local site_info
 
-  if plesk bin site --info "$hostname" >/dev/null 2>&1; then
+  if site_info="$(plesk bin site --info "$hostname" 2>/dev/null)"; then
+    current_webspace="$(printf '%s\n' "$site_info" | awk -F ': *' '$1 ~ /^[[:space:]]*Webspace$/ { print $2; exit }')"
+    if [[ "$current_webspace" != "$PLESK_WEBSPACE" ]]; then
+      log "ERROR [$hostname] belongs to Plesk webspace ${current_webspace:-unknown}; expected $PLESK_WEBSPACE"
+      return 1
+    fi
     return 0
   fi
 
@@ -131,8 +140,8 @@ provision_domain() {
     return 0
   fi
 
-  ensure_plesk_site "$hostname"
-  write_proxy_config "$hostname"
+  ensure_plesk_site "$hostname" || return 1
+  write_proxy_config "$hostname" || return 1
 
   if ! https_is_ready "$hostname"; then
     log "INFO [$hostname] issuing SSL certificate"
@@ -153,7 +162,12 @@ main() {
     exit 1
   fi
 
-  for command in awk cmp curl dig docker flock grep install mktemp plesk; do
+  [[ "$CUSTOMER_PORT" =~ ^[0-9]+$ && "$CUSTOMER_PORT" -ge 1 && "$CUSTOMER_PORT" -le 65535 ]] || {
+    log "ERROR CUSTOMER_PORT must be between 1 and 65535"
+    exit 1
+  }
+
+  for command in awk cmp curl dig docker flock grep install mktemp plesk sed; do
     require_command "$command"
   done
 

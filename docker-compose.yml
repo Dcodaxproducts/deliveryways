@@ -1,21 +1,21 @@
 services:
   postgres:
     image: postgres:16
-    container_name: deliveryways-postgres
+    container_name: feastflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: deliveryways
-      POSTGRES_PASSWORD: deliveryways
-      POSTGRES_DB: deliveryways
+      POSTGRES_USER: feastflow
+      POSTGRES_PASSWORD: feastflow
+      POSTGRES_DB: feastflow
     ports:
       - '127.0.0.1:5434:5432'
     volumes:
-      - deliveryways_postgres_data:/var/lib/postgresql/data
+      - feastflow_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U deliveryways -d deliveryways']
+      test: ['CMD-SHELL', 'pg_isready -U feastflow -d feastflow']
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  deliveryways_postgres_data:
+  feastflow_postgres_data:

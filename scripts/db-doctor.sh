@@ -21,15 +21,15 @@ export DATABASE_URL
 echo "🔎 DATABASE_URL from .env: $DATABASE_URL"
 
 printf "\n🔎 Docker postgres container status\n"
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "deliveryways-postgres|NAMES" || {
-  echo "❌ deliveryways-postgres container is not running"
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "feastflow-postgres|NAMES" || {
+  echo "❌ feastflow-postgres container is not running"
   exit 1
 }
 
-DB_USER="${DB_USER:-deliveryways}"
+DB_USER="${DB_USER:-feastflow}"
 
-printf "\n🔎 Databases inside deliveryways-postgres\n"
-docker exec deliveryways-postgres psql -U "$DB_USER" -d postgres -c "\\l" || {
+printf "\n🔎 Databases inside feastflow-postgres\n"
+docker exec feastflow-postgres psql -U "$DB_USER" -d postgres -c "\\l" || {
   echo "❌ Could not list databases from container"
   exit 1
 }

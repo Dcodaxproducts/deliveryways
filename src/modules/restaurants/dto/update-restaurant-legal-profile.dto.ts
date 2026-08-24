@@ -7,7 +7,7 @@ export class UpdateRestaurantLegalProfileDto {
   @IsString()
   ownerName?: string;
 
-  @ApiPropertyOptional({ example: 'DeliveryWays Kitchen LLC' })
+  @ApiPropertyOptional({ example: 'FeastFlow Kitchen LLC' })
   @IsOptional()
   @IsString()
   legalBusinessName?: string;

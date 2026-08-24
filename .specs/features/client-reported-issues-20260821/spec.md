@@ -2,7 +2,7 @@
 
 ## Problem
 
-DeliveryWay currently exposes inconsistent order counts, empty schedule-filter pages, late/incomplete revenue and commission totals, unstable global tax defaults, incomplete subscription/permission enforcement, and several customer/admin presentation defects. The requested batch must keep API, Restaurant Admin, Super Admin, and Customer behavior consistent without changing tenant isolation or production data during implementation.
+FeastFlow currently exposes inconsistent order counts, empty schedule-filter pages, late/incomplete revenue and commission totals, unstable global tax defaults, incomplete subscription/permission enforcement, and several customer/admin presentation defects. The requested batch must keep API, Restaurant Admin, Super Admin, and Customer behavior consistent without changing tenant isolation or production data during implementation.
 
 ## P1 requirements
 

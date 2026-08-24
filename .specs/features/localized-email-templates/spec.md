@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-DeliveryWay customer emails are hardcoded English plaintext. Super Admin can
+FeastFlow customer emails are hardcoded English plaintext. Super Admin can
 configure notification channels and a platform default language, but cannot
 manage transactional email wording, and registered customer locale is not
 persisted for later order-status emails.

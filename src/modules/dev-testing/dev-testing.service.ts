@@ -60,7 +60,7 @@ export class DevTestingService {
     const registerPayload: RegisterTenantDto = {
       packagePlanId,
       user: {
-        email: dto.ownerEmail ?? `owner.${suffix}@deliveryways.dev`,
+        email: dto.ownerEmail ?? `owner.${suffix}@feastflow.dev`,
         password: ownerPassword,
         firstName: 'Seed',
         lastName: 'Owner',
@@ -144,7 +144,7 @@ export class DevTestingService {
     });
 
     const customerEmail =
-      dto.customerEmail ?? `customer.${suffix}@deliveryways.dev`;
+      dto.customerEmail ?? `customer.${suffix}@feastflow.dev`;
 
     await this.authService.registerCustomer({
       restaurantId: tenantResult.data.restaurantId,

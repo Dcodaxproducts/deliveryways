@@ -1,4 +1,4 @@
-# DeliveryWay Container Deployment Design
+# FeastFlow Container Deployment Design
 
 **Spec**: `.specs/features/container-deployment/spec.md`
 **Status**: Approved from the deployment decisions confirmed in conversation
@@ -46,7 +46,7 @@ The application images are defined in their owning repositories. Cross-applicati
 
 - **Purpose**: Define services, private networking, volumes, health checks, localhost bindings, logging, and restart behavior.
 - **Location**: backend `deploy/compose.yml`, `deploy/compose.development.yml`, `deploy/compose.staging.yml`, `deploy/compose.production.yml`.
-- **Interfaces**: explicit `docker compose -p deliveryway-{environment}` commands.
+- **Interfaces**: explicit `docker compose -p feastflow-{environment}` commands.
 
 ### Operational scripts
 
