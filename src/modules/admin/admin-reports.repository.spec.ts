@@ -3,12 +3,15 @@ import {
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
+  Prisma,
 } from '@prisma/client';
 import { AdminReportsRepository } from './admin-reports.repository';
 
 describe('AdminReportsRepository', () => {
   it('includes restaurant-level billing invoices for an authorized branch scope', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
+    const findMany = jest
+      .fn<Promise<never[]>, [Prisma.GeneratedInvoiceFindManyArgs]>()
+      .mockResolvedValue([]);
     const repository = new AdminReportsRepository({
       generatedInvoice: { findMany },
     } as never);
@@ -22,14 +25,13 @@ describe('AdminReportsRepository', () => {
       { kind: 'SUBSCRIPTION' } as never,
     );
 
-    expect(findMany).toHaveBeenCalledWith(
+    const [findManyArgs] = findMany.mock.calls[0];
+    expect(findManyArgs.where).toEqual(
       expect.objectContaining({
-        where: expect.objectContaining({
-          tenantId: 'tenant-1',
-          restaurantId: 'restaurant-1',
-          OR: [{ branchId: 'branch-1' }, { branchId: null }],
-          kind: 'SUBSCRIPTION',
-        }),
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        OR: [{ branchId: 'branch-1' }, { branchId: null }],
+        kind: 'SUBSCRIPTION',
       }),
     );
   });
