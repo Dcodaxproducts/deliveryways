@@ -70,4 +70,4 @@ The new FeastFlow platform was initialized from another delivery-platform codeba
 - [x] Zero copied identity/client/server matches in tracked files.
 - [x] Official FeastFlow logo is used by all fallback-brand surfaces.
 - [x] All affected repositories pass typecheck, lint, build, and tests.
-- [ ] All changes are committed and pushed to their `main` branches.
+- [x] All changes are committed and pushed to their `main` branches.
