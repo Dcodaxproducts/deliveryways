@@ -44,4 +44,3 @@
 - API: Prisma validate/generate, typecheck, build, lint, full tests, migration scratch verification if schema changes.
 - Each frontend: tests, typecheck, production build, lint, translation parity.
 - Run `git diff --check`, commit atomically, and push all branches. No deployment.
-

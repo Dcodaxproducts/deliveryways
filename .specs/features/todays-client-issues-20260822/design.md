@@ -29,4 +29,3 @@
 - Existing API error envelopes and frontend toasts remain in use.
 - Invoice View handles popup blocking and PDF request failure.
 - Failed pagination fetch keeps already loaded items and allows retry.
-
