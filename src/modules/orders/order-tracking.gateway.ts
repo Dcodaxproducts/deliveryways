@@ -38,6 +38,7 @@ export class OrderTrackingGateway
   server!: Server;
 
   private readonly logger = new Logger(OrderTrackingGateway.name);
+  private adminScopeResolutionQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -56,7 +57,7 @@ export class OrderTrackingGateway
     try {
       const user = await this.authenticate(client);
       this.setSocketUser(client, user);
-      const adminOrdersRoom = await this.getAdminOrdersRoom(user, client);
+      const adminOrdersRoom = await this.getAdminOrdersRoomQueued(user, client);
       if (adminOrdersRoom) {
         await client.join(adminOrdersRoom);
       }
@@ -185,6 +186,22 @@ export class OrderTrackingGateway
     return this.notificationsRealtimeService.getRestaurantOrdersRoom(
       scope.restaurantId,
     );
+  }
+
+  private getAdminOrdersRoomQueued(
+    user: AuthUserContext,
+    client: OrderTrackingSocket,
+  ): Promise<string | null> {
+    const resolution = this.adminScopeResolutionQueue.then(() =>
+      this.getAdminOrdersRoom(user, client),
+    );
+
+    this.adminScopeResolutionQueue = resolution.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return resolution;
   }
 
   private resolveOptionalString(value: unknown) {
