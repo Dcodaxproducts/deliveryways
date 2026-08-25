@@ -3,7 +3,7 @@ import { OrdersRepository } from './orders.repository';
 
 type OrderSearchWhere = {
   restaurantId?: string;
-  status?: { not: OrderStatus };
+  status?: { not?: OrderStatus; in?: OrderStatus[] };
   createdAt?: { gte?: Date; lte?: Date };
   orderTime?: { gte?: Date; lte?: Date };
   isScheduled?: boolean;
@@ -329,6 +329,39 @@ describe('OrdersRepository', () => {
     expect(findManyCall?.skip).toBe(10);
     expect(findManyCall?.take).toBe(10);
     expect(countCall?.where).toEqual(expectedWhere);
+  });
+
+  it('lists only successful orders when requested', async () => {
+    const prisma = {
+      $transaction: jest.fn().mockResolvedValue([[], 0]),
+      order: {
+        findMany: jest.fn().mockReturnValue('findManyResult'),
+        count: jest.fn().mockReturnValue('countResult'),
+      },
+    };
+    const repository = new OrdersRepository(prisma as never);
+
+    await repository.list('restaurant-1', {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      successfulOnly: true,
+    } as never);
+
+    const findManyCalls = prisma.order.findMany.mock.calls as unknown as Array<
+      [OrderFindManyArgs]
+    >;
+    const countCalls = prisma.order.count.mock.calls as unknown as Array<
+      [OrderCountArgs]
+    >;
+    const findManyCall = findManyCalls[0]?.[0];
+    const countCall = countCalls[0]?.[0];
+
+    expect(findManyCall?.where?.status?.in).toEqual(
+      expect.arrayContaining([OrderStatus.CONFIRMED, OrderStatus.DELIVERED]),
+    );
+    expect(countCall?.where?.status).toEqual(findManyCall?.where?.status);
   });
 
   it('persists branch-provided order time without changing ASAP scheduling', async () => {

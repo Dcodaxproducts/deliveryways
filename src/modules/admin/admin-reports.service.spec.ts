@@ -531,11 +531,17 @@ describe('AdminReportsService', () => {
     const invoiceRecordsService = {
       recordDownload: jest.fn().mockResolvedValue(undefined),
     };
+    const packagePlansService = {
+      generateStoredInvoicePdf: jest
+        .fn()
+        .mockReturnValue(Buffer.from('%PDF-1.4\nOrder Payment Details')),
+    };
     const service = new AdminReportsService(
       repository as never,
       undefined,
       undefined,
       invoiceRecordsService as never,
+      packagePlansService as never,
     );
 
     const result = await service.downloadGeneratedInvoicePdf(
@@ -554,7 +560,11 @@ describe('AdminReportsService', () => {
       'generated-1',
     );
     expect(result.fileName).toBe('SUB-INV-202607.pdf');
-    expect(result.content.toString('utf8')).toContain('%PDF-1.4');
+    expect(result.content.toString('utf8')).toContain('Order Payment Details');
+    expect(packagePlansService.generateStoredInvoicePdf).toHaveBeenCalledWith(
+      'SUBSCRIPTION',
+      expect.objectContaining({ totals: { subscriptionFee: 125 } }),
+    );
     expect(invoiceRecordsService.recordDownload).toHaveBeenCalledWith(
       'generated-1',
       'business-1',

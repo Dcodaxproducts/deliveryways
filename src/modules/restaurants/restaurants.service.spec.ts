@@ -181,6 +181,7 @@ describe('RestaurantsService notification settings', () => {
       hostLabel: '@',
       target: '203.0.113.10',
     });
+    domainDnsService.verify.mockRejectedValue(new Error('DNS is not ready'));
 
     await expect(
       service.customDomainStatus(
@@ -194,6 +195,40 @@ describe('RestaurantsService notification settings', () => {
       },
     });
     expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('automatically records a working custom domain when status is read', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      customDomain: 'american-corner.de',
+      customDomainVerifiedAt: null,
+      deletedAt: null,
+    });
+    domainDnsService.verify.mockResolvedValue({
+      type: 'A',
+      host: 'american-corner.de',
+      hostLabel: '@',
+      target: '203.0.113.10',
+    });
+    domainDnsService.getInstructions.mockReturnValue({
+      type: 'A',
+      host: 'american-corner.de',
+      hostLabel: '@',
+      target: '203.0.113.10',
+    });
+    repository.update.mockResolvedValue({});
+
+    const result = await service.customDomainStatus(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data.verified).toBe(true);
+    expect(result.data.verifiedAt).toBeInstanceOf(Date);
+    const updateData = repository.update.mock.calls[0]?.[1];
+    expect(repository.update.mock.calls[0]?.[0]).toBe('restaurant-1');
+    expect(updateData?.customDomainVerifiedAt).toBeInstanceOf(Date);
   });
 
   it('persists the verification timestamp only after DNS verification', async () => {

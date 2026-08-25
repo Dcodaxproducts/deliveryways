@@ -12,6 +12,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../../database';
+import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
 import {
   AdminExportCustomersCsvQueryDto,
   AdminExportCampaignsCsvQueryDto,
@@ -29,17 +30,6 @@ export interface AdminReportsScope {
   restaurantId?: string;
   branchId?: string;
 }
-
-const RECOGNIZED_ORDER_REVENUE_STATUSES: OrderStatus[] = [
-  OrderStatus.CONFIRMED,
-  OrderStatus.PREPARING,
-  OrderStatus.READY_FOR_PICKUP,
-  OrderStatus.PICKED_UP,
-  OrderStatus.READY_TO_SERVE,
-  OrderStatus.SERVED,
-  OrderStatus.OUT_FOR_DELIVERY,
-  OrderStatus.DELIVERED,
-];
 
 const DIGITAL_PAYMENT_METHODS: PaymentMethod[] = [
   PaymentMethod.STRIPE,
@@ -410,7 +400,11 @@ export class AdminReportsRepository {
         ...(scope.branchId
           ? { OR: [{ branchId: scope.branchId }, { branchId: null }] }
           : {}),
-        ...(query.kind ? { kind: query.kind } : {}),
+        ...(query.kind
+          ? { kind: query.kind }
+          : query.excludeKind
+            ? { kind: { not: query.excludeKind } }
+            : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.subscriptionId
           ? { subscriptionId: query.subscriptionId }
@@ -718,10 +712,10 @@ export class AdminReportsRepository {
     const recognizedWhere: Prisma.OrderWhereInput = {
       ...where,
       status: query.status
-        ? RECOGNIZED_ORDER_REVENUE_STATUSES.includes(query.status)
+        ? SUCCESSFUL_ORDER_STATUSES.includes(query.status)
           ? query.status
           : { in: [] }
-        : { in: RECOGNIZED_ORDER_REVENUE_STATUSES },
+        : { in: SUCCESSFUL_ORDER_STATUSES },
     };
     const [aggregate, recognizedAggregate, paymentMethodTotals, orders, items] =
       await this.prisma.$transaction([
@@ -732,6 +726,7 @@ export class AdminReportsRepository {
         }),
         this.prisma.order.aggregate({
           where: recognizedWhere,
+          _count: { id: true },
           _sum: { totalAmount: true },
           _avg: { totalAmount: true },
         }),
@@ -774,7 +769,7 @@ export class AdminReportsRepository {
       );
 
     return {
-      totalOrders: aggregate._count.id,
+      totalOrders: recognizedAggregate._count.id,
       totalRevenue: Number(recognizedAggregate._sum.totalAmount ?? 0),
       averageOrderValue: Number(recognizedAggregate._avg.totalAmount ?? 0),
       codAmount: amountFor([PaymentMethod.COD]),
@@ -945,8 +940,13 @@ export class AdminReportsRepository {
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.excludeStatus ? { status: { not: query.excludeStatus } } : {}),
+      ...(query.status
+        ? { status: query.status }
+        : query.successfulOnly
+          ? { status: { in: SUCCESSFUL_ORDER_STATUSES } }
+          : query.excludeStatus
+            ? { status: { not: query.excludeStatus } }
+            : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
       ...(query.kind === 'group-orders'

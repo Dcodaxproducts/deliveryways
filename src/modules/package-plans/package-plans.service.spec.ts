@@ -445,24 +445,16 @@ describe('PackagePlansService', () => {
         .mockResolvedValue(makeSubscription()),
       listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
         makePaidOrder({
+          totalAmount: new Prisma.Decimal(1008),
           transactions: [
             {
               id: 'charge-1',
               type: PaymentTransactionType.CHARGE,
-              amount: new Prisma.Decimal(1000),
+              amount: new Prisma.Decimal(1010),
               currency: 'PKR',
               paymentMethod: PaymentMethod.STRIPE,
               providerRef: 'pi_123',
               processedAt: new Date('2026-06-09T10:00:00.000Z'),
-            },
-            {
-              id: 'refund-1',
-              type: PaymentTransactionType.REFUND,
-              amount: new Prisma.Decimal(200),
-              currency: 'PKR',
-              paymentMethod: PaymentMethod.STRIPE,
-              providerRef: 're_123',
-              processedAt: new Date('2026-06-10T10:00:00.000Z'),
             },
           ],
         }),
@@ -475,9 +467,9 @@ describe('PackagePlansService', () => {
       service.getRestaurantPayoutBalanceSummary('restaurant-1'),
     ).resolves.toMatchObject({
       ordersCount: 1,
-      grossAmount: 800,
-      platformCommissionAmount: 40,
-      restaurantPayoutAmount: 760,
+      grossAmount: 1008,
+      platformCommissionAmount: 50.4,
+      restaurantPayoutAmount: 957.6,
       currency: 'PKR',
       activePlan: {
         subscriptionId: 'subscription-12345678',
@@ -491,6 +483,35 @@ describe('PackagePlansService', () => {
         payoutCycle: PackagePayoutCycle.WEEKLY,
       },
     });
+  });
+
+  it('uses only the current billing cycle for a recurring invoice', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(
+        makeSubscription({
+          startsAt: new Date('2026-07-20T00:00:00.000Z'),
+          nextBillingAt: new Date('2026-09-20T00:00:00.000Z'),
+        }),
+      ),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.servicePeriod).toEqual({
+      from: new Date('2026-08-20T00:00:00.000Z'),
+      to: new Date('2026-09-20T00:00:00.000Z'),
+    });
+    expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      new Date('2026-08-20T00:00:00.000Z'),
+      new Date('2026-09-20T00:00:00.000Z'),
+      true,
+    );
   });
 
   it('includes paid order breakdown and only applies online orders as credit', async () => {
@@ -690,6 +711,31 @@ describe('PackagePlansService', () => {
     );
   });
 
+  it('rebuilds a detailed subscription PDF from a stored JSON snapshot', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+    };
+    const service = new PackagePlansService(repository as never);
+    const invoice = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+    const snapshot = JSON.parse(
+      JSON.stringify(invoice.data),
+    ) as Prisma.JsonValue;
+
+    const pdf = service.generateStoredInvoicePdf(
+      GeneratedInvoiceKind.SUBSCRIPTION,
+      snapshot,
+    );
+    const pdfText = pdf.toString('utf8');
+
+    expect(pdfText).toContain('Order Payment Details');
+    expect(pdfText).toContain('order-1');
+    expect(pdfText).toContain('Total Revenue');
+  });
+
   it('sends restaurant subscription invoice to billing email', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
@@ -852,6 +898,43 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('order-1');
     expect(pdfText).toContain('Gross');
     expect(pdfText).toContain('Net');
+  });
+
+  it('rebuilds a detailed payout PDF from a stored JSON snapshot', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+    };
+    const service = new PackagePlansService(repository as never);
+    const invoice = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-04T00:00:00.000Z',
+      toDate: '2026-06-11T00:00:00.000Z',
+    });
+    const snapshot = JSON.parse(
+      JSON.stringify(invoice.data),
+    ) as Prisma.JsonValue;
+
+    const pdf = service.generateStoredInvoicePdf(
+      GeneratedInvoiceKind.WEEKLY_PAYOUT,
+      snapshot,
+    );
+    const pdfText = pdf.toString('utf8');
+
+    expect(pdfText).toContain('Order Payout Details');
+    expect(pdfText).toContain('order-1');
+    expect(pdfText).toContain('Platform Commission');
   });
 
   it('auto-emails due subscription invoices once and advances next billing date', async () => {

@@ -1,7 +1,44 @@
-import { UserRole } from '@prisma/client';
+import { OrderStatus, UserRole } from '@prisma/client';
 import { AdminDashboardRepository } from './admin-dashboard.repository';
 
 describe('AdminDashboardRepository', () => {
+  it('uses successful orders for dashboard totals while retaining cancellation breakdown', async () => {
+    const prisma = {
+      $transaction: jest.fn((queries: unknown[]) => Promise.resolve(queries)),
+      order: {
+        aggregate: jest.fn().mockReturnValue({
+          _count: { id: 2 },
+          _sum: { totalAmount: 1008 },
+          _avg: { totalAmount: 504 },
+        }),
+        findMany: jest.fn().mockReturnValue([
+          { status: OrderStatus.DELIVERED, paymentStatus: 'PAID' },
+          { status: OrderStatus.CANCELLED, paymentStatus: 'CANCELLED' },
+        ]),
+      },
+    };
+    const repository = new AdminDashboardRepository(prisma as never);
+
+    const result = await repository.getOrdersStats({
+      restaurantId: 'restaurant-1',
+    });
+
+    const aggregateCalls = prisma.order.aggregate.mock
+      .calls as unknown as Array<
+      [{ where: { restaurantId: string; status: { in: OrderStatus[] } } }]
+    >;
+    const aggregateCall = aggregateCalls[0][0];
+    expect(aggregateCall.where.restaurantId).toBe('restaurant-1');
+    expect(aggregateCall.where.status.in).toContain(OrderStatus.CONFIRMED);
+    expect(aggregateCall.where.status.in).toContain(OrderStatus.DELIVERED);
+    expect(result.totalOrders).toBe(2);
+    expect(result.totalRevenue).toBe(1008);
+    expect(result.statusBreakdown).toContainEqual({
+      status: OrderStatus.CANCELLED,
+      count: 1,
+    });
+  });
+
   it('counts business owner stats using the same non-deleted owner/tenant filter as the includeInactive superadmin list', async () => {
     const prisma = {
       $transaction: jest.fn((queries: unknown[]) => Promise.resolve(queries)),

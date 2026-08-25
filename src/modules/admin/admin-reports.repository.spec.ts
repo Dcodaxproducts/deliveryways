@@ -22,16 +22,16 @@ describe('AdminReportsRepository', () => {
       { kind: 'SUBSCRIPTION' } as never,
     );
 
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          tenantId: 'tenant-1',
-          restaurantId: 'restaurant-1',
-          OR: [{ branchId: 'branch-1' }, { branchId: null }],
-          kind: 'SUBSCRIPTION',
-        }),
-      }),
-    );
+    const findManyCalls = findMany.mock.calls as unknown as Array<
+      [{ where: Record<string, unknown> }]
+    >;
+    const findManyCall = findManyCalls[0][0];
+    expect(findManyCall.where).toMatchObject({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      OR: [{ branchId: 'branch-1' }, { branchId: null }],
+      kind: 'SUBSCRIPTION',
+    });
   });
 
   it('allows an authorized branch to view a restaurant-level billing PDF', async () => {
@@ -68,6 +68,7 @@ describe('AdminReportsRepository', () => {
           _sum: { deliveryFee: 0, discountAmount: 0 },
         })
         .mockResolvedValueOnce({
+          _count: { id: 0 },
           _sum: { totalAmount: 0 },
           _avg: { totalAmount: 0 },
         }),
@@ -146,6 +147,7 @@ describe('AdminReportsRepository', () => {
             _sum: { deliveryFee: 6, discountAmount: 2 },
           })
           .mockResolvedValueOnce({
+            _count: { id: 3 },
             _sum: { totalAmount: 75 },
             _avg: { totalAmount: 25 },
           }),
@@ -182,6 +184,44 @@ describe('AdminReportsRepository', () => {
     expect(recognizedRevenueAggregate?.where?.status?.in).toEqual(
       expect.arrayContaining([OrderStatus.CONFIRMED]),
     );
+  });
+
+  it('filters order rows to the same successful statuses used by totals', async () => {
+    const order = {
+      aggregate: jest
+        .fn()
+        .mockResolvedValueOnce({
+          _count: { id: 1 },
+          _sum: { deliveryFee: 0, discountAmount: 0 },
+        })
+        .mockResolvedValueOnce({
+          _count: { id: 1 },
+          _sum: { totalAmount: 100 },
+          _avg: { totalAmount: 100 },
+        }),
+      groupBy: jest.fn().mockResolvedValue([]),
+      findMany: jest.fn().mockResolvedValue([]),
+    };
+    const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
+    const prisma = {
+      order,
+      orderItem,
+      $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
+        Promise.all(queries),
+      ),
+    };
+    const repository = new AdminReportsRepository(prisma as never);
+
+    await repository.getOrdersReport(
+      { restaurantId: 'restaurant-1' },
+      { successfulOnly: true },
+    );
+
+    const findManyCalls = order.findMany.mock.calls as unknown as Array<
+      [{ where: { status: { in: OrderStatus[] } } }]
+    >;
+    const findManyCall = findManyCalls[0][0];
+    expect(findManyCall.where.status.in).toContain(OrderStatus.CONFIRMED);
   });
 
   it('counts successful REFUNDED transactions in refunded and net revenue', async () => {

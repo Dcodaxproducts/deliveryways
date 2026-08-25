@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
+import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
 import { ListOrdersDto } from './dto';
 import { IntegrationScope } from './orders-integration.port';
 
@@ -436,8 +437,13 @@ export class OrdersRepository {
     const where: Prisma.OrderWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.excludeStatus ? { status: { not: query.excludeStatus } } : {}),
+      ...(query.status
+        ? { status: query.status }
+        : query.successfulOnly
+          ? { status: { in: SUCCESSFUL_ORDER_STATUSES } }
+          : query.excludeStatus
+            ? { status: { not: query.excludeStatus } }
+            : {}),
       ...(query.orderType ? { orderType: query.orderType } : {}),
       ...(query.createdFrom || query.createdTo
         ? {
