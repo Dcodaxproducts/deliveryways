@@ -38,7 +38,6 @@ export class OrderTrackingGateway
   server!: Server;
 
   private readonly logger = new Logger(OrderTrackingGateway.name);
-  private adminScopeResolutionQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -57,10 +56,6 @@ export class OrderTrackingGateway
     try {
       const user = await this.authenticate(client);
       this.setSocketUser(client, user);
-      const adminOrdersRoom = await this.getAdminOrdersRoomQueued(user, client);
-      if (adminOrdersRoom) {
-        await client.join(adminOrdersRoom);
-      }
       this.logger.log(
         `Order tracking socket connected: ${client.id} (${user.uid})`,
       );
@@ -157,55 +152,6 @@ export class OrderTrackingGateway
 
   private setSocketUser(client: OrderTrackingSocket, user: AuthUserContext) {
     (client.data as { user?: AuthUserContext }).user = user;
-  }
-
-  private async getAdminOrdersRoom(
-    user: AuthUserContext,
-    client: OrderTrackingSocket,
-  ) {
-    const auth = client.handshake.auth as Record<string, unknown>;
-    const requestedRestaurantId = this.resolveOptionalString(auth.restaurantId);
-    const requestedBranchId = this.resolveOptionalString(auth.branchId);
-    const scope = await this.ordersService.resolveRealtimeAdminOrderScope(
-      user,
-      requestedRestaurantId,
-      requestedBranchId,
-    );
-
-    if (!scope) {
-      return null;
-    }
-
-    if (scope.branchId) {
-      return this.notificationsRealtimeService.getBranchOrdersRoom(
-        scope.restaurantId,
-        scope.branchId,
-      );
-    }
-
-    return this.notificationsRealtimeService.getRestaurantOrdersRoom(
-      scope.restaurantId,
-    );
-  }
-
-  private getAdminOrdersRoomQueued(
-    user: AuthUserContext,
-    client: OrderTrackingSocket,
-  ): Promise<string | null> {
-    const resolution = this.adminScopeResolutionQueue.then(() =>
-      this.getAdminOrdersRoom(user, client),
-    );
-
-    this.adminScopeResolutionQueue = resolution.then(
-      () => undefined,
-      () => undefined,
-    );
-
-    return resolution;
-  }
-
-  private resolveOptionalString(value: unknown) {
-    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   }
 
   private getSocketUser(client: OrderTrackingSocket) {
