@@ -274,6 +274,12 @@ export class AdminExportOrdersCsvQueryDto extends AdminReportsScopedQueryDto {
   @IsEnum(OrderStatus)
   excludeStatus?: OrderStatus;
 
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  successfulOnly?: boolean;
+
   @ApiPropertyOptional({ enum: OrderTypeEnum })
   @IsOptional()
   @IsEnum(OrderTypeEnum)
@@ -507,6 +513,11 @@ export class AdminGeneratedInvoicesQueryDto extends AdminReportsScopedQueryDto {
   @IsOptional()
   @IsEnum(GeneratedInvoiceKind)
   kind?: GeneratedInvoiceKind;
+
+  @ApiPropertyOptional({ enum: GeneratedInvoiceKind })
+  @IsOptional()
+  @IsEnum(GeneratedInvoiceKind)
+  excludeKind?: GeneratedInvoiceKind;
 
   @ApiPropertyOptional({ enum: GeneratedInvoiceStatus })
   @IsOptional()

@@ -350,6 +350,12 @@ export class ListOrdersDto extends QueryDto {
   @IsEnum(OrderStatus)
   excludeStatus?: OrderStatus;
 
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  successfulOnly?: boolean;
+
   @ApiPropertyOptional({ enum: OrderTypeEnum })
   @IsOptional()
   @IsEnum(OrderTypeEnum)

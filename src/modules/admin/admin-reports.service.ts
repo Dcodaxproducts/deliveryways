@@ -18,6 +18,7 @@ import { GlobalSettingsService } from '../global-settings/global-settings.servic
 import { UserRoleEnum } from '../../common/enums';
 import { InvoicePdfBuilder } from '../../common/pdf/invoice-pdf.builder';
 import { InvoiceRecordsService } from '../invoices/invoice-records.service';
+import { PackagePlansService } from '../package-plans/package-plans.service';
 import {
   AdminReportsRepository,
   AdminReportsScope,
@@ -48,6 +49,7 @@ export class AdminReportsService {
     private readonly mailerService?: MailerService,
     private readonly globalSettingsService?: GlobalSettingsService,
     private readonly invoiceRecordsService?: InvoiceRecordsService,
+    private readonly packagePlansService?: PackagePlansService,
   ) {}
 
   async exportMenuCsv(
@@ -479,6 +481,24 @@ export class AdminReportsService {
 
     if (invoice.kind === GeneratedInvoiceKind.ORDER && invoice.orderId) {
       return this.downloadInvoicePdf(user, invoice.orderId, query);
+    }
+
+    if (
+      this.packagePlansService &&
+      (invoice.kind === GeneratedInvoiceKind.SUBSCRIPTION ||
+        invoice.kind === GeneratedInvoiceKind.WEEKLY_PAYOUT)
+    ) {
+      const content = this.packagePlansService.generateStoredInvoicePdf(
+        invoice.kind,
+        invoice.snapshot,
+      );
+      await this.invoiceRecordsService?.recordDownload(invoice.id, user.uid);
+
+      return {
+        fileName: `${invoice.invoiceNumber}.pdf`,
+        mimeType: 'application/pdf',
+        content,
+      };
     }
 
     const snapshot = this.asObject(invoice.snapshot);

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DeliverymanStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../../database';
+import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
   AdminDashboardTopRestaurantsRange,
@@ -249,7 +250,7 @@ export class AdminDashboardRepository {
   ): Promise<AdminDashboardOrdersTrend> {
     const buckets = this.buildTrendBuckets(range);
     const startAt = buckets[0]?.start ?? new Date();
-    const where = this.buildOrderWhere(scope);
+    const where = this.buildSuccessfulOrderWhere(scope);
 
     const [countBeforeRange, ordersInRange] = await this.prisma.$transaction([
       this.prisma.order.count({
@@ -347,22 +348,22 @@ export class AdminDashboardRepository {
     scope: AdminDashboardScope,
   ): Promise<AdminDashboardOrdersStats> {
     const where = this.buildOrderWhere(scope);
-    const [totalOrders, revenueAggregate, orders] =
-      await this.prisma.$transaction([
-        this.prisma.order.count({ where }),
-        this.prisma.order.aggregate({
-          where,
-          _sum: { totalAmount: true },
-          _avg: { totalAmount: true },
-        }),
-        this.prisma.order.findMany({
-          where,
-          select: {
-            status: true,
-            paymentStatus: true,
-          },
-        }),
-      ]);
+    const successfulWhere = this.buildSuccessfulOrderWhere(scope);
+    const [successfulAggregate, orders] = await this.prisma.$transaction([
+      this.prisma.order.aggregate({
+        where: successfulWhere,
+        _count: { id: true },
+        _sum: { totalAmount: true },
+        _avg: { totalAmount: true },
+      }),
+      this.prisma.order.findMany({
+        where,
+        select: {
+          status: true,
+          paymentStatus: true,
+        },
+      }),
+    ]);
 
     const statusMap = orders.reduce<Map<string, number>>((acc, order) => {
       acc.set(order.status, (acc.get(order.status) ?? 0) + 1);
@@ -378,9 +379,9 @@ export class AdminDashboardRepository {
     );
 
     return {
-      totalOrders,
-      totalRevenue: Number(revenueAggregate._sum.totalAmount ?? 0),
-      averageOrderValue: Number(revenueAggregate._avg.totalAmount ?? 0),
+      totalOrders: successfulAggregate._count.id,
+      totalRevenue: Number(successfulAggregate._sum.totalAmount ?? 0),
+      averageOrderValue: Number(successfulAggregate._avg.totalAmount ?? 0),
       statusBreakdown: Array.from(statusMap.entries()).map(
         ([status, count]) => ({
           status,
@@ -463,6 +464,7 @@ export class AdminDashboardRepository {
     scope: AdminDashboardScope,
   ): Promise<AdminDashboardRestaurantOverview> {
     const orderWhere = this.buildOrderWhere(scope);
+    const successfulOrderWhere = this.buildSuccessfulOrderWhere(scope);
     const customerWhere = this.buildCustomerWhere(scope);
     const deliverymanWhere = this.buildDeliverymanWhere(scope);
     const employeeWhere = this.buildEmployeeWhere(scope);
@@ -478,7 +480,7 @@ export class AdminDashboardRepository {
       activeEmployees,
     ] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
-        where: orderWhere,
+        where: successfulOrderWhere,
         _count: { id: true },
         _sum: { totalAmount: true },
         _avg: { totalAmount: true },
@@ -824,7 +826,7 @@ export class AdminDashboardRepository {
       deletedAt: null,
     };
     const ordersWhere = {
-      ...this.buildOrderWhere(scope),
+      ...this.buildSuccessfulOrderWhere(scope),
       ...(startAt ? { createdAt: { gte: startAt } } : {}),
     };
 
@@ -1092,6 +1094,13 @@ export class AdminDashboardRepository {
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
+    };
+  }
+
+  private buildSuccessfulOrderWhere(scope: AdminDashboardScope) {
+    return {
+      ...this.buildOrderWhere(scope),
+      status: { in: SUCCESSFUL_ORDER_STATUSES },
     };
   }
 

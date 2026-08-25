@@ -198,23 +198,28 @@ export class RestaurantsService {
 
     await this.ensureRestaurantReadAccess(user, restaurant.id);
 
+    const reconciledRestaurant =
+      await this.reconcileCustomDomainVerification(restaurant);
+
     return {
-      data: await this.withDeletionState(restaurant),
+      data: await this.withDeletionState(reconciledRestaurant),
       message: 'Restaurant fetched successfully',
     };
   }
 
   async customDomainStatus(user: AuthUserContext, id: string) {
     const restaurant = await this.requireCustomDomainRestaurant(user, id);
+    const reconciledRestaurant =
+      await this.reconcileCustomDomainVerification(restaurant);
     const instructions = this.customDomainDnsService.getInstructions(
-      restaurant.customDomain,
+      reconciledRestaurant.customDomain,
     );
 
     return {
       data: {
-        customDomain: restaurant.customDomain,
-        verified: Boolean(restaurant.customDomainVerifiedAt),
-        verifiedAt: restaurant.customDomainVerifiedAt,
+        customDomain: reconciledRestaurant.customDomain,
+        verified: Boolean(reconciledRestaurant.customDomainVerifiedAt),
+        verifiedAt: reconciledRestaurant.customDomainVerifiedAt,
         dns: instructions,
       },
       message: 'Custom domain status fetched successfully',
@@ -1826,5 +1831,30 @@ export class RestaurantsService {
     }
 
     return restaurant as typeof restaurant & { customDomain: string };
+  }
+
+  private async reconcileCustomDomainVerification<
+    T extends {
+      id: string;
+      customDomain: string | null;
+      customDomainVerifiedAt: Date | null;
+    },
+  >(restaurant: T): Promise<T> {
+    if (!restaurant.customDomain || restaurant.customDomainVerifiedAt) {
+      return restaurant;
+    }
+
+    try {
+      await this.customDomainDnsService.verify(restaurant.customDomain);
+    } catch {
+      return restaurant;
+    }
+
+    const customDomainVerifiedAt = new Date();
+    await this.restaurantsRepository.update(restaurant.id, {
+      customDomainVerifiedAt,
+    });
+
+    return { ...restaurant, customDomainVerifiedAt };
   }
 }

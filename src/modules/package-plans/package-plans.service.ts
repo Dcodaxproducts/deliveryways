@@ -644,8 +644,16 @@ export class PackagePlansService {
           new Prisma.Decimal(0),
         );
 
+        const commissionableAmount = Prisma.Decimal.max(
+          Prisma.Decimal.min(
+            new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2),
+            netCollectedAmount,
+          ),
+          new Prisma.Decimal(0),
+        ).toDecimalPlaces(2);
+
         const line = this.toWeeklyPayoutOrderLine(
-          { ...order, totalAmount: netCollectedAmount },
+          { ...order, totalAmount: commissionableAmount },
           plan,
           currency,
           specialPayouts.payoutAmountsByOrder.get(order.id) ??
@@ -724,6 +732,57 @@ export class PackagePlansService {
       mimeType: 'application/pdf',
       content,
     };
+  }
+
+  generateStoredInvoicePdf(
+    kind: GeneratedInvoiceKind,
+    snapshot: Prisma.JsonValue,
+  ) {
+    if (kind === GeneratedInvoiceKind.SUBSCRIPTION) {
+      const invoice = snapshot as unknown as Awaited<
+        ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+      >;
+      const hydratedInvoice = {
+        ...invoice,
+        issuedAt: this.parseStoredInvoiceDate(invoice.issuedAt),
+        dueAt: this.parseStoredInvoiceDate(invoice.dueAt),
+        servicePeriod: {
+          from: this.parseStoredInvoiceDate(invoice.servicePeriod.from),
+          to: this.parseStoredInvoiceDate(invoice.servicePeriod.to),
+        },
+        orderBreakdown: {
+          ...invoice.orderBreakdown,
+          orders: invoice.orderBreakdown.orders.map((order) => ({
+            ...order,
+            date: this.parseStoredInvoiceDate(order.date),
+          })),
+        },
+      };
+
+      return this.generateSubscriptionInvoicePdf(hydratedInvoice);
+    }
+
+    if (kind === GeneratedInvoiceKind.WEEKLY_PAYOUT) {
+      const invoice = snapshot as unknown as Awaited<
+        ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+      >;
+      const hydratedInvoice = {
+        ...invoice,
+        issuedAt: this.parseStoredInvoiceDate(invoice.issuedAt),
+        period: {
+          from: this.parseStoredInvoiceDate(invoice.period.from),
+          to: this.parseStoredInvoiceDate(invoice.period.to),
+        },
+        lineItems: invoice.lineItems.map((item) => ({
+          ...item,
+          paidAt: item.paidAt ? this.parseStoredInvoiceDate(item.paidAt) : null,
+        })),
+      };
+
+      return this.generateWeeklyPayoutInvoicePdf(hydratedInvoice);
+    }
+
+    throw new BadRequestException('Stored invoice kind is not supported');
   }
 
   async sendWeeklyPayoutInvoiceEmail(
@@ -1450,7 +1509,10 @@ export class PackagePlansService {
   private async buildSubscriptionInvoice(id: string) {
     const subscription = await this.getSubscriptionOrThrow(id);
     const plan = this.resolveSubscriptionInvoicePlan(subscription);
-    const servicePeriod = this.resolveSubscriptionInvoicePeriod(subscription);
+    const servicePeriod = this.resolveSubscriptionInvoicePeriod(
+      subscription,
+      plan.billingInterval,
+    );
     const commissionOrders = subscription.restaurantId
       ? await this.packagePlansRepository.listPaidRestaurantOrders(
           subscription.restaurantId,
@@ -1737,14 +1799,52 @@ export class PackagePlansService {
 
   private resolveSubscriptionInvoicePeriod(
     subscription: TenantSubscriptionDetails,
+    billingInterval: BillingInterval,
   ) {
+    if (subscription.nextBillingAt) {
+      return {
+        from: this.resolvePreviousBillingAt(
+          billingInterval,
+          subscription.nextBillingAt,
+        ),
+        to: subscription.nextBillingAt,
+      };
+    }
+
     return {
       from: subscription.startsAt,
-      to:
-        subscription.nextBillingAt ??
-        subscription.endsAt ??
-        subscription.startsAt,
+      to: subscription.endsAt ?? subscription.startsAt,
     };
+  }
+
+  private resolvePreviousBillingAt(
+    billingInterval: BillingInterval,
+    billingAt: Date,
+  ) {
+    const previousBillingAt = new Date(billingAt);
+
+    switch (billingInterval) {
+      case BillingInterval.DAILY:
+        previousBillingAt.setUTCDate(previousBillingAt.getUTCDate() - 1);
+        break;
+      case BillingInterval.WEEKLY:
+        previousBillingAt.setUTCDate(previousBillingAt.getUTCDate() - 7);
+        break;
+      case BillingInterval.BIWEEKLY:
+        previousBillingAt.setUTCDate(previousBillingAt.getUTCDate() - 14);
+        break;
+      case BillingInterval.YEARLY:
+        previousBillingAt.setUTCFullYear(
+          previousBillingAt.getUTCFullYear() - 1,
+        );
+        break;
+      case BillingInterval.MONTHLY:
+      default:
+        previousBillingAt.setUTCMonth(previousBillingAt.getUTCMonth() - 1);
+        break;
+    }
+
+    return previousBillingAt;
   }
 
   private isTransactionFeePlan(
@@ -2695,6 +2795,17 @@ export class PackagePlansService {
 
   private formatInvoiceDate(value: Date | null | undefined) {
     return value ? value.toISOString().slice(0, 10) : 'N/A';
+  }
+
+  private parseStoredInvoiceDate(value: unknown) {
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(date.getTime())) {
+      throw new InternalServerErrorException(
+        'Stored invoice snapshot contains an invalid date',
+      );
+    }
+
+    return date;
   }
 
   private formatCommissionSummary(
