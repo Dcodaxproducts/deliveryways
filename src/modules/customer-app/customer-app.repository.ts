@@ -32,6 +32,39 @@ const publicMenuItemVariationCardSelect = {
   isActive: true,
 } satisfies Prisma.MenuItemVariationSelect;
 
+const publicMenuItemScheduleSelect = {
+  categoryId: true,
+  category: {
+    select: {
+      menuLinks: {
+        select: {
+          restaurantMenu: { select: restaurantMenuScheduleSelect },
+        },
+      },
+    },
+  },
+  categoryLinks: {
+    select: {
+      menuCategoryId: true,
+      menuCategory: {
+        select: {
+          menuLinks: {
+            select: {
+              restaurantMenu: { select: restaurantMenuScheduleSelect },
+            },
+          },
+        },
+      },
+    },
+  },
+  menuLinks: {
+    select: {
+      isActive: true,
+      restaurantMenu: { select: restaurantMenuScheduleSelect },
+    },
+  },
+} satisfies Prisma.MenuItemSelect;
+
 @Injectable()
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -1387,7 +1420,7 @@ export class CustomerAppRepository {
       },
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.cuisine.findMany({
         where,
         skip: (query.page - 1) * query.limit,
@@ -1404,15 +1437,12 @@ export class CustomerAppRepository {
           itemLinks: {
             where: { menuItem: itemVisibilityWhere },
             orderBy: [{ sortOrder: 'asc' }],
-            include: {
+            select: {
+              sortOrder: true,
               menuItem: {
-                include: includeItems
-                  ? this.buildPublicMenuItemInclude(branchId)
-                  : {
-                      categoryLinks: {
-                        select: { menuCategoryId: true },
-                      },
-                    },
+                select: includeItems
+                  ? publicMenuItemScheduleSelect
+                  : { categoryId: true, categoryLinks: true },
               },
             },
           },

@@ -15,6 +15,10 @@ type FindManyMenuCategories = (
 type CountMenuCategories = (
   args: Prisma.MenuCategoryCountArgs,
 ) => Promise<number>;
+type FindManyCuisines = (
+  args: Prisma.CuisineFindManyArgs,
+) => Promise<unknown[]>;
+type CountCuisines = (args: Prisma.CuisineCountArgs) => Promise<number>;
 
 type CompactMenuItemInclude = {
   category: {
@@ -61,6 +65,41 @@ type DetailMenuItemInclude = {
 };
 
 describe('CustomerAppRepository', () => {
+  it('loads cuisine schedule data without a read transaction or item detail graph', async () => {
+    const findMany = jest
+      .fn<ReturnType<FindManyCuisines>, Parameters<FindManyCuisines>>()
+      .mockResolvedValue([]);
+    const count = jest
+      .fn<ReturnType<CountCuisines>, Parameters<CountCuisines>>()
+      .mockResolvedValue(0);
+    const transaction = jest.fn();
+    const repository = new CustomerAppRepository({
+      cuisine: { findMany, count },
+      $transaction: transaction,
+    } as unknown as PrismaService);
+
+    await repository.listCuisineCategories(
+      {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        page: 1,
+        limit: 8,
+        sortBy: 'sortOrder',
+        sortOrder: 'ASC',
+      },
+      { includeItems: true },
+    );
+
+    expect(transaction).not.toHaveBeenCalled();
+    expect(count).toHaveBeenCalledTimes(1);
+
+    const query = findMany.mock.calls[0]?.[0];
+    const serializedQuery = JSON.stringify(query);
+    expect(serializedQuery).toContain('restaurantMenu');
+    expect(serializedQuery).not.toContain('modifierLinks');
+    expect(serializedQuery).not.toContain('variations');
+  });
+
   it('counts only active, non-deleted restaurant branches', async () => {
     const count = jest.fn().mockResolvedValue(1);
     const repository = new CustomerAppRepository({
