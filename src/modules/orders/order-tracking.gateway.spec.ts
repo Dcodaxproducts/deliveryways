@@ -1,17 +1,13 @@
-import { ForbiddenException } from '@nestjs/common';
 import { UserRoleEnum } from '../../common/enums';
 import { OrderTrackingGateway } from './order-tracking.gateway';
 
 describe('OrderTrackingGateway', () => {
-  const makeGateway = (
-    user: {
-      uid: string;
-      role: UserRoleEnum;
-      rid?: string;
-      bid?: string;
-    },
-    scope: { restaurantId: string; branchId?: string } | null = null,
-  ) => {
+  const makeGateway = (user: {
+    uid: string;
+    role: UserRoleEnum;
+    rid?: string;
+    bid?: string;
+  }) => {
     const realtimeService = {
       registerServer: jest.fn(),
       getRestaurantOrdersRoom: jest.fn(
@@ -23,7 +19,7 @@ describe('OrderTrackingGateway', () => {
       ),
     };
     const ordersService = {
-      resolveRealtimeAdminOrderScope: jest.fn().mockResolvedValue(scope),
+      resolveRealtimeAdminOrderScope: jest.fn(),
     };
     const gateway = new OrderTrackingGateway(
       {
@@ -55,45 +51,33 @@ describe('OrderTrackingGateway', () => {
     return { gateway, client, realtimeService, ordersService };
   };
 
-  it('joins business admins using their validated handshake restaurant', async () => {
+  it('authenticates business admins without querying their database scope', async () => {
     const user = {
       uid: 'owner-1',
       role: UserRoleEnum.BUSINESS_ADMIN,
     };
-    const { gateway, client, ordersService } = makeGateway(user, {
-      restaurantId: 'restaurant-1',
+    const { gateway, client, ordersService } = makeGateway(user);
+
+    await gateway.handleConnection(client as never);
+
+    expect(ordersService.resolveRealtimeAdminOrderScope).not.toHaveBeenCalled();
+    expect(client.join).not.toHaveBeenCalled();
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('authenticates branch admins without querying their database scope', async () => {
+    const { gateway, client, ordersService } = makeGateway({
+      uid: 'branch-admin-1',
+      role: UserRoleEnum.BRANCH_ADMIN,
+      rid: 'restaurant-1',
+      bid: 'branch-1',
     });
 
     await gateway.handleConnection(client as never);
 
-    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledWith(
-      user,
-      'restaurant-1',
-      'branch-1',
-    );
-    expect(client.join).toHaveBeenCalledWith('orders:restaurant:restaurant-1');
+    expect(ordersService.resolveRealtimeAdminOrderScope).not.toHaveBeenCalled();
+    expect(client.join).not.toHaveBeenCalled();
     expect(client.disconnect).not.toHaveBeenCalled();
-  });
-
-  it('joins branch admins only to their branch order room', async () => {
-    const { gateway, client } = makeGateway(
-      {
-        uid: 'branch-admin-1',
-        role: UserRoleEnum.BRANCH_ADMIN,
-        rid: 'restaurant-1',
-        bid: 'branch-1',
-      },
-      {
-        restaurantId: 'restaurant-1',
-        branchId: 'branch-1',
-      },
-    );
-
-    await gateway.handleConnection(client as never);
-
-    expect(client.join).toHaveBeenCalledWith(
-      'orders:restaurant:restaurant-1:branch:branch-1',
-    );
   });
 
   it('does not join customers to an administrative order room', async () => {
@@ -109,38 +93,12 @@ describe('OrderTrackingGateway', () => {
     expect(client.disconnect).not.toHaveBeenCalled();
   });
 
-  it('rejects an admin token without its required restaurant context', async () => {
-    const { gateway, client, ordersService } = makeGateway({
-      uid: 'owner-1',
-      role: UserRoleEnum.BUSINESS_ADMIN,
-    });
-    ordersService.resolveRealtimeAdminOrderScope.mockRejectedValue(
-      new ForbiddenException('Restaurant context is required'),
-    );
-
-    await gateway.handleConnection(client as never);
-
-    expect(client.emit).toHaveBeenCalledWith('order.tracking.error', {
-      code: 'UNAUTHORIZED',
-      message: 'Restaurant context is required',
-    });
-    expect(client.disconnect).toHaveBeenCalledWith(true);
-  });
-
-  it('serializes concurrent administrative scope lookups', async () => {
+  it('does not perform database work for concurrent socket connections', async () => {
     const user = {
       uid: 'owner-1',
       role: UserRoleEnum.BUSINESS_ADMIN,
     };
     const { gateway, client, ordersService } = makeGateway(user);
-    let releaseFirstLookup: (() => void) | undefined;
-    const firstLookup = new Promise<{ restaurantId: string }>((resolve) => {
-      releaseFirstLookup = () => resolve({ restaurantId: 'restaurant-1' });
-    });
-    ordersService.resolveRealtimeAdminOrderScope
-      .mockImplementationOnce(() => firstLookup)
-      .mockResolvedValueOnce({ restaurantId: 'restaurant-1' });
-
     const firstClient = client as never;
     const secondClient = {
       ...client,
@@ -149,22 +107,11 @@ describe('OrderTrackingGateway', () => {
       join: jest.fn().mockResolvedValue(undefined),
     } as never;
 
-    const firstConnection = gateway.handleConnection(firstClient);
-    await Promise.resolve();
-    await Promise.resolve();
-    const secondConnection = gateway.handleConnection(secondClient);
-    await Promise.resolve();
-    await Promise.resolve();
+    await Promise.all([
+      gateway.handleConnection(firstClient),
+      gateway.handleConnection(secondClient),
+    ]);
 
-    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledTimes(
-      1,
-    );
-
-    releaseFirstLookup?.();
-    await Promise.all([firstConnection, secondConnection]);
-
-    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledTimes(
-      2,
-    );
+    expect(ordersService.resolveRealtimeAdminOrderScope).not.toHaveBeenCalled();
   });
 });
