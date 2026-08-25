@@ -126,4 +126,45 @@ describe('OrderTrackingGateway', () => {
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
   });
+
+  it('serializes concurrent administrative scope lookups', async () => {
+    const user = {
+      uid: 'owner-1',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    };
+    const { gateway, client, ordersService } = makeGateway(user);
+    let releaseFirstLookup: (() => void) | undefined;
+    const firstLookup = new Promise<{ restaurantId: string }>((resolve) => {
+      releaseFirstLookup = () => resolve({ restaurantId: 'restaurant-1' });
+    });
+    ordersService.resolveRealtimeAdminOrderScope
+      .mockImplementationOnce(() => firstLookup)
+      .mockResolvedValueOnce({ restaurantId: 'restaurant-1' });
+
+    const firstClient = client as never;
+    const secondClient = {
+      ...client,
+      id: 'socket-2',
+      data: {},
+      join: jest.fn().mockResolvedValue(undefined),
+    } as never;
+
+    const firstConnection = gateway.handleConnection(firstClient);
+    await Promise.resolve();
+    await Promise.resolve();
+    const secondConnection = gateway.handleConnection(secondClient);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledTimes(
+      1,
+    );
+
+    releaseFirstLookup?.();
+    await Promise.all([firstConnection, secondConnection]);
+
+    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledTimes(
+      2,
+    );
+  });
 });
