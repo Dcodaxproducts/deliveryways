@@ -988,7 +988,7 @@ describe('AuthService login', () => {
       includeDeleted: true,
     });
     expect(result.data.user.role).toBe(UserRoleEnum.BUSINESS_ADMIN);
-    expect(result.data.user.restaurantId).toBeNull();
+    expect(result.data.user.restaurantId).toBe('restaurant-1');
     expect(result.data.user.branchId).toBeNull();
   });
 

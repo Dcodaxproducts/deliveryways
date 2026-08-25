@@ -1119,6 +1119,7 @@ export class CartService {
       requestedCustomerId,
       requestedRestaurantId,
       dto.guestDeliveryAddress,
+      dto.paymentMethod,
     );
     const quoteResponse = this.toCartQuoteResponse(quote.data);
     const displayCart = await this.buildCartResponse(cart);
@@ -3003,6 +3004,7 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
     guestDeliveryAddress?: GuestOrderDeliveryAddressDto,
+    paymentMethod?: PaymentMethodEnum,
   ) {
     try {
       return await this.quoteCartClearingStaleOrderTime(
@@ -3011,6 +3013,7 @@ export class CartService {
         requestedCustomerId,
         requestedRestaurantId,
         guestDeliveryAddress,
+        paymentMethod,
       );
     } catch (error) {
       if (
@@ -3030,7 +3033,11 @@ export class CartService {
 
       return this.ordersService.quoteForCouponValidation(
         user,
-        await this.toQuotePayload(quoteCart, guestDeliveryAddress),
+        await this.toQuotePayload(
+          quoteCart,
+          guestDeliveryAddress,
+          paymentMethod,
+        ),
       );
     }
   }
@@ -3041,11 +3048,12 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
     guestDeliveryAddress?: GuestOrderDeliveryAddressDto,
+    paymentMethod?: PaymentMethodEnum,
   ) {
     try {
       return await this.ordersService.quote(
         user,
-        await this.toQuotePayload(cart, guestDeliveryAddress),
+        await this.toQuotePayload(cart, guestDeliveryAddress, paymentMethod),
       );
     } catch (error) {
       if (
@@ -3065,7 +3073,11 @@ export class CartService {
 
       return this.ordersService.quote(
         user,
-        await this.toQuotePayload(refreshedCart, guestDeliveryAddress),
+        await this.toQuotePayload(
+          refreshedCart,
+          guestDeliveryAddress,
+          paymentMethod,
+        ),
       );
     }
   }
@@ -3199,6 +3211,7 @@ export class CartService {
   private async toQuotePayload(
     cart: CartSnapshot,
     guestDeliveryAddress?: GuestOrderDeliveryAddressDto,
+    paymentMethod?: PaymentMethodEnum,
   ): Promise<QuoteOrderDto> {
     const orderType = this.toOrderTypeEnum(cart.orderType);
 
@@ -3212,6 +3225,10 @@ export class CartService {
           ? ((await this.resolveEffectiveDeliveryAddressId(cart)) ?? undefined)
           : undefined,
       guestDeliveryAddress,
+      paymentMethod:
+        paymentMethod ??
+        (cart.paymentMethod as PaymentMethodEnum | null) ??
+        undefined,
       couponCode: cart.couponCode ?? undefined,
       tipAmount: Number(cart.tipAmount),
       orderTime:

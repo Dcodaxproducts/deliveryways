@@ -451,10 +451,7 @@ export class NotificationsService {
             '',
             ...customerEmail.body.split('\n').filter((line) => {
               const normalizedLine = line.trim();
-              if (
-                Number(order.taxAmount ?? 0) === 0 &&
-                /^(Steuern|Tax):/i.test(normalizedLine)
-              ) {
+              if (/^(Steuern|Steuer|Tax):/i.test(normalizedLine)) {
                 return false;
               }
               if (
@@ -1147,7 +1144,6 @@ export class NotificationsService {
         value: order.subtotal,
         always: true,
       },
-      { label: label('Tax', 'Steuer'), value: order.taxAmount },
       {
         label: label('Delivery fee', 'Liefergebühr'),
         value: order.deliveryFee,
@@ -1216,7 +1212,7 @@ export class NotificationsService {
       '',
       ...feeLines,
       `${label('Total amount', 'Gesamtbetrag')}: ${money(order.totalAmount)}`,
-      `${label('Payment method', 'Zahlungsart')}: ${order.paymentMethod}`,
+      `${label('Payment method', 'Zahlungsart')}: ${this.localizePaymentMethod(order.paymentMethod, locale)}`,
       `${label('Payment status', 'Zahlungsstatus')}: ${order.paymentStatus}`,
       `${label('Note', 'Hinweis')}: ${order.customerNote || label('None', 'Keine')}`,
     ].join('\n');
@@ -1710,6 +1706,31 @@ export class NotificationsService {
       : orderType === 'DELIVERY'
         ? 'Lieferung'
         : 'Abholung';
+  }
+
+  private localizePaymentMethod(
+    paymentMethod: PaymentMethod,
+    locale: 'de' | 'en',
+  ): string {
+    if (paymentMethod === PaymentMethod.COD) {
+      return locale === 'de' ? 'BAR' : 'Cash';
+    }
+
+    if (paymentMethod === PaymentMethod.CARD_ON_DELIVERY) {
+      return locale === 'de'
+        ? 'Kartenzahlung bei Lieferung'
+        : 'Card on delivery';
+    }
+
+    if (
+      paymentMethod === PaymentMethod.STRIPE ||
+      paymentMethod === PaymentMethod.PAYPAL ||
+      paymentMethod === PaymentMethod.WALLET
+    ) {
+      return locale === 'de' ? 'Online bezahlt' : 'Online paid';
+    }
+
+    return paymentMethod;
   }
 
   private localizeOrderStatus(status: string, locale: 'de' | 'en'): string {

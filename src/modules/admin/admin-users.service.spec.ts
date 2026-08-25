@@ -9,6 +9,45 @@ import { AdminUsersService } from './admin-users.service';
 
 describe('AdminUsersService', () => {
   describe('listCustomers', () => {
+    it('shows a guest checkout email while preserving the generated account email', async () => {
+      const usersService = {
+        listCustomers: jest.fn().mockResolvedValue({
+          items: [
+            {
+              id: 'guest-1',
+              email: 'guest-generated@guest.local',
+              isGuest: true,
+              isActive: true,
+              profile: {
+                metadata: {
+                  guestContact: { email: ' guest@example.com ' },
+                },
+              },
+            },
+          ],
+          total: 1,
+        }),
+      };
+      const service = new AdminUsersService(usersService as never, {} as never);
+
+      const result = await service.listCustomers(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        } as never,
+        { page: 1, limit: 20 } as never,
+      );
+
+      expect(result.data[0]).toEqual(
+        expect.objectContaining({
+          email: 'guest@example.com',
+          accountEmail: 'guest-generated@guest.local',
+          isGuest: true,
+        }),
+      );
+    });
+
     it('scopes staff customer lists to the selected assigned restaurant', async () => {
       const usersService = {
         listCustomers: jest.fn().mockResolvedValue({ items: [], total: 0 }),

@@ -299,6 +299,11 @@ export class CartCustomerScopeDto {
 }
 
 export class QuoteCartDto {
+  @ApiPropertyOptional({ enum: PaymentMethodEnum })
+  @IsOptional()
+  @IsEnum(PaymentMethodEnum)
+  paymentMethod?: PaymentMethodEnum;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
