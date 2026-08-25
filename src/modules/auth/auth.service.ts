@@ -887,8 +887,7 @@ export class AuthService {
           role: user.role,
           actorType: 'USER',
           tenantId: user.tenantId,
-          restaurantId:
-            user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
+          restaurantId: user.restaurantId,
           branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
           isVerified: user.isVerified,
           isApproved: user.isApproved,
@@ -967,8 +966,7 @@ export class AuthService {
           role: user.role,
           actorType: 'USER',
           tenantId: user.tenantId,
-          restaurantId:
-            user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
+          restaurantId: user.restaurantId,
           branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
           isVerified: user.isVerified,
           isApproved: user.isApproved,
@@ -1035,8 +1033,7 @@ export class AuthService {
           role: user.role,
           actorType: 'USER',
           tenantId: user.tenantId,
-          restaurantId:
-            user.role === 'BUSINESS_ADMIN' ? null : user.restaurantId,
+          restaurantId: user.restaurantId,
           branchId: user.role === 'BUSINESS_ADMIN' ? null : user.branchId,
           isVerified: user.isVerified,
           isApproved: user.isApproved,

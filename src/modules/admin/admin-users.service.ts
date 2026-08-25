@@ -54,7 +54,9 @@ export class AdminUsersService {
     );
 
     return {
-      data: items.map((item) => this.withDeletionState(item)),
+      data: items.map((item) =>
+        this.withDeletionState(this.withCustomerContact(item)),
+      ),
       message: 'Customers fetched successfully',
       meta: {
         page: query.page,
@@ -97,7 +99,7 @@ export class AdminUsersService {
 
     this.assertStaffCustomerRestaurantAccess(user, customer.restaurantId);
     return {
-      data: this.withDeletionState(customer),
+      data: this.withDeletionState(this.withCustomerContact(customer)),
       message: 'Customer fetched successfully',
     };
   }
@@ -413,6 +415,51 @@ export class AdminUsersService {
       ...entity,
       deletionState,
     };
+  }
+
+  private withCustomerContact<
+    T extends {
+      email: string;
+      isGuest: boolean;
+      profile?: { metadata?: Prisma.JsonValue | null } | null;
+    },
+  >(customer: T): T & { accountEmail?: string } {
+    if (!customer.isGuest) {
+      return customer;
+    }
+
+    const guestEmail = this.readGuestContactEmail(
+      customer.profile?.metadata ?? null,
+    );
+    if (!guestEmail) {
+      return customer;
+    }
+
+    return {
+      ...customer,
+      accountEmail: customer.email,
+      email: guestEmail,
+    };
+  }
+
+  private readGuestContactEmail(
+    metadata: Prisma.JsonValue | null | undefined,
+  ): string | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+
+    const guestContact = (metadata as { guestContact?: unknown }).guestContact;
+    if (
+      !guestContact ||
+      typeof guestContact !== 'object' ||
+      Array.isArray(guestContact)
+    ) {
+      return null;
+    }
+
+    const email = (guestContact as { email?: unknown }).email;
+    return typeof email === 'string' && email.trim() ? email.trim() : null;
   }
 
   private async getAccessibleCustomerOrThrow(

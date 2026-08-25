@@ -6174,7 +6174,10 @@ describe('CartService', () => {
         rid: 'restaurant-1',
         role: UserRoleEnum.CUSTOMER,
       },
-      { deliveryAddressId: 'address-1' },
+      {
+        deliveryAddressId: 'address-1',
+        paymentMethod: PaymentMethodEnum.PAYPAL,
+      },
     );
 
     expect(cartRepository.update).toHaveBeenCalledWith('cart-1', {
@@ -6182,7 +6185,10 @@ describe('CartService', () => {
     });
     expect(ordersService.quote).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ deliveryAddressId: 'address-1' }),
+      expect.objectContaining({
+        deliveryAddressId: 'address-1',
+        paymentMethod: PaymentMethodEnum.PAYPAL,
+      }),
     );
     expect(result.data).toMatchObject({
       deliveryFee: 2,

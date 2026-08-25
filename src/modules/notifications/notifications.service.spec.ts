@@ -488,6 +488,11 @@ describe('NotificationsService', () => {
   });
 
   it('creates both customer email and admin in-app notification on order placed', async () => {
+    mailerService.renderTransactionalEmail.mockResolvedValue({
+      locale: 'de',
+      subject: 'orderConfirmation subject',
+      body: 'Zwischensumme: 400,00 PKR\nSteuern: 20,00 PKR\nGesamt: 450,00 PKR',
+    });
     notificationsRepository.findOrderForNotification.mockResolvedValue({
       id: 'order-1',
       tenantId: 'tenant-1',
@@ -610,11 +615,15 @@ describe('NotificationsService', () => {
         type: NotificationType.ORDER_PLACED,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         body: expect.stringMatching(
-          /VORBESTELLUNG[\s\S]*Geplant für:[\s\S]*Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30,00 PKR[\s\S]*Servicegebühr: 10,00 PKR[\s\S]*Zahlungsart: COD[\s\S]*Hinweis: Bitte klingeln/,
+          /VORBESTELLUNG[\s\S]*Geplant für:[\s\S]*Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30,00 PKR[\s\S]*Servicegebühr: 10,00 PKR[\s\S]*Zahlungsart: BAR[\s\S]*Hinweis: Bitte klingeln/,
         ),
       }),
     );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
+    const emailBodies = notificationsRepository.create.mock.calls.map(
+      ([input]) => (input as { body?: string }).body ?? '',
+    );
+    expect(emailBodies.join('\n')).not.toMatch(/^(Steuern|Steuer|Tax):/im);
     expect(mailerService.renderTransactionalEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         template: 'orderConfirmation',
