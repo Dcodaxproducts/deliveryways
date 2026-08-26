@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
 } from 'class-validator';
 
 export class CreateAddressDto {
@@ -27,6 +28,7 @@ export class CreateAddressDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
+  @Matches(/\p{L}/u, { message: 'street must contain a street name' })
   street!: string;
 
   @ApiPropertyOptional({ description: 'Customer house number' })
