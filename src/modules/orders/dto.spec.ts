@@ -163,4 +163,35 @@ describe('Order DTO validation', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('rejects a numeric-only guest delivery street', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          branchId: 'branch-1',
+          orderType: OrderTypeEnum.DELIVERY,
+          paymentMethod: PaymentMethodEnum.COD,
+          guestContact: {
+            firstName: 'Max Mustermann',
+            email: 'guest@example.com',
+            privacyPolicyAccepted: true,
+          },
+          guestDeliveryAddress: {
+            street: '40',
+            houseNumber: '40',
+            city: 'Oberhausen',
+            state: 'Nordrhein-Westfalen',
+            country: 'Deutschland',
+            lat: '51.4965',
+            lng: '6.8510',
+          },
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        },
+        {
+          type: 'body',
+          metatype: CreateOrderDto,
+        },
+      ),
+    ).rejects.toThrow();
+  });
 });

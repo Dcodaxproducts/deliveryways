@@ -162,6 +162,7 @@ export class GuestOrderDeliveryAddressDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
+  @Matches(/\p{L}/u, { message: 'street must contain a street name' })
   street!: string;
 
   @ApiPropertyOptional({ description: 'Customer house number' })
