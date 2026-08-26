@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import {
   GeneratedInvoiceKind,
   OrderStatus,
-  PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
@@ -12,6 +11,7 @@ import {
   SubscriptionStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../database';
+import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
 import {
   ListPackagePlansDto,
   ListSubscriptionDeductionsDto,
@@ -575,6 +575,8 @@ export class PackagePlansRepository {
         taxAmount: true,
         deliveryFee: true,
         serviceChargeAmount: true,
+        transactionFeeAmount: true,
+        transactionFeePayer: true,
         tipAmount: true,
         discountAmount: true,
         walletAppliedAmount: true,
@@ -584,10 +586,22 @@ export class PackagePlansRepository {
         createdAt: true,
         branch: { select: { id: true, name: true } },
         transactions: {
-          where: { status: PaymentStatus.PAID },
+          where: {
+            OR: [
+              {
+                type: PaymentTransactionType.CHARGE,
+                status: PaymentStatus.PAID,
+              },
+              {
+                type: PaymentTransactionType.REFUND,
+                status: PaymentStatus.REFUNDED,
+              },
+            ],
+          },
           orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
           select: {
             id: true,
+            type: true,
             amount: true,
             currency: true,
             paymentMethod: true,
@@ -603,19 +617,7 @@ export class PackagePlansRepository {
     return this.prisma.order.findMany({
       where: {
         restaurantId,
-        paymentMethod: {
-          notIn: [
-            PaymentMethod.COD,
-            PaymentMethod.CARD_ON_DELIVERY,
-            PaymentMethod.WALLET,
-          ],
-        },
-        transactions: {
-          some: {
-            type: PaymentTransactionType.CHARGE,
-            status: PaymentStatus.PAID,
-          },
-        },
+        status: { in: SUCCESSFUL_ORDER_STATUSES },
       },
       orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
       select: {
@@ -628,6 +630,8 @@ export class PackagePlansRepository {
         taxAmount: true,
         deliveryFee: true,
         serviceChargeAmount: true,
+        transactionFeeAmount: true,
+        transactionFeePayer: true,
         tipAmount: true,
         discountAmount: true,
         walletAppliedAmount: true,
@@ -661,6 +665,13 @@ export class PackagePlansRepository {
           },
         },
       },
+    });
+  }
+
+  findRestaurantWalletAccount(restaurantId: string) {
+    return this.prisma.restaurantWalletAccount.findUnique({
+      where: { restaurantId },
+      select: { balance: true, currency: true },
     });
   }
 

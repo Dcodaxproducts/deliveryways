@@ -13,6 +13,7 @@ import {
   GeneratedInvoiceEventType,
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
+  PaymentFeePayer,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -617,13 +618,18 @@ export class PackagePlansService {
     const plan = subscription
       ? this.resolveSubscriptionInvoicePlan(subscription)
       : null;
-    const [orders, specialPayouts, currency] = await Promise.all([
-      this.packagePlansRepository.listRestaurantWalletPayoutOrders(
-        restaurant.id,
-      ),
-      this.listSpecialPayoutSummary(restaurant.id),
-      this.resolveDefaultCurrency(),
-    ]);
+    const [orders, specialPayouts, currency, walletAccount] = await Promise.all(
+      [
+        this.packagePlansRepository.listRestaurantWalletPayoutOrders(
+          restaurant.id,
+        ),
+        this.listSpecialPayoutSummary(restaurant.id),
+        this.resolveDefaultCurrency(),
+        this.packagePlansRepository.findRestaurantWalletAccount?.(
+          restaurant.id,
+        ) ?? Promise.resolve(null),
+      ],
+    );
     let remainingCommissionCap =
       plan?.commissionCapAmount !== null &&
       plan?.commissionCapAmount !== undefined
@@ -634,65 +640,124 @@ export class PackagePlansService {
             new Prisma.Decimal(0),
           )
         : null;
-    const lineItems = orders
-      .map((order) => {
-        const netCollectedAmount = order.transactions.reduce(
-          (sum, transaction) =>
-            transaction.type === PaymentTransactionType.REFUND
-              ? sum.minus(transaction.amount)
-              : sum.plus(transaction.amount),
-          new Prisma.Decimal(0),
-        );
-
-        const commissionableAmount = Prisma.Decimal.max(
-          Prisma.Decimal.min(
-            new Prisma.Decimal(order.totalAmount).toDecimalPlaces(2),
-            netCollectedAmount,
-          ),
-          new Prisma.Decimal(0),
-        ).toDecimalPlaces(2);
-
-        const line = this.toWeeklyPayoutOrderLine(
-          { ...order, totalAmount: commissionableAmount },
-          plan,
-          currency,
-          specialPayouts.payoutAmountsByOrder.get(order.id) ??
-            new Prisma.Decimal(0),
-          remainingCommissionCap,
-        );
-
-        if (remainingCommissionCap !== null) {
-          remainingCommissionCap = Prisma.Decimal.max(
-            remainingCommissionCap.minus(line.platformCommissionAmount),
-            new Prisma.Decimal(0),
-          );
-        }
-
-        return line;
-      })
-      .filter(
-        (item) =>
-          item.grossAmount.greaterThan(0) &&
-          item.restaurantPayoutAmount.greaterThan(0),
+    const lineItems = orders.map((order) => {
+      const netCollectedAmount = order.transactions.reduce(
+        (sum, transaction) =>
+          transaction.type === PaymentTransactionType.REFUND
+            ? sum.minus(transaction.amount)
+            : sum.plus(transaction.amount),
+        new Prisma.Decimal(0),
       );
-    const grossAmount = lineItems.reduce(
-      (sum, item) => sum.plus(item.grossAmount),
+
+      const orderAmount = new Prisma.Decimal(order.totalAmount).toDecimalPlaces(
+        2,
+      );
+      const isPlatformCollected = this.isPlatformCollectedPayoutOrder(order);
+      const commissionableAmount = isPlatformCollected
+        ? Prisma.Decimal.max(
+            Prisma.Decimal.min(orderAmount, netCollectedAmount),
+            new Prisma.Decimal(0),
+          ).toDecimalPlaces(2)
+        : orderAmount;
+
+      const line = this.toWeeklyPayoutOrderLine(
+        { ...order, totalAmount: commissionableAmount },
+        plan,
+        currency,
+        specialPayouts.payoutAmountsByOrder.get(order.id) ??
+          new Prisma.Decimal(0),
+        remainingCommissionCap,
+      );
+
+      if (remainingCommissionCap !== null) {
+        remainingCommissionCap = Prisma.Decimal.max(
+          remainingCommissionCap.minus(line.platformCommissionAmount),
+          new Prisma.Decimal(0),
+        );
+      }
+
+      const transactionFeeAmount =
+        order.transactionFeePayer === PaymentFeePayer.RESTAURANT
+          ? new Prisma.Decimal(order.transactionFeeAmount).toDecimalPlaces(2)
+          : new Prisma.Decimal(0);
+
+      return {
+        ...line,
+        totalOrderAmount: commissionableAmount,
+        platformCollectedAmount: isPlatformCollected
+          ? Prisma.Decimal.max(
+              netCollectedAmount,
+              new Prisma.Decimal(0),
+            ).toDecimalPlaces(2)
+          : new Prisma.Decimal(0),
+        transactionFeeAmount,
+      };
+    });
+    const totalOrderAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.totalOrderAmount),
+      new Prisma.Decimal(0),
+    );
+    const platformCollectedAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.platformCollectedAmount),
       new Prisma.Decimal(0),
     );
     const platformCommissionAmount = lineItems.reduce(
       (sum, item) => sum.plus(item.platformCommissionAmount),
       new Prisma.Decimal(0),
     );
-    const restaurantPayoutAmount = lineItems.reduce(
-      (sum, item) => sum.plus(item.restaurantPayoutAmount),
+    const restaurantTransactionFeeAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.transactionFeeAmount),
       new Prisma.Decimal(0),
     );
+    const vatPercentage = new Prisma.Decimal(plan?.vatPercentage ?? 0);
+    const vatAmount = platformCommissionAmount
+      .plus(restaurantTransactionFeeAmount)
+      .mul(vatPercentage)
+      .div(100)
+      .toDecimalPlaces(2);
+    const previousPayoutAmount = [
+      ...specialPayouts.payoutAmountsByOrder.values(),
+    ]
+      .reduce((sum, amount) => sum.plus(amount), new Prisma.Decimal(0))
+      .toDecimalPlaces(2);
+    const totalDeductionsAmount = platformCommissionAmount
+      .plus(restaurantTransactionFeeAmount)
+      .plus(vatAmount)
+      .plus(previousPayoutAmount)
+      .toDecimalPlaces(2);
+    const calculatedRestaurantPayoutAmount = Prisma.Decimal.max(
+      platformCollectedAmount.minus(totalDeductionsAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const ledgerBalance = Prisma.Decimal.max(
+      new Prisma.Decimal(walletAccount?.balance ?? 0).toDecimalPlaces(2),
+      new Prisma.Decimal(0),
+    );
+    const restaurantPayoutAmount = Prisma.Decimal.min(
+      ledgerBalance,
+      calculatedRestaurantPayoutAmount,
+    ).toDecimalPlaces(2);
 
     return {
       ordersCount: lineItems.length,
-      grossAmount: Number(grossAmount.toDecimalPlaces(2)),
+      totalOrderAmount: Number(totalOrderAmount.toDecimalPlaces(2)),
+      platformCollectedAmount: Number(
+        platformCollectedAmount.toDecimalPlaces(2),
+      ),
+      grossAmount: Number(platformCollectedAmount.toDecimalPlaces(2)),
       platformCommissionAmount: Number(
         platformCommissionAmount.toDecimalPlaces(2),
+      ),
+      restaurantTransactionFeeAmount: Number(
+        restaurantTransactionFeeAmount.toDecimalPlaces(2),
+      ),
+      vatPercentage: Number(vatPercentage),
+      vatAmount: Number(vatAmount),
+      previousPayoutAmount: Number(previousPayoutAmount),
+      totalDeductionsAmount: Number(totalDeductionsAmount),
+      ledgerBalance: Number(ledgerBalance),
+      calculatedRestaurantPayoutAmount: Number(
+        calculatedRestaurantPayoutAmount,
       ),
       restaurantPayoutAmount: Number(restaurantPayoutAmount.toDecimalPlaces(2)),
       currency,
@@ -710,6 +775,7 @@ export class PackagePlansService {
                 plan.commissionCapAmount === null
                   ? null
                   : Number(plan.commissionCapAmount),
+              vatPercentage: Number(plan.vatPercentage),
               payoutCycle: plan.payoutCycle,
             }
           : null,
@@ -888,12 +954,29 @@ export class PackagePlansService {
       payoutRequestId: input.payoutRequestId,
       totals: {
         ordersCount: lineItems.length,
+        totalOrderAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.totalOrderAmount),
+          0,
+        ),
         grossAmount: lineItems.reduce(
           (sum, item) => sum + Number(item.grossAmount),
           0,
         ),
         platformCommissionAmount: lineItems.reduce(
           (sum, item) => sum + Number(item.platformCommissionAmount),
+          0,
+        ),
+        restaurantTransactionFeeAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.transactionFeeAmount),
+          0,
+        ),
+        vatPercentage: invoice.totals.vatPercentage,
+        vatAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.vatAmount),
+          0,
+        ),
+        previousPayoutAmount: lineItems.reduce(
+          (sum, item) => sum + Number(item.previousPayoutAmount),
           0,
         ),
         restaurantPayoutAmount: lineItems.reduce(
@@ -1143,6 +1226,7 @@ export class PackagePlansService {
       restaurant.id,
       period.from,
       period.to,
+      true,
     );
     const specialPayouts = await this.listSpecialPayoutSummary(restaurant.id);
     const defaultCurrency = await this.resolveDefaultCurrency();
@@ -1158,12 +1242,31 @@ export class PackagePlansService {
         : null;
     const lineItems = orders
       .map((order) => {
+        const orderAmount = new Prisma.Decimal(
+          order.totalAmount,
+        ).toDecimalPlaces(2);
+        const netCollectedAmount = order.transactions.reduce(
+          (sum, transaction) =>
+            transaction.type === PaymentTransactionType.REFUND
+              ? sum.minus(transaction.amount)
+              : sum.plus(transaction.amount),
+          new Prisma.Decimal(0),
+        );
+        const isPlatformCollected = this.isPlatformCollectedPayoutOrder(order);
+        const commissionableAmount = isPlatformCollected
+          ? Prisma.Decimal.max(
+              Prisma.Decimal.min(orderAmount, netCollectedAmount),
+              new Prisma.Decimal(0),
+            ).toDecimalPlaces(2)
+          : orderAmount;
+        const previousPayoutAmount =
+          specialPayouts.payoutAmountsByOrder.get(order.id) ??
+          new Prisma.Decimal(0);
         const line = this.toWeeklyPayoutOrderLine(
-          order,
+          { ...order, totalAmount: commissionableAmount },
           plan,
           defaultCurrency,
-          specialPayouts.payoutAmountsByOrder.get(order.id) ??
-            new Prisma.Decimal(0),
+          previousPayoutAmount,
           remainingCommissionCap,
         );
 
@@ -1174,9 +1277,47 @@ export class PackagePlansService {
           );
         }
 
-        return line;
+        const transactionFeeAmount =
+          order.transactionFeePayer === PaymentFeePayer.RESTAURANT
+            ? new Prisma.Decimal(order.transactionFeeAmount).toDecimalPlaces(2)
+            : new Prisma.Decimal(0);
+        const vatAmount = line.platformCommissionAmount
+          .plus(transactionFeeAmount)
+          .mul(plan?.vatPercentage ?? 0)
+          .div(100)
+          .toDecimalPlaces(2);
+        const platformCollectedAmount = isPlatformCollected
+          ? Prisma.Decimal.max(
+              netCollectedAmount,
+              new Prisma.Decimal(0),
+            ).toDecimalPlaces(2)
+          : new Prisma.Decimal(0);
+
+        return {
+          ...line,
+          totalOrderAmount: commissionableAmount,
+          grossAmount: platformCollectedAmount,
+          transactionFeeAmount,
+          vatAmount,
+          restaurantPayoutAmount: Prisma.Decimal.max(
+            platformCollectedAmount
+              .minus(line.platformCommissionAmount)
+              .minus(transactionFeeAmount)
+              .minus(vatAmount)
+              .minus(previousPayoutAmount),
+            new Prisma.Decimal(0),
+          ).toDecimalPlaces(2),
+        };
       })
-      .filter((item) => item.restaurantPayoutAmount.greaterThan(0));
+      .filter(
+        (item) =>
+          item.restaurantPayoutAmount.greaterThan(0) ||
+          item.grossAmount.equals(0),
+      );
+    const totalOrderAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.totalOrderAmount),
+      new Prisma.Decimal(0),
+    );
     const grossAmount = lineItems.reduce(
       (sum, item) => sum.plus(item.grossAmount),
       new Prisma.Decimal(0),
@@ -1185,8 +1326,24 @@ export class PackagePlansService {
       (sum, item) => sum.plus(item.platformCommissionAmount),
       new Prisma.Decimal(0),
     );
+    const restaurantTransactionFeeAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.transactionFeeAmount),
+      new Prisma.Decimal(0),
+    );
+    const vatAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.vatAmount),
+      new Prisma.Decimal(0),
+    );
+    const previousPayoutAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.previousPayoutAmount),
+      new Prisma.Decimal(0),
+    );
     const restaurantPayoutAmount = Prisma.Decimal.max(
-      grossAmount.minus(platformCommissionAmount),
+      grossAmount
+        .minus(platformCommissionAmount)
+        .minus(restaurantTransactionFeeAmount)
+        .minus(vatAmount)
+        .minus(previousPayoutAmount),
       new Prisma.Decimal(0),
     ).toDecimalPlaces(2);
     const currency = defaultCurrency;
@@ -1218,16 +1375,26 @@ export class PackagePlansService {
       lineItems: lineItems.map((item) => ({
         ...item,
         grossAmount: Number(item.grossAmount),
+        totalOrderAmount: Number(item.totalOrderAmount),
         platformCommissionAmount: Number(item.platformCommissionAmount),
+        transactionFeeAmount: Number(item.transactionFeeAmount),
+        vatAmount: Number(item.vatAmount),
         restaurantPayoutAmount: Number(item.restaurantPayoutAmount),
         previousPayoutAmount: Number(item.previousPayoutAmount),
       })),
       totals: {
         ordersCount: lineItems.length,
+        totalOrderAmount: Number(totalOrderAmount.toDecimalPlaces(2)),
         grossAmount: Number(grossAmount.toDecimalPlaces(2)),
         platformCommissionAmount: Number(
           platformCommissionAmount.toDecimalPlaces(2),
         ),
+        restaurantTransactionFeeAmount: Number(
+          restaurantTransactionFeeAmount.toDecimalPlaces(2),
+        ),
+        vatPercentage: Number(plan?.vatPercentage ?? 0),
+        vatAmount: Number(vatAmount.toDecimalPlaces(2)),
+        previousPayoutAmount: Number(previousPayoutAmount.toDecimalPlaces(2)),
         restaurantPayoutAmount: Number(restaurantPayoutAmount),
         currency,
       },
@@ -1797,6 +1964,16 @@ export class PackagePlansService {
     return !offlinePaymentMethods.has(order.paymentMethod);
   }
 
+  private isPlatformCollectedPayoutOrder(order: RestaurantPayoutOrder) {
+    const nonPlatformCollectedMethods = new Set<PaymentMethod>([
+      PaymentMethod.COD,
+      PaymentMethod.CARD_ON_DELIVERY,
+      PaymentMethod.WALLET,
+    ]);
+
+    return !nonPlatformCollectedMethods.has(order.paymentMethod);
+  }
+
   private resolveSubscriptionInvoicePeriod(
     subscription: TenantSubscriptionDetails,
     billingInterval: BillingInterval,
@@ -2205,8 +2382,11 @@ export class PackagePlansService {
       ],
       rows: [
         `Total Orders: ${invoice.totals.ordersCount}`,
+        `Total Successful Order Amount: ${this.formatInvoiceMoney(invoice.totals.totalOrderAmount)} ${invoice.totals.currency}`,
         `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
         `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
+        `Restaurant-paid Transaction Fees: ${this.formatInvoiceMoney(invoice.totals.restaurantTransactionFeeAmount)} ${invoice.totals.currency}`,
+        `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
         `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
       ],
     };
@@ -2338,6 +2518,10 @@ export class PackagePlansService {
               ],
               rows: [
                 [
+                  'Total Successful Order Amount',
+                  this.formatInvoiceMoney(invoice.totals.totalOrderAmount),
+                ],
+                [
                   'Gross Collected By Super Admin',
                   this.formatInvoiceMoney(invoice.totals.grossAmount),
                 ],
@@ -2346,6 +2530,16 @@ export class PackagePlansService {
                   this.formatInvoiceMoney(
                     invoice.totals.platformCommissionAmount,
                   ),
+                ],
+                [
+                  'Restaurant-paid Transaction Fees',
+                  this.formatInvoiceMoney(
+                    invoice.totals.restaurantTransactionFeeAmount,
+                  ),
+                ],
+                [
+                  `VAT (${invoice.totals.vatPercentage}%)`,
+                  this.formatInvoiceMoney(invoice.totals.vatAmount),
                 ],
                 [
                   'Restaurant Payout Due',
@@ -2376,6 +2570,8 @@ export class PackagePlansService {
       `Payout Period: ${this.formatInvoiceDate(invoice.period.from)} - ${this.formatInvoiceDate(invoice.period.to)}`,
       `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
       `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
+      `Restaurant-paid Transaction Fees: ${this.formatInvoiceMoney(invoice.totals.restaurantTransactionFeeAmount)} ${invoice.totals.currency}`,
+      `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
       `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
       '',
       'DeliveryWays',

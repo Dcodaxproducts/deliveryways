@@ -4,7 +4,6 @@ import {
   CouponDiscountType,
   GeneratedInvoiceEventType,
   GeneratedInvoiceStatus,
-  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -792,9 +791,7 @@ export class AdminReportsRepository {
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
       ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ?? {}),
-      status: {
-        notIn: [OrderStatus.CANCELLED, OrderStatus.REJECTED],
-      },
+      status: { in: SUCCESSFUL_ORDER_STATUSES },
     };
     const paymentWhere: Prisma.PaymentTransactionWhereInput = {
       ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
@@ -811,7 +808,7 @@ export class AdminReportsRepository {
       paidOrders,
       paidChargesByMethod,
       paidRefundsByMethod,
-      paidOrdersByMethod,
+      successfulOrdersByMethod,
     ] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
         where: orderWhere,
@@ -872,7 +869,7 @@ export class AdminReportsRepository {
       this.prisma.order.groupBy({
         by: ['paymentMethod'],
         orderBy: { paymentMethod: 'asc' },
-        where: { ...orderWhere, paymentStatus: PaymentStatus.PAID },
+        where: orderWhere,
         _sum: { totalAmount: true },
       }),
     ]);
@@ -899,7 +896,7 @@ export class AdminReportsRepository {
         (entry) => entry.paymentMethod === paymentMethod,
       )?.netReceived ?? 0;
     const codAmount = Number(
-      (paidOrdersByMethod ?? []).find(
+      (successfulOrdersByMethod ?? []).find(
         (entry) => entry.paymentMethod === PaymentMethod.COD,
       )?._sum?.totalAmount ?? 0,
     );

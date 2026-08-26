@@ -726,17 +726,26 @@ export class AdminReportsService {
       query.restaurantId,
       query.branchId,
     );
-    const data = await this.adminReportsRepository.getFinancialReport(scope, {
-      ...query,
-      restaurantId: scope.restaurantId,
-      branchId: scope.branchId,
-    });
+    const [data, payoutSummary] = await Promise.all([
+      this.adminReportsRepository.getFinancialReport(scope, {
+        ...query,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      }),
+      scope.restaurantId && !scope.branchId
+        ? (this.packagePlansService?.getRestaurantPayoutBalanceSummary(
+            scope.restaurantId,
+          ) ?? Promise.resolve(null))
+        : Promise.resolve(null),
+    ]);
     const currency =
       (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'EUR';
 
     return {
       data: {
         ...data,
+        payoutSummary,
+        availablePayoutAmount: payoutSummary?.restaurantPayoutAmount ?? null,
         currency,
         filters: {
           restaurantId: scope.restaurantId ?? null,

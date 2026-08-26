@@ -4893,9 +4893,17 @@ export class PaymentsService {
 
     return {
       ledgerBalance: Number(normalizedLedgerBalance),
+      totalOrderAmount: payoutSummary?.totalOrderAmount ?? null,
+      platformCollectedAmount: payoutSummary?.platformCollectedAmount ?? null,
       grossCollectedAmount: payoutSummary?.grossAmount ?? null,
       commissionLiabilityAmount:
         payoutSummary?.platformCommissionAmount ?? null,
+      restaurantTransactionFeeAmount:
+        payoutSummary?.restaurantTransactionFeeAmount ?? null,
+      vatPercentage: payoutSummary?.vatPercentage ?? null,
+      vatAmount: payoutSummary?.vatAmount ?? null,
+      previousPayoutAmount: payoutSummary?.previousPayoutAmount ?? null,
+      totalDeductionsAmount: payoutSummary?.totalDeductionsAmount ?? null,
       availablePayoutBalance: Number(availablePayoutBalance),
       activePlan: payoutSummary?.activePlan ?? null,
     };
@@ -4913,7 +4921,7 @@ export class PaymentsService {
 
     if (amount.greaterThan(summary.availablePayoutBalance)) {
       throw new BadRequestException(
-        'Requested amount exceeds available payout balance after commission',
+        'Requested amount exceeds available payout balance after deductions',
       );
     }
   }

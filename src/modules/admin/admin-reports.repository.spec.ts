@@ -286,6 +286,22 @@ describe('AdminReportsRepository', () => {
         netReceived: 75,
       },
     ]);
+    const orderGroupByCalls = prisma.order.groupBy.mock
+      .calls as unknown as Array<
+      [
+        {
+          where: {
+            status?: { in?: OrderStatus[] };
+            paymentStatus?: PaymentStatus;
+          };
+        },
+      ]
+    >;
+    const successfulOrdersByMethod = orderGroupByCalls[0][0];
+    expect(successfulOrdersByMethod.where.status?.in).toEqual(
+      expect.arrayContaining([OrderStatus.CONFIRMED, OrderStatus.DELIVERED]),
+    );
+    expect(successfulOrdersByMethod.where.paymentStatus).toBeUndefined();
     type PaymentQueryCall = [
       {
         where: {
