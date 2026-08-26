@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import {
   AuthUserContext,
   CurrentUser,
@@ -244,6 +245,7 @@ export class CustomerAppController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @UseInterceptors(AcceptLanguageQueryInterceptor)
+  @Throttle({ default: { ttl: 60_000, limit: 300 } })
   @Get('items')
   @ApiOperation({ summary: 'List public menu items for customer browsing' })
   listItems(
