@@ -5,6 +5,7 @@ import {
   PackageBillingModel,
   PackageCommissionType,
   PackagePayoutCycle,
+  PaymentFeePayer,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -102,6 +103,8 @@ describe('PackagePlansService', () => {
     taxAmount: new Prisma.Decimal(0),
     deliveryFee: new Prisma.Decimal(0),
     serviceChargeAmount: new Prisma.Decimal(0),
+    transactionFeeAmount: new Prisma.Decimal(0),
+    transactionFeePayer: null,
     tipAmount: new Prisma.Decimal(0),
     discountAmount: new Prisma.Decimal(0),
     walletAppliedAmount: new Prisma.Decimal(0),
@@ -429,7 +432,7 @@ describe('PackagePlansService', () => {
     );
   });
 
-  it('calculates wallet payout balance from platform-collected orders only', async () => {
+  it('deducts commission for every successful payment method plus fees and VAT', async () => {
     const repository = {
       findRestaurantPayoutScope: jest.fn().mockResolvedValue({
         id: 'restaurant-1',
@@ -446,6 +449,8 @@ describe('PackagePlansService', () => {
       listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
         makePaidOrder({
           totalAmount: new Prisma.Decimal(1008),
+          transactionFeeAmount: new Prisma.Decimal(10),
+          transactionFeePayer: PaymentFeePayer.RESTAURANT,
           transactions: [
             {
               id: 'charge-1',
@@ -458,18 +463,66 @@ describe('PackagePlansService', () => {
             },
           ],
         }),
+        makePaidOrder({
+          id: 'order-cod',
+          paymentMethod: PaymentMethod.COD,
+          paymentStatus: PaymentStatus.PENDING,
+          totalAmount: new Prisma.Decimal(200),
+          transactions: [],
+        }),
+        makePaidOrder({
+          id: 'order-card-on-delivery',
+          paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
+          paymentStatus: PaymentStatus.PENDING,
+          totalAmount: new Prisma.Decimal(300),
+          transactions: [],
+        }),
+        makePaidOrder({
+          id: 'order-wallet',
+          paymentMethod: PaymentMethod.WALLET,
+          totalAmount: new Prisma.Decimal(100),
+          transactions: [],
+        }),
+        makePaidOrder({
+          id: 'order-paypal-customer-fee',
+          paymentMethod: PaymentMethod.PAYPAL,
+          totalAmount: new Prisma.Decimal(50),
+          transactionFeeAmount: new Prisma.Decimal(5),
+          transactionFeePayer: PaymentFeePayer.CUSTOMER,
+          transactions: [
+            {
+              id: 'charge-paypal',
+              type: PaymentTransactionType.CHARGE,
+              amount: new Prisma.Decimal(50),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.PAYPAL,
+              providerRef: 'paypal-123',
+              processedAt: new Date('2026-06-09T10:00:00.000Z'),
+            },
+          ],
+        }),
       ]),
       listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([]),
+      findRestaurantWalletAccount: jest.fn().mockResolvedValue({
+        balance: new Prisma.Decimal(1060),
+        currency: 'PKR',
+      }),
     };
     const service = new PackagePlansService(repository as never);
 
     await expect(
       service.getRestaurantPayoutBalanceSummary('restaurant-1'),
     ).resolves.toMatchObject({
-      ordersCount: 1,
-      grossAmount: 1008,
-      platformCommissionAmount: 50.4,
-      restaurantPayoutAmount: 957.6,
+      ordersCount: 5,
+      totalOrderAmount: 1658,
+      platformCollectedAmount: 1060,
+      grossAmount: 1060,
+      platformCommissionAmount: 82.9,
+      restaurantTransactionFeeAmount: 10,
+      vatPercentage: 15,
+      vatAmount: 13.94,
+      totalDeductionsAmount: 106.84,
+      restaurantPayoutAmount: 953.16,
       currency: 'PKR',
       activePlan: {
         subscriptionId: 'subscription-12345678',
@@ -480,8 +533,67 @@ describe('PackagePlansService', () => {
         commissionPercentage: 5,
         commissionFixedAmount: 0,
         commissionCapAmount: 250,
+        vatPercentage: 15,
         payoutCycle: PackagePayoutCycle.WEEKLY,
       },
+    });
+  });
+
+  it('reduces provider-collected payout and commission after a refund', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: null,
+        settings: null,
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          totalAmount: new Prisma.Decimal(100),
+          transactions: [
+            {
+              id: 'charge-1',
+              type: PaymentTransactionType.CHARGE,
+              amount: new Prisma.Decimal(100),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 'pi_123',
+              processedAt: new Date('2026-06-09T10:00:00.000Z'),
+            },
+            {
+              id: 'refund-1',
+              type: PaymentTransactionType.REFUND,
+              amount: new Prisma.Decimal(40),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 're_123',
+              processedAt: new Date('2026-06-10T10:00:00.000Z'),
+            },
+          ],
+        }),
+      ]),
+      listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([]),
+      findRestaurantWalletAccount: jest.fn().mockResolvedValue({
+        balance: new Prisma.Decimal(60),
+        currency: 'PKR',
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await expect(
+      service.getRestaurantPayoutBalanceSummary('restaurant-1'),
+    ).resolves.toMatchObject({
+      totalOrderAmount: 60,
+      platformCollectedAmount: 60,
+      platformCommissionAmount: 3,
+      vatAmount: 0.45,
+      restaurantPayoutAmount: 56.55,
     });
   });
 
@@ -848,6 +960,7 @@ describe('PackagePlansService', () => {
       'restaurant-1',
       new Date('2026-06-04T00:00:00.000Z'),
       new Date('2026-06-11T00:00:00.000Z'),
+      true,
     );
     expect(result.data).toMatchObject({
       restaurant: {
@@ -862,7 +975,9 @@ describe('PackagePlansService', () => {
         ordersCount: 1,
         grossAmount: 1000,
         platformCommissionAmount: 50,
-        restaurantPayoutAmount: 950,
+        vatPercentage: 15,
+        vatAmount: 7.5,
+        restaurantPayoutAmount: 942.5,
         currency: 'PKR',
       },
     });
@@ -1339,6 +1454,7 @@ describe('PackagePlansService', () => {
       'restaurant-1',
       new Date('2026-06-29T00:00:00.000Z'),
       new Date('2026-07-06T00:00:00.000Z'),
+      true,
     );
     expect(invoiceRecordsService.hasRecord).toHaveBeenCalledWith(
       'WEEKLY_PAYOUT',
@@ -1406,6 +1522,7 @@ describe('PackagePlansService', () => {
       'restaurant-1',
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
+      true,
     );
   });
 

@@ -48,8 +48,15 @@ describe('PaymentsService', () => {
   const makeService = (
     deploymentEnvironment = 'development',
     payoutBalanceSummary?: {
+      totalOrderAmount?: number;
+      platformCollectedAmount?: number;
       grossAmount: number;
       platformCommissionAmount: number;
+      restaurantTransactionFeeAmount?: number;
+      vatPercentage?: number;
+      vatAmount?: number;
+      previousPayoutAmount?: number;
+      totalDeductionsAmount?: number;
       restaurantPayoutAmount: number;
       currency: string;
       activePlan?: {
@@ -61,6 +68,7 @@ describe('PaymentsService', () => {
         commissionPercentage: number;
         commissionFixedAmount: number;
         commissionCapAmount: number | null;
+        vatPercentage?: number;
         payoutCycle: string;
       };
     },
@@ -1528,9 +1536,16 @@ describe('PaymentsService', () => {
   it('fetches restaurant payment management summary', async () => {
     const { service, prisma, paymentsRepository, stripePaymentsService } =
       makeService('development', {
+        totalOrderAmount: 1400,
+        platformCollectedAmount: 900,
         grossAmount: 900,
         platformCommissionAmount: 90,
-        restaurantPayoutAmount: 810,
+        restaurantTransactionFeeAmount: 20,
+        vatPercentage: 19,
+        vatAmount: 20.9,
+        previousPayoutAmount: 0,
+        totalDeductionsAmount: 130.9,
+        restaurantPayoutAmount: 769.1,
         currency: 'PKR',
         activePlan: {
           subscriptionId: 'subscription-1',
@@ -1541,6 +1556,7 @@ describe('PaymentsService', () => {
           commissionPercentage: 10,
           commissionFixedAmount: 0,
           commissionCapAmount: null,
+          vatPercentage: 19,
           payoutCycle: 'WEEKLY',
         },
       });
@@ -1622,9 +1638,16 @@ describe('PaymentsService', () => {
       type: 'RESTAURANT_WALLET',
       balance: 900,
       ledgerBalance: 900,
+      totalOrderAmount: 1400,
+      platformCollectedAmount: 900,
       grossCollectedAmount: 900,
       commissionLiabilityAmount: 90,
-      availablePayoutBalance: 810,
+      restaurantTransactionFeeAmount: 20,
+      vatPercentage: 19,
+      vatAmount: 20.9,
+      previousPayoutAmount: 0,
+      totalDeductionsAmount: 130.9,
+      availablePayoutBalance: 769.1,
       activePlan: {
         subscriptionId: 'subscription-1',
         id: 'plan-1',
@@ -1634,6 +1657,7 @@ describe('PaymentsService', () => {
         commissionPercentage: 10,
         commissionFixedAmount: 0,
         commissionCapAmount: null,
+        vatPercentage: 19,
         payoutCycle: 'WEEKLY',
       },
       currency: 'PKR',
@@ -2588,7 +2612,7 @@ describe('PaymentsService', () => {
         },
       ),
     ).rejects.toThrow(
-      'Requested amount exceeds available payout balance after commission',
+      'Requested amount exceeds available payout balance after deductions',
     );
   });
 
@@ -2630,7 +2654,7 @@ describe('PaymentsService', () => {
         },
       ),
     ).rejects.toThrow(
-      'Requested amount exceeds available payout balance after commission',
+      'Requested amount exceeds available payout balance after deductions',
     );
     expect(prisma.restaurantPayoutRequest.create).not.toHaveBeenCalled();
   });
