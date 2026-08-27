@@ -102,6 +102,47 @@ describe('AdminReportsService', () => {
     expect(result.message).toBe('Orders report fetched successfully');
   });
 
+  it('returns tenant-wide order totals for staff with all-restaurant access', async () => {
+    const repository = {
+      getOrdersReport: jest.fn().mockResolvedValue({
+        totalOrders: 7,
+        totalRevenue: 245,
+        averageOrderValue: 35,
+        statusBreakdown: [],
+        orderTypeBreakdown: [],
+        paymentStatusBreakdown: [],
+        topItems: [],
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.getOrdersReport(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        restaurantAccess: {
+          allRestaurants: true,
+          restaurantIds: [],
+        },
+      } as never,
+      {},
+    );
+
+    expect(repository.getOrdersReport).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1' },
+      expect.objectContaining({
+        restaurantId: undefined,
+        branchId: undefined,
+      }),
+    );
+    expect(result.data).toMatchObject({
+      totalOrders: 7,
+      totalRevenue: 245,
+    });
+  });
+
   it('lists generated invoices for business admin scope', async () => {
     const repository = {
       listInvoices: jest.fn().mockResolvedValue([
