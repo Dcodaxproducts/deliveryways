@@ -539,6 +539,43 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('rounds percentage commission once across the payout total', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: null,
+        settings: null,
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({ totalAmount: new Prisma.Decimal('100.10') }),
+        makePaidOrder({
+          id: 'order-2',
+          totalAmount: new Prisma.Decimal('100.10'),
+        }),
+      ]),
+      listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([]),
+      findRestaurantWalletAccount: jest.fn().mockResolvedValue({
+        balance: new Prisma.Decimal('200.20'),
+        currency: 'PKR',
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await expect(
+      service.getRestaurantPayoutBalanceSummary('restaurant-1'),
+    ).resolves.toMatchObject({
+      totalOrderAmount: 200.2,
+      platformCommissionAmount: 10.01,
+    });
+  });
+
   it('reduces provider-collected payout and commission after a refund', async () => {
     const repository = {
       findRestaurantPayoutScope: jest.fn().mockResolvedValue({
