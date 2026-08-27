@@ -1273,7 +1273,31 @@ export class BranchesService {
     };
   }
 
-  async remove(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async remove(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+
+    await this.assertBranchWriteAccess(user, branch);
+
+    if (branch.isMain) {
+      throw new BadRequestException('The default branch cannot be deleted');
+    }
+
+    const remainingActiveBranches =
+      await this.branchesRepository.countActiveByRestaurantExcluding(
+        branch.restaurantId,
+        branch.id,
+      );
+
+    if (remainingActiveBranches === 0) {
+      throw new BadRequestException(
+        'A restaurant must keep at least one active branch',
+      );
+    }
+
     const data = await this.branchesRepository.softDelete(id, tx);
 
     return {
