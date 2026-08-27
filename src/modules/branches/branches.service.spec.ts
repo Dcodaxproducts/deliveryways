@@ -22,6 +22,7 @@ describe('BranchesService', () => {
       createBranchAddress: jest.fn(),
       setActive: jest.fn(),
       softDelete: jest.fn(),
+      countActiveByRestaurantExcluding: jest.fn(),
       getDeleteSummary: jest.fn(),
       forceDelete: jest.fn(),
       transaction: jest.fn((callback: (tx: unknown) => unknown) =>
@@ -69,6 +70,88 @@ describe('BranchesService', () => {
       storageService,
     };
   };
+
+  it('allows super admin to soft delete a non-main branch', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.countActiveByRestaurantExcluding.mockResolvedValue(1);
+    repository.softDelete.mockResolvedValue({
+      id: 'branch-2',
+      isActive: false,
+      deletedAt: new Date(),
+    });
+
+    const result = await service.remove(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'branch-2',
+    );
+
+    expect(repository.countActiveByRestaurantExcluding).toHaveBeenCalledWith(
+      'restaurant-1',
+      'branch-2',
+    );
+    expect(repository.softDelete).toHaveBeenCalledWith('branch-2', undefined);
+    expect(result.message).toBe('Branch soft deleted successfully');
+  });
+
+  it('rejects deleting the default branch', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: true,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.remove(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'branch-1',
+      ),
+    ).rejects.toThrow('The default branch cannot be deleted');
+
+    expect(repository.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('rejects deleting the last active branch', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.countActiveByRestaurantExcluding.mockResolvedValue(0);
+
+    await expect(
+      service.remove(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'branch-2',
+      ),
+    ).rejects.toThrow('A restaurant must keep at least one active branch');
+
+    expect(repository.softDelete).not.toHaveBeenCalled();
+  });
 
   it('updates branch address fields through branch update endpoint', async () => {
     const { service, repository, prisma } = makeService();

@@ -489,6 +489,20 @@ export class BranchesRepository {
     });
   }
 
+  async countActiveByRestaurantExcluding(
+    restaurantId: string,
+    branchId: string,
+  ) {
+    return this.prisma.branch.count({
+      where: {
+        restaurantId,
+        id: { not: branchId },
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+  }
+
   async getDeleteSummary(branchId: string) {
     const [
       users,
