@@ -640,6 +640,7 @@ export class PackagePlansService {
             new Prisma.Decimal(0),
           )
         : null;
+    const payoutSummaryCommissionCap = remainingCommissionCap;
     const lineItems = orders.map((order) => {
       const netCollectedAmount = order.transactions.reduce(
         (sum, transaction) =>
@@ -701,9 +702,10 @@ export class PackagePlansService {
       (sum, item) => sum.plus(item.platformCollectedAmount),
       new Prisma.Decimal(0),
     );
-    const platformCommissionAmount = lineItems.reduce(
-      (sum, item) => sum.plus(item.platformCommissionAmount),
-      new Prisma.Decimal(0),
+    const platformCommissionAmount = this.calculatePayoutSummaryCommission(
+      lineItems,
+      plan,
+      payoutSummaryCommissionCap,
     );
     const restaurantTransactionFeeAmount = lineItems.reduce(
       (sum, item) => sum.plus(item.transactionFeeAmount),
@@ -1516,6 +1518,36 @@ export class PackagePlansService {
     }
 
     return Prisma.Decimal.min(commission, grossAmount).toDecimalPlaces(2);
+  }
+
+  private calculatePayoutSummaryCommission(
+    lineItems: Array<{
+      totalOrderAmount: Prisma.Decimal;
+      platformCommissionAmount: Prisma.Decimal;
+    }>,
+    plan: ReturnType<
+      PackagePlansService['resolveSubscriptionInvoicePlan']
+    > | null,
+    remainingCommissionCap: Prisma.Decimal | null,
+  ) {
+    if (!plan || plan.commissionType === PackageCommissionType.FIXED) {
+      return lineItems.reduce(
+        (sum, item) => sum.plus(item.platformCommissionAmount),
+        new Prisma.Decimal(0),
+      );
+    }
+
+    const totalOrderAmount = lineItems.reduce(
+      (sum, item) => sum.plus(item.totalOrderAmount),
+      new Prisma.Decimal(0),
+    );
+    let commission = totalOrderAmount.mul(plan.commissionPercentage).div(100);
+
+    if (remainingCommissionCap !== null) {
+      commission = Prisma.Decimal.min(commission, remainingCommissionCap);
+    }
+
+    return Prisma.Decimal.min(commission, totalOrderAmount).toDecimalPlaces(2);
   }
 
   private resolvePayoutInvoicePeriod(
