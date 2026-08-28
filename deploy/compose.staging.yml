@@ -18,7 +18,3 @@ services:
   customer:
     ports:
       - 127.0.0.1:5213:3000
-
-  landing:
-    ports:
-      - 127.0.0.1:5214:3000

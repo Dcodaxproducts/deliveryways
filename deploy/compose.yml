@@ -189,33 +189,6 @@ services:
     networks:
       - application
 
-  landing:
-    <<: *runtime-service
-    image: ${LANDING_IMAGE:-feastflow-landing:local}
-    build:
-      context: ../../feastflow-landing-page
-      target: production
-      args:
-        NEXT_PUBLIC_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}
-        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
-        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
-    environment:
-      NEXT_PUBLIC_ADMIN_URL: ${PUBLIC_RESTAURANT_ADMIN_URL:?PUBLIC_RESTAURANT_ADMIN_URL is required}
-      NEXT_PUBLIC_API_URL: ${PUBLIC_API_ROOT_URL:?PUBLIC_API_ROOT_URL is required}
-      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      <<: *next-healthcheck
-      test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:3000/').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
-    networks:
-      - application
-
 networks:
   application:
     driver: bridge

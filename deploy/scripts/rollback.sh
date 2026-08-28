@@ -42,7 +42,7 @@ while IFS= read -r key; do
   export "${key}"
 done < <(ff_image_keys)
 
-readonly APP_SERVICES=(api restaurant-admin superadmin customer landing)
+readonly APP_SERVICES=(api restaurant-admin superadmin customer)
 if [[ "${SKIP_IMAGE_PULL:-}" != "yes" ]]; then
   ff_compose pull "${APP_SERVICES[@]}"
 fi

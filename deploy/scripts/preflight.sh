@@ -83,7 +83,6 @@ REQUIRED_KEYS=(
   RESTAURANT_ADMIN_IMAGE
   SUPERADMIN_IMAGE
   CUSTOMER_IMAGE
-  LANDING_IMAGE
   PUBLIC_API_ROOT_URL
   PUBLIC_API_BASE_URL
   PUBLIC_RESTAURANT_ADMIN_URL
@@ -141,7 +140,7 @@ fi
 [[ "$(read_env CORS_ORIGINS)" != *'*'* ]] || fail "CORS_ORIGINS must not contain a wildcard"
 pass "private database URL and explicit CORS origins"
 
-readonly IMAGE_KEYS=(API_IMAGE MIGRATION_IMAGE RESTAURANT_ADMIN_IMAGE SUPERADMIN_IMAGE CUSTOMER_IMAGE LANDING_IMAGE)
+readonly IMAGE_KEYS=(API_IMAGE MIGRATION_IMAGE RESTAURANT_ADMIN_IMAGE SUPERADMIN_IMAGE CUSTOMER_IMAGE)
 for key in "${IMAGE_KEYS[@]}"; do
   value="$(read_env "${key}")"
   if [[ ! "${value}" =~ (@sha256:[a-f0-9]{64}|:[a-f0-9]{7,40})$ ]]; then
@@ -174,7 +173,6 @@ readonly REQUIRED_FILES=(
   "${DEPLOY_DIR}/../../feastflow-restaurant-admin/Dockerfile"
   "${DEPLOY_DIR}/../../feastflow-superadmin/Dockerfile"
   "${DEPLOY_DIR}/../../feastflow-customer-website/Dockerfile"
-  "${DEPLOY_DIR}/../../feastflow-landing-page/Dockerfile"
   "${COMPOSE_FILE}"
   "${OVERRIDE_FILE}"
 )

@@ -18,7 +18,7 @@ fi
 
 ff_preflight
 
-readonly APP_SERVICES=(api restaurant-admin superadmin customer landing)
+readonly APP_SERVICES=(api restaurant-admin superadmin customer)
 readonly PULL_SERVICES=(postgres migration "${APP_SERVICES[@]}")
 
 if [[ "${SKIP_IMAGE_PULL:-}" != "yes" ]]; then

@@ -77,8 +77,7 @@ ff_image_keys() {
     MIGRATION_IMAGE \
     RESTAURANT_ADMIN_IMAGE \
     SUPERADMIN_IMAGE \
-    CUSTOMER_IMAGE \
-    LANDING_IMAGE
+    CUSTOMER_IMAGE
 }
 
 ff_is_immutable_image() {
