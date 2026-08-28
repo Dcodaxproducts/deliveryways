@@ -4,6 +4,7 @@ import type { Server } from 'socket.io';
 export interface OrderCreatedRealtimePayload {
   id: string;
   status: string;
+  tenantId: string;
   restaurantId: string;
   branchId: string;
   orderType: string;
@@ -16,6 +17,7 @@ export interface OrderCreatedRealtimePayload {
 export interface OrderStatusRealtimePayload {
   id: string;
   status: string;
+  tenantId: string;
   restaurantId: string;
   branchId: string;
   updatedAt: Date;
@@ -24,6 +26,7 @@ export interface OrderStatusRealtimePayload {
 export interface OrderUpdatedRealtimePayload {
   id: string;
   status: string;
+  tenantId: string;
   restaurantId: string;
   branchId: string;
   paymentStatus: string;
@@ -33,6 +36,7 @@ export interface OrderUpdatedRealtimePayload {
 export interface OrderUpdatedRealtimePayload {
   id: string;
   status: string;
+  tenantId: string;
   restaurantId: string;
   branchId: string;
   paymentStatus: string;
@@ -52,6 +56,10 @@ export class NotificationsRealtimeService {
     return `orders:restaurant:${restaurantId}`;
   }
 
+  getTenantOrdersRoom(tenantId: string) {
+    return `orders:tenant:${tenantId}`;
+  }
+
   getBranchOrdersRoom(restaurantId: string, branchId: string) {
     return `orders:restaurant:${restaurantId}:branch:${branchId}`;
   }
@@ -62,6 +70,7 @@ export class NotificationsRealtimeService {
     }
 
     this.server
+      .to(this.getTenantOrdersRoom(payload.tenantId))
       .to(this.getRestaurantOrdersRoom(payload.restaurantId))
       .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
       .emit('order.created', payload);
@@ -77,6 +86,7 @@ export class NotificationsRealtimeService {
     }
 
     this.server
+      .to(this.getTenantOrdersRoom(payload.tenantId))
       .to(this.getRestaurantOrdersRoom(payload.restaurantId))
       .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
       .emit('order.status.updated', payload);
@@ -88,6 +98,7 @@ export class NotificationsRealtimeService {
     }
 
     this.server
+      .to(this.getTenantOrdersRoom(payload.tenantId))
       .to(this.getRestaurantOrdersRoom(payload.restaurantId))
       .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
       .emit('order.updated', payload);

@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { Server, Socket } from 'socket.io';
 import { AuthUserContext } from '../../common/decorators';
+import { UserRoleEnum } from '../../common/enums';
 import { NotificationsRealtimeService } from '../notifications';
 import { OrdersService } from './orders.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
@@ -56,6 +57,10 @@ export class OrderTrackingGateway
     try {
       const user = await this.authenticate(client);
       this.setSocketUser(client, user);
+      const adminOrdersRoom = this.getAdminOrdersRoom(user);
+      if (adminOrdersRoom) {
+        await client.join(adminOrdersRoom);
+      }
       this.logger.log(
         `Order tracking socket connected: ${client.id} (${user.uid})`,
       );
@@ -152,6 +157,21 @@ export class OrderTrackingGateway
 
   private setSocketUser(client: OrderTrackingSocket, user: AuthUserContext) {
     (client.data as { user?: AuthUserContext }).user = user;
+  }
+
+  private getAdminOrdersRoom(user: AuthUserContext) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN && user.tid) {
+      return this.notificationsRealtimeService.getTenantOrdersRoom(user.tid);
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && user.rid && user.bid) {
+      return this.notificationsRealtimeService.getBranchOrdersRoom(
+        user.rid,
+        user.bid,
+      );
+    }
+
+    return null;
   }
 
   private getSocketUser(client: OrderTrackingSocket) {
