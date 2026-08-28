@@ -639,6 +639,7 @@ describe('NotificationsService', () => {
     expect(notificationsRealtimeService.emitOrderCreated).toHaveBeenCalledWith({
       id: 'order-1',
       status: 'PLACED',
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
       orderType: 'DELIVERY',

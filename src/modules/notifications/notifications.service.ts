@@ -382,6 +382,7 @@ export class NotificationsService {
     this.notificationsRealtimeService?.emitOrderCreated({
       id: order.id,
       status: order.status,
+      tenantId: order.tenantId,
       restaurantId: order.restaurantId,
       branchId: order.branchId,
       orderType: order.orderType,
@@ -537,6 +538,7 @@ export class NotificationsService {
     this.notificationsRealtimeService?.emitOrderStatusUpdated?.({
       id: order.id,
       status: order.status,
+      tenantId: order.tenantId,
       restaurantId: order.restaurantId,
       branchId: order.branchId,
       updatedAt: order.updatedAt,
@@ -626,6 +628,7 @@ export class NotificationsService {
     this.notificationsRealtimeService?.emitOrderUpdated({
       id: order.id,
       status: order.status,
+      tenantId: order.tenantId,
       restaurantId: order.restaurantId,
       branchId: order.branchId,
       paymentStatus: order.paymentStatus,
@@ -746,6 +749,7 @@ export class NotificationsService {
     this.notificationsRealtimeService?.emitOrderUpdated({
       id: payment.order.id,
       status: payment.order.status,
+      tenantId: payment.tenantId,
       restaurantId: payment.order.restaurantId,
       branchId: payment.order.branchId,
       paymentStatus: payment.order.paymentStatus,
