@@ -278,7 +278,8 @@ export class NotificationsRepository {
 
   async claimPendingOrderNotifications(input: {
     userId: string;
-    restaurantId: string;
+    tenantId: string;
+    restaurantId?: string;
     branchId?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -287,7 +288,8 @@ export class NotificationsRepository {
           audience: NotificationAudience.ADMIN,
           channel: NotificationChannel.IN_APP,
           type: NotificationType.ORDER_PLACED,
-          restaurantId: input.restaurantId,
+          tenantId: input.tenantId,
+          ...(input.restaurantId ? { restaurantId: input.restaurantId } : {}),
           ...(input.branchId ? { branchId: input.branchId } : {}),
           recipientUserId: null,
           seenAt: null,
@@ -305,17 +307,22 @@ export class NotificationsRepository {
 
       if (!ids.length) return [];
 
-      await tx.notification.updateMany({
+      const claimed = await tx.notification.updateManyAndReturn({
         where: { id: { in: ids }, recipientUserId: null },
         data: { recipientUserId: input.userId },
+        select: { id: true },
       });
+      const claimedIds = claimed.map(({ id }) => id);
+
+      if (!claimedIds.length) return [];
 
       return tx.notification.findMany({
-        where: { id: { in: ids }, recipientUserId: input.userId },
+        where: { id: { in: claimedIds }, recipientUserId: input.userId },
         include: {
           order: {
             select: {
               id: true,
+              tenantId: true,
               customerId: true,
               restaurantId: true,
               branchId: true,

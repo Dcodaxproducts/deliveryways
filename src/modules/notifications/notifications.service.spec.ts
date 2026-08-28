@@ -108,6 +108,9 @@ describe('NotificationsService', () => {
         createdAt: new Date('2026-08-12T08:00:00.000Z'),
         order: {
           id: 'order-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
           status: 'PLACED',
           paymentStatus: 'PAID',
         },
@@ -129,11 +132,43 @@ describe('NotificationsService', () => {
       notificationsRepository.claimPendingOrderNotifications,
     ).toHaveBeenCalledWith({
       userId: 'business-admin-1',
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: undefined,
     });
     expect(result.data[0]?.id).toBe('notification-1');
-    expect(result.data[0]?.order?.id).toBe('order-1');
+    expect(result.data[0]?.order).toEqual({
+      id: 'order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      status: 'PLACED',
+      paymentStatus: 'PAID',
+    });
+  });
+
+  it('claims pending orders across the authenticated tenant for a business admin', async () => {
+    notificationsRepository.claimPendingOrderNotifications.mockResolvedValue(
+      [],
+    );
+
+    await service.claimPendingOrders(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {} as never,
+    );
+
+    expect(
+      notificationsRepository.claimPendingOrderNotifications,
+    ).toHaveBeenCalledWith({
+      userId: 'business-admin-1',
+      tenantId: 'tenant-1',
+      restaurantId: undefined,
+      branchId: undefined,
+    });
   });
 
   it('lists simplified customer notifications for the logged-in customer only', async () => {

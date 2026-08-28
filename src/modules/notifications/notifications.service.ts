@@ -175,15 +175,41 @@ export class NotificationsService {
   }
 
   async claimPendingOrders(user: AuthUserContext, query: ListNotificationsDto) {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
+      if (!user.tid) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      const notifications =
+        await this.notificationsRepository.claimPendingOrderNotifications({
+          userId: user.uid,
+          tenantId: user.tid,
+          restaurantId: query.restaurantId,
+          branchId: query.branchId,
+        });
+
+      return {
+        data: notifications.map((notification) =>
+          this.toFeedItem(notification, NotificationAudience.ADMIN),
+        ),
+        message: 'Pending order notifications claimed successfully',
+      };
+    }
+
     const scope = this.resolveFeedScope(user, query);
 
     if (scope.audience !== NotificationAudience.ADMIN || !scope.restaurantId) {
       throw new ForbiddenException('Admin restaurant scope is required');
     }
 
+    if (!user.tid) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
     const notifications =
       await this.notificationsRepository.claimPendingOrderNotifications({
         userId: user.uid,
+        tenantId: user.tid,
         restaurantId: scope.restaurantId,
         branchId: scope.branchId,
       });
@@ -1638,6 +1664,9 @@ export class NotificationsService {
       seenAt: Date | null;
       order?: {
         id: string;
+        tenantId?: string;
+        restaurantId?: string;
+        branchId?: string;
         status: string;
         paymentStatus: string;
       } | null;
@@ -1663,6 +1692,9 @@ export class NotificationsService {
       order: notification.order
         ? {
             id: notification.order.id,
+            tenantId: notification.order.tenantId,
+            restaurantId: notification.order.restaurantId,
+            branchId: notification.order.branchId,
             status: notification.order.status,
             paymentStatus: notification.order.paymentStatus,
           }
