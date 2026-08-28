@@ -47,7 +47,7 @@
 
 ### T6: Commit and push isolated sync branches
 
-**Status**: In progress
+**Status**: Complete — verified branch and non-force fast-forward `main` pushes landed on origin.
 
 **Depends on**: T1-T5
 **Requirements**: SYNC-04
