@@ -19,6 +19,10 @@ const FEATURE_BY_ROUTE: Array<[string, string]> = [
   ['chat', 'chat'],
 ];
 
+const EXACT_FEATURE_BY_ROUTE = new Map<string, string>([
+  ['admin/reports/orders', 'orderManagement'],
+]);
+
 type SubscriptionFeatureRequest = {
   user?: {
     role?: string;
@@ -30,6 +34,9 @@ type SubscriptionFeatureRequest = {
 
 export const resolveSubscriptionFeature = (path: string) => {
   const normalized = path.replace(/^\/+|\/+$/g, '');
+  const exactFeature = EXACT_FEATURE_BY_ROUTE.get(normalized);
+  if (exactFeature) return exactFeature;
+
   return FEATURE_BY_ROUTE.find(
     ([route]) => normalized === route || normalized.startsWith(`${route}/`),
   )?.[1];
