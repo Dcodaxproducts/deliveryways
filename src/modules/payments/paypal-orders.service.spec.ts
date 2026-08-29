@@ -96,6 +96,55 @@ describe('PaypalOrdersService', () => {
     ).toBe('NO_SHIPPING');
   });
 
+  it('refunds a captured PayPal payment through the provider API', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ access_token: 'refund-token' }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ id: 'paypal-refund-1', status: 'COMPLETED' }),
+      } as Response);
+    const service = makeService({
+      PAYPAL_CLIENT_ID: 'client-id',
+      PAYPAL_CLIENT_SECRET: 'client-secret',
+      PAYPAL_ENVIRONMENT: 'SANDBOX',
+    });
+
+    await expect(
+      service.refundCapture({
+        captureId: 'capture-1',
+        amount: 10,
+        currency: 'EUR',
+        idempotencyKey: 'refund-payment-1-10.00',
+      }),
+    ).resolves.toMatchObject({
+      id: 'paypal-refund-1',
+      status: 'COMPLETED',
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://api-m.sandbox.paypal.com/v2/payments/captures/capture-1/refund',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const request = fetchMock.mock.calls[1]?.[1];
+    expect(request?.headers).toEqual(
+      expect.objectContaining({
+        'PayPal-Request-Id': 'refund-payment-1-10.00',
+      }),
+    );
+    if (typeof request?.body !== 'string') {
+      throw new Error('Expected PayPal refund request body to be JSON');
+    }
+    const parsedBody: unknown = JSON.parse(request.body);
+    expect(parsedBody).toEqual({
+      amount: { currency_code: 'EUR', value: '10.00' },
+    });
+  });
+
   it('recovers an already captured PayPal order after a lost capture response', async () => {
     jest
       .spyOn(global, 'fetch')

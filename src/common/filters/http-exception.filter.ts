@@ -20,6 +20,47 @@ type ErrorDetails =
   | Record<string, unknown>
   | undefined;
 
+type ErrorLocale = 'de' | 'en';
+
+const GERMAN_ERROR_MESSAGES: Record<string, string> = {
+  'Delivery is not available at requested order time':
+    'Eine Lieferung ist zur gewünschten Bestellzeit nicht verfügbar.',
+  'Pickup is not available at requested order time':
+    'Eine Abholung ist zur gewünschten Bestellzeit nicht verfügbar.',
+  'Selected menu is not available at requested order time':
+    'Das ausgewählte Menü ist zur gewünschten Bestellzeit nicht verfügbar.',
+  'Payment transaction not found':
+    'Die Zahlungstransaktion wurde nicht gefunden.',
+  'Only charge transactions can be refunded':
+    'Nur Belastungstransaktionen können erstattet werden.',
+  'Only paid transactions can be refunded':
+    'Nur bezahlte Transaktionen können erstattet werden.',
+  'Refund amount cannot exceed charge amount':
+    'Der Erstattungsbetrag darf den Belastungsbetrag nicht überschreiten.',
+  'Refund amount exceeds remaining refundable amount':
+    'Der Erstattungsbetrag übersteigt den noch erstattungsfähigen Betrag.',
+};
+
+const GERMAN_STATUS_MESSAGES: Record<number, string> = {
+  [HttpStatus.BAD_REQUEST]:
+    'Die Anfrage enthält ungültige oder unvollständige Daten.',
+  [HttpStatus.UNAUTHORIZED]: 'Bitte melden Sie sich an, um fortzufahren.',
+  [HttpStatus.FORBIDDEN]: 'Sie sind für diese Aktion nicht berechtigt.',
+  [HttpStatus.NOT_FOUND]: 'Die angeforderte Ressource wurde nicht gefunden.',
+  [HttpStatus.CONFLICT]:
+    'Die Anfrage steht im Konflikt mit dem aktuellen Datenstand.',
+  [HttpStatus.UNPROCESSABLE_ENTITY]:
+    'Die übermittelten Daten konnten nicht verarbeitet werden.',
+  [HttpStatus.TOO_MANY_REQUESTS]:
+    'Zu viele Anfragen. Bitte versuchen Sie es später erneut.',
+  [HttpStatus.BAD_GATEWAY]:
+    'Der externe Dienst konnte die Anfrage nicht abschließen.',
+  [HttpStatus.SERVICE_UNAVAILABLE]:
+    'Der Dienst ist vorübergehend nicht verfügbar.',
+  [HttpStatus.INTERNAL_SERVER_ERROR]:
+    'Ein interner Serverfehler ist aufgetreten.',
+};
+
 const FIELD_LABELS: Record<string, string> = {
   restaurantId: 'restaurant',
   restaurant_id: 'restaurant',
@@ -73,6 +114,41 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       : rawMessage;
 
     return { name, message };
+  }
+
+  private resolveLocale(value: string | string[] | undefined): ErrorLocale {
+    const language = Array.isArray(value) ? value[0] : value;
+    return language?.trim().toLowerCase().startsWith('de') ? 'de' : 'en';
+  }
+
+  private localizeMessage(
+    message: string,
+    status: number,
+    locale: ErrorLocale,
+  ): string {
+    if (locale !== 'de') return message;
+
+    return (
+      GERMAN_ERROR_MESSAGES[message] ??
+      GERMAN_STATUS_MESSAGES[status] ??
+      (status >= 500
+        ? GERMAN_STATUS_MESSAGES[HttpStatus.INTERNAL_SERVER_ERROR]
+        : GERMAN_STATUS_MESSAGES[HttpStatus.BAD_REQUEST])
+    );
+  }
+
+  private localizeValidationDetails(
+    details: ValidationErrorDetail[],
+    locale: ErrorLocale,
+  ): ValidationErrorDetail[] {
+    if (locale !== 'de') return details;
+
+    return details.map((detail) => ({
+      ...detail,
+      message: detail.allowedValues?.length
+        ? `Für ${this.normalizeFieldLabel(detail.name)} ist nur einer dieser Werte erlaubt: ${detail.allowedValues.join(', ')}`
+        : `${this.normalizeFieldLabel(detail.name)} ist ungültig.`,
+    }));
   }
 
   private normalizeFieldLabel(field: string): string {
@@ -219,6 +295,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         exception.stack,
       );
     }
+
+    const locale = this.resolveLocale(request.headers['accept-language']);
+    if (Array.isArray(details)) {
+      details = this.localizeValidationDetails(details, locale);
+    }
+    message = this.localizeMessage(message, status, locale);
 
     response.status(status).json({
       success: false,

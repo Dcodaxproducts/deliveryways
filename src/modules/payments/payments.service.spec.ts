@@ -200,6 +200,7 @@ describe('PaymentsService', () => {
     const paypalOrdersService = {
       createOrder: jest.fn(),
       captureOrder: jest.fn(),
+      refundCapture: jest.fn(),
       getReturnUrl: jest
         .fn()
         .mockReturnValue('https://shop.test/paypal/return'),
@@ -1486,6 +1487,143 @@ describe('PaymentsService', () => {
         currency: 'EUR',
       }),
     });
+  });
+
+  it('completes a PayPal provider refund before recording it locally', async () => {
+    const {
+      service,
+      paymentsRepository,
+      paypalOrdersService,
+      stripePaymentsService,
+      transactionTx,
+    } = makeService();
+
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-paypal-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.PAYPAL,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'paypal-order-1',
+      providerData: {
+        purchase_units: [
+          { payments: { captures: [{ id: 'paypal-capture-1' }] } },
+        ],
+      },
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    paymentsRepository.sumSuccessfulRefunds.mockResolvedValue(
+      new Prisma.Decimal(0),
+    );
+    paypalOrdersService.refundCapture.mockResolvedValue({
+      id: 'paypal-refund-1',
+      status: 'COMPLETED',
+      payload: { id: 'paypal-refund-1', status: 'COMPLETED' },
+    });
+    paymentsRepository.create.mockResolvedValue({
+      id: 'refund-paypal-1',
+      status: PaymentStatus.REFUNDED,
+    });
+    transactionTx.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(23),
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockImplementation(
+      (args: { where: { paymentTransactionId: string } }) =>
+        Promise.resolve(
+          args.where.paymentTransactionId === 'payment-paypal-1'
+            ? { id: 'wallet-credit-1' }
+            : null,
+        ),
+    );
+
+    await service.refund(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'payment-paypal-1',
+      { amount: 10 },
+    );
+
+    expect(paypalOrdersService.refundCapture).toHaveBeenCalledWith({
+      captureId: 'paypal-capture-1',
+      amount: 10,
+      currency: 'EUR',
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      idempotencyKey: expect.stringMatching(/^[a-f0-9]{32}$/),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      credentials: expect.objectContaining({
+        clientId: 'paypal-platform-client',
+        environment: PaypalPayoutEnvironment.SANDBOX,
+      }),
+    });
+    expect(stripePaymentsService.refundPaymentIntent).not.toHaveBeenCalled();
+    expect(paymentsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerRef: 'paypal-refund-1',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        providerData: expect.objectContaining({
+          provider: 'paypal',
+          captureId: 'paypal-capture-1',
+        }),
+      }),
+      transactionTx,
+    );
+  });
+
+  it('keeps local payment state unchanged when PayPal rejects a refund', async () => {
+    const { service, paymentsRepository, paypalOrdersService, transactionTx } =
+      makeService();
+
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-paypal-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.PAYPAL,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'paypal-order-1',
+      providerData: { captureId: 'paypal-capture-1' },
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    paymentsRepository.sumSuccessfulRefunds.mockResolvedValue(
+      new Prisma.Decimal(0),
+    );
+    paypalOrdersService.refundCapture.mockRejectedValue(
+      new Error('PayPal refund failed'),
+    );
+
+    await expect(
+      service.refund(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'payment-paypal-1',
+        { amount: 10 },
+      ),
+    ).rejects.toThrow('PayPal refund failed');
+
+    expect(paymentsRepository.create).not.toHaveBeenCalled();
+    expect(transactionTx.order.update).not.toHaveBeenCalled();
   });
 
   it('does not debit the restaurant wallet for cash order refunds', async () => {
