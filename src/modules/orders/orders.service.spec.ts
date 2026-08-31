@@ -2192,6 +2192,7 @@ describe('OrdersService - deliveryman order access', () => {
     updateStatus: jest.Mock;
     completeStatusAndSettlePendingPayment: jest.Mock;
     cancel: jest.Mock;
+    uncancel: jest.Mock;
     assignDeliveryman: jest.Mock;
   };
   let notificationsService: { notifyOrderStatusChanged: jest.Mock };
@@ -2216,6 +2217,7 @@ describe('OrdersService - deliveryman order access', () => {
       updateStatus: jest.fn(),
       completeStatusAndSettlePendingPayment: jest.fn(),
       cancel: jest.fn(),
+      uncancel: jest.fn(),
       assignDeliveryman: jest.fn(),
     };
 
@@ -2638,7 +2640,99 @@ describe('OrdersService - deliveryman order access', () => {
     ).resolves.toEqual(
       expect.objectContaining({ message: 'Order cancelled successfully' }),
     );
-    expect(ordersRepository.cancel).toHaveBeenCalledWith('order-1', 'super-1');
+    expect(ordersRepository.cancel).toHaveBeenCalledWith(
+      'order-1',
+      'super-1',
+      OrderStatus.DELIVERED,
+    );
+  });
+
+  it('lets super admin uncancel an order to its pre-cancellation status', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      status: OrderStatus.CANCELLED,
+      statusBeforeCancellation: OrderStatus.PREPARING,
+      paymentStatus: PaymentStatus.PAID,
+    });
+    ordersRepository.uncancel.mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.PREPARING,
+    });
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    const result = await service.uncancel(
+      {
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'order-1',
+    );
+
+    expect(ordersRepository.uncancel).toHaveBeenCalledWith(
+      'order-1',
+      OrderStatus.PREPARING,
+    );
+    expect(
+      chatService.syncDeliveryThreadForOrderLifecycle,
+    ).toHaveBeenCalledWith('order-1', OrderStatus.PREPARING);
+    expect(result.message).toBe('Order uncancelled successfully');
+  });
+
+  it('restores legacy cancelled orders to placed status', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.CANCELLED,
+      statusBeforeCancellation: null,
+      paymentStatus: PaymentStatus.PAID,
+    });
+    ordersRepository.uncancel.mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.PLACED,
+    });
+    Object.assign(service as object, {
+      toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
+    });
+
+    await service.uncancel(
+      {
+        uid: 'super-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      } as never,
+      'order-1',
+    );
+
+    expect(ordersRepository.uncancel).toHaveBeenCalledWith(
+      'order-1',
+      OrderStatus.PLACED,
+    );
+  });
+
+  it('blocks uncancelling refunded orders', async () => {
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.CANCELLED,
+      statusBeforeCancellation: OrderStatus.CONFIRMED,
+      paymentStatus: PaymentStatus.REFUNDED,
+    });
+
+    await expect(
+      service.uncancel(
+        {
+          uid: 'super-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        } as never,
+        'order-1',
+      ),
+    ).rejects.toThrow(
+      'Orders with refunded or cancelled payments cannot be uncancelled',
+    );
+
+    expect(ordersRepository.uncancel).not.toHaveBeenCalled();
   });
 
   it('requires branch-set order time when accepting a placed order', async () => {

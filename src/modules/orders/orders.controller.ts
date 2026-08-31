@@ -146,4 +146,13 @@ export class OrdersController {
   ) {
     return this.ordersService.cancel(user, id, dto);
   }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post(':id/uncancel')
+  @ApiOperation({ summary: 'Restore a cancelled order to its prior status' })
+  uncancel(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.ordersService.uncancel(user, id);
+  }
 }

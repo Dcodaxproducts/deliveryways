@@ -828,7 +828,7 @@ export class OrdersService {
       );
     }
 
-    const data = await this.ordersRepository.cancel(id, user.uid);
+    const data = await this.ordersRepository.cancel(id, user.uid, order.status);
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
     await this.chatService.syncDeliveryThreadForOrderLifecycle(
@@ -840,6 +840,46 @@ export class OrdersService {
     return {
       data: this.toOrderMutationResponse(data),
       message: 'Order cancelled successfully',
+    };
+  }
+
+  async uncancel(user: AuthUserContext, id: string) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can uncancel orders');
+    }
+
+    const order = await this.ordersRepository.findById(id);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.status !== OrderStatus.CANCELLED) {
+      throw new BadRequestException('Only cancelled orders can be restored');
+    }
+
+    if (
+      order.paymentStatus === PaymentStatus.REFUNDED ||
+      order.paymentStatus === PaymentStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        'Orders with refunded or cancelled payments cannot be uncancelled',
+      );
+    }
+
+    const restoredStatus = order.statusBeforeCancellation ?? OrderStatus.PLACED;
+    const data = await this.ordersRepository.uncancel(id, restoredStatus);
+
+    await this.notificationsService.notifyOrderStatusChanged(data.id);
+    await this.chatService.syncDeliveryThreadForOrderLifecycle(
+      data.id,
+      restoredStatus,
+    );
+    await this.emitTrackingUpdate(data.id);
+
+    return {
+      data: this.toOrderMutationResponse(data),
+      message: 'Order uncancelled successfully',
     };
   }
 

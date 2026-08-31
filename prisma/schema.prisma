@@ -1491,6 +1491,7 @@ model Order {
   estimatedPreparationMinutes Int?               @map("estimated_preparation_minutes")
   isScheduled                 Boolean            @default(false) @map("is_scheduled")
   status                      OrderStatus        @default(PLACED)
+  statusBeforeCancellation    OrderStatus?       @map("status_before_cancellation")
   subtotal                    Decimal            @db.Decimal(10, 2)
   taxAmount                   Decimal            @default(0) @map("tax_amount") @db.Decimal(10, 2)
   deliveryFee                 Decimal            @default(0) @map("delivery_fee") @db.Decimal(10, 2)

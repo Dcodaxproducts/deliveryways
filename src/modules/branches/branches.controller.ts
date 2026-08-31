@@ -344,6 +344,14 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Patch(':id/default')
+  setDefault(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
+    return this.branchesService.setDefault(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Post(':id/restore')
   restore(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {

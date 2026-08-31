@@ -159,6 +159,7 @@ export class BranchesService {
     const branchDto: CreateBranchDto = {
       ...dto,
       restaurantId: effectiveRestaurantId,
+      isMain: false,
       settings: this.sanitizeBranchSettingsInput(
         user,
         dto.settings,
@@ -269,6 +270,7 @@ export class BranchesService {
           const branchInput: CreateBranchDto = {
             ...item,
             restaurantId: effectiveRestaurantId,
+            isMain: false,
             settings: this.sanitizeBranchSettingsInput(
               user,
               item.settings,
@@ -1070,7 +1072,6 @@ export class BranchesService {
         id,
         {
           name: updateDto.name,
-          isMain: updateDto.isMain,
           logoUrl:
             updateDto.logoUrl !== undefined
               ? this.normalizeMediaUrl(updateDto.logoUrl)
@@ -1303,6 +1304,35 @@ export class BranchesService {
     return {
       data,
       message: 'Branch soft deleted successfully',
+    };
+  }
+
+  async setDefault(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException(
+        'Only super admin can change the default branch',
+      );
+    }
+
+    const branch = await this.branchesRepository.findById(id);
+
+    if (!branch || branch.deletedAt || !branch.isActive) {
+      throw new BadRequestException('Active branch not found');
+    }
+
+    await this.assertBranchWriteAccess(user, branch);
+
+    const data = branch.isMain
+      ? branch
+      : await this.branchesRepository.setDefault(
+          branch.id,
+          branch.restaurantId,
+          tx,
+        );
+
+    return {
+      data: await this.resolveBranchMedia(data),
+      message: 'Default branch updated successfully',
     };
   }
 
