@@ -62,6 +62,9 @@ type RestaurantPayoutOrder = Awaited<
 type SubscriptionDeduction = Awaited<
   ReturnType<PackagePlansRepository['listApplicableDeductions']>
 >[number];
+type SubscriptionPayoutActivity = Awaited<
+  ReturnType<PackagePlansRepository['listSubscriptionPayoutActivity']>
+>[number];
 
 interface SubscriptionPlanSnapshot {
   id?: string;
@@ -810,6 +813,20 @@ export class PackagePlansService {
       const invoice = snapshot as unknown as Awaited<
         ReturnType<PackagePlansService['buildSubscriptionInvoice']>
       >;
+      const payoutActivity = invoice.payoutActivity ?? {
+        currency: invoice.totals.currency,
+        summary: {
+          requestedCount: 0,
+          requestedAmount: 0,
+          approvedCount: 0,
+          approvedAmount: 0,
+          rejectedCount: 0,
+          rejectedAmount: 0,
+          paidCount: 0,
+          paidAmount: 0,
+        },
+        requests: [],
+      };
       const hydratedInvoice = {
         ...invoice,
         issuedAt: this.parseStoredInvoiceDate(invoice.issuedAt),
@@ -823,6 +840,22 @@ export class PackagePlansService {
           orders: invoice.orderBreakdown.orders.map((order) => ({
             ...order,
             date: this.parseStoredInvoiceDate(order.date),
+          })),
+        },
+        payoutActivity: {
+          ...payoutActivity,
+          requests: payoutActivity.requests.map((request) => ({
+            ...request,
+            requestedAt: this.parseStoredInvoiceDate(request.requestedAt),
+            approvedAt: request.approvedAt
+              ? this.parseStoredInvoiceDate(request.approvedAt)
+              : null,
+            rejectedAt: request.rejectedAt
+              ? this.parseStoredInvoiceDate(request.rejectedAt)
+              : null,
+            paidAt: request.paidAt
+              ? this.parseStoredInvoiceDate(request.paidAt)
+              : null,
           })),
         },
       };
@@ -1730,6 +1763,16 @@ export class PackagePlansService {
           servicePeriod.to,
         )
       : [];
+    const payoutActivity =
+      subscription.restaurantId &&
+      this.packagePlansRepository.listSubscriptionPayoutActivity
+        ? await this.packagePlansRepository.listSubscriptionPayoutActivity(
+            subscription.tenantId,
+            subscription.restaurantId,
+            servicePeriod.from,
+            servicePeriod.to,
+          )
+        : [];
 
     return this.toSubscriptionInvoice(
       subscription,
@@ -1737,6 +1780,7 @@ export class PackagePlansService {
       servicePeriod,
       commissionOrders,
       deductions,
+      payoutActivity,
     );
   }
 
@@ -1746,6 +1790,7 @@ export class PackagePlansService {
     servicePeriod: { from: Date; to: Date },
     commissionOrders: RestaurantPayoutOrder[],
     deductions: SubscriptionDeduction[],
+    payoutActivity: SubscriptionPayoutActivity[],
   ) {
     const subscriptionFeeAmount = new Prisma.Decimal(plan.planPrice)
       .toDecimalPlaces(2)
@@ -1905,6 +1950,11 @@ export class PackagePlansService {
         offlineOrders,
         plan.currency,
       ),
+      payoutActivity: this.buildSubscriptionPayoutActivity(
+        payoutActivity,
+        servicePeriod,
+        plan.currency,
+      ),
       totals: {
         subscriptionFeeAmount,
         transactionFeeAmount,
@@ -1922,6 +1972,63 @@ export class PackagePlansService {
         currency: plan.currency,
       },
       note: subscription.note,
+    };
+  }
+
+  private buildSubscriptionPayoutActivity(
+    requests: SubscriptionPayoutActivity[],
+    servicePeriod: { from: Date; to: Date },
+    currency: string,
+  ) {
+    const isInPeriod = (date: Date | null) =>
+      date !== null && date >= servicePeriod.from && date < servicePeriod.to;
+    const sum = (dates: (request: SubscriptionPayoutActivity) => Date | null) =>
+      requests
+        .filter((request) => isInPeriod(dates(request)))
+        .reduce(
+          (total, request) => total.plus(request.amount),
+          new Prisma.Decimal(0),
+        )
+        .toDecimalPlaces(2)
+        .toNumber();
+
+    return {
+      currency,
+      summary: {
+        requestedCount: requests.filter((request) =>
+          isInPeriod(request.createdAt),
+        ).length,
+        requestedAmount: sum((request) => request.createdAt),
+        approvedCount: requests.filter((request) =>
+          isInPeriod(request.approvedAt),
+        ).length,
+        approvedAmount: sum((request) => request.approvedAt),
+        rejectedCount: requests.filter((request) =>
+          isInPeriod(request.rejectedAt),
+        ).length,
+        rejectedAmount: sum((request) => request.rejectedAt),
+        paidCount: requests.filter((request) => isInPeriod(request.paidAt))
+          .length,
+        paidAmount: sum((request) => request.paidAt),
+      },
+      requests: requests.map((request) => ({
+        id: request.id,
+        branchId: request.branchId,
+        status: request.status,
+        amount: new Prisma.Decimal(request.amount)
+          .toDecimalPlaces(2)
+          .toNumber(),
+        currency: request.currency,
+        note: request.note,
+        rejectionReason: request.rejectionReason,
+        approvalNote: request.approvalNote,
+        paymentReference: request.paymentReference,
+        paidNote: request.paidNote,
+        requestedAt: request.createdAt,
+        approvedAt: request.approvedAt,
+        rejectedAt: request.rejectedAt,
+        paidAt: request.paidAt,
+      })),
     };
   }
 
@@ -2370,8 +2477,55 @@ export class PackagePlansService {
           ],
         },
         this.buildSubscriptionOrderBreakdownSection(invoice),
+        this.buildSubscriptionPayoutActivitySection(invoice),
       ],
     });
+  }
+
+  private buildSubscriptionPayoutActivitySection(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+  ): InvoicePdfSection {
+    const activity = invoice.payoutActivity;
+    if (activity.requests.length === 0) {
+      return {
+        title: 'Payout Activity',
+        rows: ['No payout request activity for this service period.'],
+      };
+    }
+
+    return {
+      title: 'Payout Activity',
+      pageBreakBefore: true,
+      rows: [
+        `Requested: ${activity.summary.requestedCount} (${this.formatInvoiceMoney(activity.summary.requestedAmount)} ${activity.currency})`,
+        `Approved: ${activity.summary.approvedCount} (${this.formatInvoiceMoney(activity.summary.approvedAmount)} ${activity.currency})`,
+        `Rejected: ${activity.summary.rejectedCount} (${this.formatInvoiceMoney(activity.summary.rejectedAmount)} ${activity.currency})`,
+        `Paid: ${activity.summary.paidCount} (${this.formatInvoiceMoney(activity.summary.paidAmount)} ${activity.currency})`,
+        'Payout activity is informational and does not change the invoice amount due.',
+      ],
+      tables: [
+        {
+          columns: [
+            { header: 'Request', width: 90 },
+            { header: 'Requested', width: 80 },
+            { header: 'Status', width: 65 },
+            { header: 'Paid', width: 80 },
+            { header: `Amount (${activity.currency})`, width: 85 },
+            { header: 'Reference', width: 100 },
+          ],
+          rows: activity.requests.map((request) => [
+            request.id,
+            this.formatInvoiceDate(request.requestedAt),
+            this.formatInvoiceLabel(request.status),
+            request.paidAt ? this.formatInvoiceDate(request.paidAt) : 'N/A',
+            this.formatInvoiceMoney(request.amount),
+            request.paymentReference ?? 'N/A',
+          ]),
+        },
+      ],
+    };
   }
 
   private buildWeeklyPayoutOrderBreakdownSection(

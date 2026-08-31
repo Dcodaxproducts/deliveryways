@@ -2539,9 +2539,6 @@ export class PaymentsService {
       providerReference,
       `Automated ${dto.provider} payout completed`,
     );
-    if (completion.completed) {
-      await this.persistSpecialPayoutInvoice(completion.data, user.uid);
-    }
 
     return {
       data: this.serializeRestaurantPayoutRequest(completion.data),
@@ -2624,9 +2621,6 @@ export class PaymentsService {
       this.resolveOptionalString(dto.note) ??
         'Manual bank payout completed by super admin',
     );
-    if (completion.completed) {
-      await this.persistSpecialPayoutInvoice(completion.data, user.uid);
-    }
 
     return {
       data: this.serializeRestaurantPayoutRequest(completion.data),
@@ -5081,28 +5075,6 @@ export class PaymentsService {
       });
 
       return { data, completed: true };
-    });
-  }
-
-  private async persistSpecialPayoutInvoice(
-    data: {
-      id: string;
-      tenantId: string;
-      restaurantId: string;
-      amount: Prisma.Decimal;
-      currency: string;
-      paidAt: Date | null;
-    },
-    paidBy: string,
-  ) {
-    await this.packagePlansService?.persistSpecialPayoutInvoiceForPaidRequest({
-      payoutRequestId: data.id,
-      tenantId: data.tenantId,
-      restaurantId: data.restaurantId,
-      amount: data.amount,
-      currency: data.currency,
-      paidBy,
-      paidAt: data.paidAt ?? new Date(),
     });
   }
 

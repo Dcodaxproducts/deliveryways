@@ -392,9 +392,28 @@ describe('PackagePlansService', () => {
   });
 
   it('returns restaurant subscription invoice details for super admin', async () => {
+    const payoutRequest = {
+      id: 'payout-1',
+      branchId: 'branch-1',
+      status: 'PAID',
+      amount: new Prisma.Decimal(400),
+      currency: 'PKR',
+      note: 'Weekly payout',
+      rejectionReason: null,
+      approvalNote: 'Approved',
+      paymentReference: 'bank-ref-1',
+      paidNote: 'Paid by bank',
+      createdAt: new Date('2026-06-10T00:00:00.000Z'),
+      approvedAt: new Date('2026-06-11T00:00:00.000Z'),
+      rejectedAt: null,
+      paidAt: new Date('2026-06-12T00:00:00.000Z'),
+    };
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+      listSubscriptionPayoutActivity: jest
+        .fn()
+        .mockResolvedValue([payoutRequest]),
     };
     const service = new PackagePlansService(repository as never);
 
@@ -423,12 +442,39 @@ describe('PackagePlansService', () => {
         totalAmount: 4807.5,
         currency: 'PKR',
       },
+      payoutActivity: {
+        currency: 'PKR',
+        summary: {
+          requestedCount: 1,
+          requestedAmount: 400,
+          approvedCount: 1,
+          approvedAmount: 400,
+          rejectedCount: 0,
+          rejectedAmount: 0,
+          paidCount: 1,
+          paidAmount: 400,
+        },
+        requests: [
+          expect.objectContaining({
+            id: 'payout-1',
+            status: 'PAID',
+            amount: 400,
+            paymentReference: 'bank-ref-1',
+          }),
+        ],
+      },
     });
     expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
       'restaurant-1',
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
       true,
+    );
+    expect(repository.listSubscriptionPayoutActivity).toHaveBeenCalledWith(
+      'tenant-1',
+      'restaurant-1',
+      new Date('2026-06-01T00:00:00.000Z'),
+      new Date('2026-07-01T00:00:00.000Z'),
     );
   });
 
@@ -860,7 +906,7 @@ describe('PackagePlansService', () => {
     );
   });
 
-  it('rebuilds a detailed subscription PDF from a stored JSON snapshot', async () => {
+  it('rebuilds a legacy subscription PDF without stored payout activity', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
@@ -870,9 +916,12 @@ describe('PackagePlansService', () => {
       superAdmin,
       'subscription-12345678',
     );
-    const snapshot = JSON.parse(
-      JSON.stringify(invoice.data),
-    ) as Prisma.JsonValue;
+    const snapshotObject = JSON.parse(JSON.stringify(invoice.data)) as Record<
+      string,
+      unknown
+    >;
+    delete snapshotObject.payoutActivity;
+    const snapshot = snapshotObject as unknown as Prisma.JsonValue;
 
     const pdf = service.generateStoredInvoicePdf(
       GeneratedInvoiceKind.SUBSCRIPTION,
@@ -883,6 +932,7 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('Order Payment Details');
     expect(pdfText).toContain('order-1');
     expect(pdfText).toContain('Total Revenue');
+    expect(pdfText).toContain('No payout request activity');
   });
 
   it('sends restaurant subscription invoice to billing email', async () => {

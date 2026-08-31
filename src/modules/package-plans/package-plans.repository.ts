@@ -613,6 +613,45 @@ export class PackagePlansRepository {
     });
   }
 
+  listSubscriptionPayoutActivity(
+    tenantId: string,
+    restaurantId: string,
+    fromDate: Date,
+    toDate: Date,
+  ) {
+    const occurredDuringPeriod = { gte: fromDate, lt: toDate };
+
+    return this.prisma.restaurantPayoutRequest.findMany({
+      where: {
+        tenantId,
+        restaurantId,
+        OR: [
+          { createdAt: occurredDuringPeriod },
+          { approvedAt: occurredDuringPeriod },
+          { rejectedAt: occurredDuringPeriod },
+          { paidAt: occurredDuringPeriod },
+        ],
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        branchId: true,
+        status: true,
+        amount: true,
+        currency: true,
+        note: true,
+        rejectionReason: true,
+        approvalNote: true,
+        paymentReference: true,
+        paidNote: true,
+        createdAt: true,
+        approvedAt: true,
+        rejectedAt: true,
+        paidAt: true,
+      },
+    });
+  }
+
   listRestaurantWalletPayoutOrders(restaurantId: string) {
     return this.prisma.order.findMany({
       where: {
