@@ -123,6 +123,43 @@ export class PaypalOrdersService {
     return this.readCaptureResult(payload);
   }
 
+  async refundCapture(input: {
+    captureId: string;
+    amount: number;
+    currency: string;
+    idempotencyKey: string;
+    credentials?: PaypalOrderCredentials;
+  }) {
+    const credentials = this.requireCredentials(input.credentials);
+    const payload = await this.request(
+      credentials,
+      `/v2/payments/captures/${encodeURIComponent(input.captureId)}/refund`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'PayPal-Request-Id': input.idempotencyKey,
+        },
+        body: JSON.stringify({
+          amount: {
+            currency_code: input.currency.toUpperCase(),
+            value: input.amount.toFixed(2),
+          },
+        }),
+      },
+    );
+    const id = this.readString(payload, ['id']);
+    const status = this.readString(payload, ['status']);
+
+    if (!id || status !== 'COMPLETED') {
+      throw new BadGatewayException(
+        'PayPal did not confirm the refund as completed',
+      );
+    }
+
+    return { id, status, payload };
+  }
+
   private readCaptureResult(payload: unknown) {
     const purchaseUnits = this.readValue(payload, ['purchase_units']);
     const purchaseUnit = Array.isArray(purchaseUnits)

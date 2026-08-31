@@ -19,7 +19,7 @@ import {
   RestaurantWalletTransactionType,
   SubscriptionStatus,
 } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
@@ -3159,6 +3159,11 @@ export class PaymentsService {
       );
     }
 
+    const currency = dto.currency ?? payment.currency;
+    let paypalRefund:
+      | { id: string; status: string; payload: unknown; captureId: string }
+      | undefined;
+
     if (payment.paymentMethod === PaymentMethod.STRIPE && payment.providerRef) {
       const stripeCredentials =
         await this.resolveGlobalStripeCheckoutCredentials();
@@ -3169,7 +3174,32 @@ export class PaymentsService {
       );
     }
 
-    const currency = dto.currency ?? payment.currency;
+    if (payment.paymentMethod === PaymentMethod.PAYPAL) {
+      if (!this.paypalOrdersService) {
+        throw new ServiceUnavailableException('PayPal checkout is unavailable');
+      }
+      const captureId = this.readPaypalCaptureId(payment.providerData);
+      if (!captureId) {
+        throw new BadRequestException(
+          'PayPal capture reference is missing from this payment',
+        );
+      }
+      const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
+      const idempotencyKey = createHash('sha256')
+        .update(
+          `${payment.id}:${refundedSoFar.plus(refundAmount).toFixed(2)}:${currency}`,
+        )
+        .digest('hex')
+        .slice(0, 32);
+      const providerRefund = await this.paypalOrdersService.refundCapture({
+        captureId,
+        amount: Number(refundAmount),
+        currency,
+        idempotencyKey,
+        credentials,
+      });
+      paypalRefund = { ...providerRefund, captureId };
+    }
 
     const data = await this.prisma.$transaction(async (tx) => {
       const refundTransaction = await this.paymentsRepository.create(
@@ -3183,8 +3213,15 @@ export class PaymentsService {
           status: PaymentStatus.REFUNDED,
           amount: refundAmount,
           currency,
-          providerRef: dto.providerRef ?? payment.providerRef,
-          providerData: dto.providerData as Prisma.InputJsonValue,
+          providerRef:
+            paypalRefund?.id ?? dto.providerRef ?? payment.providerRef,
+          providerData: paypalRefund
+            ? ({
+                provider: 'paypal',
+                captureId: paypalRefund.captureId,
+                refund: paypalRefund.payload,
+              } as Prisma.InputJsonValue)
+            : (dto.providerData as Prisma.InputJsonValue),
           note: dto.note,
           processedAt: new Date(),
         },
@@ -3255,6 +3292,24 @@ export class PaymentsService {
       data,
       message: 'Payment refunded successfully',
     };
+  }
+
+  private readPaypalCaptureId(
+    providerData: Prisma.JsonValue | null | undefined,
+  ): string | null {
+    const data = this.asJsonObject(providerData);
+    const directCaptureId = this.readString(data.captureId);
+    if (directCaptureId) return directCaptureId;
+
+    const purchaseUnits = Array.isArray(data.purchase_units)
+      ? data.purchase_units
+      : [];
+    const purchaseUnit = this.asJsonObject(purchaseUnits[0]);
+    const payments = this.asJsonObject(purchaseUnit.payments);
+    const captures = Array.isArray(payments.captures) ? payments.captures : [];
+    const capture = this.asJsonObject(captures[0]);
+
+    return this.readString(capture.id);
   }
 
   private async updateWalletTopUpStatus(
