@@ -1,4 +1,9 @@
-import { OrderStatus, Prisma } from '@prisma/client';
+import {
+  GeneratedInvoiceKind,
+  GeneratedInvoiceStatus,
+  OrderStatus,
+  Prisma,
+} from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
 
 type CreateWalletTransactionCall = {
@@ -133,5 +138,42 @@ describe('PackagePlansRepository commission order recognition', () => {
     expect(findManyArgs?.orderBy).toEqual([{ createdAt: 'asc' }]);
     expect(findManyArgs?.where).not.toHaveProperty('paymentStatus');
     expect(findManyArgs?.where).not.toHaveProperty('paidAt');
+  });
+});
+
+describe('PackagePlansRepository monthly payout history', () => {
+  it('loads finalized overlapping payouts and excludes the current source', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PackagePlansRepository({
+      generatedInvoice: { findMany },
+    } as never);
+    const monthFrom = new Date('2026-09-01T00:00:00.000Z');
+    const monthTo = new Date('2026-10-01T00:00:00.000Z');
+
+    await repository.listRestaurantMonthlyPayoutInvoices(
+      'restaurant-1',
+      monthFrom,
+      monthTo,
+      'restaurant-1:current-period',
+    );
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        status: GeneratedInvoiceStatus.SENT,
+        restaurantId: 'restaurant-1',
+        periodFrom: { lt: monthTo },
+        periodTo: { gt: monthFrom },
+        sourceKey: { not: 'restaurant-1:current-period' },
+      },
+      select: {
+        id: true,
+        sourceKey: true,
+        periodFrom: true,
+        periodTo: true,
+        snapshot: true,
+      },
+      orderBy: [{ periodFrom: 'asc' }, { createdAt: 'asc' }],
+    });
   });
 });

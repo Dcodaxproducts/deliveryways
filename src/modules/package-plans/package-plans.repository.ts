@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   GeneratedInvoiceKind,
+  GeneratedInvoiceStatus,
   OrderStatus,
   PaymentStatus,
   PaymentTransactionType,
@@ -727,6 +728,32 @@ export class PackagePlansRepository {
         snapshot: true,
       },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  listRestaurantMonthlyPayoutInvoices(
+    restaurantId: string,
+    monthFrom: Date,
+    monthTo: Date,
+    excludeSourceKey?: string,
+  ) {
+    return this.prisma.generatedInvoice.findMany({
+      where: {
+        kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        status: GeneratedInvoiceStatus.SENT,
+        restaurantId,
+        periodFrom: { lt: monthTo },
+        periodTo: { gt: monthFrom },
+        ...(excludeSourceKey ? { sourceKey: { not: excludeSourceKey } } : {}),
+      },
+      select: {
+        id: true,
+        sourceKey: true,
+        periodFrom: true,
+        periodTo: true,
+        snapshot: true,
+      },
+      orderBy: [{ periodFrom: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
