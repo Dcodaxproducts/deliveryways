@@ -93,6 +93,14 @@ describe('PackagePlansService', () => {
     ...overrides,
   });
 
+  const makeCommissionOnlySubscription = () =>
+    makeSubscription({
+      planSnapshot: {
+        ...makeSubscription().planSnapshot,
+        planPrice: 0,
+      },
+    });
+
   const makePaidOrder = (overrides: Record<string, unknown> = {}) => ({
     id: 'order-1',
     branchId: 'branch-1',
@@ -491,7 +499,7 @@ describe('PackagePlansService', () => {
       }),
       findActiveRestaurantSubscription: jest
         .fn()
-        .mockResolvedValue(makeSubscription()),
+        .mockResolvedValue(makeCommissionOnlySubscription()),
       listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
         makePaidOrder({
           totalAmount: new Prisma.Decimal(1008),
@@ -598,7 +606,7 @@ describe('PackagePlansService', () => {
       }),
       findActiveRestaurantSubscription: jest
         .fn()
-        .mockResolvedValue(makeSubscription()),
+        .mockResolvedValue(makeCommissionOnlySubscription()),
       listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
         makePaidOrder({ totalAmount: new Prisma.Decimal('100.10') }),
         makePaidOrder({
@@ -622,6 +630,88 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('carries the remaining monthly fee into the current wallet payout', async () => {
+    const subscription = makeSubscription({
+      planSnapshot: {
+        ...makeSubscription().planSnapshot,
+        planPrice: 159,
+        commissionCapAmount: 79,
+        vatPercentage: 0,
+      },
+    });
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: null,
+        settings: null,
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(subscription),
+      listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          totalAmount: new Prisma.Decimal(500),
+          paidAt: new Date('2026-09-08T10:00:00.000Z'),
+          createdAt: new Date('2026-09-08T09:55:00.000Z'),
+          transactions: [
+            {
+              id: 'txn-1',
+              type: PaymentTransactionType.CHARGE,
+              amount: new Prisma.Decimal(500),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 'pi_123',
+              processedAt: new Date('2026-09-08T10:00:00.000Z'),
+            },
+          ],
+        }),
+      ]),
+      listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([]),
+      listRestaurantMonthlyPayoutInvoices: jest.fn().mockResolvedValue([
+        {
+          snapshot: {
+            monthlyBilling: {
+              months: [
+                {
+                  month: '2026-09',
+                  commissionDeductedThisPayout: 20,
+                  monthlyFeeDeductedThisPayout: 20,
+                },
+              ],
+            },
+          },
+        },
+      ]),
+      findRestaurantWalletAccount: jest.fn().mockResolvedValue({
+        balance: new Prisma.Decimal(500),
+        currency: 'EUR',
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await expect(
+      service.getRestaurantPayoutBalanceSummary(
+        'restaurant-1',
+        new Date('2026-09-08T12:00:00.000Z'),
+      ),
+    ).resolves.toMatchObject({
+      billingMonth: '2026-09',
+      platformCommissionAmount: 25,
+      monthlyFeeAmount: 159,
+      monthlyFeeScheduledToDate: 79.5,
+      monthlyFeeDeductedBefore: 20,
+      monthlyFeeDeductedAmount: 59.5,
+      monthlyFeeDeductedThisMonth: 79.5,
+      monthlyFeeOutstandingAmount: 79.5,
+      restaurantPayoutAmount: 415.5,
+      currency: 'PKR',
+    });
+  });
+
   it('reduces provider-collected payout and commission after a refund', async () => {
     const repository = {
       findRestaurantPayoutScope: jest.fn().mockResolvedValue({
@@ -635,7 +725,7 @@ describe('PackagePlansService', () => {
       }),
       findActiveRestaurantSubscription: jest
         .fn()
-        .mockResolvedValue(makeSubscription()),
+        .mockResolvedValue(makeCommissionOnlySubscription()),
       listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
         makePaidOrder({
           totalAmount: new Prisma.Decimal(100),
@@ -816,6 +906,66 @@ describe('PackagePlansService', () => {
     });
     expect(result.data.totals.transactionFeeAmount).toBe(250);
     expect(result.data.totals.onlinePaymentCreditAmount).toBe(4000);
+  });
+
+  it('reconciles finalized weekly commission and monthly-fee deductions', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+      listRestaurantMonthlyPayoutInvoices: jest.fn().mockResolvedValue([
+        {
+          id: 'weekly-payout-1',
+          sourceKey: 'weekly-payout-1',
+          periodFrom: new Date('2026-06-01T00:00:00.000Z'),
+          periodTo: new Date('2026-06-08T00:00:00.000Z'),
+          snapshot: {
+            monthlyBilling: {
+              months: [
+                {
+                  month: '2026-06',
+                  commissionDeductedThisPayout: 50,
+                  monthlyFeeDeductedThisPayout: 1250,
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getSubscriptionInvoice(
+      superAdmin,
+      'subscription-12345678',
+    );
+
+    expect(result.data.weeklyPayoutDeductions).toEqual({
+      commissionAmount: 50,
+      monthlyFeeAmount: 1250,
+      totalAmount: 1300,
+    });
+    expect(result.data.totals).toMatchObject({
+      subscriptionFeeAmount: 5000,
+      transactionFeeAmount: 50,
+      weeklyCommissionDeductedAmount: 50,
+      weeklyMonthlyFeeDeductedAmount: 1250,
+      onlinePaymentCreditAmount: 0,
+      subtotal: 3750,
+      vatAmount: 562.5,
+      amountDue: 4312.5,
+    });
+    expect(result.data.lineItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          description: 'Monthly fee withheld from weekly payouts',
+          amount: -1250,
+        }),
+        expect.objectContaining({
+          description: 'Commission withheld from weekly payouts',
+          amount: -50,
+        }),
+      ]),
+    );
   });
 
   it('returns a credit note when online payment credit covers subscription fees', async () => {
@@ -1030,9 +1180,14 @@ describe('PackagePlansService', () => {
         settings: { billing: { email: 'billing@pizza.test' } },
         tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
       }),
-      findActiveRestaurantSubscription: jest
-        .fn()
-        .mockResolvedValue(makeSubscription()),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(
+        makeSubscription({
+          planSnapshot: {
+            ...makeSubscription().planSnapshot,
+            planPrice: 0,
+          },
+        }),
+      ),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
     };
     const service = new PackagePlansService(repository as never);
@@ -1068,6 +1223,319 @@ describe('PackagePlansService', () => {
         currency: 'PKR',
       },
     });
+  });
+
+  it('deducts only the remaining calendar-month commission cap', async () => {
+    const order = makePaidOrder({
+      totalAmount: new Prisma.Decimal(700),
+      paidAt: new Date('2026-06-18T10:00:00.000Z'),
+      createdAt: new Date('2026-06-18T09:55:00.000Z'),
+      transactions: [
+        {
+          ...makePaidOrder().transactions[0],
+          amount: new Prisma.Decimal(700),
+        },
+      ],
+    });
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(
+        makeSubscription({
+          planSnapshot: {
+            ...makeSubscription().planSnapshot,
+            planPrice: 0,
+            commissionCapAmount: 79,
+            vatPercentage: 0,
+          },
+        }),
+      ),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([order]),
+      listRestaurantMonthlyPayoutInvoices: jest.fn().mockResolvedValue([
+        {
+          id: 'prior-payout',
+          sourceKey: 'prior-source',
+          periodFrom: new Date('2026-06-01T00:00:00.000Z'),
+          periodTo: new Date('2026-06-15T00:00:00.000Z'),
+          snapshot: {
+            monthlyBilling: {
+              months: [
+                {
+                  month: '2026-06',
+                  commissionDeductedThisPayout: 45,
+                  monthlyFeeDeductedThisPayout: 0,
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-15T00:00:00.000Z',
+      toDate: '2026-06-22T00:00:00.000Z',
+    });
+
+    expect(result.data.totals.platformCommissionAmount).toBe(34);
+    expect(result.data.monthlyBilling.months).toEqual([
+      expect.objectContaining({
+        month: '2026-06',
+        commissionDeductedBefore: 45,
+        commissionDeductedThisPayout: 34,
+        commissionDeductedThisMonth: 79,
+        commissionCapRemaining: 0,
+      }),
+    ]);
+  });
+
+  it('deducts no commission after the cap and resets in a new month', async () => {
+    const monthlyHistory = {
+      id: 'prior-payout',
+      sourceKey: 'prior-source',
+      periodFrom: new Date('2026-06-01T00:00:00.000Z'),
+      periodTo: new Date('2026-06-29T00:00:00.000Z'),
+      snapshot: {
+        monthlyBilling: {
+          months: [
+            {
+              month: '2026-06',
+              commissionDeductedThisPayout: 79,
+              monthlyFeeDeductedThisPayout: 0,
+            },
+          ],
+        },
+      },
+    };
+    const orderFor = (amount: number, paidAt: string) =>
+      makePaidOrder({
+        totalAmount: new Prisma.Decimal(amount),
+        paidAt: new Date(paidAt),
+        createdAt: new Date(paidAt),
+        transactions: [
+          {
+            ...makePaidOrder().transactions[0],
+            amount: new Prisma.Decimal(amount),
+            processedAt: new Date(paidAt),
+          },
+        ],
+      });
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(
+        makeSubscription({
+          planSnapshot: {
+            ...makeSubscription().planSnapshot,
+            planPrice: 0,
+            commissionCapAmount: 79,
+            vatPercentage: 0,
+          },
+        }),
+      ),
+      listPaidRestaurantOrders: jest
+        .fn()
+        .mockResolvedValueOnce([orderFor(800, '2026-06-30T10:00:00.000Z')])
+        .mockResolvedValueOnce([orderFor(400, '2026-07-03T10:00:00.000Z')]),
+      listRestaurantMonthlyPayoutInvoices: jest
+        .fn()
+        .mockImplementation((_restaurantId: string, monthFrom: Date) =>
+          Promise.resolve(
+            monthFrom.getUTCMonth() === 5 ? [monthlyHistory] : [],
+          ),
+        ),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const capped = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-29T00:00:00.000Z',
+      toDate: '2026-07-01T00:00:00.000Z',
+    });
+    const reset = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-07-01T00:00:00.000Z',
+      toDate: '2026-07-08T00:00:00.000Z',
+    });
+
+    expect(capped.data.totals.platformCommissionAmount).toBe(0);
+    expect(reset.data.totals.platformCommissionAmount).toBe(20);
+  });
+
+  it('withholds four monthly-fee installments and carries unpaid amounts', async () => {
+    const order = makePaidOrder({
+      totalAmount: new Prisma.Decimal(100),
+      paidAt: new Date('2026-06-10T10:00:00.000Z'),
+      createdAt: new Date('2026-06-10T10:00:00.000Z'),
+      transactions: [
+        {
+          ...makePaidOrder().transactions[0],
+          amount: new Prisma.Decimal(100),
+        },
+      ],
+    });
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(
+        makeSubscription({
+          planSnapshot: {
+            ...makeSubscription().planSnapshot,
+            billingModel: PackageBillingModel.PLAN,
+            planPrice: 159,
+            commissionPercentage: 0,
+            commissionCapAmount: null,
+            vatPercentage: 0,
+          },
+        }),
+      ),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([order]),
+      listRestaurantMonthlyPayoutInvoices: jest.fn().mockResolvedValue([
+        {
+          id: 'week-1',
+          sourceKey: 'week-1-source',
+          periodFrom: new Date('2026-06-01T00:00:00.000Z'),
+          periodTo: new Date('2026-06-08T00:00:00.000Z'),
+          snapshot: {
+            monthlyBilling: {
+              months: [
+                {
+                  month: '2026-06',
+                  commissionDeductedThisPayout: 0,
+                  monthlyFeeDeductedThisPayout: 20,
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-08T00:00:00.000Z',
+      toDate: '2026-06-15T00:00:00.000Z',
+    });
+
+    expect(result.data.totals.monthlyFeeDeductedAmount).toBe(59.5);
+    expect(result.data.totals.restaurantPayoutAmount).toBe(40.5);
+    expect(result.data.monthlyBilling.months).toEqual([
+      expect.objectContaining({
+        monthlyFeeAmount: 159,
+        monthlyFeeScheduledToDate: 79.5,
+        monthlyFeeDeductedBefore: 20,
+        monthlyFeeDeductedThisPayout: 59.5,
+        monthlyFeeDeductedThisMonth: 79.5,
+        monthlyFeeOutstandingAmount: 79.5,
+      }),
+    ]);
+  });
+
+  it('caps a monthly-fee installment by payout balance and charges zero after full collection', async () => {
+    const makeOrder = (amount: number, paidAt: string) =>
+      makePaidOrder({
+        totalAmount: new Prisma.Decimal(amount),
+        paidAt: new Date(paidAt),
+        createdAt: new Date(paidAt),
+        transactions: [
+          {
+            ...makePaidOrder().transactions[0],
+            amount: new Prisma.Decimal(amount),
+          },
+        ],
+      });
+    const history = (deducted: number) => [
+      {
+        id: `history-${deducted}`,
+        sourceKey: `history-${deducted}`,
+        periodFrom: new Date('2026-06-01T00:00:00.000Z'),
+        periodTo: new Date('2026-06-29T00:00:00.000Z'),
+        snapshot: {
+          monthlyBilling: {
+            months: [
+              {
+                month: '2026-06',
+                commissionDeductedThisPayout: 0,
+                monthlyFeeDeductedThisPayout: deducted,
+              },
+            ],
+          },
+        },
+      },
+    ];
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(
+        makeSubscription({
+          planSnapshot: {
+            ...makeSubscription().planSnapshot,
+            billingModel: PackageBillingModel.PLAN,
+            planPrice: 159,
+            commissionPercentage: 0,
+            commissionCapAmount: null,
+            vatPercentage: 0,
+          },
+        }),
+      ),
+      listPaidRestaurantOrders: jest
+        .fn()
+        .mockResolvedValueOnce([makeOrder(10, '2026-06-05T10:00:00.000Z')])
+        .mockResolvedValueOnce([makeOrder(100, '2026-06-30T10:00:00.000Z')]),
+      listRestaurantMonthlyPayoutInvoices: jest
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(history(159)),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const insufficient = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-01T00:00:00.000Z',
+      toDate: '2026-06-08T00:00:00.000Z',
+    });
+    const fifth = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-29T00:00:00.000Z',
+      toDate: '2026-07-01T00:00:00.000Z',
+    });
+
+    expect(insufficient.data.totals.monthlyFeeDeductedAmount).toBe(10);
+    expect(insufficient.data.totals.restaurantPayoutAmount).toBe(0);
+    expect(insufficient.data.totals.monthlyFeeOutstandingAmount).toBe(149);
+    expect(fifth.data.totals.monthlyFeeDeductedAmount).toBe(0);
+    expect(fifth.data.totals.restaurantPayoutAmount).toBe(100);
   });
 
   it('renders payout invoice PDF with order-level reconciliation rows', async () => {
@@ -1497,7 +1965,12 @@ describe('PackagePlansService', () => {
   });
 
   it('auto-emails weekly payout invoices once for the last completed payout period', async () => {
-    const subscription = makeSubscription();
+    const subscription = makeSubscription({
+      planSnapshot: {
+        ...makeSubscription().planSnapshot,
+        planPrice: 0,
+      },
+    });
     const repository = {
       listActiveRestaurantSubscriptionsForPayouts: jest
         .fn()
@@ -1614,7 +2087,12 @@ describe('PackagePlansService', () => {
   });
 
   it('excludes amounts already paid by an early special payout from the next scheduled payout', async () => {
-    const subscription = makeSubscription();
+    const subscription = makeSubscription({
+      planSnapshot: {
+        ...makeSubscription().planSnapshot,
+        planPrice: 0,
+      },
+    });
     const repository = {
       listActiveRestaurantSubscriptionsForPayouts: jest
         .fn()

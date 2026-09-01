@@ -6,10 +6,10 @@ DeliveryWay currently applies a package commission cap without a reliable calend
 
 ## Goals
 
-- [ ] Apply percentage commission to each payout's eligible sales while sharing one calendar-month cap.
-- [ ] Withhold a monthly fixed package fee in four equal weekly installments, carrying an unpaid installment only within that month.
-- [ ] Report monthly accrued, deducted, and remaining amounts in payout invoices and balance summaries.
-- [ ] Reconcile the monthly subscription invoice against amounts already withheld from weekly payouts.
+- [x] Apply percentage commission to each payout's eligible sales while sharing one calendar-month cap.
+- [x] Withhold a monthly fixed package fee in four equal weekly installments, carrying an unpaid installment only within that month.
+- [x] Report monthly accrued, deducted, and remaining amounts in payout invoices and balance summaries.
+- [x] Reconcile the monthly subscription invoice against amounts already withheld from weekly payouts.
 
 ## Out of Scope
 
@@ -72,21 +72,21 @@ DeliveryWay currently applies a package commission cap without a reliable calend
 
 | Requirement ID | Requirement | Status |
 | --- | --- | --- |
-| WPB-01 | Calendar-month commission cap | In Tasks |
-| WPB-02 | Month-boundary order allocation | In Tasks |
-| WPB-03 | Four-part fixed monthly fee | In Tasks |
-| WPB-04 | In-month unpaid-fee carry and fifth-week zero | In Tasks |
-| WPB-05 | Month-end outstanding and new-month reset | In Tasks |
-| WPB-06 | Separate charge reporting | In Tasks |
-| WPB-07 | Subscription invoice reconciliation | In Tasks |
-| WPB-08 | Idempotent regeneration and legacy snapshot fallback | In Tasks |
+| WPB-01 | Calendar-month commission cap | Verified |
+| WPB-02 | Month-boundary order allocation | Verified |
+| WPB-03 | Four-part fixed monthly fee | Verified |
+| WPB-04 | In-month unpaid-fee carry and fifth-week zero | Verified |
+| WPB-05 | Month-end outstanding and new-month reset | Verified |
+| WPB-06 | Separate charge reporting | Verified |
+| WPB-07 | Subscription invoice reconciliation | Verified |
+| WPB-08 | Idempotent regeneration and legacy snapshot fallback | Verified |
 
 **Coverage**: 8 total, 8 mapped to tasks, 0 unmapped.
 
 ## Success Criteria
 
-- [ ] The 400/500/700/800 commission example produces 20/25/34/0.
-- [ ] Four fixed-fee installments total exactly 159 and a fifth deduction is zero.
-- [ ] Insufficient weekly balance creates same-month outstanding fee without a negative payout.
-- [ ] A new calendar month starts independent counters.
-- [ ] Typecheck, build, tests, lint, and repository enforcement checks pass.
+- [x] The 400/500/700/800 commission example produces 20/25/34/0.
+- [x] Four fixed-fee installments total exactly 159 and a fifth deduction is zero.
+- [x] Insufficient weekly balance creates same-month outstanding fee without a negative payout.
+- [x] A new calendar month starts independent counters.
+- [x] Typecheck, build, tests, lint, and changed-file enforcement checks pass.
