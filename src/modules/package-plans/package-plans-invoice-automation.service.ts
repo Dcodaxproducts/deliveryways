@@ -15,11 +15,10 @@ export class PackagePlansInvoiceAutomationService {
     const now = new Date();
     const subscriptions =
       await this.packagePlansService.emailDueSubscriptionInvoices(now);
-    const payouts = await this.packagePlansService.emailDuePayoutInvoices(now);
 
-    if (subscriptions.sent > 0 || payouts.sent > 0) {
+    if (subscriptions.sent > 0) {
       this.logger.log(
-        `Auto invoice emails sent: subscriptions=${subscriptions.sent}, payouts=${payouts.sent}`,
+        `Auto subscription invoice emails sent: ${subscriptions.sent}`,
       );
     }
   }

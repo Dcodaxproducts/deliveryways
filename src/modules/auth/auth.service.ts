@@ -357,8 +357,8 @@ export class AuthService {
 
       await this.tenantsService.assignOwner(tenant.id, user.id, tx);
       const subscriptionStartsAt = new Date();
-      const subscriptionPaymentRequired =
-        this.isPackagePlanPaymentRequiredNow(packagePlan);
+      const subscriptionPaymentPending =
+        this.isPackagePlanPaymentPending(packagePlan);
       const subscription = await tx.tenantSubscription.create({
         data: {
           tenant: { connect: { id: tenant.id } },
@@ -368,7 +368,7 @@ export class AuthService {
             packagePlan.trialDays > 0
               ? SubscriptionStatus.TRIALING
               : SubscriptionStatus.ACTIVE,
-          paymentStatus: subscriptionPaymentRequired
+          paymentStatus: subscriptionPaymentPending
             ? PaymentStatus.PENDING
             : PaymentStatus.PAID,
           startsAt: subscriptionStartsAt,
@@ -378,13 +378,9 @@ export class AuthService {
             packagePlan.trialDays,
           ),
           planSnapshot: this.buildPackagePlanSnapshot(packagePlan),
-          note: subscriptionPaymentRequired
-            ? options.autoApproveOwner
-              ? 'Created by super admin. Payment required to activate selected package plan.'
-              : 'Payment required to activate selected package plan.'
-            : options.autoApproveOwner
-              ? 'Created by super admin.'
-              : 'Selected during business owner registration.',
+          note: options.autoApproveOwner
+            ? 'Created by super admin. Package fees are billed on the configured billing cycle.'
+            : 'Selected during business owner registration. Package fees are billed on the configured billing cycle.',
           createdBy: options.createdBy ?? user.id,
           updatedBy: options.createdBy ?? user.id,
         },
@@ -405,7 +401,7 @@ export class AuthService {
         restaurantId: restaurant.id,
         branchId: branch.id,
         subscription,
-        paymentRequiredNow: subscriptionPaymentRequired,
+        paymentRequiredNow: false,
         email: user.email,
         branchAdminCredentials: branchAdmin
           ? {
@@ -486,7 +482,7 @@ export class AuthService {
     };
   }
 
-  private isPackagePlanPaymentRequiredNow(packagePlan: {
+  private isPackagePlanPaymentPending(packagePlan: {
     billingModel: PackageBillingModel;
     planPrice: Prisma.Decimal;
     trialDays: number;

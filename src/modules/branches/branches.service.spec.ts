@@ -8,6 +8,7 @@ describe('BranchesService', () => {
     const repository = {
       create: jest.fn(),
       update: jest.fn(),
+      setDefault: jest.fn(),
       listByBranchId: jest.fn(),
       listByRestaurant: jest.fn(),
       listAllByRestaurant: jest.fn(),
@@ -151,6 +152,82 @@ describe('BranchesService', () => {
     ).rejects.toThrow('A restaurant must keep at least one active branch');
 
     expect(repository.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('switches the default branch atomically for super admin', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.setDefault.mockResolvedValue({
+      id: 'branch-2',
+      restaurantId: 'restaurant-1',
+      isMain: true,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    const result = await service.setDefault(
+      {
+        uid: 'super-admin-1',
+        role: UserRoleEnum.SUPER_ADMIN,
+      },
+      'branch-2',
+    );
+
+    expect(repository.setDefault).toHaveBeenCalledWith(
+      'branch-2',
+      'restaurant-1',
+      undefined,
+    );
+    expect(result.message).toBe('Default branch updated successfully');
+  });
+
+  it('rejects making an inactive branch the default', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: false,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.setDefault(
+        {
+          uid: 'super-admin-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'branch-2',
+      ),
+    ).rejects.toThrow('Active branch not found');
+
+    expect(repository.setDefault).not.toHaveBeenCalled();
+  });
+
+  it('rejects default-branch changes outside super admin', async () => {
+    const { service, repository } = makeService();
+
+    await expect(
+      service.setDefault(
+        {
+          uid: 'business-admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        },
+        'branch-2',
+      ),
+    ).rejects.toThrow('Only super admin can change the default branch');
+
+    expect(repository.findById).not.toHaveBeenCalled();
+    expect(repository.setDefault).not.toHaveBeenCalled();
   });
 
   it('updates branch address fields through branch update endpoint', async () => {
@@ -921,6 +998,7 @@ describe('BranchesService', () => {
       },
       {
         name: 'Main Branch',
+        isMain: true,
         street: 'Street 12',
         city: 'Lahore',
         state: 'Punjab',
@@ -960,6 +1038,7 @@ describe('BranchesService', () => {
     expect(createPayload).toMatchObject({
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
+      isMain: false,
     });
     expect(createPayload.settings?.deliveryTime).toBe(45);
     expect(createPayload.settings?.deliveryIntervalMinutes).toBe(15);

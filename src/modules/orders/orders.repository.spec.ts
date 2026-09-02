@@ -56,6 +56,62 @@ describe('OrdersRepository', () => {
     jest.useRealTimers();
   });
 
+  it('stores the prior status when cancelling an order', async () => {
+    const update = jest.fn().mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.CANCELLED,
+    });
+    const repository = new OrdersRepository({ order: { update } } as never);
+
+    await repository.cancel('order-1', 'super-admin-1', OrderStatus.PREPARING);
+
+    const updateCalls = update.mock.calls as unknown as Array<
+      [
+        {
+          where: { id: string };
+          data: {
+            status: OrderStatus;
+            statusBeforeCancellation: OrderStatus;
+            cancelledByUserId: string;
+            cancelledAt: Date;
+          };
+        },
+      ]
+    >;
+    const updateArgs = updateCalls[0][0];
+
+    expect(updateArgs).toEqual({
+      where: { id: 'order-1' },
+      data: {
+        status: OrderStatus.CANCELLED,
+        statusBeforeCancellation: OrderStatus.PREPARING,
+        cancelledByUserId: 'super-admin-1',
+        cancelledAt: updateArgs.data.cancelledAt,
+      },
+    });
+    expect(updateArgs.data.cancelledAt).toBeInstanceOf(Date);
+  });
+
+  it('clears cancellation metadata when restoring an order', async () => {
+    const update = jest.fn().mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.CONFIRMED,
+    });
+    const repository = new OrdersRepository({ order: { update } } as never);
+
+    await repository.uncancel('order-1', OrderStatus.CONFIRMED);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'order-1' },
+      data: {
+        status: OrderStatus.CONFIRMED,
+        statusBeforeCancellation: null,
+        cancelledAt: null,
+        cancelledByUserId: null,
+      },
+    });
+  });
+
   it('filters order list search by order id and customer identity', async () => {
     const prisma = {
       $transaction: jest.fn().mockResolvedValue([[], 0]),

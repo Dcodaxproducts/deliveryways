@@ -473,7 +473,7 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       id: 'subscription-1',
       packagePlanId: 'plan-1',
       paymentStatus: PaymentStatus.PENDING,
-      paymentRequiredNow: true,
+      paymentRequiredNow: false,
       plan: {
         id: 'plan-1',
         name: 'Growth Plan',
@@ -536,7 +536,7 @@ describe('AuthService registerTenant branch admin onboarding', () => {
         paymentStatus: PaymentStatus.PENDING,
         createdBy: 'super-admin-1',
         updatedBy: 'super-admin-1',
-        note: 'Created by super admin. Payment required to activate selected package plan.',
+        note: 'Created by super admin. Package fees are billed on the configured billing cycle.',
       });
       expect(result.data.user).toMatchObject({
         isVerified: true,
@@ -545,7 +545,7 @@ describe('AuthService registerTenant branch admin onboarding', () => {
       expect(result.data.verificationOtp).toBeUndefined();
       expect(result.data.subscription).toMatchObject({
         paymentStatus: PaymentStatus.PENDING,
-        paymentRequiredNow: true,
+        paymentRequiredNow: false,
       });
       expect(result.message).toBe('Tenant account created by super admin.');
     } finally {

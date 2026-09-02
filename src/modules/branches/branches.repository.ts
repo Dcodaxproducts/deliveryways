@@ -88,19 +88,6 @@ export class BranchesRepository {
   ) {
     const client = this.client(tx);
 
-    if (payload.isMain) {
-      await client.branch.updateMany({
-        where: {
-          restaurantId: payload.restaurantId,
-          isMain: true,
-          deletedAt: null,
-        },
-        data: {
-          isMain: false,
-        },
-      });
-    }
-
     const branch = await client.branch.create({
       data: {
         tenantId: payload.tenantId,
@@ -460,6 +447,26 @@ export class BranchesRepository {
 
   async update(id: string, data: Prisma.BranchUpdateInput, tx?: PrismaTx) {
     return this.client(tx).branch.update({ where: { id }, data });
+  }
+
+  async setDefault(id: string, restaurantId: string, tx?: PrismaTx) {
+    const operation = async (client: PrismaTx) => {
+      await client.branch.updateMany({
+        where: {
+          restaurantId,
+          isMain: true,
+          deletedAt: null,
+        },
+        data: { isMain: false },
+      });
+
+      return client.branch.update({
+        where: { id },
+        data: { isMain: true },
+      });
+    };
+
+    return tx ? operation(tx) : this.prisma.$transaction(operation);
   }
 
   async setActive(id: string, isActive: boolean, tx?: PrismaTx) {

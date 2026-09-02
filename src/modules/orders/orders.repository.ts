@@ -708,13 +708,31 @@ export class OrdersRepository {
     });
   }
 
-  async cancel(id: string, cancelledByUserId: string, tx?: PrismaTx) {
+  async cancel(
+    id: string,
+    cancelledByUserId: string,
+    previousStatus: OrderStatus,
+    tx?: PrismaTx,
+  ) {
     return this.client(tx).order.update({
       where: { id },
       data: {
-        status: 'CANCELLED',
+        status: OrderStatus.CANCELLED,
+        statusBeforeCancellation: previousStatus,
         cancelledAt: new Date(),
         cancelledByUserId,
+      },
+    });
+  }
+
+  async uncancel(id: string, status: OrderStatus, tx?: PrismaTx) {
+    return this.client(tx).order.update({
+      where: { id },
+      data: {
+        status,
+        statusBeforeCancellation: null,
+        cancelledAt: null,
+        cancelledByUserId: null,
       },
     });
   }
