@@ -108,19 +108,72 @@ describe('WinOrderPollingService', () => {
 
     const payload = result.OrderList.Order[0] as {
       OrderID: string;
-      AddInfo: { PaymentType: string; PaymentFee?: number; Total: number };
+      AddInfo: {
+        PaymentType: string;
+        PaymentFee?: number;
+        DeliverType: string;
+        DeliveryType?: string;
+        Total: number;
+      };
       ArticleList: { Article: Array<{ ArticleNo: string; Price: number }> };
     };
     expect(payload.OrderID).toBe('order-1');
     expect(payload.AddInfo).toEqual(
       expect.objectContaining({ PaymentType: 'Barzahlung', Total: 15 }),
     );
+    expect(payload.AddInfo.DeliverType).toBe('Lieferung');
+    expect(payload.AddInfo.DeliveryType).toBeUndefined();
     expect(payload.AddInfo.PaymentFee).toBeUndefined();
     expect(payload.ArticleList.Article).toEqual([
       expect.objectContaining({ ArticleNo: 'P1', Price: 10 }),
       expect.objectContaining({ ArticleNo: 'SC', Price: 1 }),
     ]);
   });
+
+  it.each([
+    ['DELIVERY', 'Lieferung'],
+    ['TAKEAWAY', 'Abholung'],
+    ['DINE_IN', 'Vor Ort'],
+  ] as const)(
+    'exports %s orders with WinOrder DeliverType %s',
+    async (orderType, expectedDeliverType) => {
+      const typedOrder: IntegrationOrder = {
+        ...order,
+        id: `order-${orderType.toLowerCase()}`,
+        orderType,
+        serviceChargeAmount: 0,
+      };
+      const orders = {
+        listExportCandidates: jest.fn().mockResolvedValue([typedOrder]),
+      };
+      const connections = { findByBranch: jest.fn().mockResolvedValue({}) };
+      const mappings = {
+        list: jest.fn().mockResolvedValue({
+          catalogMappings: [],
+          paymentMappings: [],
+        }),
+      };
+      const exports = {
+        lease: jest.fn().mockResolvedValue(new Set([typedOrder.id])),
+        markFailed: jest.fn(),
+      };
+      const service = new WinOrderPollingService(
+        orders as never,
+        connections as never,
+        mappings as never,
+        exports as never,
+      );
+
+      const result = await service.getNewOrders(machine);
+      const payload = result.OrderList.Order[0] as {
+        AddInfo: { DeliverType: string; DeliveryType?: string };
+      };
+
+      expect(payload.AddInfo.DeliverType).toBe(expectedDeliverType);
+      expect(payload.AddInfo.DeliveryType).toBeUndefined();
+      expect(exports.markFailed).not.toHaveBeenCalled();
+    },
+  );
 
   it('uses the online default and base article for a new variation', async () => {
     const onlineOrder: IntegrationOrder = {

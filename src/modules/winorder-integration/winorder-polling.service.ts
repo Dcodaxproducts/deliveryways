@@ -169,7 +169,7 @@ export class WinOrderPollingService {
         DiscountName: order.discountAmount ? 'Discount' : undefined,
         CurrencyStr: order.currency ?? undefined,
         DeliverLumpSum: order.deliveryFee || undefined,
-        DeliveryType: this.deliveryType(order.orderType),
+        DeliverType: this.deliverType(order.orderType),
         Comment: order.customerNote ?? undefined,
         PaymentType: paymentType,
         PaymentFee: order.paymentFeeAmount || undefined,
@@ -231,9 +231,9 @@ export class WinOrderPollingService {
     throw new Error(`Missing payment mapping: ${order.paymentMethod}`);
   }
 
-  private deliveryType(orderType: IntegrationOrder['orderType']) {
-    if (orderType === 'DELIVERY') return 'delivery';
-    if (orderType === 'TAKEAWAY') return 'take-away';
-    return 'dine-in';
+  private deliverType(orderType: IntegrationOrder['orderType']) {
+    if (orderType === 'DELIVERY') return 'Lieferung';
+    if (orderType === 'TAKEAWAY') return 'Abholung';
+    return 'Vor Ort';
   }
 }
