@@ -156,7 +156,32 @@ describe('AdminReportsRepository', () => {
           { paymentMethod: PaymentMethod.STRIPE, _sum: { totalAmount: 25 } },
           { paymentMethod: PaymentMethod.WALLET, _sum: { totalAmount: 20 } },
         ]),
-        findMany: jest.fn().mockResolvedValue([]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: 'order-cash',
+              createdAt: new Date('2026-08-28T12:00:00.000Z'),
+              paymentMethod: PaymentMethod.COD,
+              paymentStatus: PaymentStatus.PENDING,
+              totalAmount: 30,
+            },
+            {
+              id: 'order-card-on-delivery',
+              createdAt: new Date('2026-08-28T12:30:00.000Z'),
+              paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
+              paymentStatus: PaymentStatus.PENDING,
+              totalAmount: 0,
+            },
+            {
+              id: 'order-online',
+              createdAt: new Date('2026-08-28T13:00:00.000Z'),
+              paymentMethod: PaymentMethod.STRIPE,
+              paymentStatus: PaymentStatus.PAID,
+              totalAmount: 25,
+            },
+          ]),
       },
       orderItem: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
@@ -176,7 +201,20 @@ describe('AdminReportsRepository', () => {
       averageOrderValue: 25,
       codAmount: 30,
       digitalAmount: 45,
+      offlineOrderCount: 2,
+      offlineAmount: 30,
+      onlineOrderCount: 1,
+      onlineAmount: 45,
     });
+    expect(result.orders).toEqual([
+      expect.objectContaining({
+        id: 'order-cash',
+        paymentMethod: PaymentMethod.COD,
+        totalAmount: 30,
+      }),
+      expect.objectContaining({ id: 'order-card-on-delivery' }),
+      expect.objectContaining({ id: 'order-online' }),
+    ]);
     const aggregateCalls = prisma.order.aggregate.mock.calls as Array<
       [{ where?: { status?: { in?: OrderStatus[] } } }]
     >;
@@ -220,8 +258,11 @@ describe('AdminReportsRepository', () => {
     const findManyCalls = order.findMany.mock.calls as unknown as Array<
       [{ where: { status: { in: OrderStatus[] } } }]
     >;
-    const findManyCall = findManyCalls[0][0];
+    const findManyCall = findManyCalls[1][0];
     expect(findManyCall.where.status.in).toContain(OrderStatus.CONFIRMED);
+    expect(findManyCall).toMatchObject({
+      orderBy: [{ createdAt: 'asc' }],
+    });
   });
 
   it('counts successful REFUNDED transactions in refunded and net revenue', async () => {

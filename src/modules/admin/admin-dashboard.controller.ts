@@ -56,8 +56,8 @@ export class AdminDashboardController {
     summary:
       'Get super-admin dashboard totals for tenants, restaurants, branches, and customers',
   })
-  getOverview() {
-    return this.adminDashboardService.getOverview();
+  getOverview(@CurrentUser() user: AuthUserContext) {
+    return this.adminDashboardService.getOverview(user);
   }
 
   @Get('restaurants/trend')

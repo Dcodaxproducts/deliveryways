@@ -39,6 +39,11 @@ const DIGITAL_PAYMENT_METHODS: PaymentMethod[] = [
   PaymentMethod.WALLET,
 ];
 
+const OFFLINE_PAYMENT_METHODS: PaymentMethod[] = [
+  PaymentMethod.COD,
+  PaymentMethod.CARD_ON_DELIVERY,
+];
+
 @Injectable()
 export class AdminReportsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -716,45 +721,62 @@ export class AdminReportsRepository {
           : { in: [] }
         : { in: SUCCESSFUL_ORDER_STATUSES },
     };
-    const [aggregate, recognizedAggregate, paymentMethodTotals, orders, items] =
-      await this.prisma.$transaction([
-        this.prisma.order.aggregate({
-          where,
-          _count: { id: true },
-          _sum: { deliveryFee: true, discountAmount: true },
-        }),
-        this.prisma.order.aggregate({
-          where: recognizedWhere,
-          _count: { id: true },
-          _sum: { totalAmount: true },
-          _avg: { totalAmount: true },
-        }),
-        this.prisma.order.groupBy({
-          by: ['paymentMethod'],
-          orderBy: { paymentMethod: 'asc' },
-          where: recognizedWhere,
-          _sum: { totalAmount: true },
-        }),
-        this.prisma.order.findMany({
-          where,
-          select: {
-            status: true,
-            orderType: true,
-            paymentStatus: true,
-          },
-        }),
-        this.prisma.orderItem.findMany({
-          where: {
-            order: where,
-          },
-          select: {
-            menuItemId: true,
-            menuItemName: true,
-            quantity: true,
-            lineTotal: true,
-          },
-        }),
-      ]);
+    const [
+      aggregate,
+      recognizedAggregate,
+      paymentMethodTotals,
+      orders,
+      reportOrders,
+      items,
+    ] = await this.prisma.$transaction([
+      this.prisma.order.aggregate({
+        where,
+        _count: { id: true },
+        _sum: { deliveryFee: true, discountAmount: true },
+      }),
+      this.prisma.order.aggregate({
+        where: recognizedWhere,
+        _count: { id: true },
+        _sum: { totalAmount: true },
+        _avg: { totalAmount: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['paymentMethod'],
+        orderBy: { paymentMethod: 'asc' },
+        where: recognizedWhere,
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.order.findMany({
+        where,
+        select: {
+          status: true,
+          orderType: true,
+          paymentStatus: true,
+        },
+      }),
+      this.prisma.order.findMany({
+        where: recognizedWhere,
+        orderBy: [{ createdAt: 'asc' }],
+        select: {
+          id: true,
+          createdAt: true,
+          paymentMethod: true,
+          paymentStatus: true,
+          totalAmount: true,
+        },
+      }),
+      this.prisma.orderItem.findMany({
+        where: {
+          order: where,
+        },
+        select: {
+          menuItemId: true,
+          menuItemName: true,
+          quantity: true,
+          lineTotal: true,
+        },
+      }),
+    ]);
 
     const amountFor = (methods: PaymentMethod[]) =>
       Number(
@@ -767,18 +789,33 @@ export class AdminReportsRepository {
           .toFixed(2),
       );
 
+    const countFor = (methods: PaymentMethod[]) =>
+      reportOrders.filter((order) => methods.includes(order.paymentMethod))
+        .length;
+
     return {
       totalOrders: recognizedAggregate._count.id,
       totalRevenue: Number(recognizedAggregate._sum.totalAmount ?? 0),
       averageOrderValue: Number(recognizedAggregate._avg.totalAmount ?? 0),
       codAmount: amountFor([PaymentMethod.COD]),
       digitalAmount: amountFor(DIGITAL_PAYMENT_METHODS),
+      offlineOrderCount: countFor(OFFLINE_PAYMENT_METHODS),
+      offlineAmount: amountFor(OFFLINE_PAYMENT_METHODS),
+      onlineOrderCount: countFor(DIGITAL_PAYMENT_METHODS),
+      onlineAmount: amountFor(DIGITAL_PAYMENT_METHODS),
       totalDeliveryFee: Number(aggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(aggregate._sum.discountAmount ?? 0),
       statusBreakdown: this.countByField(orders, 'status'),
       orderTypeBreakdown: this.countByField(orders, 'orderType'),
       paymentStatusBreakdown: this.countByField(orders, 'paymentStatus'),
       topItems: this.buildTopItems(items),
+      orders: reportOrders.map((order) => ({
+        id: order.id,
+        createdAt: order.createdAt,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        totalAmount: Number(order.totalAmount),
+      })),
     };
   }
 

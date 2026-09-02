@@ -43,10 +43,17 @@ export class AdminDashboardService {
     private readonly adminDashboardRepository: AdminDashboardRepository,
   ) {}
 
-  async getOverview(): Promise<{
+  async getOverview(user: AuthUserContext): Promise<{
     data: AdminDashboardOverview;
     message: string;
   }> {
+    const isSuperAdminStaff =
+      this.isStaffActor(user) && user.panelType === 'SUPER_ADMIN';
+
+    if (user.role !== UserRoleEnum.SUPER_ADMIN && !isSuperAdminStaff) {
+      throw new ForbiddenException('Super-admin dashboard access is required');
+    }
+
     const data = await this.adminDashboardRepository.getOverview();
 
     return {

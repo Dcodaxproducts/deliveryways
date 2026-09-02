@@ -59,7 +59,9 @@ describe('AdminDashboardService', () => {
 
     const service = new AdminDashboardService(repository as never);
 
-    await expect(service.getOverview()).resolves.toEqual({
+    await expect(
+      service.getOverview({ uid: 'super-1', role: 'SUPER_ADMIN' } as never),
+    ).resolves.toEqual({
       data: {
         tenants: { total: 10, active: 7, inactive: 3 },
         restaurants: { total: 20, active: 15, inactive: 5 },
@@ -68,6 +70,43 @@ describe('AdminDashboardService', () => {
       },
       message: 'Admin dashboard overview fetched successfully',
     });
+  });
+
+  it('allows super-admin-panel staff to load the global overview', async () => {
+    const repository = {
+      getOverview: jest.fn().mockResolvedValue({
+        tenants: { total: 10, active: 7, inactive: 3 },
+        restaurants: { total: 20, active: 15, inactive: 5 },
+        branches: { total: 50, active: 41, inactive: 9 },
+        customers: { total: 1000, active: 960, inactive: 40 },
+        orders: { total: 2500 },
+      }),
+    };
+    const service = new AdminDashboardService(repository as never);
+
+    await service.getOverview({
+      uid: 'staff-1',
+      role: 'STAFF',
+      actorType: 'STAFF',
+      panelType: 'SUPER_ADMIN',
+    } as never);
+
+    expect(repository.getOverview).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects staff from a restaurant panel from the global overview', async () => {
+    const repository = { getOverview: jest.fn() };
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getOverview({
+        uid: 'staff-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        panelType: 'BUSINESS_ADMIN',
+      } as never),
+    ).rejects.toThrow('Super-admin dashboard access is required');
+    expect(repository.getOverview).not.toHaveBeenCalled();
   });
 
   it('returns restaurant trend data', async () => {

@@ -60,6 +60,7 @@ export interface AdminDashboardOverview {
   restaurants: EntityOverviewCounts;
   branches: EntityOverviewCounts;
   customers: EntityOverviewCounts;
+  orders: { total: number };
 }
 
 export interface AdminDashboardRestaurantTrend {
@@ -170,6 +171,7 @@ export class AdminDashboardRepository {
       activeBranches,
       totalCustomers,
       activeCustomers,
+      totalOrders,
     ] = await this.prisma.$transaction([
       this.prisma.tenant.count({ where: { deletedAt: null } }),
       this.prisma.tenant.count({
@@ -193,6 +195,9 @@ export class AdminDashboardRepository {
           isActive: true,
         },
       }),
+      this.prisma.order.count({
+        where: { status: { in: SUCCESSFUL_ORDER_STATUSES } },
+      }),
     ]);
 
     return {
@@ -200,6 +205,7 @@ export class AdminDashboardRepository {
       restaurants: this.buildCounts(totalRestaurants, activeRestaurants),
       branches: this.buildCounts(totalBranches, activeBranches),
       customers: this.buildCounts(totalCustomers, activeCustomers),
+      orders: { total: totalOrders },
     };
   }
 
