@@ -1400,6 +1400,7 @@ export class NotificationsService {
     subject: string;
     body: string;
     payload: Prisma.JsonValue | null;
+    tenantId: string;
     restaurantId: string;
     branchId: string;
     recipientUserId?: string | null;
@@ -1409,6 +1410,7 @@ export class NotificationsService {
       const tokenRows =
         await this.notificationsRepository.listPushTokensForNotification({
           audience: notification.audience,
+          tenantId: notification.tenantId,
           restaurantId: notification.restaurantId,
           branchId: notification.branchId,
           recipientUserId: notification.recipientUserId,

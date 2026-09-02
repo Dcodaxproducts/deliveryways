@@ -465,6 +465,7 @@ export class NotificationsRepository {
 
   async listPushTokensForNotification(input: {
     audience: NotificationAudience;
+    tenantId: string;
     restaurantId: string;
     branchId: string;
     recipientUserId?: string | null;
@@ -507,7 +508,7 @@ export class NotificationsRepository {
         OR: [
           {
             role: UserRole.BUSINESS_ADMIN,
-            restaurantId: input.restaurantId,
+            tenantId: input.tenantId,
           },
           {
             role: UserRole.BRANCH_ADMIN,
