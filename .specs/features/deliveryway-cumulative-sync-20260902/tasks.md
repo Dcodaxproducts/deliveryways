@@ -75,7 +75,7 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 - [x] All affected repositories pass their executable verification surfaces.
 - [x] Customer unchanged repository passes lint, typecheck, 83 files / 577 tests, and build.
 - [x] Tracked-file isolation scan finds no DeliveryWay identity/runtime leakage.
-- [ ] All commits are pushed and remote heads match.
+- [x] All commits are pushed and remote heads match.
 
 ## T7: Production Edge Readiness
 
