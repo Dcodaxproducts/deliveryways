@@ -375,7 +375,7 @@ export class BranchSettingsDto {
 
 export class CreateBranchAdminDto {
   @ApiProperty()
-  @IsEmail()
+  @IsEmail({}, { message: 'Enter a valid branch admin email address' })
   email!: string;
 
   @ApiPropertyOptional({
@@ -388,12 +388,12 @@ export class CreateBranchAdminDto {
 
   @ApiProperty()
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Branch admin first name is required' })
   firstName!: string;
 
   @ApiProperty()
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Branch admin last name is required' })
   lastName!: string;
 
   @ApiPropertyOptional()
