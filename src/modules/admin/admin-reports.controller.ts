@@ -199,6 +199,17 @@ export class AdminReportsController {
     return this.adminReportsService.recreateGeneratedInvoice(user, invoiceId);
   }
 
+  @Post('generated-invoices/:invoiceId/resend')
+  @HttpCode(200)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Resend a generated invoice billing email' })
+  resendGeneratedInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.adminReportsService.resendGeneratedInvoice(user, invoiceId);
+  }
+
   @Get('generated-invoices/:invoiceId/pdf')
   @Roles(
     RolesEnum.SUPER_ADMIN,

@@ -291,7 +291,7 @@ export class NotificationsRepository {
           tenantId: input.tenantId,
           ...(input.restaurantId ? { restaurantId: input.restaurantId } : {}),
           ...(input.branchId ? { branchId: input.branchId } : {}),
-          recipientUserId: null,
+          OR: [{ recipientUserId: null }, { recipientUserId: input.userId }],
           seenAt: null,
           order: {
             status: {
@@ -299,7 +299,7 @@ export class NotificationsRepository {
             },
           },
         },
-        select: { id: true },
+        select: { id: true, recipientUserId: true },
         orderBy: { createdAt: 'asc' },
         take: 20,
       });
@@ -313,11 +313,18 @@ export class NotificationsRepository {
         select: { id: true },
       });
       const claimedIds = claimed.map(({ id }) => id);
+      const ownedIds = candidates
+        .filter(({ recipientUserId }) => recipientUserId === input.userId)
+        .map(({ id }) => id);
+      const recoverableIds = [...new Set([...claimedIds, ...ownedIds])];
 
-      if (!claimedIds.length) return [];
+      if (!recoverableIds.length) return [];
 
       return tx.notification.findMany({
-        where: { id: { in: claimedIds }, recipientUserId: input.userId },
+        where: {
+          id: { in: recoverableIds },
+          recipientUserId: input.userId,
+        },
         include: {
           order: {
             select: {

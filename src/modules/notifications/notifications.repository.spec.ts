@@ -17,10 +17,13 @@ describe('NotificationsRepository', () => {
     const findMany = jest
       .fn()
       .mockResolvedValueOnce([
-        { id: 'notification-1' },
-        { id: 'notification-2' },
+        { id: 'notification-1', recipientUserId: null },
+        { id: 'notification-2', recipientUserId: 'business-admin-1' },
       ])
-      .mockResolvedValueOnce([claimedNotification]);
+      .mockResolvedValueOnce([
+        claimedNotification,
+        { id: 'notification-2', order: { id: 'order-2' } },
+      ]);
     const updateManyAndReturn = jest
       .fn()
       .mockResolvedValue([{ id: 'notification-1' }]);
@@ -46,7 +49,10 @@ describe('NotificationsRepository', () => {
         channel: NotificationChannel.IN_APP,
         type: NotificationType.ORDER_PLACED,
         tenantId: 'tenant-1',
-        recipientUserId: null,
+        OR: [
+          { recipientUserId: null },
+          { recipientUserId: 'business-admin-1' },
+        ],
         seenAt: null,
         order: {
           status: {
@@ -54,7 +60,7 @@ describe('NotificationsRepository', () => {
           },
         },
       },
-      select: { id: true },
+      select: { id: true, recipientUserId: true },
       orderBy: { createdAt: 'asc' },
       take: 20,
     });
@@ -70,12 +76,15 @@ describe('NotificationsRepository', () => {
       2,
       expect.objectContaining({
         where: {
-          id: { in: ['notification-1'] },
+          id: { in: ['notification-1', 'notification-2'] },
           recipientUserId: 'business-admin-1',
         },
       }),
     );
-    expect(result).toEqual([claimedNotification]);
+    expect(result).toEqual([
+      claimedNotification,
+      { id: 'notification-2', order: { id: 'order-2' } },
+    ]);
   });
 
   it('selects tenant Business Admins and branch-scoped Branch Admins for admin push', async () => {
