@@ -125,8 +125,25 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     message: string,
     status: number,
     locale: ErrorLocale,
+    code: string,
+    details: ErrorDetails,
   ): string {
     if (locale !== 'de') return message;
+
+    if (
+      code === 'MINIMUM_ORDER_AMOUNT_NOT_MET' &&
+      details &&
+      !Array.isArray(details) &&
+      typeof details.shortfall === 'number' &&
+      Number.isFinite(details.shortfall)
+    ) {
+      const shortfall = new Intl.NumberFormat('de-DE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Math.max(0, details.shortfall));
+
+      return `Der Mindestbestellwert ist noch nicht erreicht. Bitte bestellen Sie noch für ${shortfall} €`;
+    }
 
     return (
       GERMAN_ERROR_MESSAGES[message] ??
@@ -300,7 +317,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (Array.isArray(details)) {
       details = this.localizeValidationDetails(details, locale);
     }
-    message = this.localizeMessage(message, status, locale);
+    message = this.localizeMessage(message, status, locale, code, details);
 
     response.status(status).json({
       success: false,
