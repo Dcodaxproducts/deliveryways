@@ -157,6 +157,40 @@ export class InvoiceRecordsService {
     });
   }
 
+  async recordEmail(
+    invoiceId: string,
+    recipientEmail: string,
+    actorId?: string | null,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const invoice = await tx.generatedInvoice.update({
+        where: { id: invoiceId },
+        data: {
+          status: GeneratedInvoiceStatus.SENT,
+          sentCount: { increment: 1 },
+          lastSentAt: new Date(),
+          lastSentTo: recipientEmail,
+        },
+      });
+
+      await tx.generatedInvoiceEvent.create({
+        data: {
+          generatedInvoiceId: invoice.id,
+          eventType: GeneratedInvoiceEventType.EMAILED,
+          actorId,
+          recipientEmail,
+          metadata: {
+            sourceKey: invoice.sourceKey,
+            invoiceNumber: invoice.invoiceNumber,
+            resend: true,
+          },
+        },
+      });
+
+      return invoice;
+    });
+  }
+
   private toJsonSnapshot(value: Prisma.InputJsonValue) {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }

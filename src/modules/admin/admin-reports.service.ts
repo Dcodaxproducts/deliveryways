@@ -457,6 +457,85 @@ export class AdminReportsService {
     };
   }
 
+  async resendGeneratedInvoice(user: AuthUserContext, invoiceId: string) {
+    this.ensureSuperAdmin(user);
+    const invoice =
+      await this.adminReportsRepository.findGeneratedInvoiceByIdUnscoped(
+        invoiceId,
+      );
+
+    if (!invoice) {
+      throw new NotFoundException('Generated invoice not found');
+    }
+    if (invoice.status === GeneratedInvoiceStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Cancelled invoices must be recreated before sending',
+      );
+    }
+    if (
+      !this.packagePlansService ||
+      (invoice.kind !== GeneratedInvoiceKind.SUBSCRIPTION &&
+        invoice.kind !== GeneratedInvoiceKind.WEEKLY_PAYOUT)
+    ) {
+      throw new BadRequestException(
+        'This generated invoice type cannot be resent from billing history',
+      );
+    }
+    if (!this.mailerService || !this.invoiceRecordsService) {
+      throw new InternalServerErrorException(
+        'Invoice email delivery is not configured',
+      );
+    }
+
+    const snapshot = this.asObject(invoice.snapshot);
+    const restaurant = this.asObject(snapshot.restaurant);
+    const recipientEmail =
+      typeof restaurant.billingEmail === 'string'
+        ? restaurant.billingEmail.trim()
+        : invoice.lastSentTo?.trim();
+
+    if (!recipientEmail) {
+      throw new BadRequestException(
+        'Restaurant billing email is required to resend invoice',
+      );
+    }
+
+    const content = this.packagePlansService.generateStoredInvoicePdf(
+      invoice.kind,
+      invoice.snapshot,
+    );
+    await this.mailerService.sendEmail(
+      recipientEmail,
+      `DeliveryWays invoice ${invoice.invoiceNumber}`,
+      [
+        'Hello,',
+        '',
+        `Invoice ${invoice.invoiceNumber} is attached.`,
+        '',
+        'DeliveryWays',
+      ].join('\n'),
+      {
+        attachments: [
+          {
+            filename: `${invoice.invoiceNumber}.pdf`,
+            content,
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    );
+    const resent = await this.invoiceRecordsService.recordEmail(
+      invoice.id,
+      recipientEmail,
+      user.uid,
+    );
+
+    return {
+      data: this.toGeneratedInvoiceSummary(resent),
+      message: 'Generated invoice resent successfully',
+    };
+  }
+
   async downloadGeneratedInvoicePdf(
     user: AuthUserContext,
     invoiceId: string,
