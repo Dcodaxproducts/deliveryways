@@ -40,6 +40,9 @@ describe('NotificationsService', () => {
   let pushNotificationsService: {
     sendToTokens: jest.Mock;
   };
+  let globalSettingsService: {
+    getSettings: jest.Mock;
+  };
   let notificationsRealtimeService: {
     emitOrderCreated: jest.Mock;
     emitOrderUpdated: jest.Mock;
@@ -81,6 +84,14 @@ describe('NotificationsService', () => {
     pushNotificationsService = {
       sendToTokens: jest.fn().mockResolvedValue([]),
     };
+    globalSettingsService = {
+      getSettings: jest.fn().mockResolvedValue({
+        data: {
+          defaultCurrency: 'PKR',
+          timezone: 'Europe/Berlin',
+        },
+      }),
+    };
     notificationsRealtimeService = {
       emitOrderCreated: jest.fn(),
       emitOrderUpdated: jest.fn(),
@@ -90,7 +101,7 @@ describe('NotificationsService', () => {
       notificationsRepository as never,
       mailerService as never,
       pushNotificationsService as never,
-      undefined,
+      globalSettingsService as never,
       notificationsRealtimeService as never,
     );
   });
@@ -651,6 +662,16 @@ describe('NotificationsService', () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         body: expect.stringMatching(
           /VORBESTELLUNG[\s\S]*Geplant für:[\s\S]*Kundendaten[\s\S]*Extra Käse × 2[\s\S]*Sonderwünsche: Ohne Zwiebeln[\s\S]*Liefergebühr: 30,00 PKR[\s\S]*Servicegebühr: 10,00 PKR[\s\S]*Zahlungsart: BAR[\s\S]*Hinweis: Bitte klingeln/,
+        ),
+      }),
+    );
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        body: expect.stringMatching(
+          /Geplant für: 24\.07\.2026, 20:30[\s\S]*Bestelldatum und -zeit: 23\.07\.2026, 14:00/,
         ),
       }),
     );
