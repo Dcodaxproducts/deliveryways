@@ -334,8 +334,10 @@ export class NotificationsService {
       return;
     }
 
+    const globalSettings = await this.globalSettingsService?.getSettings();
     const currency =
-      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'PKR';
+      globalSettings?.data.defaultCurrency.trim().toUpperCase() ?? 'PKR';
+    const timeZone = globalSettings?.data.timezone || 'UTC';
 
     const restaurantLocale =
       await this.mailerService.resolveTransactionalLocale();
@@ -358,6 +360,7 @@ export class NotificationsService {
       order,
       restaurantLocale,
       currency,
+      timeZone,
     );
     const customerRecipientEmail = this.resolveCustomerEmail(order.customer);
     const payload = {
@@ -1091,6 +1094,7 @@ export class NotificationsService {
     order: OrderForNotification,
     locale: 'de' | 'en',
     currency: string,
+    timeZone: string,
   ): string {
     const isGerman = locale === 'de';
     const label = (english: string, german: string) =>
@@ -1105,6 +1109,7 @@ export class NotificationsService {
         ? new Intl.DateTimeFormat(isGerman ? 'de-DE' : 'en-GB', {
             dateStyle: 'medium',
             timeStyle: 'short',
+            timeZone,
           }).format(value)
         : label('Not scheduled', 'Nicht vorbestellt');
     const customerLastName =
