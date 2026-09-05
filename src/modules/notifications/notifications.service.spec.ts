@@ -1200,6 +1200,44 @@ describe('NotificationsService', () => {
     );
   });
 
+  it('adds the restaurant-local delivery time to the customer accepted-order email', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'accepted-order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      orderTime: new Date('2026-07-24T18:30:00.000Z'),
+      status: OrderStatus.CONFIRMED,
+      paymentStatus: PaymentStatus.PAID,
+      customer: {
+        email: 'customer@example.com',
+        profile: { firstName: 'Rames' },
+      },
+      branch: { id: 'branch-1', name: 'American Corner' },
+    });
+    notificationsRepository.create.mockResolvedValue({
+      id: 'customer-notification-1',
+      recipientEmail: 'customer@example.com',
+      subject: 'orderStatus subject',
+      body: 'orderStatus body\n\nLieferzeit: 24.07.2026, 20:30',
+    });
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+
+    await service.notifyOrderStatusChanged('accepted-order-1');
+
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
+        type: NotificationType.ORDER_STATUS_CHANGED,
+        body: 'orderStatus body\n\nLieferzeit: 24.07.2026, 20:30',
+      }),
+    );
+  });
+
   it('marks notification as failed when email sending throws', async () => {
     notificationsRepository.findPaymentForNotification.mockResolvedValue({
       id: 'payment-1',

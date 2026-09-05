@@ -597,6 +597,16 @@ export class NotificationsService {
         status: this.localizeOrderStatus(order.status, customerLocale),
       },
     });
+    const customerEmailBody =
+      order.status === OrderStatus.CONFIRMED && order.orderTime
+        ? `${customerEmail.body}\n\n${this.formatConfirmedOrderTime(
+            order.orderTime,
+            order.orderType,
+            customerLocale,
+            (await this.globalSettingsService?.getSettings())?.data.timezone ||
+              'UTC',
+          )}`
+        : customerEmail.body;
 
     await this.createAndDispatchCustomerEmail({
       tenantId: order.tenantId,
@@ -607,7 +617,7 @@ export class NotificationsService {
       recipientEmail: this.resolveCustomerEmail(order.customer),
       type,
       subject: customerEmail.subject,
-      body: customerEmail.body,
+      body: customerEmailBody,
       payload: {
         orderId: order.id,
         branchName: order.branch.name,
@@ -1788,6 +1798,38 @@ export class NotificationsService {
       CANCELLED: { de: 'Storniert', en: 'Cancelled' },
     };
     return translations[status]?.[locale] ?? status;
+  }
+
+  private formatConfirmedOrderTime(
+    orderTime: Date,
+    orderType: string,
+    locale: 'de' | 'en',
+    timeZone: string,
+  ): string {
+    const labels = {
+      de:
+        orderType === 'DELIVERY'
+          ? 'Lieferzeit'
+          : orderType === 'PICKUP'
+            ? 'Abholzeit'
+            : 'Zeit vor Ort',
+      en:
+        orderType === 'DELIVERY'
+          ? 'Delivery time'
+          : orderType === 'PICKUP'
+            ? 'Pickup time'
+            : 'Dine-in time',
+    };
+    const formattedTime = new Intl.DateTimeFormat(
+      locale === 'de' ? 'de-DE' : 'en-GB',
+      {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone,
+      },
+    ).format(orderTime);
+
+    return `${labels[locale]}: ${formattedTime}`;
   }
 
   private localizePaymentStatus(status: string, locale: 'de' | 'en'): string {
