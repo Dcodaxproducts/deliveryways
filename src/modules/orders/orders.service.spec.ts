@@ -2298,6 +2298,32 @@ describe('OrdersService - deliveryman order access', () => {
     expect(result.message).toBe('Orders fetched successfully');
   });
 
+  it("lists an authenticated customer's orders without requiring a restaurant claim", async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    };
+
+    await service.list(
+      {
+        uid: 'customer-1',
+        role: UserRoleEnum.CUSTOMER,
+        actorType: 'USER',
+      } as never,
+      query as never,
+    );
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      undefined,
+      query,
+      'customer-1',
+      undefined,
+      false,
+    );
+  });
+
   it('hides unpaid online-payment orders from business admin all-orders lists', async () => {
     const query = {
       page: 1,

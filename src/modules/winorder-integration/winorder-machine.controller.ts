@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBasicAuth, ApiTags } from '@nestjs/swagger';
-import { Public } from '../../common/decorators';
+import { Public, RawResponse } from '../../common/decorators';
 import { WinOrderBasicAuthGuard } from './winorder-basic-auth.guard';
 import {
   WinOrderMachine,
@@ -22,6 +22,7 @@ import { WinOrderStatusService } from './winorder-status.service';
 @Public()
 @ApiTags('WinOrder Machine API')
 @ApiBasicAuth()
+@RawResponse()
 @Controller(['winorder', 'winorder/:storeId'])
 @UseGuards(WinOrderBasicAuthGuard)
 export class WinOrderMachineController {

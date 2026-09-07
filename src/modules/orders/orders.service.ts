@@ -589,9 +589,10 @@ export class OrdersService {
     ].includes(user.role as UserRoleEnum);
     const excludeUnpaidOnlineOrders =
       isRestaurantOperator && query.status !== OrderStatus.PAYMENT_PENDING;
-    const restaurantId = isDeliveryman
-      ? undefined
-      : await this.resolveRestaurantId(user, query.restaurantId);
+    const restaurantId =
+      isDeliveryman || user.role === UserRoleEnum.CUSTOMER
+        ? undefined
+        : await this.resolveRestaurantId(user, query.restaurantId);
     const customerId =
       user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
     const deliverymanId = isDeliveryman ? user.uid : undefined;
