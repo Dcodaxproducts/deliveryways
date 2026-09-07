@@ -1174,6 +1174,32 @@ describe('OrdersService - realtime admin order scope', () => {
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('validates a staff restaurant subscription against assigned access', async () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.resolveRealtimeAdminOrderScope(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          restaurantAccess: {
+            restaurantIds: ['restaurant-1'],
+            branchIds: [],
+          },
+        } as never,
+        'restaurant-1',
+      ),
+    ).resolves.toEqual({ restaurantId: 'restaurant-1' });
+  });
 });
 
 describe('OrdersService - delivery pricing modes', () => {
@@ -2371,6 +2397,33 @@ describe('OrdersService - deliveryman order access', () => {
 
     expect(ordersRepository.list).toHaveBeenCalledWith(
       'restaurant-1',
+      query,
+      undefined,
+      undefined,
+      true,
+    );
+  });
+
+  it('allows super-admin-panel staff to list orders globally', async () => {
+    const query = {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    };
+
+    await service.list(
+      {
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        panelType: 'SUPER_ADMIN',
+      } as never,
+      query as never,
+    );
+
+    expect(ordersRepository.list).toHaveBeenCalledWith(
+      undefined,
       query,
       undefined,
       undefined,

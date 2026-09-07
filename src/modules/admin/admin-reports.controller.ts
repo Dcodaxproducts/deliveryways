@@ -30,6 +30,7 @@ import {
   AdminGeneratedInvoicePdfQueryDto,
   AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
+  AdminOrderInvoicePdfQueryDto,
   AdminOrdersReportQueryDto,
   AdminReportsScopedQueryDto,
 } from './dto';
@@ -276,7 +277,7 @@ export class AdminReportsController {
   async downloadInvoicePdf(
     @CurrentUser() user: AuthUserContext,
     @Param('orderId') orderId: string,
-    @Query() query: AdminReportsScopedQueryDto,
+    @Query() query: AdminOrderInvoicePdfQueryDto,
     @Res({ passthrough: true }) response: Response,
   ) {
     const file = await this.adminReportsService.downloadInvoicePdf(

@@ -126,6 +126,37 @@ export class OrderTrackingGateway
     });
   }
 
+  @SubscribeMessage('order.admin.subscribe')
+  async subscribeToAdminOrders(
+    @ConnectedSocket() client: OrderTrackingSocket,
+    @MessageBody() body: { restaurantId?: string; branchId?: string },
+  ) {
+    return this.handleSocketRequest(client, async (user) => {
+      const scope = await this.ordersService.resolveRealtimeAdminOrderScope(
+        user,
+        body?.restaurantId,
+        body?.branchId,
+      );
+      if (!scope) {
+        throw new UnauthorizedException(
+          'Administrative order scope is required',
+        );
+      }
+
+      const room = scope.branchId
+        ? this.notificationsRealtimeService.getBranchOrdersRoom(
+            scope.restaurantId,
+            scope.branchId,
+          )
+        : this.notificationsRealtimeService.getRestaurantOrdersRoom(
+            scope.restaurantId,
+          );
+      await client.join(room);
+
+      return { ...scope, room };
+    });
+  }
+
   private async authenticate(
     client: OrderTrackingSocket,
   ): Promise<AuthUserContext> {

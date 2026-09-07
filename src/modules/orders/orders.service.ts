@@ -642,6 +642,25 @@ export class OrdersService {
       return { restaurantId, branchId };
     }
 
+    if (this.isStaffActor(user)) {
+      const restaurantId = await this.resolveRestaurantId(
+        user,
+        requestedRestaurantId,
+      );
+      if (!restaurantId) {
+        throw new ForbiddenException('Restaurant context is required');
+      }
+
+      if (requestedBranchId) {
+        await this.ensureBranchAccess(user, restaurantId, requestedBranchId);
+      }
+
+      return {
+        restaurantId,
+        ...(requestedBranchId ? { branchId: requestedBranchId } : {}),
+      };
+    }
+
     return null;
   }
 
@@ -3955,7 +3974,10 @@ export class OrdersService {
     user: AuthUserContext,
     requestedRestaurantId?: string,
   ): Promise<string | undefined> {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+    if (
+      user.role === UserRoleEnum.SUPER_ADMIN ||
+      this.isSuperAdminPanelStaff(user)
+    ) {
       return requestedRestaurantId;
     }
 
@@ -4018,6 +4040,10 @@ export class OrdersService {
 
   private isStaffActor(user: AuthUserContext): boolean {
     return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
+  }
+
+  private isSuperAdminPanelStaff(user: AuthUserContext): boolean {
+    return this.isStaffActor(user) && user.panelType === 'SUPER_ADMIN';
   }
 
   private async resolveQuoteCustomer(
@@ -4228,7 +4254,10 @@ export class OrdersService {
     restaurantId: string,
     branchId: string,
   ) {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+    if (
+      user.role === UserRoleEnum.SUPER_ADMIN ||
+      this.isSuperAdminPanelStaff(user)
+    ) {
       return;
     }
 
@@ -4351,7 +4380,10 @@ export class OrdersService {
     branchId?: string,
     adminOnly = false,
   ) {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+    if (
+      user.role === UserRoleEnum.SUPER_ADMIN ||
+      this.isSuperAdminPanelStaff(user)
+    ) {
       return;
     }
 

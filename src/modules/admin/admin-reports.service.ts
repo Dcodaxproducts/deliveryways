@@ -34,6 +34,7 @@ import {
   AdminGeneratedInvoicePdfQueryDto,
   AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
+  AdminOrderInvoicePdfQueryDto,
   AdminOrdersReportQueryDto,
   AdminReportsScopedQueryDto,
 } from './dto';
@@ -666,13 +667,13 @@ export class AdminReportsService {
   async downloadInvoicePdf(
     user: AuthUserContext,
     orderId: string,
-    query: AdminReportsScopedQueryDto,
+    query: AdminOrderInvoicePdfQueryDto,
   ) {
     const invoice = await this.getInvoiceOrder(user, orderId, query);
     const details = await this.toInvoiceDetails(invoice);
     const invoiceNumber = details.invoiceNumber;
 
-    const content = await this.generateInvoicePdf(invoice);
+    const content = await this.generateInvoicePdf(invoice, query.locale);
     await this.persistOrderInvoice(user, invoice, details, {
       eventType: GeneratedInvoiceEventType.DOWNLOADED,
     });
@@ -908,77 +909,159 @@ export class AdminReportsService {
     return type === 'coupons' ? 'Coupons' : 'Promotions';
   }
 
-  private async generateInvoicePdf(invoice: InvoiceOrder) {
+  private async generateInvoicePdf(
+    invoice: InvoiceOrder,
+    locale: 'en' | 'de' = 'en',
+  ) {
     const summary = await this.toInvoiceDetails(invoice);
     const business = summary.business;
     const customer = summary.customer;
+    const copy = this.getOrderInvoiceCopy(locale);
 
     return InvoicePdfBuilder.build({
-      title: `Order Invoice ${summary.invoiceNumber}`,
+      title: `${copy.title} ${summary.invoiceNumber}`,
       subtitle: `${summary.restaurant.name} · ${summary.branch.name}`,
       invoiceNumber: summary.invoiceNumber,
       issuedAt: summary.issuedAt,
       brandName: business.name,
+      labels: {
+        invoiceNumber: copy.invoiceNumber,
+        issued: copy.issued,
+        footer: copy.footer,
+        page: copy.page,
+        of: copy.of,
+      },
       meta: [
-        { label: 'Order ID', value: summary.orderId },
-        { label: 'Paid At', value: this.formatDate(summary.paidAt) },
-        { label: 'Order Type', value: summary.orderType },
-        { label: 'Payment Status', value: summary.paymentStatus },
-        { label: 'Currency', value: summary.payment.currency },
+        { label: copy.orderId, value: summary.orderId },
+        { label: copy.paidAt, value: this.formatDate(summary.paidAt) },
+        { label: copy.orderType, value: summary.orderType },
+        { label: copy.currency, value: summary.payment.currency },
       ],
       sections: [
         {
-          title: 'Seller',
+          title: copy.seller,
           rows: [
             business.name,
-            `Address: ${business.billingAddress.formatted ?? 'N/A'}`,
-            `Email: ${business.email ?? 'N/A'}`,
-            `Phone: ${business.phone ?? 'N/A'}`,
-            `Tax/VAT No: ${business.taxNumber ?? 'N/A'}`,
+            `${copy.address}: ${business.billingAddress.formatted ?? copy.notAvailable}`,
+            `${copy.email}: ${business.email ?? copy.notAvailable}`,
+            `${copy.phone}: ${business.phone ?? copy.notAvailable}`,
+            `${copy.taxNumber}: ${business.taxNumber ?? copy.notAvailable}`,
           ],
         },
         {
-          title: 'Customer',
+          title: copy.customer,
           rows: [
             customer.name,
-            `Email: ${customer.email}`,
-            `Phone: ${customer.phone ?? 'N/A'}`,
-            `Address: ${summary.customerBillingAddress.formatted ?? 'N/A'}`,
+            `${copy.email}: ${customer.email}`,
+            `${copy.phone}: ${customer.phone ?? copy.notAvailable}`,
+            `${copy.address}: ${summary.customerBillingAddress.formatted ?? copy.notAvailable}`,
           ],
         },
         {
-          title: 'Items',
+          title: copy.items,
           rows: summary.items.map(
             (item) =>
-              `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)}${item.depositAmount > 0 ? ` + Pfand ${this.formatMoney(item.depositAmount)}` : ''} = ${this.formatMoney(item.lineTotal)}`,
+              `${item.menuItemName}${item.variationName ? ` (${item.variationName})` : ''} x${item.quantity} @ ${this.formatMoney(item.unitPrice)}${item.depositAmount > 0 ? ` + ${copy.deposit} ${this.formatMoney(item.depositAmount)}` : ''} = ${this.formatMoney(item.lineTotal)}`,
           ),
         },
         {
-          title: 'Totals',
+          title: copy.totals,
           rows: [
-            `Subtotal: ${this.formatMoney(summary.subtotal)}`,
-            `${summary.taxBreakdown.label}${
+            `${copy.subtotal}: ${this.formatMoney(summary.subtotal)}`,
+            `${copy.tax}${
               summary.taxBreakdown.ratePercentage > 0
                 ? ` (${summary.taxBreakdown.ratePercentage}%)`
                 : ''
             }: ${this.formatMoney(summary.taxAmount)}`,
-            `Delivery Fee: ${this.formatMoney(summary.deliveryFee)}`,
-            `Discount: ${this.formatMoney(summary.discountAmount)}`,
-            `Wallet Applied: ${this.formatMoney(summary.walletAppliedAmount)}`,
-            `Loyalty Discount: ${this.formatMoney(summary.loyaltyDiscountAmount)}`,
-            `Total: ${this.formatMoney(summary.totalAmount)} ${summary.payment.currency}`,
+            `${copy.deliveryFee}: ${this.formatMoney(summary.deliveryFee)}`,
+            `${copy.discount}: ${this.formatMoney(summary.discountAmount)}`,
+            `${copy.walletApplied}: ${this.formatMoney(summary.walletAppliedAmount)}`,
+            `${copy.loyaltyDiscount}: ${this.formatMoney(summary.loyaltyDiscountAmount)}`,
+            `${copy.total}: ${this.formatMoney(summary.totalAmount)} ${summary.payment.currency}`,
           ],
         },
         {
-          title: 'Bank Details',
+          title: copy.bankDetails,
           rows: [
-            `Account Holder: ${business.bankDetails.accountHolder ?? 'N/A'}`,
-            `Bank Name: ${business.bankDetails.bankName ?? 'N/A'}`,
-            `IBAN/Account: ${business.bankDetails.iban ?? business.bankDetails.accountNumber ?? 'N/A'}`,
+            `${copy.accountHolder}: ${business.bankDetails.accountHolder ?? copy.notAvailable}`,
+            `${copy.bankName}: ${business.bankDetails.bankName ?? copy.notAvailable}`,
+            `${copy.iban}: ${business.bankDetails.iban ?? business.bankDetails.accountNumber ?? copy.notAvailable}`,
           ],
         },
       ],
     });
+  }
+
+  private getOrderInvoiceCopy(locale: 'en' | 'de') {
+    if (locale === 'de') {
+      return {
+        title: 'Bestellrechnung',
+        invoiceNumber: 'Rechnungsnr.',
+        issued: 'Ausgestellt',
+        orderId: 'Bestell-ID',
+        paidAt: 'Bezahlt am',
+        orderType: 'Bestellart',
+        currency: 'Währung',
+        seller: 'Verkäufer',
+        address: 'Adresse',
+        email: 'E-Mail',
+        phone: 'Telefon',
+        taxNumber: 'USt-IdNr./Steuernr.',
+        customer: 'Kunde',
+        items: 'Artikel',
+        deposit: 'Pfand',
+        totals: 'Summen',
+        subtotal: 'Zwischensumme',
+        tax: 'MwSt./Steuer (inklusive)',
+        deliveryFee: 'Liefergebühr',
+        discount: 'Rabatt',
+        walletApplied: 'Eingesetztes Guthaben',
+        loyaltyDiscount: 'Treuerabatt',
+        total: 'Gesamt',
+        bankDetails: 'Bankverbindung',
+        accountHolder: 'Kontoinhaber',
+        bankName: 'Bankname',
+        iban: 'IBAN/Konto',
+        notAvailable: 'k. A.',
+        footer: 'Erstellt von DeliveryWays',
+        page: 'Seite',
+        of: 'von',
+      };
+    }
+
+    return {
+      title: 'Order Invoice',
+      invoiceNumber: 'Invoice #',
+      issued: 'Issued',
+      orderId: 'Order ID',
+      paidAt: 'Paid At',
+      orderType: 'Order Type',
+      currency: 'Currency',
+      seller: 'Seller',
+      address: 'Address',
+      email: 'Email',
+      phone: 'Phone',
+      taxNumber: 'Tax/VAT No',
+      customer: 'Customer',
+      items: 'Items',
+      deposit: 'Deposit',
+      totals: 'Totals',
+      subtotal: 'Subtotal',
+      tax: 'VAT/Tax (inclusive)',
+      deliveryFee: 'Delivery Fee',
+      discount: 'Discount',
+      walletApplied: 'Wallet Applied',
+      loyaltyDiscount: 'Loyalty Discount',
+      total: 'Total',
+      bankDetails: 'Bank Details',
+      accountHolder: 'Account Holder',
+      bankName: 'Bank Name',
+      iban: 'IBAN/Account',
+      notAvailable: 'N/A',
+      footer: 'Generated by DeliveryWays',
+      page: 'Page',
+      of: 'of',
+    };
   }
 
   private async persistOrderInvoice(
@@ -1489,7 +1572,10 @@ export class AdminReportsService {
     requestedRestaurantId?: string,
     requestedBranchId?: string,
   ): Promise<AdminReportsScope> {
-    if (user.role === UserRoleEnum.SUPER_ADMIN) {
+    if (
+      user.role === UserRoleEnum.SUPER_ADMIN ||
+      this.isSuperAdminPanelStaff(user)
+    ) {
       if (requestedBranchId) {
         const branch =
           await this.adminReportsRepository.findBranchScope(requestedBranchId);
@@ -1720,6 +1806,10 @@ export class AdminReportsService {
 
   private isStaffActor(user: AuthUserContext): boolean {
     return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
+  }
+
+  private isSuperAdminPanelStaff(user: AuthUserContext): boolean {
+    return this.isStaffActor(user) && user.panelType === 'SUPER_ADMIN';
   }
 
   private buildFileName(prefix: string, scope: AdminReportsScope) {

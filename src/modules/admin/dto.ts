@@ -552,6 +552,13 @@ export class AdminGeneratedInvoicePdfQueryDto extends AdminReportsScopedQueryDto
   kind?: GeneratedInvoiceKind;
 }
 
+export class AdminOrderInvoicePdfQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional({ enum: ['en', 'de'], default: 'en' })
+  @IsOptional()
+  @IsIn(['en', 'de'])
+  locale?: 'en' | 'de';
+}
+
 export class AdminInvoicesQueryDto extends AdminReportsScopedQueryDto {
   @ApiPropertyOptional({ enum: OrderStatus })
   @IsOptional()
