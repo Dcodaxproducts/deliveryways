@@ -3398,7 +3398,7 @@ export class PaymentsService {
     }
 
     const stripeCredentials =
-      await this.resolveGlobalStripeCheckoutCredentials();
+      (await this.findGlobalStripeCheckoutCredentials()) ?? undefined;
     const event = this.stripePaymentsService.constructWebhookEvent(
       rawBody,
       signature,
