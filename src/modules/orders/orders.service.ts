@@ -1567,6 +1567,7 @@ export class OrdersService {
     const promotionInput = {
       restaurantId: branch.restaurantId,
       branchId: branch.id,
+      orderType: dto.orderType as OrderType,
       customerId: customer.customerId,
       customerIsGuest: customer.isGuest,
       isScheduledOrder: dto.isScheduled === true,

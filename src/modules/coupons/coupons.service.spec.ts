@@ -6,6 +6,7 @@ import {
   CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
+  OrderType,
   Prisma,
 } from '@prisma/client';
 import { CouponsService, CouponValidationInput } from './coupons.service';
@@ -34,6 +35,7 @@ describe('CouponsService', () => {
     maxUses: 100,
     maxUsesPerCustomer: 3,
     usedCount: 0,
+    applicableOrderType: null,
     startsAt: new Date('2026-01-01'),
     expiresAt: new Date('2026-12-31'),
     activeDays: null,
@@ -58,6 +60,7 @@ describe('CouponsService', () => {
     subtotal: 1000,
     menuItemIds: ['mi-1', 'mi-2'],
     categoryIds: ['cat-1', 'cat-2'],
+    orderType: OrderType.DELIVERY,
   };
 
   beforeEach(() => {
@@ -108,6 +111,35 @@ describe('CouponsService', () => {
         tenant: { connect: { id: 'tid-1' } },
         restaurant: { connect: { id: 'rid-1' } },
         code: 'SAVE20',
+      }),
+    );
+  });
+
+  it('creates a coupon without optional validity dates', async () => {
+    repository.findTenantRestaurants!.mockResolvedValue([{ id: 'rid-1' }]);
+    repository.create!.mockResolvedValue({ id: 'coupon-1' });
+
+    await service.create(
+      {
+        uid: 'admin-1',
+        tid: 'tid-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        code: 'PICKUP10',
+        title: 'Pickup 10%',
+        discountType: CouponDiscountType.PERCENTAGE,
+        discountValue: 10,
+        applicableOrderType: OrderType.TAKEAWAY,
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'PICKUP10',
+        startsAt: undefined,
+        expiresAt: undefined,
+        applicableOrderType: OrderType.TAKEAWAY,
       }),
     );
   });
@@ -875,6 +907,29 @@ describe('CouponsService', () => {
     );
   });
 
+  it('rejects a pickup-only coupon for a delivery order', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({ applicableOrderType: OrderType.TAKEAWAY }),
+    );
+
+    await expect(service.validateForCheckout(baseInput)).rejects.toThrow(
+      'Coupon is not valid for this order type',
+    );
+  });
+
+  it('accepts a pickup-only coupon for a takeaway order', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({ applicableOrderType: OrderType.TAKEAWAY }),
+    );
+
+    const result = await service.validateForCheckout({
+      ...baseInput,
+      orderType: OrderType.TAKEAWAY,
+    });
+
+    expect(result.coupon.code).toBe('SAVE20');
+  });
+
   it('throws when global usage limit reached', async () => {
     repository.findByCode!.mockResolvedValue(
       makeCoupon({ maxUses: 10, usedCount: 10 }),
@@ -991,6 +1046,7 @@ describe('CouponsService', () => {
       subtotal: baseInput.subtotal,
       menuItemIds: baseInput.menuItemIds,
       categoryIds: baseInput.categoryIds,
+      orderType: baseInput.orderType,
     };
     const result = await service.findBestAutoApplyPromotion(input);
 
@@ -1030,6 +1086,7 @@ describe('CouponsService', () => {
       subtotal: 10,
       menuItemIds: ['cmq857knc005xl6ilp5grymkz'],
       categoryIds: ['cat-pizza'],
+      orderType: baseInput.orderType,
       lineItems: [
         {
           menuItemId: 'cmq857knc005xl6ilp5grymkz',
@@ -1073,6 +1130,7 @@ describe('CouponsService', () => {
       subtotal: 10,
       menuItemIds: ['mi-1'],
       categoryIds: ['cat-1'],
+      orderType: baseInput.orderType,
       lineItems: [
         {
           menuItemId: 'mi-1',

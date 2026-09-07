@@ -28,6 +28,7 @@ import {
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   OrderStatus,
+  OrderType,
   PaymentStatus,
 } from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
@@ -734,6 +735,15 @@ export class AdminPromotionBaseDto {
   @IsString()
   branchId?: string;
 
+  @ApiPropertyOptional({
+    enum: OrderType,
+    nullable: true,
+    description: 'Restrict this campaign to one order type.',
+  })
+  @IsOptional()
+  @IsEnum(OrderType)
+  applicableOrderType?: OrderType | null;
+
   @ApiProperty({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
   @IsIn(['FLAT', 'PERCENTAGE', 'FIXED_PRICE'])
   discountType!: 'FLAT' | 'PERCENTAGE' | 'FIXED_PRICE';
@@ -982,6 +992,15 @@ export class UpdateAdminPromotionDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    nullable: true,
+    description: 'Restrict this campaign to one order type.',
+  })
+  @IsOptional()
+  @IsEnum(OrderType)
+  applicableOrderType?: OrderType | null;
 
   @ApiPropertyOptional({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
   @IsOptional()

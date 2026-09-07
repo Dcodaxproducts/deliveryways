@@ -205,6 +205,7 @@ export class AdminPromotionsService {
           : undefined,
       maxUses: dto.maxUses,
       maxUsesPerCustomer: dto.maxUsesPerCustomer,
+      applicableOrderType: dto.applicableOrderType,
       dealSelectionMode,
       dealRequiredQuantity,
       startsAt: this.resolveDateWriteInput(dto.startsAt),
@@ -513,6 +514,9 @@ export class AdminPromotionsService {
       ...(dto.maxUses !== undefined ? { maxUses: dto.maxUses } : {}),
       ...(dto.maxUsesPerCustomer !== undefined
         ? { maxUsesPerCustomer: dto.maxUsesPerCustomer }
+        : {}),
+      ...(dto.applicableOrderType !== undefined
+        ? { applicableOrderType: dto.applicableOrderType }
         : {}),
       ...(dto.dealSelectionMode !== undefined ||
       dto.dealRequiredQuantity !== undefined ||
