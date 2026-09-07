@@ -84,7 +84,7 @@ describe('NotificationsRepository', () => {
     ]);
   });
 
-  it('selects tenant Business Admins and branch-scoped Branch Admins for admin push', async () => {
+  it('selects restaurant Business Admins and branch-scoped Branch Admins for admin push', async () => {
     const findUsers = jest
       .fn()
       .mockResolvedValue([
@@ -104,7 +104,6 @@ describe('NotificationsRepository', () => {
 
     const result = await repository.listPushTokensForNotification({
       audience: NotificationAudience.ADMIN,
-      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
     });
@@ -116,7 +115,7 @@ describe('NotificationsRepository', () => {
         OR: [
           {
             role: UserRole.BUSINESS_ADMIN,
-            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
           },
           {
             role: UserRole.BRANCH_ADMIN,
