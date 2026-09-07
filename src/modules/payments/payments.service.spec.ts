@@ -2109,6 +2109,32 @@ describe('PaymentsService', () => {
     expect(result.received).toBe(true);
   });
 
+  it('uses environment Stripe credentials for webhooks when global checkout is disabled', async () => {
+    const { service, stripePaymentsService, globalSettingsService } =
+      makeService();
+
+    globalSettingsService.getPayoutProviderSettings.mockResolvedValue({
+      configurations: {},
+    });
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'checkout.session.completed',
+      data: { object: {} },
+    });
+
+    const payload = Buffer.from('{}');
+    const result = await service.handleStripeWebhook(payload, 'sig_123');
+
+    expect(stripePaymentsService.constructWebhookEvent).toHaveBeenCalledWith(
+      payload,
+      'sig_123',
+      undefined,
+    );
+    expect(result).toEqual({
+      received: true,
+      eventType: 'checkout.session.completed',
+    });
+  });
+
   it('moves payment-pending Stripe order to placed after webhook success', async () => {
     const {
       service,
