@@ -4,6 +4,7 @@ import {
   CouponApplyMode,
   CouponDiscountType,
   CouponStatus,
+  OrderType,
 } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -83,13 +84,25 @@ export class CouponInputDto {
   @Min(1)
   maxUsesPerCustomer?: number;
 
-  @ApiProperty({ format: 'date-time' })
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
   @IsDateString()
-  startsAt!: string;
+  startsAt?: string | null;
 
-  @ApiProperty({ format: 'date-time' })
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
   @IsDateString()
-  expiresAt!: string;
+  expiresAt?: string | null;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    nullable: true,
+    description:
+      'Restrict this coupon to one order type. Omit to allow every order type.',
+  })
+  @IsOptional()
+  @IsEnum(OrderType)
+  applicableOrderType?: OrderType | null;
 
   @ApiPropertyOptional({ description: 'Optional menu item scope' })
   @IsOptional()
@@ -208,6 +221,14 @@ export class ValidateCouponDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    description: 'Required when validating an order-type-restricted coupon.',
+  })
+  @IsOptional()
+  @IsEnum(OrderType)
+  orderType?: OrderType;
 }
 
 export class SetCouponStatusDto {

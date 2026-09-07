@@ -13,6 +13,7 @@ import {
   CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
+  OrderType,
   Prisma,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
@@ -50,6 +51,7 @@ export interface CouponValidationInput {
   lineItems?: CouponValidationLineInput[];
   ignoreMinOrderAmount?: boolean;
   isScheduledOrder?: boolean;
+  orderType?: OrderType;
 }
 
 export interface CouponValidationResult {
@@ -150,8 +152,9 @@ export class CouponsService {
           : undefined,
       maxUses: dto.maxUses,
       maxUsesPerCustomer: dto.maxUsesPerCustomer,
-      startsAt: new Date(dto.startsAt),
-      expiresAt: new Date(dto.expiresAt),
+      applicableOrderType: dto.applicableOrderType,
+      startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
       scopeMenuItem: dto.scopeMenuItemId
         ? { connect: { id: dto.scopeMenuItemId } }
         : undefined,
@@ -247,8 +250,19 @@ export class CouponsService {
           : undefined,
       maxUses: dto.maxUses,
       maxUsesPerCustomer: dto.maxUsesPerCustomer,
-      startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
-      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      applicableOrderType: dto.applicableOrderType,
+      startsAt:
+        dto.startsAt === null
+          ? null
+          : dto.startsAt
+            ? new Date(dto.startsAt)
+            : undefined,
+      expiresAt:
+        dto.expiresAt === null
+          ? null
+          : dto.expiresAt
+            ? new Date(dto.expiresAt)
+            : undefined,
       status: dto.status,
       isActive: dto.isActive,
       scopeMenuItem: dto.scopeMenuItemId
@@ -347,6 +361,7 @@ export class CouponsService {
       subtotal: dto.subtotal,
       menuItemIds: dto.menuItemIds ?? [],
       categoryIds: dto.categoryIds ?? [],
+      orderType: dto.orderType,
     });
 
     return {
@@ -875,6 +890,13 @@ export class CouponsService {
 
     if (coupon.branchId && coupon.branchId !== input.branchId) {
       throw new BadRequestException('Coupon is not valid for this branch');
+    }
+
+    if (
+      coupon.applicableOrderType &&
+      coupon.applicableOrderType !== input.orderType
+    ) {
+      throw new BadRequestException('Coupon is not valid for this order type');
     }
 
     if (coupon.kind === CouponCampaignKind.GIFT_CARD) {
