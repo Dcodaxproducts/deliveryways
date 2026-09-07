@@ -143,6 +143,40 @@ describe('AdminReportsService', () => {
     });
   });
 
+  it('returns global order totals for staff assigned to the super-admin panel', async () => {
+    const repository = {
+      getOrdersReport: jest.fn().mockResolvedValue({
+        totalOrders: 45,
+        totalRevenue: 1557,
+        averageOrderValue: 34.6,
+        statusBreakdown: [],
+        orderTypeBreakdown: [],
+        paymentStatusBreakdown: [],
+        topItems: [],
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.getOrdersReport(
+      {
+        uid: 'staff-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        panelType: 'SUPER_ADMIN',
+      } as never,
+      {},
+    );
+
+    expect(repository.getOrdersReport).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        restaurantId: undefined,
+        branchId: undefined,
+      }),
+    );
+    expect(result.data.totalOrders).toBe(45);
+  });
+
   it('lists generated invoices for business admin scope', async () => {
     const repository = {
       listInvoices: jest.fn().mockResolvedValue([
@@ -844,6 +878,7 @@ describe('AdminReportsService', () => {
       'VAT/Tax \\(inclusive\\) \\(5%\\):',
     );
     expect(result.content.toString('utf8')).toContain('(50.00) Tj');
+    expect(result.content.toString('utf8')).not.toContain('Payment Status');
     expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
       expect.objectContaining({
         invoiceNumber: 'INV-12345678',
@@ -851,6 +886,25 @@ describe('AdminReportsService', () => {
         eventType: 'DOWNLOADED',
       }),
     );
+
+    const germanResult = await service.downloadInvoicePdf(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'order-12345678',
+      { locale: 'de' },
+    );
+    const germanPdf = germanResult.content.toString('utf8');
+
+    expect(germanPdf).toContain('Bestellrechnung');
+    expect(germanPdf).toContain('Rechnungsnr.');
+    expect(germanPdf).toContain('W\\344hrung');
+    expect(germanPdf).toContain('Liefergeb\\374hr');
+    expect(germanPdf).not.toContain('Payment Status');
+    expect(germanPdf).not.toContain('Zahlungsstatus');
   });
 
   it('generates report export CSV and sends it to email', async () => {

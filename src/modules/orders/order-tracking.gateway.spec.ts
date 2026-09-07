@@ -8,6 +8,8 @@ describe('OrderTrackingGateway', () => {
     tid?: string;
     rid?: string;
     bid?: string;
+    actorType?: string;
+    panelType?: string;
   }) => {
     const realtimeService = {
       registerServer: jest.fn(),
@@ -133,5 +135,41 @@ describe('OrderTrackingGateway', () => {
     ]);
 
     expect(ordersService.resolveRealtimeAdminOrderScope).not.toHaveBeenCalled();
+  });
+
+  it('joins staff to a validated restaurant order room after explicit subscription', async () => {
+    const user = {
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      actorType: 'STAFF',
+      tid: 'tenant-1',
+    };
+    const { gateway, client, realtimeService, ordersService } =
+      makeGateway(user);
+    ordersService.resolveRealtimeAdminOrderScope.mockResolvedValue({
+      restaurantId: 'restaurant-1',
+    });
+
+    await gateway.handleConnection(client as never);
+    const result = await gateway.subscribeToAdminOrders(client as never, {
+      restaurantId: 'restaurant-1',
+    });
+
+    expect(ordersService.resolveRealtimeAdminOrderScope).toHaveBeenCalledWith(
+      user,
+      'restaurant-1',
+      undefined,
+    );
+    expect(realtimeService.getRestaurantOrdersRoom).toHaveBeenCalledWith(
+      'restaurant-1',
+    );
+    expect(client.join).toHaveBeenCalledWith('orders:restaurant:restaurant-1');
+    expect(result).toEqual({
+      success: true,
+      data: {
+        restaurantId: 'restaurant-1',
+        room: 'orders:restaurant:restaurant-1',
+      },
+    });
   });
 });
