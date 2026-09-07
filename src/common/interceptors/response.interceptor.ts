@@ -8,16 +8,27 @@ import {
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ApiResponse } from '../interfaces';
+import { RAW_RESPONSE_METADATA_KEY } from '../decorators';
 
 @Injectable()
 export class ResponseInterceptor<T> implements NestInterceptor<
   T,
-  ApiResponse<T> | StreamableFile
+  ApiResponse<T> | StreamableFile | T
 > {
   intercept(
-    _context: ExecutionContext,
+    context: ExecutionContext,
     next: CallHandler,
-  ): Observable<ApiResponse<T> | StreamableFile> {
+  ): Observable<ApiResponse<T> | StreamableFile | T> {
+    const rawResponse =
+      Reflect.getMetadata(RAW_RESPONSE_METADATA_KEY, context.getHandler()) ===
+        true ||
+      Reflect.getMetadata(RAW_RESPONSE_METADATA_KEY, context.getClass()) ===
+        true;
+
+    if (rawResponse) {
+      return next.handle() as Observable<T>;
+    }
+
     return next.handle().pipe(
       map(
         (
