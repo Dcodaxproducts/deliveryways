@@ -2,6 +2,37 @@ import { OrderStatus, UserRole } from '@prisma/client';
 import { AdminDashboardRepository } from './admin-dashboard.repository';
 
 describe('AdminDashboardRepository', () => {
+  it('includes the total order count in the superadmin overview', async () => {
+    const prisma = {
+      $transaction: jest.fn((queries: unknown[]) => Promise.resolve(queries)),
+      tenant: {
+        count: jest.fn().mockReturnValueOnce(2).mockReturnValueOnce(1),
+      },
+      restaurant: {
+        count: jest.fn().mockReturnValueOnce(3).mockReturnValueOnce(2),
+      },
+      branch: {
+        count: jest.fn().mockReturnValueOnce(4).mockReturnValueOnce(3),
+      },
+      user: {
+        count: jest.fn().mockReturnValueOnce(5).mockReturnValueOnce(4),
+      },
+      order: {
+        count: jest.fn().mockReturnValue(6),
+      },
+    };
+    const repository = new AdminDashboardRepository(prisma as never);
+
+    await expect(repository.getOverview()).resolves.toEqual({
+      tenants: { total: 2, active: 1, inactive: 1 },
+      restaurants: { total: 3, active: 2, inactive: 1 },
+      branches: { total: 4, active: 3, inactive: 1 },
+      customers: { total: 5, active: 4, inactive: 1 },
+      orders: { total: 6 },
+    });
+    expect(prisma.order.count).toHaveBeenCalledWith();
+  });
+
   it('uses successful orders for dashboard totals while retaining cancellation breakdown', async () => {
     const prisma = {
       $transaction: jest.fn((queries: unknown[]) => Promise.resolve(queries)),

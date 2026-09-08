@@ -54,7 +54,7 @@ export class AdminDashboardController {
   @Roles(RolesEnum.SUPER_ADMIN)
   @ApiOperation({
     summary:
-      'Get super-admin dashboard totals for tenants, restaurants, branches, and customers',
+      'Get super-admin dashboard totals for tenants, restaurants, branches, customers, and orders',
   })
   getOverview() {
     return this.adminDashboardService.getOverview();
