@@ -151,10 +151,10 @@ done
 pass "immutable application image references"
 
 if [[ "${ENVIRONMENT}" == "staging" ]]; then
-  [[ "$(read_env STRIPE_SECRET_KEY)" == sk_test_* ]] || fail "${ENVIRONMENT} must use a Stripe test secret key"
+  [[ "$(read_env STRIPE_SECRET_KEY)" =~ ^(sk|rk)_test_ ]] || fail "${ENVIRONMENT} must use a Stripe test secret or restricted key"
   [[ "$(read_env STRIPE_PUBLISHABLE_KEY)" == pk_test_* ]] || fail "${ENVIRONMENT} must use a Stripe test publishable key"
 else
-  [[ "$(read_env STRIPE_SECRET_KEY)" == sk_live_* ]] || fail "production must use a Stripe live secret key"
+  [[ "$(read_env STRIPE_SECRET_KEY)" =~ ^(sk|rk)_live_ ]] || fail "production must use a Stripe live secret or restricted key"
   [[ "$(read_env STRIPE_PUBLISHABLE_KEY)" == pk_live_* ]] || fail "production must use a Stripe live publishable key"
 fi
 pass "Stripe key mode matches ${ENVIRONMENT}"
