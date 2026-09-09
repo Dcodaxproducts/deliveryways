@@ -1,4 +1,5 @@
 import { WinOrderMachineController } from './winorder-machine.controller';
+import { RAW_RESPONSE_METADATA_KEY } from '../../common/decorators';
 
 describe('WinOrderMachineController', () => {
   const machine = {
@@ -8,6 +9,12 @@ describe('WinOrderMachineController', () => {
     branchId: 'branch-1',
     storeId: 41,
   };
+
+  it('returns the vendor machine contract without the platform envelope', () => {
+    expect(
+      Reflect.getMetadata(RAW_RESPONSE_METADATA_KEY, WinOrderMachineController),
+    ).toBe(true);
+  });
 
   const makeController = () => {
     const pollingService = { getNewOrders: jest.fn() };

@@ -40,6 +40,9 @@ describe('NotificationsService', () => {
   let pushNotificationsService: {
     sendToTokens: jest.Mock;
   };
+  let globalSettingsService: {
+    getSettings: jest.Mock;
+  };
   let notificationsRealtimeService: {
     emitOrderCreated: jest.Mock;
     emitOrderUpdated: jest.Mock;
@@ -81,6 +84,14 @@ describe('NotificationsService', () => {
     pushNotificationsService = {
       sendToTokens: jest.fn().mockResolvedValue([]),
     };
+    globalSettingsService = {
+      getSettings: jest.fn().mockResolvedValue({
+        data: {
+          defaultCurrency: 'PKR',
+          timezone: 'Europe/Berlin',
+        },
+      }),
+    };
     notificationsRealtimeService = {
       emitOrderCreated: jest.fn(),
       emitOrderUpdated: jest.fn(),
@@ -90,7 +101,7 @@ describe('NotificationsService', () => {
       notificationsRepository as never,
       mailerService as never,
       pushNotificationsService as never,
-      undefined,
+      globalSettingsService as never,
       notificationsRealtimeService as never,
     );
   });
@@ -619,6 +630,16 @@ describe('NotificationsService', () => {
         ),
       }),
     );
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        body: expect.stringMatching(
+          /Geplant für: 24\.07\.2026, 20:30[\s\S]*Bestelldatum und -zeit: 23\.07\.2026, 14:00/,
+        ),
+      }),
+    );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
     const emailBodies = notificationsRepository.create.mock.calls.map(
       ([input]) => (input as { body?: string }).body ?? '',
@@ -1140,6 +1161,44 @@ describe('NotificationsService', () => {
         notificationId: 'deliveryman-notification-1',
         audience: NotificationAudience.DELIVERYMAN,
         tokens: ['fcm-token-1'],
+      }),
+    );
+  });
+
+  it('adds the restaurant-local delivery time to the customer accepted-order email', async () => {
+    notificationsRepository.findOrderForNotification.mockResolvedValue({
+      id: 'accepted-order-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      deliverymanId: null,
+      orderType: 'DELIVERY',
+      orderTime: new Date('2026-07-24T18:30:00.000Z'),
+      status: OrderStatus.CONFIRMED,
+      paymentStatus: PaymentStatus.PAID,
+      customer: {
+        email: 'customer@example.com',
+        profile: { firstName: 'Rames' },
+      },
+      branch: { id: 'branch-1', name: 'American Corner' },
+    });
+    notificationsRepository.create.mockResolvedValue({
+      id: 'customer-notification-1',
+      recipientEmail: 'customer@example.com',
+      subject: 'orderStatus subject',
+      body: 'orderStatus body\n\nLieferzeit: 24.07.2026, 20:30',
+    });
+    notificationsRepository.updateDelivery.mockResolvedValue({});
+
+    await service.notifyOrderStatusChanged('accepted-order-1');
+
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
+        type: NotificationType.ORDER_STATUS_CHANGED,
+        body: 'orderStatus body\n\nLieferzeit: 24.07.2026, 20:30',
       }),
     );
   });

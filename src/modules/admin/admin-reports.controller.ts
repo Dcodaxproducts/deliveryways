@@ -30,6 +30,7 @@ import {
   AdminGeneratedInvoicePdfQueryDto,
   AdminGeneratedInvoicesQueryDto,
   AdminInvoicesQueryDto,
+  AdminOrderInvoicePdfQueryDto,
   AdminOrdersReportQueryDto,
   AdminReportsScopedQueryDto,
 } from './dto';
@@ -199,6 +200,17 @@ export class AdminReportsController {
     return this.adminReportsService.recreateGeneratedInvoice(user, invoiceId);
   }
 
+  @Post('generated-invoices/:invoiceId/resend')
+  @HttpCode(200)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Resend a generated invoice billing email' })
+  resendGeneratedInvoice(
+    @CurrentUser() user: AuthUserContext,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    return this.adminReportsService.resendGeneratedInvoice(user, invoiceId);
+  }
+
   @Get('generated-invoices/:invoiceId/pdf')
   @Roles(
     RolesEnum.SUPER_ADMIN,
@@ -265,7 +277,7 @@ export class AdminReportsController {
   async downloadInvoicePdf(
     @CurrentUser() user: AuthUserContext,
     @Param('orderId') orderId: string,
-    @Query() query: AdminReportsScopedQueryDto,
+    @Query() query: AdminOrderInvoicePdfQueryDto,
     @Res({ passthrough: true }) response: Response,
   ) {
     const file = await this.adminReportsService.downloadInvoicePdf(

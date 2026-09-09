@@ -59,6 +59,56 @@ describe('GlobalExceptionFilter', () => {
     );
   });
 
+  it('localizes the minimum-order shortfall for German checkout requests', () => {
+    const filter = new GlobalExceptionFilter();
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          url: '/api/v1/cart/checkout',
+          headers: { 'accept-language': 'de-DE,de;q=0.9' },
+        }),
+      }),
+    };
+
+    filter.catch(
+      new BadRequestException({
+        message:
+          'Subtotal is below zone minimum order amount. Add 4.00 more to checkout.',
+        error: 'MINIMUM_ORDER_AMOUNT_NOT_MET',
+        details: {
+          scope: 'zone',
+          subtotal: 8,
+          minOrderAmount: 12,
+          shortfall: 4,
+        },
+      }),
+      host as never,
+    );
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'Der Mindestbestellwert ist noch nicht erreicht. Bitte bestellen Sie noch für 4,00 €',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        error: expect.objectContaining({
+          code: 'MINIMUM_ORDER_AMOUNT_NOT_MET',
+          message:
+            'Der Mindestbestellwert ist noch nicht erreicht. Bitte bestellen Sie noch für 4,00 €',
+          details: {
+            scope: 'zone',
+            subtotal: 8,
+            minOrderAmount: 12,
+            shortfall: 4,
+          },
+        }),
+      }),
+    );
+  });
+
   it('never returns an untranslated domain error to German clients', () => {
     const filter = new GlobalExceptionFilter();
     const json = jest.fn();

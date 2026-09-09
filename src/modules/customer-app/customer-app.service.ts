@@ -906,8 +906,23 @@ export class CustomerAppService {
         categoryIds: promotionContext.hasBroadHappyHour
           ? []
           : promotionContext.categoryIds,
-        includeItems: false,
+        includeItems: true,
       });
+    const visibleCuisines = items
+      .map((item) => {
+        const visibleItemCount = Array.isArray(item.items)
+          ? this.filterAvailableMenuItems(
+              item.items as PublicMenuItemScheduleCarrier[],
+            ).length
+          : item._count.items;
+
+        return {
+          ...item,
+          items: undefined,
+          _count: { items: visibleItemCount },
+        };
+      })
+      .filter((item) => item._count.items > 0);
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
       resolvedQuery.locale,
@@ -916,7 +931,7 @@ export class CustomerAppService {
 
     return {
       data: await Promise.all(
-        items.map((item) =>
+        visibleCuisines.map((item) =>
           this.mapCuisineCategory(
             item,
             promotionContext.promotions,
@@ -926,7 +941,10 @@ export class CustomerAppService {
         ),
       ),
       message: 'Promotional cuisines fetched successfully',
-      meta: buildPaginationMeta(query, total),
+      meta: buildPaginationMeta(
+        query,
+        total - (items.length - visibleCuisines.length),
+      ),
     };
   }
 

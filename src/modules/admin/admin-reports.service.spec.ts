@@ -143,6 +143,40 @@ describe('AdminReportsService', () => {
     });
   });
 
+  it('returns global order totals for staff assigned to the super-admin panel', async () => {
+    const repository = {
+      getOrdersReport: jest.fn().mockResolvedValue({
+        totalOrders: 45,
+        totalRevenue: 1557,
+        averageOrderValue: 34.6,
+        statusBreakdown: [],
+        orderTypeBreakdown: [],
+        paymentStatusBreakdown: [],
+        topItems: [],
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.getOrdersReport(
+      {
+        uid: 'staff-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        panelType: 'SUPER_ADMIN',
+      } as never,
+      {},
+    );
+
+    expect(repository.getOrdersReport).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        restaurantId: undefined,
+        branchId: undefined,
+      }),
+    );
+    expect(result.data.totalOrders).toBe(45);
+  });
+
   it('lists generated invoices for business admin scope', async () => {
     const repository = {
       listInvoices: jest.fn().mockResolvedValue([
@@ -381,6 +415,96 @@ describe('AdminReportsService', () => {
     );
     expect(result.data.id).toBe('generated-2');
     expect(result.data.invoiceNumber).toMatch(/^WPO-INV-1-R-/);
+  });
+
+  it('resends a reviewed subscription invoice from its immutable snapshot', async () => {
+    const invoice = {
+      id: 'generated-1',
+      invoiceNumber: 'SUB-INV-1',
+      sourceKey: 'subscription-1:period-1',
+      kind: 'SUBSCRIPTION',
+      status: 'ISSUED',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      customerId: null,
+      orderId: null,
+      subscriptionId: 'subscription-1',
+      periodFrom: new Date('2026-08-01T00:00:00.000Z'),
+      periodTo: new Date('2026-09-01T00:00:00.000Z'),
+      currency: 'EUR',
+      totalAmount: 125,
+      sentCount: 0,
+      downloadedCount: 0,
+      lastSentAt: null,
+      lastSentTo: null,
+      createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      snapshot: {
+        restaurant: {
+          name: 'Pizza House',
+          billingEmail: 'billing@pizza.de',
+        },
+      },
+    };
+    const repository = {
+      findGeneratedInvoiceByIdUnscoped: jest.fn().mockResolvedValue(invoice),
+    };
+    const mailer = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecords = {
+      recordEmail: jest
+        .fn()
+        .mockResolvedValue({ ...invoice, status: 'SENT', sentCount: 1 }),
+    };
+    const packagePlans = {
+      generateStoredInvoicePdf: jest.fn().mockReturnValue(Buffer.from('pdf')),
+    };
+    const service = new AdminReportsService(
+      repository as never,
+      mailer as never,
+      undefined,
+      invoiceRecords as never,
+      packagePlans as never,
+    );
+
+    const result = await service.resendGeneratedInvoice(
+      { uid: 'super-1', role: 'SUPER_ADMIN' } as never,
+      invoice.id,
+    );
+
+    expect(packagePlans.generateStoredInvoicePdf).toHaveBeenCalledWith(
+      'SUBSCRIPTION',
+      invoice.snapshot,
+    );
+    expect(mailer.sendEmail).toHaveBeenCalledWith(
+      'billing@pizza.de',
+      expect.stringContaining(invoice.invoiceNumber),
+      expect.any(String),
+      expect.objectContaining({ attachments: [expect.any(Object)] }),
+    );
+    expect(invoiceRecords.recordEmail).toHaveBeenCalledWith(
+      invoice.id,
+      'billing@pizza.de',
+      'super-1',
+    );
+    expect(result.data.status).toBe('SENT');
+  });
+
+  it('does not resend a cancelled generated invoice', async () => {
+    const repository = {
+      findGeneratedInvoiceByIdUnscoped: jest.fn().mockResolvedValue({
+        id: 'generated-1',
+        status: 'CANCELLED',
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    await expect(
+      service.resendGeneratedInvoice(
+        { uid: 'super-1', role: 'SUPER_ADMIN' } as never,
+        'generated-1',
+      ),
+    ).rejects.toThrow('must be recreated before sending');
   });
 
   it('lists generated invoice history for permission-authorized staff scope', async () => {
@@ -754,6 +878,7 @@ describe('AdminReportsService', () => {
       'VAT/Tax \\(inclusive\\) \\(5%\\):',
     );
     expect(result.content.toString('utf8')).toContain('(50.00) Tj');
+    expect(result.content.toString('utf8')).not.toContain('Payment Status');
     expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
       expect.objectContaining({
         invoiceNumber: 'INV-12345678',
@@ -761,6 +886,25 @@ describe('AdminReportsService', () => {
         eventType: 'DOWNLOADED',
       }),
     );
+
+    const germanResult = await service.downloadInvoicePdf(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'order-12345678',
+      { locale: 'de' },
+    );
+    const germanPdf = germanResult.content.toString('utf8');
+
+    expect(germanPdf).toContain('Bestellrechnung');
+    expect(germanPdf).toContain('Rechnungsnr.');
+    expect(germanPdf).toContain('W\\344hrung');
+    expect(germanPdf).toContain('Liefergeb\\374hr');
+    expect(germanPdf).not.toContain('Payment Status');
+    expect(germanPdf).not.toContain('Zahlungsstatus');
   });
 
   it('generates report export CSV and sends it to email', async () => {

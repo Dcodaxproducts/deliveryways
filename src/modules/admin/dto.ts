@@ -28,6 +28,7 @@ import {
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   OrderStatus,
+  OrderType,
   PaymentStatus,
 } from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
@@ -552,6 +553,13 @@ export class AdminGeneratedInvoicePdfQueryDto extends AdminReportsScopedQueryDto
   kind?: GeneratedInvoiceKind;
 }
 
+export class AdminOrderInvoicePdfQueryDto extends AdminReportsScopedQueryDto {
+  @ApiPropertyOptional({ enum: ['en', 'de'], default: 'en' })
+  @IsOptional()
+  @IsIn(['en', 'de'])
+  locale?: 'en' | 'de';
+}
+
 export class AdminInvoicesQueryDto extends AdminReportsScopedQueryDto {
   @ApiPropertyOptional({ enum: OrderStatus })
   @IsOptional()
@@ -726,6 +734,15 @@ export class AdminPromotionBaseDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    nullable: true,
+    description: 'Restrict this campaign to one order type.',
+  })
+  @IsOptional()
+  @IsEnum(OrderType)
+  applicableOrderType?: OrderType | null;
 
   @ApiProperty({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
   @IsIn(['FLAT', 'PERCENTAGE', 'FIXED_PRICE'])
@@ -975,6 +992,15 @@ export class UpdateAdminPromotionDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    nullable: true,
+    description: 'Restrict this campaign to one order type.',
+  })
+  @IsOptional()
+  @IsEnum(OrderType)
+  applicableOrderType?: OrderType | null;
 
   @ApiPropertyOptional({ enum: ['FLAT', 'PERCENTAGE', 'FIXED_PRICE'] })
   @IsOptional()

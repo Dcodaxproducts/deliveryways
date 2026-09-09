@@ -1,0 +1,79 @@
+name: API quality and P0 acceptance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'release/**'
+      - 'sync/**'
+      - 'test/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: feastflow_acceptance
+          POSTGRES_PASSWORD: feastflow_acceptance
+          POSTGRES_DB: feastflow_acceptance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U feastflow_acceptance -d feastflow_acceptance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://feastflow_acceptance:feastflow_acceptance@127.0.0.1:5432/feastflow_acceptance
+      NODE_ENV: test
+      APP_ENV: test
+      EMAIL_ENABLED: 'false'
+      JWT_ACCESS_SECRET: p0-acceptance-access-secret
+      JWT_REFRESH_SECRET: p0-acceptance-refresh-secret
+      THROTTLE_LIMIT: '10000'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Apply migrations to disposable database
+        run: npx prisma migrate deploy
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint without modifying source
+        run: npx eslint "{src,apps,libs,test}/**/*.ts"
+
+      - name: Run unit and integration tests
+        run: npm test -- --runInBand
+
+      - name: Run isolated P0 lifecycle acceptance
+        run: npm run test:p0
+
+      - name: Build Production bundle
+        run: npm run build

@@ -289,7 +289,7 @@ export class NotificationsRepository {
           type: NotificationType.ORDER_PLACED,
           restaurantId: input.restaurantId,
           ...(input.branchId ? { branchId: input.branchId } : {}),
-          recipientUserId: null,
+          OR: [{ recipientUserId: null }, { recipientUserId: input.userId }],
           seenAt: null,
           order: {
             status: {
@@ -297,7 +297,7 @@ export class NotificationsRepository {
             },
           },
         },
-        select: { id: true },
+        select: { id: true, recipientUserId: true },
         orderBy: { createdAt: 'asc' },
         take: 20,
       });
