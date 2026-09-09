@@ -1,6 +1,6 @@
 # Multi-tenant and RBAC deny matrix
 
-Status: Locally verified; CI pending
+Status: Verified
 
 ## Problem
 
@@ -28,3 +28,9 @@ This phase adds acceptance coverage only. It uses the existing disposable Postgr
 - Every requirement above is mapped to a passing database-backed HTTP assertion.
 - Existing P0 acceptance, unit tests, typecheck, lint, and Production build remain green.
 - CI uses ephemeral PostgreSQL and performs no deployment.
+
+## Verification
+
+- Local: 115 migrations, both P0 acceptance journeys, 105 suites / 1,208 existing tests, typecheck, lint, and Production build passed.
+- GitHub Actions: quality run `34341430253` passed.
+- No application source, schema, live database, container, or deployment changed.
