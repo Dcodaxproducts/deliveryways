@@ -34,8 +34,8 @@ describe('WinOrderPollingService', () => {
       phone: '123',
     },
     deliveryAddress: {
-      street: 'Main Street 1',
-      area: null,
+      street: 'Main Street',
+      area: '1',
       postalCode: '12345',
       city: 'Bremen',
       state: 'Bremen',
@@ -116,6 +116,9 @@ describe('WinOrderPollingService', () => {
         Total: number;
       };
       ArticleList: { Article: Array<{ ArticleNo: string; Price: number }> };
+      Customer: {
+        DeliveryAddress: { Street: string; AddAddress?: string };
+      };
     };
     expect(payload.OrderID).toBe('order-1');
     expect(payload.AddInfo).toEqual(
@@ -124,6 +127,10 @@ describe('WinOrderPollingService', () => {
     expect(payload.AddInfo.DeliverType).toBe('Lieferung');
     expect(payload.AddInfo.DeliveryType).toBeUndefined();
     expect(payload.AddInfo.PaymentFee).toBeUndefined();
+    expect(payload.Customer.DeliveryAddress).toEqual(
+      expect.objectContaining({ Street: 'Main Street 1' }),
+    );
+    expect(payload.Customer.DeliveryAddress.AddAddress).toBeUndefined();
     expect(payload.ArticleList.Article).toEqual([
       expect.objectContaining({ ArticleNo: 'P1', Price: 10 }),
       expect.objectContaining({ ArticleNo: 'SC', Price: 1 }),

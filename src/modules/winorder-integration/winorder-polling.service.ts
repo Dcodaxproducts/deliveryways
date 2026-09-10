@@ -191,8 +191,10 @@ export class WinOrderPollingService {
         DeliveryAddress: {
           FirstName: order.customer.firstName ?? undefined,
           LastName: order.customer.lastName ?? undefined,
-          Street: order.deliveryAddress?.street,
-          AddAddress: order.deliveryAddress?.area ?? undefined,
+          Street:
+            [order.deliveryAddress?.street, order.deliveryAddress?.area]
+              .filter((part): part is string => Boolean(part?.trim()))
+              .join(' ') || undefined,
           Zip: order.deliveryAddress?.postalCode ?? undefined,
           City: order.deliveryAddress?.city,
           Country: order.deliveryAddress?.country,
