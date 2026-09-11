@@ -286,7 +286,7 @@ describe('WinOrderPollingService', () => {
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 
-  it('exports unmapped items and modifiers by name', async () => {
+  it('exports modifiers without repricing and item notes as sub-article comments', async () => {
     const nameMatchedOrder: IntegrationOrder = {
       ...order,
       id: 'order-3',
@@ -296,6 +296,7 @@ describe('WinOrderPollingService', () => {
           ...order.items[0],
           variationId: 'large',
           variationName: 'Large',
+          note: 'ohne Mais',
           modifiers: [
             {
               modifierId: 'cheese',
@@ -338,10 +339,15 @@ describe('WinOrderPollingService', () => {
           ArticleNo?: string;
           ArticleName: string;
           ArticleSize?: string;
+          Price: number;
+          Comment?: string;
           SubArticleList?: {
             SubArticle: Array<{
               ArticleNo?: string;
-              ArticleName: string;
+              ArticleName?: string;
+              Count: number;
+              Price?: number;
+              Comment?: string;
             }>;
           };
         }>;
@@ -352,16 +358,24 @@ describe('WinOrderPollingService', () => {
         ArticleNo: undefined,
         ArticleName: 'Pizza',
         ArticleSize: 'Large',
+        Price: 10,
         SubArticleList: {
           SubArticle: [
-            expect.objectContaining({
+            {
               ArticleNo: undefined,
               ArticleName: 'Extra Cheese',
-            }),
+              Count: 2,
+              Price: 0,
+            },
+            {
+              Comment: 'ohne Mais',
+              Count: 1,
+            },
           ],
         },
       }),
     ]);
+    expect(payload.ArticleList.Article[0].Comment).toBeUndefined();
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 

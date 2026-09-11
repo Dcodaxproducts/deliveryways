@@ -117,7 +117,13 @@ export class WinOrderPollingService {
               `${WinOrderCatalogMappingType.ITEM}:item:${item.menuItemId}:base`,
             )
           : undefined);
-      const subArticles = item.modifiers.map((modifier) => {
+      const subArticles: Array<{
+        ArticleNo?: string;
+        ArticleName?: string;
+        Count: number;
+        Price?: number;
+        Comment?: string;
+      }> = item.modifiers.map((modifier) => {
         const modifierMapping = catalogMappings.get(
           `${WinOrderCatalogMappingType.MODIFIER}:modifier:${modifier.modifierId}`,
         );
@@ -125,9 +131,12 @@ export class WinOrderPollingService {
           ArticleNo: modifierMapping?.externalArticleNo ?? undefined,
           ArticleName: modifierMapping?.externalArticleName || modifier.name,
           Count: modifier.quantity,
-          Price: modifier.unitPrice,
+          Price: 0,
         };
       });
+      if (item.note) {
+        subArticles.push({ Comment: item.note, Count: 1 });
+      }
       return {
         ArticleNo: mapping?.externalArticleNo ?? undefined,
         ArticleName: mapping?.externalArticleName || item.menuItemName,
@@ -136,7 +145,6 @@ export class WinOrderPollingService {
         Price: item.unitPrice,
         Tax: item.taxPercentage ?? undefined,
         Deposit: item.depositAmount || undefined,
-        Comment: item.note ?? undefined,
         SubArticleList: subArticles.length
           ? { SubArticle: subArticles }
           : undefined,
@@ -156,7 +164,6 @@ export class WinOrderPollingService {
         Price: order.serviceChargeAmount,
         Tax: undefined,
         Deposit: undefined,
-        Comment: undefined,
         SubArticleList: undefined,
       });
     }
