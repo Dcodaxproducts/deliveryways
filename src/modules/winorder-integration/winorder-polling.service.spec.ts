@@ -379,6 +379,143 @@ describe('WinOrderPollingService', () => {
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 
+  it('keeps the reported three-item WinOrder total and product notes intact', async () => {
+    const reportedOrder: IntegrationOrder = {
+      ...order,
+      id: 'order-reported-winorder-total',
+      subtotal: 28,
+      deliveryFee: 1,
+      serviceChargeAmount: 0,
+      tipAmount: 2,
+      totalAmount: 31,
+      items: [
+        {
+          ...order.items[0],
+          id: 'chicken-nuggets',
+          menuItemId: 'chicken-nuggets',
+          menuItemName: 'Chicken Nuggets, 6 Stück',
+          unitPrice: 3.8,
+          lineTotal: 3.8,
+          modifiers: [
+            {
+              modifierId: 'salsa-sauce',
+              name: 'Salsa Sauce',
+              quantity: 1,
+              unitPrice: 0,
+            },
+          ],
+        },
+        {
+          ...order.items[0],
+          id: 'pizza-basic',
+          menuItemId: 'pizza-basic',
+          menuItemName: 'Pizza Basic, klein',
+          unitPrice: 11,
+          lineTotal: 11,
+          note: 'Pizza schneiden',
+          modifiers: [
+            {
+              modifierId: 'cheese',
+              name: 'Käserand',
+              quantity: 1,
+              unitPrice: 2,
+            },
+            {
+              modifierId: 'onions',
+              name: 'Zwiebeln',
+              quantity: 1,
+              unitPrice: 1,
+            },
+          ],
+        },
+        {
+          ...order.items[0],
+          id: 'bolognese',
+          menuItemId: 'bolognese',
+          menuItemName: 'BOLOGNESE, Portion',
+          unitPrice: 13.2,
+          lineTotal: 13.2,
+          note: 'ohne Mais',
+          modifiers: [
+            {
+              modifierId: 'ham',
+              name: 'Formfleisch-Vorderschinken',
+              quantity: 1,
+              unitPrice: 2,
+            },
+          ],
+        },
+      ],
+    };
+    const orders = {
+      listExportCandidates: jest.fn().mockResolvedValue([reportedOrder]),
+    };
+    const connections = { findByBranch: jest.fn().mockResolvedValue({}) };
+    const mappings = {
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const exports = {
+      lease: jest
+        .fn()
+        .mockResolvedValue(new Set(['order-reported-winorder-total'])),
+      markFailed: jest.fn(),
+    };
+    const service = new WinOrderPollingService(
+      orders as never,
+      connections as never,
+      mappings as never,
+      exports as never,
+    );
+
+    const result = await service.getNewOrders(machine);
+    const payload = result.OrderList.Order[0] as {
+      AddInfo: { DeliverLumpSum: number; Tip: number; Total: number };
+      ArticleList: {
+        Article: Array<{
+          Count: number;
+          Price: number;
+          SubArticleList?: {
+            SubArticle: Array<{
+              ArticleName?: string;
+              Count: number;
+              Price?: number;
+              Comment?: string;
+            }>;
+          };
+        }>;
+      };
+    };
+    const subArticles = payload.ArticleList.Article.flatMap(
+      (article) => article.SubArticleList?.SubArticle ?? [],
+    );
+    const articleTotal = payload.ArticleList.Article.reduce(
+      (total, article) => total + article.Price * article.Count,
+      0,
+    );
+
+    expect(articleTotal).toBe(28);
+    expect(
+      articleTotal + payload.AddInfo.DeliverLumpSum + payload.AddInfo.Tip,
+    ).toBe(payload.AddInfo.Total);
+    expect(subArticles.filter((subArticle) => subArticle.ArticleName)).toEqual([
+      expect.objectContaining({ ArticleName: 'Salsa Sauce', Price: 0 }),
+      expect.objectContaining({ ArticleName: 'Käserand', Price: 0 }),
+      expect.objectContaining({ ArticleName: 'Zwiebeln', Price: 0 }),
+      expect.objectContaining({
+        ArticleName: 'Formfleisch-Vorderschinken',
+        Price: 0,
+      }),
+    ]);
+    expect(subArticles.filter((subArticle) => subArticle.Comment)).toEqual([
+      { Comment: 'Pizza schneiden', Count: 1 },
+      { Comment: 'ohne Mais', Count: 1 },
+    ]);
+    expect(exports.markFailed).not.toHaveBeenCalled();
+  });
+
   it('keeps a positive generic service charge retryable without a mapping', async () => {
     const orders = {
       listExportCandidates: jest.fn().mockResolvedValue([order]),
