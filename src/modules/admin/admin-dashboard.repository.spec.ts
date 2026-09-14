@@ -2,7 +2,7 @@ import { OrderStatus, UserRole } from '@prisma/client';
 import { AdminDashboardRepository } from './admin-dashboard.repository';
 
 describe('AdminDashboardRepository', () => {
-  it('includes the total order count in the superadmin overview', async () => {
+  it('includes successful order count and revenue in the superadmin overview', async () => {
     const prisma = {
       $transaction: jest.fn((queries: unknown[]) => Promise.resolve(queries)),
       tenant: {
@@ -18,19 +18,36 @@ describe('AdminDashboardRepository', () => {
         count: jest.fn().mockReturnValueOnce(5).mockReturnValueOnce(4),
       },
       order: {
-        count: jest.fn().mockReturnValue(6),
+        aggregate: jest.fn().mockReturnValue({
+          _count: { id: 6 },
+          _sum: { totalAmount: 321.5 },
+        }),
       },
     };
-    const repository = new AdminDashboardRepository(prisma as never);
+    const globalSettings = {
+      getDefaultCurrencyCode: jest.fn().mockResolvedValue('GBP'),
+    };
+    const repository = new AdminDashboardRepository(
+      prisma as never,
+      globalSettings as never,
+    );
 
     await expect(repository.getOverview()).resolves.toEqual({
       tenants: { total: 2, active: 1, inactive: 1 },
       restaurants: { total: 3, active: 2, inactive: 1 },
       branches: { total: 4, active: 3, inactive: 1 },
       customers: { total: 5, active: 4, inactive: 1 },
-      orders: { total: 6 },
+      orders: { total: 6, revenue: 321.5, currency: 'GBP' },
     });
-    expect(prisma.order.count).toHaveBeenCalledWith();
+    const aggregateCalls = prisma.order.aggregate.mock
+      .calls as unknown as Array<
+      [{ where: { status: { in: OrderStatus[] } } }]
+    >;
+    const aggregateCall = aggregateCalls[0][0];
+    expect(aggregateCall.where.status.in).toEqual(
+      expect.arrayContaining([OrderStatus.CONFIRMED, OrderStatus.DELIVERED]),
+    );
+    expect(globalSettings.getDefaultCurrencyCode).toHaveBeenCalledTimes(1);
   });
 
   it('uses successful orders for dashboard totals while retaining cancellation breakdown', async () => {

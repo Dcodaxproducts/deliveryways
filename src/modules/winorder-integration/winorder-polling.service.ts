@@ -117,7 +117,13 @@ export class WinOrderPollingService {
               `${WinOrderCatalogMappingType.ITEM}:item:${item.menuItemId}:base`,
             )
           : undefined);
-      const subArticles = item.modifiers.map((modifier) => {
+      const subArticles: Array<{
+        ArticleNo?: string;
+        ArticleName?: string;
+        Count: number;
+        Price?: number;
+        Comment?: string;
+      }> = item.modifiers.map((modifier) => {
         const modifierMapping = catalogMappings.get(
           `${WinOrderCatalogMappingType.MODIFIER}:modifier:${modifier.modifierId}`,
         );
@@ -125,9 +131,12 @@ export class WinOrderPollingService {
           ArticleNo: modifierMapping?.externalArticleNo ?? undefined,
           ArticleName: modifierMapping?.externalArticleName || modifier.name,
           Count: modifier.quantity,
-          Price: modifier.unitPrice,
+          Price: 0,
         };
       });
+      if (item.note) {
+        subArticles.push({ Comment: item.note, Count: 1 });
+      }
       return {
         ArticleNo: mapping?.externalArticleNo ?? undefined,
         ArticleName: mapping?.externalArticleName || item.menuItemName,
@@ -136,7 +145,6 @@ export class WinOrderPollingService {
         Price: item.unitPrice,
         Tax: item.taxPercentage ?? undefined,
         Deposit: item.depositAmount || undefined,
-        Comment: item.note ?? undefined,
         SubArticleList: subArticles.length
           ? { SubArticle: subArticles }
           : undefined,
@@ -156,7 +164,6 @@ export class WinOrderPollingService {
         Price: order.serviceChargeAmount,
         Tax: undefined,
         Deposit: undefined,
-        Comment: undefined,
         SubArticleList: undefined,
       });
     }
@@ -169,7 +176,7 @@ export class WinOrderPollingService {
         DiscountName: order.discountAmount ? 'Discount' : undefined,
         CurrencyStr: order.currency ?? undefined,
         DeliverLumpSum: order.deliveryFee || undefined,
-        DeliveryType: this.deliveryType(order.orderType),
+        DeliverType: this.deliverType(order.orderType),
         Comment: order.customerNote ?? undefined,
         PaymentType: paymentType,
         PaymentFee: order.paymentFeeAmount || undefined,
@@ -191,8 +198,10 @@ export class WinOrderPollingService {
         DeliveryAddress: {
           FirstName: order.customer.firstName ?? undefined,
           LastName: order.customer.lastName ?? undefined,
-          Street: order.deliveryAddress?.street,
-          AddAddress: order.deliveryAddress?.area ?? undefined,
+          Street:
+            [order.deliveryAddress?.street, order.deliveryAddress?.area]
+              .filter((part): part is string => Boolean(part?.trim()))
+              .join(' ') || undefined,
           Zip: order.deliveryAddress?.postalCode ?? undefined,
           City: order.deliveryAddress?.city,
           Country: order.deliveryAddress?.country,
@@ -231,9 +240,9 @@ export class WinOrderPollingService {
     throw new Error(`Missing payment mapping: ${order.paymentMethod}`);
   }
 
-  private deliveryType(orderType: IntegrationOrder['orderType']) {
-    if (orderType === 'DELIVERY') return 'delivery';
-    if (orderType === 'TAKEAWAY') return 'take-away';
-    return 'dine-in';
+  private deliverType(orderType: IntegrationOrder['orderType']) {
+    if (orderType === 'DELIVERY') return 'Lieferung';
+    if (orderType === 'TAKEAWAY') return 'Abholung';
+    return 'Vor Ort';
   }
 }

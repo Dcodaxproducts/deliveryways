@@ -60,7 +60,7 @@ export interface AdminDashboardOverview {
   restaurants: EntityOverviewCounts;
   branches: EntityOverviewCounts;
   customers: EntityOverviewCounts;
-  orders: { total: number };
+  orders: { total: number; revenue: number; currency: string };
 }
 
 export interface AdminDashboardRestaurantTrend {
@@ -171,7 +171,7 @@ export class AdminDashboardRepository {
       activeBranches,
       totalCustomers,
       activeCustomers,
-      totalOrders,
+      successfulOrders,
     ] = await this.prisma.$transaction([
       this.prisma.tenant.count({ where: { deletedAt: null } }),
       this.prisma.tenant.count({
@@ -195,15 +195,26 @@ export class AdminDashboardRepository {
           isActive: true,
         },
       }),
-      this.prisma.order.count(),
+      this.prisma.order.aggregate({
+        where: { status: { in: SUCCESSFUL_ORDER_STATUSES } },
+        _count: { id: true },
+        _sum: { totalAmount: true },
+      }),
     ]);
+
+    const currency =
+      (await this.globalSettingsService?.getDefaultCurrencyCode()) ?? 'EUR';
 
     return {
       tenants: this.buildCounts(totalTenants, activeTenants),
       restaurants: this.buildCounts(totalRestaurants, activeRestaurants),
       branches: this.buildCounts(totalBranches, activeBranches),
       customers: this.buildCounts(totalCustomers, activeCustomers),
-      orders: { total: totalOrders },
+      orders: {
+        total: successfulOrders._count.id,
+        revenue: Number(successfulOrders._sum.totalAmount ?? 0),
+        currency,
+      },
     };
   }
 

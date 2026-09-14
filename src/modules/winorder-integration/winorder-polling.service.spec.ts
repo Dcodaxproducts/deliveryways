@@ -34,8 +34,8 @@ describe('WinOrderPollingService', () => {
       phone: '123',
     },
     deliveryAddress: {
-      street: 'Main Street 1',
-      area: null,
+      street: 'Main Street',
+      area: '1',
       postalCode: '12345',
       city: 'Bremen',
       state: 'Bremen',
@@ -108,14 +108,32 @@ describe('WinOrderPollingService', () => {
 
     const payload = result.OrderList.Order[0] as {
       OrderID: string;
-      AddInfo: { PaymentType: string; PaymentFee?: number; Total: number };
+      AddInfo: {
+        DeliverType: string;
+        DeliveryType?: string;
+        PaymentType: string;
+        PaymentFee?: number;
+        Total: number;
+      };
       ArticleList: { Article: Array<{ ArticleNo: string; Price: number }> };
+      Customer: {
+        DeliveryAddress: { Street: string; AddAddress?: string };
+      };
     };
     expect(payload.OrderID).toBe('order-1');
     expect(payload.AddInfo).toEqual(
-      expect.objectContaining({ PaymentType: 'Barzahlung', Total: 15 }),
+      expect.objectContaining({
+        DeliverType: 'Lieferung',
+        PaymentType: 'Barzahlung',
+        Total: 15,
+      }),
     );
+    expect(payload.AddInfo.DeliveryType).toBeUndefined();
     expect(payload.AddInfo.PaymentFee).toBeUndefined();
+    expect(payload.Customer.DeliveryAddress).toEqual(
+      expect.objectContaining({ Street: 'Main Street 1' }),
+    );
+    expect(payload.Customer.DeliveryAddress.AddAddress).toBeUndefined();
     expect(payload.ArticleList.Article).toEqual([
       expect.objectContaining({ ArticleNo: 'P1', Price: 10 }),
       expect.objectContaining({ ArticleNo: 'SC', Price: 1 }),
@@ -226,7 +244,7 @@ describe('WinOrderPollingService', () => {
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 
-  it('exports unmapped items and modifiers by name', async () => {
+  it('exports modifiers without repricing and item notes as sub-article comments', async () => {
     const nameMatchedOrder: IntegrationOrder = {
       ...order,
       id: 'order-3',
@@ -236,6 +254,7 @@ describe('WinOrderPollingService', () => {
           ...order.items[0],
           variationId: 'large',
           variationName: 'Large',
+          note: 'ohne Mais',
           modifiers: [
             {
               modifierId: 'cheese',
@@ -278,10 +297,15 @@ describe('WinOrderPollingService', () => {
           ArticleNo?: string;
           ArticleName: string;
           ArticleSize?: string;
+          Price: number;
+          Comment?: string;
           SubArticleList?: {
             SubArticle: Array<{
               ArticleNo?: string;
-              ArticleName: string;
+              ArticleName?: string;
+              Count: number;
+              Price?: number;
+              Comment?: string;
             }>;
           };
         }>;
@@ -292,16 +316,24 @@ describe('WinOrderPollingService', () => {
         ArticleNo: undefined,
         ArticleName: 'Pizza',
         ArticleSize: 'Large',
+        Price: 10,
         SubArticleList: {
           SubArticle: [
-            expect.objectContaining({
+            {
               ArticleNo: undefined,
               ArticleName: 'Extra Cheese',
-            }),
+              Count: 2,
+              Price: 0,
+            },
+            {
+              Comment: 'ohne Mais',
+              Count: 1,
+            },
           ],
         },
       }),
     ]);
+    expect(payload.ArticleList.Article[0].Comment).toBeUndefined();
     expect(exports.markFailed).not.toHaveBeenCalled();
   });
 
