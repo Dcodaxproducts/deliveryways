@@ -180,6 +180,39 @@ describe('RolesGuard staff role permissions', () => {
     ).resolves.toBe(true);
   });
 
+  it('allows all-restaurant SUPER_ADMIN panel staff to read global dashboard totals', async () => {
+    const staff = activeStaffRole([
+      { access: 'dashboard', operations: ['read'] },
+    ]);
+    staff.restaurantAccess = {
+      restaurantIds: [],
+      branchIds: [],
+      allRestaurants: true,
+      hasAllRestaurantsAccess: true,
+    };
+    const prisma: PrismaMock = {
+      staffUser: { findUnique: jest.fn().mockResolvedValue(staff) },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.SUPER_ADMIN],
+      controllerPath: 'admin/dashboard',
+      handlerPath: 'overview',
+      method: RequestMethod.GET,
+      prisma,
+    });
+    const user: TestUser = {
+      uid: 'staff-1',
+      role: RolesEnum.STAFF,
+      actorType: 'STAFF',
+    };
+
+    await expect(guard.canActivate(createContext(user))).resolves.toBe(true);
+    expect(user.panelType).toBe('SUPER_ADMIN');
+    expect(user.restaurantAccess?.allRestaurants).toBe(true);
+    expect(user.tid).toBe('tenant-1');
+    expect(user.rid).toBeNull();
+  });
+
   it('allows STAFF to read WinOrder with the WinOrder permission', async () => {
     const baseStaffRole = activeStaffRole([
       { access: 'winorder-integration', operations: ['read'] },

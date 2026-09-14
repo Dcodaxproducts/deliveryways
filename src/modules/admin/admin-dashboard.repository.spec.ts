@@ -17,18 +17,24 @@ describe('AdminDashboardRepository', () => {
       user: {
         count: jest.fn().mockReturnValueOnce(50).mockReturnValueOnce(45),
       },
-      order: { count: jest.fn().mockReturnValue(240) },
+      order: {
+        aggregate: jest.fn().mockReturnValue({
+          _count: { id: 240 },
+          _sum: { totalAmount: 13842.5 },
+        }),
+      },
     };
     const repository = new AdminDashboardRepository(prisma as never);
 
     await expect(repository.getOverview()).resolves.toMatchObject({
       restaurants: { total: 12, active: 10, inactive: 2 },
-      orders: { total: 240 },
+      orders: { total: 240, revenue: 13842.5, currency: 'EUR' },
     });
-    const orderCountCalls = prisma.order.count.mock.calls as unknown as Array<
+    const orderAggregateCalls = prisma.order.aggregate.mock
+      .calls as unknown as Array<
       [{ where: { status: { in: OrderStatus[] } } }]
     >;
-    expect(orderCountCalls[0][0].where.status.in).toEqual(
+    expect(orderAggregateCalls[0][0].where.status.in).toEqual(
       expect.arrayContaining([OrderStatus.CONFIRMED, OrderStatus.DELIVERED]),
     );
   });

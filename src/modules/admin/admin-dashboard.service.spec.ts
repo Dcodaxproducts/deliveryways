@@ -54,6 +54,7 @@ describe('AdminDashboardService', () => {
         restaurants: { total: 20, active: 15, inactive: 5 },
         branches: { total: 50, active: 41, inactive: 9 },
         customers: { total: 1000, active: 960, inactive: 40 },
+        orders: { total: 2500, revenue: 84500, currency: 'EUR' },
       }),
     };
 
@@ -67,6 +68,7 @@ describe('AdminDashboardService', () => {
         restaurants: { total: 20, active: 15, inactive: 5 },
         branches: { total: 50, active: 41, inactive: 9 },
         customers: { total: 1000, active: 960, inactive: 40 },
+        orders: { total: 2500, revenue: 84500, currency: 'EUR' },
       },
       message: 'Admin dashboard overview fetched successfully',
     });
@@ -79,7 +81,7 @@ describe('AdminDashboardService', () => {
         restaurants: { total: 20, active: 15, inactive: 5 },
         branches: { total: 50, active: 41, inactive: 9 },
         customers: { total: 1000, active: 960, inactive: 40 },
-        orders: { total: 2500 },
+        orders: { total: 2500, revenue: 84500, currency: 'EUR' },
       }),
     };
     const service = new AdminDashboardService(repository as never);
