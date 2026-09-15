@@ -1,6 +1,6 @@
 # FeastFlow — Major Updates and Coverage Tracker
 
-Last updated: 14 September 2026
+Last updated: 15 September 2026
 
 This is the high-level record of the work being covered in FeastFlow. It intentionally tracks product areas and major outcomes rather than every small visual or code change.
 
@@ -17,12 +17,12 @@ This is the high-level record of the work being covered in FeastFlow. It intenti
 | Area | Implementation | Staging | Production |
 |---|---|---|---|
 | Core platform/API parity | Completed | Deployed | Deployment status varies by release |
-| Partner admin improvements | Completed | Deployed through the mobile top-sheet release | Latest UI consistency release pending |
-| Superadmin improvements | Completed | Deployed through pagination/responsive refinements | Latest UI consistency release pending |
+| Partner admin improvements | Completed | Latest UI consistency release deployed | Latest UI consistency release pending |
+| Superadmin improvements | Completed | Latest UI consistency release deployed | Latest UI consistency release pending |
 | Customer storefront | Live and validated | Menu fetching verified | Existing Production release live |
-| Unified admin theme and shadcn controls | Completed and pushed | Pending deployment | Pending deployment |
+| Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified | Pending deployment |
 
-Latest UI consistency commits awaiting deployment:
+Latest UI consistency commits deployed to Staging:
 
 - Partner: `4b29b52`
 - Superadmin: `5368947`
@@ -37,7 +37,7 @@ Latest UI consistency commits awaiting deployment:
 - Set the platform admin theme color to `oklch(70.5% 0.213 47.604)` for both Staging and Production builds.
 - Kept restaurant storefront branding customizable while protecting the platform admin theme from runtime restaurant overrides.
 
-**Status:** Completed and pushed; latest theme/control release is pending deployment.
+**Status:** Completed, pushed, and deployed to Staging. Production deployment remains pending.
 
 ### Navigation and sidebars
 
@@ -48,7 +48,7 @@ Latest UI consistency commits awaiting deployment:
 - Moved the collapse control beside the sidebar in the navbar.
 - Changed the mobile restaurant selector to a viewport-safe top sheet.
 
-**Status:** Deployed and verified on Staging, except the latest unified theme/navbar-control sizing release.
+**Status:** Deployed and verified on Staging, including the unified theme/navbar-control sizing release.
 
 ### Dialogs, alerts, tables, and forms
 
@@ -156,16 +156,44 @@ Recent Partner and Superadmin releases have passed these gates before being push
 - Staging changes are smoke-tested through localhost, public endpoints, repeated health probes, logs, and browser checks.
 - Production is never assumed from a Staging deployment; it requires its own approval and verification.
 
-**Current deployment note:** the latest Partner and Superadmin UI consistency commits are pushed but not yet deployed to Staging or Production.
+**Current deployment note:** Partner `4b29b52` and Superadmin `5368947` are deployed and verified on Staging. Production remains unchanged and requires separate approval.
 
-## 10. Current Priorities
+## 10. UI Modernization Phase Roadmap
 
-1. Deploy and verify the unified admin theme/shadcn consistency release on Staging.
-2. Run authenticated business acceptance for the updated Partner and Superadmin workflows.
-3. Promote approved cumulative releases to Production with ancestry, backup, rollback, smoke, and browser proof.
-4. Populate or unlink the empty Staging modifier group so customer customization summaries match usable options.
-5. Fix the missing customer favicon.
-6. Continue replacing any remaining one-off UI patterns with shared shadcn-based components when those screens are touched.
+The approved roadmap covers 139 routes across Partner, Superadmin, and Customer while preserving existing routes, APIs, permissions, validation, state transitions, pricing, and business flows.
+
+| Phase | Scope | Status |
+|---|---|---|
+| Phase 0 | Full UI audit, component map, and 139-route migration matrix | Completed |
+| Phase 1 | Shared Partner UI foundation and ownership contracts | Completed and consumed |
+| Phase 2 | Partner dashboard and 27 data/list routes | Completed and deployed to Staging |
+| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | Next phase |
+| Phase 4 | Complete Superadmin modernization (34 routes) | Planned |
+| Phase 5 | Complete Customer modernization (36 routes) | Planned |
+| Phase 6 | Cross-app hardening and authenticated Staging UAT | Planned |
+
+### Next phase: Phase 3
+
+Phase 3 covers the complete Partner operational family rather than isolated screen-polish tasks:
+
+- Authentication and account recovery.
+- Branch workspace, create/edit/detail, hours, closures, and delivery settings.
+- Orders, group orders, detail/tracking, status, and payment updates.
+- POS and item configuration.
+- Promotion, deal, and gift-card creation/editing.
+- Reports and invoices.
+- Loyalty, reservations, notifications, chat, printing, and WinOrder.
+- Restaurant, profile, settings, theme, payment, legal, content, FAQ, and global search screens.
+
+The phase must reuse canonical components, preserve all existing behavior, cover all 41 mapped routes, and pass responsive, accessibility, regression, type, build, lint, and browser verification before it is considered complete.
+
+## 11. Current Priorities
+
+1. Execute Phase 3 as one complete Partner operational/detail/form/settings/auth release covering all 41 mapped routes.
+2. Run authenticated business acceptance for the updated Partner and Superadmin workflows already on Staging.
+3. Populate or unlink the empty Staging modifier group so customer customization summaries match usable options.
+4. Fix the missing customer favicon.
+5. Promote approved cumulative releases to Production with ancestry, backup, rollback, smoke, and browser proof.
 
 ## Maintenance Rule
 
