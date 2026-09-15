@@ -167,12 +167,12 @@ The approved roadmap covers 139 routes across Partner, Superadmin, and Customer 
 | Phase 0 | Full UI audit, component map, and 139-route migration matrix | Completed |
 | Phase 1 | Shared Partner UI foundation and ownership contracts | Completed and consumed |
 | Phase 2 | Partner dashboard and 27 data/list routes | Completed and deployed to Staging |
-| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | Next phase |
+| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Task 1 route audit complete |
 | Phase 4 | Complete Superadmin modernization (34 routes) | Planned |
 | Phase 5 | Complete Customer modernization (36 routes) | Planned |
 | Phase 6 | Cross-app hardening and authenticated Staging UAT | Planned |
 
-### Next phase: Phase 3
+### Active phase: Phase 3
 
 Phase 3 covers the complete Partner operational family rather than isolated screen-polish tasks:
 
@@ -187,9 +187,79 @@ Phase 3 covers the complete Partner operational family rather than isolated scre
 
 The phase must reuse canonical components, preserve all existing behavior, cover all 41 mapped routes, and pass responsive, accessibility, regression, type, build, lint, and browser verification before it is considered complete.
 
+### Phase 3 task status
+
+1. **Completed:** audit and map all 41 routes; freeze the existing behavior contracts.
+2. **Next:** build or extend the shared form, detail, settings, field, action, and responsive-dialog components.
+3. **Open:** modernize authentication and branch-management screens.
+4. **Open:** modernize Orders, POS, and payment workflows.
+5. **Open:** modernize reports, promotions, integrations, and settings.
+6. **Open:** run complete desktop/mobile verification before Staging.
+
+### Task 1 — audited 41-route map
+
+The Phase 0 migration matrix remains the membership source of truth. Task 1 revalidated that all 41 unique Phase 3 routes still exist on Partner commit `4b29b52`, and that every entry file resolves to its mapped screen owner. No route, API, permission, validation rule, price calculation, state transition, query key, service call, or workflow was changed by this audit.
+
+| # | Route | Current screen owner | Family | Phase 3 target |
+|---:|---|---|---|---|
+| 1 | `/about-us` | `Settings/pages/AboutUsPage.tsx` | Settings | Settings layout |
+| 2 | `/auto-printing` | `printing/pages/AutoPrintingPage.tsx` | Settings | Settings layout |
+| 3 | `/branch-workspace` | `branches/pages/BranchWorkspacePage.tsx` | Operation | Workflow layout |
+| 4 | `/branches/[branchId]` | `Branches/pages/BranchDetailsPage.tsx` | Detail | Detail layout |
+| 5 | `/branches/edit` | `branches/pages/EditBranchPage.tsx` | Form | Form layout |
+| 6 | `/content-management/about` | `Settings/pages/AboutUsPage.tsx` | Settings | Settings layout |
+| 7 | `/deliveryman/add` | `deliverymen/pages/AddDeliverymanPage.tsx` | Form | Form layout |
+| 8 | `/faqs` | `settings/faqs/pages/FaqsPage.tsx` | Settings | Settings layout |
+| 9 | `/faqs/add` | `settings/faqs/pages/AddFaqPage.tsx` | Form | Form layout |
+| 10 | `/forgot-password` | `Auth/ForgotPasswordPage.tsx` | Authentication | Auth shell |
+| 11 | `/global-settings` | `settings/pages/GlobalSettingsPage.tsx` | Settings | Settings layout |
+| 12 | `/integrations/winorder` | `WinOrder/WinOrderSettingsPage.tsx` | Settings | Settings layout |
+| 13 | `/legal-profile` | `Settings/pages/LegalProfilePage.tsx` | Settings | Settings layout |
+| 14 | `/live-chat` | `notifications/chat/pages/LiveChatPage.tsx` | Operation | Workflow layout |
+| 15 | `/login` | `Auth/LoginPage.tsx` | Authentication | Auth shell |
+| 16 | `/loyalty` | `loyalty/pages/LoyaltyPage.tsx` | Operation | Workflow layout |
+| 17 | `/menu` | `Menu/pages/MenuOverviewPage.tsx` | Operation | Workflow layout |
+| 18 | `/menu/categories/[id]` | `Menu/categories/pages/CategoryDetailsPage.tsx` | Detail | Detail layout |
+| 19 | `/menu/deals/[id]/edit` | `Menu/deals/pages/EditAdminDealPage.tsx` | Form | Form layout |
+| 20 | `/menu/deals/add` | `Menu/deals/pages/AddAdminDealPage.tsx` | Form | Form layout |
+| 21 | `/notification-settings` | `notifications/pages/NotificationSettingsPage.tsx` | Settings | Settings layout |
+| 22 | `/orders` | `orders/pages/OrdersPage.tsx` | Operation | Workflow layout |
+| 23 | `/orders/details/[orderId]` | `orders/pages/OrderDetailsPage.tsx` | Detail | Detail layout |
+| 24 | `/orders/group/[orderId]` | `orders/pages/GroupOrderDetailsPage.tsx` | Detail | Detail layout |
+| 25 | `/payment-settings` | `Settings/pages/PaymentSettingsPage.tsx` | Settings | Settings layout |
+| 26 | `/pos` | `pos/pages/PosPage.tsx` | Operation | Workflow layout |
+| 27 | `/privacy-policy` | `settings/pages/PrivacyPolicyPage.tsx` | Settings | Settings layout |
+| 28 | `/profile` | `Profile/ProfilePage.tsx` | Detail | Detail layout |
+| 29 | `/profile/edit` | `Profile/EditProfilePage.tsx` | Form | Form layout |
+| 30 | `/promotion-management` | `promotions/pages/PromotionManagementPage.tsx` | Operation | Workflow layout |
+| 31 | `/promotion-management/coupons/add` | `promotions/pages/AddCouponPage.tsx` | Form | Form layout |
+| 32 | `/promotion-management/gift-cards/[id]/edit` | `Promotions/gift-cards/pages/EditGiftCardPage.tsx` | Form | Form layout |
+| 33 | `/promotion-management/gift-cards/add` | `Promotions/gift-cards/pages/AddGiftCardPage.tsx` | Form | Form layout |
+| 34 | `/promotion-management/happy-hour/add` | `promotions/pages/AddHappyHourPage.tsx` | Form | Form layout |
+| 35 | `/promotion-management/promotions/add` | `promotions/pages/AddPromotionPage.tsx` | Form | Form layout |
+| 36 | `/register` | `Auth/RegisterInfoPage.tsx` | Authentication | Auth shell |
+| 37 | `/reports` | `reports/pages/ReportsPage.tsx` | Operation | Workflow layout |
+| 38 | `/reset-password` | `Auth/ResetPasswordPage.tsx` | Authentication | Auth shell |
+| 39 | `/restaurants/add` | `settings/restaurants/pages/AddRestaurantPage.tsx` | Form | Form layout |
+| 40 | `/search` | `Search/SearchPage.tsx` | Search | Search/results layout |
+| 41 | `/theme-settings` | `Settings/pages/StorefrontSettingsPage.tsx` | Settings | Settings layout |
+
+Validated family totals: 4 authentication, 5 detail, 12 form, 8 operation, 11 settings/content, and 1 global-search route.
+
+### Frozen behavior contracts for Phase 3
+
+- **Authentication:** preserve login, registration, recovery/reset payloads, session storage, role-aware redirects, error handling, and existing validation.
+- **Tenant and permissions:** preserve AppShell authentication, restaurant/branch selection, role restrictions, staff permission mapping, and tenant/restaurant/branch data scope.
+- **Branches and delivery staff:** preserve create/edit payloads, opening and delivery hours, holiday overrides, temporary closures, branch-admin routing, and delivery-staff mutations.
+- **Orders and POS:** preserve order/group-order state transitions, tracking, payment updates, totals, discounts, taxes, modifier pricing, item notes, and printing behavior.
+- **Menu and promotions:** preserve menu/category/deal relationships, coupon/promotion/happy-hour/gift-card validation, edit identifiers, availability, branch scope, and mutation/query invalidation.
+- **Reports and integrations:** preserve report calculations and filters, payout/export behavior, WinOrder connection/catalog mapping, endpoint setup, and auto-printing configuration.
+- **Settings and content:** preserve profile, restaurant, theme, payment, notification, legal, FAQ, privacy, About Us, loyalty, chat, and global-search service contracts and save actions.
+- **UI-only boundary:** Phase 3 may replace presentation shells and reusable components, but domain hooks, services, API endpoints, request/response shapes, pricing helpers, and state machines remain unchanged unless separately approved.
+
 ## 11. Current Priorities
 
-1. Execute Phase 3 as one complete Partner operational/detail/form/settings/auth release covering all 41 mapped routes.
+1. Begin Phase 3 Task 2 by extending the canonical shared form, detail, settings, field, action, and responsive-dialog components for the audited 41-route map.
 2. Run authenticated business acceptance for the updated Partner and Superadmin workflows already on Staging.
 3. Populate or unlink the empty Staging modifier group so customer customization summaries match usable options.
 4. Fix the missing customer favicon.
