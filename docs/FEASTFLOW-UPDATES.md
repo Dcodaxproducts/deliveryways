@@ -167,7 +167,7 @@ The approved roadmap covers 139 routes across Partner, Superadmin, and Customer 
 | Phase 0 | Full UI audit, component map, and 139-route migration matrix | Completed |
 | Phase 1 | Shared Partner UI foundation and ownership contracts | Completed and consumed |
 | Phase 2 | Partner dashboard and 27 data/list routes | Completed and deployed to Staging |
-| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Task 1 route audit complete |
+| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Tasks 1–2 complete |
 | Phase 4 | Complete Superadmin modernization (34 routes) | Planned |
 | Phase 5 | Complete Customer modernization (36 routes) | Planned |
 | Phase 6 | Cross-app hardening and authenticated Staging UAT | Planned |
@@ -190,8 +190,8 @@ The phase must reuse canonical components, preserve all existing behavior, cover
 ### Phase 3 task status
 
 1. **Completed:** audit and map all 41 routes; freeze the existing behavior contracts.
-2. **Next:** build or extend the shared form, detail, settings, field, action, and responsive-dialog components.
-3. **Open:** modernize authentication and branch-management screens.
+2. **Completed:** build or extend the shared form, detail, settings, field, action, and responsive-dialog components.
+3. **Next:** modernize authentication and branch-management screens.
 4. **Open:** modernize Orders, POS, and payment workflows.
 5. **Open:** modernize reports, promotions, integrations, and settings.
 6. **Open:** run complete desktop/mobile verification before Staging.
@@ -257,9 +257,23 @@ Validated family totals: 4 authentication, 5 detail, 12 form, 8 operation, 11 se
 - **Settings and content:** preserve profile, restaurant, theme, payment, notification, legal, FAQ, privacy, About Us, loyalty, chat, and global-search service contracts and save actions.
 - **UI-only boundary:** Phase 3 may replace presentation shells and reusable components, but domain hooks, services, API endpoints, request/response shapes, pricing helpers, and state machines remain unchanged unless separately approved.
 
+### Task 2 — shared Phase 3 UI foundation
+
+Partner commit `8770f62` adds the canonical presentation layer required by the audited Phase 3 routes:
+
+- `FormLayout`, `FormSection`, and `FormActions` for responsive form bodies, optional previews, typed field grids, disclosures, and mobile/sticky action regions.
+- An extended `FormField` render contract that supplies stable IDs, required state, invalid state, and help/error relationships directly to controls.
+- `DetailLayout`, `DetailPanel`, and `InfoList` for summary/main/sidebar composition and semantic label/value metadata.
+- `SettingsLayout` for section navigation, content, live save status, and sticky actions.
+- `ResponsiveDialog` for one controlled contract rendered as a desktop Dialog or mobile Sheet, with shared headers, scrollable bodies, actions, sizes, and pending-action dismissal protection.
+- An extended `ConfirmDialog` with busy labels, inline errors, loading feedback, and dismissal protection while a mutation is pending.
+- Ownership enforcement and documentation so parallel form, detail, and information-list owners cannot be added; the old `ModalActions` name now resolves to canonical `FormActions`.
+
+The foundation is UI-only and is not deployed independently. Authentication, branch, order, POS, menu, pricing, promotion, reporting, integration, permission, tenant, and API behavior remain unchanged. Task 3 will consume these components across the authentication and branch-management route family.
+
 ## 11. Current Priorities
 
-1. Begin Phase 3 Task 2 by extending the canonical shared form, detail, settings, field, action, and responsive-dialog components for the audited 41-route map.
+1. Begin Phase 3 Task 3 by modernizing the authentication/recovery and branch-management route family using the new shared components.
 2. Run authenticated business acceptance for the updated Partner and Superadmin workflows already on Staging.
 3. Populate or unlink the empty Staging modifier group so customer customization summaries match usable options.
 4. Fix the missing customer favicon.
