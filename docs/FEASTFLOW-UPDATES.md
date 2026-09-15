@@ -167,7 +167,7 @@ The approved roadmap covers 139 routes across Partner, Superadmin, and Customer 
 | Phase 0 | Full UI audit, component map, and 139-route migration matrix | Completed |
 | Phase 1 | Shared Partner UI foundation and ownership contracts | Completed and consumed |
 | Phase 2 | Partner dashboard and 27 data/list routes | Completed and deployed to Staging |
-| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Tasks 1–2 complete |
+| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Tasks 1–3 complete |
 | Phase 4 | Complete Superadmin modernization (34 routes) | Planned |
 | Phase 5 | Complete Customer modernization (36 routes) | Planned |
 | Phase 6 | Cross-app hardening and authenticated Staging UAT | Planned |
@@ -191,8 +191,8 @@ The phase must reuse canonical components, preserve all existing behavior, cover
 
 1. **Completed:** audit and map all 41 routes; freeze the existing behavior contracts.
 2. **Completed:** build or extend the shared form, detail, settings, field, action, and responsive-dialog components.
-3. **Next:** modernize authentication and branch-management screens.
-4. **Open:** modernize Orders, POS, and payment workflows.
+3. **Completed:** modernize authentication and branch-management screens.
+4. **Next:** modernize Orders, POS, and payment workflows.
 5. **Open:** modernize reports, promotions, integrations, and settings.
 6. **Open:** run complete desktop/mobile verification before Staging.
 
@@ -269,11 +269,23 @@ Partner commit `8770f62` adds the canonical presentation layer required by the a
 - An extended `ConfirmDialog` with busy labels, inline errors, loading feedback, and dismissal protection while a mutation is pending.
 - Ownership enforcement and documentation so parallel form, detail, and information-list owners cannot be added; the old `ModalActions` name now resolves to canonical `FormActions`.
 
-The foundation is UI-only and is not deployed independently. Authentication, branch, order, POS, menu, pricing, promotion, reporting, integration, permission, tenant, and API behavior remain unchanged. Task 3 will consume these components across the authentication and branch-management route family.
+The foundation is UI-only and is not deployed independently. Authentication, branch, order, POS, menu, pricing, promotion, reporting, integration, permission, tenant, and API behavior remain unchanged. Task 3 consumes these components across the authentication and branch-management route family.
+
+### Task 3 — authentication and branch management
+
+Partner commit `e01f3c8` modernizes the seven mapped authentication and branch-management routes:
+
+- `/login`, `/forgot-password`, `/reset-password`, and `/register` now share one accessible, responsive `AuthPageShell`, `AuthCard`, and FeastFlow brand treatment with consistent controls, focus states, actions, and mobile/desktop composition.
+- `/branch-workspace` uses the canonical page header and section-card presentation while preserving the assigned-branch scope banner, branch-only navigation, refresh behavior, and branch card restrictions.
+- `/branches/[branchId]` consumes `DetailLayout`, `DetailPanel`, and semantic `InfoList` owners while preserving branch, restaurant, manager, address, order-type, metric, and holiday-hours queries and values.
+- `/branches/edit` consumes `PageHeader`, `FormLayout`, `FormActions`, and `SectionCard`, retaining its three-step form, branch-admin redirect guard, validation, payload mapping, notification update, delivery settings, working-hours mutation, and step transitions.
+- Focused regression guards cover canonical-owner adoption plus frozen authentication, redirect, branch-scope, query, and mutation contracts.
+
+Verification passed 114 suites and 1,037 tests, TypeScript, the 65-route Production build, exact-case imports, 3,322-key i18n parity, shared-UI ownership, diff checks, and lint with zero errors and 95 inherited warnings in untouched files. Visible desktop/mobile browser acceptance passed eight authentication views and six protected-route redirects without page errors or horizontal overflow. This change is pushed but not deployed; API, database, environment files, Staging, and Production remain unchanged.
 
 ## 11. Current Priorities
 
-1. Begin Phase 3 Task 3 by modernizing the authentication/recovery and branch-management route family using the new shared components.
+1. Begin Phase 3 Task 4 by modernizing Orders, POS, and payment workflows using the shared operation, detail, form, and dialog contracts.
 2. Run authenticated business acceptance for the updated Partner and Superadmin workflows already on Staging.
 3. Populate or unlink the empty Staging modifier group so customer customization summaries match usable options.
 4. Fix the missing customer favicon.
