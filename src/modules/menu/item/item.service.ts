@@ -70,6 +70,7 @@ export class MenuItemService {
 
   async create(user: AuthUserContext, dto: CreateMenuItemDto) {
     const restaurantId = await this.resolveRestaurantId(user, dto.restaurantId);
+    const name = this.normalizeMenuItemName(dto.name);
     const modifiers = this.resolveDirectModifiers(dto);
     const categoryIds = this.resolveCategoryIds(
       dto.categoryId,
@@ -89,7 +90,7 @@ export class MenuItemService {
 
     const slug = await this.resolveUniqueSlug(
       restaurantId,
-      dto.slug ?? dto.name,
+      dto.slug ?? name,
     );
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
@@ -97,10 +98,12 @@ export class MenuItemService {
     this.assertSelectionLimits(dto);
     await this.assertKnownLabels(restaurantId, dto.labels ?? dto.dietaryFlags);
     await this.assertUniqueFields(restaurantId, { sku });
+    await this.assertUniqueMenuItemName(restaurantId, name);
 
     const data = await this.createItemWithAssignments(
       restaurantId,
       dto,
+      name,
       slug,
       sku,
       pricing,
@@ -119,6 +122,7 @@ export class MenuItemService {
   private async createItemWithAssignments(
     restaurantId: string,
     dto: CreateMenuItemDto,
+    name: string,
     slug: string,
     sku: string | undefined,
     pricing: {
@@ -137,7 +141,7 @@ export class MenuItemService {
           {
             restaurant: { connect: { id: restaurantId } },
             category: { connect: { id: dto.categoryId } },
-            name: dto.name,
+            name,
             slug,
             description: dto.description,
             ingredients: dto.ingredients,
@@ -210,11 +214,21 @@ export class MenuItemService {
     }
 
     const usedSlugs = new Set<string>();
+    const usedNames = new Set<string>();
     const payload: Prisma.MenuItemCreateManyInput[] = [];
     const categoryLinks: Array<{ slug: string; categoryIds: string[] }> = [];
     const cuisineLinks: Array<{ slug: string; cuisineIds: string[] }> = [];
 
     for (const item of dto.items) {
+      const name = this.normalizeMenuItemName(item.name);
+      const nameKey = name.toLocaleLowerCase('en-US');
+      if (usedNames.has(nameKey)) {
+        throw new BadRequestException(
+          'Bulk menu items must contain unique names within the restaurant',
+        );
+      }
+      await this.assertUniqueMenuItemName(restaurantId, name);
+      usedNames.add(nameKey);
       const pricing = this.resolvePricingInput(item);
       const taxInput = await this.resolveTaxInput(item);
       this.assertSelectionLimits(item);
@@ -224,7 +238,7 @@ export class MenuItemService {
       );
       const slug = await this.resolveUniqueSlug(
         restaurantId,
-        item.slug ?? item.name,
+        item.slug ?? name,
         undefined,
         usedSlugs,
       );
@@ -241,7 +255,7 @@ export class MenuItemService {
       payload.push({
         restaurantId,
         categoryId: item.categoryId,
-        name: item.name,
+        name,
         slug,
         description: item.description,
         ingredients: item.ingredients,
@@ -418,6 +432,11 @@ export class MenuItemService {
       dto.labels ?? dto.dietaryFlags,
     );
     await this.assertUniqueFields(item.restaurantId, { sku }, id);
+    const name =
+      dto.name !== undefined ? this.normalizeMenuItemName(dto.name) : undefined;
+    if (name !== undefined) {
+      await this.assertUniqueMenuItemName(item.restaurantId, name, id);
+    }
 
     const data = await this.prisma.$transaction(async (tx) => {
       const updated = await this.itemRepository.update(
@@ -426,7 +445,7 @@ export class MenuItemService {
           category: categoryIds
             ? { connect: { id: categoryIds[0] } }
             : undefined,
-          name: dto.name,
+          name,
           slug,
           description: dto.description,
           ingredients: dto.ingredients,
@@ -1128,7 +1147,13 @@ export class MenuItemService {
 
     await this.ensureCanAccessRestaurant(user, item.restaurantId, 'write');
 
-    const name = dto.name?.trim() || `${item.name} Copy`;
+    const name =
+      dto.name !== undefined
+        ? this.normalizeMenuItemName(dto.name)
+        : await this.resolveUniqueCopyName(item.restaurantId, item.name);
+    if (dto.name !== undefined) {
+      await this.assertUniqueMenuItemName(item.restaurantId, name);
+    }
     const slug = await this.resolveUniqueSlug(
       item.restaurantId,
       dto.slug ?? `${item.slug}-copy`,
@@ -1594,6 +1619,55 @@ export class MenuItemService {
         );
       }
     }
+  }
+
+  private normalizeMenuItemName(value: string): string {
+    const name = value.trim();
+    if (!name) {
+      throw new BadRequestException('Menu item name is required');
+    }
+
+    return name;
+  }
+
+  private async assertUniqueMenuItemName(
+    restaurantId: string,
+    name: string,
+    excludeId?: string,
+  ): Promise<void> {
+    const existing =
+      await this.itemRepository.findActiveByRestaurantAndName(
+        restaurantId,
+        name,
+        excludeId,
+      );
+
+    if (existing) {
+      throw new BadRequestException(
+        'An active menu item with this name already exists in this restaurant',
+      );
+    }
+  }
+
+  private async resolveUniqueCopyName(
+    restaurantId: string,
+    sourceName: string,
+  ): Promise<string> {
+    const baseName = `${sourceName.trim()} Copy`;
+    let candidate = baseName;
+    let counter = 2;
+
+    while (
+      await this.itemRepository.findActiveByRestaurantAndName(
+        restaurantId,
+        candidate,
+      )
+    ) {
+      candidate = `${baseName} ${counter}`;
+      counter += 1;
+    }
+
+    return candidate;
   }
 
   private throwMenuItemUniqueError(error: unknown) {

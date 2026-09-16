@@ -14,6 +14,7 @@ describe('MenuItemService', () => {
       findById: jest.fn(),
       findByRestaurantAndSlug: jest.fn(),
       findByRestaurantAndSku: jest.fn(),
+      findActiveByRestaurantAndName: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
       countOrderItems: jest.fn(),
@@ -329,6 +330,75 @@ describe('MenuItemService', () => {
       undefined,
     );
     expect(itemRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a duplicate active menu item name in the restaurant', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findByRestaurantAndSlug.mockResolvedValue(null);
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.findActiveByRestaurantAndName.mockResolvedValue({
+      id: 'item-2',
+    });
+
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          restaurantId: 'restaurant-1',
+          categoryId: 'category-1',
+          name: ' Loaded Fries ',
+          basePrice: 450,
+        },
+      ),
+    ).rejects.toThrow(
+      'An active menu item with this name already exists in this restaurant',
+    );
+    expect(itemRepository.findActiveByRestaurantAndName).toHaveBeenCalledWith(
+      'restaurant-1',
+      'Loaded Fries',
+      undefined,
+    );
+    expect(itemRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate names inside one bulk menu-item payload', async () => {
+    const { service, itemRepository, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.menuCategory.findFirst.mockResolvedValue({ id: 'category-1' });
+    itemRepository.findActiveByRestaurantAndName.mockResolvedValue(null);
+
+    await expect(
+      service.createBulk(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          restaurantId: 'restaurant-1',
+          items: [
+            {
+              categoryId: 'category-1',
+              name: 'Loaded Fries',
+              basePrice: 450,
+            },
+            {
+              categoryId: 'category-1',
+              name: ' loaded fries ',
+              basePrice: 500,
+            },
+          ],
+        },
+      ),
+    ).rejects.toThrow(
+      'Bulk menu items must contain unique names within the restaurant',
+    );
   });
 
   it('stores separate deposit amount when provided', async () => {
@@ -1181,8 +1251,12 @@ describe('MenuItemService', () => {
       'restaurant-1',
       tx,
     );
+    expect(itemRepository.findActiveByRestaurantAndName).toHaveBeenCalledWith(
+      'restaurant-1',
+      'Burger Copy',
+    );
     expect(itemRepository.create).toHaveBeenCalledWith(
-      expect.objectContaining({ sortOrder: 99 }),
+      expect.objectContaining({ name: 'Burger Copy', sortOrder: 99 }),
       tx,
     );
     expect(tx.modifierGroupModifier.createMany).not.toHaveBeenCalled();
@@ -1347,6 +1421,44 @@ describe('MenuItemService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('rejects renaming a menu item to another active restaurant item', async () => {
+    const { service, itemRepository } = makeService();
+    itemRepository.findById.mockResolvedValue({
+      id: 'item-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+      pricingMode: 'SINGLE',
+      basePrice: new Prisma.Decimal(500),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      dietaryFlags: [],
+    });
+    itemRepository.findByRestaurantAndSku.mockResolvedValue(null);
+    itemRepository.findActiveByRestaurantAndName.mockResolvedValue({
+      id: 'item-2',
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.SUPER_ADMIN,
+        },
+        'item-1',
+        { name: ' Existing Item ' },
+      ),
+    ).rejects.toThrow(
+      'An active menu item with this name already exists in this restaurant',
+    );
+    expect(itemRepository.findActiveByRestaurantAndName).toHaveBeenCalledWith(
+      'restaurant-1',
+      'Existing Item',
+      'item-1',
+    );
+    expect(itemRepository.update).not.toHaveBeenCalled();
   });
 
   it('clears item modifiers and variation overrides when update sends empty arrays', async () => {
