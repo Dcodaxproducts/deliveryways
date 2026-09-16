@@ -105,6 +105,7 @@ export class StaffManagementService {
       message: invitationEmailSent
         ? 'Staff account created and invitation email sent successfully'
         : 'Staff account created, but invitation email was not sent',
+      meta: { invitationEmailSent },
       invitationEmailSent,
     };
   }

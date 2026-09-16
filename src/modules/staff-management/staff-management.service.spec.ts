@@ -498,6 +498,7 @@ describe('StaffManagementService', () => {
     expect(result).toEqual(
       expect.objectContaining({
         invitationEmailSent: true,
+        meta: { invitationEmailSent: true },
         message: 'Staff account created and invitation email sent successfully',
       }),
     );
@@ -563,6 +564,7 @@ describe('StaffManagementService', () => {
     expect(result).toEqual(
       expect.objectContaining({
         invitationEmailSent: false,
+        meta: { invitationEmailSent: false },
         message: 'Staff account created, but invitation email was not sent',
       }),
     );
