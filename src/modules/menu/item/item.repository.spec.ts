@@ -101,6 +101,29 @@ describe('MenuItemRepository', () => {
     });
   });
 
+  it('looks up active menu-item names inside one restaurant', async () => {
+    const { repository, findFirst } = createRepository();
+
+    await repository.findActiveByRestaurantAndName(
+      'restaurant-1',
+      'Loaded Fries',
+      'item-1',
+    );
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        restaurantId: 'restaurant-1',
+        name: {
+          equals: 'Loaded Fries',
+          mode: Prisma.QueryMode.insensitive,
+        },
+        deletedAt: null,
+        id: { not: 'item-1' },
+      },
+      select: { id: true },
+    });
+  });
+
   it('loads shared and item-scoped variation modifier prices separately', async () => {
     const { repository, findMany } = createRepository();
 

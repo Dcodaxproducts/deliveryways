@@ -80,6 +80,22 @@ export class MenuItemRepository {
     });
   }
 
+  async findActiveByRestaurantAndName(
+    restaurantId: string,
+    name: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.menuItem.findFirst({
+      where: {
+        restaurantId,
+        name: { equals: name, mode: Prisma.QueryMode.insensitive },
+        deletedAt: null,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+  }
+
   async reorderRestaurantItems(
     restaurantId: string,
     items: Array<{ id: string; sortOrder: number }>,
