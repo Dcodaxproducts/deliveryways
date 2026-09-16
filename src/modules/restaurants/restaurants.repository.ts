@@ -47,8 +47,9 @@ export class RestaurantsRepository {
     tenantId: string,
     name: string,
     excludeId?: string,
+    tx?: PrismaTx,
   ) {
-    return this.prisma.restaurant.findFirst({
+    return this.client(tx).restaurant.findFirst({
       where: {
         tenantId,
         name: { equals: name, mode: Prisma.QueryMode.insensitive },

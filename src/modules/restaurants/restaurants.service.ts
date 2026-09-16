@@ -53,8 +53,10 @@ export class RestaurantsService {
   ) {}
 
   async create(tenantId: string, dto: CreateRestaurantDto, tx?: PrismaTx) {
-    const slug = await this.ensureUniqueSlug(dto.name);
-    const subdomain = await this.ensureUniqueSubdomain(dto.name);
+    const name = this.normalizeRestaurantName(dto.name);
+    await this.assertUniqueRestaurantName(tenantId, name, undefined, tx);
+    const slug = await this.ensureUniqueSlug(name);
+    const subdomain = await this.ensureUniqueSubdomain(name);
     const customDomain = await this.normalizeUniqueCustomDomain(
       dto.customDomain,
     );
@@ -62,7 +64,7 @@ export class RestaurantsService {
     return this.restaurantsRepository.create(
       {
         tenant: { connect: { id: tenantId } },
-        name: dto.name,
+        name,
         slug,
         subdomain,
         logoUrl: this.normalizeMediaUrl(dto.logoUrl),
@@ -261,10 +263,23 @@ export class RestaurantsService {
       throw new NotFoundException('Restaurant not found');
     }
 
+    const name =
+      dto.name !== undefined
+        ? this.normalizeRestaurantName(dto.name)
+        : undefined;
+    if (name !== undefined) {
+      await this.assertUniqueRestaurantName(
+        restaurant.tenantId,
+        name,
+        id,
+        tx,
+      );
+    }
+
     const data = await this.restaurantsRepository.update(
       id,
       {
-        name: dto.name,
+        name,
         logoUrl:
           dto.logoUrl !== undefined
             ? this.normalizeMediaUrl(dto.logoUrl)
@@ -1729,6 +1744,36 @@ export class RestaurantsService {
 
   private isStaffActor(user: AuthUserContext): boolean {
     return user.actorType === 'STAFF' || user.role === UserRoleEnum.STAFF;
+  }
+
+  private normalizeRestaurantName(value: string): string {
+    const name = value.trim();
+    if (!name) {
+      throw new BadRequestException('Restaurant name is required');
+    }
+
+    return name;
+  }
+
+  private async assertUniqueRestaurantName(
+    tenantId: string,
+    name: string,
+    excludeId?: string,
+    tx?: PrismaTx,
+  ): Promise<void> {
+    const existing =
+      await this.restaurantsRepository.findActiveByTenantAndName(
+        tenantId,
+        name,
+        excludeId,
+        tx,
+      );
+
+    if (existing) {
+      throw new BadRequestException(
+        'An active restaurant with this name already exists in this tenant',
+      );
+    }
   }
 
   private async ensureUniqueSlug(

@@ -16,6 +16,7 @@ describe('RestaurantsService notification settings', () => {
     findBySlug: jest.Mock;
     findBySubdomain: jest.Mock;
     findByCustomDomain: jest.Mock;
+    findActiveByTenantAndName: jest.Mock;
     findById: jest.Mock;
     findFirstByTenantId: jest.Mock;
     listByTenant: jest.Mock;
@@ -35,6 +36,7 @@ describe('RestaurantsService notification settings', () => {
       findBySlug: jest.fn(),
       findBySubdomain: jest.fn(),
       findByCustomDomain: jest.fn(),
+      findActiveByTenantAndName: jest.fn(),
       findById: jest.fn(),
       findFirstByTenantId: jest.fn(),
       listByTenant: jest.fn(),
@@ -111,6 +113,25 @@ describe('RestaurantsService notification settings', () => {
     );
   });
 
+  it('rejects an active restaurant name already used in the tenant', async () => {
+    repository.findActiveByTenantAndName.mockResolvedValue({
+      id: 'restaurant-2',
+    });
+
+    await expect(
+      service.create('tenant-1', { name: ' Burger House ' }),
+    ).rejects.toThrow(
+      'An active restaurant with this name already exists in this tenant',
+    );
+    expect(repository.findActiveByTenantAndName).toHaveBeenCalledWith(
+      'tenant-1',
+      'Burger House',
+      undefined,
+      undefined,
+    );
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
   it('does not change slug or subdomain when the restaurant name changes', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',
@@ -141,6 +162,42 @@ describe('RestaurantsService notification settings', () => {
     expect(repository.update.mock.calls[0]?.[1]).not.toHaveProperty(
       'subdomain',
     );
+    expect(repository.update.mock.calls[0]?.[1]).toMatchObject({
+      name: 'New Name',
+    });
+  });
+
+  it('rejects renaming a restaurant to another active tenant name', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      name: 'Old Name',
+      deletedAt: null,
+    });
+    repository.findActiveByTenantAndName.mockResolvedValue({
+      id: 'restaurant-2',
+    });
+
+    await expect(
+      service.update(
+        {
+          uid: 'business-admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-1',
+        { name: ' Existing Name ' },
+      ),
+    ).rejects.toThrow(
+      'An active restaurant with this name already exists in this tenant',
+    );
+    expect(repository.findActiveByTenantAndName).toHaveBeenCalledWith(
+      'tenant-1',
+      'Existing Name',
+      'restaurant-1',
+      undefined,
+    );
+    expect(repository.update).not.toHaveBeenCalled();
   });
 
   it('rejects a custom domain assigned to another restaurant', async () => {
