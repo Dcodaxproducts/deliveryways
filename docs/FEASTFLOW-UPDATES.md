@@ -19,7 +19,7 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 | Area                                    | Implementation       | Staging                                                                                 | Production                            |
 | --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
 | Core platform/API parity                | Completed            | Deployed                                                                                | Deployment status varies by release   |
-| Partner admin improvements              | Completed and pushed | Dashboard/menu and menu/orders refinements deployed; metric-density follow-up pending      | Latest UI consistency release pending |
+| Partner admin improvements              | Completed and pushed | Dashboard/menu, menu/orders, and metric-density refinements deployed and verified          | Latest UI consistency release pending |
 | Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
 | Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
 | Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
@@ -35,7 +35,7 @@ Latest Partner UI refinements deployed to Staging:
 - Partner: `bbe85f0`
 - Partner: `cff6bdf`
 
-Latest Partner UI refinement ready for Staging:
+Latest Partner UI refinement deployed to Staging:
 
 - Partner: `e53e4ed`
 
@@ -95,7 +95,7 @@ This release restored the protected Staging Maps configuration, enabled environm
 - Standardized loaded and loading metric cards on one compact 88-pixel contract, with no more than three large cards per desktop row across Dashboard, Orders, Reports, Customers, Deliverymen, Employees, Reservations, and Loyalty.
 - Removed the remaining nested Menu Management surface and repeated filter headings, compacted legacy Allergen and Variation filters, aligned Search/Reset actions, and reduced duplicate Loyalty copy and oversized controls.
 
-**Status:** The first two refinements are deployed and verified on Staging. The current Partner image is `cff6bdf`; it is healthy with zero restarts. The metric-density follow-up is implemented and pushed at `e53e4ed`, with 114 suites / 1,042 tests, TypeScript, lint, the 65-route build, UI/import/i18n guards, and 20/20 desktop/mobile browser checks passing. It is not yet deployed. Production remains unchanged.
+**Status:** All three refinements are deployed and verified on Staging. The current Partner image is `e53e4ed`; it is healthy with zero restarts. The metric-density follow-up passed 114 suites / 1,042 tests, TypeScript, lint, the 65-route build, UI/import/i18n guards, three local/public probe rounds, and 20/20 live desktop/mobile browser checks. Production remains unchanged.
 
 ## 2. Menu and Catalog Management
 
