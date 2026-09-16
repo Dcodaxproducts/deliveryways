@@ -77,7 +77,7 @@ Verification completed before push:
 - Superadmin: lint with zero errors and one inherited warning, TypeScript, 10 test files / 25 tests, 1,839-key bilingual message parity, and 34-route production build.
 - Focused hostname tests accept blank, valid, uppercase, and trailing-dot hostnames and reject protocol, path, port, localhost, and invalid-label inputs.
 
-Remaining before Staging verification: build immutable Customer and Superadmin images, prepare rollback metadata, deploy only those two services, and run guest, cart-error, footer, and custom-domain browser acceptance checks. Production remains unchanged.
+Immutable non-root Customer and Superadmin images are built with exact revision labels, protected Staging configuration was verified by hash, ancestry checks passed, and exact rollback images are recorded. Remaining before Staging verification: approve and deploy only those two services, then run guest, cart-error, footer, and custom-domain browser acceptance checks. Production remains unchanged.
 
 ## Requirement and UX Gaps
 
