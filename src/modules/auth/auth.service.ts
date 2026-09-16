@@ -82,6 +82,10 @@ type GoogleTokenInfo = {
   aud?: string;
   email?: string;
   email_verified?: string | boolean;
+  family_name?: string;
+  given_name?: string;
+  name?: string;
+  picture?: string;
   sub?: string;
 };
 
@@ -912,26 +916,40 @@ export class AuthService {
       throw new UnauthorizedException('Invalid Google credentials');
     }
 
-    const user = await this.resolveLoginUser({
+    if (
+      (!dto.role || dto.role === UserRoleEnum.CUSTOMER) &&
+      !dto.restaurantId
+    ) {
+      throw new BadRequestException(
+        'restaurantId is required for customer login',
+      );
+    }
+
+    let user = await this.resolveLoginUser({
       email,
       restaurantId: dto.restaurantId,
       role: dto.role,
     });
 
     if (!user) {
-      throw new UnauthorizedException(
-        'No account is linked to this Google email',
-      );
+      if (
+        dto.restaurantId &&
+        (!dto.role || dto.role === UserRoleEnum.CUSTOMER)
+      ) {
+        user = await this.createGoogleCustomer(
+          dto.restaurantId,
+          email,
+          tokenInfo,
+        );
+      } else {
+        throw new UnauthorizedException(
+          'No account is linked to this Google email',
+        );
+      }
     }
 
     if (user.email.trim().toLowerCase() !== email) {
       throw new UnauthorizedException('Invalid Google credentials');
-    }
-
-    if (user.role === 'CUSTOMER' && !dto.restaurantId) {
-      throw new BadRequestException(
-        'restaurantId is required for customer login',
-      );
     }
 
     const loginDeletionState = this.resolveRecoverableLoginState(user);
@@ -2605,6 +2623,71 @@ export class AuthService {
     }
 
     return tokenInfo;
+  }
+
+  private async createGoogleCustomer(
+    restaurantId: string,
+    email: string,
+    tokenInfo: GoogleTokenInfo,
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      select: { tenantId: true },
+    });
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const displayName = tokenInfo.name?.trim() ?? '';
+    const displayNameParts = displayName.split(/\s+/).filter(Boolean);
+    const firstName =
+      tokenInfo.given_name?.trim() || displayNameParts[0] || 'Google';
+    const lastName =
+      tokenInfo.family_name?.trim() ||
+      displayNameParts.slice(1).join(' ') ||
+      'Customer';
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await this.usersService.create(
+          {
+            email,
+            password: await bcrypt.hash(randomBytes(32).toString('hex'), 10),
+            role: UserRoleEnum.CUSTOMER,
+            restaurantId,
+            tenantId: restaurant.tenantId,
+            isVerified: true,
+            isApproved: true,
+            isGuest: false,
+            profile: {
+              firstName,
+              lastName,
+              avatarUrl: tokenInfo.picture?.trim() || undefined,
+            },
+          },
+          tx,
+        );
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2002'
+      ) {
+        throw error;
+      }
+    }
+
+    const user = await this.resolveLoginUser({
+      email,
+      restaurantId,
+    });
+    if (!user) {
+      throw new ServiceUnavailableException(
+        'Unable to create Google customer account',
+      );
+    }
+
+    return user;
   }
 
   private async assertAssignedBranchContext(user: {

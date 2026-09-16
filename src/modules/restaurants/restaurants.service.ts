@@ -268,12 +268,7 @@ export class RestaurantsService {
         ? this.normalizeRestaurantName(dto.name)
         : undefined;
     if (name !== undefined) {
-      await this.assertUniqueRestaurantName(
-        restaurant.tenantId,
-        name,
-        id,
-        tx,
-      );
+      await this.assertUniqueRestaurantName(restaurant.tenantId, name, id, tx);
     }
 
     const data = await this.restaurantsRepository.update(
@@ -1761,13 +1756,12 @@ export class RestaurantsService {
     excludeId?: string,
     tx?: PrismaTx,
   ): Promise<void> {
-    const existing =
-      await this.restaurantsRepository.findActiveByTenantAndName(
-        tenantId,
-        name,
-        excludeId,
-        tx,
-      );
+    const existing = await this.restaurantsRepository.findActiveByTenantAndName(
+      tenantId,
+      name,
+      excludeId,
+      tx,
+    );
 
     if (existing) {
       throw new BadRequestException(

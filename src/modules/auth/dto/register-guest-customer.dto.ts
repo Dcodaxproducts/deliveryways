@@ -10,7 +10,7 @@ export class RegisterGuestCustomerDto {
 
   @ApiProperty()
   @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
+    typeof value === 'string' ? value.trim() : undefined,
   )
   @IsString()
   @IsNotEmpty()

@@ -88,10 +88,7 @@ export class MenuItemService {
       dto.variationPriceOverrides,
     );
 
-    const slug = await this.resolveUniqueSlug(
-      restaurantId,
-      dto.slug ?? name,
-    );
+    const slug = await this.resolveUniqueSlug(restaurantId, dto.slug ?? name);
     const sku = this.resolveOptionalString(dto.sku);
     const pricing = this.resolvePricingInput(dto);
     const taxInput = await this.resolveTaxInput(dto);
@@ -1635,12 +1632,11 @@ export class MenuItemService {
     name: string,
     excludeId?: string,
   ): Promise<void> {
-    const existing =
-      await this.itemRepository.findActiveByRestaurantAndName(
-        restaurantId,
-        name,
-        excludeId,
-      );
+    const existing = await this.itemRepository.findActiveByRestaurantAndName(
+      restaurantId,
+      name,
+      excludeId,
+    );
 
     if (existing) {
       throw new BadRequestException(
