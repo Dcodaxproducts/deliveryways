@@ -43,6 +43,22 @@ export class RestaurantsRepository {
     });
   }
 
+  async findActiveByTenantAndName(
+    tenantId: string,
+    name: string,
+    excludeId?: string,
+  ) {
+    return this.prisma.restaurant.findFirst({
+      where: {
+        tenantId,
+        name: { equals: name, mode: Prisma.QueryMode.insensitive },
+        deletedAt: null,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+  }
+
   async listByTenant(
     tenantId: string | undefined,
     query: QueryDto,
