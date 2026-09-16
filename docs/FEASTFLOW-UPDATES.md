@@ -19,7 +19,7 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 | Area                                    | Implementation       | Staging                                                                                 | Production                            |
 | --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
 | Core platform/API parity                | Completed            | Deployed                                                                                | Deployment status varies by release   |
-| Partner admin improvements              | Completed and pushed | Dashboard/menu refinement deployed and verified                                         | Latest UI consistency release pending |
+| Partner admin improvements              | Completed and pushed | Dashboard/menu refinement deployed; menu/orders consistency follow-up pending deployment | Latest UI consistency release pending |
 | Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
 | Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
 | Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
@@ -33,6 +33,10 @@ Latest UI consistency commits deployed to Staging:
 Latest Partner UI refinement deployed to Staging:
 
 - Partner: `bbe85f0`
+
+Latest Partner menu/orders consistency follow-up pending Staging deployment:
+
+- Partner: `cff6bdf`
 
 Validated-issues batch 1 commits deployed to Staging:
 
@@ -84,8 +88,11 @@ This release restored the protected Staging Maps configuration, enabled environm
 - Consolidated Menu Overview navigation actions into a compact responsive action group with a distinct primary create action.
 - Added one canonical menu-management page shell and adopted it across allergens, categories, cuisines, items, labels, modifier categories, modifier groups, modifiers, and variations.
 - Removed nested title, subtitle, result-count, and section-card duplication while preserving the existing routes, permissions, queries, mutations, and modal workflows.
+- Added canonical page-action and page-tab owners so Menu Management actions, navigation, and Orders tabs use one placement, size, radius, active state, and responsive behavior.
+- Moved table-owned create actions into the shared page header without relocating modal state, removed Deals counts from the filter header, and normalized Deals and Orders filters to the shared control rhythm.
+- Rebuilt the Orders list and order-details headers on the canonical page-header/action contracts while preserving export, printing, notification sound, scheduling, status, and fulfillment behavior.
 
-**Status:** Implemented, deployed to Staging, and verified in Partner commit `bbe85f0`. The live container is healthy with zero restarts; repeated local/public probes and desktop/mobile browser checks passed. Production remains unchanged.
+**Status:** The first refinement is deployed and verified on Staging in Partner commit `bbe85f0`. The consistency follow-up is implemented, verified, and pushed as `cff6bdf`, but is not yet deployed. Its proof passed lint with zero errors, TypeScript, 114 suites/1,041 tests, the 65-route Production build, i18n/import/UI ownership guards, and 18/18 desktop/mobile browser checks across Menu Management, Deals, and Orders without duplicate page headings or horizontal overflow. Production remains unchanged.
 
 ## 2. Menu and Catalog Management
 
