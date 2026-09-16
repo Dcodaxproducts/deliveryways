@@ -649,7 +649,9 @@ describe('NotificationsService', () => {
         channel: NotificationChannel.EMAIL,
         subject: '[VORBESTELLUNG] orderConfirmation subject',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        body: expect.stringContaining('========== VORBESTELLUNG =========='),
+        body: expect.stringMatching(
+          /========== VORBESTELLUNG ==========[\s\S]*Geplant für: 24\.07\.26, 20:30/,
+        ),
         type: NotificationType.ORDER_PLACED,
       }),
     );

@@ -470,7 +470,11 @@ export class NotificationsService {
           const scheduledFor = order.orderTime
             ? new Intl.DateTimeFormat(
                 customerLocale === 'de' ? 'de-DE' : 'en-GB',
-                { dateStyle: 'short', timeStyle: 'short' },
+                {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                  timeZone,
+                },
               ).format(order.orderTime)
             : null;
           const customerBanner = order.isScheduled
