@@ -19,7 +19,7 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 | Area                                    | Implementation       | Staging                                                                                 | Production                            |
 | --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
 | Core platform/API parity                | Completed            | Deployed                                                                                | Deployment status varies by release   |
-| Partner admin improvements              | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
+| Partner admin improvements              | Completed and pushed | Existing release deployed; dashboard/menu refinement pending                            | Latest UI consistency release pending |
 | Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
 | Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
 | Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
@@ -29,6 +29,10 @@ Latest UI consistency commits deployed to Staging:
 
 - Partner: `4b29b52`
 - Superadmin: `5368947`
+
+Latest Partner UI refinement pending Staging deployment:
+
+- Partner: `bbe85f0`
 
 Validated-issues batch 1 commits deployed to Staging:
 
@@ -71,6 +75,17 @@ This release restored the protected Staging Maps configuration, enabled environm
 - Standardized visible upload and filter controls using reusable shadcn components.
 
 **Status:** Deployed and verified on Staging.
+
+### Partner dashboard and menu-management consistency
+
+- Added a reusable segmented control with explicit active and hover contrast for report ranges.
+- Removed the forced full-height Revenue Trend panel so the chart follows its content instead of leaving a large empty section.
+- Moved empty-result summaries from filter toolbars into the shared pagination footer.
+- Consolidated Menu Overview navigation actions into a compact responsive action group with a distinct primary create action.
+- Added one canonical menu-management page shell and adopted it across allergens, categories, cuisines, items, labels, modifier categories, modifier groups, modifiers, and variations.
+- Removed nested title, subtitle, result-count, and section-card duplication while preserving the existing routes, permissions, queries, mutations, and modal workflows.
+
+**Status:** Implemented, browser-verified on desktop and mobile, and pushed in Partner commit `bbe85f0`. Staging and Production remain unchanged pending deployment approval.
 
 ## 2. Menu and Catalog Management
 
