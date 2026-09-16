@@ -16,18 +16,28 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 
 ## Current Release Summary
 
-| Area | Implementation | Staging | Production |
-|---|---|---|---|
-| Core platform/API parity | Completed | Deployed | Deployment status varies by release |
-| Partner admin improvements | Completed | Latest UI consistency release deployed | Latest UI consistency release pending |
-| Superadmin improvements | Completed | Latest UI consistency release deployed | Latest UI consistency release pending |
-| Customer storefront | Live and validated | Menu fetching verified | Existing Production release live |
-| Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified | Pending deployment |
+| Area                                    | Implementation       | Staging                                                                                 | Production                            |
+| --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
+| Core platform/API parity                | Completed            | Deployed                                                                                | Deployment status varies by release   |
+| Partner admin improvements              | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
+| Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
+| Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
+| Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
+| Validated Staging issues batch 1        | Completed and pushed | Deployed; issues 1, 3, and 5 verified, issues 2 and 4 await authenticated UI acceptance | Not deployed                          |
 
 Latest UI consistency commits deployed to Staging:
 
 - Partner: `4b29b52`
 - Superadmin: `5368947`
+
+Validated-issues batch 1 commits deployed to Staging:
+
+- Platform API: `b4a3cfb`
+- Partner: `9b3a296`
+- Superadmin: `5f917a2`
+- Customer: `1f5931a`
+
+This release restored the protected Staging Maps configuration, enabled environment-specific SMTP delivery, added staff invitation delivery feedback, corrected Customer signup/OTP handling, improved global-settings color validation, and cleared stale Partner restaurant context. Production was not changed.
 
 ## 1. UI and Design System
 
@@ -154,21 +164,21 @@ Recent Partner and Superadmin releases have passed these gates before being push
 - Staging changes are smoke-tested through localhost, public endpoints, repeated health probes, logs, and browser checks.
 - Production is never assumed from a Staging deployment; it requires its own approval and verification.
 
-**Current deployment note:** Partner `4b29b52` and Superadmin `5368947` are deployed and verified on Staging. Production remains unchanged and requires separate approval.
+**Current deployment note:** The validated-issues batch 1 revisions listed above are deployed on Staging. All four application containers are healthy with zero restarts, migration status is current, transactional email/OTP checks passed, and Production remains unchanged. Authenticated UI acceptance is still required for global-settings color handling and stale Partner restaurant context.
 
 ## 10. UI Modernization Phase Roadmap
 
 The approved roadmap covers 139 routes across Partner, Superadmin, and Customer while preserving existing routes, APIs, permissions, validation, state transitions, pricing, and business flows.
 
-| Phase | Scope | Status |
-|---|---|---|
-| Phase 0 | Full UI audit, component map, and 139-route migration matrix | Completed |
-| Phase 1 | Shared Partner UI foundation and ownership contracts | Completed and consumed |
-| Phase 2 | Partner dashboard and 27 data/list routes | Completed and deployed to Staging |
-| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Tasks 1–3 complete |
-| Phase 4 | Complete Superadmin modernization (34 routes) | Planned |
-| Phase 5 | Complete Customer modernization (36 routes) | Planned |
-| Phase 6 | Cross-app hardening and authenticated Staging UAT | Planned |
+| Phase   | Scope                                                                    | Status                            |
+| ------- | ------------------------------------------------------------------------ | --------------------------------- |
+| Phase 0 | Full UI audit, component map, and 139-route migration matrix             | Completed                         |
+| Phase 1 | Shared Partner UI foundation and ownership contracts                     | Completed and consumed            |
+| Phase 2 | Partner dashboard and 27 data/list routes                                | Completed and deployed to Staging |
+| Phase 3 | Partner operational, detail, form, settings, and auth family (41 routes) | In progress — Tasks 1–3 complete  |
+| Phase 4 | Complete Superadmin modernization (34 routes)                            | Planned                           |
+| Phase 5 | Complete Customer modernization (36 routes)                              | Planned                           |
+| Phase 6 | Cross-app hardening and authenticated Staging UAT                        | Planned                           |
 
 ### Active phase: Phase 3
 
@@ -198,49 +208,49 @@ The phase must reuse canonical components, preserve all existing behavior, cover
 
 The Phase 0 migration matrix remains the membership source of truth. Task 1 revalidated that all 41 unique Phase 3 routes still exist on Partner commit `4b29b52`, and that every entry file resolves to its mapped screen owner. No route, API, permission, validation rule, price calculation, state transition, query key, service call, or workflow was changed by this audit.
 
-| # | Route | Current screen owner | Family | Phase 3 target |
-|---:|---|---|---|---|
-| 1 | `/about-us` | `Settings/pages/AboutUsPage.tsx` | Settings | Settings layout |
-| 2 | `/auto-printing` | `printing/pages/AutoPrintingPage.tsx` | Settings | Settings layout |
-| 3 | `/branch-workspace` | `branches/pages/BranchWorkspacePage.tsx` | Operation | Workflow layout |
-| 4 | `/branches/[branchId]` | `Branches/pages/BranchDetailsPage.tsx` | Detail | Detail layout |
-| 5 | `/branches/edit` | `branches/pages/EditBranchPage.tsx` | Form | Form layout |
-| 6 | `/content-management/about` | `Settings/pages/AboutUsPage.tsx` | Settings | Settings layout |
-| 7 | `/deliveryman/add` | `deliverymen/pages/AddDeliverymanPage.tsx` | Form | Form layout |
-| 8 | `/faqs` | `settings/faqs/pages/FaqsPage.tsx` | Settings | Settings layout |
-| 9 | `/faqs/add` | `settings/faqs/pages/AddFaqPage.tsx` | Form | Form layout |
-| 10 | `/forgot-password` | `Auth/ForgotPasswordPage.tsx` | Authentication | Auth shell |
-| 11 | `/global-settings` | `settings/pages/GlobalSettingsPage.tsx` | Settings | Settings layout |
-| 12 | `/integrations/winorder` | `WinOrder/WinOrderSettingsPage.tsx` | Settings | Settings layout |
-| 13 | `/legal-profile` | `Settings/pages/LegalProfilePage.tsx` | Settings | Settings layout |
-| 14 | `/live-chat` | `notifications/chat/pages/LiveChatPage.tsx` | Operation | Workflow layout |
-| 15 | `/login` | `Auth/LoginPage.tsx` | Authentication | Auth shell |
-| 16 | `/loyalty` | `loyalty/pages/LoyaltyPage.tsx` | Operation | Workflow layout |
-| 17 | `/menu` | `Menu/pages/MenuOverviewPage.tsx` | Operation | Workflow layout |
-| 18 | `/menu/categories/[id]` | `Menu/categories/pages/CategoryDetailsPage.tsx` | Detail | Detail layout |
-| 19 | `/menu/deals/[id]/edit` | `Menu/deals/pages/EditAdminDealPage.tsx` | Form | Form layout |
-| 20 | `/menu/deals/add` | `Menu/deals/pages/AddAdminDealPage.tsx` | Form | Form layout |
-| 21 | `/notification-settings` | `notifications/pages/NotificationSettingsPage.tsx` | Settings | Settings layout |
-| 22 | `/orders` | `orders/pages/OrdersPage.tsx` | Operation | Workflow layout |
-| 23 | `/orders/details/[orderId]` | `orders/pages/OrderDetailsPage.tsx` | Detail | Detail layout |
-| 24 | `/orders/group/[orderId]` | `orders/pages/GroupOrderDetailsPage.tsx` | Detail | Detail layout |
-| 25 | `/payment-settings` | `Settings/pages/PaymentSettingsPage.tsx` | Settings | Settings layout |
-| 26 | `/pos` | `pos/pages/PosPage.tsx` | Operation | Workflow layout |
-| 27 | `/privacy-policy` | `settings/pages/PrivacyPolicyPage.tsx` | Settings | Settings layout |
-| 28 | `/profile` | `Profile/ProfilePage.tsx` | Detail | Detail layout |
-| 29 | `/profile/edit` | `Profile/EditProfilePage.tsx` | Form | Form layout |
-| 30 | `/promotion-management` | `promotions/pages/PromotionManagementPage.tsx` | Operation | Workflow layout |
-| 31 | `/promotion-management/coupons/add` | `promotions/pages/AddCouponPage.tsx` | Form | Form layout |
-| 32 | `/promotion-management/gift-cards/[id]/edit` | `Promotions/gift-cards/pages/EditGiftCardPage.tsx` | Form | Form layout |
-| 33 | `/promotion-management/gift-cards/add` | `Promotions/gift-cards/pages/AddGiftCardPage.tsx` | Form | Form layout |
-| 34 | `/promotion-management/happy-hour/add` | `promotions/pages/AddHappyHourPage.tsx` | Form | Form layout |
-| 35 | `/promotion-management/promotions/add` | `promotions/pages/AddPromotionPage.tsx` | Form | Form layout |
-| 36 | `/register` | `Auth/RegisterInfoPage.tsx` | Authentication | Auth shell |
-| 37 | `/reports` | `reports/pages/ReportsPage.tsx` | Operation | Workflow layout |
-| 38 | `/reset-password` | `Auth/ResetPasswordPage.tsx` | Authentication | Auth shell |
-| 39 | `/restaurants/add` | `settings/restaurants/pages/AddRestaurantPage.tsx` | Form | Form layout |
-| 40 | `/search` | `Search/SearchPage.tsx` | Search | Search/results layout |
-| 41 | `/theme-settings` | `Settings/pages/StorefrontSettingsPage.tsx` | Settings | Settings layout |
+|   # | Route                                        | Current screen owner                               | Family         | Phase 3 target        |
+| --: | -------------------------------------------- | -------------------------------------------------- | -------------- | --------------------- |
+|   1 | `/about-us`                                  | `Settings/pages/AboutUsPage.tsx`                   | Settings       | Settings layout       |
+|   2 | `/auto-printing`                             | `printing/pages/AutoPrintingPage.tsx`              | Settings       | Settings layout       |
+|   3 | `/branch-workspace`                          | `branches/pages/BranchWorkspacePage.tsx`           | Operation      | Workflow layout       |
+|   4 | `/branches/[branchId]`                       | `Branches/pages/BranchDetailsPage.tsx`             | Detail         | Detail layout         |
+|   5 | `/branches/edit`                             | `branches/pages/EditBranchPage.tsx`                | Form           | Form layout           |
+|   6 | `/content-management/about`                  | `Settings/pages/AboutUsPage.tsx`                   | Settings       | Settings layout       |
+|   7 | `/deliveryman/add`                           | `deliverymen/pages/AddDeliverymanPage.tsx`         | Form           | Form layout           |
+|   8 | `/faqs`                                      | `settings/faqs/pages/FaqsPage.tsx`                 | Settings       | Settings layout       |
+|   9 | `/faqs/add`                                  | `settings/faqs/pages/AddFaqPage.tsx`               | Form           | Form layout           |
+|  10 | `/forgot-password`                           | `Auth/ForgotPasswordPage.tsx`                      | Authentication | Auth shell            |
+|  11 | `/global-settings`                           | `settings/pages/GlobalSettingsPage.tsx`            | Settings       | Settings layout       |
+|  12 | `/integrations/winorder`                     | `WinOrder/WinOrderSettingsPage.tsx`                | Settings       | Settings layout       |
+|  13 | `/legal-profile`                             | `Settings/pages/LegalProfilePage.tsx`              | Settings       | Settings layout       |
+|  14 | `/live-chat`                                 | `notifications/chat/pages/LiveChatPage.tsx`        | Operation      | Workflow layout       |
+|  15 | `/login`                                     | `Auth/LoginPage.tsx`                               | Authentication | Auth shell            |
+|  16 | `/loyalty`                                   | `loyalty/pages/LoyaltyPage.tsx`                    | Operation      | Workflow layout       |
+|  17 | `/menu`                                      | `Menu/pages/MenuOverviewPage.tsx`                  | Operation      | Workflow layout       |
+|  18 | `/menu/categories/[id]`                      | `Menu/categories/pages/CategoryDetailsPage.tsx`    | Detail         | Detail layout         |
+|  19 | `/menu/deals/[id]/edit`                      | `Menu/deals/pages/EditAdminDealPage.tsx`           | Form           | Form layout           |
+|  20 | `/menu/deals/add`                            | `Menu/deals/pages/AddAdminDealPage.tsx`            | Form           | Form layout           |
+|  21 | `/notification-settings`                     | `notifications/pages/NotificationSettingsPage.tsx` | Settings       | Settings layout       |
+|  22 | `/orders`                                    | `orders/pages/OrdersPage.tsx`                      | Operation      | Workflow layout       |
+|  23 | `/orders/details/[orderId]`                  | `orders/pages/OrderDetailsPage.tsx`                | Detail         | Detail layout         |
+|  24 | `/orders/group/[orderId]`                    | `orders/pages/GroupOrderDetailsPage.tsx`           | Detail         | Detail layout         |
+|  25 | `/payment-settings`                          | `Settings/pages/PaymentSettingsPage.tsx`           | Settings       | Settings layout       |
+|  26 | `/pos`                                       | `pos/pages/PosPage.tsx`                            | Operation      | Workflow layout       |
+|  27 | `/privacy-policy`                            | `settings/pages/PrivacyPolicyPage.tsx`             | Settings       | Settings layout       |
+|  28 | `/profile`                                   | `Profile/ProfilePage.tsx`                          | Detail         | Detail layout         |
+|  29 | `/profile/edit`                              | `Profile/EditProfilePage.tsx`                      | Form           | Form layout           |
+|  30 | `/promotion-management`                      | `promotions/pages/PromotionManagementPage.tsx`     | Operation      | Workflow layout       |
+|  31 | `/promotion-management/coupons/add`          | `promotions/pages/AddCouponPage.tsx`               | Form           | Form layout           |
+|  32 | `/promotion-management/gift-cards/[id]/edit` | `Promotions/gift-cards/pages/EditGiftCardPage.tsx` | Form           | Form layout           |
+|  33 | `/promotion-management/gift-cards/add`       | `Promotions/gift-cards/pages/AddGiftCardPage.tsx`  | Form           | Form layout           |
+|  34 | `/promotion-management/happy-hour/add`       | `promotions/pages/AddHappyHourPage.tsx`            | Form           | Form layout           |
+|  35 | `/promotion-management/promotions/add`       | `promotions/pages/AddPromotionPage.tsx`            | Form           | Form layout           |
+|  36 | `/register`                                  | `Auth/RegisterInfoPage.tsx`                        | Authentication | Auth shell            |
+|  37 | `/reports`                                   | `reports/pages/ReportsPage.tsx`                    | Operation      | Workflow layout       |
+|  38 | `/reset-password`                            | `Auth/ResetPasswordPage.tsx`                       | Authentication | Auth shell            |
+|  39 | `/restaurants/add`                           | `settings/restaurants/pages/AddRestaurantPage.tsx` | Form           | Form layout           |
+|  40 | `/search`                                    | `Search/SearchPage.tsx`                            | Search         | Search/results layout |
+|  41 | `/theme-settings`                            | `Settings/pages/StorefrontSettingsPage.tsx`        | Settings       | Settings layout       |
 
 Validated family totals: 4 authentication, 5 detail, 12 form, 8 operation, 11 settings/content, and 1 global-search route.
 
