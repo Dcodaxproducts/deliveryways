@@ -1,4 +1,5 @@
 import * as bcrypt from 'bcrypt';
+import { BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 
@@ -68,6 +69,7 @@ describe('AuthService registerGuestCustomer', () => {
 
     const result = await service.registerGuestCustomer({
       restaurantId: 'restaurant-1',
+      firstName: 'Guest',
     });
 
     expect(prisma.restaurant.findFirst).toHaveBeenCalledWith({
@@ -89,5 +91,16 @@ describe('AuthService registerGuestCustomer', () => {
     expect(result.data.user.isVerified).toBe(true);
     expect(result.data.user.isActive).toBe(true);
     expect(result.data.accessToken).toBe('access-token');
+  });
+
+  it('rejects a blank guest first name before creating an account', async () => {
+    await expect(
+      service.registerGuestCustomer({
+        restaurantId: 'restaurant-1',
+        firstName: '   ',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.restaurant.findFirst).not.toHaveBeenCalled();
+    expect(usersService.create).not.toHaveBeenCalled();
   });
 });

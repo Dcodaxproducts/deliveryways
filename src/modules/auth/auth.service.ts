@@ -667,6 +667,10 @@ export class AuthService {
 
   async registerGuestCustomer(dto: RegisterGuestCustomerDto, locale?: string) {
     const customerLocale = resolveCustomerEmailLocale(locale, 'de');
+    const firstName = dto.firstName.trim();
+    if (!firstName) {
+      throw new BadRequestException('Guest first name is required');
+    }
     const restaurant = await this.prisma.restaurant.findFirst({
       where: {
         id: dto.restaurantId,
@@ -699,7 +703,7 @@ export class AuthService {
           isApproved: true,
           isGuest: true,
           profile: {
-            firstName: dto.firstName?.trim() || 'Guest',
+            firstName,
             lastName: dto.lastName?.trim() || 'Customer',
             phone: dto.phone,
             locale: customerLocale,
@@ -735,7 +739,7 @@ export class AuthService {
           isActive: createdUser.isActive,
           isGuest: createdUser.isGuest,
           profile: {
-            firstName: dto.firstName?.trim() || 'Guest',
+            firstName,
             lastName: dto.lastName?.trim() || 'Customer',
             phone: dto.phone,
           },
