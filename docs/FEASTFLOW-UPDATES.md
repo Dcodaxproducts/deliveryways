@@ -19,7 +19,7 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 | Area                                    | Implementation       | Staging                                                                                 | Production                            |
 | --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
 | Core platform/API parity                | Completed            | Deployed                                                                                | Deployment status varies by release   |
-| Partner admin improvements              | Completed and pushed | Existing release deployed; dashboard/menu refinement pending                            | Latest UI consistency release pending |
+| Partner admin improvements              | Completed and pushed | Dashboard/menu refinement deployed and verified                                         | Latest UI consistency release pending |
 | Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
 | Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
 | Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
@@ -30,7 +30,7 @@ Latest UI consistency commits deployed to Staging:
 - Partner: `4b29b52`
 - Superadmin: `5368947`
 
-Latest Partner UI refinement pending Staging deployment:
+Latest Partner UI refinement deployed to Staging:
 
 - Partner: `bbe85f0`
 
@@ -85,7 +85,7 @@ This release restored the protected Staging Maps configuration, enabled environm
 - Added one canonical menu-management page shell and adopted it across allergens, categories, cuisines, items, labels, modifier categories, modifier groups, modifiers, and variations.
 - Removed nested title, subtitle, result-count, and section-card duplication while preserving the existing routes, permissions, queries, mutations, and modal workflows.
 
-**Status:** Implemented, browser-verified on desktop and mobile, and pushed in Partner commit `bbe85f0`. Staging and Production remain unchanged pending deployment approval.
+**Status:** Implemented, deployed to Staging, and verified in Partner commit `bbe85f0`. The live container is healthy with zero restarts; repeated local/public probes and desktop/mobile browser checks passed. Production remains unchanged.
 
 ## 2. Menu and Catalog Management
 
