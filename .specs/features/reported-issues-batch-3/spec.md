@@ -6,11 +6,11 @@ The final five items in the 15-item Staging report remain unresolved: duplicate 
 
 ## Goals
 
-- [ ] Prevent new active restaurant-name duplicates within one tenant.
-- [ ] Prevent new active menu-item-name duplicates within one restaurant.
-- [ ] Require a name when a person explicitly chooses "Continue as guest".
-- [ ] Let a verified Google identity sign in to, or create, a customer account only for the selected restaurant.
-- [ ] Serve a valid default Customer favicon while retaining restaurant branding overrides.
+- [x] Prevent new active restaurant-name duplicates within one tenant.
+- [x] Prevent new active menu-item-name duplicates within one restaurant.
+- [x] Require a name when a person explicitly chooses "Continue as guest".
+- [x] Let a verified Google identity sign in to, or create, a customer account only for the selected restaurant.
+- [x] Serve a valid default Customer favicon while retaining restaurant branding overrides.
 
 ## Out of Scope
 
@@ -87,15 +87,15 @@ Acceptance criteria:
 
 | Requirement ID | Requirement | Status |
 | --- | --- | --- |
-| B3-REST-01 | Tenant-scoped restaurant-name validation | In Tasks |
-| B3-MENU-01 | Restaurant-scoped menu-item-name validation | In Tasks |
-| B3-GUEST-01 | Required interactive guest name with technical-session compatibility | In Tasks |
-| B3-GOOGLE-01 | Scoped Google sign-in and customer provisioning | In Tasks |
-| B3-ICON-01 | Valid default favicon and preserved branding override | In Tasks |
+| B3-REST-01 | Tenant-scoped restaurant-name validation | Verified |
+| B3-MENU-01 | Restaurant-scoped menu-item-name validation | Verified |
+| B3-GUEST-01 | Required interactive guest name with technical-session compatibility | Verified |
+| B3-GOOGLE-01 | Scoped Google sign-in and customer provisioning | Verified |
+| B3-ICON-01 | Valid default favicon and preserved branding override | Verified |
 
 ## Success Criteria
 
-- [ ] All affected focused tests pass.
-- [ ] Full API and Customer verification pass.
-- [ ] Existing Staging records are not mutated.
-- [ ] Source commits and the dedicated issue tracker accurately distinguish source-fixed from deployed status.
+- [x] All affected focused tests pass.
+- [x] Full API and Customer verification pass.
+- [x] Existing Staging records are not mutated.
+- [x] Source commits and the dedicated issue tracker accurately distinguish source-fixed from deployed status.

@@ -84,10 +84,31 @@ Immutable non-root Customer and Superadmin images are built with exact revision 
 | Area                       | Valid gap                                                                                                                                                 | Decision / status                                                                                                                                                                                              |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Superadmin custom domain   | Create Business and Create Restaurant do not provide matching client-side hostname validation/help before the API rejects protocol, path, or port values. | **Fixed in source / pending Staging deployment.** The batch request approved the existing hostname-only API contract. Both forms now provide matching bilingual guidance and validation.                       |
-| Restaurant-name uniqueness | Multiple active restaurants can share the same name.                                                                                                      | Define uniqueness scope before changing schema/API behavior. Recommended: tenant-scoped rather than global uniqueness.                                                                                         |
-| Menu-item-name uniqueness  | Multiple active items can share the same name within one restaurant.                                                                                      | Define whether uniqueness is restaurant-scoped or restaurant/category-scoped before changing schema/API behavior.                                                                                              |
-| Guest name requirement     | The current guest contract permits an empty name.                                                                                                         | Decide whether guest name becomes required. This is a behavior change, separate from the confirmed profile-display defect.                                                                                     |
-| Customer Google login      | Google sign-in fails in the observed flow.                                                                                                                | The broker route/assets returned 404 and `google-login` returned 401, but existing-account linkage cannot be confirmed without the exact email and restaurant because customer accounts are restaurant-scoped. |
+| Restaurant-name uniqueness | Multiple active restaurants can share the same name.                                                                                                      | **Fixed in source / pending Staging deployment.** New active duplicates are rejected case-insensitively within one tenant. Existing duplicates remain unchanged pending a separate data-cleanup decision.       |
+| Menu-item-name uniqueness  | Multiple active items can share the same name within one restaurant.                                                                                      | **Fixed in source / pending Staging deployment.** New active duplicates are rejected case-insensitively within one restaurant; duplicate actions generate a unique copy name. Existing duplicates remain.       |
+| Guest name requirement     | The current guest contract permits an empty name.                                                                                                         | **Fixed in source / pending Staging deployment.** Interactive guest continuation requires a trimmed first name in both UI and API; technical cart guest sessions retain an explicit generic identity.             |
+| Customer Google login      | Google sign-in fails in the observed flow.                                                                                                                | **Fixed in source / pending Staging deployment.** Verified Google identities sign into an existing customer or provision a verified customer only within the selected restaurant; invalid tokens remain rejected. |
+
+## Batch 3 Fix Record — Remaining Five Issues
+
+Status: implemented, verified, and pushed; not deployed to Staging.
+
+| Application | Commit(s) | Covered work |
+| --- | --- | --- |
+| Platform API | `7331a1c`, `34f6bd2` | Tenant-scoped, case-insensitive active restaurant-name collision lookup and create/update validation. |
+| Platform API | `7329155`, `85555b8` | Restaurant-scoped, case-insensitive active menu-item collision lookup and single, bulk, update, and duplicate-flow validation. |
+| Platform API | `418ae05`, `8fa2625` | Required interactive guest first names and verified, restaurant-scoped Google customer sign-in/provisioning. |
+| Customer | `4bb4e35`, `cbd4920` | Required localized guest-name input while preserving technical guest carts, plus a valid default favicon with runtime branding override preserved. |
+
+Verification completed before delivery:
+
+- Platform API: TypeScript, build, complete test suite, lint, and focused restaurant, menu-item, guest, and Google-auth regression suites.
+- Customer: TypeScript, lint, complete Vitest suite, and the 38-route production build using protected Staging build configuration.
+- `/favicon.ico` returned HTTP 200 from the production build and was identified as a valid Windows icon.
+- Invalid or unverified Google tokens remain rejected; account lookup and creation are restricted to the selected restaurant and customer role.
+- The Staging database audit found one existing restaurant-name collision and one existing menu-item-name collision. Neither was renamed, deleted, or otherwise mutated. Application guards prevent new collisions; a database unique index is intentionally deferred until existing data is reconciled.
+
+Deployment scope remains API and Customer. The release must be cumulative with the already-pushed Batch 2 Customer fixes. Production remains unchanged.
 
 ## Reports Not Accepted Into the Confirmed Backlog
 
@@ -100,7 +121,7 @@ Immutable non-root Customer and Superadmin images are built with exact revision 
 | Area                  | Open item                                                                                                                                                          | Classification                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | Staging modifier data | The `Extra Burger Toppings` group is linked to an item but contains no modifiers, so customer customization summaries can describe a group with no usable choices. | **Data/configuration issue.** Populate the group or unlink it from the item; this is not an API-fetch defect. |
-| Customer favicon      | The customer favicon returns HTTP 404 on Staging.                                                                                                                  | **Confirmed minor issue / not yet fixed.**                                                                    |
+| Customer favicon      | The customer favicon returns HTTP 404 on Staging.                                                                                                                  | **Fixed in source / pending Staging deployment.** The production build serves a valid default icon while retaining the runtime branding override. |
 
 ## Maintenance Rule
 

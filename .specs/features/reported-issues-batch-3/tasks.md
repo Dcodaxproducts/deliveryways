@@ -1,27 +1,27 @@
 # FeastFlow Reported Issues Batch 3 Tasks
 
 **Design**: `.specs/features/reported-issues-batch-3/design.md`
-**Status**: In Progress
+**Status**: Complete
 
 ## Execution Plan
 
 ### Foundation
 
-1. T1 repository lookup for active tenant-scoped restaurant names.
-2. T2 service validation for restaurant create/update.
-3. T3 repository lookup for active restaurant-scoped menu-item names.
-4. T4 service validation for menu item create/bulk/update/duplicate.
+1. [x] T1 repository lookup for active tenant-scoped restaurant names.
+2. [x] T2 service validation for restaurant create/update.
+3. [x] T3 repository lookup for active restaurant-scoped menu-item names.
+4. [x] T4 service validation for menu item create/bulk/update/duplicate.
 
 ### Authentication and Customer
 
-5. T5 require interactive guest first names while preserving technical cart guests.
-6. T6 provision missing restaurant-scoped customers during verified Google login.
-7. T7 add a valid default Customer favicon and preserve branding override.
+5. [x] T5 require interactive guest first names while preserving technical cart guests.
+6. [x] T6 provision missing restaurant-scoped customers during verified Google login.
+7. [x] T7 add a valid default Customer favicon and preserve branding override.
 
 ### Completion
 
-8. T8 run full verification in API and Customer repositories.
-9. T9 update `FEASTFLOW-ISSUES.md`, commit, and push each repository.
+8. [x] T8 run full verification in API and Customer repositories.
+9. [x] T9 update `FEASTFLOW-ISSUES.md`, commit, and push each repository.
 
 ## Task Breakdown
 
