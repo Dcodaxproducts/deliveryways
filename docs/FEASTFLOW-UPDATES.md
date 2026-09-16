@@ -317,6 +317,16 @@ The following backlog was reproduced or supported by live Staging traffic, confi
 - **Checkout total after item removal:** the observed delete returned HTTP 200 with a reduced cart and the deployed frontend consumes that response to recalculate totals. An exact cart state or recording is required.
 - **Global six-item cart maximum:** no global six-item constraint exists. The backend enforces each item's configured `maxQuantity`; the inspected Nauman items use a per-item maximum of five.
 
+### Staging issue remediation — batch 1 (issues 1–5)
+
+Status: implemented and verified in source; not deployed to Staging.
+
+- The protected Staging Maps key succeeds from the Partner Staging origin (`PlacesServiceStatus.OK`), while all three deployed frontend images contain an older key. Partner, Superadmin, and Customer production builds pass with the current protected key and are ready for a coordinated Staging rebuild.
+- Blank primary and secondary global-settings colors now clear the stored value, while malformed nonblank values return readable field-specific validation messages.
+- Staff creation now sends the new staff member an invitation email when delivery is enabled and returns `invitationEmailSent`; Partner and Superadmin show a warning instead of claiming success when delivery is disabled or fails.
+- Partner clears persisted Business Admin restaurant/branch selection before authorized restaurants load, preventing stale restaurant-scoped dashboard/category requests before workspace selection.
+- Customer OTP delivery remains configuration-blocked: Staging has `EMAIL_ENABLED=false` and no SMTP host, username, password, or from address. No Production mail secret was copied into Staging.
+
 ## 12. Current Priorities
 
 1. Begin Phase 3 Task 4 by modernizing Orders, POS, and payment workflows using the shared operation, detail, form, and dialog contracts.

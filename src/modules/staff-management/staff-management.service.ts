@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
@@ -9,6 +10,7 @@ import { Prisma, StaffPanelType } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
+import { MailerService } from '../mailer/mailer.service';
 import { StaffRolesService } from '../staff-roles/staff-roles.service';
 import { StorageService } from '../storage/storage.service';
 import { StaffManagementRepository } from './staff-management.repository';
@@ -35,10 +37,13 @@ interface StaffRestaurantAccessScope {
 
 @Injectable()
 export class StaffManagementService {
+  private readonly logger = new Logger(StaffManagementService.name);
+
   constructor(
     private readonly staffManagementRepository: StaffManagementRepository,
     private readonly staffRolesService: StaffRolesService,
     private readonly storageService?: StorageService,
+    private readonly mailerService?: MailerService,
   ) {}
 
   async create(user: AuthUserContext, dto: CreateStaffDto) {
@@ -88,11 +93,54 @@ export class StaffManagementService {
       existing && existing.deletedAt
         ? await this.staffManagementRepository.update(existing.id, staffPayload)
         : await this.staffManagementRepository.create(staffPayload);
+    const invitationEmailSent = await this.sendStaffInvitationEmail({
+      email,
+      firstName: dto.firstName.trim(),
+      lastName: dto.lastName.trim(),
+      password: dto.password,
+    });
 
     return {
       data: await this.resolveMediaResponse(this.toStaffResponse(data)),
-      message: 'Staff account created successfully',
+      message: invitationEmailSent
+        ? 'Staff account created and invitation email sent successfully'
+        : 'Staff account created, but invitation email was not sent',
+      invitationEmailSent,
     };
+  }
+
+  private async sendStaffInvitationEmail(input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    password: string;
+  }): Promise<boolean> {
+    if (!this.mailerService?.isDeliveryEnabled()) {
+      return false;
+    }
+
+    try {
+      await this.mailerService.sendEmail(
+        input.email,
+        'Your FeastFlow staff account',
+        [
+          `Hello ${input.firstName} ${input.lastName},`,
+          '',
+          'A FeastFlow staff account has been created for you.',
+          `Email: ${input.email}`,
+          `Temporary password: ${input.password}`,
+          '',
+          'Sign in through your FeastFlow staff portal and change your password after your first login.',
+        ].join('\n'),
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to send staff invitation email to ${input.email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return false;
+    }
   }
 
   async list(user: AuthUserContext, query: ListStaffDto) {

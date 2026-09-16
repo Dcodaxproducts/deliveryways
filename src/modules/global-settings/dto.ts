@@ -21,6 +21,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -768,14 +769,20 @@ export class UpdateGlobalSettingsDto {
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsString()
-  @Matches(HEX_COLOR_REGEX)
+  @ValidateIf((_object, value) => value !== '')
+  @Matches(HEX_COLOR_REGEX, {
+    message: 'Primary color must be a valid hex color',
+  })
   primaryColor?: string;
 
   @ApiPropertyOptional({ example: '#1F2937' })
   @IsOptional()
   @Transform(normalizeOptionalString)
   @IsString()
-  @Matches(HEX_COLOR_REGEX)
+  @ValidateIf((_object, value) => value !== '')
+  @Matches(HEX_COLOR_REGEX, {
+    message: 'Secondary color must be a valid hex color',
+  })
   secondaryColor?: string;
 
   @ApiPropertyOptional({ example: 'Inter' })

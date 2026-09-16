@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { StaffPanelType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { UserRoleEnum } from '../../common/enums';
+import { MailerService } from '../mailer/mailer.service';
 import { StaffRolesService } from '../staff-roles/staff-roles.service';
 import { StaffManagementRepository } from './staff-management.repository';
 import { StaffManagementService } from './staff-management.service';
@@ -431,6 +432,140 @@ describe('StaffManagementService', () => {
         isActive: true,
       }),
     ]);
+  });
+
+  it('sends the new staff member an invitation email with their credentials', async () => {
+    const staffRolesService = {
+      getManageableRoleOrThrow: jest.fn().mockResolvedValue({
+        id: 'role-1',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        restaurantAccess: null,
+      }),
+    };
+    const mailerService = {
+      isDeliveryEnabled: jest.fn().mockReturnValue(true),
+      sendEmail: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new StaffManagementService(
+      repository,
+      staffRolesService as unknown as StaffRolesService,
+      undefined,
+      mailerService as unknown as MailerService,
+    );
+    repository.findByEmail.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      id: 'staff-1',
+      email: 'employee@example.com',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed-password',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
+
+    const result = await service.create(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      {
+        staffRoleId: 'role-1',
+        email: 'Employee@Example.com',
+        password: 'Employee@123',
+        firstName: 'New',
+        lastName: 'Employee',
+      },
+    );
+
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'employee@example.com',
+      'Your FeastFlow staff account',
+      expect.stringContaining('Temporary password: Employee@123'),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        invitationEmailSent: true,
+        message: 'Staff account created and invitation email sent successfully',
+      }),
+    );
+  });
+
+  it('reports when email delivery is disabled without claiming an invitation was sent', async () => {
+    const staffRolesService = {
+      getManageableRoleOrThrow: jest.fn().mockResolvedValue({
+        id: 'role-1',
+        ownerUserId: 'admin-1',
+        panelType: StaffPanelType.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: null,
+        branchId: null,
+        restaurantAccess: null,
+      }),
+    };
+    const mailerService = {
+      isDeliveryEnabled: jest.fn().mockReturnValue(false),
+      sendEmail: jest.fn(),
+    };
+    service = new StaffManagementService(
+      repository,
+      staffRolesService as unknown as StaffRolesService,
+      undefined,
+      mailerService as unknown as MailerService,
+    );
+    repository.findByEmail.mockResolvedValue(null);
+    repository.create.mockResolvedValue({
+      id: 'staff-1',
+      email: 'employee@example.com',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      deletedAt: null,
+      password: 'hashed-password',
+      staffRole: {
+        id: 'role-1',
+        deletedAt: null,
+        isActive: true,
+      },
+    } as never);
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
+
+    const result = await service.create(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      {
+        staffRoleId: 'role-1',
+        email: 'employee@example.com',
+        password: 'Employee@123',
+        firstName: 'New',
+        lastName: 'Employee',
+      },
+    );
+
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        invitationEmailSent: false,
+        message: 'Staff account created, but invitation email was not sent',
+      }),
+    );
   });
 
   it('stores all-restaurants staff access without expanding restaurant ids', async () => {
