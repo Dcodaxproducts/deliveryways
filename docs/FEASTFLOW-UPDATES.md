@@ -1,8 +1,10 @@
 # FeastFlow — Major Updates and Coverage Tracker
 
-Last updated: 15 September 2026
+Last updated: 16 September 2026
 
 This is the high-level record of the work being covered in FeastFlow. It intentionally tracks product areas and major outcomes rather than every small visual or code change.
+
+Reported defects, investigation evidence, fixes, and deployment status are tracked separately in [FEASTFLOW-ISSUES.md](./FEASTFLOW-ISSUES.md).
 
 ## Status Legend
 
@@ -70,8 +72,6 @@ Latest UI consistency commits deployed to Staging:
 
 **Status:** Workflow changes are deployed on Staging; customer data fetching is verified.
 
-**Open data item:** the Staging `Extra Burger Toppings` group is linked to an item but currently contains no modifiers. This is catalog configuration, not an API-fetch failure.
-
 ## 3. Admin Access, Reporting, and Business Visibility
 
 - Enabled authorized platform staff using the Superadmin panel with all-restaurants access to see global restaurant, successful-order, and revenue totals.
@@ -99,8 +99,6 @@ Latest UI consistency commits deployed to Staging:
 - Preserved customizable restaurant storefront branding independently from the admin-panel theme.
 
 **Status:** Staging customer menu fetching is working correctly.
-
-**Open minor item:** the customer favicon currently returns 404 on Staging.
 
 ## 6. Performance and Accessibility
 
@@ -283,57 +281,11 @@ Partner commit `e01f3c8` modernizes the seven mapped authentication and branch-m
 
 Verification passed 114 suites and 1,037 tests, TypeScript, the 65-route Production build, exact-case imports, 3,322-key i18n parity, shared-UI ownership, diff checks, and lint with zero errors and 95 inherited warnings in untouched files. Visible desktop/mobile browser acceptance passed eight authentication views and six protected-route redirects without page errors or horizontal overflow. This change is pushed but not deployed; API, database, environment files, Staging, and Production remain unchanged.
 
-## 11. Validated Staging Tester Issues — 2026-09-15
-
-The following backlog was reproduced or supported by live Staging traffic, configuration, database, and source inspection. The audit was read-only: no application code, database records, environment values, containers, Staging services, or Production services were changed.
-
-### Confirmed defects
-
-| Area | Valid issue | Evidence / scope |
-|---|---|---|
-| Cross-app maps and addresses | Maps, Places autocomplete, current-location lookup, and reverse geocoding fail across Superadmin Brand Owner addresses, Partner branch creation, Storefront location selection, and Checkout address selection. Some searches remain in a loading state and maps can render blank. | The frontend Google Maps project returns `REQUEST_DENIED` because Google disabled API use for that project. This consolidates Superadmin #1, Partner #3–4, and Restaurant Domain #1–2 and #5–7 under one configuration root cause. |
-| Superadmin global settings | Saving an empty/invalid primary color exposes the raw `primaryColor must match ... regular expression` validator message. | Live PATCH returned HTTP 400 with the technical class-validator regex message; replace it with user-facing color validation. |
-| Superadmin employee onboarding | Newly created employees do not receive an invitation email. | The current staff-create workflow creates credentials but does not send an invitation; Staging email delivery is also disabled. |
-| Partner restaurant context | Dashboard and category requests can use a stale unauthorized restaurant selection, producing load/network errors. | Tester traffic used restaurant `cmtvc82...` and received HTTP 403; selecting authorized restaurant `cmu28s1...` restored HTTP 200/201 behavior. The UI must clear or validate stale restaurant context. |
-| Customer OTP delivery | Storefront signup OTP email is not delivered. | Staging has `EMAIL_ENABLED=false` and no SMTP host/username/password. |
-| Guest favorites | Restaurant and menu-item favorite controls are visible to guest users. | Guest sessions receive tokens, while favorite visibility checks only for token presence. Restaurant Domain #4 and #11 are duplicate symptoms. |
-| Guest profile name | A supplied guest name is stored, but the storefront profile displays `User`. | The navbar intentionally substitutes the generic label for guest accounts instead of rendering the stored name. |
-| Customer cart feedback | A rejected add-to-cart request can display both an incorrect success toast and the limit error. | The optimistic handler emits the success toast before the API response, then rolls back and emits the error after HTTP 400. |
-| Storefront footer | The leftmost desktop footer column is misaligned relative to the remaining columns. | The footer columns use asymmetric desktop padding. |
-
-### Valid requirement and UX gaps requiring scope approval
-
-| Area | Valid gap | Decision required |
-|---|---|---|
-| Superadmin custom domain | Create Business and Create Restaurant do not provide matching client-side hostname validation/help before the API rejects protocol, path, or port values. | Keep the backend hostname-only contract; add clear field guidance and validation. Superadmin reports #2 and #3 are the same gap. Blank and valid hostname-only values are accepted. |
-| Restaurant-name uniqueness | Multiple active restaurants can share the same name. | Define uniqueness scope before changing schema/API behavior. Recommended: tenant-scoped rather than global uniqueness. |
-| Menu-item-name uniqueness | Multiple active items can share the same name within one restaurant. | Define whether uniqueness is restaurant-scoped or restaurant/category-scoped before changing schema/API behavior. |
-| Guest name requirement | The current guest contract permits an empty name. | Product must decide whether guest name becomes required; this is a behavior change, separate from the confirmed profile-display defect. |
-| Customer Google login | Google sign-in fails in the observed flow. | The broker route/assets returned 404 and `google-login` returned 401, but the reported existing-account linkage cannot be confirmed without the exact email and restaurant because customer accounts are restaurant-scoped. |
-
-### Reports not accepted into the confirmed backlog
-
-- **Superadmin export:** the observed export request returned HTTP 200; the current UI supports CSV and client-generated PDF, not Excel. A browser recording or failed downloaded file is required to reproduce a defect.
-- **Checkout total after item removal:** the observed delete returned HTTP 200 with a reduced cart and the deployed frontend consumes that response to recalculate totals. An exact cart state or recording is required.
-- **Global six-item cart maximum:** no global six-item constraint exists. The backend enforces each item's configured `maxQuantity`; the inspected Nauman items use a per-item maximum of five.
-
-### Staging issue remediation — batch 1 (issues 1–5)
-
-Status: implemented and verified in source; not deployed to Staging.
-
-- The protected Staging Maps key succeeds from the Partner Staging origin (`PlacesServiceStatus.OK`), while all three deployed frontend images contain an older key. Partner, Superadmin, and Customer production builds pass with the current protected key and are ready for a coordinated Staging rebuild.
-- Blank primary and secondary global-settings colors now clear the stored value, while malformed nonblank values return readable field-specific validation messages.
-- Staff creation now sends the new staff member an invitation email when delivery is enabled and returns `invitationEmailSent`; Partner and Superadmin show a warning instead of claiming success when delivery is disabled or fails.
-- Partner clears persisted Business Admin restaurant/branch selection before authorized restaurants load, preventing stale restaurant-scoped dashboard/category requests before workspace selection.
-- Customer OTP delivery remains configuration-blocked: Staging has `EMAIL_ENABLED=false` and no SMTP host, username, password, or from address. No Production mail secret was copied into Staging.
-
-## 12. Current Priorities
+## 11. Current Priorities
 
 1. Begin Phase 3 Task 4 by modernizing Orders, POS, and payment workflows using the shared operation, detail, form, and dialog contracts.
 2. Run authenticated business acceptance for the updated Partner and Superadmin workflows already on Staging.
-3. Populate or unlink the empty Staging modifier group so customer customization summaries match usable options.
-4. Fix the missing customer favicon.
-5. Promote approved cumulative releases to Production with ancestry, backup, rollback, smoke, and browser proof.
+3. Promote approved cumulative releases to Production with ancestry, backup, rollback, smoke, and browser proof.
 
 ## Maintenance Rule
 
