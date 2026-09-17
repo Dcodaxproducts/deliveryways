@@ -728,6 +728,7 @@ export class AdminReportsRepository {
       orders,
       reportOrders,
       items,
+      payoutRequests,
     ] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
         where,
@@ -776,6 +777,25 @@ export class AdminReportsRepository {
           lineTotal: true,
         },
       }),
+      this.prisma.restaurantPayoutRequest.findMany({
+        where: {
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+          ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+          ...(scope.branchId ? { branchId: scope.branchId } : {}),
+          ...(this.buildDateRange(query.fromDate, query.toDate, 'createdAt') ??
+            {}),
+        },
+        orderBy: [{ createdAt: 'asc' }],
+        select: {
+          id: true,
+          createdAt: true,
+          status: true,
+          amount: true,
+          currency: true,
+          paidAt: true,
+          paymentReference: true,
+        },
+      }),
     ]);
 
     const amountFor = (methods: PaymentMethod[]) =>
@@ -815,6 +835,15 @@ export class AdminReportsRepository {
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,
         totalAmount: Number(order.totalAmount),
+      })),
+      payoutActivity: payoutRequests.map((request) => ({
+        id: request.id,
+        requestedAt: request.createdAt,
+        status: request.status,
+        amount: Number(request.amount),
+        currency: request.currency,
+        paidAt: request.paidAt,
+        paymentReference: request.paymentReference,
       })),
     };
   }

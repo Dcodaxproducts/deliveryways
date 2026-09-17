@@ -213,6 +213,50 @@ describe('RolesGuard staff role permissions', () => {
     expect(user.rid).toBeNull();
   });
 
+  it('inherits all-restaurants access from the role when legacy staff access is empty', async () => {
+    const baseStaff = activeStaffRole([
+      { access: 'dashboard', operations: ['read'] },
+    ]);
+    const staff = {
+      ...baseStaff,
+      restaurantAccess: {
+        restaurantIds: [],
+        branchIds: [],
+        allRestaurants: false,
+        hasAllRestaurantsAccess: false,
+      },
+      staffRole: {
+        ...baseStaff.staffRole,
+        restaurantAccess: {
+          restaurantIds: [],
+          branchIds: [],
+          allRestaurants: true,
+          hasAllRestaurantsAccess: true,
+        },
+      },
+    };
+    const prisma: PrismaMock = {
+      staffUser: { findUnique: jest.fn().mockResolvedValue(staff) },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.SUPER_ADMIN],
+      controllerPath: 'admin/dashboard',
+      handlerPath: 'overview',
+      method: RequestMethod.GET,
+      prisma,
+    });
+    const user: TestUser = {
+      uid: 'staff-1',
+      role: RolesEnum.STAFF,
+      actorType: 'STAFF',
+    };
+
+    await expect(guard.canActivate(createContext(user))).resolves.toBe(true);
+    expect(user.restaurantAccess).toEqual(
+      expect.objectContaining({ allRestaurants: true }),
+    );
+  });
+
   it('allows STAFF to read WinOrder with the WinOrder permission', async () => {
     const baseStaffRole = activeStaffRole([
       { access: 'winorder-integration', operations: ['read'] },

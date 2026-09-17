@@ -14,7 +14,7 @@ import {
   StaffRolePermissionDto,
   UpdateStaffRoleDto,
 } from './dto';
-import { PermissionModulesService } from '../permission-modules/permission-modules.service';
+import { PermissionModulesService } from '../permission-modules';
 import { StaffRolesRepository } from './staff-roles.repository';
 
 interface ResolvedStaffScope {
@@ -28,6 +28,8 @@ interface ResolvedStaffScope {
 interface StaffRestaurantAccessScope {
   restaurantIds: string[];
   branchIds: string[];
+  allRestaurants: boolean;
+  hasAllRestaurantsAccess: boolean;
 }
 
 @Injectable()
@@ -110,7 +112,10 @@ export class StaffRolesService {
           ? await this.normalizePermissions(dto.permissions)
           : undefined,
       restaurantAccess:
-        dto.restaurantIds !== undefined || dto.branchIds !== undefined
+        dto.restaurantIds !== undefined ||
+        dto.branchIds !== undefined ||
+        dto.allRestaurants !== undefined ||
+        dto.hasAllRestaurantsAccess !== undefined
           ? await this.resolveRestaurantAccess(
               {
                 ownerUserId: role.ownerUserId,
@@ -340,14 +345,36 @@ export class StaffRolesService {
 
   private async resolveRestaurantAccess(
     scope: ResolvedStaffScope,
-    dto: { restaurantIds?: string[]; branchIds?: string[] },
+    dto: {
+      restaurantIds?: string[];
+      branchIds?: string[];
+      allRestaurants?: boolean;
+      hasAllRestaurantsAccess?: boolean;
+    },
   ): Promise<Prisma.InputJsonValue | undefined> {
-    if (dto.restaurantIds === undefined && dto.branchIds === undefined) {
+    if (
+      dto.restaurantIds === undefined &&
+      dto.branchIds === undefined &&
+      dto.allRestaurants === undefined &&
+      dto.hasAllRestaurantsAccess === undefined
+    ) {
       return undefined;
     }
 
-    const restaurantIds = this.uniqueCleanIds(dto.restaurantIds ?? []);
-    const branchIds = this.uniqueCleanIds(dto.branchIds ?? []);
+    const allRestaurants =
+      dto.allRestaurants === true || dto.hasAllRestaurantsAccess === true;
+    const restaurantIds = allRestaurants
+      ? []
+      : this.uniqueCleanIds(dto.restaurantIds ?? []);
+    const branchIds = allRestaurants
+      ? []
+      : this.uniqueCleanIds(dto.branchIds ?? []);
+
+    if (allRestaurants && (scope.restaurantId || scope.branchId)) {
+      throw new ForbiddenException(
+        'All-restaurants access is only available to platform and business admin roles',
+      );
+    }
 
     if (
       scope.restaurantId &&
@@ -397,6 +424,8 @@ export class StaffRolesService {
     return {
       restaurantIds,
       branchIds,
+      allRestaurants,
+      hasAllRestaurantsAccess: allRestaurants,
     } satisfies StaffRestaurantAccessScope;
   }
 

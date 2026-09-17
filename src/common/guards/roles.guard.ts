@@ -351,23 +351,28 @@ export class RolesGuard implements CanActivate {
     }
 
     const record = value as Record<string, unknown>;
+    const restaurantIds = Array.isArray(record.restaurantIds)
+      ? record.restaurantIds.filter(
+          (item): item is string => typeof item === 'string' && !!item,
+        )
+      : [];
+    const branchIds = Array.isArray(record.branchIds)
+      ? record.branchIds.filter(
+          (item): item is string => typeof item === 'string' && !!item,
+        )
+      : [];
+    const allRestaurants =
+      record.allRestaurants === true || record.hasAllRestaurantsAccess === true;
+
+    if (!allRestaurants && !restaurantIds.length && !branchIds.length) {
+      return null;
+    }
+
     return {
-      restaurantIds: Array.isArray(record.restaurantIds)
-        ? record.restaurantIds.filter(
-            (item): item is string => typeof item === 'string' && !!item,
-          )
-        : [],
-      branchIds: Array.isArray(record.branchIds)
-        ? record.branchIds.filter(
-            (item): item is string => typeof item === 'string' && !!item,
-          )
-        : [],
-      allRestaurants:
-        record.allRestaurants === true ||
-        record.hasAllRestaurantsAccess === true,
-      hasAllRestaurantsAccess:
-        record.hasAllRestaurantsAccess === true ||
-        record.allRestaurants === true,
+      restaurantIds,
+      branchIds,
+      allRestaurants,
+      hasAllRestaurantsAccess: allRestaurants,
     };
   }
 

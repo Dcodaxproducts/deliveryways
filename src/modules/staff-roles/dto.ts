@@ -50,6 +50,16 @@ export class CreateStaffRoleDto {
   @IsArray()
   @IsString({ each: true })
   branchIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allRestaurants?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hasAllRestaurantsAccess?: boolean;
 }
 
 export class UpdateStaffRoleDto {
@@ -87,6 +97,16 @@ export class UpdateStaffRoleDto {
   @IsArray()
   @IsString({ each: true })
   branchIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allRestaurants?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hasAllRestaurantsAccess?: boolean;
 }
 
 export class ListStaffRolesDto extends QueryDto {
