@@ -78,9 +78,13 @@ describe('AdminReportsRepository', () => {
       findMany: jest.fn().mockResolvedValue([]),
     };
     const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
+    const restaurantPayoutRequest = {
+      findMany: jest.fn().mockResolvedValue([]),
+    };
     const prisma = {
       order,
       orderItem,
+      restaurantPayoutRequest,
       $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
         Promise.all(queries),
       ),
@@ -158,9 +162,40 @@ describe('AdminReportsRepository', () => {
           { paymentMethod: PaymentMethod.STRIPE, _sum: { totalAmount: 25 } },
           { paymentMethod: PaymentMethod.WALLET, _sum: { totalAmount: 20 } },
         ]),
-        findMany: jest.fn().mockResolvedValue([]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: 'order-cash',
+              createdAt: new Date('2026-08-28T10:00:00.000Z'),
+              paymentMethod: PaymentMethod.COD,
+              paymentStatus: PaymentStatus.PAID,
+              totalAmount: 30,
+            },
+            {
+              id: 'order-online',
+              createdAt: new Date('2026-08-28T11:00:00.000Z'),
+              paymentMethod: PaymentMethod.STRIPE,
+              paymentStatus: PaymentStatus.PAID,
+              totalAmount: 25,
+            },
+          ]),
       },
       orderItem: { findMany: jest.fn().mockResolvedValue([]) },
+      restaurantPayoutRequest: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'payout-1',
+            createdAt: new Date('2026-08-28T15:00:00.000Z'),
+            status: 'PAID',
+            amount: 40,
+            currency: 'EUR',
+            paidAt: new Date('2026-08-29T09:00:00.000Z'),
+            paymentReference: 'BANK-1',
+          },
+        ]),
+      },
       $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
         Promise.all(queries),
       ),
@@ -178,7 +213,21 @@ describe('AdminReportsRepository', () => {
       averageOrderValue: 25,
       codAmount: 30,
       digitalAmount: 45,
+      offlineOrderCount: 1,
+      onlineOrderCount: 1,
     });
+    expect(result.orders).toEqual([
+      expect.objectContaining({ id: 'order-cash', totalAmount: 30 }),
+      expect.objectContaining({ id: 'order-online', totalAmount: 25 }),
+    ]);
+    expect(result.payoutActivity).toEqual([
+      expect.objectContaining({
+        id: 'payout-1',
+        amount: 40,
+        status: 'PAID',
+        paymentReference: 'BANK-1',
+      }),
+    ]);
     const aggregateCalls = prisma.order.aggregate.mock.calls as Array<
       [{ where?: { status?: { in?: OrderStatus[] } } }]
     >;
@@ -205,9 +254,13 @@ describe('AdminReportsRepository', () => {
       findMany: jest.fn().mockResolvedValue([]),
     };
     const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
+    const restaurantPayoutRequest = {
+      findMany: jest.fn().mockResolvedValue([]),
+    };
     const prisma = {
       order,
       orderItem,
+      restaurantPayoutRequest,
       $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
         Promise.all(queries),
       ),

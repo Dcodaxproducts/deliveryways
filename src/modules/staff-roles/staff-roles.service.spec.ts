@@ -117,4 +117,29 @@ describe('StaffRolesService', () => {
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('stores all-restaurants scope on a super-admin staff role', async () => {
+    repository.findByNameWithinScope.mockResolvedValue(null);
+    repository.create.mockResolvedValue({ id: 'role-1' } as never);
+
+    await service.create(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        name: 'Admin for All',
+        permissions: [{ access: 'dashboard', operations: ['read'] }],
+        allRestaurants: true,
+      },
+    );
+
+    expect(repository.create.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        restaurantAccess: {
+          restaurantIds: [],
+          branchIds: [],
+          allRestaurants: true,
+          hasAllRestaurantsAccess: true,
+        },
+      }),
+    );
+  });
 });
