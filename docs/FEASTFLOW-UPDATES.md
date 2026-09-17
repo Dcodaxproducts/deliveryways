@@ -323,6 +323,12 @@ Partner commits `9cc0a6e` and `b485209` modernize Orders, Order Details, Group O
 
 The cumulative Partner head `b485209` was deployed to Staging on 2026-09-17 as an immutable non-root image. Only the Partner service was recreated; API, PostgreSQL, Customer, Superadmin, and Production remained unchanged. The container is healthy with zero restarts, three local/public probe rounds passed, recent logs are clean, and 30/30 desktop/mobile browser checks passed across Orders, Order Details, Group Orders, POS, Payments, Reports, promotion tabs, coupon/promotion/happy-hour forms, and gift cards without browser errors or horizontal overflow. Release and exact-image rollback overlays are stored under `/opt/feastflow/releases/staging/20260917-partner-phase3-modernization*.compose.yml`.
 
+### Responsive control and navigation follow-up
+
+Partner commit `e589163` standardizes responsive filter actions, tabs, metric cards, sidebar expansion, Orders navigation ownership, and POS density. Shared `FilterActions`, `FilterBar`, `PageTabs`, and `SegmentedControl` contracts prevent Search/Reset clipping, undersized buttons, overlapping controls, and wrapped tab labels. Labels and Allergens use the canonical compact metric card; expanded sidebar groups scroll into view; Orders has one sidebar destination with subviews owned by page tabs; POS reuses the compact shared card/layout system.
+
+The cumulative commit was deployed to Staging on 2026-09-17 as immutable non-root image `sha256:1a099d35955bcf775368b30d35340ac5e3260090dd24217afc4349832e4d4623`. Only Partner was recreated; API, PostgreSQL, Customer, Superadmin, and Production remained unchanged. Partner is healthy with zero restarts, the full Staging smoke test and three local/public probe rounds passed, logs are clean, and the exact live bundle passed 18/18 desktop/mobile checks across Menu, Reservations, Orders, and POS with no overflow, clipped actions, narrow buttons, wrapped tabs, duplicate Orders navigation, sidebar visibility failures, or browser errors. Release and exact-image rollback overlays are stored under `/opt/feastflow/releases/staging/20260917-partner-responsive-ui-consistency*.compose.yml`.
+
 ## 11. Current Priorities
 
 1. Run authenticated business acceptance for the updated Partner workflows on Staging, including real order, POS, payment, report, and promotion data.
