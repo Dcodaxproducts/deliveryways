@@ -23,7 +23,7 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 | Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
 | Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
 | Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
-| Validated Staging issues batch 1        | Completed and pushed | Deployed; issues 1, 3, and 5 verified, issues 2 and 4 await authenticated UI acceptance | Not deployed                          |
+| Validated Staging issues batch 1        | Completed and pushed | Deployed and fully accepted; persisted-scope follow-up `c7e667e` verified               | Not deployed                          |
 
 Latest UI consistency commits deployed to Staging:
 
@@ -38,6 +38,7 @@ Latest Partner UI refinements deployed to Staging:
 Latest Partner UI refinement deployed to Staging:
 
 - Partner: `e53e4ed`
+- Partner auth-scope follow-up: `c7e667e`
 
 Validated-issues batch 1 commits deployed to Staging:
 
@@ -189,7 +190,7 @@ Recent Partner and Superadmin releases have passed these gates before being push
 - Staging changes are smoke-tested through localhost, public endpoints, repeated health probes, logs, and browser checks.
 - Production is never assumed from a Staging deployment; it requires its own approval and verification.
 
-**Current deployment note:** The validated-issues batch 1 revisions listed above are deployed on Staging. All four application containers are healthy with zero restarts, migration status is current, transactional email/OTP checks passed, and Production remains unchanged. Authenticated UI acceptance is still required for global-settings color handling and stale Partner restaurant context.
+**Current deployment note:** The validated issue batches are deployed and accepted on Staging. Global Settings colors, stale Partner context, rejected-cart feedback, footer alignment, both custom-domain forms, and restaurant/menu-item uniqueness passed live acceptance on 17 September. Partner `c7e667e` is healthy with zero restarts; only the Partner service was recreated and the other Staging container IDs remained unchanged. Valid-provider Google completion still requires an interactive Google test identity. Production remains unchanged.
 
 ## 10. UI Modernization Phase Roadmap
 
