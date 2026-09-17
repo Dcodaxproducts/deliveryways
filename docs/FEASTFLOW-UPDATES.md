@@ -317,10 +317,16 @@ Partner commit `e01f3c8` modernizes the seven mapped authentication and branch-m
 
 Verification passed 114 suites and 1,037 tests, TypeScript, the 65-route Production build, exact-case imports, 3,322-key i18n parity, shared-UI ownership, diff checks, and lint with zero errors and 95 inherited warnings in untouched files. Visible desktop/mobile browser acceptance passed eight authentication views and six protected-route redirects without page errors or horizontal overflow. This change is pushed but not deployed; API, database, environment files, Staging, and Production remain unchanged.
 
+### Tasks 4–5 — Orders, POS, Payments, Reports, and Promotions
+
+Partner commits `9cc0a6e` and `b485209` modernize Orders, Order Details, Group Orders, POS, Payments, Reports, coupons, promotions, happy hours, and gift cards with the canonical page, tab, filter, detail, state, form, dialog, action, button, and badge contracts. Domain hooks, routes, permissions, report export, tenant scope, API contracts, and mutation behavior remain unchanged. The coupon view now uses live data instead of hard-coded KPI values and provides explicit loading, error, empty, table, and mobile-card states.
+
+The cumulative Partner head `b485209` was deployed to Staging on 2026-09-17 as an immutable non-root image. Only the Partner service was recreated; API, PostgreSQL, Customer, Superadmin, and Production remained unchanged. The container is healthy with zero restarts, three local/public probe rounds passed, recent logs are clean, and 30/30 desktop/mobile browser checks passed across Orders, Order Details, Group Orders, POS, Payments, Reports, promotion tabs, coupon/promotion/happy-hour forms, and gift cards without browser errors or horizontal overflow. Release and exact-image rollback overlays are stored under `/opt/feastflow/releases/staging/20260917-partner-phase3-modernization*.compose.yml`.
+
 ## 11. Current Priorities
 
-1. Begin Phase 3 Task 4 by modernizing Orders, POS, and payment workflows using the shared operation, detail, form, and dialog contracts.
-2. Run authenticated business acceptance for the updated Partner and Superadmin workflows already on Staging.
+1. Run authenticated business acceptance for the updated Partner workflows on Staging, including real order, POS, payment, report, and promotion data.
+2. Complete valid-provider Google sign-in acceptance with an interactive Google test identity.
 3. Promote approved cumulative releases to Production with ancestry, backup, rollback, smoke, and browser proof.
 
 ## Maintenance Rule
