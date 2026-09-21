@@ -317,7 +317,13 @@ export class PackagePlansService {
       throw new BadRequestException('Active package plan is required');
     }
 
-    this.assertDateRange(dto.startsAt, dto.endsAt);
+    const startsAt = dto.startsAt ? new Date(dto.startsAt) : new Date();
+    const endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
+    const nextBillingAt = dto.nextBillingAt
+      ? new Date(dto.nextBillingAt)
+      : this.resolveInitialBillingAt(plan.billingInterval, startsAt, endsAt);
+
+    this.assertBillingSchedule(startsAt, endsAt, nextBillingAt);
 
     const existing = await this.packagePlansRepository.findActiveSubscription(
       dto.tenantId,
@@ -340,11 +346,9 @@ export class PackagePlansService {
       status: dto.status ?? SubscriptionStatus.ACTIVE,
       paymentStatus: dto.paymentStatus ?? PaymentStatus.PENDING,
       payoutCycleOverride: dto.payoutCycleOverride,
-      startsAt: dto.startsAt ? new Date(dto.startsAt) : new Date(),
-      endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
-      nextBillingAt: dto.nextBillingAt
-        ? new Date(dto.nextBillingAt)
-        : this.resolveNextBillingAt(plan.billingInterval, dto.startsAt),
+      startsAt,
+      endsAt: endsAt ?? undefined,
+      nextBillingAt,
       planSnapshot: this.buildPlanSnapshot(plan),
       note: dto.note,
       createdBy: user.uid,
@@ -392,10 +396,21 @@ export class PackagePlansService {
       }
     }
 
-    this.assertDateRange(
-      dto.startsAt ?? existing.startsAt.toISOString(),
-      dto.endsAt ?? existing.endsAt?.toISOString(),
+    const startsAt = dto.startsAt ? new Date(dto.startsAt) : existing.startsAt;
+    const endsAt = dto.endsAt ? new Date(dto.endsAt) : existing.endsAt;
+    const billingInterval =
+      nextPlan?.billingInterval ??
+      this.resolveSubscriptionInvoicePlan(existing).billingInterval;
+    const scheduleChanged = Boolean(
+      dto.startsAt || dto.endsAt || dto.packagePlanId,
     );
+    const nextBillingAt = dto.nextBillingAt
+      ? new Date(dto.nextBillingAt)
+      : scheduleChanged || !existing.nextBillingAt
+        ? this.resolveInitialBillingAt(billingInterval, startsAt, endsAt)
+        : existing.nextBillingAt;
+
+    this.assertBillingSchedule(startsAt, endsAt, nextBillingAt);
 
     const data = await this.packagePlansRepository.updateSubscription(id, {
       packagePlan: dto.packagePlanId
@@ -407,9 +422,8 @@ export class PackagePlansService {
       payoutCycleOverride: dto.payoutCycleOverride,
       startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
       endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
-      nextBillingAt: dto.nextBillingAt
-        ? new Date(dto.nextBillingAt)
-        : undefined,
+      nextBillingAt:
+        dto.nextBillingAt || scheduleChanged ? nextBillingAt : undefined,
       note: dto.note,
       updatedBy: user.uid,
     });
@@ -540,7 +554,7 @@ export class PackagePlansService {
   async getSubscriptionInvoice(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildSubscriptionInvoice(id);
-    await this.persistSubscriptionInvoice(user, invoice);
+    this.assertSubscriptionInvoicePeriodClosed(invoice);
 
     return {
       data: invoice,
@@ -551,6 +565,7 @@ export class PackagePlansService {
   async downloadSubscriptionInvoicePdf(user: AuthUserContext, id: string) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildSubscriptionInvoice(id);
+    this.assertSubscriptionInvoicePeriodClosed(invoice);
     const content = this.generateSubscriptionInvoicePdf(invoice);
     await this.persistSubscriptionInvoice(user, invoice, {
       eventType: GeneratedInvoiceEventType.DOWNLOADED,
@@ -570,6 +585,7 @@ export class PackagePlansService {
   ) {
     this.ensureSuperAdmin(user);
     const invoice = await this.buildSubscriptionInvoice(id);
+    this.assertSubscriptionInvoicePeriodClosed(invoice);
     const recipientEmail = dto.email ?? invoice.restaurant?.billingEmail;
 
     if (!recipientEmail) {
@@ -631,6 +647,10 @@ export class PackagePlansService {
     const plan = subscription
       ? this.resolveSubscriptionInvoicePlan(subscription)
       : null;
+    const billingPeriod =
+      subscription && plan
+        ? this.resolveOpenSubscriptionBillingPeriod(subscription, plan, now)
+        : this.resolveBillingMonthPeriod(this.toBillingMonth(now));
     const [orders, specialPayouts, currency, walletAccount] = await Promise.all(
       [
         this.packagePlansRepository.listRestaurantWalletPayoutOrders(
@@ -731,6 +751,7 @@ export class PackagePlansService {
 
       return {
         ...line,
+        occurredAt: order.paidAt ?? order.createdAt,
         billingMonth,
         totalOrderAmount: commissionableAmount,
         platformCollectedAmount: isPlatformCollected
@@ -846,6 +867,31 @@ export class PackagePlansService {
     const vatAmount = payoutChargeVatAmount
       .plus(monthlyFeeVatAmount)
       .toDecimalPlaces(2);
+    const billingPeriodLineItems = lineItems.filter(
+      (item) =>
+        item.occurredAt >= billingPeriod.from &&
+        item.occurredAt < billingPeriod.to,
+    );
+    const billingPeriodOrderAmount = this.sumDecimalValues(
+      billingPeriodLineItems.map((item) => item.totalOrderAmount),
+    ).toDecimalPlaces(2);
+    const billingPeriodPlatformCollectedAmount = this.sumDecimalValues(
+      billingPeriodLineItems.map((item) => item.platformCollectedAmount),
+    ).toDecimalPlaces(2);
+    const billingPeriodCommissionAmount = this.sumDecimalValues(
+      billingPeriodLineItems.map((item) => item.platformCommissionAmount),
+    ).toDecimalPlaces(2);
+    const billingPeriodTransactionFeeAmount = this.sumDecimalValues(
+      billingPeriodLineItems.map((item) => item.transactionFeeAmount),
+    ).toDecimalPlaces(2);
+    const billingPeriodPreviousPayoutAmount = this.sumDecimalValues(
+      billingPeriodLineItems.map((item) => item.previousPayoutAmount),
+    ).toDecimalPlaces(2);
+    const billingPeriodVatAmount = billingPeriodCommissionAmount
+      .plus(billingPeriodTransactionFeeAmount)
+      .mul(vatPercentage)
+      .div(100)
+      .toDecimalPlaces(2);
 
     return {
       ordersCount: lineItems.length,
@@ -864,6 +910,18 @@ export class PackagePlansService {
       vatAmount: Number(vatAmount),
       previousPayoutAmount: Number(previousPayoutAmount),
       billingMonth: currentBillingMonth,
+      billingPeriod,
+      billingPeriodSummary: {
+        ordersCount: billingPeriodLineItems.length,
+        totalOrderAmount: Number(billingPeriodOrderAmount),
+        platformCollectedAmount: Number(billingPeriodPlatformCollectedAmount),
+        platformCommissionAmount: Number(billingPeriodCommissionAmount),
+        restaurantTransactionFeeAmount: Number(
+          billingPeriodTransactionFeeAmount,
+        ),
+        vatAmount: Number(billingPeriodVatAmount),
+        previousPayoutAmount: Number(billingPeriodPreviousPayoutAmount),
+      },
       monthlyFeeAmount: Number(monthlyFeeAmount),
       monthlyFeeScheduledToDate: Number(monthlyFeeScheduledToDate),
       monthlyFeeDeductedBefore: Number(
@@ -2659,7 +2717,8 @@ export class PackagePlansService {
   ) {
     if (subscription.nextBillingAt) {
       return {
-        from: this.resolvePreviousBillingAt(
+        from: this.resolveBillingPeriodStart(
+          subscription.startsAt,
           billingInterval,
           subscription.nextBillingAt,
         ),
@@ -2671,36 +2730,6 @@ export class PackagePlansService {
       from: subscription.startsAt,
       to: subscription.endsAt ?? subscription.startsAt,
     };
-  }
-
-  private resolvePreviousBillingAt(
-    billingInterval: BillingInterval,
-    billingAt: Date,
-  ) {
-    const previousBillingAt = new Date(billingAt);
-
-    switch (billingInterval) {
-      case BillingInterval.DAILY:
-        previousBillingAt.setUTCDate(previousBillingAt.getUTCDate() - 1);
-        break;
-      case BillingInterval.WEEKLY:
-        previousBillingAt.setUTCDate(previousBillingAt.getUTCDate() - 7);
-        break;
-      case BillingInterval.BIWEEKLY:
-        previousBillingAt.setUTCDate(previousBillingAt.getUTCDate() - 14);
-        break;
-      case BillingInterval.YEARLY:
-        previousBillingAt.setUTCFullYear(
-          previousBillingAt.getUTCFullYear() - 1,
-        );
-        break;
-      case BillingInterval.MONTHLY:
-      default:
-        previousBillingAt.setUTCMonth(previousBillingAt.getUTCMonth() - 1);
-        break;
-    }
-
-    return previousBillingAt;
   }
 
   private isTransactionFeePlan(
@@ -3361,13 +3390,33 @@ export class PackagePlansService {
     >,
     paymentStatus?: PaymentStatus,
   ) {
+    const subscription = await this.getSubscriptionOrThrow(
+      invoice.subscriptionId,
+    );
+    if (
+      subscription.endsAt &&
+      invoice.servicePeriod.to >= subscription.endsAt
+    ) {
+      await this.packagePlansRepository.updateSubscription(
+        invoice.subscriptionId,
+        {
+          nextBillingAt: null,
+          status: SubscriptionStatus.EXPIRED,
+          ...(paymentStatus ? { paymentStatus } : {}),
+        },
+      );
+      return;
+    }
+
+    const nextBillingAt = this.resolveInitialBillingAt(
+      invoice.packagePlan.billingInterval,
+      invoice.servicePeriod.to,
+      subscription.endsAt,
+    );
     await this.packagePlansRepository.updateSubscription(
       invoice.subscriptionId,
       {
-        nextBillingAt: this.resolveNextBillingAt(
-          invoice.packagePlan.billingInterval,
-          invoice.servicePeriod.to.toISOString(),
-        ),
+        nextBillingAt,
         ...(paymentStatus ? { paymentStatus } : {}),
       },
     );
@@ -3926,42 +3975,106 @@ export class PackagePlansService {
     }
   }
 
-  private assertDateRange(startsAt?: string, endsAt?: string): void {
-    if (!startsAt || !endsAt) {
-      return;
-    }
-
-    if (new Date(startsAt) >= new Date(endsAt)) {
+  private assertBillingSchedule(
+    startsAt: Date,
+    endsAt: Date | null,
+    nextBillingAt: Date,
+  ): void {
+    if (endsAt && startsAt >= endsAt) {
       throw new BadRequestException(
         'Subscription end date must be after start date',
       );
     }
+
+    if (nextBillingAt <= startsAt) {
+      throw new BadRequestException(
+        'Next billing date must be after subscription start date',
+      );
+    }
+
+    if (endsAt && nextBillingAt > endsAt) {
+      throw new BadRequestException(
+        'Next billing date cannot be after subscription end date',
+      );
+    }
   }
 
-  private resolveNextBillingAt(
+  private assertSubscriptionInvoicePeriodClosed(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildSubscriptionInvoice']>
+    >,
+    now = new Date(),
+  ) {
+    if (invoice.servicePeriod.to > now) {
+      throw new BadRequestException(
+        `Invoice will be generated after the billing period closes at ${invoice.servicePeriod.to.toISOString()}`,
+      );
+    }
+  }
+
+  private resolveOpenSubscriptionBillingPeriod(
+    subscription: TenantSubscriptionDetails,
+    plan: ReturnType<PackagePlansService['resolveSubscriptionInvoicePlan']>,
+    now: Date,
+  ) {
+    if (!subscription.nextBillingAt) {
+      return this.resolveBillingMonthPeriod(this.toBillingMonth(now));
+    }
+
+    return this.resolveSubscriptionInvoicePeriod(
+      subscription,
+      plan.billingInterval,
+    );
+  }
+
+  private resolveInitialBillingAt(
     billingInterval: BillingInterval,
-    startsAt?: string,
-  ): Date {
-    const nextBillingAt = startsAt ? new Date(startsAt) : new Date();
+    startsAt: Date,
+    endsAt: Date | null,
+  ) {
+    const nextBillingAt = this.addBillingInterval(startsAt, billingInterval);
+    return endsAt && endsAt < nextBillingAt ? new Date(endsAt) : nextBillingAt;
+  }
+
+  private resolveBillingPeriodStart(
+    startsAt: Date,
+    billingInterval: BillingInterval,
+    periodTo: Date,
+  ) {
+    let periodFrom = new Date(startsAt);
+    let nextBoundary = this.addBillingInterval(periodFrom, billingInterval);
+
+    while (nextBoundary < periodTo) {
+      periodFrom = nextBoundary;
+      nextBoundary = this.addBillingInterval(periodFrom, billingInterval);
+    }
+
+    return periodFrom;
+  }
+
+  private addBillingInterval(date: Date, billingInterval: BillingInterval) {
+    const boundary = new Date(date);
 
     switch (billingInterval) {
       case BillingInterval.DAILY:
-        nextBillingAt.setDate(nextBillingAt.getDate() + 1);
-        return nextBillingAt;
+        boundary.setUTCDate(boundary.getUTCDate() + 1);
+        break;
       case BillingInterval.WEEKLY:
-        nextBillingAt.setDate(nextBillingAt.getDate() + 7);
-        return nextBillingAt;
+        boundary.setUTCDate(boundary.getUTCDate() + 7);
+        break;
       case BillingInterval.BIWEEKLY:
-        nextBillingAt.setDate(nextBillingAt.getDate() + 14);
-        return nextBillingAt;
+        boundary.setUTCDate(boundary.getUTCDate() + 14);
+        break;
       case BillingInterval.YEARLY:
-        nextBillingAt.setFullYear(nextBillingAt.getFullYear() + 1);
-        return nextBillingAt;
+        boundary.setUTCFullYear(boundary.getUTCFullYear() + 1);
+        break;
       case BillingInterval.MONTHLY:
       default:
-        nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
-        return nextBillingAt;
+        boundary.setUTCMonth(boundary.getUTCMonth() + 1);
+        break;
     }
+
+    return boundary;
   }
 
   private buildPlanSnapshot(plan: {

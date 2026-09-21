@@ -4963,19 +4963,34 @@ export class PaymentsService {
       Prisma.Decimal.min(normalizedLedgerBalance, calculatedAvailablePayout),
       new Prisma.Decimal(0),
     ).toDecimalPlaces(2);
+    const billingPeriodSummary = payoutSummary?.billingPeriodSummary;
 
     return {
       ledgerBalance: Number(normalizedLedgerBalance),
-      totalOrderAmount: payoutSummary?.totalOrderAmount ?? null,
-      platformCollectedAmount: payoutSummary?.platformCollectedAmount ?? null,
-      grossCollectedAmount: payoutSummary?.grossAmount ?? null,
+      totalOrderAmount: billingPeriodSummary?.totalOrderAmount ?? null,
+      platformCollectedAmount:
+        billingPeriodSummary?.platformCollectedAmount ?? null,
+      grossCollectedAmount:
+        billingPeriodSummary?.platformCollectedAmount ?? null,
       commissionLiabilityAmount:
-        payoutSummary?.platformCommissionAmount ?? null,
+        billingPeriodSummary?.platformCommissionAmount ?? null,
       restaurantTransactionFeeAmount:
-        payoutSummary?.restaurantTransactionFeeAmount ?? null,
+        billingPeriodSummary?.restaurantTransactionFeeAmount ?? null,
       vatPercentage: payoutSummary?.vatPercentage ?? null,
-      vatAmount: payoutSummary?.vatAmount ?? null,
-      previousPayoutAmount: payoutSummary?.previousPayoutAmount ?? null,
+      vatAmount: billingPeriodSummary?.vatAmount ?? null,
+      billingMonth: payoutSummary?.billingMonth ?? null,
+      billingPeriod: payoutSummary?.billingPeriod ?? null,
+      monthlyFeeAmount: payoutSummary?.monthlyFeeAmount ?? null,
+      monthlyFeeScheduledToDate:
+        payoutSummary?.monthlyFeeScheduledToDate ?? null,
+      monthlyFeeDeductedBefore: payoutSummary?.monthlyFeeDeductedBefore ?? null,
+      monthlyFeeDeductedAmount: payoutSummary?.monthlyFeeDeductedAmount ?? null,
+      monthlyFeeVatAmount: payoutSummary?.monthlyFeeVatAmount ?? null,
+      monthlyFeeDeductedThisMonth:
+        payoutSummary?.monthlyFeeDeductedThisMonth ?? null,
+      monthlyFeeOutstandingAmount:
+        payoutSummary?.monthlyFeeOutstandingAmount ?? null,
+      previousPayoutAmount: billingPeriodSummary?.previousPayoutAmount ?? null,
       totalDeductionsAmount: payoutSummary?.totalDeductionsAmount ?? null,
       availablePayoutBalance: Number(availablePayoutBalance),
       activePlan: payoutSummary?.activePlan ?? null,
