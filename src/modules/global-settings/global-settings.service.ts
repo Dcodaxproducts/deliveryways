@@ -82,7 +82,22 @@ export interface LandingPageSettingsShape {
   };
   home: LandingHomeSettingsShape;
   pages: LandingPagePagesShape;
+  legalProfile: GlobalLegalProfileShape;
   faqs: LandingPageFaqShape[];
+}
+
+export interface GlobalLegalProfileShape {
+  ownerName: string | null;
+  legalBusinessName: string | null;
+  taxNumber: string | null;
+  businessAddress: {
+    street: string | null;
+    shopNumber: string | null;
+    postalCode: string | null;
+    city: string | null;
+    country: string | null;
+  };
+  contractText: string | null;
 }
 
 export interface LandingHomeLocalizedBlockShape {
@@ -694,7 +709,24 @@ export class GlobalSettingsService {
       },
       home: this.defaultLandingHomeSettings(),
       pages: this.defaultLandingPagePages(),
+      legalProfile: this.defaultGlobalLegalProfile(),
       faqs: [],
+    };
+  }
+
+  private defaultGlobalLegalProfile(): GlobalLegalProfileShape {
+    return {
+      ownerName: null,
+      legalBusinessName: null,
+      taxNumber: null,
+      businessAddress: {
+        street: null,
+        shopNumber: null,
+        postalCode: null,
+        city: null,
+        country: null,
+      },
+      contractText: null,
     };
   }
 
@@ -1204,6 +1236,10 @@ export class GlobalSettingsService {
           } as unknown as Prisma.JsonValue)
         : current.home,
       pages: this.mergeLandingPagePages(current.pages, updates.pages),
+      legalProfile: this.mergeGlobalLegalProfile(
+        current.legalProfile,
+        updates.legalProfile,
+      ),
       faqs:
         updates.faqs !== undefined
           ? updates.faqs
@@ -1252,7 +1288,70 @@ export class GlobalSettingsService {
       },
       home: this.extractLandingHomeSettings(source),
       pages: this.extractLandingPagePages(source),
+      legalProfile: this.extractGlobalLegalProfile(source),
       faqs: this.extractLandingPageFaqs(source),
+    };
+  }
+
+  private mergeGlobalLegalProfile(
+    current: GlobalLegalProfileShape,
+    updates: NonNullable<
+      UpdateGlobalSettingsDto['landingPageSettings']
+    >['legalProfile'],
+  ): GlobalLegalProfileShape {
+    if (!updates) {
+      return current;
+    }
+
+    const value = (key: 'ownerName' | 'legalBusinessName' | 'taxNumber') =>
+      updates[key] !== undefined
+        ? this.resolveOptionalString(updates[key])
+        : current[key];
+    const addressValue = (
+      key: keyof GlobalLegalProfileShape['businessAddress'],
+    ) =>
+      updates.businessAddress?.[key] !== undefined
+        ? this.resolveOptionalString(updates.businessAddress[key])
+        : current.businessAddress[key];
+
+    return {
+      ownerName: value('ownerName'),
+      legalBusinessName: value('legalBusinessName'),
+      taxNumber: value('taxNumber'),
+      businessAddress: {
+        street: addressValue('street'),
+        shopNumber: addressValue('shopNumber'),
+        postalCode: addressValue('postalCode'),
+        city: addressValue('city'),
+        country: addressValue('country'),
+      },
+      contractText:
+        updates.contractText !== undefined
+          ? this.sanitizeOptionalLandingHtml(updates.contractText)
+          : current.contractText,
+    };
+  }
+
+  private extractGlobalLegalProfile(
+    source: Prisma.JsonValue | null | undefined,
+  ): GlobalLegalProfileShape {
+    const read = (key: string) =>
+      this.readStringValue(source, [['legalProfile', key]]);
+    const readAddress = (key: string) =>
+      this.readStringValue(source, [['legalProfile', 'businessAddress', key]]);
+
+    return {
+      ownerName: read('ownerName'),
+      legalBusinessName: read('legalBusinessName'),
+      taxNumber: read('taxNumber'),
+      businessAddress: {
+        street: readAddress('street'),
+        shopNumber: readAddress('shopNumber'),
+        postalCode: readAddress('postalCode'),
+        city: readAddress('city'),
+        country: readAddress('country'),
+      },
+      contractText: read('contractText'),
     };
   }
 

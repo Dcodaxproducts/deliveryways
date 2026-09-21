@@ -122,7 +122,11 @@ describe('WinOrderPollingService', () => {
     };
     expect(payload.OrderID).toBe('order-1');
     expect(payload.AddInfo).toEqual(
-      expect.objectContaining({ PaymentType: 'Barzahlung', Total: 15 }),
+      expect.objectContaining({
+        PaymentType: 'Barzahlung',
+        Tip: 1,
+        Total: 14,
+      }),
     );
     expect(payload.AddInfo.DeliverType).toBe('Lieferung');
     expect(payload.AddInfo.DeliveryType).toBeUndefined();
@@ -497,9 +501,12 @@ describe('WinOrderPollingService', () => {
     );
 
     expect(articleTotal).toBe(28);
-    expect(
-      articleTotal + payload.AddInfo.DeliverLumpSum + payload.AddInfo.Tip,
-    ).toBe(payload.AddInfo.Total);
+    expect(articleTotal + payload.AddInfo.DeliverLumpSum).toBe(
+      payload.AddInfo.Total,
+    );
+    expect(payload.AddInfo.Total + payload.AddInfo.Tip).toBe(
+      reportedOrder.totalAmount,
+    );
     expect(subArticles.filter((subArticle) => subArticle.ArticleName)).toEqual([
       expect.objectContaining({ ArticleName: 'Salsa Sauce', Price: 0 }),
       expect.objectContaining({ ArticleName: 'Käserand', Price: 0 }),

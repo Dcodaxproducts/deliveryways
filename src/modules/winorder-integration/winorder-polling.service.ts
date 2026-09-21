@@ -182,7 +182,10 @@ export class WinOrderPollingService {
         PaymentFee: order.paymentFeeAmount || undefined,
         Tip: order.tipAmount || undefined,
         TransactionID: order.paymentReference ?? undefined,
-        Total: order.totalAmount,
+        Total: this.resolveWinOrderInvoiceTotal(
+          order.totalAmount,
+          order.tipAmount,
+        ),
       },
       ArticleList: { Article: articles },
       StoreData: {
@@ -210,6 +213,10 @@ export class WinOrderPollingService {
         },
       },
     };
+  }
+
+  private resolveWinOrderInvoiceTotal(totalAmount: number, tipAmount: number) {
+    return Number(Math.max(totalAmount - tipAmount, 0).toFixed(2));
   }
 
   private requireMapping(

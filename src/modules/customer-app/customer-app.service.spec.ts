@@ -224,6 +224,14 @@ describe('CustomerAppService', () => {
       getSettings: jest.fn().mockResolvedValue({
         data: { timezone: 'Europe/Berlin' },
       }),
+      getLandingPageSettings: jest.fn().mockResolvedValue({
+        data: {
+          pages: {
+            privacyPolicy: { contentEn: null, contentDe: null },
+          },
+          legalProfile: null,
+        },
+      }),
     };
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
@@ -3225,6 +3233,67 @@ describe('CustomerAppService', () => {
     expect(result.data.policyLink).toBe(
       '/api/v1/public-content/privacy-policy?restaurantId=restaurant-1',
     );
+  });
+
+  it('uses the Superadmin global privacy and legal profile for every restaurant', async () => {
+    const { service, repository, globalSettingsService } = makeService();
+    repository.findRestaurantPublicContent.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      tenant: { id: 'tenant-1', name: 'Restaurant Owner' },
+      name: 'Restaurant One',
+      coverImage: null,
+      settings: {
+        privacyPolicy: 'Restaurant privacy text',
+        legalProfile: {
+          legalBusinessName: 'Restaurant Legal Name',
+          taxNumber: 'LOCAL-TAX',
+        },
+      },
+    });
+    globalSettingsService.getLandingPageSettings.mockResolvedValue({
+      data: {
+        pages: {
+          privacyPolicy: {
+            contentEn: '<p>Global privacy policy</p>',
+            contentDe: '<p>Globale Datenschutzerklärung</p>',
+          },
+        },
+        legalProfile: {
+          ownerName: 'DeliveryWay GmbH',
+          legalBusinessName: 'DeliveryWay GmbH',
+          taxNumber: 'GLOBAL-TAX',
+          businessAddress: {
+            street: 'Global Street',
+            shopNumber: '10',
+            postalCode: '10115',
+            city: 'Berlin',
+            country: 'Germany',
+          },
+          contractText: '<p>Global legal text</p>',
+        },
+      },
+    });
+
+    const result = await service.getPrivacyPolicy({
+      restaurantId: 'restaurant-1',
+      locale: 'de',
+    });
+
+    expect(result.data.content).toBe('<p>Globale Datenschutzerklärung</p>');
+    expect(result.data.legalProfile).toEqual({
+      ownerName: 'DeliveryWay GmbH',
+      legalBusinessName: 'DeliveryWay GmbH',
+      taxNumber: 'GLOBAL-TAX',
+      businessAddress: {
+        street: 'Global Street',
+        shopNumber: '10',
+        state: '10115',
+        city: 'Berlin',
+        country: 'Germany',
+      },
+      contractText: '<p>Global legal text</p>',
+    });
   });
 
   it('fetches restaurant-managed about us content for customer web', async () => {

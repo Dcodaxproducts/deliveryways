@@ -468,14 +468,45 @@ export class CustomerAppService {
     user?: AuthUserContext,
   ) {
     const { restaurant } = await this.getPublicContent(query, user);
-    const privacyPolicy = this.readStringValue(restaurant.settings, [
+    const restaurantPrivacyPolicy = this.readStringValue(restaurant.settings, [
       ['customerApp', 'privacyPolicy'],
       ['publicContent', 'privacyPolicy'],
       ['privacyPolicy'],
       ['privacy_policy'],
     ]);
     const tenantName = restaurant.tenant?.name ?? restaurant.name;
-    const legalProfile = this.extractLegalProfile(restaurant.settings);
+    const restaurantLegalProfile = this.extractLegalProfile(
+      restaurant.settings,
+    );
+    const globalContent = await this.globalSettingsService
+      ?.getLandingPageSettings?.()
+      .then((response) => response.data);
+    const locale = normalizeLocale(query.locale);
+    const globalPrivacyPolicy = locale.startsWith('de')
+      ? globalContent?.pages.privacyPolicy.contentDe
+      : globalContent?.pages.privacyPolicy.contentEn;
+    const globalLegalProfile = globalContent?.legalProfile;
+    const globalAddress = globalLegalProfile?.businessAddress;
+    const legalProfile = {
+      ownerName: globalLegalProfile?.ownerName ?? tenantName,
+      legalBusinessName:
+        globalLegalProfile?.legalBusinessName ??
+        restaurantLegalProfile.legalBusinessName,
+      taxNumber:
+        globalLegalProfile?.taxNumber ?? restaurantLegalProfile.taxNumber,
+      businessAddress:
+        globalAddress && Object.values(globalAddress).some(Boolean)
+          ? {
+              street: globalAddress.street,
+              shopNumber: globalAddress.shopNumber,
+              state: globalAddress.postalCode,
+              city: globalAddress.city,
+              country: globalAddress.country,
+            }
+          : restaurantLegalProfile.businessAddress,
+      contractText:
+        globalLegalProfile?.contractText ?? restaurantLegalProfile.contractText,
+    };
 
     return {
       data: {
@@ -485,11 +516,8 @@ export class CustomerAppService {
         tenantName,
         restaurantCoverImage: await this.resolveMediaUrl(restaurant.coverImage),
         title: 'Privacy Policy',
-        content: privacyPolicy,
-        legalProfile: {
-          ...legalProfile,
-          ownerName: tenantName,
-        },
+        content: globalPrivacyPolicy ?? restaurantPrivacyPolicy,
+        legalProfile,
         policyLink: this.buildPrivacyPolicyLink(restaurant.id),
       },
       message: 'Privacy policy fetched successfully',
