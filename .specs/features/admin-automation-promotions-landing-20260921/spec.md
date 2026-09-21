@@ -1,8 +1,8 @@
-# DeliveryWay Admin, Automation, Promotions, and Landing Specification
+# FeastFlow Admin, Automation, Promotions, and Landing Specification
 
 ## Problem Statement
 
-DeliveryWay currently displays the logged-in employee as a branch admin when a branch manager relation is absent, stores an auto-accept flag without enforcing it, cannot scope promotions by fulfillment type, and renders landing content and fallback packages outside Superadmin control.
+FeastFlow currently displays the logged-in employee as a branch admin when a branch manager relation is absent, stores an auto-accept flag without enforcing it, cannot scope promotions by fulfillment type, and renders landing content and fallback packages outside Superadmin control.
 
 ## Goals
 
@@ -55,4 +55,3 @@ WHEN Superadmin marks package plans for landing display THEN public landing pric
 | PROMO-01 | In Tasks |
 | LAND-01 | In Tasks |
 | LAND-02 | In Tasks |
-

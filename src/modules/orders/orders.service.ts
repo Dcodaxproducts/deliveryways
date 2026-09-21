@@ -1623,7 +1623,6 @@ export class OrdersService {
       customerId: customer.customerId,
       customerIsGuest: customer.isGuest,
       isScheduledOrder: dto.isScheduled === true,
-      orderType: dto.orderType as OrderType,
       subtotal: Number(subtotal),
       menuItemIds: pricedLines.map((line) => line.menuItemId),
       categoryIds: [

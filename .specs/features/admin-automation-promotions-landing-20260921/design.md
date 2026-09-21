@@ -1,4 +1,4 @@
-# DeliveryWay Admin, Automation, Promotions, and Landing Design
+# FeastFlow Admin, Automation, Promotions, and Landing Design
 
 **Spec:** `spec.md`
 
@@ -22,4 +22,3 @@
 - Missing branch admin renders blank fields.
 - Auto-accept errors do not create a second order; transaction/status transition tests protect idempotency.
 - Landing fetch failure renders only structural chrome and managed-empty states.
-

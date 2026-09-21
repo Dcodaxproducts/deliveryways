@@ -218,11 +218,6 @@ export class ValidateCouponDto {
   @Min(0)
   subtotal!: number;
 
-  @ApiPropertyOptional({ enum: OrderType })
-  @IsOptional()
-  @IsEnum(OrderType)
-  orderType?: OrderType;
-
   @ApiProperty({ description: 'Optional for scoped coupon checks' })
   @IsOptional()
   @IsString({ each: true })

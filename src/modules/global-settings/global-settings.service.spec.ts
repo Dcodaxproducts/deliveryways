@@ -620,8 +620,8 @@ describe('GlobalSettingsService', () => {
       scopeKey: 'GLOBAL',
       landingPageSettings: {
         legalProfile: {
-          ownerName: 'DeliveryWay GmbH',
-          legalBusinessName: 'DeliveryWay GmbH',
+          ownerName: 'FeastFlow GmbH',
+          legalBusinessName: 'FeastFlow GmbH',
           taxNumber: 'OLD-TAX',
           businessAddress: { city: 'Berlin' },
           contractText: '<p>Old legal text</p>',
@@ -648,8 +648,8 @@ describe('GlobalSettingsService', () => {
     );
 
     expect(result.data.legalProfile).toEqual({
-      ownerName: 'DeliveryWay GmbH',
-      legalBusinessName: 'DeliveryWay GmbH',
+      ownerName: 'FeastFlow GmbH',
+      legalBusinessName: 'FeastFlow GmbH',
       taxNumber: 'GLOBAL-TAX',
       businessAddress: {
         street: null,

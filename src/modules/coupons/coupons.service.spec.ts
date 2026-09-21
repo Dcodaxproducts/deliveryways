@@ -227,7 +227,10 @@ describe('CouponsService', () => {
       makeCoupon({ allowedOrderTypes: [OrderType.TAKEAWAY] }),
     );
 
-    const result = await service.validateForCheckout(baseInput);
+    const result = await service.validateForCheckout({
+      ...baseInput,
+      orderType: OrderType.TAKEAWAY,
+    });
 
     expect(Number(result.discountAmount)).toBe(100);
   });

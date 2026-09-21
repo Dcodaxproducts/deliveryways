@@ -1,4 +1,4 @@
-# DeliveryWay Admin, Automation, Promotions, and Landing Tasks
+# FeastFlow Admin, Automation, Promotions, and Landing Tasks
 
 ## Phase 1: Correctness Foundation
 
@@ -27,4 +27,3 @@
 - API: Prisma validate/generate, migration apply/rollback proof on disposable PostgreSQL, focused Jest, full Jest, TypeScript, build, lint.
 - Restaurant Admin: focused tests, full tests, TypeScript, build, lint, i18n/import checks.
 - Superadmin/Landing: TypeScript, lint, production build, focused component/service tests where harness exists.
-

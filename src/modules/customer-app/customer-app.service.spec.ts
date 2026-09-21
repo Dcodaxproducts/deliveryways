@@ -3260,8 +3260,8 @@ describe('CustomerAppService', () => {
           },
         },
         legalProfile: {
-          ownerName: 'DeliveryWay GmbH',
-          legalBusinessName: 'DeliveryWay GmbH',
+          ownerName: 'FeastFlow GmbH',
+          legalBusinessName: 'FeastFlow GmbH',
           taxNumber: 'GLOBAL-TAX',
           businessAddress: {
             street: 'Global Street',
@@ -3282,8 +3282,8 @@ describe('CustomerAppService', () => {
 
     expect(result.data.content).toBe('<p>Globale Datenschutzerklärung</p>');
     expect(result.data.legalProfile).toEqual({
-      ownerName: 'DeliveryWay GmbH',
-      legalBusinessName: 'DeliveryWay GmbH',
+      ownerName: 'FeastFlow GmbH',
+      legalBusinessName: 'FeastFlow GmbH',
       taxNumber: 'GLOBAL-TAX',
       businessAddress: {
         street: 'Global Street',
