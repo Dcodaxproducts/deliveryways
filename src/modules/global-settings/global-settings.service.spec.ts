@@ -103,6 +103,9 @@ describe('GlobalSettingsService', () => {
       update: Prisma.GlobalSettingUpdateInput,
       create: Prisma.GlobalSettingCreateInput,
     ) => Promise<unknown>;
+    findPublicRestaurantsByIds: (
+      ids: string[],
+    ) => Promise<Array<{ id: string; name: string; logoUrl: string | null }>>;
   };
   let ensureSingletonSpy: jest.SpiedFunction<
     typeof repositoryImpl.ensureSingleton
@@ -126,6 +129,9 @@ describe('GlobalSettingsService', () => {
         create: Prisma.GlobalSettingCreateInput,
       ) {
         return Promise.resolve(create);
+      },
+      findPublicRestaurantsByIds() {
+        return Promise.resolve([]);
       },
     };
 

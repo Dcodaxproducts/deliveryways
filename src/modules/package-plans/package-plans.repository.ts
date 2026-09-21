@@ -79,6 +79,7 @@ export class PackagePlansRepository {
     const where: Prisma.PackagePlanWhereInput = {
       deletedAt: null,
       isActive: true,
+      ...(query.landingOnly ? { showOnLanding: true } : {}),
       ...(query.billingModel ? { billingModel: query.billingModel } : {}),
       ...(query.search
         ? {
@@ -124,6 +125,7 @@ export class PackagePlansRepository {
           trialDays: true,
           features: true,
           isDefault: true,
+          showOnLanding: true,
         },
       }),
       this.prisma.packagePlan.count({ where }),

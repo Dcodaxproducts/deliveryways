@@ -262,6 +262,29 @@ export class BranchesRepository {
             },
           },
         },
+        users: {
+          where: {
+            role: UserRole.BRANCH_ADMIN,
+            isActive: true,
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isActive: true,
+            profile: {
+              select: {
+                firstName: true,
+                lastName: true,
+                phone: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
         restaurant: {
           select: {
             id: true,

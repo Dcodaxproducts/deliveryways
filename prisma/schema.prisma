@@ -1187,6 +1187,7 @@ model Coupon {
   imageUrl             String?                  @map("image_url")
   kind                 CouponCampaignKind       @default(PROMOTION)
   audience             CouponAudience           @default(BOTH)
+  allowedOrderTypes    OrderType[]               @default([DELIVERY, TAKEAWAY, DINE_IN]) @map("allowed_order_types")
   status               CouponStatus             @default(ACTIVE)
   applyMode            CouponApplyMode          @default(ORDER_TOTAL) @map("apply_mode")
   autoApply            Boolean                  @default(false) @map("auto_apply")
@@ -2046,6 +2047,7 @@ model PackagePlan {
   features              Json?
   isActive              Boolean               @default(true) @map("is_active")
   isDefault             Boolean               @default(false) @map("is_default")
+  showOnLanding         Boolean               @default(false) @map("show_on_landing")
   deletedAt             DateTime?             @map("deleted_at") @db.Timestamptz
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz

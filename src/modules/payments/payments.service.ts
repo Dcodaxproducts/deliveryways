@@ -76,6 +76,7 @@ import {
   PaypalOrdersService,
   type PaypalOrderCredentials,
 } from './paypal-orders.service';
+import { OrdersService } from '../orders/orders.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -171,6 +172,7 @@ export class PaymentsService {
     private readonly packagePlansService?: PackagePlansService,
     private readonly paypalOrdersService?: PaypalOrdersService,
     @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly ordersService?: OrdersService,
   ) {}
 
   async createSubscriptionAttempt(
@@ -1170,6 +1172,9 @@ export class PaymentsService {
         );
       }
     });
+    if (shouldPlaceOrder) {
+      await this.tryAutoAcceptPlacedOrder(orderId, 'PayPal capture');
+    }
 
     return updated;
   }
@@ -1340,6 +1345,7 @@ export class PaymentsService {
 
     if (order.status === OrderStatus.PAYMENT_PENDING) {
       await this.notificationsService.notifyOrderPlaced(order.id);
+      await this.tryAutoAcceptPlacedOrder(order.id, 'payment method update');
     }
 
     return data;
@@ -3593,6 +3599,24 @@ export class PaymentsService {
         );
       }
     });
+    if (shouldPlaceOrder) {
+      await this.tryAutoAcceptPlacedOrder(orderId, 'Stripe webhook');
+    }
+  }
+
+  private async tryAutoAcceptPlacedOrder(orderId: string, source: string) {
+    if (!this.ordersService) {
+      return;
+    }
+
+    try {
+      await this.ordersService.autoAcceptPlacedOrder(orderId);
+    } catch (error: unknown) {
+      this.logger.error(
+        `${source} placed order ${orderId}, but automatic acceptance failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   private async handleStripePaymentIntentFailed(

@@ -11,6 +11,7 @@ import { StripePaymentsService } from './stripe-payments.service';
 import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
 import { PaypalOrdersService } from './paypal-orders.service';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PaypalOrdersService } from './paypal-orders.service';
     GlobalSettingsModule,
     MailerModule,
     PackagePlansModule,
+    OrdersModule,
   ],
   controllers: [PaymentsController],
   providers: [

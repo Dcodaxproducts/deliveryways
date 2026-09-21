@@ -649,6 +649,19 @@ export class OrdersRepository {
     });
   }
 
+  async confirmPlacedOrder(id: string, orderTime: Date) {
+    const result = await this.prisma.order.updateMany({
+      where: { id, status: OrderStatus.PLACED },
+      data: { status: OrderStatus.CONFIRMED, orderTime },
+    });
+
+    if (result.count === 0) {
+      return null;
+    }
+
+    return this.findById(id);
+  }
+
   async completeStatusAndSettlePendingPayment(
     id: string,
     status: OrderStatus,

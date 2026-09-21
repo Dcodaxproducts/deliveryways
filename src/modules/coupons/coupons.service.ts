@@ -13,6 +13,7 @@ import {
   CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
+  OrderType,
   Prisma,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
@@ -50,6 +51,7 @@ export interface CouponValidationInput {
   lineItems?: CouponValidationLineInput[];
   ignoreMinOrderAmount?: boolean;
   isScheduledOrder?: boolean;
+  orderType?: OrderType;
 }
 
 export interface CouponValidationResult {
@@ -133,6 +135,11 @@ export class CouponsService {
       title: dto.title,
       description: dto.description,
       audience: dto.audience ?? CouponAudience.BOTH,
+      allowedOrderTypes: dto.allowedOrderTypes ?? [
+        OrderType.DELIVERY,
+        OrderType.TAKEAWAY,
+        OrderType.DINE_IN,
+      ],
       applyMode:
         dto.applyMode ??
         (dto.scopeMenuItemIds?.length || dto.scopeCategoryIds?.length
@@ -230,6 +237,7 @@ export class CouponsService {
       title: dto.title,
       description: dto.description,
       audience: dto.audience,
+      allowedOrderTypes: dto.allowedOrderTypes,
       applyMode: dto.applyMode,
       branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
       discountType: dto.discountType,
@@ -347,6 +355,7 @@ export class CouponsService {
       subtotal: dto.subtotal,
       menuItemIds: dto.menuItemIds ?? [],
       categoryIds: dto.categoryIds ?? [],
+      orderType: dto.orderType,
     });
 
     return {
@@ -837,6 +846,12 @@ export class CouponsService {
     if (!this.isAudienceEligible(coupon.audience, input.customerIsGuest)) {
       throw new BadRequestException(
         'Coupon is not available for this customer',
+      );
+    }
+
+    if (!this.isOrderTypeEligible(coupon.allowedOrderTypes, input.orderType)) {
+      throw new BadRequestException(
+        'Coupon is not available for this order type',
       );
     }
 
@@ -1527,6 +1542,25 @@ export class CouponsService {
       audience === CouponAudience.BOTH ||
       (customerIsGuest && audience === CouponAudience.GUEST) ||
       (!customerIsGuest && audience === CouponAudience.REGISTERED)
+    );
+  }
+
+  private isOrderTypeEligible(
+    allowedOrderTypes: OrderType[] | null | undefined,
+    orderType?: OrderType,
+  ) {
+    if (!allowedOrderTypes?.length) {
+      return true;
+    }
+
+    const unrestricted =
+      allowedOrderTypes.includes(OrderType.DELIVERY) &&
+      allowedOrderTypes.includes(OrderType.TAKEAWAY) &&
+      allowedOrderTypes.includes(OrderType.DINE_IN);
+
+    return (
+      unrestricted ||
+      Boolean(orderType && allowedOrderTypes.includes(orderType))
     );
   }
 

@@ -105,6 +105,7 @@ interface NormalizedPlanInput {
   features?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
   isActive?: boolean;
   isDefault?: boolean;
+  showOnLanding?: boolean;
 }
 
 @Injectable()
@@ -144,6 +145,7 @@ export class PackagePlansService {
       features: input.features,
       isActive: input.isActive ?? true,
       isDefault: input.isDefault ?? false,
+      showOnLanding: input.showOnLanding ?? false,
     });
 
     return {
@@ -2151,6 +2153,7 @@ export class PackagePlansService {
           : undefined,
       isActive: dto.isActive,
       isDefault: dto.isDefault,
+      showOnLanding: dto.showOnLanding,
     };
   }
 

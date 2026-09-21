@@ -6,6 +6,33 @@ import {
 } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
 
+describe('PackagePlansRepository public landing visibility', () => {
+  it('filters landing requests to explicitly selected active plans', async () => {
+    const findMany = jest
+      .fn<Promise<unknown[]>, [Prisma.PackagePlanFindManyArgs]>()
+      .mockResolvedValue([]);
+    const count = jest.fn().mockResolvedValue(0);
+    const prisma = {
+      packagePlan: { findMany, count },
+      $transaction: jest.fn().mockResolvedValue([[], 0]),
+    };
+    const repository = new PackagePlansRepository(prisma as never);
+
+    await repository.listPublicPlans({
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      landingOnly: true,
+    });
+
+    const where = findMany.mock.calls[0]?.[0].where;
+    expect(where?.deletedAt).toBeNull();
+    expect(where?.isActive).toBe(true);
+    expect(where?.showOnLanding).toBe(true);
+  });
+});
+
 type CreateWalletTransactionCall = {
   data: {
     subscriptionInvoiceKey: string;
