@@ -18,7 +18,11 @@ export class MenuCategoryRepository {
     const direction = query.sortOrder.toLowerCase() as 'asc' | 'desc';
 
     if (query.sortBy === 'sortOrder') {
-      return [{ sortOrder: direction }, { createdAt: 'desc' }];
+      return [
+        { sortOrder: direction },
+        { createdAt: direction },
+        { name: 'asc' },
+      ];
     }
 
     return [

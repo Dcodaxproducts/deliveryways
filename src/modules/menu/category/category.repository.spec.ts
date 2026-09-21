@@ -18,8 +18,8 @@ describe('MenuCategoryRepository', () => {
   };
 
   it.each([
-    ['ASC', [{ sortOrder: 'asc' }, { createdAt: 'desc' }]],
-    ['DESC', [{ sortOrder: 'desc' }, { createdAt: 'desc' }]],
+    ['ASC', [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { name: 'asc' }]],
+    ['DESC', [{ sortOrder: 'desc' }, { createdAt: 'desc' }, { name: 'asc' }]],
   ] as const)(
     'orders menu categories by sortOrder %s',
     async (sortOrder, orderBy) => {
