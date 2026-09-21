@@ -20,6 +20,15 @@ enum StaffPanelType {
   BRANCH_ADMIN
 }
 
+enum StaffActivityAction {
+  LOGIN
+  LOGOUT
+  CREATE
+  UPDATE
+  DELETE
+  OTHER
+}
+
 enum AddressRefType {
   TENANT
   RESTAURANT
@@ -1187,7 +1196,7 @@ model Coupon {
   imageUrl             String?                  @map("image_url")
   kind                 CouponCampaignKind       @default(PROMOTION)
   audience             CouponAudience           @default(BOTH)
-  allowedOrderTypes    OrderType[]               @default([DELIVERY, TAKEAWAY, DINE_IN]) @map("allowed_order_types")
+  allowedOrderTypes    OrderType[]              @default([DELIVERY, TAKEAWAY, DINE_IN]) @map("allowed_order_types")
   status               CouponStatus             @default(ACTIVE)
   applyMode            CouponApplyMode          @default(ORDER_TOTAL) @map("apply_mode")
   autoApply            Boolean                  @default(false) @map("auto_apply")
@@ -1384,6 +1393,39 @@ model StaffUser {
   @@index([ownerUserId, panelType, isActive])
   @@index([tenantId, restaurantId, branchId, isActive])
   @@map("staff_users")
+}
+
+model StaffActivityLog {
+  id             String              @id @default(cuid())
+  ownerUserId    String              @map("owner_user_id")
+  staffUserId    String              @map("staff_user_id")
+  staffEmail     String              @map("staff_email")
+  staffName      String              @map("staff_name")
+  staffRoleId    String?             @map("staff_role_id")
+  staffRoleName  String?             @map("staff_role_name")
+  panelType      StaffPanelType      @map("panel_type")
+  action         StaffActivityAction
+  module         String              @db.VarChar(120)
+  description    String
+  targetType     String?             @map("target_type") @db.VarChar(120)
+  targetId       String?             @map("target_id") @db.VarChar(191)
+  restaurantId   String?             @map("restaurant_id")
+  restaurantName String?             @map("restaurant_name")
+  branchId       String?             @map("branch_id")
+  branchName     String?             @map("branch_name")
+  httpMethod     String?             @map("http_method") @db.VarChar(12)
+  requestPath    String?             @map("request_path") @db.VarChar(500)
+  statusCode     Int?                @map("status_code")
+  ipAddress      String?             @map("ip_address") @db.VarChar(100)
+  userAgent      String?             @map("user_agent") @db.VarChar(500)
+  changedFields  String[]            @default([]) @map("changed_fields")
+  occurredAt     DateTime            @default(now()) @map("occurred_at") @db.Timestamptz
+
+  @@index([ownerUserId, occurredAt], map: "staff_activity_logs_owner_user_id_occurred_at_idx")
+  @@index([ownerUserId, staffUserId, occurredAt], map: "staff_activity_logs_owner_user_id_staff_user_id_occur_idx")
+  @@index([ownerUserId, restaurantId, occurredAt], map: "staff_activity_logs_owner_user_id_restaurant_id_occur_idx")
+  @@index([ownerUserId, action, occurredAt], map: "staff_activity_logs_owner_user_id_action_occurred_at_idx")
+  @@map("staff_activity_logs")
 }
 
 model Deliveryman {

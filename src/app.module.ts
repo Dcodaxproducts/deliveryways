@@ -35,6 +35,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { StaffRolesModule } from './modules/staff-roles/staff-roles.module';
 import { PermissionModulesModule } from './modules/permission-modules/permission-modules.module';
 import { StaffManagementModule } from './modules/staff-management/staff-management.module';
+import { StaffActivityLogsModule } from './modules/staff-activity-logs/staff-activity-logs.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
 import { PosModule } from './modules/pos/pos.module';
@@ -107,6 +108,7 @@ import { AppController } from './app.controller';
     PermissionModulesModule,
     StaffRolesModule,
     StaffManagementModule,
+    StaffActivityLogsModule,
     ChatModule,
     GroupOrdersModule,
     PosModule,
