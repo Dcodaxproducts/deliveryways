@@ -569,6 +569,79 @@ class LandingHomeSettingsDto {
   appDownload?: LandingHomeAppDownloadDto;
 }
 
+class GlobalLegalAddressDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(300)
+  street?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100)
+  shopNumber?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100)
+  postalCode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(200)
+  city?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(200)
+  country?: string;
+}
+
+class GlobalLegalProfileDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(300)
+  ownerName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(300)
+  legalBusinessName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(200)
+  taxNumber?: string;
+
+  @ApiPropertyOptional({ type: GlobalLegalAddressDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GlobalLegalAddressDto)
+  businessAddress?: GlobalLegalAddressDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MaxLength(100000)
+  contractText?: string;
+}
+
 export class LandingPageSettingsDto {
   @ApiPropertyOptional({ example: 'FeastFlow' })
   @IsOptional()
@@ -629,6 +702,12 @@ export class LandingPageSettingsDto {
   @ValidateNested()
   @Type(() => LandingPagePagesDto)
   pages?: LandingPagePagesDto;
+
+  @ApiPropertyOptional({ type: GlobalLegalProfileDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GlobalLegalProfileDto)
+  legalProfile?: GlobalLegalProfileDto;
 
   @ApiPropertyOptional({ type: [LandingPageFaqDto] })
   @IsOptional()

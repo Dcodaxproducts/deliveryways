@@ -79,6 +79,20 @@ const emptyLandingHome = {
   },
 };
 
+const emptyGlobalLegalProfile = {
+  ownerName: null,
+  legalBusinessName: null,
+  taxNumber: null,
+  businessAddress: {
+    street: null,
+    shopNumber: null,
+    postalCode: null,
+    city: null,
+    country: null,
+  },
+  contractText: null,
+};
+
 describe('GlobalSettingsService', () => {
   let service: GlobalSettingsService;
   let repositoryImpl: {
@@ -168,6 +182,7 @@ describe('GlobalSettingsService', () => {
           },
           home: emptyLandingHome,
           pages: emptyLandingPages,
+          legalProfile: emptyGlobalLegalProfile,
           faqs: [],
         },
         paymentMethods: [
@@ -592,6 +607,53 @@ describe('GlobalSettingsService', () => {
       },
     });
     expect(result.data.pages.about.contentEn).toBe('<h2>Story</h2>');
+  });
+
+  it('stores one sanitized global legal profile for all restaurants', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {
+        legalProfile: {
+          ownerName: 'DeliveryWay GmbH',
+          legalBusinessName: 'DeliveryWay GmbH',
+          taxNumber: 'OLD-TAX',
+          businessAddress: { city: 'Berlin' },
+          contractText: '<p>Old legal text</p>',
+        },
+      },
+    });
+    updateSingletonSpy.mockImplementation((update) =>
+      Promise.resolve({
+        scopeKey: 'GLOBAL',
+        landingPageSettings: update.landingPageSettings,
+      }),
+    );
+
+    const result = await service.updateLandingPageSettings(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      {
+        legalProfile: {
+          taxNumber: 'GLOBAL-TAX',
+          businessAddress: { postalCode: '10115' },
+          contractText:
+            '<p onclick="alert(1)">Global legal text</p><script>bad()</script>',
+        },
+      },
+    );
+
+    expect(result.data.legalProfile).toEqual({
+      ownerName: 'DeliveryWay GmbH',
+      legalBusinessName: 'DeliveryWay GmbH',
+      taxNumber: 'GLOBAL-TAX',
+      businessAddress: {
+        street: null,
+        shopNumber: null,
+        postalCode: '10115',
+        city: 'Berlin',
+        country: null,
+      },
+      contractText: '<p>Global legal text</p>',
+    });
   });
 
   it('keeps deprecated platform service charge config available for fallback reads', async () => {
