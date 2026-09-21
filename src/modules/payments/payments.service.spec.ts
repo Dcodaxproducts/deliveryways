@@ -55,6 +55,24 @@ describe('PaymentsService', () => {
       restaurantTransactionFeeAmount?: number;
       vatPercentage?: number;
       vatAmount?: number;
+      billingMonth?: string;
+      billingPeriod?: { from: Date; to: Date };
+      billingPeriodSummary?: {
+        ordersCount: number;
+        totalOrderAmount: number;
+        platformCollectedAmount: number;
+        platformCommissionAmount: number;
+        restaurantTransactionFeeAmount: number;
+        vatAmount: number;
+        previousPayoutAmount: number;
+      };
+      monthlyFeeAmount?: number;
+      monthlyFeeScheduledToDate?: number;
+      monthlyFeeDeductedBefore?: number;
+      monthlyFeeDeductedAmount?: number;
+      monthlyFeeVatAmount?: number;
+      monthlyFeeDeductedThisMonth?: number;
+      monthlyFeeOutstandingAmount?: number;
       previousPayoutAmount?: number;
       totalDeductionsAmount?: number;
       restaurantPayoutAmount: number;
@@ -1681,6 +1699,15 @@ describe('PaymentsService', () => {
         restaurantTransactionFeeAmount: 20,
         vatPercentage: 19,
         vatAmount: 20.9,
+        billingPeriodSummary: {
+          ordersCount: 4,
+          totalOrderAmount: 1400,
+          platformCollectedAmount: 900,
+          platformCommissionAmount: 90,
+          restaurantTransactionFeeAmount: 20,
+          vatAmount: 20.9,
+          previousPayoutAmount: 0,
+        },
         previousPayoutAmount: 0,
         totalDeductionsAmount: 130.9,
         restaurantPayoutAmount: 769.1,
@@ -1783,6 +1810,15 @@ describe('PaymentsService', () => {
       restaurantTransactionFeeAmount: 20,
       vatPercentage: 19,
       vatAmount: 20.9,
+      billingMonth: null,
+      billingPeriod: null,
+      monthlyFeeAmount: null,
+      monthlyFeeScheduledToDate: null,
+      monthlyFeeDeductedBefore: null,
+      monthlyFeeDeductedAmount: null,
+      monthlyFeeVatAmount: null,
+      monthlyFeeDeductedThisMonth: null,
+      monthlyFeeOutstandingAmount: null,
       previousPayoutAmount: 0,
       totalDeductionsAmount: 130.9,
       availablePayoutBalance: 769.1,

@@ -357,6 +357,51 @@ describe('PackagePlansService', () => {
     expect(result.message).toBe('Tenant subscription assigned successfully');
   });
 
+  it('uses the configured subscription end as the first invoice boundary', async () => {
+    const repository = {
+      findTenantById: jest.fn().mockResolvedValue({ id: 'tenant-1' }),
+      findPlanById: jest.fn().mockResolvedValue(makePlan()),
+      findActiveSubscription: jest.fn().mockResolvedValue(null),
+      createSubscription: jest.fn().mockResolvedValue({ id: 'sub-new' }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await service.assignSubscription(superAdmin, {
+      tenantId: 'tenant-1',
+      packagePlanId: 'plan-1',
+      startsAt: '2026-10-01T00:00:00.000Z',
+      endsAt: '2026-10-21T00:00:00.000Z',
+    });
+
+    expect(repository.createSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startsAt: new Date('2026-10-01T00:00:00.000Z'),
+        endsAt: new Date('2026-10-21T00:00:00.000Z'),
+        nextBillingAt: new Date('2026-10-21T00:00:00.000Z'),
+      }),
+    );
+  });
+
+  it('rejects an invoice boundary outside the subscription period', async () => {
+    const repository = {
+      findTenantById: jest.fn().mockResolvedValue({ id: 'tenant-1' }),
+      findPlanById: jest.fn().mockResolvedValue(makePlan()),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    await expect(
+      service.assignSubscription(superAdmin, {
+        tenantId: 'tenant-1',
+        packagePlanId: 'plan-1',
+        startsAt: '2026-10-01T00:00:00.000Z',
+        endsAt: '2026-10-21T00:00:00.000Z',
+        nextBillingAt: '2026-11-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow(
+      'Next billing date cannot be after subscription end date',
+    );
+  });
+
   it('refreshes plan features when switching an existing subscription', async () => {
     const existing = makeSubscription();
     const nextPlan = makePlan({
@@ -484,6 +529,32 @@ describe('PackagePlansService', () => {
       new Date('2026-06-01T00:00:00.000Z'),
       new Date('2026-07-01T00:00:00.000Z'),
     );
+  });
+
+  it('does not generate an invoice before its billing period closes', async () => {
+    const repository = {
+      findSubscriptionById: jest.fn().mockResolvedValue(
+        makeSubscription({
+          startsAt: new Date('2026-10-01T00:00:00.000Z'),
+          nextBillingAt: new Date('2026-11-01T00:00:00.000Z'),
+        }),
+      ),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+    };
+    const invoiceRecordsService = { persist: jest.fn() };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    await expect(
+      service.getSubscriptionInvoice(superAdmin, 'subscription-12345678'),
+    ).rejects.toThrow(
+      'Invoice will be generated after the billing period closes',
+    );
+    expect(invoiceRecordsService.persist).not.toHaveBeenCalled();
   });
 
   it('deducts commission for every successful payment method plus fees and VAT', async () => {
@@ -630,8 +701,83 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('separates current invoice-period totals from lifetime payout history', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: null,
+        settings: null,
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(null),
+      listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          id: 'order-august',
+          totalAmount: new Prisma.Decimal(100),
+          paidAt: new Date('2026-08-20T10:00:00.000Z'),
+          createdAt: new Date('2026-08-20T09:55:00.000Z'),
+          transactions: [
+            {
+              id: 'txn-august',
+              type: PaymentTransactionType.CHARGE,
+              amount: new Prisma.Decimal(100),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 'pi_august',
+              processedAt: new Date('2026-08-20T10:00:00.000Z'),
+            },
+          ],
+        }),
+        makePaidOrder({
+          id: 'order-september',
+          totalAmount: new Prisma.Decimal(100),
+          paidAt: new Date('2026-09-20T10:00:00.000Z'),
+          createdAt: new Date('2026-09-20T09:55:00.000Z'),
+          transactions: [
+            {
+              id: 'txn-september',
+              type: PaymentTransactionType.CHARGE,
+              amount: new Prisma.Decimal(100),
+              currency: 'PKR',
+              paymentMethod: PaymentMethod.STRIPE,
+              providerRef: 'pi_september',
+              processedAt: new Date('2026-09-20T10:00:00.000Z'),
+            },
+          ],
+        }),
+      ]),
+      listRestaurantSpecialPayoutInvoices: jest.fn().mockResolvedValue([]),
+      findRestaurantWalletAccount: jest.fn().mockResolvedValue({
+        balance: new Prisma.Decimal(200),
+        currency: 'PKR',
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getRestaurantPayoutBalanceSummary(
+      'restaurant-1',
+      new Date('2026-09-21T12:00:00.000Z'),
+    );
+
+    expect(result.totalOrderAmount).toBe(200);
+    expect(result.billingPeriod).toEqual({
+      from: new Date('2026-09-01T00:00:00.000Z'),
+      to: new Date('2026-10-01T00:00:00.000Z'),
+    });
+    expect(result.billingPeriodSummary).toMatchObject({
+      ordersCount: 1,
+      totalOrderAmount: 100,
+      platformCollectedAmount: 100,
+    });
+    expect(result.restaurantPayoutAmount).toBe(200);
+  });
+
   it('carries the remaining monthly fee into the current wallet payout', async () => {
     const subscription = makeSubscription({
+      nextBillingAt: new Date('2026-10-01T00:00:00.000Z'),
       planSnapshot: {
         ...makeSubscription().planSnapshot,
         planPrice: 159,
@@ -710,6 +856,9 @@ describe('PackagePlansService', () => {
       restaurantPayoutAmount: 415.5,
       currency: 'PKR',
     });
+    expect(repository.listRestaurantWalletPayoutOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+    );
   });
 
   it('reduces provider-collected payout and commission after a refund', async () => {
@@ -1653,6 +1802,48 @@ describe('PackagePlansService', () => {
     expect(repository.updateSubscription).toHaveBeenCalledWith(
       'subscription-12345678',
       { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
+    );
+  });
+
+  it('expires a subscription after generating its final period invoice', async () => {
+    const subscription = makeSubscription({
+      endsAt: new Date('2026-07-01T00:00:00.000Z'),
+      nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+    const repository = {
+      listDueSubscriptions: jest.fn().mockResolvedValue([subscription]),
+      findSubscriptionById: jest.fn().mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      settleSubscriptionInvoiceFromWallet: jest.fn().mockResolvedValue({
+        appliedAmount: new Prisma.Decimal(0),
+        balanceAfter: new Prisma.Decimal(0),
+        walletAccountId: 'restaurant-wallet-1',
+        walletTransactionId: null,
+      }),
+      updateSubscription: jest.fn().mockResolvedValue(subscription),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasEmailed: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    await service.emailDueSubscriptionInvoices(
+      new Date('2026-07-01T02:00:00.000Z'),
+    );
+
+    expect(repository.updateSubscription).toHaveBeenCalledWith(
+      'subscription-12345678',
+      {
+        nextBillingAt: null,
+        status: SubscriptionStatus.EXPIRED,
+      },
     );
   });
 
