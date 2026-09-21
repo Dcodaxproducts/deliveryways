@@ -233,11 +233,62 @@ export class GlobalSettingsService {
       this.buildDefaultCreateInput(),
     );
     const settings = this.extractLandingPageSettings(data.landingPageSettings);
+    const selectedRestaurants =
+      await this.globalSettingsRepository.findPublicRestaurantsByIds(
+        settings.home.featuredRestaurants.restaurantIds,
+      );
+    const restaurantById = new Map(
+      selectedRestaurants.map((restaurant) => [restaurant.id, restaurant]),
+    );
+    const featuredRestaurantItems = await Promise.all(
+      settings.home.featuredRestaurants.restaurantIds
+        .flatMap((id) => {
+          const restaurant = restaurantById.get(id);
+          return restaurant ? [restaurant] : [];
+        })
+        .map(async (restaurant) => ({
+          id: restaurant.id,
+          name: restaurant.name,
+          logoUrl: await this.storageService.resolveViewUrl(restaurant.logoUrl),
+        })),
+    );
+    const resolvedHome = {
+      ...settings.home,
+      hero: {
+        ...settings.home.hero,
+        imageUrl: await this.storageService.resolveViewUrl(
+          settings.home.hero.imageUrl,
+        ),
+      },
+      featuredRestaurants: {
+        ...settings.home.featuredRestaurants,
+        items: featuredRestaurantItems,
+      },
+      growth: {
+        ...settings.home.growth,
+        imageUrl: await this.storageService.resolveViewUrl(
+          settings.home.growth.imageUrl,
+        ),
+      },
+      orderManagement: {
+        ...settings.home.orderManagement,
+        imageUrl: await this.storageService.resolveViewUrl(
+          settings.home.orderManagement.imageUrl,
+        ),
+      },
+      appDownload: {
+        ...settings.home.appDownload,
+        backgroundImageUrl: await this.storageService.resolveViewUrl(
+          settings.home.appDownload.backgroundImageUrl,
+        ),
+      },
+    };
 
     return {
       data: {
         ...settings,
         logoUrl: await this.storageService.resolveViewUrl(settings.logoUrl),
+        home: resolvedHome,
         faqs: settings.faqs.filter((faq) => faq.isActive),
       },
       message: 'Landing page settings fetched successfully',

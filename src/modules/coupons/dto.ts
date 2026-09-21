@@ -9,6 +9,7 @@ import {
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -42,6 +43,18 @@ export class CouponInputDto {
   @IsOptional()
   @IsEnum(CouponAudience)
   audience?: CouponAudience;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    isArray: true,
+    default: [OrderType.DELIVERY, OrderType.TAKEAWAY, OrderType.DINE_IN],
+    description: 'Fulfillment types allowed to use this campaign',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(OrderType, { each: true })
+  allowedOrderTypes?: OrderType[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -204,6 +217,11 @@ export class ValidateCouponDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   subtotal!: number;
+
+  @ApiPropertyOptional({ enum: OrderType })
+  @IsOptional()
+  @IsEnum(OrderType)
+  orderType?: OrderType;
 
   @ApiProperty({ description: 'Optional for scoped coupon checks' })
   @IsOptional()

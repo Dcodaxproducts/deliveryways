@@ -709,17 +709,18 @@ export class BranchesService {
     await this.assertBranchAccess(user, branch);
 
     const [address] = await this.branchesRepository.listBranchAddresses([id]);
+    const branchAdmin = branch.manager ?? branch.users?.[0] ?? null;
 
     return {
       data: await this.withBranchDeletionState({
         ...this.withVisibleBranchSettings(user, branch),
-        branchAdmin: branch.manager
+        branchAdmin: branchAdmin
           ? {
-              id: branch.manager.id,
-              email: branch.manager.email,
-              firstName: branch.manager.profile?.firstName ?? '',
-              lastName: branch.manager.profile?.lastName ?? '',
-              phone: branch.manager.profile?.phone ?? '',
+              id: branchAdmin.id,
+              email: branchAdmin.email,
+              firstName: branchAdmin.profile?.firstName ?? '',
+              lastName: branchAdmin.profile?.lastName ?? '',
+              phone: branchAdmin.profile?.phone ?? '',
             }
           : null,
         address: address

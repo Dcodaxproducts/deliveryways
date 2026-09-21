@@ -3141,6 +3141,91 @@ describe('OrdersService - deliveryman order access', () => {
   });
 });
 
+describe('OrdersService - automatic acceptance', () => {
+  const makeService = () => {
+    const ordersRepository = {
+      findById: jest.fn(),
+      confirmPlacedOrder: jest.fn(),
+    };
+    const notificationsService = {
+      notifyOrderStatusChanged: jest.fn(),
+    };
+    const chatService = {
+      syncDeliveryThreadForOrderLifecycle: jest.fn(),
+    };
+    const realtimeService = { emitTrackingUpdate: jest.fn() };
+    const service = new OrdersService(
+      {} as never,
+      ordersRepository as never,
+      {} as never,
+      notificationsService as never,
+      chatService as never,
+      realtimeService as never,
+    );
+
+    return {
+      service,
+      ordersRepository,
+      notificationsService,
+      chatService,
+    };
+  };
+
+  it('confirms a placed order when branch automatic acceptance is enabled', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-21T10:00:00.000Z'));
+    const { service, ordersRepository, notificationsService, chatService } =
+      makeService();
+    const placedOrder = {
+      id: 'order-1',
+      status: OrderStatus.PLACED,
+      isScheduled: false,
+      orderTime: null,
+      branch: {
+        settings: {
+          automation: { autoAcceptOrders: true, estimatedPrepTime: 20 },
+        },
+      },
+    };
+    ordersRepository.findById.mockResolvedValue(placedOrder);
+    ordersRepository.confirmPlacedOrder.mockResolvedValue({
+      ...placedOrder,
+      status: OrderStatus.CONFIRMED,
+    });
+
+    await expect(service.autoAcceptPlacedOrder('order-1')).resolves.toEqual(
+      expect.objectContaining({ status: OrderStatus.CONFIRMED }),
+    );
+
+    expect(ordersRepository.confirmPlacedOrder).toHaveBeenCalledWith(
+      'order-1',
+      new Date('2026-09-21T10:20:00.000Z'),
+    );
+    expect(notificationsService.notifyOrderStatusChanged).toHaveBeenCalledWith(
+      'order-1',
+    );
+    expect(
+      chatService.syncDeliveryThreadForOrderLifecycle,
+    ).toHaveBeenCalledWith('order-1', OrderStatus.CONFIRMED);
+    jest.useRealTimers();
+  });
+
+  it('leaves placed orders unchanged when automatic acceptance is disabled', async () => {
+    const { service, ordersRepository, notificationsService } = makeService();
+    ordersRepository.findById.mockResolvedValue({
+      id: 'order-1',
+      status: OrderStatus.PLACED,
+      branch: { settings: { automation: { autoAcceptOrders: false } } },
+    });
+
+    await expect(service.autoAcceptPlacedOrder('order-1')).resolves.toBeNull();
+
+    expect(ordersRepository.confirmPlacedOrder).not.toHaveBeenCalled();
+    expect(
+      notificationsService.notifyOrderStatusChanged,
+    ).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrdersService - order reviews', () => {
   const makeService = () => {
     const ordersRepository = {
@@ -6005,6 +6090,11 @@ describe('OrdersService - wallet payment', () => {
         loyaltyDiscountAmount: new Prisma.Decimal(0),
         walletAppliedAmount: new Prisma.Decimal(0),
         totalAmount: new Prisma.Decimal(500),
+      }),
+      findById: jest.fn().mockResolvedValue({
+        id: 'order-1',
+        status: OrderStatus.PLACED,
+        branch: { settings: { automation: { autoAcceptOrders: false } } },
       }),
     };
     const prisma = {

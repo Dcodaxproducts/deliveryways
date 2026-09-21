@@ -33,6 +33,12 @@ export class ListPackagePlansDto extends AdminListQueryDto {
   @IsOptional()
   @IsEnum(PackageBillingModel)
   billingModel?: PackageBillingModel;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  landingOnly?: boolean;
 }
 
 export class CreatePackagePlanDto {
@@ -150,6 +156,11 @@ export class CreatePackagePlanDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  showOnLanding?: boolean;
 }
 
 export class UpdatePackagePlanDto {
@@ -164,6 +175,11 @@ export class UpdatePackagePlanDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  showOnLanding?: boolean;
 
   @ApiPropertyOptional({ enum: PackageBillingModel })
   @IsOptional()

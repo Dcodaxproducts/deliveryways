@@ -30,4 +30,13 @@ export class GlobalSettingsRepository {
       create,
     });
   }
+
+  async findPublicRestaurantsByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+
+    return this.prisma.restaurant.findMany({
+      where: { id: { in: ids }, deletedAt: null, isActive: true },
+      select: { id: true, name: true, logoUrl: true },
+    });
+  }
 }

@@ -549,6 +549,8 @@ export class OrdersService {
       );
     }
 
+    let responseData = data;
+
     if (data.status === OrderStatus.PLACED) {
       const placedFromPos = user.role !== UserRoleEnum.CUSTOMER;
 
@@ -572,10 +574,19 @@ export class OrdersService {
           error instanceof Error ? error.stack : String(error),
         );
       }
+
+      const autoAcceptedOrder = await this.autoAcceptPlacedOrder(data.id);
+      if (autoAcceptedOrder) {
+        responseData = {
+          ...data,
+          status: autoAcceptedOrder.status,
+          orderTime: autoAcceptedOrder.orderTime,
+        };
+      }
     }
 
     return {
-      data: this.toOrderMutationResponse(data),
+      data: this.toOrderMutationResponse(responseData),
       message: 'Order created successfully',
     };
   }
@@ -812,6 +823,47 @@ export class OrdersService {
       data: this.toOrderMutationResponse(data),
       message: 'Order status updated successfully',
     };
+  }
+
+  async autoAcceptPlacedOrder(id: string) {
+    const order = await this.ordersRepository.findById(id);
+
+    if (!order || order.status !== OrderStatus.PLACED) {
+      return null;
+    }
+
+    const settings = this.asRecord(order.branch.settings);
+    const automation = this.asRecord(settings.automation);
+    if (automation.autoAcceptOrders !== true) {
+      return null;
+    }
+
+    const configuredMinutes = Number(automation.estimatedPrepTime);
+    const estimatedPrepTime =
+      Number.isFinite(configuredMinutes) && configuredMinutes >= 0
+        ? Math.trunc(configuredMinutes)
+        : 30;
+    const acceptedOrderTime =
+      order.isScheduled && order.orderTime
+        ? order.orderTime
+        : new Date(Date.now() + estimatedPrepTime * 60_000);
+    const confirmed = await this.ordersRepository.confirmPlacedOrder(
+      id,
+      acceptedOrderTime,
+    );
+
+    if (!confirmed) {
+      return null;
+    }
+
+    await this.notificationsService.notifyOrderStatusChanged(id);
+    await this.chatService.syncDeliveryThreadForOrderLifecycle(
+      id,
+      OrderStatus.CONFIRMED,
+    );
+    await this.emitTrackingUpdate(id);
+
+    return confirmed;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1571,6 +1623,7 @@ export class OrdersService {
       customerId: customer.customerId,
       customerIsGuest: customer.isGuest,
       isScheduledOrder: dto.isScheduled === true,
+      orderType: dto.orderType as OrderType,
       subtotal: Number(subtotal),
       menuItemIds: pricedLines.map((line) => line.menuItemId),
       categoryIds: [

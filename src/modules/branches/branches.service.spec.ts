@@ -1236,6 +1236,57 @@ describe('BranchesService', () => {
     );
   });
 
+  it('returns the assigned active branch admin when legacy managerId is missing', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      settings: null,
+      isActive: true,
+      deletedAt: null,
+      managerId: null,
+      manager: null,
+      users: [
+        {
+          id: 'legacy-branch-admin',
+          email: 'branch.admin@example.com',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          isActive: true,
+          profile: {
+            firstName: 'Branch',
+            lastName: 'Administrator',
+            phone: '+49 30 123456',
+          },
+        },
+      ],
+      restaurant: { id: 'restaurant-1' },
+    });
+    repository.listBranchAddresses.mockResolvedValue([]);
+
+    const result = await service.details(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-2',
+    );
+
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        branchAdmin: {
+          id: 'legacy-branch-admin',
+          email: 'branch.admin@example.com',
+          firstName: 'Branch',
+          lastName: 'Administrator',
+          phone: '+49 30 123456',
+        },
+      }),
+    );
+  });
+
   it('allows super admin to fetch all branches without restaurant filter', async () => {
     const { service, repository } = makeService();
     repository.listByRestaurant.mockResolvedValue({ items: [], total: 0 });

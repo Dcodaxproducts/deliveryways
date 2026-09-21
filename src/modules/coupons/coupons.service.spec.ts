@@ -25,6 +25,11 @@ describe('CouponsService', () => {
     title: '20% Off',
     description: null,
     audience: CouponAudience.BOTH,
+    allowedOrderTypes: [
+      OrderType.DELIVERY,
+      OrderType.TAKEAWAY,
+      OrderType.DINE_IN,
+    ],
     status: CouponStatus.ACTIVE,
     applyMode: CouponApplyMode.SCOPED_ITEMS,
     autoApply: false,
@@ -215,6 +220,29 @@ describe('CouponsService', () => {
     const result = await service.validateForCheckout(baseInput);
 
     expect(Number(result.discountAmount)).toBe(100);
+  });
+
+  it('allows a pickup-only promotion for takeaway orders', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({ allowedOrderTypes: [OrderType.TAKEAWAY] }),
+    );
+
+    const result = await service.validateForCheckout(baseInput);
+
+    expect(Number(result.discountAmount)).toBe(100);
+  });
+
+  it('rejects a pickup-only promotion for delivery orders', async () => {
+    repository.findByCode!.mockResolvedValue(
+      makeCoupon({ allowedOrderTypes: [OrderType.TAKEAWAY] }),
+    );
+
+    await expect(
+      service.validateForCheckout({
+        ...baseInput,
+        orderType: OrderType.DELIVERY,
+      }),
+    ).rejects.toThrow('Coupon is not available for this order type');
   });
 
   it('rejects a registered-only coupon for a guest customer', async () => {
