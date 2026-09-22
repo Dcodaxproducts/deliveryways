@@ -2334,6 +2334,7 @@ model WinOrderConnection {
   storeId                  Int?      @map("store_id")
   storeName                String?   @map("store_name") @db.VarChar(191)
   isEnabled                Boolean   @default(true) @map("is_enabled")
+  orderExportCutoffAt      DateTime  @default(now()) @map("order_export_cutoff_at") @db.Timestamptz
   lastPollAt               DateTime? @map("last_poll_at") @db.Timestamptz
   lastSuccessfulCallbackAt DateTime? @map("last_successful_callback_at") @db.Timestamptz
   lastErrorAt              DateTime? @map("last_error_at") @db.Timestamptz

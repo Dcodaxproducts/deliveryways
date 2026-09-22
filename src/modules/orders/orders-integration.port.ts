@@ -96,6 +96,7 @@ export interface OrdersIntegrationPort {
   listExportCandidates(
     scope: IntegrationScope,
     limit: number,
+    createdFrom: Date,
   ): Promise<IntegrationOrder[]>;
   applyStatus(input: ApplyIntegrationOrderStatusInput): Promise<void>;
 }

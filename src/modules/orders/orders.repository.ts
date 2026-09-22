@@ -76,6 +76,7 @@ export class OrdersRepository {
   async findIntegrationExportCandidates(
     scope: IntegrationScope,
     limit: number,
+    createdFrom: Date,
   ) {
     return this.prisma.order.findMany({
       where: {
@@ -83,6 +84,7 @@ export class OrdersRepository {
         restaurantId: scope.restaurantId,
         branchId: scope.branchId,
         status: { in: [OrderStatus.PLACED, OrderStatus.CONFIRMED] },
+        createdAt: { gte: createdFrom },
         winOrderExports: {
           none: { state: WinOrderExportState.ACKNOWLEDGED },
         },

@@ -115,6 +115,7 @@ export class WinOrderConnectionRepository {
       storeId: true,
       storeName: true,
       isEnabled: true,
+      orderExportCutoffAt: true,
       lastPollAt: true,
       lastSuccessfulCallbackAt: true,
       lastErrorAt: true,
