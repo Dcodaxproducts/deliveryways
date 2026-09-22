@@ -16,15 +16,15 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 
 ## Current Release Summary
 
-| Area                                    | Implementation       | Staging                                                                                 | Production                            |
-| --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
-| Core platform/API parity                | Completed            | Deployed                                                                                | Deployment status varies by release   |
-| Partner admin improvements              | Completed and pushed | Dashboard/menu, menu/orders, and metric-density refinements deployed and verified          | Latest UI consistency release pending |
-| Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                                  | Latest UI consistency release pending |
-| Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
-| Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
-| Validated Staging issues batch 1        | Completed and pushed | Deployed and fully accepted; persisted-scope follow-up `c7e667e` verified               | Not deployed                          |
-| Cross-app auth viewport fit             | Completed and pushed | Pending deployment                                                                      | Pending deployment                    |
+| Area                                    | Implementation       | Staging                                                                           | Production                            |
+| --------------------------------------- | -------------------- | --------------------------------------------------------------------------------- | ------------------------------------- |
+| Core platform/API parity                | Completed            | Deployed                                                                          | Deployment status varies by release   |
+| Partner admin improvements              | Completed and pushed | Dashboard/menu, menu/orders, and metric-density refinements deployed and verified | Latest UI consistency release pending |
+| Superadmin improvements                 | Completed            | Latest UI consistency release deployed                                            | Latest UI consistency release pending |
+| Customer storefront                     | Live and validated   | Menu fetching verified                                                            | Existing Production release live      |
+| Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                             | Pending deployment                    |
+| Validated Staging issues batch 1        | Completed and pushed | Deployed and fully accepted; persisted-scope follow-up `c7e667e` verified         | Not deployed                          |
+| Cross-app auth viewport fit             | Completed and pushed | Pending deployment                                                                | Pending deployment                    |
 
 Latest UI consistency commits deployed to Staging:
 
@@ -348,3 +348,14 @@ The cumulative commit was deployed to Staging on 2026-09-17 as immutable non-roo
 ## Maintenance Rule
 
 Update this document when a major capability, product area, deployment state, or open risk changes. Do not add individual spacing tweaks, copy edits, single test cases, image hashes, or routine commit details unless they materially change release status.
+
+## Storefront Ordering and Deal-ticket Clarity — 22 September 2026
+
+Status: verified and pushed; Staging rollout in progress. Production unchanged.
+
+- Customer category cards now follow the same configured ascending category order shown in Partner Admin, including paginated menus.
+- Partner HTML and ESC/POS tickets now render grouped deal components from the canonical `displayItems` response and add a visible `DEAL: Deal` boundary before the first component.
+- WinOrder retains exact main-article names and numbers while adding a supported comment-only `Deal-Artikel` marker to deal components, protecting productive article matching while making deal context visible.
+- The changes are cumulative with the 22 September authentication viewport improvements already present on the same Partner and Customer branches.
+
+Release commits: Platform API `682ac77`, Partner `d589aee`, Customer `4d41a11`.
