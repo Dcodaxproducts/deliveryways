@@ -361,3 +361,5 @@ Status: deployed and verified on Staging. Production unchanged.
 Release commits: Platform API `682ac77`, Partner `d589aee`, Customer `4d41a11`.
 
 Staging runs cumulative immutable images from Platform API `581dc4c`, Partner `d589aee`, and Customer `4d41a11`. The rollout passed restore-tested backup, committed migrations, health checks, official localhost smoke tests, three public HTTPS rounds, live category-order verification, and zero-restart/error-log checks. PostgreSQL and Superadmin containers remained unchanged. Release manifest: `/opt/feastflow/releases/staging/20260922T074042Z.env`.
+
+WinOrder historical-replay protection is deployed on Staging in Platform API `b3e2b3b`. A persisted per-connection cutoff now excludes pre-cutover orders inside the database query before pagination while retaining retries for new unacknowledged orders. The API-only rollout passed the 119-migration assertion, restore-tested backup, full smoke and public health checks, and clean restart/log checks. Release manifest: `/opt/feastflow/releases/staging/20260922T081209Z.env`.
