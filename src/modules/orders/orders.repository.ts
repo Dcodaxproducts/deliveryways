@@ -6,6 +6,7 @@ import {
   PaymentTransactionType,
   Prisma,
   PrismaClient,
+  WinOrderExportState,
 } from '@prisma/client';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
@@ -81,7 +82,10 @@ export class OrdersRepository {
         tenantId: scope.tenantId,
         restaurantId: scope.restaurantId,
         branchId: scope.branchId,
-        status: OrderStatus.PLACED,
+        status: { in: [OrderStatus.PLACED, OrderStatus.CONFIRMED] },
+        winOrderExports: {
+          none: { state: WinOrderExportState.ACKNOWLEDGED },
+        },
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit,

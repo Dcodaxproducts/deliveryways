@@ -134,6 +134,9 @@ export class WinOrderPollingService {
           Price: 0,
         };
       });
+      if (item.dealId) {
+        subArticles.unshift({ Comment: 'Deal-Artikel', Count: 1 });
+      }
       if (item.note) {
         subArticles.push({ Comment: item.note, Count: 1 });
       }
