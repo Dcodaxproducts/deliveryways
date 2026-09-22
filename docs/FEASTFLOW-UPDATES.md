@@ -373,3 +373,11 @@ Superadmin commit `7c40e83` brings the overview dashboard into the Partner compa
 The analytics layout now keeps side panels full-width at tablet sizes and enters the three-column composition only on desktop, while range controls retain compact button sizing at every breakpoint. Browser acceptance passed at 1440×900, 1024×768, and 390×844 with six consistent metric cards, compact controls, and no horizontal overflow. Lint, TypeScript, 13 suites / 31 tests, and the 30-route Production build passed.
 
 The cumulative Superadmin commit `7c40e83` was deployed to Staging as immutable image `sha256:c4480f6c84f800393d27ab7a7e7aa0a582f5f5d346e7f870f620800ef966f452`. Only Superadmin was recreated; API, PostgreSQL, Partner, Customer, and Production remained unchanged. The Staging container is healthy with zero restarts, the official four-service smoke suite passed, three public HTTPS probe rounds passed, and recent Superadmin logs are clean. Release manifest: `/opt/feastflow/releases/staging/20260922T112913Z.env`.
+
+## Superadmin Restaurants and Global Settings Refinement — 22 September 2026
+
+Status: pushed, not deployed. Staging remains on Superadmin `7c40e83`; Production is unchanged.
+
+Superadmin commit `a7fa161` removes vertical movement from dashboard metric and system-health card hover states, retaining only stable color and border feedback. The Restaurants directory now uses a compact desktop table, clearer result hierarchy, responsive filters and actions, an inline retry state, and dedicated mobile restaurant cards so domains and controls remain readable without horizontal scrolling. Global Settings is split into five focused task sections—General defaults, Landing Page Settings, Payments, Restaurant payouts, and Tax Types—while preserving the existing data, permissions, mutations, and save behavior.
+
+Browser acceptance passed at 1440×900, 1024×768, and 390×844. Dashboard card geometry remained unchanged before and after hover, all six metric cards rendered at every viewport, all five Global Settings sections switched successfully, and the Restaurants and Settings pages had no document-level horizontal overflow. Lint, TypeScript, 14 suites / 33 tests, and the 30-route Production build passed.
