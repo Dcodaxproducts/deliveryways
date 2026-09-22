@@ -376,8 +376,10 @@ The cumulative Superadmin commit `7c40e83` was deployed to Staging as immutable 
 
 ## Superadmin Restaurants and Global Settings Refinement — 22 September 2026
 
-Status: pushed, not deployed. Staging remains on Superadmin `7c40e83`; Production is unchanged.
+Status: deployed and verified on Staging. Production unchanged.
 
 Superadmin commit `a7fa161` removes vertical movement from dashboard metric and system-health card hover states, retaining only stable color and border feedback. The Restaurants directory now uses a compact desktop table, clearer result hierarchy, responsive filters and actions, an inline retry state, and dedicated mobile restaurant cards so domains and controls remain readable without horizontal scrolling. Global Settings is split into five focused task sections—General defaults, Landing Page Settings, Payments, Restaurant payouts, and Tax Types—while preserving the existing data, permissions, mutations, and save behavior.
 
 Browser acceptance passed at 1440×900, 1024×768, and 390×844. Dashboard card geometry remained unchanged before and after hover, all six metric cards rendered at every viewport, all five Global Settings sections switched successfully, and the Restaurants and Settings pages had no document-level horizontal overflow. Lint, TypeScript, 14 suites / 33 tests, and the 30-route Production build passed.
+
+The cumulative Superadmin commit `a7fa161` was deployed to Staging as immutable image `sha256:a01261eafe79917183b05e7a026f6de5c4d5a61b69db5e6b7915f7b14c63beb6`. Only Superadmin was recreated; API, PostgreSQL, Partner, Customer, and Production remained unchanged. The official four-service smoke suite and three public HTTPS probe rounds passed, the Superadmin container is healthy with zero restarts, and recent logs are clean. Release manifest: `/opt/feastflow/releases/staging/20260922T123520Z.env`.
