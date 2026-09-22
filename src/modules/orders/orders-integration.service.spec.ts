@@ -88,7 +88,11 @@ describe('OrdersIntegrationService', () => {
       },
     ]);
 
-    const result = await service.listExportCandidates(scope, 25);
+    const result = await service.listExportCandidates(
+      scope,
+      25,
+      new Date('2026-09-22T08:00:00.000Z'),
+    );
 
     expect(result[0]).toEqual(
       expect.objectContaining({
@@ -142,7 +146,11 @@ describe('OrdersIntegrationService', () => {
       },
     ]);
 
-    const result = await service.listExportCandidates(scope, 25);
+    const result = await service.listExportCandidates(
+      scope,
+      25,
+      new Date('2026-09-22T08:00:00.000Z'),
+    );
 
     expect(result[0].paymentFeeAmount).toBe(0);
   });

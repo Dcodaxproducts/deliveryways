@@ -1,4 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { PaymentMethod, WinOrderCatalogMappingType } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import {
@@ -40,9 +44,13 @@ export class WinOrderPollingService {
       restaurantId: machine.restaurantId,
       branchId: machine.branchId,
     };
-    const [connection, candidates, mappingSet] = await Promise.all([
-      this.connections.findByBranch(scope),
-      this.orders.listExportCandidates(scope, 25),
+    const connection = await this.connections.findByBranch(scope);
+    const [candidates, mappingSet] = await Promise.all([
+      this.orders.listExportCandidates(
+        scope,
+        25,
+        connection?.orderExportCutoffAt ?? new Date(),
+      ),
       this.mappings.list(scope, machine.connectionId),
     ]);
     const leaseToken = randomBytes(16).toString('hex');
@@ -228,7 +236,9 @@ export class WinOrderPollingService {
     key: string,
   ): CatalogMapping {
     const mapping = mappings.get(`${type}:${key}`);
-    if (!mapping) throw new Error(`Missing catalog mapping: ${key}`);
+    if (!mapping) {
+      throw new UnprocessableEntityException(`Missing catalog mapping: ${key}`);
+    }
     return mapping;
   }
 
@@ -247,7 +257,9 @@ export class WinOrderPollingService {
       return WINORDER_ONLINE_PAYMENT_TYPE;
     }
 
-    throw new Error(`Missing payment mapping: ${order.paymentMethod}`);
+    throw new UnprocessableEntityException(
+      `Missing payment mapping: ${order.paymentMethod}`,
+    );
   }
 
   private deliverType(orderType: IntegrationOrder['orderType']) {

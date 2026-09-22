@@ -64,13 +64,16 @@ describe('WinOrderPollingService', () => {
   };
 
   it('emits the official OrderList envelope with mapped articles', async () => {
+    const orderExportCutoffAt = new Date('2026-09-22T08:00:00.000Z');
     const orders = {
       listExportCandidates: jest.fn().mockResolvedValue([order]),
     };
     const connections = {
-      findByBranch: jest
-        .fn()
-        .mockResolvedValue({ storeId: 4, storeName: 'Main' }),
+      findByBranch: jest.fn().mockResolvedValue({
+        storeId: 4,
+        storeName: 'Main',
+        orderExportCutoffAt,
+      }),
     };
     const mappings = {
       list: jest.fn().mockResolvedValue({
@@ -105,6 +108,16 @@ describe('WinOrderPollingService', () => {
     );
 
     const result = await service.getNewOrders(machine);
+
+    expect(orders.listExportCandidates).toHaveBeenCalledWith(
+      {
+        tenantId: machine.tenantId,
+        restaurantId: machine.restaurantId,
+        branchId: machine.branchId,
+      },
+      25,
+      orderExportCutoffAt,
+    );
 
     const payload = result.OrderList.Order[0] as {
       OrderID: string;

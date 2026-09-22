@@ -1,0 +1,2 @@
+ALTER TABLE "winorder_connections"
+ADD COLUMN "order_export_cutoff_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;

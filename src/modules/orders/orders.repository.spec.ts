@@ -45,6 +45,7 @@ type OrderCountArgs = {
 type IntegrationOrderFindManyArgs = {
   where: {
     status: { in: OrderStatus[] };
+    createdAt: { gte: Date };
     winOrderExports: {
       none: { state: string };
     };
@@ -65,11 +66,12 @@ describe('OrdersRepository', () => {
     jest.useRealTimers();
   });
 
-  it('keeps auto-accepted orders eligible for integration export', async () => {
+  it('keeps new auto-accepted orders eligible without replaying orders before the cutoff', async () => {
     const findMany = jest
       .fn<Promise<unknown[]>, [IntegrationOrderFindManyArgs]>()
       .mockResolvedValue([]);
     const repository = new OrdersRepository({ order: { findMany } } as never);
+    const exportCutoff = new Date('2026-09-22T08:00:00.000Z');
 
     await repository.findIntegrationExportCandidates(
       {
@@ -78,6 +80,7 @@ describe('OrdersRepository', () => {
         branchId: 'branch-1',
       },
       25,
+      exportCutoff,
     );
 
     const [query] = findMany.mock.calls[0];
@@ -87,6 +90,7 @@ describe('OrdersRepository', () => {
       OrderStatus.CONFIRMED,
     ]);
     expect(query.where.winOrderExports.none.state).toBe('ACKNOWLEDGED');
+    expect(query.where.createdAt.gte).toEqual(exportCutoff);
   });
 
   it('stores the prior status when cancelling an order', async () => {

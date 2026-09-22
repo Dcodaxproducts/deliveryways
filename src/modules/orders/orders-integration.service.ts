@@ -37,10 +37,12 @@ export class OrdersIntegrationService implements OrdersIntegrationPort {
   async listExportCandidates(
     scope: IntegrationScope,
     limit: number,
+    createdFrom: Date,
   ): Promise<IntegrationOrder[]> {
     const orders = await this.ordersRepository.findIntegrationExportCandidates(
       scope,
       Math.min(Math.max(limit, 1), 100),
+      createdFrom,
     );
 
     return orders.map((order) => ({
