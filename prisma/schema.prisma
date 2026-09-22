@@ -1563,13 +1563,13 @@ model Order {
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                   DateTime           @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  restaurant          Restaurant           @relation(fields: [restaurantId], references: [id])
-  branch              Branch               @relation(fields: [branchId], references: [id])
-  customer            User                 @relation("OrderCustomer", fields: [customerId], references: [id])
-  coupon              Coupon?              @relation(fields: [couponId], references: [id])
-  deliveryAddress     Address?             @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
-  deliveryman         Deliveryman?         @relation(fields: [deliverymanId], references: [id])
+  tenant              Tenant                @relation(fields: [tenantId], references: [id])
+  restaurant          Restaurant            @relation(fields: [restaurantId], references: [id])
+  branch              Branch                @relation(fields: [branchId], references: [id])
+  customer            User                  @relation("OrderCustomer", fields: [customerId], references: [id])
+  coupon              Coupon?               @relation(fields: [couponId], references: [id])
+  deliveryAddress     Address?              @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  deliveryman         Deliveryman?          @relation(fields: [deliverymanId], references: [id])
   items               OrderItem[]
   couponUsages        CouponUsage[]
   transactions        PaymentTransaction[]
@@ -1577,8 +1577,9 @@ model Order {
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
   chatThreads         ChatThread[]
-  sourceGroupOrder    GroupOrderSession?   @relation("GroupOrderFinalOrder")
+  sourceGroupOrder    GroupOrderSession?    @relation("GroupOrderFinalOrder")
   review              OrderReview?
+  winOrderExports     WinOrderOrderExport[]
 
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
@@ -2411,6 +2412,7 @@ model WinOrderOrderExport {
   updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
   connection   WinOrderConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  order        Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
   statusEvents WinOrderStatusEvent[]
 
   @@unique([connectionId, orderId])

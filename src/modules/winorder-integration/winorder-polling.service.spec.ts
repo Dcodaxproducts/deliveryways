@@ -555,6 +555,60 @@ describe('WinOrderPollingService', () => {
     );
   });
 
+  it('marks deal components without changing WinOrder article matching', async () => {
+    const dealOrder: IntegrationOrder = {
+      ...order,
+      serviceChargeAmount: 0,
+      items: [
+        {
+          ...order.items[0],
+          dealId: 'deal-1',
+          note: 'Well done',
+        },
+      ],
+    };
+    const orders = {
+      listExportCandidates: jest.fn().mockResolvedValue([dealOrder]),
+    };
+    const connections = { findByBranch: jest.fn().mockResolvedValue({}) };
+    const mappings = {
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const exports = {
+      lease: jest.fn().mockResolvedValue(new Set(['order-1'])),
+      markFailed: jest.fn(),
+    };
+    const service = new WinOrderPollingService(
+      orders as never,
+      connections as never,
+      mappings as never,
+      exports as never,
+    );
+
+    const result = await service.getNewOrders(machine);
+    const payload = result.OrderList.Order[0] as {
+      ArticleList: {
+        Article: Array<{
+          ArticleName: string;
+          SubArticleList?: {
+            SubArticle: Array<{ Comment?: string; Count: number }>;
+          };
+        }>;
+      };
+    };
+    const article = payload.ArticleList.Article[0];
+
+    expect(article.ArticleName).toBe('Pizza');
+    expect(article.SubArticleList?.SubArticle).toEqual([
+      { Comment: 'Deal-Artikel', Count: 1 },
+      { Comment: 'Well done', Count: 1 },
+    ]);
+    expect(exports.markFailed).not.toHaveBeenCalled();
+  });
+
   it('keeps unsupported unmapped payments retryable', async () => {
     const orders = {
       listExportCandidates: jest.fn().mockResolvedValue([

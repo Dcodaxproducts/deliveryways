@@ -42,6 +42,15 @@ type OrderCountArgs = {
   where?: OrderSearchWhere;
 };
 
+type IntegrationOrderFindManyArgs = {
+  where: {
+    status: { in: OrderStatus[] };
+    winOrderExports: {
+      none: { state: string };
+    };
+  };
+};
+
 type OrderUpdateArgs = {
   where: { id: string };
   data: {
@@ -54,6 +63,30 @@ type OrderUpdateArgs = {
 describe('OrdersRepository', () => {
   beforeEach(() => {
     jest.useRealTimers();
+  });
+
+  it('keeps auto-accepted orders eligible for integration export', async () => {
+    const findMany = jest
+      .fn<Promise<unknown[]>, [IntegrationOrderFindManyArgs]>()
+      .mockResolvedValue([]);
+    const repository = new OrdersRepository({ order: { findMany } } as never);
+
+    await repository.findIntegrationExportCandidates(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      },
+      25,
+    );
+
+    const [query] = findMany.mock.calls[0];
+
+    expect(query.where.status.in).toEqual([
+      OrderStatus.PLACED,
+      OrderStatus.CONFIRMED,
+    ]);
+    expect(query.where.winOrderExports.none.state).toBe('ACKNOWLEDGED');
   });
 
   it('stores the prior status when cancelling an order', async () => {
