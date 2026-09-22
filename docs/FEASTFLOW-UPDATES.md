@@ -351,7 +351,7 @@ Update this document when a major capability, product area, deployment state, or
 
 ## Storefront Ordering and Deal-ticket Clarity — 22 September 2026
 
-Status: verified and pushed; Staging rollout in progress. Production unchanged.
+Status: deployed and verified on Staging. Production unchanged.
 
 - Customer category cards now follow the same configured ascending category order shown in Partner Admin, including paginated menus.
 - Partner HTML and ESC/POS tickets now render grouped deal components from the canonical `displayItems` response and add a visible `DEAL: Deal` boundary before the first component.
@@ -359,3 +359,5 @@ Status: verified and pushed; Staging rollout in progress. Production unchanged.
 - The changes are cumulative with the 22 September authentication viewport improvements already present on the same Partner and Customer branches.
 
 Release commits: Platform API `682ac77`, Partner `d589aee`, Customer `4d41a11`.
+
+Staging runs cumulative immutable images from Platform API `581dc4c`, Partner `d589aee`, and Customer `4d41a11`. The rollout passed restore-tested backup, committed migrations, health checks, official localhost smoke tests, three public HTTPS rounds, live category-order verification, and zero-restart/error-log checks. PostgreSQL and Superadmin containers remained unchanged. Release manifest: `/opt/feastflow/releases/staging/20260922T074042Z.env`.

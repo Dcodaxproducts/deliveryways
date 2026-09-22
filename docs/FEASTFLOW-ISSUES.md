@@ -145,7 +145,7 @@ Add reported problems here only after recording their evidence and classificatio
 
 **Reported DeliveryWay parity issues:** customer categories ignored the configured Admin order; auto-accepted orders were no longer visible to WinOrder polling; deal components were not identified in WinOrder or printed tickets.
 
-**FeastFlow status:** fixed, verified, and pushed; Staging rollout in progress. Production unchanged.
+**FeastFlow status:** fixed, verified, and deployed to Staging. Production unchanged.
 
 | Application  | Commit    | Fix                                                                                                                                                                                                   |
 | ------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -156,3 +156,5 @@ Add reported problems here only after recording their evidence and classificatio
 Migration `20260922060500_link_winorder_exports_orders` adds the export-to-order foreign key as `NOT VALID`, enforcing new rows without scanning historical records during rollout. Prisma validation/generation and all 118 migrations passed on an isolated PostgreSQL database after a verified pre-migration dump.
 
 Verification passed: Platform API TypeScript/build/lint and 109 suites / 1,248 tests; Partner TypeScript/build, 125 files / 1,097 tests, lint with zero errors, 3,386-key i18n parity, import and shared-UI ownership checks; Customer TypeScript/build/lint and 85 files / 597 tests. Focused category, WinOrder, and printer regression suites passed.
+
+Staging verification passed on immutable images for Platform API `581dc4c` (cumulative over implementation commit `682ac77`), Partner `d589aee`, and Customer `4d41a11`. All affected containers are healthy with zero restarts; the official localhost smoke suite, three public HTTPS rounds, the 118-migration assertion, the new cascading foreign-key assertion, and a live public category-order probe passed. PostgreSQL and Superadmin were not recreated. Restore-tested backup: `/opt/feastflow/backups/staging/feastflow_staging_20260922T073633Z.dump`; release manifest: `/opt/feastflow/releases/staging/20260922T074042Z.env`.
