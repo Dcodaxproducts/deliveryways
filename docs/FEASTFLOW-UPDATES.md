@@ -366,8 +366,10 @@ WinOrder historical-replay protection is deployed on Staging in Platform API `b3
 
 ## Superadmin Dashboard Overview Refinement — 22 September 2026
 
-Status: verified and pushed. Not deployed.
+Status: deployed and verified on Staging. Production unchanged.
 
 Superadmin commit `7c40e83` brings the overview dashboard into the Partner compact-card and responsive layout system. The six platform metrics now use the canonical 88px card contract and matching skeleton geometry; dashboard alerts use semantic status tones; top restaurants, system health, and recent activity use denser token-based rows; refresh actions use the shared button contract; and failed overview totals expose an inline retry action.
 
-The analytics layout now keeps side panels full-width at tablet sizes and enters the three-column composition only on desktop, while range controls retain compact button sizing at every breakpoint. Browser acceptance passed at 1440×900, 1024×768, and 390×844 with six consistent metric cards, compact controls, and no horizontal overflow. Lint, TypeScript, 13 suites / 31 tests, and the 30-route Production build passed. Staging and Production remain unchanged.
+The analytics layout now keeps side panels full-width at tablet sizes and enters the three-column composition only on desktop, while range controls retain compact button sizing at every breakpoint. Browser acceptance passed at 1440×900, 1024×768, and 390×844 with six consistent metric cards, compact controls, and no horizontal overflow. Lint, TypeScript, 13 suites / 31 tests, and the 30-route Production build passed.
+
+The cumulative Superadmin commit `7c40e83` was deployed to Staging as immutable image `sha256:c4480f6c84f800393d27ab7a7e7aa0a582f5f5d346e7f870f620800ef966f452`. Only Superadmin was recreated; API, PostgreSQL, Partner, Customer, and Production remained unchanged. The Staging container is healthy with zero restarts, the official four-service smoke suite passed, three public HTTPS probe rounds passed, and recent Superadmin logs are clean. Release manifest: `/opt/feastflow/releases/staging/20260922T112913Z.env`.
