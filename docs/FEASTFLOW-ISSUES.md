@@ -162,3 +162,13 @@ Staging verification passed on immutable images for Platform API `581dc4c` (cumu
 **Historical replay follow-up:** expanding export eligibility to `CONFIRMED` initially lacked a cutover boundary, so legacy confirmed orders without acknowledgement rows could enter oldest-first polling. Platform API commit `b3e2b3b` adds a persisted per-connection export cutoff and applies it inside the candidate query before ordering and pagination. Existing connections receive the migration timestamp; future connections receive their creation timestamp. This preserves indefinite retries for new unacknowledged orders while making pre-cutover history ineligible.
 
 The replay guard is deployed and verified on Staging as API image `b3e2b3b`. Migration `20260922080000_add_winorder_export_cutoff` brought Staging to 119 migrations. API-only recreation, the official four-service smoke suite, three public API rounds, schema/cutoff assertions, zero restarts, and a clean critical-log scan passed. Restore-tested backup: `/opt/feastflow/backups/staging/feastflow_staging_20260922T081037Z.dump`; release manifest: `/opt/feastflow/releases/staging/20260922T081209Z.env`. Staging currently has no configured WinOrder connections, so a configured machine remains the external acceptance boundary.
+
+## Restaurant Tax Number in Impressum — 22 September 2026
+
+**Reported issue:** the global Superadmin legal profile could override the restaurant-specific tax/VAT number in a storefront Impressum.
+
+**Status:** fixed in source and pushed; not deployed.
+
+Global privacy policy, legal identity, address, and contract text remain Superadmin-owned. The public legal response now always sources `taxNumber` from the selected restaurant's existing legal/billing settings. Restaurant-level legal-text editing remains absent from Partner navigation as intended. Restaurants without a stored tax number continue to omit the tax-number row.
+
+Platform API verification passed: focused Customer App service 65/65 tests, full TypeScript/build/lint, and 109 suites / 1,248 tests. No schema migration or frontend change is required.
