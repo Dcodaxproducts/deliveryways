@@ -492,8 +492,7 @@ export class CustomerAppService {
       legalBusinessName:
         globalLegalProfile?.legalBusinessName ??
         restaurantLegalProfile.legalBusinessName,
-      taxNumber:
-        globalLegalProfile?.taxNumber ?? restaurantLegalProfile.taxNumber,
+      taxNumber: restaurantLegalProfile.taxNumber,
       businessAddress:
         globalAddress && Object.values(globalAddress).some(Boolean)
           ? {

@@ -3235,7 +3235,7 @@ describe('CustomerAppService', () => {
     );
   });
 
-  it('uses the Superadmin global privacy and legal profile for every restaurant', async () => {
+  it('uses global legal content with the selected restaurant tax number', async () => {
     const { service, repository, globalSettingsService } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -3284,7 +3284,7 @@ describe('CustomerAppService', () => {
     expect(result.data.legalProfile).toEqual({
       ownerName: 'DeliveryWay GmbH',
       legalBusinessName: 'DeliveryWay GmbH',
-      taxNumber: 'GLOBAL-TAX',
+      taxNumber: 'LOCAL-TAX',
       businessAddress: {
         street: 'Global Street',
         shopNumber: '10',
