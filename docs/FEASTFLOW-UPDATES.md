@@ -363,3 +363,11 @@ Release commits: Platform API `682ac77`, Partner `d589aee`, Customer `4d41a11`.
 Staging runs cumulative immutable images from Platform API `581dc4c`, Partner `d589aee`, and Customer `4d41a11`. The rollout passed restore-tested backup, committed migrations, health checks, official localhost smoke tests, three public HTTPS rounds, live category-order verification, and zero-restart/error-log checks. PostgreSQL and Superadmin containers remained unchanged. Release manifest: `/opt/feastflow/releases/staging/20260922T074042Z.env`.
 
 WinOrder historical-replay protection is deployed on Staging in Platform API `b3e2b3b`. A persisted per-connection cutoff now excludes pre-cutover orders inside the database query before pagination while retaining retries for new unacknowledged orders. The API-only rollout passed the 119-migration assertion, restore-tested backup, full smoke and public health checks, and clean restart/log checks. Release manifest: `/opt/feastflow/releases/staging/20260922T081209Z.env`.
+
+## Superadmin Dashboard Overview Refinement — 22 September 2026
+
+Status: verified and pushed. Not deployed.
+
+Superadmin commit `7c40e83` brings the overview dashboard into the Partner compact-card and responsive layout system. The six platform metrics now use the canonical 88px card contract and matching skeleton geometry; dashboard alerts use semantic status tones; top restaurants, system health, and recent activity use denser token-based rows; refresh actions use the shared button contract; and failed overview totals expose an inline retry action.
+
+The analytics layout now keeps side panels full-width at tablet sizes and enters the three-column composition only on desktop, while range controls retain compact button sizing at every breakpoint. Browser acceptance passed at 1440×900, 1024×768, and 390×844 with six consistent metric cards, compact controls, and no horizontal overflow. Lint, TypeScript, 13 suites / 31 tests, and the 30-route Production build passed. Staging and Production remain unchanged.
