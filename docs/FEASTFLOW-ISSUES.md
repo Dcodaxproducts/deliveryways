@@ -1,6 +1,6 @@
 # FeastFlow — Issues and Fix Tracker
 
-Last updated: 16 September 2026
+Last updated: 22 September 2026
 
 This file is the source of truth for reported defects, investigation results, fixes, verification, and deployment status. Product updates, planned improvements, and UI modernization work are tracked separately in [FEASTFLOW-UPDATES.md](./FEASTFLOW-UPDATES.md).
 
@@ -109,6 +109,20 @@ Verification completed before delivery:
 - The Staging database audit found one existing restaurant-name collision and one existing menu-item-name collision. Neither was renamed, deleted, or otherwise mutated. Application guards prevent new collisions; a database unique index is intentionally deferred until existing data is reconciled.
 
 The cumulative release deployed API `2ce7584` (including tracker/runtime target `b57287e`) and Customer `cbd4920`, together with Batch 2 Superadmin `636bcc0`. All target containers are healthy, non-root, and at zero restarts. PostgreSQL and Partner were not recreated. The verified pre-deployment backup is `/opt/feastflow/backups/staging/feastflow_staging_20260916T114713Z.dump`; all 115 migrations were current. Three localhost and three public smoke rounds passed, browser checks passed on desktop/mobile, and recent target-service logs contained no error markers. Production remains unchanged.
+
+## Cross-app Authentication Viewport Fix — 22 September 2026
+
+**Reported issue:** Customer, Partner, and Superadmin authentication screens could exceed the visible browser height and make the document scroll, especially on shorter mobile viewports.
+
+**Status:** Fixed in source and pushed; not deployed.
+
+| Application | Commit | Covered work |
+| --- | --- | --- |
+| Customer | `9caeb4a` | Exact dynamic-viewport auth shell, compact login/signup/recovery spacing, responsive social actions, and height-aware form fitting. |
+| Partner | `be7ed89` | Exact dynamic-viewport shared auth shell plus height-aware handling for login, registration, recovery, and reset cards. |
+| Superadmin | `103727d` | Exact dynamic-viewport login shell with compact card spacing and bounded card height. |
+
+Verification passed 30/30 browser geometry cases across 1440×900, 390×844, and 375×667 viewports. Every tested auth document remained free of horizontal and vertical overflow, and every auth card stayed within the viewport. Customer passed 85 test files / 597 tests, TypeScript, lint, and its 38-route build; Partner passed 125 test files / 1,096 tests, TypeScript, its 65-route build, i18n parity, and shared-UI checks; Superadmin passed 13 test files / 31 tests, TypeScript, lint, and its 30-route build. No API, database, environment, Staging, or Production state changed.
 
 ## Reports Not Accepted Into the Confirmed Backlog
 

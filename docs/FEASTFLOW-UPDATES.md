@@ -1,6 +1,6 @@
 # FeastFlow — Major Updates and Coverage Tracker
 
-Last updated: 16 September 2026
+Last updated: 22 September 2026
 
 This is the high-level record of the work being covered in FeastFlow. It intentionally tracks product areas and major outcomes rather than every small visual or code change.
 
@@ -24,6 +24,7 @@ Reported defects, investigation evidence, fixes, and deployment status are track
 | Customer storefront                     | Live and validated   | Menu fetching verified                                                                  | Existing Production release live      |
 | Unified admin theme and shadcn controls | Completed and pushed | Deployed and verified                                                                   | Pending deployment                    |
 | Validated Staging issues batch 1        | Completed and pushed | Deployed and fully accepted; persisted-scope follow-up `c7e667e` verified               | Not deployed                          |
+| Cross-app auth viewport fit             | Completed and pushed | Pending deployment                                                                      | Pending deployment                    |
 
 Latest UI consistency commits deployed to Staging:
 
@@ -81,6 +82,15 @@ This release restored the protected Staging Maps configuration, enabled environm
 - Standardized visible upload and filter controls using reusable shadcn components.
 
 **Status:** Deployed and verified on Staging.
+
+### Cross-app authentication viewport fit
+
+- Customer, Partner, and Superadmin auth shells now own exactly the dynamic viewport height and suppress document-level overflow.
+- Tall signup, registration, recovery, and reset forms use compact spacing and height-aware fitting so all controls remain visible on short mobile screens.
+- Responsive auth actions no longer rely on widths that can exceed narrow viewports.
+- Browser geometry acceptance passed 30/30 route/viewport cases at 1440×900, 390×844, and 375×667 with no page overflow and all auth cards inside viewport bounds.
+
+**Status:** Completed and pushed in Customer `9caeb4a`, Partner `be7ed89`, and Superadmin `103727d`. Staging and Production deployment remain pending.
 
 ### Partner dashboard and menu-management consistency
 
