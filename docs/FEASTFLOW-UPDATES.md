@@ -383,3 +383,13 @@ Superadmin commit `a7fa161` removes vertical movement from dashboard metric and 
 Browser acceptance passed at 1440×900, 1024×768, and 390×844. Dashboard card geometry remained unchanged before and after hover, all six metric cards rendered at every viewport, all five Global Settings sections switched successfully, and the Restaurants and Settings pages had no document-level horizontal overflow. Lint, TypeScript, 14 suites / 33 tests, and the 30-route Production build passed.
 
 The cumulative Superadmin commit `a7fa161` was deployed to Staging as immutable image `sha256:a01261eafe79917183b05e7a026f6de5c4d5a61b69db5e6b7915f7b14c63beb6`. Only Superadmin was recreated; API, PostgreSQL, Partner, Customer, and Production remained unchanged. The official four-service smoke suite and three public HTTPS probe rounds passed, the Superadmin container is healthy with zero restarts, and recent logs are clean. Release manifest: `/opt/feastflow/releases/staging/20260922T123520Z.env`.
+
+## Cross-app Loading Skeleton Fidelity — 23 September 2026
+
+Status: deployed and verified on Staging. Production unchanged.
+
+Partner `a9650da`, Superadmin `50196ae`, and Customer `e86ecf5` replace generic app-level loading placeholders with responsive route-aware structures that mirror each destination page. Partner now preserves the five-metric dashboard and management-card hierarchy; Superadmin uses shell, dashboard, list/table, mobile-card, detail, owner, and form-specific loading structures; Customer mirrors the real desktop and mobile storefront hierarchy for home, collection, and detail routes.
+
+All three Staging frontend services were rebuilt as immutable non-root images and recreated. Platform API and PostgreSQL retained their exact container IDs, no migration or data mutation ran, and Production was untouched. The fresh Staging backup `/opt/feastflow/backups/staging/feastflow_staging_20260923T065406Z.dump` restored successfully with 77 public tables.
+
+The official localhost smoke suite, three public HTTPS rounds, delayed zero-restart health checks, clean recent logs, and 18/18 live desktop/mobile browser checks passed. Browser acceptance covered Partner, Superadmin, and Customer public/protected routes at 1440×900 and 390×844 with correct redirects, visible content, no horizontal overflow, no page errors, and no FeastFlow write requests. Release manifest: `/opt/feastflow/releases/staging/20260923T070008Z.env`; release and exact-image rollback overlays are stored under `/opt/feastflow/releases/staging/20260923-skeleton-layout-parity*.compose.yml`.
