@@ -157,7 +157,10 @@ export class AdminDashboardService {
       query.restaurantId,
       query.branchId,
     );
-    const data = await this.adminDashboardRepository.getOrdersStats(scope);
+    const data = await this.adminDashboardRepository.getOrdersStats(
+      scope,
+      query.kind,
+    );
 
     return {
       data,

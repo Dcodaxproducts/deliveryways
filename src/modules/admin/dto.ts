@@ -28,6 +28,7 @@ import {
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   OrderStatus,
+  OrderType,
   PaymentStatus,
 } from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
@@ -183,7 +184,12 @@ export class AdminDashboardRevenueTrendQueryDto extends AdminDashboardScopedQuer
   range?: AdminDashboardTrendRange;
 }
 
-export class AdminDashboardOrdersStatsQueryDto extends AdminDashboardScopedQueryDto {}
+export class AdminDashboardOrdersStatsQueryDto extends AdminDashboardScopedQueryDto {
+  @ApiPropertyOptional({ enum: ['order', 'group-orders'] })
+  @IsOptional()
+  @IsIn(['order', 'group-orders'])
+  kind?: 'order' | 'group-orders';
+}
 
 export class AdminDashboardCustomersStatsQueryDto extends AdminDashboardScopedQueryDto {}
 
@@ -702,6 +708,18 @@ export class AdminPromotionBaseDto {
   description?: string;
 
   @ApiPropertyOptional({
+    enum: OrderType,
+    isArray: true,
+    default: [OrderType.DELIVERY, OrderType.TAKEAWAY, OrderType.DINE_IN],
+    description: 'Order fulfillment types eligible for this promotion.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(OrderType, { each: true })
+  allowedOrderTypes?: OrderType[];
+
+  @ApiPropertyOptional({
     enum: CouponAudience,
     default: CouponAudience.BOTH,
     description: 'Customer audience allowed to see and use this campaign',
@@ -953,6 +971,17 @@ export class UpdateAdminPromotionDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({
+    enum: OrderType,
+    isArray: true,
+    description: 'Order fulfillment types eligible for this promotion.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(OrderType, { each: true })
+  allowedOrderTypes?: OrderType[];
 
   @ApiPropertyOptional({ enum: CouponAudience })
   @IsOptional()

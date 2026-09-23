@@ -13,6 +13,10 @@ import {
 import { PrismaService } from '../../database';
 import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
 import {
+  DIGITAL_PAYMENT_METHODS,
+  OFFLINE_PAYMENT_METHODS,
+} from '../../common/utils/payment-method-groups';
+import {
   AdminExportCustomersCsvQueryDto,
   AdminExportCampaignsCsvQueryDto,
   AdminExportDeliverymenCsvQueryDto,
@@ -29,20 +33,6 @@ export interface AdminReportsScope {
   restaurantId?: string;
   branchId?: string;
 }
-
-const DIGITAL_PAYMENT_METHODS: PaymentMethod[] = [
-  PaymentMethod.STRIPE,
-  PaymentMethod.PAYPAL,
-  PaymentMethod.EASYPAISA,
-  PaymentMethod.JAZZCASH,
-  PaymentMethod.BANK_TRANSFER,
-  PaymentMethod.WALLET,
-];
-
-const OFFLINE_PAYMENT_METHODS: PaymentMethod[] = [
-  PaymentMethod.COD,
-  PaymentMethod.CARD_ON_DELIVERY,
-];
 
 @Injectable()
 export class AdminReportsRepository {
@@ -798,7 +788,7 @@ export class AdminReportsRepository {
       }),
     ]);
 
-    const amountFor = (methods: PaymentMethod[]) =>
+    const amountFor = (methods: readonly PaymentMethod[]) =>
       Number(
         paymentMethodTotals
           .filter((entry) => methods.includes(entry.paymentMethod))
@@ -809,7 +799,7 @@ export class AdminReportsRepository {
           .toFixed(2),
       );
 
-    const countFor = (methods: PaymentMethod[]) =>
+    const countFor = (methods: readonly PaymentMethod[]) =>
       reportOrders.filter((order) => methods.includes(order.paymentMethod))
         .length;
 

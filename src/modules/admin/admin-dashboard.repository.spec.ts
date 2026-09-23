@@ -1,4 +1,4 @@
-import { OrderStatus, UserRole } from '@prisma/client';
+import { OrderStatus, PaymentMethod, UserRole } from '@prisma/client';
 import { AdminDashboardRepository } from './admin-dashboard.repository';
 
 describe('AdminDashboardRepository', () => {
@@ -48,6 +48,16 @@ describe('AdminDashboardRepository', () => {
           _sum: { totalAmount: 1008 },
           _avg: { totalAmount: 504 },
         }),
+        groupBy: jest.fn().mockReturnValue([
+          {
+            paymentMethod: PaymentMethod.COD,
+            _sum: { totalAmount: 408 },
+          },
+          {
+            paymentMethod: PaymentMethod.STRIPE,
+            _sum: { totalAmount: 600 },
+          },
+        ]),
         findMany: jest.fn().mockReturnValue([
           { status: OrderStatus.DELIVERED, paymentStatus: 'PAID' },
           { status: OrderStatus.CANCELLED, paymentStatus: 'CANCELLED' },
@@ -56,9 +66,10 @@ describe('AdminDashboardRepository', () => {
     };
     const repository = new AdminDashboardRepository(prisma as never);
 
-    const result = await repository.getOrdersStats({
-      restaurantId: 'restaurant-1',
-    });
+    const result = await repository.getOrdersStats(
+      { restaurantId: 'restaurant-1' },
+      'order',
+    );
 
     const aggregateCalls = prisma.order.aggregate.mock
       .calls as unknown as Array<
@@ -70,9 +81,25 @@ describe('AdminDashboardRepository', () => {
     expect(aggregateCall.where.status.in).toContain(OrderStatus.DELIVERED);
     expect(result.totalOrders).toBe(2);
     expect(result.totalRevenue).toBe(1008);
+    expect(result.codAmount).toBe(408);
+    expect(result.digitalAmount).toBe(600);
     expect(result.statusBreakdown).toContainEqual({
       status: OrderStatus.CANCELLED,
       count: 1,
+    });
+    const groupByCalls = prisma.order.groupBy.mock.calls as unknown as Array<
+      [
+        {
+          where: {
+            restaurantId: string;
+            sourceGroupOrder: { is: null };
+          };
+        },
+      ]
+    >;
+    expect(groupByCalls[0][0].where).toMatchObject({
+      restaurantId: 'restaurant-1',
+      sourceGroupOrder: { is: null },
     });
   });
 
