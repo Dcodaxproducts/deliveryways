@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { DeliverymanStatus, Prisma, UserRole } from '@prisma/client';
+import {
+  DeliverymanStatus,
+  PaymentMethod,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 import { PrismaService } from '../../database';
+import { DIGITAL_PAYMENT_METHODS } from '../../common/utils/payment-method-groups';
 import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
@@ -86,6 +92,8 @@ export interface AdminDashboardOrdersStats {
   totalOrders: number;
   totalRevenue: number;
   averageOrderValue: number;
+  codAmount: number;
+  digitalAmount: number;
   statusBreakdown: AdminDashboardStatusBreakdownItem[];
   paymentStatusBreakdown: AdminDashboardStatusBreakdownItem[];
 }
@@ -361,24 +369,52 @@ export class AdminDashboardRepository {
 
   async getOrdersStats(
     scope: AdminDashboardScope,
+    kind?: 'order' | 'group-orders',
   ): Promise<AdminDashboardOrdersStats> {
-    const where = this.buildOrderWhere(scope);
-    const successfulWhere = this.buildSuccessfulOrderWhere(scope);
-    const [successfulAggregate, orders] = await this.prisma.$transaction([
-      this.prisma.order.aggregate({
-        where: successfulWhere,
-        _count: { id: true },
-        _sum: { totalAmount: true },
-        _avg: { totalAmount: true },
-      }),
-      this.prisma.order.findMany({
-        where,
-        select: {
-          status: true,
-          paymentStatus: true,
-        },
-      }),
-    ]);
+    const kindWhere: Prisma.OrderWhereInput =
+      kind === 'group-orders'
+        ? { sourceGroupOrder: { isNot: null } }
+        : kind === 'order'
+          ? { sourceGroupOrder: { is: null } }
+          : {};
+    const where = { ...this.buildOrderWhere(scope), ...kindWhere };
+    const successfulWhere = {
+      ...this.buildSuccessfulOrderWhere(scope),
+      ...kindWhere,
+    };
+    const [successfulAggregate, paymentMethodTotals, orders] =
+      await this.prisma.$transaction([
+        this.prisma.order.aggregate({
+          where: successfulWhere,
+          _count: { id: true },
+          _sum: { totalAmount: true },
+          _avg: { totalAmount: true },
+        }),
+        this.prisma.order.groupBy({
+          by: ['paymentMethod'],
+          where: successfulWhere,
+          orderBy: { paymentMethod: 'asc' },
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.findMany({
+          where,
+          select: {
+            status: true,
+            paymentStatus: true,
+          },
+        }),
+      ]);
+
+    const amountFor = (methods: readonly PaymentMethod[]) =>
+      Number(
+        paymentMethodTotals
+          .filter((entry) => methods.includes(entry.paymentMethod))
+          .reduce(
+            (total, entry) => total + Number(entry._sum?.totalAmount ?? 0),
+            0,
+          )
+          .toFixed(2),
+      );
 
     const statusMap = orders.reduce<Map<string, number>>((acc, order) => {
       acc.set(order.status, (acc.get(order.status) ?? 0) + 1);
@@ -397,6 +433,8 @@ export class AdminDashboardRepository {
       totalOrders: successfulAggregate._count.id,
       totalRevenue: Number(successfulAggregate._sum.totalAmount ?? 0),
       averageOrderValue: Number(successfulAggregate._avg.totalAmount ?? 0),
+      codAmount: amountFor([PaymentMethod.COD]),
+      digitalAmount: amountFor(DIGITAL_PAYMENT_METHODS),
       statusBreakdown: Array.from(statusMap.entries()).map(
         ([status, count]) => ({
           status,

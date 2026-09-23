@@ -11,6 +11,7 @@ import {
   CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
+  OrderType,
   Prisma,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -186,6 +187,11 @@ export class AdminPromotionsService {
       code: this.resolvePromotionCode(dto.code, codePrefix),
       title: dto.title,
       description: dto.description,
+      allowedOrderTypes: dto.allowedOrderTypes ?? [
+        OrderType.DELIVERY,
+        OrderType.TAKEAWAY,
+        OrderType.DINE_IN,
+      ],
       audience: dto.audience ?? CouponAudience.BOTH,
       imageUrl: this.resolveImageUrl(dto),
       kind: CouponCampaignKind.PROMOTION,
@@ -485,6 +491,9 @@ export class AdminPromotionsService {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.description !== undefined
         ? { description: dto.description }
+        : {}),
+      ...(dto.allowedOrderTypes !== undefined
+        ? { allowedOrderTypes: dto.allowedOrderTypes }
         : {}),
       ...(dto.audience !== undefined ? { audience: dto.audience } : {}),
       ...(this.hasImageUrlInput(dto)
@@ -1350,6 +1359,7 @@ export class AdminPromotionsService {
     code: string;
     title: string;
     description: string | null;
+    allowedOrderTypes: OrderType[];
     imageUrl: string | null;
     kind: CouponCampaignKind;
     audience: CouponAudience;
@@ -1393,6 +1403,7 @@ export class AdminPromotionsService {
       code: coupon.autoApply ? null : coupon.code,
       title: coupon.title,
       description: coupon.description,
+      allowedOrderTypes: coupon.allowedOrderTypes,
       imageUrl: coupon.imageUrl,
       thumbnailUrl: coupon.imageUrl,
       kind: coupon.kind,

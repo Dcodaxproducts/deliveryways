@@ -5,6 +5,7 @@ import {
   CouponDealSelectionMode,
   CouponDiscountType,
   CouponStatus,
+  OrderType,
   Prisma,
 } from '@prisma/client';
 import { AdminPromotionsService } from './admin-promotions.service';
@@ -18,6 +19,11 @@ describe('AdminPromotionsService', () => {
     code: 'HAPPY50',
     title: 'Happy Hour',
     description: null,
+    allowedOrderTypes: [
+      OrderType.DELIVERY,
+      OrderType.TAKEAWAY,
+      OrderType.DINE_IN,
+    ],
     imageUrl: null,
     kind: CouponCampaignKind.HAPPY_HOUR,
     status: CouponStatus.ACTIVE,
@@ -164,6 +170,84 @@ describe('AdminPromotionsService', () => {
         },
       }),
     );
+  });
+
+  it('persists fulfillment types when creating a promotion', async () => {
+    const repository = {
+      countActiveMenuItems: jest.fn().mockResolvedValue(0),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+      create: jest.fn().mockResolvedValue(
+        makeCoupon({
+          kind: CouponCampaignKind.PROMOTION,
+          allowedOrderTypes: [OrderType.TAKEAWAY],
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    const result = await service.createPromotion(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        title: 'Takeaway discount',
+        discountType: 'PERCENTAGE',
+        discountValue: 10,
+        startsAt: '2026-04-22T00:00:00.000Z',
+        expiresAt: '2026-05-22T00:00:00.000Z',
+        allowedOrderTypes: [OrderType.TAKEAWAY],
+      },
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowedOrderTypes: [OrderType.TAKEAWAY],
+      }),
+    );
+    expect(result.data.allowedOrderTypes).toEqual([OrderType.TAKEAWAY]);
+  });
+
+  it('updates only the submitted promotion fulfillment types', async () => {
+    const existing = makeCoupon({ kind: CouponCampaignKind.PROMOTION });
+    const repository = {
+      findById: jest.fn().mockResolvedValue(existing),
+      countActiveMenuItems: jest.fn().mockResolvedValue(0),
+      countActiveMenuCategories: jest.fn().mockResolvedValue(0),
+      update: jest.fn().mockResolvedValue(
+        makeCoupon({
+          ...existing,
+          allowedOrderTypes: [OrderType.DELIVERY, OrderType.TAKEAWAY],
+        }),
+      ),
+    };
+    const service = new AdminPromotionsService(repository as never);
+
+    const result = await service.updatePromotion(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      'promo-1',
+      {
+        allowedOrderTypes: [OrderType.DELIVERY, OrderType.TAKEAWAY],
+      },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'promo-1',
+      expect.objectContaining({
+        allowedOrderTypes: [OrderType.DELIVERY, OrderType.TAKEAWAY],
+      }),
+    );
+    expect(result.data.allowedOrderTypes).toEqual([
+      OrderType.DELIVERY,
+      OrderType.TAKEAWAY,
+    ]);
   });
 
   it('creates a deal as a fixed price scoped item promotion', async () => {
