@@ -5,6 +5,11 @@ import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsRepository } from './global-settings.repository';
 import { DEFAULT_CUSTOMER_EMAIL_TEMPLATES } from './email-templates';
 import {
+  LandingCollectionDisplayMode,
+  LandingContentImagePosition,
+  LandingHomeSection,
+} from './dto';
+import {
   GlobalSettingsService,
   PaymentMethodSettingsShape,
 } from './global-settings.service';
@@ -41,10 +46,20 @@ const emptyLandingHomeBlock = {
   checklistDe: [],
   imageUrl: null,
   isVisible: true,
+  imagePosition: 'left',
 };
 
 const emptyLandingHome = {
+  sectionOrder: [
+    'hero',
+    'featuredRestaurants',
+    'growth',
+    'orderManagement',
+    'faqs',
+    'appDownload',
+  ],
   hero: {
+    isVisible: true,
     badgeEn: null,
     badgeDe: null,
     headingEn: null,
@@ -64,9 +79,16 @@ const emptyLandingHome = {
     headingDe: null,
     restaurantIds: [],
     isVisible: true,
+    displayMode: 'grid',
+    columns: 4,
   },
   growth: emptyLandingHomeBlock,
-  orderManagement: emptyLandingHomeBlock,
+  orderManagement: { ...emptyLandingHomeBlock, imagePosition: 'right' },
+  faqs: {
+    headingEn: null,
+    headingDe: null,
+    isVisible: true,
+  },
   appDownload: {
     headingEn: null,
     headingDe: null,
@@ -77,6 +99,14 @@ const emptyLandingHome = {
     appStoreUrl: null,
     isVisible: true,
   },
+};
+
+const emptyLandingPackages = {
+  isVisible: true,
+  packagePlanIds: [],
+  displayMode: 'grid',
+  columns: 3,
+  highlightedPackagePlanId: null,
 };
 
 describe('GlobalSettingsService', () => {
@@ -167,6 +197,7 @@ describe('GlobalSettingsService', () => {
             youtube: null,
           },
           home: emptyLandingHome,
+          packages: emptyLandingPackages,
           pages: emptyLandingPages,
           faqs: [],
         },
@@ -465,6 +496,7 @@ describe('GlobalSettingsService', () => {
           instagram: 'https://instagram.com/new',
         },
         pages: emptyLandingPages,
+        packages: emptyLandingPackages,
         faqs: [
           {
             id: 'existing',
@@ -493,6 +525,8 @@ describe('GlobalSettingsService', () => {
             headingEn: 'Featured restaurants',
             restaurantIds: ['restaurant-1'],
             isVisible: true,
+            displayMode: 'grid',
+            columns: 4,
           },
           growth: {
             headingEn: 'Grow faster',
@@ -513,9 +547,29 @@ describe('GlobalSettingsService', () => {
       { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
       {
         home: {
+          sectionOrder: [
+            LandingHomeSection.HERO,
+            LandingHomeSection.GROWTH,
+            LandingHomeSection.FEATURED_RESTAURANTS,
+            LandingHomeSection.ORDER_MANAGEMENT,
+            LandingHomeSection.FAQS,
+            LandingHomeSection.APP_DOWNLOAD,
+          ],
           hero: { subheadingEn: 'One platform for every order.' },
-          featuredRestaurants: { restaurantIds: ['restaurant-2'] },
-          growth: { isVisible: false },
+          featuredRestaurants: {
+            restaurantIds: ['restaurant-2'],
+            displayMode: LandingCollectionDisplayMode.CAROUSEL,
+            columns: 3,
+          },
+          growth: {
+            isVisible: false,
+            imagePosition: LandingContentImagePosition.RIGHT,
+          },
+        },
+        packages: {
+          packagePlanIds: ['plan-pro', 'plan-starter'],
+          highlightedPackagePlanId: 'plan-pro',
+          columns: 2,
         },
       },
     );
@@ -529,11 +583,26 @@ describe('GlobalSettingsService', () => {
       headingEn: 'Featured restaurants',
       restaurantIds: ['restaurant-2'],
       isVisible: true,
+      displayMode: 'carousel',
+      columns: 3,
     });
     expect(result.data.home.growth).toMatchObject({
       headingEn: 'Grow faster',
       checklistEn: ['Manage orders'],
       isVisible: false,
+      imagePosition: 'right',
+    });
+    expect(result.data.home.sectionOrder.slice(0, 3)).toEqual([
+      'hero',
+      'growth',
+      'featuredRestaurants',
+    ]);
+    expect(result.data.packages).toEqual({
+      isVisible: true,
+      packagePlanIds: ['plan-pro', 'plan-starter'],
+      displayMode: 'grid',
+      columns: 2,
+      highlightedPackagePlanId: 'plan-pro',
     });
   });
 
