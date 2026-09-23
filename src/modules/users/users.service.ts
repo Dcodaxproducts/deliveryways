@@ -124,8 +124,8 @@ export class UsersService {
     );
   }
 
-  async findByEmail(email: string, restaurantId?: string) {
-    return this.usersRepository.findByEmail(email, restaurantId);
+  async findByEmail(email: string, restaurantId?: string, role?: UserRole) {
+    return this.usersRepository.findByEmail(email, restaurantId, role);
   }
 
   async findByEmailIncludingDeleted(email: string, restaurantId?: string) {
@@ -199,6 +199,7 @@ export class UsersService {
     otp: string,
     expiresAt: Date,
     restaurantId?: string,
+    role?: UserRole,
   ) {
     return this.usersRepository.updateByEmail(
       email,
@@ -208,6 +209,7 @@ export class UsersService {
         resetPasswordOtpAttempts: 0,
       },
       restaurantId,
+      role,
     );
   }
 
@@ -261,6 +263,7 @@ export class UsersService {
     otp: string | null,
     expiresAt: Date | null,
     restaurantId?: string,
+    role?: UserRole,
   ) {
     return this.usersRepository.updateByEmail(
       email,
@@ -270,6 +273,7 @@ export class UsersService {
         verificationOtpAttempts: 0,
       },
       restaurantId,
+      role,
     );
   }
 

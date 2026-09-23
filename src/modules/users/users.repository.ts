@@ -20,12 +20,13 @@ export class UsersRepository {
     return this.client(tx).user.update({ where: { id }, data });
   }
 
-  async findByEmail(email: string, restaurantId?: string) {
+  async findByEmail(email: string, restaurantId?: string, role?: UserRole) {
     return this.prisma.user.findFirst({
       where: {
         email,
         deletedAt: null,
         ...(restaurantId !== undefined ? { restaurantId } : {}),
+        ...(role !== undefined ? { role } : {}),
       },
       include: {
         profile: true,
@@ -200,12 +201,14 @@ export class UsersRepository {
     email: string,
     data: Prisma.UserUpdateManyMutationInput,
     restaurantId?: string,
+    role?: UserRole,
   ) {
     return this.prisma.user.updateMany({
       where: {
         email,
         deletedAt: null,
         ...(restaurantId !== undefined ? { restaurantId } : {}),
+        ...(role !== undefined ? { role } : {}),
       },
       data,
     });

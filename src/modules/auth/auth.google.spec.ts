@@ -92,17 +92,19 @@ describe('AuthService googleLogin', () => {
 
   it('signs in an existing customer only in the selected restaurant', async () => {
     mockGoogleToken();
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue(customer);
+    usersService.findManyForDevResolution!.mockResolvedValue([customer]);
 
     const result = await service.googleLogin({
       idToken: 'valid-google-token-value',
       restaurantId: 'restaurant-1',
     });
 
-    expect(usersService.findByEmailIncludingDeleted).toHaveBeenCalledWith(
-      'customer@example.com',
-      'restaurant-1',
-    );
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith({
+      email: 'customer@example.com',
+      restaurantId: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+      includeDeleted: true,
+    });
     expect(usersService.create).not.toHaveBeenCalled();
     expect(result.data.user.id).toBe('customer-1');
     expect(result.data.user.authProvider).toBe('GOOGLE');
@@ -111,8 +113,8 @@ describe('AuthService googleLogin', () => {
   it('creates and signs in a verified customer when the scoped account is missing', async () => {
     mockGoogleToken({ picture: 'https://images.example.com/ada.png' });
     usersService
-      .findByEmailIncludingDeleted!.mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(customer);
+      .findManyForDevResolution!.mockResolvedValueOnce([])
+      .mockResolvedValueOnce([customer]);
     prisma.restaurant.findFirst.mockResolvedValue({ tenantId: 'tenant-1' });
 
     const result = await service.googleLogin({
