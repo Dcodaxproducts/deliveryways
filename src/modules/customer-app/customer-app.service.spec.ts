@@ -2429,7 +2429,13 @@ describe('CustomerAppService', () => {
         secondaryColor: '#000000',
         fontFamily: 'Inter',
       },
-      settings: {},
+      settings: {
+        ordering: {
+          preorderEnabled: false,
+          tipsEnabled: true,
+          internalValue: 'not-public',
+        },
+      },
     });
     repository.listCuisineCategories.mockResolvedValue({ items: [], total: 0 });
     repository.listPromotionalItems.mockResolvedValue([]);
@@ -2532,6 +2538,10 @@ describe('CustomerAppService', () => {
         primaryColor: '#FF0000',
         secondaryColor: '#000000',
         fontFamily: 'Inter',
+      },
+      ordering: {
+        preorderEnabled: false,
+        tipsEnabled: true,
       },
     });
     expect(result.data.branch).toMatchObject({
@@ -2932,6 +2942,7 @@ describe('CustomerAppService', () => {
       currency: 'PKR',
       timezone: 'Europe/Berlin',
       branding: {},
+      ordering: { preorderEnabled: true, tipsEnabled: true },
     });
   });
 
@@ -3059,6 +3070,7 @@ describe('CustomerAppService', () => {
       currency: 'AED',
       timezone: 'Europe/Berlin',
       branding: {},
+      ordering: { preorderEnabled: true, tipsEnabled: true },
     });
   });
 

@@ -58,6 +58,7 @@ import {
   UpdateOrderStatusDto,
 } from './dto';
 import { OrdersRepository } from './orders.repository';
+import { extractRestaurantOrderingSettings } from '../../common/utils/restaurant-ordering-settings.util';
 
 const DEFAULT_SCHEDULE_TIMEZONE = 'Asia/Karachi';
 
@@ -1082,6 +1083,11 @@ export class OrdersService {
     }
 
     await this.ensureBranchAccess(user, branch.restaurantId, branch.id);
+    this.assertRestaurantOrderingSettings(
+      branch.restaurant?.settings,
+      dto,
+      orderTime,
+    );
 
     const settings = this.readBranchSettings(
       branch.settings,
@@ -2895,6 +2901,27 @@ export class OrdersService {
     return dto.orderType === OrderTypeEnum.DELIVERY
       ? new Date().toISOString()
       : null;
+  }
+
+  private assertRestaurantOrderingSettings(
+    settings: Prisma.JsonValue | null | undefined,
+    dto: QuoteOrderDto,
+    orderTime: string | null,
+  ) {
+    const ordering = extractRestaurantOrderingSettings(settings);
+    const isPreorder =
+      dto.isScheduled === true ||
+      (orderTime !== null && this.isScheduledOrderTime(orderTime));
+
+    if (!ordering.preorderEnabled && isPreorder) {
+      throw new BadRequestException(
+        'Preorders are disabled for this restaurant',
+      );
+    }
+
+    if (!ordering.tipsEnabled && (dto.tipAmount ?? 0) > 0) {
+      throw new BadRequestException('Tips are disabled for this restaurant');
+    }
   }
 
   private assertValidOrderTime(orderTime: string) {

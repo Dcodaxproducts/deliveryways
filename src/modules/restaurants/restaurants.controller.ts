@@ -34,6 +34,7 @@ import {
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
+  UpdateRestaurantOrderingSettingsDto,
   UpdateRestaurantPaymentFeeDto,
   UpdateRestaurantServiceChargeDto,
 } from './dto';
@@ -149,6 +150,31 @@ export class RestaurantsController {
     @Body() dto: UpdateRestaurantNotificationSettingsDto,
   ) {
     return this.restaurantsService.updateNotificationSettings(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Get(':id/ordering-settings')
+  @ApiOperation({ summary: 'Get restaurant ordering settings' })
+  orderingSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.restaurantsService.orderingSettings(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Patch(':id/ordering-settings')
+  @ApiOperation({ summary: 'Update restaurant ordering settings' })
+  updateOrderingSettings(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantOrderingSettingsDto,
+  ) {
+    return this.restaurantsService.updateOrderingSettings(user, id, dto);
   }
 
   @ApiBearerAuth()
