@@ -104,10 +104,12 @@ export class AdminDashboardService {
       query.restaurantId,
       query.branchId,
     );
-    const data = await this.adminDashboardRepository.getOrdersTrend(
-      scope,
-      query.range ?? 'daily',
-    );
+    const data = await this.adminDashboardRepository.getOrdersTrend(scope, {
+      range: query.range,
+      fromDate: query.fromDate,
+      toDate: query.toDate,
+      kind: query.kind,
+    });
 
     return {
       data,
@@ -127,10 +129,12 @@ export class AdminDashboardService {
       query.restaurantId,
       query.branchId,
     );
-    const data = await this.adminDashboardRepository.getRevenueTrend(
-      scope,
-      query.range ?? 'daily',
-    );
+    const data = await this.adminDashboardRepository.getRevenueTrend(scope, {
+      range: query.range,
+      fromDate: query.fromDate,
+      toDate: query.toDate,
+      kind: query.kind,
+    });
 
     return {
       data,

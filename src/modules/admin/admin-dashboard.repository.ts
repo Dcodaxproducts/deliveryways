@@ -75,14 +75,23 @@ export interface AdminDashboardRestaurantTrend {
   points: AdminDashboardTrendPoint[];
 }
 
+interface AdminDashboardTrendPeriod {
+  fromDate: string;
+  toDate: string;
+  timeZone: 'UTC';
+  explicit: boolean;
+}
+
 export interface AdminDashboardOrdersTrend {
   range: AdminDashboardTrendRange;
+  period: AdminDashboardTrendPeriod;
   totalOrdersInRange: number;
   points: AdminDashboardTrendPoint[];
 }
 
 export interface AdminDashboardRevenueTrend {
   range: AdminDashboardTrendRange;
+  period: AdminDashboardTrendPeriod;
   totalRevenueInRange: number;
   currency: string;
   points: AdminDashboardTrendPoint[];
@@ -160,6 +169,13 @@ export interface AdminDashboardScope {
   tenantId?: string;
   restaurantId?: string;
   branchId?: string;
+}
+
+export interface AdminDashboardTrendOptions {
+  range?: AdminDashboardTrendRange;
+  fromDate?: string;
+  toDate?: string;
+  kind?: 'order' | 'group-orders';
 }
 
 @Injectable()
@@ -269,41 +285,55 @@ export class AdminDashboardRepository {
 
   async getOrdersTrend(
     scope: AdminDashboardScope,
-    range: AdminDashboardTrendRange = 'daily',
+    options: AdminDashboardTrendOptions | AdminDashboardTrendRange = {},
   ): Promise<AdminDashboardOrdersTrend> {
-    const buckets = this.buildTrendBuckets(range);
-    const startAt = buckets[0]?.start ?? new Date();
-    const where = this.buildSuccessfulOrderWhere(scope);
+    const trendOptions =
+      typeof options === 'string' ? { range: options } : options;
+    const period = this.resolveTrendPeriod(trendOptions);
+    const where = {
+      ...this.buildOrderWhere(scope),
+      ...this.buildOrderKindWhere(trendOptions.kind),
+    };
 
-    const [countBeforeRange, ordersInRange] = await this.prisma.$transaction([
-      this.prisma.order.count({
-        where: {
-          ...where,
-          createdAt: { lt: startAt },
-        },
-      }),
-      this.prisma.order.findMany({
-        where: {
-          ...where,
-          createdAt: { gte: startAt },
-        },
-        select: {
-          createdAt: true,
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-      }),
-    ]);
+    const ordersInRangeQuery = this.prisma.order.findMany({
+      where: {
+        ...where,
+        createdAt: { gte: period.start, lt: period.end },
+      },
+      select: {
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    let countBeforeRange = 0;
+    let ordersInRange: Awaited<typeof ordersInRangeQuery>;
+
+    if (period.explicit) {
+      ordersInRange = await ordersInRangeQuery;
+    } else {
+      [countBeforeRange, ordersInRange] = await this.prisma.$transaction([
+        this.prisma.order.count({
+          where: {
+            ...where,
+            createdAt: { lt: period.start },
+          },
+        }),
+        ordersInRangeQuery,
+      ]);
+    }
 
     const points = this.buildTrendPoints(
-      buckets,
+      period.buckets,
       countBeforeRange,
       ordersInRange.map((order) => order.createdAt),
     );
 
     return {
-      range,
+      range: period.range,
+      period: this.toTrendPeriodMetadata(period),
       totalOrdersInRange: points.reduce((sum, point) => sum + point.value, 0),
       points,
     };
@@ -311,12 +341,14 @@ export class AdminDashboardRepository {
 
   async getRevenueTrend(
     scope: AdminDashboardScope,
-    range: AdminDashboardTrendRange = 'daily',
+    options: AdminDashboardTrendOptions | AdminDashboardTrendRange = {},
   ): Promise<AdminDashboardRevenueTrend> {
-    const buckets = this.buildTrendBuckets(range);
-    const startAt = buckets[0]?.start ?? new Date();
+    const trendOptions =
+      typeof options === 'string' ? { range: options } : options;
+    const period = this.resolveTrendPeriod(trendOptions);
     const where = {
       ...this.buildPaymentTransactionWhere(scope),
+      ...this.buildPaymentKindWhere(trendOptions.kind),
       type: 'CHARGE' as const,
       status: 'PAID' as const,
     };
@@ -324,7 +356,7 @@ export class AdminDashboardRepository {
     const transactions = await this.prisma.paymentTransaction.findMany({
       where: {
         ...where,
-        createdAt: { gte: startAt },
+        createdAt: { gte: period.start, lt: period.end },
       },
       select: {
         amount: true,
@@ -337,7 +369,7 @@ export class AdminDashboardRepository {
     });
 
     let cumulativeTotal = 0;
-    const points = buckets.map((bucket) => {
+    const points = period.buckets.map((bucket) => {
       const value = transactions
         .filter(
           (transaction) =>
@@ -357,7 +389,8 @@ export class AdminDashboardRepository {
     });
 
     return {
-      range,
+      range: period.range,
+      period: this.toTrendPeriodMetadata(period),
       totalRevenueInRange: Number(
         points.reduce((sum, point) => sum + point.value, 0).toFixed(2),
       ),
@@ -1000,6 +1033,128 @@ export class AdminDashboardRepository {
     };
   }
 
+  private resolveTrendPeriod(options: AdminDashboardTrendOptions) {
+    const explicit = Boolean(options.fromDate || options.toDate);
+    if (!explicit) {
+      const range = options.range ?? 'daily';
+      const buckets = this.buildTrendBuckets(range);
+      return {
+        explicit,
+        range,
+        buckets,
+        start: buckets[0]?.start ?? new Date(),
+        end: buckets.at(-1)?.end ?? new Date(),
+      };
+    }
+
+    const fallbackRange = options.range ?? 'daily';
+    const fallbackBuckets = this.buildTrendBuckets(fallbackRange);
+    const fallbackStart =
+      fallbackBuckets[0]?.start ?? this.startOfUtcDay(new Date());
+    const fallbackEnd = fallbackBuckets.at(-1)?.end ?? new Date();
+    const start = options.fromDate
+      ? this.parseTrendBoundary(options.fromDate, false)
+      : fallbackStart;
+    const end = options.toDate
+      ? this.parseTrendBoundary(options.toDate, true)
+      : fallbackEnd;
+    const range = options.range ?? this.inferTrendRange(start, end);
+
+    return {
+      explicit,
+      range,
+      buckets: this.buildExplicitTrendBuckets(start, end, range),
+      start,
+      end,
+    };
+  }
+
+  private toTrendPeriodMetadata(period: {
+    explicit: boolean;
+    start: Date;
+    end: Date;
+  }): AdminDashboardTrendPeriod {
+    return {
+      fromDate: period.start.toISOString(),
+      toDate: new Date(period.end.getTime() - 1).toISOString(),
+      timeZone: 'UTC',
+      explicit: period.explicit,
+    };
+  }
+
+  private parseTrendBoundary(value: string, endExclusive: boolean) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const result = new Date(`${value}T00:00:00.000Z`);
+      if (endExclusive) {
+        result.setUTCDate(result.getUTCDate() + 1);
+      }
+      return result;
+    }
+
+    const result = new Date(value);
+    if (endExclusive) {
+      result.setTime(result.getTime() + 1);
+    }
+    return result;
+  }
+
+  private inferTrendRange(start: Date, end: Date): AdminDashboardTrendRange {
+    const days = Math.max(1, (end.getTime() - start.getTime()) / 86_400_000);
+    if (days <= 31) return 'daily';
+    if (days <= 186) return 'weekly';
+    return 'monthly';
+  }
+
+  private buildExplicitTrendBuckets(
+    start: Date,
+    end: Date,
+    range: AdminDashboardTrendRange,
+  ) {
+    const buckets: Array<{
+      key: string;
+      label: string;
+      start: Date;
+      end: Date;
+    }> = [];
+    let cursor = new Date(start);
+
+    while (cursor < end) {
+      const bucketStart = new Date(cursor);
+      const next = new Date(cursor);
+      if (range === 'monthly') {
+        next.setUTCMonth(next.getUTCMonth() + 1, 1);
+        next.setUTCHours(0, 0, 0, 0);
+      } else {
+        next.setUTCDate(next.getUTCDate() + (range === 'weekly' ? 7 : 1));
+      }
+      const bucketEnd = next < end ? next : new Date(end);
+      const endLabel = new Date(bucketEnd.getTime() - 1);
+      const key =
+        range === 'daily'
+          ? this.toDateKey(bucketStart)
+          : `${this.toDateKey(bucketStart)}_${this.toDateKey(endLabel)}`;
+      const label =
+        range === 'monthly'
+          ? bucketStart.toLocaleDateString('en-US', {
+              month: 'short',
+              year: 'numeric',
+              timeZone: 'UTC',
+            })
+          : range === 'weekly'
+            ? `${bucketStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${endLabel.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`
+            : bucketStart.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                timeZone: 'UTC',
+              });
+
+      buckets.push({ key, label, start: bucketStart, end: bucketEnd });
+      cursor = bucketEnd;
+    }
+
+    return buckets;
+  }
+
   private buildTrendBuckets(range: AdminDashboardTrendRange) {
     if (range === 'weekly') {
       return this.buildWeeklyTrendBuckets();
@@ -1192,6 +1347,19 @@ export class AdminDashboardRepository {
       ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
       ...(scope.branchId ? { branchId: scope.branchId } : {}),
     };
+  }
+
+  private buildOrderKindWhere(kind?: 'order' | 'group-orders') {
+    return kind === 'group-orders'
+      ? { sourceGroupOrder: { isNot: null } }
+      : kind === 'order'
+        ? { sourceGroupOrder: { is: null } }
+        : {};
+  }
+
+  private buildPaymentKindWhere(kind?: 'order' | 'group-orders') {
+    const orderWhere = this.buildOrderKindWhere(kind);
+    return kind ? { order: { is: orderWhere } } : {};
   }
 
   private buildPaymentTransactionWhere(scope: AdminDashboardScope) {

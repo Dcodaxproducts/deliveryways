@@ -3,15 +3,12 @@ import {
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
-  Prisma,
 } from '@prisma/client';
 import { AdminReportsRepository } from './admin-reports.repository';
 
 describe('AdminReportsRepository', () => {
   it('includes restaurant-level billing invoices for an authorized branch scope', async () => {
-    const findMany = jest
-      .fn<Promise<never[]>, [Prisma.GeneratedInvoiceFindManyArgs]>()
-      .mockResolvedValue([]);
+    const findMany = jest.fn().mockResolvedValue([]);
     const repository = new AdminReportsRepository({
       generatedInvoice: { findMany },
     } as never);
@@ -25,15 +22,16 @@ describe('AdminReportsRepository', () => {
       { kind: 'SUBSCRIPTION' } as never,
     );
 
-    const [findManyArgs] = findMany.mock.calls[0];
-    expect(findManyArgs.where).toEqual(
-      expect.objectContaining({
-        tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
-        OR: [{ branchId: 'branch-1' }, { branchId: null }],
-        kind: 'SUBSCRIPTION',
-      }),
-    );
+    const findManyCalls = findMany.mock.calls as unknown as Array<
+      [{ where: Record<string, unknown> }]
+    >;
+    const findManyCall = findManyCalls[0][0];
+    expect(findManyCall.where).toMatchObject({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      OR: [{ branchId: 'branch-1' }, { branchId: null }],
+      kind: 'SUBSCRIPTION',
+    });
   });
 
   it('allows an authorized branch to view a restaurant-level billing PDF', async () => {
@@ -95,10 +93,10 @@ describe('AdminReportsRepository', () => {
       { restaurantId: 'restaurant-1' },
       {
         excludeStatus: OrderStatus.PAYMENT_PENDING,
-        fromDate: '2026-08-21T00:00:00.000Z',
-        toDate: '2026-08-21T23:59:59.999Z',
-        orderTimeFrom: '2026-08-22T00:00:00.000Z',
-        orderTimeTo: '2026-08-22T23:59:59.999Z',
+        fromDate: '2026-08-21',
+        toDate: '2026-08-21',
+        orderTimeFrom: '2026-08-22',
+        orderTimeTo: '2026-08-22',
         isScheduled: true,
       },
     );
@@ -141,44 +139,81 @@ describe('AdminReportsRepository', () => {
     expect(orderItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { order: expectedWhere } }),
     );
+    const payoutCalls = restaurantPayoutRequest.findMany.mock
+      .calls as unknown as Array<[{ where: { createdAt: unknown } }]>;
+    expect(payoutCalls[0][0].where.createdAt).toEqual(expectedWhere.createdAt);
   });
 
-  it('recognizes full confirmed order totals by cash and digital method', async () => {
+  it('reconciles all matching orders while recognizing successful revenue', async () => {
     const prisma = {
       order: {
         aggregate: jest
           .fn()
           .mockResolvedValueOnce({
-            _count: { id: 3 },
+            _count: { id: 4 },
             _sum: { deliveryFee: 6, discountAmount: 2 },
           })
           .mockResolvedValueOnce({
-            _count: { id: 3 },
-            _sum: { totalAmount: 75 },
+            _count: { id: 2 },
+            _sum: { totalAmount: 50 },
             _avg: { totalAmount: 25 },
           }),
         groupBy: jest.fn().mockResolvedValue([
           { paymentMethod: PaymentMethod.COD, _sum: { totalAmount: 30 } },
-          { paymentMethod: PaymentMethod.STRIPE, _sum: { totalAmount: 25 } },
-          { paymentMethod: PaymentMethod.WALLET, _sum: { totalAmount: 20 } },
+          { paymentMethod: PaymentMethod.STRIPE, _sum: { totalAmount: 20 } },
         ]),
         findMany: jest
           .fn()
-          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            { status: OrderStatus.CONFIRMED },
+            { status: OrderStatus.DELIVERED },
+            { status: OrderStatus.CANCELLED },
+            { status: OrderStatus.REJECTED },
+          ])
+          .mockResolvedValueOnce([
+            { paymentMethod: PaymentMethod.COD },
+            { paymentMethod: PaymentMethod.STRIPE },
+          ])
           .mockResolvedValueOnce([
             {
               id: 'order-cash',
-              createdAt: new Date('2026-08-28T10:00:00.000Z'),
+              status: OrderStatus.CONFIRMED,
+              orderType: 'DELIVERY',
+              sourceGroupOrder: null,
+              createdAt: new Date('2026-08-28T12:00:00.000Z'),
               paymentMethod: PaymentMethod.COD,
-              paymentStatus: PaymentStatus.PAID,
+              paymentStatus: PaymentStatus.PENDING,
               totalAmount: 30,
             },
             {
               id: 'order-online',
-              createdAt: new Date('2026-08-28T11:00:00.000Z'),
+              status: OrderStatus.DELIVERED,
+              orderType: 'DELIVERY',
+              sourceGroupOrder: { id: 'group-1' },
+              createdAt: new Date('2026-08-28T12:15:00.000Z'),
               paymentMethod: PaymentMethod.STRIPE,
               paymentStatus: PaymentStatus.PAID,
-              totalAmount: 25,
+              totalAmount: 20,
+            },
+            {
+              id: 'order-cancelled',
+              status: OrderStatus.CANCELLED,
+              orderType: 'TAKEAWAY',
+              sourceGroupOrder: null,
+              createdAt: new Date('2026-08-28T12:30:00.000Z'),
+              paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
+              paymentStatus: PaymentStatus.PENDING,
+              totalAmount: 0,
+            },
+            {
+              id: 'order-rejected',
+              status: OrderStatus.REJECTED,
+              orderType: 'DELIVERY',
+              sourceGroupOrder: null,
+              createdAt: new Date('2026-08-28T13:00:00.000Z'),
+              paymentMethod: PaymentMethod.WALLET,
+              paymentStatus: PaymentStatus.FAILED,
+              totalAmount: 0,
             },
           ]),
       },
@@ -208,18 +243,48 @@ describe('AdminReportsRepository', () => {
     );
 
     expect(result).toMatchObject({
-      totalOrders: 3,
-      totalRevenue: 75,
+      totalOrders: 4,
+      successfulOrders: 2,
+      cancelledOrders: 1,
+      rejectedOrders: 1,
+      totalRevenue: 50,
       averageOrderValue: 25,
       codAmount: 30,
-      digitalAmount: 45,
+      digitalAmount: 20,
       offlineOrderCount: 1,
+      offlineAmount: 30,
       onlineOrderCount: 1,
+      onlineAmount: 20,
     });
-    expect(result.orders).toEqual([
-      expect.objectContaining({ id: 'order-cash', totalAmount: 30 }),
-      expect.objectContaining({ id: 'order-online', totalAmount: 25 }),
-    ]);
+    expect(
+      result.statusBreakdown.reduce((total, entry) => total + entry.count, 0),
+    ).toBe(result.totalOrders);
+    expect(result.orders).toHaveLength(result.totalOrders);
+    expect(result.orders).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'order-cash',
+          status: OrderStatus.CONFIRMED,
+          orderType: 'DELIVERY',
+          groupOrderId: null,
+          paymentMethod: PaymentMethod.COD,
+          totalAmount: 30,
+        }),
+        expect.objectContaining({
+          id: 'order-online',
+          status: OrderStatus.DELIVERED,
+          groupOrderId: 'group-1',
+        }),
+        expect.objectContaining({
+          id: 'order-cancelled',
+          status: OrderStatus.CANCELLED,
+        }),
+        expect.objectContaining({
+          id: 'order-rejected',
+          status: OrderStatus.REJECTED,
+        }),
+      ]),
+    );
     expect(result.payoutActivity).toEqual([
       expect.objectContaining({
         id: 'payout-1',
@@ -275,8 +340,13 @@ describe('AdminReportsRepository', () => {
     const findManyCalls = order.findMany.mock.calls as unknown as Array<
       [{ where: { status: { in: OrderStatus[] } } }]
     >;
-    const findManyCall = findManyCalls[0][0];
-    expect(findManyCall.where.status.in).toContain(OrderStatus.CONFIRMED);
+    const successfulRowsCall = findManyCalls[1][0];
+    const reportRowsCall = findManyCalls[2][0];
+    expect(successfulRowsCall.where.status.in).toContain(OrderStatus.CONFIRMED);
+    expect(reportRowsCall.where.status.in).toContain(OrderStatus.CONFIRMED);
+    expect(reportRowsCall).toMatchObject({
+      orderBy: [{ createdAt: 'asc' }],
+    });
   });
 
   it('counts successful REFUNDED transactions in refunded and net revenue', async () => {
@@ -324,9 +394,18 @@ describe('AdminReportsRepository', () => {
 
     const result = await repository.getFinancialReport(
       { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
-      {},
+      { fromDate: '2026-08-21', toDate: '2026-08-21' },
     );
 
+    const financialAggregateCalls = prisma.order.aggregate.mock
+      .calls as unknown as Array<
+      [{ where: { createdAt: { gte: Date; lte: Date } } }]
+    >;
+    const financialAggregateCall = financialAggregateCalls[0][0];
+    expect(financialAggregateCall.where.createdAt).toEqual({
+      gte: new Date('2026-08-21T00:00:00.000Z'),
+      lte: new Date('2026-08-21T23:59:59.999Z'),
+    });
     expect(result.refundedAmount).toBe(25);
     expect(result.netRevenue).toBe(75);
     expect(result.codAmount).toBe(50);
