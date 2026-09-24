@@ -205,6 +205,7 @@ describe('AdminDashboardRepository', () => {
   });
 
   it.each([
+    ['daily', '2026-09-24', '2026-09-24', 1],
     ['daily', '2026-09-01', '2026-09-03', 3],
     ['weekly', '2026-09-01', '2026-09-15', 3],
     ['monthly', '2026-01-15', '2026-03-02', 3],
@@ -252,6 +253,24 @@ describe('AdminDashboardRepository', () => {
       expect(where).not.toHaveProperty('status');
     },
   );
+
+  it('rejects a reversed explicit timestamp period before querying', async () => {
+    const findMany = jest.fn();
+    const repository = new AdminDashboardRepository({
+      order: { findMany },
+    } as never);
+
+    await expect(
+      repository.getOrdersTrend(
+        { restaurantId: 'restaurant-1' },
+        {
+          fromDate: '2026-09-24T12:00:00.000Z',
+          toDate: '2026-09-24T11:59:59.999Z',
+        },
+      ),
+    ).rejects.toThrow('fromDate must be before or equal to toDate');
+    expect(findMany).not.toHaveBeenCalled();
+  });
 
   it('keeps paid revenue semantics while applying explicit period and group scope', async () => {
     const findMany = jest.fn().mockResolvedValue([

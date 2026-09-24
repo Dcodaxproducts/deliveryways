@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   DeliverymanStatus,
   PaymentMethod,
@@ -1058,6 +1058,11 @@ export class AdminDashboardRepository {
     const end = options.toDate
       ? this.parseTrendBoundary(options.toDate, true)
       : fallbackEnd;
+    if (start >= end) {
+      throw new BadRequestException(
+        'fromDate must be before or equal to toDate',
+      );
+    }
     const range = options.range ?? this.inferTrendRange(start, end);
 
     return {
