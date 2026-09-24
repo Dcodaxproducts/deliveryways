@@ -164,7 +164,7 @@ export class AdminDashboardRestaurantTrendQueryDto {
   range?: AdminDashboardTrendRange;
 }
 
-export class AdminDashboardOrdersTrendQueryDto extends AdminDashboardScopedQueryDto {
+export class AdminDashboardTrendQueryDto extends AdminDashboardScopedQueryDto {
   @ApiPropertyOptional({
     enum: ADMIN_DASHBOARD_TREND_RANGE_VALUES,
     default: 'daily',
@@ -172,17 +172,29 @@ export class AdminDashboardOrdersTrendQueryDto extends AdminDashboardScopedQuery
   @IsOptional()
   @IsIn(ADMIN_DASHBOARD_TREND_RANGE_VALUES)
   range?: AdminDashboardTrendRange;
+
+  @ApiPropertyOptional({ description: 'Inclusive UTC period start' })
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Inclusive UTC period end; date-only values include the full day',
+  })
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+
+  @ApiPropertyOptional({ enum: ['order', 'group-orders'] })
+  @IsOptional()
+  @IsIn(['order', 'group-orders'])
+  kind?: 'order' | 'group-orders';
 }
 
-export class AdminDashboardRevenueTrendQueryDto extends AdminDashboardScopedQueryDto {
-  @ApiPropertyOptional({
-    enum: ADMIN_DASHBOARD_TREND_RANGE_VALUES,
-    default: 'daily',
-  })
-  @IsOptional()
-  @IsIn(ADMIN_DASHBOARD_TREND_RANGE_VALUES)
-  range?: AdminDashboardTrendRange;
-}
+export class AdminDashboardOrdersTrendQueryDto extends AdminDashboardTrendQueryDto {}
+
+export class AdminDashboardRevenueTrendQueryDto extends AdminDashboardTrendQueryDto {}
 
 export class AdminDashboardOrdersStatsQueryDto extends AdminDashboardScopedQueryDto {
   @ApiPropertyOptional({ enum: ['order', 'group-orders'] })

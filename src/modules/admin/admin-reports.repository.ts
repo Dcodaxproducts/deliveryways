@@ -716,6 +716,7 @@ export class AdminReportsRepository {
       recognizedAggregate,
       paymentMethodTotals,
       orders,
+      successfulReportOrders,
       reportOrders,
       items,
       payoutRequests,
@@ -747,13 +748,24 @@ export class AdminReportsRepository {
       }),
       this.prisma.order.findMany({
         where: recognizedWhere,
+        select: {
+          paymentMethod: true,
+        },
+      }),
+      this.prisma.order.findMany({
+        where,
         orderBy: [{ createdAt: 'asc' }],
         select: {
           id: true,
           createdAt: true,
+          status: true,
+          orderType: true,
           paymentMethod: true,
           paymentStatus: true,
           totalAmount: true,
+          sourceGroupOrder: {
+            select: { id: true },
+          },
         },
       }),
       this.prisma.orderItem.findMany({
@@ -800,11 +812,17 @@ export class AdminReportsRepository {
       );
 
     const countFor = (methods: readonly PaymentMethod[]) =>
-      reportOrders.filter((order) => methods.includes(order.paymentMethod))
-        .length;
+      successfulReportOrders.filter((order) =>
+        methods.includes(order.paymentMethod),
+      ).length;
+    const statusCount = (status: string) =>
+      orders.filter((order) => order.status === status).length;
 
     return {
-      totalOrders: recognizedAggregate._count.id,
+      totalOrders: aggregate._count.id,
+      successfulOrders: recognizedAggregate._count.id,
+      cancelledOrders: statusCount('CANCELLED'),
+      rejectedOrders: statusCount('REJECTED'),
       totalRevenue: Number(recognizedAggregate._sum.totalAmount ?? 0),
       averageOrderValue: Number(recognizedAggregate._avg.totalAmount ?? 0),
       codAmount: amountFor([PaymentMethod.COD]),
@@ -822,9 +840,12 @@ export class AdminReportsRepository {
       orders: reportOrders.map((order) => ({
         id: order.id,
         createdAt: order.createdAt,
+        status: order.status,
+        orderType: order.orderType,
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,
         totalAmount: Number(order.totalAmount),
+        groupOrderId: order.sourceGroupOrder?.id ?? null,
       })),
       payoutActivity: payoutRequests.map((request) => ({
         id: request.id,
@@ -1030,10 +1051,20 @@ export class AdminReportsRepository {
 
     return {
       [field]: {
-        ...(fromDate ? { gte: new Date(fromDate) } : {}),
-        ...(toDate ? { lte: new Date(toDate) } : {}),
+        ...(fromDate ? { gte: this.parseDateBoundary(fromDate, false) } : {}),
+        ...(toDate ? { lte: this.parseDateBoundary(toDate, true) } : {}),
       },
     };
+  }
+
+  private parseDateBoundary(value: string, endOfDay: boolean) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return new Date(
+        `${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`,
+      );
+    }
+
+    return new Date(value);
   }
 
   private buildCampaignTypeWhere(

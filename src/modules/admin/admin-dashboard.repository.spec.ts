@@ -180,4 +180,115 @@ describe('AdminDashboardRepository', () => {
       },
     });
   });
+
+  it('keeps range fallback cumulative semantics in a Prisma transaction', async () => {
+    const count = jest.fn().mockResolvedValue(5);
+    const findMany = jest.fn().mockResolvedValue([{ createdAt: new Date() }]);
+    const transaction = jest.fn((queries: Array<Promise<unknown>>) =>
+      Promise.all(queries),
+    );
+    const repository = new AdminDashboardRepository({
+      order: { count, findMany },
+      $transaction: transaction,
+    } as never);
+
+    const result = await repository.getOrdersTrend(
+      { branchId: 'branch-1' },
+      'daily',
+    );
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(result.range).toBe('daily');
+    expect(result.period.explicit).toBe(false);
+    expect(result.points.at(-1)?.cumulativeTotal).toBe(6);
+  });
+
+  it.each([
+    ['daily', '2026-09-01', '2026-09-03', 3],
+    ['weekly', '2026-09-01', '2026-09-15', 3],
+    ['monthly', '2026-01-15', '2026-03-02', 3],
+    [undefined, '2026-09-01', '2026-09-03', 3],
+  ] as const)(
+    'uses deterministic UTC %s buckets for explicit periods',
+    async (range, fromDate, toDate, expectedBuckets) => {
+      const findMany = jest.fn().mockResolvedValue([]);
+      const count = jest.fn();
+      const repository = new AdminDashboardRepository({
+        order: { findMany, count },
+      } as never);
+
+      const result = await repository.getOrdersTrend(
+        { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+        { range, fromDate, toDate, kind: 'order' },
+      );
+
+      expect(result.points).toHaveLength(expectedBuckets);
+      expect(result.range).toBe(range ?? 'daily');
+      expect(result.period).toEqual({
+        fromDate: `${fromDate}T00:00:00.000Z`,
+        toDate: new Date(
+          new Date(`${toDate}T00:00:00.000Z`).getTime() + 86_399_999,
+        ).toISOString(),
+        timeZone: 'UTC',
+        explicit: true,
+      });
+      expect(count).not.toHaveBeenCalled();
+      const findManyCalls = findMany.mock.calls as unknown as Array<
+        [{ where: Record<string, unknown> }]
+      >;
+      const where = findManyCalls[0][0].where;
+      expect(where).toMatchObject({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        sourceGroupOrder: { is: null },
+        createdAt: {
+          gte: new Date(`${fromDate}T00:00:00.000Z`),
+          lt: new Date(
+            new Date(`${toDate}T00:00:00.000Z`).getTime() + 86_400_000,
+          ),
+        },
+      });
+      expect(where).not.toHaveProperty('status');
+    },
+  );
+
+  it('keeps paid revenue semantics while applying explicit period and group scope', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        amount: 25,
+        currency: 'EUR',
+        createdAt: new Date('2026-09-03T23:59:59.999Z'),
+      },
+    ]);
+    const repository = new AdminDashboardRepository(
+      { paymentTransaction: { findMany } } as never,
+      { getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR') } as never,
+    );
+
+    const result = await repository.getRevenueTrend(
+      { restaurantId: 'restaurant-1', branchId: 'branch-1' },
+      {
+        fromDate: '2026-09-01',
+        toDate: '2026-09-03',
+        kind: 'group-orders',
+      },
+    );
+
+    expect(result.totalRevenueInRange).toBe(25);
+    const findManyCalls = findMany.mock.calls as unknown as Array<
+      [{ where: Record<string, unknown> }]
+    >;
+    expect(findManyCalls[0][0].where).toMatchObject({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      type: 'CHARGE',
+      status: 'PAID',
+      order: { is: { sourceGroupOrder: { isNot: null } } },
+      createdAt: {
+        gte: new Date('2026-09-01T00:00:00.000Z'),
+        lt: new Date('2026-09-04T00:00:00.000Z'),
+      },
+    });
+  });
 });

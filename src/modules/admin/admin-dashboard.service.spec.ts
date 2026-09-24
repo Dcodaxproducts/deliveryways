@@ -171,7 +171,13 @@ describe('AdminDashboardService', () => {
           tid: 'tenant-1',
           role: 'BUSINESS_ADMIN',
         } as never,
-        { range: 'monthly', restaurantId: 'restaurant-1' },
+        {
+          range: 'monthly',
+          restaurantId: 'restaurant-1',
+          fromDate: '2026-01-01',
+          toDate: '2026-03-31',
+          kind: 'group-orders',
+        },
       ),
     ).resolves.toEqual({
       data: {
@@ -193,7 +199,12 @@ describe('AdminDashboardService', () => {
         tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
       },
-      'monthly',
+      {
+        range: 'monthly',
+        fromDate: '2026-01-01',
+        toDate: '2026-03-31',
+        kind: 'group-orders',
+      },
     );
   });
 
@@ -227,7 +238,12 @@ describe('AdminDashboardService', () => {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
       },
-      'daily',
+      {
+        range: 'daily',
+        fromDate: undefined,
+        toDate: undefined,
+        kind: undefined,
+      },
     );
   });
 
@@ -358,7 +374,12 @@ describe('AdminDashboardService', () => {
         tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
       },
-      'weekly',
+      {
+        range: 'weekly',
+        fromDate: undefined,
+        toDate: undefined,
+        kind: undefined,
+      },
     );
   });
 
