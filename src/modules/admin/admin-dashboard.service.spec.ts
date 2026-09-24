@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { AdminDashboardService } from './admin-dashboard.service';
 
 describe('AdminDashboardService', () => {
@@ -167,6 +168,53 @@ describe('AdminDashboardService', () => {
         kind: 'group-orders',
       },
     );
+  });
+
+  it('accepts an explicit same-day date-only trend period', async () => {
+    const repository = {
+      findRestaurantScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+      }),
+      getOrdersTrend: jest.fn().mockResolvedValue({
+        range: 'daily',
+        totalOrdersInRange: 0,
+        points: [],
+      }),
+    };
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getOrdersTrend(
+        {
+          uid: 'business-1',
+          tid: 'tenant-1',
+          role: 'BUSINESS_ADMIN',
+        } as never,
+        {
+          restaurantId: 'restaurant-1',
+          fromDate: '2026-09-24',
+          toDate: '2026-09-24',
+        },
+      ),
+    ).resolves.toMatchObject({ data: { totalOrdersInRange: 0 } });
+    expect(repository.getOrdersTrend).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a reversed explicit timestamp trend period', async () => {
+    const repository = {
+      findRestaurantScope: jest.fn(),
+      getOrdersTrend: jest.fn(),
+    };
+    const service = new AdminDashboardService(repository as never);
+
+    await expect(
+      service.getOrdersTrend({ uid: 'super-1', role: 'SUPER_ADMIN' } as never, {
+        fromDate: '2026-09-24T12:00:00.000Z',
+        toDate: '2026-09-24T11:59:59.999Z',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.getOrdersTrend).not.toHaveBeenCalled();
   });
 
   it('locks branch admin trend queries to own branch', async () => {

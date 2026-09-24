@@ -99,6 +99,7 @@ export class AdminDashboardService {
     data: AdminDashboardOrdersTrend;
     message: string;
   }> {
+    this.validateTrendPeriod(query.fromDate, query.toDate);
     const scope = await this.resolveDashboardScope(
       user,
       query.restaurantId,
@@ -124,6 +125,7 @@ export class AdminDashboardService {
     data: AdminDashboardRevenueTrend;
     message: string;
   }> {
+    this.validateTrendPeriod(query.fromDate, query.toDate);
     const scope = await this.resolveDashboardScope(
       user,
       query.restaurantId,
@@ -546,6 +548,14 @@ export class AdminDashboardService {
     }
 
     return restaurantId;
+  }
+
+  private validateTrendPeriod(fromDate?: string, toDate?: string): void {
+    if (fromDate && toDate && new Date(fromDate) > new Date(toDate)) {
+      throw new BadRequestException(
+        'fromDate must be before or equal to toDate',
+      );
+    }
   }
 
   private canStaffAccessRestaurant(
