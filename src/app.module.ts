@@ -54,6 +54,7 @@ import {
   VerifiedUserGuard,
 } from './common/guards';
 import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.middleware';
+import { AuthenticatedApiCacheMiddleware } from './common/middleware/authenticated-api-cache.middleware';
 import { AppController } from './app.controller';
 
 @Module({
@@ -149,9 +150,11 @@ import { AppController } from './app.controller';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(TenantDiscoveryMiddleware).forRoutes({
-      path: '*',
-      method: RequestMethod.ALL,
-    });
+    consumer
+      .apply(AuthenticatedApiCacheMiddleware, TenantDiscoveryMiddleware)
+      .forRoutes({
+        path: '*',
+        method: RequestMethod.ALL,
+      });
   }
 }
