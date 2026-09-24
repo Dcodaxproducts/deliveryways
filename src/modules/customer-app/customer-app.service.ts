@@ -73,6 +73,7 @@ import { normalizeLocale } from '../localizations/localization.util';
 import { MailerService } from '../mailer/mailer.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import { ContactSubmissionsService } from '../contact-submissions/contact-submissions.service';
+import { extractRestaurantOrderingSettings } from '../../common/utils/restaurant-ordering-settings.util';
 
 type AutoApplyPromotion = Awaited<
   ReturnType<CouponsService['getActiveAutoApplyPromotions']>
@@ -1413,6 +1414,7 @@ export class CustomerAppService {
           currency,
           timezone,
           branding: this.asObject(restaurant.branding),
+          ordering: extractRestaurantOrderingSettings(restaurant.settings),
         },
         branch: translatedBranch
           ? {

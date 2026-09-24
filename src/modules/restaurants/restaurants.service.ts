@@ -29,11 +29,16 @@ import {
   UpdateRestaurantImagesDto,
   UpdateRestaurantLegalProfileDto,
   UpdateRestaurantNotificationSettingsDto,
+  UpdateRestaurantOrderingSettingsDto,
   UpdateRestaurantPaymentFeeDto,
   UpdateRestaurantServiceChargeDto,
 } from './dto';
 import { randomUUID } from 'crypto';
 import { CustomDomainDnsService } from './custom-domain-dns.service';
+import {
+  extractRestaurantOrderingSettings,
+  mergeRestaurantOrderingSettings,
+} from '../../common/utils/restaurant-ordering-settings.util';
 
 @Injectable()
 export class RestaurantsService {
@@ -716,6 +721,46 @@ export class RestaurantsService {
     return {
       data: this.extractNotificationSettings(data),
       message: 'Notification settings updated successfully',
+    };
+  }
+
+  async orderingSettings(user: AuthUserContext, restaurantId: string) {
+    await this.ensureRestaurantReadAccess(user, restaurantId);
+    const restaurant = await this.restaurantsRepository.findById(restaurantId);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    return {
+      data: extractRestaurantOrderingSettings(restaurant.settings),
+      message: 'Ordering settings fetched successfully',
+    };
+  }
+
+  async updateOrderingSettings(
+    user: AuthUserContext,
+    restaurantId: string,
+    dto: UpdateRestaurantOrderingSettingsDto,
+    tx?: PrismaTx,
+  ) {
+    await this.ensureRestaurantWriteAccess(user, restaurantId);
+    const restaurant = await this.restaurantsRepository.findById(restaurantId);
+
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const settings = mergeRestaurantOrderingSettings(restaurant.settings, dto);
+    const updated = await this.restaurantsRepository.update(
+      restaurantId,
+      { settings: settings as Prisma.InputJsonValue },
+      tx,
+    );
+
+    return {
+      data: extractRestaurantOrderingSettings(updated.settings),
+      message: 'Ordering settings updated successfully',
     };
   }
 

@@ -1440,4 +1440,72 @@ describe('RestaurantsService notification settings', () => {
       customerApp: { giftCardsEnabled: true },
     });
   });
+
+  it('returns enabled ordering defaults when settings are missing', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: null,
+    });
+
+    const result = await service.orderingSettings(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data).toEqual({
+      preorderEnabled: true,
+      tipsEnabled: true,
+    });
+  });
+
+  it('updates only supplied ordering flags and preserves other settings', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+      settings: {
+        currency: 'PKR',
+        ordering: { preorderEnabled: true, tipsEnabled: false },
+      },
+    });
+    repository.update.mockImplementation((_id, data) =>
+      Promise.resolve({
+        id: 'restaurant-1',
+        settings: data.settings,
+      }),
+    );
+
+    const result = await service.updateOrderingSettings(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { preorderEnabled: false },
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'restaurant-1',
+      {
+        settings: {
+          currency: 'PKR',
+          ordering: { preorderEnabled: false, tipsEnabled: false },
+        },
+      },
+      undefined,
+    );
+    expect(result.data).toEqual({
+      preorderEnabled: false,
+      tipsEnabled: false,
+    });
+  });
 });

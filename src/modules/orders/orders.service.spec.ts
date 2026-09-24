@@ -8323,3 +8323,92 @@ describe('OrdersService - wallet payment', () => {
     expect(prisma.menuItem.findFirst).not.toHaveBeenCalled();
   });
 });
+
+describe('OrdersService - restaurant ordering controls', () => {
+  const user = {
+    uid: 'super-admin-1',
+    role: UserRoleEnum.SUPER_ADMIN,
+  } as never;
+
+  const makeService = (settings: Record<string, unknown>) =>
+    new OrdersService(
+      {
+        branch: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'branch-1',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            settings: {},
+            restaurant: { settings },
+          }),
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+  const baseDto = {
+    branchId: 'branch-1',
+    orderType: OrderTypeEnum.TAKEAWAY,
+    items: [{ menuItemId: 'item-1', quantity: 1 }],
+  };
+
+  it('rejects scheduled and future cart quotes when preorders are disabled', async () => {
+    const service = makeService({
+      ordering: { preorderEnabled: false, tipsEnabled: true },
+    });
+
+    await expect(
+      service.quote(user, { ...baseDto, isScheduled: true } as never),
+    ).rejects.toThrow('Preorders are disabled for this restaurant');
+    await expect(
+      service.quote(user, {
+        ...baseDto,
+        orderTime: '2099-01-01T00:00:00.000Z',
+      } as never),
+    ).rejects.toThrow('Preorders are disabled for this restaurant');
+  });
+
+  it('rejects a positive checkout tip when tips are disabled', async () => {
+    const service = makeService({
+      ordering: { preorderEnabled: true, tipsEnabled: false },
+    });
+
+    await expect(
+      service.create(user, { ...baseDto, tipAmount: 1 } as never),
+    ).rejects.toThrow('Tips are disabled for this restaurant');
+  });
+
+  it('accepts zero or omitted tips and immediate orders at the shared gate', () => {
+    const service = makeService({
+      ordering: { preorderEnabled: false, tipsEnabled: false },
+    });
+    const assertOrderingSettings = (
+      service as unknown as {
+        assertRestaurantOrderingSettings: (
+          settings: Prisma.JsonValue | null,
+          dto: { isScheduled?: boolean; tipAmount?: number },
+          orderTime: string | null,
+        ) => void;
+      }
+    ).assertRestaurantOrderingSettings.bind(service);
+
+    expect(() =>
+      assertOrderingSettings(
+        { ordering: { preorderEnabled: false, tipsEnabled: false } },
+        { isScheduled: false, tipAmount: 0 },
+        null,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertOrderingSettings(
+        { ordering: { preorderEnabled: false, tipsEnabled: false } },
+        {},
+        null,
+      ),
+    ).not.toThrow();
+  });
+});

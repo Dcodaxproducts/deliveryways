@@ -4,6 +4,7 @@ export { UpdateRestaurantImagesDto } from './update-restaurant-images.dto';
 export { UpdateRestaurantCustomerAppContentDto } from './update-restaurant-customer-app-content.dto';
 export { UpdateRestaurantLegalProfileDto } from './update-restaurant-legal-profile.dto';
 export { UpdateRestaurantNotificationSettingsDto } from './update-restaurant-notification-settings.dto';
+export { UpdateRestaurantOrderingSettingsDto } from './update-restaurant-ordering-settings.dto';
 export { UpdateRestaurantServiceChargeDto } from './update-restaurant-service-charge.dto';
 export { UpdateRestaurantPaymentFeeDto } from './update-restaurant-payment-fee.dto';
 export {
