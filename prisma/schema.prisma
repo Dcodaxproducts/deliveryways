@@ -442,6 +442,7 @@ model Tenant {
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
+  branchMenuAssignments  BranchMenuAssignment[]
 
   @@map("tenants")
 }
@@ -502,6 +503,7 @@ model Restaurant {
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
+  branchMenuAssignments  BranchMenuAssignment[]
 
   @@map("restaurants")
 }
@@ -545,6 +547,7 @@ model Branch {
   posOrderDrafts      PosOrderDraft[]
   orderReviews        OrderReview[]
   contactSubmissions  ContactSubmission[]
+  menuAssignments     BranchMenuAssignment[]
 
   @@map("branches")
 }
@@ -833,9 +836,31 @@ model RestaurantMenu {
   categories         RestaurantMenuCategory[]
   carts              Cart[]
   groupOrderSessions GroupOrderSession[]
+  branchAssignments  BranchMenuAssignment[]
 
   @@unique([restaurantId, slug])
   @@map("restaurant_menus")
+}
+
+model BranchMenuAssignment {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  restaurantId     String   @map("restaurant_id")
+  branchId         String   @map("branch_id")
+  restaurantMenuId String   @map("restaurant_menu_id")
+  isDefault        Boolean  @default(false) @map("is_default")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  restaurant     Restaurant     @relation(fields: [restaurantId], references: [id])
+  branch         Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  restaurantMenu RestaurantMenu @relation(fields: [restaurantMenuId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, restaurantMenuId])
+  @@index([tenantId, restaurantId, branchId])
+  @@map("branch_menu_assignments")
 }
 
 model RestaurantMenuCategory {

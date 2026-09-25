@@ -35,4 +35,14 @@ describe('BranchesController branch admin permissions', () => {
     expect(getRouteRoles('deliveryHours')).toContain(RolesEnum.STAFF);
     expect(getRouteRoles('updateDeliveryHours')).toContain(RolesEnum.STAFF);
   });
+
+  it('allows business admins to manage scoped branch lifecycle and menus', () => {
+    expect(getRouteRoles('suspend')).toContain(RolesEnum.BUSINESS_ADMIN);
+    expect(getRouteRoles('remove')).toContain(RolesEnum.BUSINESS_ADMIN);
+    expect(getRouteRoles('activate')).toContain(RolesEnum.BUSINESS_ADMIN);
+    expect(getRouteRoles('restore')).toContain(RolesEnum.BUSINESS_ADMIN);
+    expect(getRouteRoles('replaceMenuAssignments')).toContain(
+      RolesEnum.BUSINESS_ADMIN,
+    );
+  });
 });

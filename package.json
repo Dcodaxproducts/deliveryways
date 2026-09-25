@@ -37,7 +37,8 @@
     "db:restore": "bash scripts/restore-db.sh",
     "sync:server": "bash scripts/sync-server.sh",
     "deploy:safe": "bash scripts/deploy-safe.sh",
-    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev"
+    "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev",
+    "qa:partner-branch": "ts-node scripts/qa/partner-branch-fixture.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1009.0",

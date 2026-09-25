@@ -16,6 +16,98 @@ export class BranchesRepository {
     return this.prisma.$transaction(callback);
   }
 
+  listMenuAssignments(branchId: string, tx?: PrismaTx) {
+    return this.client(tx).branchMenuAssignment.findMany({
+      where: { branchId, isActive: true },
+      orderBy: [
+        { isDefault: 'desc' },
+        { restaurantMenu: { sortOrder: 'asc' } },
+      ],
+      include: {
+        restaurantMenu: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            isTimed: true,
+            timingConfig: true,
+            sortOrder: true,
+            isActive: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+  }
+
+  findActiveRestaurantMenus(
+    tenantId: string,
+    restaurantId: string,
+    menuIds: string[],
+    tx?: PrismaTx,
+  ) {
+    return this.client(tx).restaurantMenu.findMany({
+      where: {
+        id: { in: menuIds },
+        restaurantId,
+        restaurant: { tenantId, deletedAt: null },
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+  }
+
+  async replaceMenuAssignments(
+    scope: { tenantId: string; restaurantId: string; branchId: string },
+    menuIds: string[],
+    defaultMenuId: string,
+    tx: PrismaTx,
+  ) {
+    await tx.branchMenuAssignment.deleteMany({
+      where: {
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+        restaurantMenuId: { notIn: menuIds },
+      },
+    });
+    await tx.branchMenuAssignment.updateMany({
+      where: {
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        branchId: scope.branchId,
+      },
+      data: { isDefault: false, isActive: true },
+    });
+
+    for (const restaurantMenuId of menuIds) {
+      await tx.branchMenuAssignment.upsert({
+        where: {
+          branchId_restaurantMenuId: {
+            branchId: scope.branchId,
+            restaurantMenuId,
+          },
+        },
+        create: {
+          ...scope,
+          restaurantMenuId,
+          isActive: true,
+          isDefault: restaurantMenuId === defaultMenuId,
+        },
+        update: {
+          tenantId: scope.tenantId,
+          restaurantId: scope.restaurantId,
+          isActive: true,
+          isDefault: restaurantMenuId === defaultMenuId,
+        },
+      });
+    }
+
+    return this.listMenuAssignments(scope.branchId, tx);
+  }
+
   findStaffBranchAccess(staffId: string) {
     return this.prisma.staffUser.findUnique({
       where: { id: staffId },

@@ -25,6 +25,7 @@ import {
   CleanupOrphanBranchDto,
   CreateBranchDto,
   ListBranchesDto,
+  ReplaceBranchMenuAssignmentsDto,
   UpdateBranchDto,
   UpdateBranchDeliveryHoursDto,
   UpdateBranchDeliveryTimeDto,
@@ -317,6 +318,34 @@ export class BranchesController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.STAFF,
   )
+  @Get(':id/menus')
+  getMenuAssignments(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+  ) {
+    return this.branchesService.getMenuAssignments(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Put(':id/menus')
+  replaceMenuAssignments(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: ReplaceBranchMenuAssignmentsDto,
+  ) {
+    return this.branchesService.replaceMenuAssignments(user, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
+  @Roles(
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
+  )
   @Patch(':id')
   update(
     @CurrentUser() user: AuthUserContext,
@@ -328,7 +357,7 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Patch(':id/suspend')
   suspend(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.suspend(user, id);
@@ -377,7 +406,7 @@ export class BranchesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
-  @Roles(RolesEnum.SUPER_ADMIN)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
   @Delete(':id')
   remove(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.remove(user, id);

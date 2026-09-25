@@ -36,6 +36,9 @@ describe('BranchesService', () => {
       findRestaurantPaymentSettings: jest.fn().mockResolvedValue({
         settings: {},
       }),
+      listMenuAssignments: jest.fn(),
+      findActiveRestaurantMenus: jest.fn(),
+      replaceMenuAssignments: jest.fn(),
     };
 
     const usersService = {
@@ -2655,5 +2658,129 @@ describe('BranchesService', () => {
       isClosed: false,
     });
     expect(result.message).toBe('Branch reopened successfully');
+  });
+
+  it('allows a scoped business admin to suspend a non-main branch', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.countActiveByRestaurantExcluding.mockResolvedValue(1);
+    repository.setActive.mockResolvedValue({ id: 'branch-2', isActive: false });
+    await expect(
+      service.suspend(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+        },
+        'branch-2',
+      ),
+    ).resolves.toMatchObject({ message: 'Branch suspended successfully' });
+  });
+
+  it('rejects business-admin lifecycle access across tenants', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-2',
+      restaurantId: 'restaurant-2',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    await expect(
+      service.remove(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+        },
+        'branch-2',
+      ),
+    ).rejects.toThrow('outside your tenant');
+    expect(repository.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('rejects suspending the main branch', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-main',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: true,
+      isActive: true,
+      deletedAt: null,
+    });
+    await expect(
+      service.suspend(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+        },
+        'branch-main',
+      ),
+    ).rejects.toThrow('default branch cannot be suspended');
+    expect(repository.setActive).not.toHaveBeenCalled();
+  });
+
+  it('rejects a default menu that is not assigned', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    await expect(
+      service.replaceMenuAssignments(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+        },
+        'branch-2',
+        { menuIds: ['menu-1'], defaultMenuId: 'menu-2' },
+      ),
+    ).rejects.toThrow('defaultMenuId must be included');
+    expect(repository.replaceMenuAssignments).not.toHaveBeenCalled();
+  });
+
+  it('rejects inactive or cross-restaurant menu assignments', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.findActiveRestaurantMenus.mockResolvedValue([{ id: 'menu-1' }]);
+    await expect(
+      service.replaceMenuAssignments(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+        },
+        'branch-2',
+        { menuIds: ['menu-1', 'menu-foreign'], defaultMenuId: 'menu-1' },
+      ),
+    ).rejects.toThrow('must be active and belong');
+    expect(repository.replaceMenuAssignments).not.toHaveBeenCalled();
   });
 });

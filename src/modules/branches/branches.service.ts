@@ -23,6 +23,7 @@ import {
   CreateBranchDto,
   ListBranchesDto,
   ListPublicBranchesDto,
+  ReplaceBranchMenuAssignmentsDto,
   UpdateBranchDto,
   UpdateBranchDeliveryHoursDto,
   UpdateBranchDeliveryTimeDto,
@@ -1186,7 +1187,109 @@ export class BranchesService {
     };
   }
 
-  async suspend(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async getMenuAssignments(user: AuthUserContext, id: string) {
+    const branch = await this.branchesRepository.findById(id);
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+    await this.assertBranchAccess(user, branch);
+    const assignments = await this.branchesRepository.listMenuAssignments(id);
+    return {
+      data: this.toMenuAssignmentSummary(id, assignments),
+      message: 'Branch menu assignments fetched successfully',
+    };
+  }
+
+  async replaceMenuAssignments(
+    user: AuthUserContext,
+    id: string,
+    dto: ReplaceBranchMenuAssignmentsDto,
+  ) {
+    const branch = await this.branchesRepository.findById(id);
+    if (!branch || branch.deletedAt || !branch.isActive) {
+      throw new BadRequestException('Active branch not found');
+    }
+    await this.assertBranchWriteAccess(user, branch);
+    if (!dto.menuIds.includes(dto.defaultMenuId)) {
+      throw new BadRequestException(
+        'defaultMenuId must be included in menuIds',
+      );
+    }
+
+    const assignments = await this.branchesRepository.transaction(
+      async (trx) => {
+        const menus = await this.branchesRepository.findActiveRestaurantMenus(
+          branch.tenantId,
+          branch.restaurantId,
+          dto.menuIds,
+          trx,
+        );
+        if (menus.length !== dto.menuIds.length) {
+          throw new BadRequestException(
+            'All assigned menus must be active and belong to the branch restaurant',
+          );
+        }
+        return this.branchesRepository.replaceMenuAssignments(
+          {
+            tenantId: branch.tenantId,
+            restaurantId: branch.restaurantId,
+            branchId: branch.id,
+          },
+          dto.menuIds,
+          dto.defaultMenuId,
+          trx,
+        );
+      },
+    );
+
+    return {
+      data: this.toMenuAssignmentSummary(id, assignments),
+      message: 'Branch menu assignments replaced successfully',
+    };
+  }
+
+  private toMenuAssignmentSummary(
+    branchId: string,
+    assignments: Awaited<ReturnType<BranchesRepository['listMenuAssignments']>>,
+  ) {
+    return {
+      branchId,
+      defaultMenuId:
+        assignments.find((assignment) => assignment.isDefault)
+          ?.restaurantMenuId ?? null,
+      assignments: assignments.map((assignment) => ({
+        id: assignment.id,
+        restaurantMenuId: assignment.restaurantMenuId,
+        isDefault: assignment.isDefault,
+        isActive: assignment.isActive,
+        createdAt: assignment.createdAt,
+        updatedAt: assignment.updatedAt,
+        menu: assignment.restaurantMenu,
+      })),
+    };
+  }
+
+  async suspend(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const branch = await this.branchesRepository.findById(id);
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+    await this.assertBranchWriteAccess(user, branch);
+    if (branch.isMain) {
+      throw new BadRequestException('The default branch cannot be suspended');
+    }
+    if (branch.isActive) {
+      const remainingActiveBranches =
+        await this.branchesRepository.countActiveByRestaurantExcluding(
+          branch.restaurantId,
+          branch.id,
+        );
+      if (remainingActiveBranches === 0) {
+        throw new BadRequestException(
+          'A restaurant must keep at least one active branch',
+        );
+      }
+    }
     const data = await this.branchesRepository.setActive(id, false, tx);
 
     return {
@@ -1195,7 +1298,12 @@ export class BranchesService {
     };
   }
 
-  async activate(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async activate(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    const branch = await this.branchesRepository.findById(id);
+    if (!branch || branch.deletedAt) {
+      throw new BadRequestException('Branch not found');
+    }
+    await this.assertBranchWriteAccess(user, branch);
     const data = await this.branchesRepository.setActive(id, true, tx);
 
     return {
@@ -1214,23 +1322,13 @@ export class BranchesService {
       );
     }
 
-    const branch = await this.branchesRepository.findBranchTenant(id);
+    const branch = await this.branchesRepository.findById(id);
 
     if (!branch) {
       throw new BadRequestException('Branch not found');
     }
 
-    if (user.role === UserRoleEnum.BUSINESS_ADMIN) {
-      if (!user.tid) {
-        throw new ForbiddenException('Tenant context is required');
-      }
-
-      if (branch.tenantId !== user.tid) {
-        throw new ForbiddenException(
-          'You cannot restore branches outside your tenant restaurants',
-        );
-      }
-    }
+    await this.assertBranchWriteAccess(user, branch);
 
     const data = await this.branchesRepository.restore(id, tx);
 
@@ -1655,6 +1753,12 @@ export class BranchesService {
         );
       }
 
+      if (user.rid && branch.restaurantId !== user.rid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
+        );
+      }
+
       return;
     }
 
@@ -1711,6 +1815,12 @@ export class BranchesService {
       if (branch.tenantId !== user.tid) {
         throw new ForbiddenException(
           'You cannot access resources outside your tenant restaurants',
+        );
+      }
+
+      if (user.rid && branch.restaurantId !== user.rid) {
+        throw new ForbiddenException(
+          'You cannot access resources outside your restaurant',
         );
       }
 
