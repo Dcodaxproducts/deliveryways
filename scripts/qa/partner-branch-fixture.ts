@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { AddressRefType, Prisma, PrismaClient } from '@prisma/client';
 import {
   RecoverableManifest,
@@ -9,7 +10,13 @@ import {
   verifyRecoverableManifest,
 } from '../../src/modules/branches/qa-partner-manifest.protocol';
 
-const db = new PrismaClient();
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error('DATABASE_URL is required for the Partner QA fixture');
+}
+const db = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: databaseUrl }),
+});
 const RUN_KEY = 'qa-partner-branch-v1-20260925';
 const OWNER = 'Synthetic QA fixture [' + RUN_KEY + ']';
 const mode = process.argv[2] ?? 'dry-run';
