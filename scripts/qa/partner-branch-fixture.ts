@@ -1,7 +1,13 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { AddressRefType, Prisma, PrismaClient } from '@prisma/client';
+import {
+  RecoverableManifest,
+  RecoveryInspection,
+  runRecoverableApply,
+  runRecoverableRollback,
+  verifyRecoverableManifest,
+} from '../../src/modules/branches/qa-partner-manifest.protocol';
 
 const db = new PrismaClient();
 const RUN_KEY = 'qa-partner-branch-v1-20260925';
@@ -38,7 +44,7 @@ type RestaurantState = {
   bio: string | null;
   branding: Prisma.JsonValue | null;
 };
-interface Manifest {
+interface Manifest extends RecoverableManifest {
   runKey: string;
   tenantId: string;
   restaurantId: string;
@@ -47,7 +53,7 @@ interface Manifest {
   snapshotHash: string;
   applied: RestaurantState;
   appliedHash: string;
-  fixtureHash?: string;
+  fixtureHash: string;
 }
 async function lockFixtureRows(tx: Prisma.TransactionClient): Promise<void> {
   const fixtureIds = Object.values(ids);
@@ -192,6 +198,274 @@ function hash(value: unknown): string {
     .update(JSON.stringify(canonical(value)))
     .digest('hex');
 }
+function fixtureFingerprint(
+  state: Awaited<ReturnType<typeof fixtureState>>,
+): unknown {
+  return {
+    branches: state.branches.map((row) => ({
+      id: row.id,
+      tenantId: row.tenantId,
+      restaurantId: row.restaurantId,
+      name: row.name,
+      description: row.description,
+      settings: row.settings,
+      isMain: row.isMain,
+      isActive: row.isActive,
+      deletedAt: row.deletedAt,
+    })),
+    addresses: state.addresses.map((row) => ({
+      id: row.id,
+      tenantId: row.tenantId,
+      referenceId: row.referenceId,
+      refType: row.refType,
+      street: row.street,
+      area: row.area,
+      postalCode: row.postalCode,
+      city: row.city,
+      state: row.state,
+      country: row.country,
+      isActive: row.isActive,
+      deletedAt: row.deletedAt,
+    })),
+    menus: state.menus.map((row) => ({
+      id: row.id,
+      restaurantId: row.restaurantId,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      sortOrder: row.sortOrder,
+      isActive: row.isActive,
+      deletedAt: row.deletedAt,
+    })),
+    categories: state.categories.map((row) => ({
+      id: row.id,
+      restaurantId: row.restaurantId,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      isActive: row.isActive,
+      deletedAt: row.deletedAt,
+    })),
+    items: state.items.map((row) => ({
+      id: row.id,
+      restaurantId: row.restaurantId,
+      categoryId: row.categoryId,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      basePrice: row.basePrice.toString(),
+      isActive: row.isActive,
+      deletedAt: row.deletedAt,
+    })),
+    itemOverrides: state.itemOverrides.map((row) => ({
+      id: row.id,
+      branchId: row.branchId,
+      menuItemId: row.menuItemId,
+      isAvailable: row.isAvailable,
+      priceOverride: row.priceOverride,
+    })),
+    categoryOverrides: state.categoryOverrides.map((row) => ({
+      id: row.id,
+      branchId: row.branchId,
+      menuCategoryId: row.menuCategoryId,
+      isVisible: row.isVisible,
+    })),
+    assignments: state.assignments.map((row) => ({
+      id: row.id,
+      tenantId: row.tenantId,
+      restaurantId: row.restaurantId,
+      branchId: row.branchId,
+      restaurantMenuId: row.restaurantMenuId,
+      isDefault: row.isDefault,
+      isActive: row.isActive,
+    })),
+    contacts: state.contacts.map((row) => ({
+      id: row.id,
+      tenantId: row.tenantId,
+      restaurantId: row.restaurantId,
+      branchId: row.branchId,
+      name: row.name,
+      email: row.email,
+      subject: row.subject,
+      message: row.message,
+      metadata: row.metadata,
+    })),
+  };
+}
+function expectedFixtureFingerprint(): unknown {
+  const byId = <T extends { id: string }>(rows: T[]) =>
+    rows.sort((left, right) => left.id.localeCompare(right.id));
+  return {
+    branches: byId([
+      {
+        id: ids.north,
+        tenantId,
+        restaurantId,
+        name: 'QA North',
+        description: OWNER,
+        settings: { qaFixtureRunKey: RUN_KEY },
+        isMain: false,
+        isActive: true,
+        deletedAt: null,
+      },
+      {
+        id: ids.riverside,
+        tenantId,
+        restaurantId,
+        name: 'QA Riverside',
+        description: OWNER,
+        settings: { qaFixtureRunKey: RUN_KEY },
+        isMain: false,
+        isActive: false,
+        deletedAt: null,
+      },
+    ]),
+    addresses: byId([
+      {
+        id: ids.northAddress,
+        tenantId,
+        referenceId: ids.north,
+        refType: AddressRefType.BRANCH,
+        street: '100 QA North Street',
+        area: RUN_KEY,
+        postalCode: 'QA-0001',
+        city: 'Test City',
+        state: 'Test State',
+        country: 'Test Country',
+        isActive: true,
+        deletedAt: null,
+      },
+      {
+        id: ids.riversideAddress,
+        tenantId,
+        referenceId: ids.riverside,
+        refType: AddressRefType.BRANCH,
+        street: '200 QA Riverside Street',
+        area: RUN_KEY,
+        postalCode: 'QA-0001',
+        city: 'Test City',
+        state: 'Test State',
+        country: 'Test Country',
+        isActive: true,
+        deletedAt: null,
+      },
+    ]),
+    menus: byId([
+      {
+        id: ids.allDay,
+        restaurantId,
+        name: 'QA All Day',
+        slug: menuSlugs[0],
+        description: OWNER,
+        sortOrder: 10,
+        isActive: true,
+        deletedAt: null,
+      },
+      {
+        id: ids.evening,
+        restaurantId,
+        name: 'QA Evening',
+        slug: menuSlugs[1],
+        description: OWNER,
+        sortOrder: 20,
+        isActive: true,
+        deletedAt: null,
+      },
+    ]),
+    categories: [
+      {
+        id: ids.category,
+        restaurantId,
+        name: 'QA Favorites',
+        slug: 'qa-partner-favorites-20260925',
+        description: OWNER,
+        isActive: true,
+        deletedAt: null,
+      },
+    ],
+    items: [
+      {
+        id: ids.item,
+        restaurantId,
+        categoryId: ids.category,
+        name: 'QA Garden Bowl',
+        slug: 'qa-partner-garden-bowl-20260925',
+        description: OWNER,
+        basePrice: '12.5',
+        isActive: true,
+        deletedAt: null,
+      },
+    ],
+    itemOverrides: [
+      {
+        id: ids.itemOverride,
+        branchId: ids.riverside,
+        menuItemId: ids.item,
+        isAvailable: false,
+        priceOverride: null,
+      },
+    ],
+    categoryOverrides: [
+      {
+        id: ids.categoryOverride,
+        branchId: ids.riverside,
+        menuCategoryId: ids.category,
+        isVisible: true,
+      },
+    ],
+    assignments: byId([
+      {
+        id: ids.northAllDay,
+        tenantId,
+        restaurantId,
+        branchId: ids.north,
+        restaurantMenuId: ids.allDay,
+        isDefault: true,
+        isActive: true,
+      },
+      {
+        id: ids.northEvening,
+        tenantId,
+        restaurantId,
+        branchId: ids.north,
+        restaurantMenuId: ids.evening,
+        isDefault: false,
+        isActive: true,
+      },
+      {
+        id: ids.riversideAllDay,
+        tenantId,
+        restaurantId,
+        branchId: ids.riverside,
+        restaurantMenuId: ids.allDay,
+        isDefault: true,
+        isActive: true,
+      },
+    ]),
+    contacts: [
+      {
+        id: ids.contact,
+        tenantId,
+        restaurantId,
+        branchId: ids.north,
+        name: 'Synthetic QA Guest',
+        email: 'qa-partner-branch@example.invalid',
+        subject: 'Synthetic QA contact',
+        message: 'Partner workflow fixture.',
+        metadata: { runKey: RUN_KEY, synthetic: true },
+      },
+    ],
+  };
+}
+function expectedFixtureHash(): string {
+  return hash(expectedFixtureFingerprint());
+}
+function injectFault(
+  point: 'pre-transaction' | 'transaction' | 'post-commit',
+): void {
+  if (process.env.QA_FIXTURE_FAULT === point)
+    throw new Error('Injected fixture fault: ' + point);
+}
 function requireScope(): void {
   if (!tenantId || !restaurantId)
     throw new Error('QA_TENANT_ID and QA_RESTAURANT_ID are required');
@@ -223,32 +497,6 @@ async function getRestaurant(
   });
   if (!row) throw new Error('Explicit tenant/restaurant scope was not found');
   return row;
-}
-async function loadManifest(required: boolean): Promise<Manifest | null> {
-  try {
-    const value = JSON.parse(await readFile(manifestPath, 'utf8')) as Manifest;
-    assertOwned(
-      'Manifest',
-      value.runKey === RUN_KEY &&
-        value.tenantId === tenantId &&
-        value.restaurantId === restaurantId &&
-        hash(value.ids) === hash(ids) &&
-        value.snapshotHash === hash(value.snapshot) &&
-        value.appliedHash === hash(value.applied),
-    );
-    return value;
-  } catch (error) {
-    const code =
-      error instanceof Error && 'code' in error ? String(error.code) : '';
-    if (!required && code === 'ENOENT') return null;
-    throw error;
-  }
-}
-async function saveManifest(value: Manifest): Promise<void> {
-  await mkdir(dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, JSON.stringify(value, null, 2) + '\n', {
-    flag: 'wx',
-  });
 }
 async function assertFixtureOwnership(
   tx: Prisma.TransactionClient,
@@ -433,19 +681,36 @@ async function assertFixtureOwnership(
         contacts.length === 1,
     );
 }
-async function apply(): Promise<void> {
+function validateManifest(manifest: Manifest): void {
+  assertOwned(
+    'Manifest',
+    manifest.protocolVersion === 1 &&
+      manifest.operationId.length > 0 &&
+      ['PENDING', 'FINALIZED'].includes(manifest.status) &&
+      manifest.runKey === RUN_KEY &&
+      manifest.tenantId === tenantId &&
+      manifest.restaurantId === restaurantId &&
+      hash(manifest.ids) === hash(ids) &&
+      manifest.snapshotHash === hash(manifest.snapshot) &&
+      manifest.appliedHash === hash(manifest.applied) &&
+      manifest.fixtureHash === expectedFixtureHash(),
+  );
+}
+async function createPendingManifest(): Promise<Manifest> {
   const restaurant = await getRestaurant();
-  const existingManifest = await loadManifest(false);
   const marker = object(object(restaurant.branding).qaFixture).runKey;
   if (marker && marker !== RUN_KEY)
     throw new Error('Restaurant is owned by a different QA run');
-  const snapshot: RestaurantState = existingManifest?.snapshot ?? {
+  const snapshot: RestaurantState = {
     tagline: restaurant.tagline,
     bio: restaurant.bio,
     branding: restaurant.branding,
   };
   const applied = appliedState(snapshot);
-  const manifest: Manifest = existingManifest ?? {
+  return {
+    protocolVersion: 1,
+    operationId: randomUUID(),
+    status: 'PENDING',
     runKey: RUN_KEY,
     tenantId,
     restaurantId,
@@ -454,36 +719,74 @@ async function apply(): Promise<void> {
     snapshotHash: hash(snapshot),
     applied,
     appliedHash: hash(applied),
+    fixtureHash: expectedFixtureHash(),
   };
-  if (
-    existingManifest &&
-    ![manifest.snapshotHash, manifest.appliedHash].includes(
-      hash({
-        tagline: restaurant.tagline,
-        bio: restaurant.bio,
-        branding: restaurant.branding,
-      }),
-    )
-  ) {
-    throw new Error(
-      'Restaurant branding changed after apply; refusing idempotent overwrite',
-    );
-  }
-  if (!existingManifest) await saveManifest(manifest);
-  const fixtureHash = await db.$transaction(async (tx) => {
+}
+async function inspectManifest(
+  manifest: Manifest,
+): Promise<RecoveryInspection> {
+  return db.$transaction(async (tx) => {
     await tx.$queryRaw(
       Prisma.sql`SELECT "id" FROM "restaurants" WHERE "id" = ${restaurantId} AND "tenant_id" = ${tenantId} FOR UPDATE`,
     );
     await lockFixtureRows(tx);
+    const restaurant = await getRestaurant(tx);
+    const restaurantState: RestaurantState = {
+      tagline: restaurant.tagline,
+      bio: restaurant.bio,
+      branding: restaurant.branding,
+    };
+    const fixture = await fixtureState(tx);
+    if (fixtureIsEmpty(fixture))
+      return hash(restaurantState) === manifest.snapshotHash
+        ? 'CLEAN'
+        : 'RETRYABLE_COLLISION';
+    try {
+      await assertFixtureOwnership(tx, true);
+      if (hash(fixtureFingerprint(fixture)) === manifest.fixtureHash)
+        return hash(restaurantState) === manifest.appliedHash
+          ? 'APPLIED'
+          : 'COLLISION';
+    } catch {
+      // A pre-transaction foreign collision is safe to abandon, never delete.
+    }
+    return hash(restaurantState) === manifest.appliedHash
+      ? 'COLLISION'
+      : 'RETRYABLE_COLLISION';
+  });
+}
+async function apply(): Promise<void> {
+  await runRecoverableApply({
+    path: manifestPath,
+    createPending: createPendingManifest,
+    validate: validateManifest,
+    inspect: inspectManifest,
+    prepareFinalized: (manifest) => manifest,
+    transaction: applyFixtureTransaction,
+    afterPending: () => injectFault('pre-transaction'),
+    afterCommit: () => injectFault('post-commit'),
+  });
+}
+async function applyFixtureTransaction(manifest: Manifest): Promise<void> {
+  const applied = manifest.applied;
+  await db.$transaction(async (tx) => {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "restaurants" WHERE "id" = ${restaurantId} AND "tenant_id" = ${tenantId} FOR UPDATE`,
+    );
+    await lockFixtureRows(tx);
+    const current = await getRestaurant(tx);
+    const currentState: RestaurantState = {
+      tagline: current.tagline,
+      bio: current.bio,
+      branding: current.branding,
+    };
+    if (hash(currentState) !== manifest.snapshotHash)
+      throw new Error(
+        'Restaurant branding changed before apply; refusing overwrite',
+      );
     const before = await fixtureState(tx);
-    if (!existingManifest && !fixtureIsEmpty(before))
+    if (!fixtureIsEmpty(before))
       throw new Error('Fixture collision preflight failed');
-    if (
-      existingManifest &&
-      (!existingManifest.fixtureHash ||
-        hash(before) !== existingManifest.fixtureHash)
-    )
-      throw new Error('Fixture changed after apply; refusing overwrite');
     await assertFixtureOwnership(tx, false);
     await tx.restaurant.update({
       where: { id: restaurantId },
@@ -493,6 +796,7 @@ async function apply(): Promise<void> {
         branding: applied.branding as Prisma.InputJsonValue,
       },
     });
+    injectFault('transaction');
     for (const row of [
       { id: ids.north, name: 'QA North', isActive: true },
       { id: ids.riverside, name: 'QA Riverside', isActive: false },
@@ -679,14 +983,19 @@ async function apply(): Promise<void> {
       },
     });
     await assertFixtureOwnership(tx, true);
-    return hash(await fixtureState(tx));
+    if (
+      hash(fixtureFingerprint(await fixtureState(tx))) !== manifest.fixtureHash
+    )
+      throw new Error('Applied fixture does not match pending manifest hash');
   });
-  manifest.fixtureHash = fixtureHash;
-  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 }
 async function verify(): Promise<void> {
-  await getRestaurant();
-  await db.$transaction((tx) => assertFixtureOwnership(tx, true));
+  await verifyRecoverableManifest({
+    path: manifestPath,
+    validate: validateManifest,
+    inspect: inspectManifest,
+    prepareFinalized: (manifest) => manifest,
+  });
   console.log(
     JSON.stringify(
       {
@@ -701,17 +1010,14 @@ async function verify(): Promise<void> {
     ),
   );
 }
-async function rollback(): Promise<void> {
-  const manifest = await loadManifest(true);
-  if (!manifest) throw new Error('Manifest is required');
+async function rollbackFixtureTransaction(manifest: Manifest): Promise<void> {
   await db.$transaction(async (tx) => {
     await tx.$queryRaw(
       Prisma.sql`SELECT "id" FROM "restaurants" WHERE "id" = ${restaurantId} AND "tenant_id" = ${tenantId} FOR UPDATE`,
     );
     await lockFixtureRows(tx);
     if (
-      !manifest.fixtureHash ||
-      hash(await fixtureState(tx)) !== manifest.fixtureHash
+      hash(fixtureFingerprint(await fixtureState(tx))) !== manifest.fixtureHash
     )
       throw new Error('Fixture changed after apply; refusing unsafe rollback');
     const current = await getRestaurant(tx);
@@ -824,6 +1130,15 @@ async function rollback(): Promise<void> {
             : (manifest.snapshot.branding as Prisma.InputJsonValue),
       },
     });
+  });
+}
+async function rollback(): Promise<void> {
+  await runRecoverableRollback({
+    path: manifestPath,
+    validate: validateManifest,
+    inspect: inspectManifest,
+    prepareFinalized: (manifest) => manifest,
+    transaction: rollbackFixtureTransaction,
   });
 }
 async function main(): Promise<void> {

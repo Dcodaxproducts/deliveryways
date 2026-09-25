@@ -5,9 +5,9 @@
 Run key: qa-partner-branch-v1-20260925. The tool requires explicit QA_TENANT_ID and QA_RESTAURANT_ID and verifies that relationship before work. It has not been run against Staging.
 
 - npm run qa:partner-branch -- dry-run: validate scope and print stable IDs without mutation.
-- apply: preflights every fixed ID/slug/compound key, rejects anything not positively owned by this run, writes a hashed pre-change manifest, then applies one transaction. Reapply is allowed only while restaurant branding still matches the original or applied hash.
-- verify: exact tenant/restaurant-scoped fixture counts.
-- rollback: requires matching snapshot/applied hashes and ownership markers, refuses restoration after legitimate branding edits, and applies tenant + run-key guards to every exact-ID deletion.
+- apply: atomically writes a PENDING manifest containing snapshot, applied-state, and deterministic fixture hashes before mutation; preflights every fixed ID/slug/compound key; then applies one transaction. A successful commit is atomically finalized. Retries clean pre-transaction/rolled-back pending manifests or finalize a committed pending manifest without replaying writes.
+- verify: exact tenant/restaurant-scoped fixture ownership and hashes; it safely finalizes a committed PENDING manifest after a post-commit crash.
+- rollback: accepts verified FINALIZED or committed PENDING manifests, requires matching snapshot/applied/fixture hashes and ownership markers, refuses restoration after legitimate edits, and applies tenant + run-key guards to every exact-ID deletion. It never deletes collided non-fixture data.
 
 Optional QA_MANIFEST_PATH chooses the operator-controlled snapshot path. Fixtures include synthetic branding, North active and Riverside inactive branches, two menus, catalog/category and item overrides, and a synthetic contact submission. Orders are deliberately omitted because the schema requires an existing customer; the tool never attaches data to an unknown Staging user. No credentials or real PII are stored.
 
