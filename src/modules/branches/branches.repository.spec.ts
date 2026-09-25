@@ -1,6 +1,32 @@
 import { BranchesRepository } from './branches.repository';
 
 describe('BranchesRepository', () => {
+  it('scopes assignment reads through tenant, restaurant, branch and active menu state', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new BranchesRepository({
+      branchMenuAssignment: { findMany },
+    } as never);
+
+    await repository.listMenuAssignments({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+          isActive: true,
+          branch: { isActive: true, deletedAt: null },
+          restaurantMenu: { isActive: true, deletedAt: null },
+        },
+      }),
+    );
+  });
+
   it('switches the restaurant default branch in one transaction', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const update = jest.fn().mockResolvedValue({

@@ -4,6 +4,12 @@ import { PrismaService } from '../../database';
 import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 
+export interface BranchMenuAssignmentScope {
+  tenantId: string;
+  restaurantId: string;
+  branchId: string;
+}
+
 @Injectable()
 export class BranchesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -16,9 +22,42 @@ export class BranchesRepository {
     return this.prisma.$transaction(callback);
   }
 
-  listMenuAssignments(branchId: string, tx?: PrismaTx) {
+  async lockBranchForUpdate(scope: BranchMenuAssignmentScope, tx: PrismaTx) {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "branches"
+      WHERE "id" = ${scope.branchId}
+        AND "tenant_id" = ${scope.tenantId}
+        AND "restaurant_id" = ${scope.restaurantId}
+      FOR UPDATE
+    `);
+    return rows.length === 1;
+  }
+
+  async lockRestaurantBranchesForUpdate(
+    tenantId: string,
+    restaurantId: string,
+    tx: PrismaTx,
+  ) {
+    await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "branches"
+      WHERE "tenant_id" = ${tenantId}
+        AND "restaurant_id" = ${restaurantId}
+        AND "deleted_at" IS NULL
+      ORDER BY "id"
+      FOR UPDATE
+    `);
+  }
+
+  listMenuAssignments(scope: BranchMenuAssignmentScope, tx?: PrismaTx) {
     return this.client(tx).branchMenuAssignment.findMany({
-      where: { branchId, isActive: true },
+      where: {
+        ...scope,
+        isActive: true,
+        branch: { isActive: true, deletedAt: null },
+        restaurantMenu: { isActive: true, deletedAt: null },
+      },
       orderBy: [
         { isDefault: 'desc' },
         { restaurantMenu: { sortOrder: 'asc' } },
@@ -60,7 +99,7 @@ export class BranchesRepository {
   }
 
   async replaceMenuAssignments(
-    scope: { tenantId: string; restaurantId: string; branchId: string },
+    scope: BranchMenuAssignmentScope,
     menuIds: string[],
     defaultMenuId: string,
     tx: PrismaTx,
@@ -105,7 +144,7 @@ export class BranchesRepository {
       });
     }
 
-    return this.listMenuAssignments(scope.branchId, tx);
+    return this.listMenuAssignments(scope, tx);
   }
 
   findStaffBranchAccess(staffId: string) {
@@ -334,8 +373,8 @@ export class BranchesRepository {
     });
   }
 
-  async findById(id: string) {
-    return this.prisma.branch.findUnique({
+  async findById(id: string, tx?: PrismaTx) {
+    return this.client(tx).branch.findUnique({
       where: { id },
       include: {
         manager: {
@@ -612,11 +651,14 @@ export class BranchesRepository {
   }
 
   async countActiveByRestaurantExcluding(
+    tenantId: string,
     restaurantId: string,
     branchId: string,
+    tx?: PrismaTx,
   ) {
-    return this.prisma.branch.count({
+    return this.client(tx).branch.count({
       where: {
+        tenantId,
         restaurantId,
         id: { not: branchId },
         isActive: true,

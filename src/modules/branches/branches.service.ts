@@ -1193,7 +1193,11 @@ export class BranchesService {
       throw new BadRequestException('Branch not found');
     }
     await this.assertBranchAccess(user, branch);
-    const assignments = await this.branchesRepository.listMenuAssignments(id);
+    const assignments = await this.branchesRepository.listMenuAssignments({
+      tenantId: branch.tenantId,
+      restaurantId: branch.restaurantId,
+      branchId: branch.id,
+    });
     return {
       data: this.toMenuAssignmentSummary(id, assignments),
       message: 'Branch menu assignments fetched successfully',
@@ -1216,11 +1220,27 @@ export class BranchesService {
       );
     }
 
+    const scope = {
+      tenantId: branch.tenantId,
+      restaurantId: branch.restaurantId,
+      branchId: branch.id,
+    };
     const assignments = await this.branchesRepository.transaction(
       async (trx) => {
+        const locked = await this.branchesRepository.lockBranchForUpdate(
+          scope,
+          trx,
+        );
+        const lockedBranch = locked
+          ? await this.branchesRepository.findById(id, trx)
+          : null;
+        if (!lockedBranch || lockedBranch.deletedAt || !lockedBranch.isActive) {
+          throw new BadRequestException('Active branch not found');
+        }
+        await this.assertBranchWriteAccess(user, lockedBranch);
         const menus = await this.branchesRepository.findActiveRestaurantMenus(
-          branch.tenantId,
-          branch.restaurantId,
+          scope.tenantId,
+          scope.restaurantId,
           dto.menuIds,
           trx,
         );
@@ -1230,11 +1250,7 @@ export class BranchesService {
           );
         }
         return this.branchesRepository.replaceMenuAssignments(
-          {
-            tenantId: branch.tenantId,
-            restaurantId: branch.restaurantId,
-            branchId: branch.id,
-          },
+          scope,
           dto.menuIds,
           dto.defaultMenuId,
           trx,
@@ -1254,6 +1270,7 @@ export class BranchesService {
   ) {
     return {
       branchId,
+      menuIds: assignments.map((assignment) => assignment.restaurantMenuId),
       defaultMenuId:
         assignments.find((assignment) => assignment.isDefault)
           ?.restaurantMenuId ?? null,
@@ -1270,27 +1287,44 @@ export class BranchesService {
   }
 
   async suspend(user: AuthUserContext, id: string, tx?: PrismaTx) {
-    const branch = await this.branchesRepository.findById(id);
-    if (!branch || branch.deletedAt) {
-      throw new BadRequestException('Branch not found');
-    }
-    await this.assertBranchWriteAccess(user, branch);
-    if (branch.isMain) {
-      throw new BadRequestException('The default branch cannot be suspended');
-    }
-    if (branch.isActive) {
-      const remainingActiveBranches =
-        await this.branchesRepository.countActiveByRestaurantExcluding(
-          branch.restaurantId,
-          branch.id,
-        );
-      if (remainingActiveBranches === 0) {
-        throw new BadRequestException(
-          'A restaurant must keep at least one active branch',
-        );
+    const operation = async (trx: PrismaTx) => {
+      const initial = await this.branchesRepository.findById(id, trx);
+      if (!initial || initial.deletedAt) {
+        throw new BadRequestException('Branch not found');
       }
-    }
-    const data = await this.branchesRepository.setActive(id, false, tx);
+      await this.assertBranchWriteAccess(user, initial);
+      await this.branchesRepository.lockRestaurantBranchesForUpdate(
+        initial.tenantId,
+        initial.restaurantId,
+        trx,
+      );
+      const branch = await this.branchesRepository.findById(id, trx);
+      if (!branch || branch.deletedAt) {
+        throw new BadRequestException('Branch not found');
+      }
+      await this.assertBranchWriteAccess(user, branch);
+      if (branch.isMain) {
+        throw new BadRequestException('The default branch cannot be suspended');
+      }
+      if (branch.isActive) {
+        const remainingActiveBranches =
+          await this.branchesRepository.countActiveByRestaurantExcluding(
+            branch.tenantId,
+            branch.restaurantId,
+            branch.id,
+            trx,
+          );
+        if (remainingActiveBranches === 0) {
+          throw new BadRequestException(
+            'A restaurant must keep at least one active branch',
+          );
+        }
+      }
+      return this.branchesRepository.setActive(id, false, trx);
+    };
+    const data = tx
+      ? await operation(tx)
+      : await this.branchesRepository.transaction(operation);
 
     return {
       data: await this.resolveBranchMedia(data),
@@ -1374,31 +1408,42 @@ export class BranchesService {
   }
 
   async remove(user: AuthUserContext, id: string, tx?: PrismaTx) {
-    const branch = await this.branchesRepository.findById(id);
-
-    if (!branch || branch.deletedAt) {
-      throw new BadRequestException('Branch not found');
-    }
-
-    await this.assertBranchWriteAccess(user, branch);
-
-    if (branch.isMain) {
-      throw new BadRequestException('The default branch cannot be deleted');
-    }
-
-    const remainingActiveBranches =
-      await this.branchesRepository.countActiveByRestaurantExcluding(
-        branch.restaurantId,
-        branch.id,
+    const operation = async (trx: PrismaTx) => {
+      const initial = await this.branchesRepository.findById(id, trx);
+      if (!initial || initial.deletedAt) {
+        throw new BadRequestException('Branch not found');
+      }
+      await this.assertBranchWriteAccess(user, initial);
+      await this.branchesRepository.lockRestaurantBranchesForUpdate(
+        initial.tenantId,
+        initial.restaurantId,
+        trx,
       );
-
-    if (remainingActiveBranches === 0) {
-      throw new BadRequestException(
-        'A restaurant must keep at least one active branch',
-      );
-    }
-
-    const data = await this.branchesRepository.softDelete(id, tx);
+      const branch = await this.branchesRepository.findById(id, trx);
+      if (!branch || branch.deletedAt) {
+        throw new BadRequestException('Branch not found');
+      }
+      await this.assertBranchWriteAccess(user, branch);
+      if (branch.isMain) {
+        throw new BadRequestException('The default branch cannot be deleted');
+      }
+      const remainingActiveBranches =
+        await this.branchesRepository.countActiveByRestaurantExcluding(
+          branch.tenantId,
+          branch.restaurantId,
+          branch.id,
+          trx,
+        );
+      if (remainingActiveBranches === 0) {
+        throw new BadRequestException(
+          'A restaurant must keep at least one active branch',
+        );
+      }
+      return this.branchesRepository.softDelete(id, trx);
+    };
+    const data = tx
+      ? await operation(tx)
+      : await this.branchesRepository.transaction(operation);
 
     return {
       data,

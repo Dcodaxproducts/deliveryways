@@ -39,6 +39,8 @@ describe('BranchesService', () => {
       listMenuAssignments: jest.fn(),
       findActiveRestaurantMenus: jest.fn(),
       replaceMenuAssignments: jest.fn(),
+      lockBranchForUpdate: jest.fn().mockResolvedValue(true),
+      lockRestaurantBranchesForUpdate: jest.fn().mockResolvedValue(undefined),
     };
 
     const usersService = {
@@ -101,10 +103,20 @@ describe('BranchesService', () => {
     );
 
     expect(repository.countActiveByRestaurantExcluding).toHaveBeenCalledWith(
+      'tenant-1',
       'restaurant-1',
       'branch-2',
+      expect.any(Object),
     );
-    expect(repository.softDelete).toHaveBeenCalledWith('branch-2', undefined);
+    expect(repository.lockRestaurantBranchesForUpdate).toHaveBeenCalledWith(
+      'tenant-1',
+      'restaurant-1',
+      expect.any(Object),
+    );
+    expect(repository.softDelete).toHaveBeenCalledWith(
+      'branch-2',
+      expect.any(Object),
+    );
     expect(result.message).toBe('Branch soft deleted successfully');
   });
 
@@ -154,6 +166,11 @@ describe('BranchesService', () => {
       ),
     ).rejects.toThrow('A restaurant must keep at least one active branch');
 
+    expect(repository.lockRestaurantBranchesForUpdate).toHaveBeenCalledWith(
+      'tenant-1',
+      'restaurant-1',
+      expect.any(Object),
+    );
     expect(repository.softDelete).not.toHaveBeenCalled();
   });
 
@@ -2782,5 +2799,132 @@ describe('BranchesService', () => {
       ),
     ).rejects.toThrow('must be active and belong');
     expect(repository.replaceMenuAssignments).not.toHaveBeenCalled();
+  });
+
+  it('returns the canonical branch menu assignment contract', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.listMenuAssignments.mockResolvedValue([
+      {
+        id: 'assignment-1',
+        restaurantMenuId: 'menu-1',
+        isDefault: true,
+        isActive: true,
+        createdAt: new Date('2026-09-25T00:00:00.000Z'),
+        updatedAt: new Date('2026-09-25T00:00:00.000Z'),
+        restaurantMenu: { id: 'menu-1', name: 'All Day' },
+      },
+      {
+        id: 'assignment-2',
+        restaurantMenuId: 'menu-2',
+        isDefault: false,
+        isActive: true,
+        createdAt: new Date('2026-09-25T00:00:00.000Z'),
+        updatedAt: new Date('2026-09-25T00:00:00.000Z'),
+        restaurantMenu: { id: 'menu-2', name: 'Evening' },
+      },
+    ]);
+
+    const result = await service.getMenuAssignments(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      },
+      'branch-2',
+    );
+
+    expect(result.data).toMatchObject({
+      branchId: 'branch-2',
+      menuIds: ['menu-1', 'menu-2'],
+      defaultMenuId: 'menu-1',
+    });
+    expect(repository.listMenuAssignments).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-2',
+    });
+  });
+
+  it('locks and revalidates a branch before replacing menu assignments', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.findActiveRestaurantMenus.mockResolvedValue([{ id: 'menu-1' }]);
+    repository.replaceMenuAssignments.mockResolvedValue([]);
+
+    await service.replaceMenuAssignments(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+      },
+      'branch-2',
+      { menuIds: ['menu-1'], defaultMenuId: 'menu-1' },
+    );
+
+    expect(repository.lockBranchForUpdate).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-2',
+      },
+      expect.any(Object),
+    );
+    expect(repository.findActiveRestaurantMenus).toHaveBeenCalledWith(
+      'tenant-1',
+      'restaurant-1',
+      ['menu-1'],
+      expect.any(Object),
+    );
+  });
+
+  it('revalidates main-branch protection after acquiring lifecycle locks', async () => {
+    const { service, repository } = makeService();
+    repository.findById
+      .mockResolvedValueOnce({
+        id: 'branch-2',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        isMain: false,
+        isActive: true,
+        deletedAt: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'branch-2',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        isMain: true,
+        isActive: true,
+        deletedAt: null,
+      });
+
+    await expect(
+      service.suspend(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+        },
+        'branch-2',
+      ),
+    ).rejects.toThrow('default branch cannot be suspended');
+    expect(repository.lockRestaurantBranchesForUpdate).toHaveBeenCalled();
+    expect(repository.setActive).not.toHaveBeenCalled();
   });
 });

@@ -505,6 +505,7 @@ model Restaurant {
   contactSubmissions     ContactSubmission[]
   branchMenuAssignments  BranchMenuAssignment[]
 
+  @@unique([id, tenantId])
   @@map("restaurants")
 }
 
@@ -549,6 +550,7 @@ model Branch {
   contactSubmissions  ContactSubmission[]
   menuAssignments     BranchMenuAssignment[]
 
+  @@unique([id, tenantId, restaurantId])
   @@map("branches")
 }
 
@@ -839,6 +841,7 @@ model RestaurantMenu {
   branchAssignments  BranchMenuAssignment[]
 
   @@unique([restaurantId, slug])
+  @@unique([id, restaurantId])
   @@map("restaurant_menus")
 }
 
@@ -854,9 +857,9 @@ model BranchMenuAssignment {
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant         Tenant         @relation(fields: [tenantId], references: [id])
-  restaurant     Restaurant     @relation(fields: [restaurantId], references: [id])
-  branch         Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  restaurantMenu RestaurantMenu @relation(fields: [restaurantMenuId], references: [id], onDelete: Cascade)
+  restaurant     Restaurant     @relation(fields: [restaurantId, tenantId], references: [id, tenantId])
+  branch         Branch         @relation(fields: [branchId, tenantId, restaurantId], references: [id, tenantId, restaurantId], onDelete: Cascade)
+  restaurantMenu RestaurantMenu @relation(fields: [restaurantMenuId, restaurantId], references: [id, restaurantId], onDelete: Cascade)
 
   @@unique([branchId, restaurantMenuId])
   @@index([tenantId, restaurantId, branchId])
