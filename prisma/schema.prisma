@@ -626,7 +626,7 @@ model User {
   contactSubmissions     ContactSubmission[]     @relation("ContactSubmissionCustomer")
   contactReplies         ContactSubmission[]     @relation("ContactSubmissionReplier")
 
-  @@unique([email, restaurantId])
+  @@unique([email, restaurantId, role])
   @@map("users")
 }
 

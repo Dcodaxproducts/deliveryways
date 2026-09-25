@@ -48,6 +48,7 @@ describe('AuthService password reset OTP scoping', () => {
       expect.any(String),
       expect.any(Date),
       'restaurant-1',
+      'CUSTOMER',
     );
   });
 
@@ -72,6 +73,7 @@ describe('AuthService password reset OTP scoping', () => {
       expect.any(String),
       expect.any(Date),
       'restaurant-1',
+      'CUSTOMER',
     );
   });
 
@@ -97,6 +99,7 @@ describe('AuthService password reset OTP scoping', () => {
     expect(usersService.findByEmail).toHaveBeenCalledWith(
       'customer@example.com',
       'restaurant-1',
+      'CUSTOMER',
     );
     expect(result.message).toBe('Password reset successful');
   });

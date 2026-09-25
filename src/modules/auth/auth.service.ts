@@ -14,6 +14,7 @@ import {
   PaymentStatus,
   Prisma,
   SubscriptionStatus,
+  UserRole,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomInt } from 'crypto';
@@ -574,10 +575,11 @@ export class AuthService {
       throw new NotFoundException('Restaurant not found');
     }
 
-    const existing = await this.usersService.findByEmail(
-      dto.email,
-      dto.restaurantId,
-    );
+    const existing = await this.usersService.existsByEmailAndRole({
+      email: dto.email,
+      restaurantId: dto.restaurantId,
+      role: UserRole.CUSTOMER,
+    });
     if (existing) {
       throw new BadRequestException('Email already exists');
     }
@@ -1815,6 +1817,7 @@ export class AuthService {
     return this.issueVerificationOtp({
       email: dbUser.email,
       restaurantId: dbUser.restaurantId ?? undefined,
+      role: dbUser.role,
     });
   }
 
@@ -1832,6 +1835,7 @@ export class AuthService {
     const user = await this.usersService.findByEmail(
       dto.email,
       dto.restaurantId,
+      dto.restaurantId ? UserRole.CUSTOMER : undefined,
     );
 
     if (!user) {
@@ -2566,10 +2570,14 @@ export class AuthService {
     }
 
     if (dto.restaurantId) {
-      return this.usersService.findByEmailIncludingDeleted(
-        normalizedEmail,
-        dto.restaurantId,
-      );
+      const [customer] = await this.usersService.findManyForDevResolution({
+        email: normalizedEmail,
+        restaurantId: dto.restaurantId,
+        role: UserRole.CUSTOMER,
+        includeDeleted: true,
+      });
+
+      return customer ?? null;
     }
 
     const candidates = await this.usersService.findManyForDevResolution({
@@ -2787,7 +2795,9 @@ export class AuthService {
   }
 
   private async issueVerificationOtp(
-    dto: Pick<ResendOtpDto, 'email' | 'restaurantId'>,
+    dto: Pick<ResendOtpDto, 'email' | 'restaurantId'> & {
+      role?: UserRole;
+    },
     requestedLocale?: string,
   ) {
     const emailEnabled = process.env.EMAIL_ENABLED === 'true';
@@ -2795,6 +2805,7 @@ export class AuthService {
     const user = await this.usersService.findByEmail(
       dto.email,
       dto.restaurantId,
+      dto.role ?? (dto.restaurantId ? UserRole.CUSTOMER : undefined),
     );
 
     if (!user || user.deletedAt || user.isVerified) {
@@ -2811,6 +2822,7 @@ export class AuthService {
       otp,
       expiresAt,
       dto.restaurantId,
+      dto.role ?? (dto.restaurantId ? UserRole.CUSTOMER : undefined),
     );
 
     if (emailEnabled) {
@@ -2843,6 +2855,7 @@ export class AuthService {
       otp,
       expiresAt,
       dto.restaurantId,
+      dto.restaurantId ? UserRole.CUSTOMER : undefined,
     );
 
     if (result.count === 0) {
@@ -2856,6 +2869,7 @@ export class AuthService {
       const user = await this.usersService.findByEmail(
         dto.email,
         dto.restaurantId,
+        dto.restaurantId ? UserRole.CUSTOMER : undefined,
       );
       await this.mailerService.sendPasswordResetEmail(
         dto.email,

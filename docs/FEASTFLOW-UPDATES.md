@@ -339,6 +339,12 @@ Partner commit `e589163` standardizes responsive filter actions, tabs, metric ca
 
 The cumulative commit was deployed to Staging on 2026-09-17 as immutable non-root image `sha256:1a099d35955bcf775368b30d35340ac5e3260090dd24217afc4349832e4d4623`. Only Partner was recreated; API, PostgreSQL, Customer, Superadmin, and Production remained unchanged. Partner is healthy with zero restarts, the full Staging smoke test and three local/public probe rounds passed, logs are clean, and the exact live bundle passed 18/18 desktop/mobile checks across Menu, Reservations, Orders, and POS with no overflow, clipped actions, narrow buttons, wrapped tabs, duplicate Orders navigation, sidebar visibility failures, or browser errors. Release and exact-image rollback overlays are stored under `/opt/feastflow/releases/staging/20260917-partner-responsive-ui-consistency*.compose.yml`.
 
+### Admin/report parity and shared controls Staging release
+
+The coordinated DeliveryWay-parity and Partner shared-controls release is live on Staging: API `ca54be5`, Superadmin `5bf94f2`, and Partner `a715cac`. It adds role-level all-restaurants access with explicit-scope precedence, selected-period order-payment and payout report data, coupon payload sanitization with visible validation feedback, canonical search and shadcn date/time controls, thin arrowless scrollbars, and the compact POS header. No schema migration was required.
+
+Only API, Partner, and Superadmin were recreated. PostgreSQL and Customer remained unchanged, all five services are healthy with zero restarts, and Production was not touched. The verified database backup is `/opt/feastflow/backups/staging/feastflow_staging_20260917T111706Z.dump`. Local smoke, three public probe rounds, clean-log checks, 12/12 desktop/mobile shared-control checks, and 8/8 anonymous login/protected-route browser checks passed. Release and exact-image rollback overlays are stored under `/opt/feastflow/releases/staging/20260917-admin-report-shared-controls*.compose.yml`; the release manifest is `/opt/feastflow/releases/staging/20260917T111949Z.env`.
+
 ## 11. Current Priorities
 
 1. Run authenticated business acceptance for the updated Partner workflows on Staging, including real order, POS, payment, report, and promotion data.

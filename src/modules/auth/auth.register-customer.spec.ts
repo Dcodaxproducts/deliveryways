@@ -23,7 +23,7 @@ describe('AuthService registerCustomer', () => {
     };
 
     usersService = {
-      findByEmail: jest.fn(),
+      existsByEmailAndRole: jest.fn(),
       create: jest.fn(),
       setRefreshTokenHash: jest.fn(),
     };
@@ -57,7 +57,7 @@ describe('AuthService registerCustomer', () => {
 
   it('checks existing customers within the same restaurant scope', async () => {
     prisma.restaurant.findFirst.mockResolvedValue({ tenantId: 'tenant-1' });
-    usersService.findByEmail!.mockResolvedValue(null);
+    usersService.existsByEmailAndRole!.mockResolvedValue(false);
     usersService.create!.mockResolvedValue({
       id: 'customer-2',
       email: 'customer@example.com',
@@ -79,21 +79,18 @@ describe('AuthService registerCustomer', () => {
       phone: '03001234567',
     });
 
-    expect(usersService.findByEmail).toHaveBeenCalledWith(
-      'customer@example.com',
-      'restaurant-2',
-    );
+    expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
+      email: 'customer@example.com',
+      restaurantId: 'restaurant-2',
+      role: 'CUSTOMER',
+    });
     expect(usersService.create).toHaveBeenCalled();
     expect(result.data.accessToken).toBe('access-token');
   });
 
   it('rejects duplicate customer email within the same restaurant', async () => {
     prisma.restaurant.findFirst.mockResolvedValue({ tenantId: 'tenant-1' });
-    usersService.findByEmail!.mockResolvedValue({
-      id: 'customer-1',
-      email: 'customer@example.com',
-      restaurantId: 'restaurant-1',
-    });
+    usersService.existsByEmailAndRole!.mockResolvedValue(true);
 
     await expect(
       service.registerCustomer({
@@ -105,10 +102,11 @@ describe('AuthService registerCustomer', () => {
       }),
     ).rejects.toThrow(BadRequestException);
 
-    expect(usersService.findByEmail).toHaveBeenCalledWith(
-      'customer@example.com',
-      'restaurant-1',
-    );
+    expect(usersService.existsByEmailAndRole).toHaveBeenCalledWith({
+      email: 'customer@example.com',
+      restaurantId: 'restaurant-1',
+      role: 'CUSTOMER',
+    });
     expect(usersService.create).not.toHaveBeenCalled();
   });
 
@@ -116,7 +114,7 @@ describe('AuthService registerCustomer', () => {
     const originalEmailEnabled = process.env.EMAIL_ENABLED;
     process.env.EMAIL_ENABLED = 'true';
     prisma.restaurant.findFirst.mockResolvedValue({ tenantId: 'tenant-1' });
-    usersService.findByEmail!.mockResolvedValue(null);
+    usersService.existsByEmailAndRole!.mockResolvedValue(false);
     usersService.create!.mockResolvedValue({
       id: 'customer-3',
       email: 'customer@example.com',

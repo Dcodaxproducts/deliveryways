@@ -11,6 +11,9 @@ import { AuthUserContext } from '../../common/decorators';
 import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsRepository } from './global-settings.repository';
 import {
+  LandingCollectionDisplayMode,
+  LandingContentImagePosition,
+  LandingHomeSection,
   PaymentMethodSettingDto,
   TaxTypeSettingDto,
   UpdateGlobalPaymentMethodsDto,
@@ -81,6 +84,7 @@ export interface LandingPageSettingsShape {
     youtube: string | null;
   };
   home: LandingHomeSettingsShape;
+  packages: LandingPackagePlansShape;
   pages: LandingPagePagesShape;
   legalProfile: GlobalLegalProfileShape;
   faqs: LandingPageFaqShape[];
@@ -109,10 +113,13 @@ export interface LandingHomeLocalizedBlockShape {
   checklistDe: string[];
   imageUrl: string | null;
   isVisible: boolean;
+  imagePosition: LandingContentImagePosition;
 }
 
 export interface LandingHomeSettingsShape {
+  sectionOrder: LandingHomeSection[];
   hero: {
+    isVisible: boolean;
     badgeEn: string | null;
     badgeDe: string | null;
     headingEn: string | null;
@@ -132,9 +139,16 @@ export interface LandingHomeSettingsShape {
     headingDe: string | null;
     restaurantIds: string[];
     isVisible: boolean;
+    displayMode: LandingCollectionDisplayMode;
+    columns: number;
   };
   growth: LandingHomeLocalizedBlockShape;
   orderManagement: LandingHomeLocalizedBlockShape;
+  faqs: {
+    headingEn: string | null;
+    headingDe: string | null;
+    isVisible: boolean;
+  };
   appDownload: {
     headingEn: string | null;
     headingDe: string | null;
@@ -145,6 +159,14 @@ export interface LandingHomeSettingsShape {
     appStoreUrl: string | null;
     isVisible: boolean;
   };
+}
+
+export interface LandingPackagePlansShape {
+  isVisible: boolean;
+  packagePlanIds: string[];
+  displayMode: LandingCollectionDisplayMode;
+  columns: number;
+  highlightedPackagePlanId: string | null;
 }
 
 export interface LandingPageHeroShape {
@@ -759,6 +781,7 @@ export class GlobalSettingsService {
         youtube: null,
       },
       home: this.defaultLandingHomeSettings(),
+      packages: this.defaultLandingPackagePlans(),
       pages: this.defaultLandingPagePages(),
       legalProfile: this.defaultGlobalLegalProfile(),
       faqs: [],
@@ -791,10 +814,13 @@ export class GlobalSettingsService {
       checklistDe: [],
       imageUrl: null,
       isVisible: true,
+      imagePosition: LandingContentImagePosition.LEFT,
     });
 
     return {
+      sectionOrder: Object.values(LandingHomeSection),
       hero: {
+        isVisible: true,
         badgeEn: null,
         badgeDe: null,
         headingEn: null,
@@ -814,9 +840,19 @@ export class GlobalSettingsService {
         headingDe: null,
         restaurantIds: [],
         isVisible: true,
+        displayMode: LandingCollectionDisplayMode.GRID,
+        columns: 4,
       },
       growth: emptyBlock(),
-      orderManagement: emptyBlock(),
+      orderManagement: {
+        ...emptyBlock(),
+        imagePosition: LandingContentImagePosition.RIGHT,
+      },
+      faqs: {
+        headingEn: null,
+        headingDe: null,
+        isVisible: true,
+      },
       appDownload: {
         headingEn: null,
         headingDe: null,
@@ -827,6 +863,16 @@ export class GlobalSettingsService {
         appStoreUrl: null,
         isVisible: true,
       },
+    };
+  }
+
+  private defaultLandingPackagePlans(): LandingPackagePlansShape {
+    return {
+      isVisible: true,
+      packagePlanIds: [],
+      displayMode: LandingCollectionDisplayMode.GRID,
+      columns: 3,
+      highlightedPackagePlanId: null,
     };
   }
 
@@ -1283,9 +1329,15 @@ export class GlobalSettingsService {
                 ...current.home.appDownload,
                 ...updates.home.appDownload,
               },
+              faqs: { ...current.home.faqs, ...updates.home.faqs },
             },
           } as unknown as Prisma.JsonValue)
         : current.home,
+      packages: updates.packages
+        ? this.extractLandingPackagePlans({
+            packages: { ...current.packages, ...updates.packages },
+          } as unknown as Prisma.JsonValue)
+        : current.packages,
       pages: this.mergeLandingPagePages(current.pages, updates.pages),
       legalProfile: this.mergeGlobalLegalProfile(
         current.legalProfile,
@@ -1338,6 +1390,7 @@ export class GlobalSettingsService {
         youtube: this.readStringValue(source, [['socialLinks', 'youtube']]),
       },
       home: this.extractLandingHomeSettings(source),
+      packages: this.extractLandingPackagePlans(source),
       pages: this.extractLandingPagePages(source),
       legalProfile: this.extractGlobalLegalProfile(source),
       faqs: this.extractLandingPageFaqs(source),
@@ -1409,6 +1462,7 @@ export class GlobalSettingsService {
   private extractLandingHomeSettings(
     source: Prisma.JsonValue | null | undefined,
   ): LandingHomeSettingsShape {
+    const defaults = this.defaultLandingHomeSettings();
     const read = (section: string, key: string) =>
       this.readStringValue(source, [['home', section, key]]);
     const readStrings = (section: string, key: string) => {
@@ -1426,7 +1480,9 @@ export class GlobalSettingsService {
     };
 
     return {
+      sectionOrder: this.readLandingHomeSectionOrder(source),
       hero: {
+        isVisible: readVisible('hero'),
         badgeEn: read('hero', 'badgeEn'),
         badgeDe: read('hero', 'badgeDe'),
         headingEn: read('hero', 'headingEn'),
@@ -1446,9 +1502,24 @@ export class GlobalSettingsService {
         headingDe: read('featuredRestaurants', 'headingDe'),
         restaurantIds: readStrings('featuredRestaurants', 'restaurantIds'),
         isVisible: readVisible('featuredRestaurants'),
+        displayMode: this.readLandingCollectionDisplayMode(
+          source,
+          ['home', 'featuredRestaurants', 'displayMode'],
+          defaults.featuredRestaurants.displayMode,
+        ),
+        columns: this.readLandingColumns(
+          source,
+          ['home', 'featuredRestaurants', 'columns'],
+          defaults.featuredRestaurants.columns,
+        ),
       },
       growth: this.extractLandingHomeBlock(source, 'growth'),
       orderManagement: this.extractLandingHomeBlock(source, 'orderManagement'),
+      faqs: {
+        headingEn: read('faqs', 'headingEn'),
+        headingDe: read('faqs', 'headingDe'),
+        isVisible: readVisible('faqs'),
+      },
       appDownload: {
         headingEn: read('appDownload', 'headingEn'),
         headingDe: read('appDownload', 'headingDe'),
@@ -1478,6 +1549,15 @@ export class GlobalSettingsService {
         : [];
     };
     const visible = this.readPath(source, ['home', section, 'isVisible']);
+    const defaultPosition =
+      section === 'growth'
+        ? LandingContentImagePosition.LEFT
+        : LandingContentImagePosition.RIGHT;
+    const imagePosition = this.readPath(source, [
+      'home',
+      section,
+      'imagePosition',
+    ]);
 
     return {
       headingEn: value('headingEn'),
@@ -1488,7 +1568,86 @@ export class GlobalSettingsService {
       checklistDe: checklist('checklistDe'),
       imageUrl: value('imageUrl'),
       isVisible: typeof visible === 'boolean' ? visible : true,
+      imagePosition: Object.values(LandingContentImagePosition).includes(
+        imagePosition as LandingContentImagePosition,
+      )
+        ? (imagePosition as LandingContentImagePosition)
+        : defaultPosition,
     };
+  }
+
+  private extractLandingPackagePlans(
+    source: Prisma.JsonValue | null | undefined,
+  ): LandingPackagePlansShape {
+    const defaults = this.defaultLandingPackagePlans();
+    const isVisible = this.readPath(source, ['packages', 'isVisible']);
+    const ids = this.readPath(source, ['packages', 'packagePlanIds']);
+
+    return {
+      isVisible: typeof isVisible === 'boolean' ? isVisible : true,
+      packagePlanIds: Array.isArray(ids)
+        ? ids
+            .filter((id): id is string => typeof id === 'string')
+            .map((id) => id.trim())
+            .filter(
+              (id, index, values) =>
+                Boolean(id) && values.indexOf(id) === index,
+            )
+        : [],
+      displayMode: this.readLandingCollectionDisplayMode(
+        source,
+        ['packages', 'displayMode'],
+        defaults.displayMode,
+      ),
+      columns: this.readLandingColumns(
+        source,
+        ['packages', 'columns'],
+        defaults.columns,
+      ),
+      highlightedPackagePlanId: this.readStringValue(source, [
+        ['packages', 'highlightedPackagePlanId'],
+      ]),
+    };
+  }
+
+  private readLandingHomeSectionOrder(
+    source: Prisma.JsonValue | null | undefined,
+  ): LandingHomeSection[] {
+    const defaults = Object.values(LandingHomeSection);
+    const value = this.readPath(source, ['home', 'sectionOrder']);
+    const configured = Array.isArray(value)
+      ? value.filter(
+          (section): section is LandingHomeSection =>
+            typeof section === 'string' &&
+            defaults.includes(section as LandingHomeSection),
+        )
+      : [];
+
+    return [...new Set([...configured, ...defaults])];
+  }
+
+  private readLandingCollectionDisplayMode(
+    source: Prisma.JsonValue | null | undefined,
+    path: string[],
+    fallback: LandingCollectionDisplayMode,
+  ): LandingCollectionDisplayMode {
+    const value = this.readPath(source, path);
+    return Object.values(LandingCollectionDisplayMode).includes(
+      value as LandingCollectionDisplayMode,
+    )
+      ? (value as LandingCollectionDisplayMode)
+      : fallback;
+  }
+
+  private readLandingColumns(
+    source: Prisma.JsonValue | null | undefined,
+    path: string[],
+    fallback: number,
+  ): number {
+    const value = this.readPath(source, path);
+    return typeof value === 'number' && [2, 3, 4].includes(value)
+      ? value
+      : fallback;
   }
 
   private mergeLandingPagePages(

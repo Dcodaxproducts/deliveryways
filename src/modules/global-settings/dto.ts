@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayUnique,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -24,6 +25,25 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+
+export enum LandingHomeSection {
+  HERO = 'hero',
+  FEATURED_RESTAURANTS = 'featuredRestaurants',
+  GROWTH = 'growth',
+  ORDER_MANAGEMENT = 'orderManagement',
+  FAQS = 'faqs',
+  APP_DOWNLOAD = 'appDownload',
+}
+
+export enum LandingCollectionDisplayMode {
+  GRID = 'grid',
+  CAROUSEL = 'carousel',
+}
+
+export enum LandingContentImagePosition {
+  LEFT = 'left',
+  RIGHT = 'right',
+}
 
 const HEX_COLOR_REGEX = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
 
@@ -362,6 +382,11 @@ class LandingPageFaqDto {
 }
 
 class LandingHomeHeroDto {
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -449,6 +474,18 @@ class LandingHomeFeaturedRestaurantsDto {
   @IsOptional()
   @IsBoolean()
   isVisible?: boolean;
+
+  @ApiPropertyOptional({ enum: LandingCollectionDisplayMode })
+  @IsOptional()
+  @IsEnum(LandingCollectionDisplayMode)
+  displayMode?: LandingCollectionDisplayMode;
+
+  @ApiPropertyOptional({ enum: [2, 3, 4], default: 4 })
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(4)
+  columns?: number;
 }
 
 class LandingHomeContentBlockDto {
@@ -490,6 +527,30 @@ class LandingHomeContentBlockDto {
   imageUrl?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+
+  @ApiPropertyOptional({ enum: LandingContentImagePosition })
+  @IsOptional()
+  @IsEnum(LandingContentImagePosition)
+  imagePosition?: LandingContentImagePosition;
+}
+
+class LandingHomeFaqsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  headingEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  headingDe?: string;
+
+  @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()
   isVisible?: boolean;
@@ -538,6 +599,13 @@ class LandingHomeAppDownloadDto {
 }
 
 class LandingHomeSettingsDto {
+  @ApiPropertyOptional({ enum: LandingHomeSection, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(LandingHomeSection, { each: true })
+  sectionOrder?: LandingHomeSection[];
+
   @ApiPropertyOptional({ type: LandingHomeHeroDto })
   @IsOptional()
   @ValidateNested()
@@ -561,6 +629,12 @@ class LandingHomeSettingsDto {
   @ValidateNested()
   @Type(() => LandingHomeContentBlockDto)
   orderManagement?: LandingHomeContentBlockDto;
+
+  @ApiPropertyOptional({ type: LandingHomeFaqsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingHomeFaqsDto)
+  faqs?: LandingHomeFaqsDto;
 
   @ApiPropertyOptional({ type: LandingHomeAppDownloadDto })
   @IsOptional()
@@ -642,6 +716,37 @@ class GlobalLegalProfileDto {
   contractText?: string;
 }
 
+class LandingPackagePlansDto {
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  packagePlanIds?: string[];
+
+  @ApiPropertyOptional({ enum: LandingCollectionDisplayMode })
+  @IsOptional()
+  @IsEnum(LandingCollectionDisplayMode)
+  displayMode?: LandingCollectionDisplayMode;
+
+  @ApiPropertyOptional({ enum: [2, 3, 4], default: 3 })
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(4)
+  columns?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  highlightedPackagePlanId?: string;
+}
+
 export class LandingPageSettingsDto {
   @ApiPropertyOptional({ example: 'FeastFlow' })
   @IsOptional()
@@ -696,6 +801,12 @@ export class LandingPageSettingsDto {
   @ValidateNested()
   @Type(() => LandingHomeSettingsDto)
   home?: LandingHomeSettingsDto;
+
+  @ApiPropertyOptional({ type: LandingPackagePlansDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LandingPackagePlansDto)
+  packages?: LandingPackagePlansDto;
 
   @ApiPropertyOptional({ type: LandingPagePagesDto })
   @IsOptional()

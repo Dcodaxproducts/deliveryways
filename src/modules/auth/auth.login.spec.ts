@@ -120,22 +120,24 @@ describe('AuthService login', () => {
   });
 
   it('uses restaurantId when customer logs in', async () => {
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
-      id: 'customer-1',
-      email: 'customer@example.com',
-      password: 'hashed-password',
-      role: UserRoleEnum.CUSTOMER,
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: null,
-      isVerified: true,
-      isApproved: true,
-      isActive: true,
-      isGuest: false,
-      deletedAt: null,
-      deleteAfter: null,
-      profile: null,
-    });
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.CUSTOMER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isActive: true,
+        isGuest: false,
+        deletedAt: null,
+        deleteAfter: null,
+        profile: null,
+      },
+    ]);
 
     const result = await service.login({
       email: 'customer@example.com',
@@ -143,10 +145,12 @@ describe('AuthService login', () => {
       restaurantId: 'restaurant-1',
     });
 
-    expect(usersService.findByEmailIncludingDeleted).toHaveBeenCalledWith(
-      'customer@example.com',
-      'restaurant-1',
-    );
+    expect(usersService.findManyForDevResolution).toHaveBeenCalledWith({
+      email: 'customer@example.com',
+      restaurantId: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+      includeDeleted: true,
+    });
     expect(result.data.accessToken).toBe('access-token');
     expect(result.data.user.deletionScheduled).toBe(false);
     expect(usersService.setRefreshTokenHash).toHaveBeenCalledWith(
@@ -156,22 +160,24 @@ describe('AuthService login', () => {
   });
 
   it('returns scheduled-deletion metadata on login only for actual account deletion', async () => {
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
-      id: 'customer-1',
-      email: 'customer@example.com',
-      password: 'hashed-password',
-      role: UserRoleEnum.CUSTOMER,
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: null,
-      isVerified: true,
-      isApproved: true,
-      isActive: false,
-      isGuest: false,
-      deletedAt: new Date('2026-04-09T00:00:00.000Z'),
-      deleteAfter: new Date('2099-05-09T00:00:00.000Z'),
-      profile: null,
-    });
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.CUSTOMER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isActive: false,
+        isGuest: false,
+        deletedAt: new Date('2026-04-09T00:00:00.000Z'),
+        deleteAfter: new Date('2099-05-09T00:00:00.000Z'),
+        profile: null,
+      },
+    ]);
 
     const result = await service.login({
       email: 'customer@example.com',
@@ -191,22 +197,24 @@ describe('AuthService login', () => {
   });
 
   it('allows account deletion cancellation by login credentials', async () => {
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue({
-      id: 'customer-1',
-      email: 'customer@example.com',
-      password: 'hashed-password',
-      role: UserRoleEnum.CUSTOMER,
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: null,
-      isVerified: true,
-      isApproved: true,
-      isActive: false,
-      isGuest: false,
-      deletedAt: new Date('2026-04-09T00:00:00.000Z'),
-      deleteAfter: new Date('2099-05-09T00:00:00.000Z'),
-      profile: null,
-    });
+    usersService.findManyForDevResolution!.mockResolvedValue([
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        password: 'hashed-password',
+        role: UserRoleEnum.CUSTOMER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: null,
+        isVerified: true,
+        isApproved: true,
+        isActive: false,
+        isGuest: false,
+        deletedAt: new Date('2026-04-09T00:00:00.000Z'),
+        deleteAfter: new Date('2099-05-09T00:00:00.000Z'),
+        profile: null,
+      },
+    ]);
 
     const result = await service.cancelDeletionByLogin({
       email: 'customer@example.com',
@@ -482,7 +490,7 @@ describe('AuthService login', () => {
   });
 
   it('rejects invalid credentials', async () => {
-    usersService.findByEmailIncludingDeleted!.mockResolvedValue(null);
+    usersService.findManyForDevResolution!.mockResolvedValue([]);
 
     await expect(
       service.login({
