@@ -54,7 +54,12 @@ export class SubscriptionFeaturesGuard implements CanActivate {
     if (!this.isRestaurantPanelActor(user?.role, user?.actorType)) return true;
 
     const feature = resolveSubscriptionFeature(
-      this.readPath(Reflect.getMetadata(PATH_METADATA, context.getClass())),
+      [
+        this.readPath(Reflect.getMetadata(PATH_METADATA, context.getClass())),
+        this.readPath(Reflect.getMetadata(PATH_METADATA, context.getHandler())),
+      ]
+        .filter(Boolean)
+        .join('/'),
     );
     if (!feature || !user?.tid || !user.rid) return true;
 

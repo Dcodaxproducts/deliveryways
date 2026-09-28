@@ -177,6 +177,54 @@ describe('AdminReportsService', () => {
     expect(result.data.totalOrders).toBe(45);
   });
 
+  it('returns an empty date-scoped report for super-admin staff and the selected restaurant', async () => {
+    const repository = {
+      findRestaurantScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+      }),
+      getOrdersReport: jest.fn().mockResolvedValue({
+        totalOrders: 0,
+        successfulOrders: 0,
+        totalRevenue: 0,
+        averageOrderValue: 0,
+        statusBreakdown: [],
+        orderTypeBreakdown: [],
+        paymentStatusBreakdown: [],
+        topItems: [],
+        orders: [],
+        payoutActivity: [],
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+    const query = {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-09-27T22:00:00.000Z',
+      toDate: '2026-09-28T09:18:00.000Z',
+    };
+
+    const result = await service.getOrdersReport(
+      {
+        uid: 'staff-1',
+        role: 'STAFF',
+        actorType: 'STAFF',
+        panelType: 'SUPER_ADMIN',
+      } as never,
+      query,
+    );
+
+    expect(repository.findRestaurantScope).toHaveBeenCalledWith('restaurant-1');
+    expect(repository.getOrdersReport).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining(query),
+    );
+    expect(result.data).toMatchObject({
+      totalOrders: 0,
+      orders: [],
+      filters: query,
+    });
+  });
+
   it('lists generated invoices for business admin scope', async () => {
     const repository = {
       listInvoices: jest.fn().mockResolvedValue([
