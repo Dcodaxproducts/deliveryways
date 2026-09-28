@@ -5,6 +5,52 @@ import {
   SubscriptionFeaturesGuard,
 } from './subscription-features.guard';
 
+type TestUser = {
+  role: string;
+  actorType?: string;
+  tid?: string | null;
+  rid?: string | null;
+};
+
+const createContext = (
+  controllerPath: string,
+  handlerPath: string,
+  user: TestUser,
+  query: Record<string, unknown> = {},
+) => {
+  class TestController {}
+  const handler = () => undefined;
+  Reflect.defineMetadata(PATH_METADATA, controllerPath, TestController);
+  Reflect.defineMetadata(PATH_METADATA, handlerPath, handler);
+
+  return {
+    getClass: () => TestController,
+    getHandler: () => handler,
+    switchToHttp: () => ({
+      getRequest: () => ({ user, query }),
+    }),
+  };
+};
+
+const createPrisma = (options?: {
+  features?: Record<string, boolean>;
+  restaurant?: { id: string } | null;
+}) => ({
+  restaurant: {
+    findFirst: jest.fn().mockResolvedValue(options?.restaurant ?? null),
+  },
+  tenantSubscription: {
+    findFirst: jest.fn().mockResolvedValue({
+      packagePlan: {
+        features: options?.features ?? {
+          orderManagement: true,
+          customerAnalytics: false,
+        },
+      },
+    }),
+  },
+});
+
 describe('SubscriptionFeaturesGuard', () => {
   it('maps protected routes to plan features', () => {
     expect(resolveSubscriptionFeature('orders')).toBe('orderManagement');
@@ -17,45 +63,28 @@ describe('SubscriptionFeaturesGuard', () => {
     );
   });
 
-  it('allows selected-restaurant order summaries when order management is enabled', async () => {
-    class AdminReportsController {}
-    const getOrdersReport = () => undefined;
-    Reflect.defineMetadata(
-      PATH_METADATA,
+  it('evaluates an authorized selected restaurant instead of a prior restaurant claim', async () => {
+    const prisma = createPrisma();
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
       'admin/reports',
-      AdminReportsController,
-    );
-    Reflect.defineMetadata(PATH_METADATA, 'orders', getOrdersReport);
-    const findFirst = jest.fn().mockResolvedValue({
-      packagePlan: {
-        features: { orderManagement: true, customerAnalytics: false },
+      'orders',
+      {
+        role: 'STAFF',
+        actorType: 'STAFF',
+        tid: 'tenant-1',
+        rid: 'restaurant-selected',
       },
-    });
-    const guard = new SubscriptionFeaturesGuard({
-      tenantSubscription: { findFirst },
-    } as never);
-    const context = {
-      getClass: () => AdminReportsController,
-      getHandler: () => getOrdersReport,
-      switchToHttp: () => ({
-        getRequest: () => ({
-          user: {
-            role: 'STAFF',
-            actorType: 'STAFF',
-            tid: 'tenant-1',
-            rid: 'restaurant-1',
-          },
-          query: {
-            restaurantId: 'restaurant-1',
-            fromDate: '2026-09-27T22:00:00.000Z',
-            toDate: '2026-09-28T09:18:00.000Z',
-          },
-        }),
-      }),
-    };
+      {
+        restaurantId: 'restaurant-selected',
+        fromDate: '2026-09-27T22:00:00.000Z',
+        toDate: '2026-09-28T09:18:00.000Z',
+      },
+    );
 
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
-    const calls = findFirst.mock.calls as unknown as Array<
+    const calls = prisma.tenantSubscription.findFirst.mock
+      .calls as unknown as Array<
       [
         {
           where: {
@@ -65,69 +94,160 @@ describe('SubscriptionFeaturesGuard', () => {
         },
       ]
     >;
-    expect(calls[0][0].where.tenantId).toBe('tenant-1');
-    expect(calls[0][0].where.OR).toContainEqual({
-      restaurantId: 'restaurant-1',
+    expect(calls[0][0].where).toMatchObject({
+      tenantId: 'tenant-1',
+      OR: [{ restaurantId: 'restaurant-selected' }, { restaurantId: null }],
     });
   });
 
-  it('rejects a restaurant-panel request when its plan disables the feature', async () => {
-    class OrdersController {}
-    const listOrders = () => undefined;
-    Reflect.defineMetadata(PATH_METADATA, 'orders', OrdersController);
-    const prisma = {
-      tenantSubscription: {
-        findFirst: jest.fn().mockResolvedValue({
-          packagePlan: { features: { orderManagement: false } },
-        }),
-      },
-    };
+  it('rejects staff when the selected restaurant differs from the authorized scope', async () => {
+    const prisma = createPrisma();
     const guard = new SubscriptionFeaturesGuard(prisma as never);
-    const context = {
-      getClass: () => OrdersController,
-      getHandler: () => listOrders,
-      switchToHttp: () => ({
-        getRequest: () => ({
-          user: {
-            role: 'RESTAURANT_ADMIN',
-            tid: 'tenant-1',
-            rid: 'restaurant-1',
-          },
-        }),
-      }),
-    };
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      {
+        role: 'STAFF',
+        actorType: 'STAFF',
+        tid: 'tenant-1',
+        rid: 'restaurant-assigned',
+      },
+      { restaurantId: 'restaurant-unassigned' },
+    );
+
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      'Access to the selected restaurant is denied',
+    );
+    expect(prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects a selected restaurant when order management is disabled', async () => {
+    const prisma = createPrisma({
+      features: { orderManagement: false, customerAnalytics: true },
+    });
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      {
+        role: 'STAFF',
+        actorType: 'STAFF',
+        tid: 'tenant-1',
+        rid: 'restaurant-selected',
+      },
+      { restaurantId: 'restaurant-selected' },
+    );
 
     await expect(guard.canActivate(context as never)).rejects.toThrow(
       ForbiddenException,
     );
   });
 
-  it('allows the request after switching to a plan that enables the feature', async () => {
-    class PosController {}
-    const listPosOrders = () => undefined;
-    Reflect.defineMetadata(PATH_METADATA, 'pos', PosController);
-    const prisma = {
-      tenantSubscription: {
-        findFirst: jest.fn().mockResolvedValue({
-          packagePlan: { features: { posCashRegister: true } },
-        }),
-      },
-    };
+  it('validates tenant membership before gating a tenant-wide business admin target', async () => {
+    const prisma = createPrisma({ restaurant: { id: 'restaurant-selected' } });
     const guard = new SubscriptionFeaturesGuard(prisma as never);
-    const context = {
-      getClass: () => PosController,
-      getHandler: () => listPosOrders,
-      switchToHttp: () => ({
-        getRequest: () => ({
-          user: {
-            role: 'BRANCH_ADMIN',
-            tid: 'tenant-1',
-            rid: 'restaurant-1',
-          },
-        }),
-      }),
-    };
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      { role: 'BUSINESS_ADMIN', tid: 'tenant-1', rid: null },
+      { restaurantId: 'restaurant-selected' },
+    );
 
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
+    expect(prisma.restaurant.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'restaurant-selected',
+        tenantId: 'tenant-1',
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+  });
+
+  it('denies a cross-tenant business admin target before reading feature state', async () => {
+    const prisma = createPrisma({ restaurant: null });
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      { role: 'BUSINESS_ADMIN', tid: 'tenant-1', rid: null },
+      { restaurantId: 'restaurant-other-tenant' },
+    );
+
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      'Access to the selected restaurant is denied',
+    );
+    expect(prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('allows super-admin staff after the role guard hydrates selected tenant and restaurant claims', async () => {
+    const prisma = createPrisma();
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      {
+        role: 'STAFF',
+        actorType: 'STAFF',
+        tid: 'tenant-selected',
+        rid: 'restaurant-selected',
+      },
+      { restaurantId: 'restaurant-selected' },
+    );
+
+    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+  });
+
+  it('denies selected-restaurant access for super-admin staff without hydrated claims', async () => {
+    const prisma = createPrisma();
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      { role: 'STAFF', actorType: 'STAFF', tid: null, rid: null },
+      { restaurantId: 'restaurant-selected' },
+    );
+
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      'Access to the selected restaurant is denied',
+    );
+    expect(prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('does not require restaurant entitlement for an unscoped super-admin report', async () => {
+    const prisma = createPrisma();
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext('admin/reports', 'orders', {
+      role: 'STAFF',
+      actorType: 'STAFF',
+      tid: null,
+      rid: null,
+    });
+
+    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+    expect(prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('preserves customer analytics gating for other report handlers', async () => {
+    const prisma = createPrisma({
+      features: { orderManagement: true, customerAnalytics: false },
+    });
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'financial',
+      {
+        role: 'STAFF',
+        actorType: 'STAFF',
+        tid: 'tenant-1',
+        rid: 'restaurant-selected',
+      },
+      { restaurantId: 'restaurant-selected' },
+    );
+
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      'Your current subscription does not include customerAnalytics',
+    );
   });
 });

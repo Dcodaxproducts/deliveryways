@@ -23,13 +23,18 @@ const EXACT_FEATURE_BY_ROUTE = new Map<string, string>([
   ['admin/reports/orders', 'orderManagement'],
 ]);
 
+type SubscriptionFeatureUser = {
+  role?: string;
+  actorType?: string;
+  tid?: string | null;
+  rid?: string | null;
+};
+
 type SubscriptionFeatureRequest = {
-  user?: {
-    role?: string;
-    actorType?: string;
-    tid?: string | null;
-    rid?: string | null;
-  };
+  user?: SubscriptionFeatureUser;
+  params?: Record<string, unknown>;
+  query?: Record<string, unknown>;
+  body?: Record<string, unknown>;
 };
 
 export const resolveSubscriptionFeature = (path: string) => {
@@ -61,12 +66,15 @@ export class SubscriptionFeaturesGuard implements CanActivate {
         .filter(Boolean)
         .join('/'),
     );
-    if (!feature || !user?.tid || !user.rid) return true;
+    if (!feature || !user) return true;
+
+    const scope = await this.resolveSubscriptionScope(request, user);
+    if (!scope) return true;
 
     const subscription = await this.prisma.tenantSubscription.findFirst({
       where: {
-        tenantId: user.tid,
-        OR: [{ restaurantId: user.rid }, { restaurantId: null }],
+        tenantId: scope.tenantId,
+        OR: [{ restaurantId: scope.restaurantId }, { restaurantId: null }],
         status: {
           in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
         },
@@ -83,6 +91,75 @@ export class SubscriptionFeaturesGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private async resolveSubscriptionScope(
+    request: SubscriptionFeatureRequest,
+    user: SubscriptionFeatureUser,
+  ): Promise<{ tenantId: string; restaurantId: string } | null> {
+    const requestedRestaurantId = this.readRequestString(
+      request,
+      'restaurantId',
+    );
+
+    if (!requestedRestaurantId) {
+      return user.tid && user.rid
+        ? { tenantId: user.tid, restaurantId: user.rid }
+        : null;
+    }
+
+    if (!user.tid) {
+      throw new ForbiddenException(
+        'Access to the selected restaurant is denied',
+      );
+    }
+
+    if (user.actorType === 'STAFF' || user.role === 'STAFF') {
+      if (user.rid !== requestedRestaurantId) {
+        throw new ForbiddenException(
+          'Access to the selected restaurant is denied',
+        );
+      }
+
+      return { tenantId: user.tid, restaurantId: requestedRestaurantId };
+    }
+
+    if (user.rid && user.rid !== requestedRestaurantId) {
+      throw new ForbiddenException(
+        'Access to the selected restaurant is denied',
+      );
+    }
+
+    if (!user.rid) {
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: {
+          id: requestedRestaurantId,
+          tenantId: user.tid,
+          deletedAt: null,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (!restaurant) {
+        throw new ForbiddenException(
+          'Access to the selected restaurant is denied',
+        );
+      }
+    }
+
+    return { tenantId: user.tid, restaurantId: requestedRestaurantId };
+  }
+
+  private readRequestString(
+    request: SubscriptionFeatureRequest,
+    key: string,
+  ): string | undefined {
+    const value =
+      request.body?.[key] ?? request.query?.[key] ?? request.params?.[key];
+    if (typeof value !== 'string') return undefined;
+
+    const normalized = value.trim();
+    return normalized || undefined;
   }
 
   private isRestaurantPanelActor(role?: string, actorType?: string) {
