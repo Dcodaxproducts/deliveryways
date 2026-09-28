@@ -58,6 +58,7 @@ import {
   UpdateTableReservationStatusDto,
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
+import { createBrandingVersion } from './branding-version.util';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -354,6 +355,10 @@ export class CustomerAppService {
         customDomainVerified: Boolean(restaurant.customDomainVerifiedAt),
         logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
         branding: restaurant.branding,
+        brandingVersion: createBrandingVersion(
+          restaurant.id,
+          restaurant.branding,
+        ),
       },
       message: 'Domain context resolved successfully',
     };
@@ -1414,6 +1419,10 @@ export class CustomerAppService {
           currency,
           timezone,
           branding: this.asObject(restaurant.branding),
+          brandingVersion: createBrandingVersion(
+            restaurant.id,
+            restaurant.branding,
+          ),
           ordering: extractRestaurantOrderingSettings(restaurant.settings),
         },
         branch: translatedBranch
