@@ -17,13 +17,15 @@ describe('SubscriptionFeaturesGuard', () => {
     );
   });
 
-  it('allows all-restaurant staff to read embedded order totals with order management', async () => {
+  it('allows selected-restaurant order summaries when order management is enabled', async () => {
     class AdminReportsController {}
+    const getOrdersReport = () => undefined;
     Reflect.defineMetadata(
       PATH_METADATA,
-      'admin/reports/orders',
+      'admin/reports',
       AdminReportsController,
     );
+    Reflect.defineMetadata(PATH_METADATA, 'orders', getOrdersReport);
     const findFirst = jest.fn().mockResolvedValue({
       packagePlan: {
         features: { orderManagement: true, customerAnalytics: false },
@@ -34,6 +36,7 @@ describe('SubscriptionFeaturesGuard', () => {
     } as never);
     const context = {
       getClass: () => AdminReportsController,
+      getHandler: () => getOrdersReport,
       switchToHttp: () => ({
         getRequest: () => ({
           user: {
@@ -41,6 +44,11 @@ describe('SubscriptionFeaturesGuard', () => {
             actorType: 'STAFF',
             tid: 'tenant-1',
             rid: 'restaurant-1',
+          },
+          query: {
+            restaurantId: 'restaurant-1',
+            fromDate: '2026-09-27T22:00:00.000Z',
+            toDate: '2026-09-28T09:18:00.000Z',
           },
         }),
       }),
@@ -65,6 +73,7 @@ describe('SubscriptionFeaturesGuard', () => {
 
   it('rejects a restaurant-panel request when its plan disables the feature', async () => {
     class OrdersController {}
+    const listOrders = () => undefined;
     Reflect.defineMetadata(PATH_METADATA, 'orders', OrdersController);
     const prisma = {
       tenantSubscription: {
@@ -76,6 +85,7 @@ describe('SubscriptionFeaturesGuard', () => {
     const guard = new SubscriptionFeaturesGuard(prisma as never);
     const context = {
       getClass: () => OrdersController,
+      getHandler: () => listOrders,
       switchToHttp: () => ({
         getRequest: () => ({
           user: {
@@ -94,6 +104,7 @@ describe('SubscriptionFeaturesGuard', () => {
 
   it('allows the request after switching to a plan that enables the feature', async () => {
     class PosController {}
+    const listPosOrders = () => undefined;
     Reflect.defineMetadata(PATH_METADATA, 'pos', PosController);
     const prisma = {
       tenantSubscription: {
@@ -105,6 +116,7 @@ describe('SubscriptionFeaturesGuard', () => {
     const guard = new SubscriptionFeaturesGuard(prisma as never);
     const context = {
       getClass: () => PosController,
+      getHandler: () => listPosOrders,
       switchToHttp: () => ({
         getRequest: () => ({
           user: {
