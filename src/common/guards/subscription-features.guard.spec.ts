@@ -17,6 +17,11 @@ const createContext = (
   handlerPath: string,
   user: TestUser,
   query: Record<string, unknown> = {},
+  options: {
+    method?: string;
+    params?: Record<string, unknown>;
+    body?: Record<string, unknown>;
+  } = {},
 ) => {
   class TestController {}
   const handler = () => undefined;
@@ -27,7 +32,13 @@ const createContext = (
     getClass: () => TestController,
     getHandler: () => handler,
     switchToHttp: () => ({
-      getRequest: () => ({ user, query }),
+      getRequest: () => ({
+        user,
+        query,
+        method: options.method ?? 'GET',
+        params: options.params ?? {},
+        body: options.body ?? {},
+      }),
     }),
   };
 };
@@ -163,6 +174,64 @@ describe('SubscriptionFeaturesGuard', () => {
       },
       select: { id: true },
     });
+  });
+
+  it('denies conflicting GET body and query restaurant scopes before reading feature state', async () => {
+    const prisma = createPrisma({ restaurant: { id: 'restaurant-query' } });
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      { role: 'BUSINESS_ADMIN', tid: 'tenant-1', rid: null },
+      { restaurantId: 'restaurant-query' },
+      {
+        method: 'GET',
+        body: { restaurantId: 'restaurant-body' },
+      },
+    );
+
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      'Access to the selected restaurant is denied',
+    );
+    expect(prisma.restaurant.findFirst).not.toHaveBeenCalled();
+    expect(prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('denies a BUSINESS_ADMIN report when query and parameter scopes differ', async () => {
+    const prisma = createPrisma({ restaurant: { id: 'restaurant-query' } });
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'admin/reports',
+      'orders',
+      { role: 'BUSINESS_ADMIN', tid: 'tenant-1', rid: null },
+      { restaurantId: 'restaurant-query' },
+      {
+        method: 'GET',
+        params: { restaurantId: 'restaurant-param' },
+      },
+    );
+
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      'Access to the selected restaurant is denied',
+    );
+    expect(prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('preserves legitimate body-scoped routes', async () => {
+    const prisma = createPrisma();
+    const guard = new SubscriptionFeaturesGuard(prisma as never);
+    const context = createContext(
+      'orders',
+      '',
+      { role: 'RESTAURANT_ADMIN', tid: 'tenant-1', rid: 'restaurant-1' },
+      {},
+      {
+        method: 'POST',
+        body: { restaurantId: 'restaurant-1' },
+      },
+    );
+
+    await expect(guard.canActivate(context as never)).resolves.toBe(true);
   });
 
   it('denies a cross-tenant business admin target before reading feature state', async () => {

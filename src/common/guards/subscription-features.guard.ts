@@ -32,6 +32,7 @@ type SubscriptionFeatureUser = {
 
 type SubscriptionFeatureRequest = {
   user?: SubscriptionFeatureUser;
+  method?: string;
   params?: Record<string, unknown>;
   query?: Record<string, unknown>;
   body?: Record<string, unknown>;
@@ -97,10 +98,7 @@ export class SubscriptionFeaturesGuard implements CanActivate {
     request: SubscriptionFeatureRequest,
     user: SubscriptionFeatureUser,
   ): Promise<{ tenantId: string; restaurantId: string } | null> {
-    const requestedRestaurantId = this.readRequestString(
-      request,
-      'restaurantId',
-    );
+    const requestedRestaurantId = this.resolveRequestedRestaurantId(request);
 
     if (!requestedRestaurantId) {
       return user.tid && user.rid
@@ -150,12 +148,30 @@ export class SubscriptionFeaturesGuard implements CanActivate {
     return { tenantId: user.tid, restaurantId: requestedRestaurantId };
   }
 
-  private readRequestString(
+  private resolveRequestedRestaurantId(
     request: SubscriptionFeatureRequest,
-    key: string,
   ): string | undefined {
-    const value =
-      request.body?.[key] ?? request.query?.[key] ?? request.params?.[key];
+    const sources = {
+      params: this.normalizeScopeId(request.params?.restaurantId),
+      query: this.normalizeScopeId(request.query?.restaurantId),
+      body: this.normalizeScopeId(request.body?.restaurantId),
+    };
+    const distinctIds = new Set(Object.values(sources).filter(Boolean));
+    if (distinctIds.size > 1) {
+      throw new ForbiddenException(
+        'Access to the selected restaurant is denied',
+      );
+    }
+
+    const method = request.method?.toUpperCase();
+    if (method === 'GET' || method === 'HEAD') {
+      return sources.query ?? sources.params ?? sources.body;
+    }
+
+    return sources.params ?? sources.body ?? sources.query;
+  }
+
+  private normalizeScopeId(value: unknown): string | undefined {
     if (typeof value !== 'string') return undefined;
 
     const normalized = value.trim();
