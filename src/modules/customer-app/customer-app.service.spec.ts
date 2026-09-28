@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { CustomerAppService } from './customer-app.service';
+import { createBrandingVersion } from './branding-version.util';
 
 describe('CustomerAppService', () => {
   const itemFixture = {
@@ -336,6 +337,7 @@ describe('CustomerAppService', () => {
       host: 'www.sample-bistro.example',
       customDomain: 'www.sample-bistro.example',
       customDomainVerified: true,
+      brandingVersion: createBrandingVersion('restaurant-1', null),
     });
   });
 
@@ -2539,6 +2541,11 @@ describe('CustomerAppService', () => {
         secondaryColor: '#000000',
         fontFamily: 'Inter',
       },
+      brandingVersion: createBrandingVersion('restaurant-1', {
+        primaryColor: '#FF0000',
+        secondaryColor: '#000000',
+        fontFamily: 'Inter',
+      }),
       ordering: {
         preorderEnabled: false,
         tipsEnabled: true,
@@ -2942,6 +2949,7 @@ describe('CustomerAppService', () => {
       currency: 'PKR',
       timezone: 'Europe/Berlin',
       branding: {},
+      brandingVersion: createBrandingVersion('restaurant-1', null),
       ordering: { preorderEnabled: true, tipsEnabled: true },
     });
   });
@@ -3070,6 +3078,7 @@ describe('CustomerAppService', () => {
       currency: 'AED',
       timezone: 'Europe/Berlin',
       branding: {},
+      brandingVersion: createBrandingVersion('restaurant-1', null),
       ordering: { preorderEnabled: true, tipsEnabled: true },
     });
   });
