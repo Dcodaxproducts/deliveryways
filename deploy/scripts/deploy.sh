@@ -16,20 +16,50 @@ if [[ "${DW_ENVIRONMENT}" == "production" && "${SKIP_IMAGE_PULL:-}" == "yes" ]];
   dw_fail "production image pulls cannot be skipped"
 fi
 
+case "${USE_LOCAL_RELEASE_IMAGES:-no}" in
+  yes | no)
+    ;;
+  *)
+    dw_fail "USE_LOCAL_RELEASE_IMAGES must be yes or no"
+    ;;
+esac
+
+if [[ "${USE_LOCAL_RELEASE_IMAGES:-no}" == "yes" ]]; then
+  [[ "${DW_ENVIRONMENT}" == "production" ]] \
+    || dw_fail "local release images are supported only for production"
+  [[ "${PRODUCTION_LOCAL_IMAGES_APPROVED:-}" == "yes" ]] \
+    || dw_fail "local production images require PRODUCTION_LOCAL_IMAGES_APPROVED=yes"
+fi
+
 dw_preflight
 
 readonly APP_SERVICES=(api restaurant-admin superadmin customer landing)
 readonly PULL_SERVICES=(postgres migration "${APP_SERVICES[@]}")
 
-if [[ "${SKIP_IMAGE_PULL:-}" != "yes" ]]; then
+if [[ "${USE_LOCAL_RELEASE_IMAGES:-no}" == "yes" ]]; then
+  printf 'Using explicitly approved local immutable production images...\n'
+  dw_verify_local_release_approval
+  IFS=',' read -r -a local_release_services <<<"${LOCAL_RELEASE_SERVICES}"
+  release_app_services=()
+  for service in "${local_release_services[@]}"; do
+    [[ "${service}" == "migration" ]] || release_app_services+=("${service}")
+  done
+  [[ "${#release_app_services[@]}" -gt 0 ]] \
+    || dw_fail "local release must include at least one application service"
+elif [[ "${SKIP_IMAGE_PULL:-}" != "yes" ]]; then
   printf 'Pulling immutable release images...\n'
   dw_compose --profile tools pull "${PULL_SERVICES[@]}"
 else
-  printf 'Skipping registry pull for controlled staging verification.\n'
+  printf 'Skipping registry pull for controlled non-production verification.\n'
 fi
 
-printf 'Starting PostgreSQL and waiting for health...\n'
-dw_compose up --detach --no-build --wait postgres
+if [[ "${USE_LOCAL_RELEASE_IMAGES:-no}" == "yes" ]]; then
+  printf 'Verifying the existing PostgreSQL container without pulling or recreating it...\n'
+  readonly POSTGRES_CONTAINER_BEFORE="$(dw_verify_running_postgres)"
+else
+  printf 'Starting PostgreSQL and waiting for health...\n'
+  dw_compose up --detach --no-build --wait postgres
+fi
 
 backup_output="$(env DELIVERYWAY_BACKUP_ROOT="${DW_BACKUP_ROOT}" \
   "${SCRIPT_DIR}/backup-db.sh" "${DW_ENVIRONMENT}" "${DW_ENV_FILE}")"
@@ -40,7 +70,14 @@ backup_file="$(printf '%s\n' "${backup_output}" | sed -n 's/^Backup verified: //
 "${SCRIPT_DIR}/migrate-db.sh" "${DW_ENVIRONMENT}" "${DW_ENV_FILE}" "${backup_file}"
 
 printf 'Starting application services and waiting for health...\n'
-dw_compose up --detach --no-build --wait "${APP_SERVICES[@]}"
+if [[ "${USE_LOCAL_RELEASE_IMAGES:-no}" == "yes" ]]; then
+  dw_compose up --detach --no-build --no-deps --wait "${release_app_services[@]}"
+  [[ "${POSTGRES_CONTAINER_BEFORE}" == "$(dw_compose ps -q postgres)" ]] \
+    || dw_fail "PostgreSQL container changed during local image deployment"
+  dw_verify_running_release_images
+else
+  dw_compose up --detach --no-build --wait "${APP_SERVICES[@]}"
+fi
 "${SCRIPT_DIR}/smoke-test.sh" "${DW_ENVIRONMENT}" "${DW_ENV_FILE}"
 
 readonly RELEASE_DIR="${DW_RELEASE_ROOT}/${DW_ENVIRONMENT}"
