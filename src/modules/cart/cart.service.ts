@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -1128,7 +1129,11 @@ export class CartService {
       : [];
 
     return {
-      data: this.alignQuoteSubtotalWithCartItems(quoteResponse, displayItems),
+      data: {
+        ...this.alignQuoteSubtotalWithCartItems(quoteResponse, displayItems),
+        id: cart.id,
+        updatedAt: cart.updatedAt,
+      },
       message: 'Cart quote generated successfully',
     };
   }
@@ -1139,6 +1144,33 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
+    const customer = await this.resolveCartCustomerScope(
+      user,
+      requestedCustomerId,
+    );
+    if (!customer.tenantId || !customer.restaurantId) {
+      throw new ForbiddenException('Customer checkout scope is incomplete');
+    }
+
+    const requestHash = this.hashCheckoutRequest(dto);
+    const idempotency = {
+      tenantId: customer.tenantId,
+      restaurantId: customer.restaurantId,
+      customerId: customer.id,
+      idempotencyKey: dto.idempotencyKey,
+      requestHash,
+      cartId: dto.cartId,
+      cartVersion: new Date(dto.cartVersion),
+    };
+    const replay =
+      await this.ordersService.resolveCheckoutIdempotency(idempotency);
+    if (replay) {
+      return {
+        data: replay.data,
+        message: 'Order created from cart successfully',
+      };
+    }
+
     const cart = await this.getExistingCartOrThrow(
       user,
       requestedCustomerId,
@@ -1147,18 +1179,64 @@ export class CartService {
     if (!cart.items.length) {
       throw new BadRequestException('Cart is empty');
     }
+    this.assertCheckoutCartIdentity(cart, dto);
 
     const order = await this.ordersService.create(
       user,
       await this.toCreateOrderPayload(cart, dto),
+      idempotency,
     );
-
-    await this.cartRepository.deleteByCustomerId(cart.customerId);
 
     return {
       data: order.data,
       message: 'Order created from cart successfully',
     };
+  }
+
+  private assertCheckoutCartIdentity(
+    cart: CartSnapshot,
+    dto: CheckoutCartDto,
+  ): void {
+    if (cart.id !== dto.cartId) {
+      throw new BadRequestException(
+        'Checkout cart does not match the current customer cart',
+      );
+    }
+
+    if (
+      cart.updatedAt.toISOString() !== new Date(dto.cartVersion).toISOString()
+    ) {
+      throw new BadRequestException(
+        'Cart changed after checkout started. Refresh and try again',
+      );
+    }
+  }
+
+  private hashCheckoutRequest(dto: CheckoutCartDto): string {
+    const request: Record<string, unknown> = { ...dto };
+    delete request.idempotencyKey;
+
+    return createHash('sha256')
+      .update(JSON.stringify(this.canonicalizeCheckoutValue(request)))
+      .digest('hex');
+  }
+
+  private canonicalizeCheckoutValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.canonicalizeCheckoutValue(item));
+    }
+
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.keys(record)
+          .sort()
+          .filter((key) => record[key] !== undefined)
+          .map((key) => [key, this.canonicalizeCheckoutValue(record[key])]),
+      );
+    }
+
+    return value;
   }
 
   private async getExistingCartOrThrow(

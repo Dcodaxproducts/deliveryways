@@ -1,5 +1,10 @@
 import { ArgumentMetadata, ValidationPipe } from '@nestjs/common';
-import { AddCartItemDto, AddCartItemsBatchDto, QuoteCartDto } from './dto';
+import {
+  AddCartItemDto,
+  AddCartItemsBatchDto,
+  CheckoutCartDto,
+  QuoteCartDto,
+} from './dto';
 
 describe('Cart DTO validation', () => {
   const validationPipe = new ValidationPipe({
@@ -67,6 +72,29 @@ describe('Cart DTO validation', () => {
         postalCode: '45327',
       },
     });
+  });
+
+  it('requires a UUID key and exact cart identity for checkout', async () => {
+    const checkoutMetadata = {
+      ...bodyMetadata,
+      metatype: CheckoutCartDto,
+    };
+
+    await expect(
+      validationPipe.transform(
+        {
+          idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+          cartId: 'cart-1',
+          cartVersion: '2026-09-28T06:00:00.000Z',
+          paymentMethod: 'COD',
+        },
+        checkoutMetadata,
+      ),
+    ).resolves.toMatchObject({ cartId: 'cart-1' });
+
+    await expect(
+      validationPipe.transform({ paymentMethod: 'COD' }, checkoutMetadata),
+    ).rejects.toBeDefined();
   });
 
   it('rejects cart batches larger than 25 items', async () => {

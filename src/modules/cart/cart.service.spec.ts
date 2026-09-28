@@ -46,6 +46,7 @@ describe('CartService', () => {
       quote: jest.fn(),
       quoteForCouponValidation: jest.fn(),
       assertDeliveryAddressCoverage: jest.fn(),
+      resolveCheckoutIdempotency: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       details: jest.fn(),
     };
@@ -6882,6 +6883,7 @@ describe('CartService', () => {
   });
 
   it('falls back to saved cart checkout fields when omitted at checkout', async () => {
+    const cartUpdatedAt = new Date();
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -6897,7 +6899,7 @@ describe('CartService', () => {
       orderTime: new Date('2026-03-24T19:30:00.000Z'),
       customerNote: 'Saved note',
       createdAt: new Date(),
-      updatedAt: new Date(),
+      updatedAt: cartUpdatedAt,
       items: [
         {
           id: 'item-1',
@@ -6922,7 +6924,11 @@ describe('CartService', () => {
         rid: 'restaurant-1',
         role: UserRoleEnum.CUSTOMER,
       },
-      {},
+      {
+        idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+        cartId: 'cart-1',
+        cartVersion: cartUpdatedAt.toISOString(),
+      },
     );
 
     expect(ordersService.create).toHaveBeenCalledWith(
@@ -6932,10 +6938,12 @@ describe('CartService', () => {
         customerNote: 'Saved note',
         orderTime: '2026-03-24T19:30:00.000Z',
       }),
+      expect.any(Object),
     );
   });
 
   it('creates order from cart using checkout note, order time, and payment method', async () => {
+    const cartUpdatedAt = new Date();
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -6951,7 +6959,7 @@ describe('CartService', () => {
       orderTime: new Date('2026-03-24T19:30:00.000Z'),
       customerNote: 'Please call',
       createdAt: new Date(),
-      updatedAt: new Date(),
+      updatedAt: cartUpdatedAt,
       items: [
         {
           id: 'item-1',
@@ -6977,6 +6985,9 @@ describe('CartService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       {
+        idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+        cartId: 'cart-1',
+        cartVersion: cartUpdatedAt.toISOString(),
         paymentMethod: PaymentMethodEnum.COD,
         orderTime: '2026-03-24T19:30:00.000Z',
         customerNote: 'Please call before delivery',
@@ -6994,9 +7005,7 @@ describe('CartService', () => {
         orderType: OrderTypeEnum.DELIVERY,
         orderTime: '2026-03-24T19:30:00.000Z',
       }),
-    );
-    expect(cartRepository.deleteByCustomerId).toHaveBeenCalledWith(
-      'customer-1',
+      expect.any(Object),
     );
     expect(result.message).toBe('Order created from cart successfully');
   });
@@ -7052,6 +7061,7 @@ describe('CartService', () => {
   });
 
   it('uses checkout note alias when creating order from cart', async () => {
+    const cartUpdatedAt = new Date();
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -7067,7 +7077,7 @@ describe('CartService', () => {
       orderTime: new Date('2026-03-24T19:30:00.000Z'),
       customerNote: null,
       createdAt: new Date(),
-      updatedAt: new Date(),
+      updatedAt: cartUpdatedAt,
       items: [
         {
           id: 'item-1',
@@ -7093,6 +7103,9 @@ describe('CartService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       {
+        idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+        cartId: 'cart-1',
+        cartVersion: cartUpdatedAt.toISOString(),
         paymentMethod: PaymentMethodEnum.COD,
         note: 'Call on arrival',
       },
@@ -7103,10 +7116,12 @@ describe('CartService', () => {
       expect.objectContaining({
         customerNote: 'Call on arrival',
       }),
+      expect.any(Object),
     );
   });
 
   it('passes guest contact consent and inline delivery address at cart checkout', async () => {
+    const cartUpdatedAt = new Date();
     const { service, cartRepository, ordersService, profilesRepository } =
       makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -7122,7 +7137,7 @@ describe('CartService', () => {
       orderTime: new Date('2026-03-24T19:30:00.000Z'),
       customerNote: null,
       createdAt: new Date(),
-      updatedAt: new Date(),
+      updatedAt: cartUpdatedAt,
       items: [
         {
           id: 'item-1',
@@ -7149,6 +7164,9 @@ describe('CartService', () => {
         isGuest: true,
       },
       {
+        idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+        cartId: 'cart-1',
+        cartVersion: cartUpdatedAt.toISOString(),
         paymentMethod: PaymentMethodEnum.COD,
         guestContact: {
           firstName: 'Max Mustermann',
@@ -7186,6 +7204,7 @@ describe('CartService', () => {
           lng: '74.3587',
         },
       }),
+      expect.any(Object),
     );
   });
 
@@ -7289,6 +7308,145 @@ describe('CartService', () => {
         expect.objectContaining({ quantity: 3 }),
         expect.any(Object),
       );
+    });
+  });
+
+  describe('checkout idempotency', () => {
+    const user = {
+      uid: 'customer-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    };
+    const updatedAt = new Date('2026-09-28T06:00:00.000Z');
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      restaurantMenuId: null,
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: PaymentMethodEnum.COD,
+      orderTime: null,
+      tipAmount: new Prisma.Decimal(0),
+      customerNote: null,
+      createdAt: updatedAt,
+      updatedAt,
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-item-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+        },
+      ],
+    };
+    const dto = {
+      idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+      cartId: cart.id,
+      cartVersion: updatedAt.toISOString(),
+      paymentMethod: PaymentMethodEnum.COD,
+    };
+
+    const mockCheckoutInternals = (service: CartService) => {
+      const internals = service as unknown as {
+        resolveCartCustomerScope(...args: unknown[]): Promise<unknown>;
+        getExistingCartOrThrow(...args: unknown[]): Promise<unknown>;
+        toCreateOrderPayload(...args: unknown[]): Promise<unknown>;
+      };
+      jest.spyOn(internals, 'resolveCartCustomerScope').mockResolvedValue({
+        id: 'customer-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      });
+      const cartSpy = jest
+        .spyOn(internals, 'getExistingCartOrThrow')
+        .mockResolvedValue(cart);
+      jest.spyOn(internals, 'toCreateOrderPayload').mockResolvedValue({
+        branchId: 'branch-1',
+        orderType: OrderTypeEnum.TAKEAWAY,
+        items: [{ menuItemId: 'menu-item-1', quantity: 1 }],
+        paymentMethod: PaymentMethodEnum.COD,
+      });
+      return { cartSpy };
+    };
+
+    it('returns a sequential retry without recreating the order or reading a deleted cart', async () => {
+      const { service, ordersService } = makeService();
+      const { cartSpy } = mockCheckoutInternals(service);
+      ordersService.resolveCheckoutIdempotency.mockResolvedValue({
+        data: { id: 'order-1' },
+        message: 'Order created successfully',
+      });
+
+      const result = await service.checkout(user as never, dto);
+
+      expect(result.data).toEqual({ id: 'order-1' });
+      expect(cartSpy).not.toHaveBeenCalled();
+      expect(ordersService.create).not.toHaveBeenCalled();
+    });
+
+    it('binds authenticated checkout to tenant, restaurant, customer, and request hash', async () => {
+      const { service, ordersService } = makeService();
+      mockCheckoutInternals(service);
+      ordersService.create.mockResolvedValue({ data: { id: 'order-1' } });
+
+      await service.checkout(user as never, dto);
+
+      expect(ordersService.resolveCheckoutIdempotency).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          idempotencyKey: dto.idempotencyKey,
+          requestHash: expect.stringMatching(/^[a-f0-9]{64}$/) as unknown,
+          cartId: 'cart-1',
+          cartVersion: updatedAt,
+        }),
+      );
+      expect(ordersService.create).toHaveBeenCalledWith(
+        user,
+        expect.any(Object),
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          idempotencyKey: dto.idempotencyKey,
+          cartId: 'cart-1',
+          cartVersion: updatedAt,
+        }),
+      );
+    });
+
+    it('uses the durable synthetic customer scope for guest checkout', async () => {
+      const { service, ordersService } = makeService();
+      mockCheckoutInternals(service);
+      ordersService.create.mockResolvedValue({ data: { id: 'guest-order-1' } });
+
+      await service.checkout({ ...user, isGuest: true } as never, dto);
+
+      expect(ordersService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ uid: 'customer-1', isGuest: true }),
+        expect.any(Object),
+        expect.objectContaining({ customerId: 'customer-1' }),
+      );
+    });
+
+    it('rejects a reused attempt after the cart version changes', async () => {
+      const { service } = makeService();
+      mockCheckoutInternals(service);
+
+      await expect(
+        service.checkout(user as never, {
+          ...dto,
+          cartVersion: '2026-09-28T06:00:01.000Z',
+        }),
+      ).rejects.toThrow('Cart changed after checkout started');
     });
   });
 });

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -265,6 +266,18 @@ type BuildQuoteOptions = {
   skipOrderTimeAvailabilityValidation?: boolean;
 };
 
+export interface CheckoutIdempotencyContext {
+  tenantId: string;
+  restaurantId: string;
+  customerId: string;
+  idempotencyKey: string;
+  requestHash: string;
+  cartId: string;
+  cartVersion: Date;
+}
+
+class CheckoutCartVersionConflict extends Error {}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -350,7 +363,31 @@ export class OrdersService {
     );
   }
 
-  async create(user: AuthUserContext, dto: CreateOrderDto) {
+  async resolveCheckoutIdempotency(context: CheckoutIdempotencyContext) {
+    const existing =
+      await this.ordersRepository.findByCheckoutIdempotency(context);
+
+    if (!existing) {
+      return null;
+    }
+
+    if (existing.checkoutRequestHash !== context.requestHash) {
+      throw new ConflictException(
+        'Idempotency key was already used with a different checkout request',
+      );
+    }
+
+    return {
+      data: this.toOrderMutationResponse(existing),
+      message: 'Order created successfully',
+    };
+  }
+
+  async create(
+    user: AuthUserContext,
+    dto: CreateOrderDto,
+    idempotency?: CheckoutIdempotencyContext,
+  ) {
     const quote = await this.buildQuote(user, dto);
     const currency = await this.resolveRestaurantCurrency(
       quote.branch.restaurantId,
@@ -379,154 +416,201 @@ export class OrdersService {
     this.assertWalletPaymentCoverage(dto.paymentMethod, quote);
 
     const customerId = quote.customer.customerId;
+    if (
+      idempotency &&
+      (idempotency.tenantId !== quote.branch.tenantId ||
+        idempotency.restaurantId !== quote.branch.restaurantId ||
+        idempotency.customerId !== customerId)
+    ) {
+      throw new ForbiddenException(
+        'Checkout idempotency scope does not match the order scope',
+      );
+    }
     const initialPaymentStatus = this.resolveInitialPaymentStatus(
       dto.paymentMethod ?? PaymentMethodEnum.COD,
       quote,
     );
     await this.assertCheckoutProviderConfigured(dto.paymentMethod);
 
-    const data = await this.prisma.$transaction(async (tx) => {
-      const processedAt =
-        initialPaymentStatus === PaymentStatus.PAID ? new Date() : undefined;
-      await this.assertDineInTableCapacity(
-        tx,
-        dto.orderType,
-        quote.branch.id,
-        quote.orderTime,
-        branchSettings,
-      );
-      const guestDeliveryAddress = dto.guestDeliveryAddress
-        ? await this.createGuestDeliveryAddress(
+    let data: Awaited<ReturnType<OrdersRepository['create']>>;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        if (idempotency) {
+          const consumedCart = await tx.cart.deleteMany({
+            where: {
+              id: idempotency.cartId,
+              tenantId: idempotency.tenantId,
+              restaurantId: idempotency.restaurantId,
+              customerId: idempotency.customerId,
+              updatedAt: idempotency.cartVersion,
+            },
+          });
+          if (consumedCart.count !== 1) {
+            throw new CheckoutCartVersionConflict();
+          }
+        }
+
+        const processedAt =
+          initialPaymentStatus === PaymentStatus.PAID ? new Date() : undefined;
+        await this.assertDineInTableCapacity(
+          tx,
+          dto.orderType,
+          quote.branch.id,
+          quote.orderTime,
+          branchSettings,
+        );
+        const guestDeliveryAddress = dto.guestDeliveryAddress
+          ? await this.createGuestDeliveryAddress(
+              tx,
+              quote.branch.tenantId,
+              customerId,
+              dto.guestDeliveryAddress,
+            )
+          : null;
+
+        if (quote.customer.isGuest && dto.guestContact) {
+          await this.updateGuestContact(
             tx,
-            quote.branch.tenantId,
             customerId,
-            dto.guestDeliveryAddress,
-          )
-        : null;
+            dto.guestContact,
+            quote.branch.restaurantId,
+          );
+        }
+        const deliveryAddressId =
+          dto.deliveryAddressId ?? guestDeliveryAddress?.id;
 
-      if (quote.customer.isGuest && dto.guestContact) {
-        await this.updateGuestContact(
-          tx,
-          customerId,
-          dto.guestContact,
-          quote.branch.restaurantId,
-        );
-      }
-      const deliveryAddressId =
-        dto.deliveryAddressId ?? guestDeliveryAddress?.id;
-
-      const order = await this.ordersRepository.create(
-        {
-          tenant: { connect: { id: quote.branch.tenantId } },
-          restaurant: { connect: { id: quote.branch.restaurantId } },
-          branch: { connect: { id: quote.branch.id } },
-          customer: { connect: { id: customerId } },
-          coupon: quote.couponId
-            ? { connect: { id: quote.couponId } }
-            : undefined,
-          deliveryAddress: deliveryAddressId
-            ? { connect: { id: deliveryAddressId } }
-            : undefined,
-          orderType: dto.orderType,
-          paymentMethod: dto.paymentMethod,
-          orderTime: quote.orderTime ? new Date(quote.orderTime) : null,
-          isScheduled: dto.isScheduled === true,
-          status: this.resolveInitialOrderStatus(dto.paymentMethod),
-          subtotal: quote.subtotal,
-          taxAmount: quote.taxAmount,
-          deliveryFee: quote.deliveryFee,
-          serviceChargeType: quote.serviceChargeType,
-          serviceChargeValue: quote.serviceChargeValue,
-          serviceChargeAmount: quote.serviceChargeAmount,
-          transactionFeeType: quote.transactionFeeType,
-          transactionFeeValue: quote.transactionFeeValue,
-          transactionFeeAmount: quote.transactionFeeAmount,
-          transactionFeePayer: quote.transactionFeePayer,
-          tipAmount: quote.tipAmount,
-          discountAmount: quote.discountAmount,
-          walletAppliedAmount: quote.walletAppliedAmount,
-          loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
-          loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
-          totalAmount: quote.totalAmount,
-          paymentStatus: initialPaymentStatus,
-          paidAt: processedAt,
-          deliveryOtp:
-            dto.orderType === OrderTypeEnum.DELIVERY
-              ? this.generateDeliveryOtp()
+        const order = await this.ordersRepository.create(
+          {
+            tenant: { connect: { id: quote.branch.tenantId } },
+            restaurant: { connect: { id: quote.branch.restaurantId } },
+            branch: { connect: { id: quote.branch.id } },
+            customer: { connect: { id: customerId } },
+            checkoutIdempotencyKey: idempotency?.idempotencyKey,
+            checkoutRequestHash: idempotency?.requestHash,
+            coupon: quote.couponId
+              ? { connect: { id: quote.couponId } }
               : undefined,
-          customerNote: dto.customerNote,
-          items: {
-            create: quote.lines.map((line) => ({
-              menuItem: { connect: { id: line.menuItemId } },
-              menuItemName: line.menuItemName,
-              variationId: line.variationId,
-              variationName: line.variationName,
-              unitPrice: line.unitPrice,
-              depositAmount: line.depositAmount,
-              quantity: line.quantity,
-              lineTotal: line.lineTotal,
-              note: line.note,
-              snapshotModifiers: this.packOrderSelections(
-                line.snapshotModifiers,
-                line.snapshotSections,
-                line.dealId,
-              ) as unknown as Prisma.InputJsonValue,
-            })),
+            deliveryAddress: deliveryAddressId
+              ? { connect: { id: deliveryAddressId } }
+              : undefined,
+            orderType: dto.orderType,
+            paymentMethod: dto.paymentMethod,
+            orderTime: quote.orderTime ? new Date(quote.orderTime) : null,
+            isScheduled: dto.isScheduled === true,
+            status: this.resolveInitialOrderStatus(dto.paymentMethod),
+            subtotal: quote.subtotal,
+            taxAmount: quote.taxAmount,
+            deliveryFee: quote.deliveryFee,
+            serviceChargeType: quote.serviceChargeType,
+            serviceChargeValue: quote.serviceChargeValue,
+            serviceChargeAmount: quote.serviceChargeAmount,
+            transactionFeeType: quote.transactionFeeType,
+            transactionFeeValue: quote.transactionFeeValue,
+            transactionFeeAmount: quote.transactionFeeAmount,
+            transactionFeePayer: quote.transactionFeePayer,
+            tipAmount: quote.tipAmount,
+            discountAmount: quote.discountAmount,
+            walletAppliedAmount: quote.walletAppliedAmount,
+            loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
+            loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
+            totalAmount: quote.totalAmount,
+            paymentStatus: initialPaymentStatus,
+            paidAt: processedAt,
+            deliveryOtp:
+              dto.orderType === OrderTypeEnum.DELIVERY
+                ? this.generateDeliveryOtp()
+                : undefined,
+            customerNote: dto.customerNote,
+            items: {
+              create: quote.lines.map((line) => ({
+                menuItem: { connect: { id: line.menuItemId } },
+                menuItemName: line.menuItemName,
+                variationId: line.variationId,
+                variationName: line.variationName,
+                unitPrice: line.unitPrice,
+                depositAmount: line.depositAmount,
+                quantity: line.quantity,
+                lineTotal: line.lineTotal,
+                note: line.note,
+                snapshotModifiers: this.packOrderSelections(
+                  line.snapshotModifiers,
+                  line.snapshotSections,
+                  line.dealId,
+                ) as unknown as Prisma.InputJsonValue,
+              })),
+            },
           },
-        },
-        tx,
-      );
-
-      await this.loyaltyWalletService!.applyOrderBenefits(
-        tx,
-        {
-          customerId,
-          tenantId: quote.branch.tenantId,
-          restaurantId: quote.branch.restaurantId,
-          branchId: quote.branch.id,
-        },
-        {
-          id: order.id,
-          walletAppliedAmount: quote.walletAppliedAmount,
-          loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
-          loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
-        },
-        user.uid,
-      );
-
-      await tx.paymentTransaction.create({
-        data: {
-          orderId: order.id,
-          tenantId: quote.branch.tenantId,
-          restaurantId: quote.branch.restaurantId,
-          branchId: quote.branch.id,
-          paymentMethod: dto.paymentMethod,
-          type: PaymentTransactionType.CHARGE,
-          status: initialPaymentStatus,
-          amount: this.resolvePaymentTransactionAmount(
-            dto.paymentMethod,
-            quote,
-          ),
-          currency,
-          processedAt,
-          note:
-            dto.paymentMethod === PaymentMethodEnum.WALLET
-              ? 'Order paid fully via wallet balance'
-              : undefined,
-        },
-      });
-
-      if (quote.couponId) {
-        await this.couponsService.registerUsage(
-          quote.couponId,
-          customerId,
-          order.id,
           tx,
         );
-      }
 
-      return order;
-    });
+        await this.loyaltyWalletService!.applyOrderBenefits(
+          tx,
+          {
+            customerId,
+            tenantId: quote.branch.tenantId,
+            restaurantId: quote.branch.restaurantId,
+            branchId: quote.branch.id,
+          },
+          {
+            id: order.id,
+            walletAppliedAmount: quote.walletAppliedAmount,
+            loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
+            loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
+          },
+          user.uid,
+        );
+
+        await tx.paymentTransaction.create({
+          data: {
+            orderId: order.id,
+            tenantId: quote.branch.tenantId,
+            restaurantId: quote.branch.restaurantId,
+            branchId: quote.branch.id,
+            paymentMethod: dto.paymentMethod,
+            type: PaymentTransactionType.CHARGE,
+            status: initialPaymentStatus,
+            amount: this.resolvePaymentTransactionAmount(
+              dto.paymentMethod,
+              quote,
+            ),
+            currency,
+            processedAt,
+            note:
+              dto.paymentMethod === PaymentMethodEnum.WALLET
+                ? 'Order paid fully via wallet balance'
+                : undefined,
+          },
+        });
+
+        if (quote.couponId) {
+          await this.couponsService.registerUsage(
+            quote.couponId,
+            customerId,
+            order.id,
+            tx,
+          );
+        }
+
+        return order;
+      });
+    } catch (error: unknown) {
+      if (
+        idempotency &&
+        (this.isCheckoutIdempotencyConflict(error) ||
+          error instanceof CheckoutCartVersionConflict)
+      ) {
+        const replay = await this.resolveCheckoutIdempotency(idempotency);
+        if (replay) {
+          return replay;
+        }
+      }
+      if (error instanceof CheckoutCartVersionConflict) {
+        throw new ConflictException(
+          'Cart changed after checkout started. Refresh and try again',
+        );
+      }
+      throw error;
+    }
 
     try {
       if (initialPaymentStatus === PaymentStatus.PAID) {
@@ -590,6 +674,13 @@ export class OrdersService {
       data: this.toOrderMutationResponse(responseData),
       message: 'Order created successfully',
     };
+  }
+
+  private isCheckoutIdempotencyConflict(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
   }
 
   async list(user: AuthUserContext, query: ListOrdersDto) {
@@ -3021,13 +3112,23 @@ export class OrdersService {
     },
   >(
     order: T,
-  ): Omit<T, 'tenantId' | 'deliveryOtp'> & { payableAmount?: number } {
+  ): Omit<
+    T,
+    | 'tenantId'
+    | 'deliveryOtp'
+    | 'checkoutIdempotencyKey'
+    | 'checkoutRequestHash'
+  > & { payableAmount?: number } {
     const rest = { ...order } as T & {
       tenantId?: string | null;
       deliveryOtp?: string | null;
+      checkoutIdempotencyKey?: string | null;
+      checkoutRequestHash?: string | null;
     };
     delete rest.tenantId;
     delete rest.deliveryOtp;
+    delete rest.checkoutIdempotencyKey;
+    delete rest.checkoutRequestHash;
 
     const payableAmount = rest.totalAmount;
     if (

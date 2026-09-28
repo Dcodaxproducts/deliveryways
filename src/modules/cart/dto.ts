@@ -8,9 +8,11 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   ValidateIf,
   ValidateNested,
@@ -321,6 +323,24 @@ export class QuoteCartDto {
 }
 
 export class CheckoutCartDto {
+  @ApiProperty({
+    description:
+      'Client-generated UUID reused only for retries of this checkout attempt.',
+  })
+  @IsUUID()
+  idempotencyKey!: string;
+
+  @ApiProperty({ description: 'Server-issued cart identifier.' })
+  @IsString()
+  @IsNotEmpty()
+  cartId!: string;
+
+  @ApiProperty({
+    description: 'Exact cart updatedAt timestamp returned by the server.',
+  })
+  @IsDateString()
+  cartVersion!: string;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()

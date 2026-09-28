@@ -73,6 +73,26 @@ export class OrdersRepository {
     });
   }
 
+  async findByCheckoutIdempotency(scope: {
+    tenantId: string;
+    restaurantId: string;
+    customerId: string;
+    idempotencyKey: string;
+  }) {
+    return this.prisma.order.findFirst({
+      where: {
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        customerId: scope.customerId,
+        checkoutIdempotencyKey: scope.idempotencyKey,
+      },
+      include: {
+        items: true,
+        coupon: true,
+      },
+    });
+  }
+
   async findIntegrationExportCandidates(
     scope: IntegrationScope,
     limit: number,

@@ -1553,6 +1553,8 @@ model Order {
   restaurantId                String             @map("restaurant_id")
   branchId                    String             @map("branch_id")
   customerId                  String             @map("customer_id")
+  checkoutIdempotencyKey      String?            @map("checkout_idempotency_key") @db.VarChar(36)
+  checkoutRequestHash         String?            @map("checkout_request_hash") @db.VarChar(64)
   couponId                    String?            @map("coupon_id")
   deliveryAddressId           String?            @map("delivery_address_id")
   deliverymanId               String?            @map("deliveryman_id")
@@ -1610,6 +1612,7 @@ model Order {
   review              OrderReview?
   winOrderExports     WinOrderOrderExport[]
 
+  @@unique([tenantId, restaurantId, customerId, checkoutIdempotencyKey], map: "orders_checkout_idempotency_scope_key")
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([deliverymanId, status, createdAt])

@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import {
   CouponCampaignKind,
   CouponDealSelectionMode,
@@ -8410,5 +8414,84 @@ describe('OrdersService - restaurant ordering controls', () => {
         null,
       ),
     ).not.toThrow();
+  });
+});
+
+describe('OrdersService - checkout idempotency', () => {
+  const context = {
+    tenantId: 'tenant-1',
+    restaurantId: 'restaurant-1',
+    customerId: 'customer-1',
+    idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+    requestHash: 'a'.repeat(64),
+    cartId: 'cart-1',
+    cartVersion: new Date('2026-09-28T06:00:00.000Z'),
+  };
+
+  const makeService = (findByCheckoutIdempotency: jest.Mock): OrdersService =>
+    new OrdersService(
+      {} as never,
+      { findByCheckoutIdempotency } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+  it('returns the original order for an identical sequential retry', async () => {
+    const findByCheckoutIdempotency = jest.fn().mockResolvedValue({
+      id: 'order-1',
+      tenantId: context.tenantId,
+      checkoutIdempotencyKey: context.idempotencyKey,
+      checkoutRequestHash: context.requestHash,
+      items: [],
+      coupon: null,
+    });
+    const service = makeService(findByCheckoutIdempotency);
+
+    const result = await service.resolveCheckoutIdempotency(context);
+
+    expect(result?.data).toEqual({
+      id: 'order-1',
+      items: [],
+      coupon: null,
+    });
+  });
+
+  it('fails deterministically when a key is reused with another payload', async () => {
+    const service = makeService(
+      jest.fn().mockResolvedValue({
+        id: 'order-1',
+        checkoutRequestHash: 'b'.repeat(64),
+      }),
+    );
+
+    await expect(
+      service.resolveCheckoutIdempotency(context),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('keeps the same key isolated by tenant, restaurant, and customer', async () => {
+    const findByCheckoutIdempotency = jest.fn().mockResolvedValue(null);
+    const service = makeService(findByCheckoutIdempotency);
+
+    await service.resolveCheckoutIdempotency(context);
+    await service.resolveCheckoutIdempotency({
+      ...context,
+      tenantId: 'tenant-2',
+      restaurantId: 'restaurant-2',
+      customerId: 'guest-2',
+    });
+
+    expect(findByCheckoutIdempotency).toHaveBeenNthCalledWith(1, context);
+    expect(findByCheckoutIdempotency).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        tenantId: 'tenant-2',
+        restaurantId: 'restaurant-2',
+        customerId: 'guest-2',
+        idempotencyKey: context.idempotencyKey,
+      }),
+    );
   });
 });
