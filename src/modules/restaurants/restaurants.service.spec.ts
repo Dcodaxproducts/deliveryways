@@ -111,6 +111,71 @@ describe('RestaurantsService notification settings', () => {
     );
   });
 
+  it('preserves custom-domain verification when a branding save repeats the same domain', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      customDomain: 'www.example.com',
+      customDomainVerifiedAt: new Date('2026-08-14T07:04:16.637Z'),
+      deletedAt: null,
+    });
+    repository.findByCustomDomain.mockResolvedValue(null);
+    repository.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      {
+        customDomain: 'WWW.Example.com.',
+        branding: {
+          assets: { faviconUrl: 'https://cdn.example.com/icon.webp' },
+        },
+      },
+    );
+
+    const [, updateData] = repository.update.mock.calls[0] as [
+      string,
+      { customDomain?: string | null; customDomainVerifiedAt?: Date | null },
+      undefined,
+    ];
+    expect(updateData.customDomain).toBe('www.example.com');
+    expect(updateData.customDomainVerifiedAt).toBeUndefined();
+  });
+
+  it('clears custom-domain verification when the normalized domain changes', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      customDomain: 'www.old.example',
+      customDomainVerifiedAt: new Date('2026-08-14T07:04:16.637Z'),
+      deletedAt: null,
+    });
+    repository.findByCustomDomain.mockResolvedValue(null);
+    repository.update.mockResolvedValue({ id: 'restaurant-1' });
+
+    await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { customDomain: 'www.new.example' },
+    );
+
+    const [, updateData] = repository.update.mock.calls[0] as [
+      string,
+      { customDomain?: string | null; customDomainVerifiedAt?: Date | null },
+      undefined,
+    ];
+    expect(updateData.customDomain).toBe('www.new.example');
+    expect(updateData.customDomainVerifiedAt).toBeNull();
+  });
+
   it('does not change slug or subdomain when the restaurant name changes', async () => {
     repository.findById.mockResolvedValue({
       id: 'restaurant-1',

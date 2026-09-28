@@ -266,6 +266,14 @@ export class RestaurantsService {
       throw new NotFoundException('Restaurant not found');
     }
 
+    const customDomain =
+      dto.customDomain !== undefined
+        ? await this.normalizeUniqueCustomDomain(dto.customDomain, id)
+        : undefined;
+    const customDomainChanged =
+      dto.customDomain !== undefined &&
+      customDomain !== restaurant.customDomain;
+
     const data = await this.restaurantsRepository.update(
       id,
       {
@@ -278,12 +286,8 @@ export class RestaurantsService {
           dto.coverImage !== undefined
             ? this.normalizeMediaUrl(dto.coverImage)
             : undefined,
-        customDomain:
-          dto.customDomain !== undefined
-            ? await this.normalizeUniqueCustomDomain(dto.customDomain, id)
-            : undefined,
-        customDomainVerifiedAt:
-          dto.customDomain !== undefined ? null : undefined,
+        customDomain,
+        customDomainVerifiedAt: customDomainChanged ? null : undefined,
         tagline: dto.tagline,
         bio: dto.bio,
         supportContact: dto.supportContact as Prisma.InputJsonValue,
