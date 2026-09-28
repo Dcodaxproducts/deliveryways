@@ -293,7 +293,7 @@ describe('CustomerAppService', () => {
       branding: {
         assets: {
           faviconUrl:
-            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
         },
       },
       branches: [{ id: 'branch-1', name: 'Main Branch', isMain: true }],
@@ -315,10 +315,12 @@ describe('CustomerAppService', () => {
       customDomainVerified: false,
       branchId: 'branch-1',
       faviconUrl:
-        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
     });
     expect(storageService.resolveTrustedPublicViewUrl).toHaveBeenCalledWith(
-      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
+      'tenant-1',
+      'restaurant-1',
     );
   });
 

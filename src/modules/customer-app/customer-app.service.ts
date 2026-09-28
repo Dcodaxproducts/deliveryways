@@ -364,6 +364,8 @@ export class CustomerAppService {
         ),
         faviconUrl: await this.storageService.resolveTrustedPublicViewUrl(
           getBrandingFaviconUrl(restaurant.branding),
+          restaurant.tenantId,
+          restaurant.id,
         ),
       },
       message: 'Domain context resolved successfully',

@@ -104,6 +104,8 @@ export class StorageService {
 
   async resolveTrustedPublicViewUrl(
     fileUrl: string | null | undefined,
+    tenantId: string,
+    restaurantId: string,
     expiresIn?: number,
   ): Promise<string | null> {
     if (!fileUrl || typeof fileUrl !== 'string' || !fileUrl.trim()) {
@@ -118,8 +120,13 @@ export class StorageService {
     try {
       const key = this.resolveObjectKey(undefined, fileUrl.trim(), s3Config);
       const segments = key.split('/');
+      const requiredPrefix = [
+        StorageFolderEnum.UPLOADS,
+        this.slugify(tenantId),
+        this.slugify(restaurantId),
+      ].join('/');
       if (
-        !key.startsWith(`${StorageFolderEnum.UPLOADS}/`) ||
+        !key.startsWith(`${requiredPrefix}/`) ||
         segments.some((segment) => segment === '.' || segment === '..')
       ) {
         return null;

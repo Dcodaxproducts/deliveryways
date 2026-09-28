@@ -57,25 +57,39 @@ describe('StorageService', () => {
   it('resolves only configured storage URLs for public server-side fetches', async () => {
     await expect(
       service.resolveTrustedPublicViewUrl(
-        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
+        'tenant-1',
+        'restaurant-1',
       ),
     ).resolves.toBe('https://signed-url.example');
 
     await expect(
       service.resolveTrustedPublicViewUrl(
-        'https://deliveryway.s3.eu-west-2.amazonaws.com.evil.test/uploads/favicon.webp',
+        'https://deliveryway.s3.eu-west-2.amazonaws.com.evil.test/uploads/tenant-1/restaurant-1/favicon.webp',
+        'tenant-1',
+        'restaurant-1',
       ),
     ).resolves.toBeNull();
     await expect(
       service.resolveTrustedPublicViewUrl(
         'https://127.0.0.1/internal/favicon.webp',
+        'tenant-1',
+        'restaurant-1',
       ),
     ).resolves.toBeNull();
     await expect(
-      service.resolveTrustedPublicViewUrl('../private/favicon.webp'),
+      service.resolveTrustedPublicViewUrl(
+        '../private/favicon.webp',
+        'tenant-1',
+        'restaurant-1',
+      ),
     ).resolves.toBeNull();
     await expect(
-      service.resolveTrustedPublicViewUrl('restaurant-logos/favicon.webp'),
+      service.resolveTrustedPublicViewUrl(
+        'uploads/tenant-2/restaurant-2/favicon.webp',
+        'tenant-1',
+        'restaurant-1',
+      ),
     ).resolves.toBeNull();
   });
 
