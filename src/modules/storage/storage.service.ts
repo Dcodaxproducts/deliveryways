@@ -102,6 +102,40 @@ export class StorageService {
     }
   }
 
+  async resolveTrustedPublicViewUrl(
+    fileUrl: string | null | undefined,
+    expiresIn?: number,
+  ): Promise<string | null> {
+    if (!fileUrl || typeof fileUrl !== 'string' || !fileUrl.trim()) {
+      return null;
+    }
+
+    const s3Config = this.getS3Config();
+    if (!s3Config.bucket || !s3Config.region) {
+      return null;
+    }
+
+    try {
+      const key = this.resolveObjectKey(undefined, fileUrl.trim(), s3Config);
+      const segments = key.split('/');
+      if (
+        !key.startsWith(`${StorageFolderEnum.UPLOADS}/`) ||
+        segments.some((segment) => segment === '.' || segment === '..')
+      ) {
+        return null;
+      }
+
+      const client = this.createS3Client(s3Config);
+      return await getSignedUrl(
+        client,
+        new GetObjectCommand({ Bucket: s3Config.bucket, Key: key }),
+        { expiresIn: expiresIn ?? s3Config.presignedUploadExpirySeconds },
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async createPresignedUploadUrl(
     user: AuthUserContext | undefined,
     dto: CreatePresignedUploadUrlDto,
@@ -432,8 +466,19 @@ export class StorageService {
     }
 
     const publicBaseUrl = config.publicBaseUrl?.replace(/\/+$/, '');
-    if (publicBaseUrl && fileUrl.startsWith(publicBaseUrl)) {
-      return this.normalizeObjectKey(pathname);
+    if (publicBaseUrl) {
+      const parsedPublicBaseUrl = new URL(publicBaseUrl);
+      const basePath = parsedPublicBaseUrl.pathname
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '');
+      const hasExpectedPath =
+        !basePath ||
+        pathname === basePath ||
+        pathname.startsWith(`${basePath}/`);
+
+      if (parsedUrl.origin === parsedPublicBaseUrl.origin && hasExpectedPath) {
+        return this.normalizeObjectKey(pathname.slice(basePath.length));
+      }
     }
 
     if (!config.bucket || !config.region) {

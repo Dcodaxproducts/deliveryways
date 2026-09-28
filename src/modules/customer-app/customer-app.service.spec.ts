@@ -152,6 +152,9 @@ describe('CustomerAppService', () => {
       resolveViewUrl: jest.fn(
         (value: string | null | undefined) => value ?? null,
       ),
+      resolveTrustedPublicViewUrl: jest.fn(
+        (value: string | null | undefined) => value ?? null,
+      ),
       resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
     };
 
@@ -275,7 +278,8 @@ describe('CustomerAppService', () => {
   };
 
   it('resolves the explicit restaurant subdomain from the request host', async () => {
-    const { service, repository, configService } = makeService();
+    const { service, repository, configService, storageService } =
+      makeService();
     configService.get.mockReturnValue('delivery-way.de');
     repository.findRestaurantDomainContext.mockResolvedValue({
       id: 'restaurant-1',
@@ -286,7 +290,12 @@ describe('CustomerAppService', () => {
       customDomain: null,
       customDomainVerifiedAt: null,
       logoUrl: null,
-      branding: null,
+      branding: {
+        assets: {
+          faviconUrl:
+            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+        },
+      },
       branches: [{ id: 'branch-1', name: 'Main Branch', isMain: true }],
     });
 
@@ -305,7 +314,12 @@ describe('CustomerAppService', () => {
       subdomain: 'burger-house',
       customDomainVerified: false,
       branchId: 'branch-1',
+      faviconUrl:
+        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
     });
+    expect(storageService.resolveTrustedPublicViewUrl).toHaveBeenCalledWith(
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+    );
   });
 
   it('preserves www when resolving a verified custom domain', async () => {

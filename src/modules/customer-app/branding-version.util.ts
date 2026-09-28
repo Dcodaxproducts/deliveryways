@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-const getFaviconValue = (branding: unknown): unknown => {
+export const getBrandingFaviconUrl = (branding: unknown): string | null => {
   if (!branding || typeof branding !== 'object' || Array.isArray(branding)) {
     return null;
   }
@@ -17,7 +17,8 @@ const getFaviconValue = (branding: unknown): unknown => {
       ? (logos as Record<string, unknown>).faviconUrl
       : null;
 
-  return assetRecord.faviconUrl ?? nestedFavicon ?? null;
+  const value = assetRecord.faviconUrl ?? nestedFavicon;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 };
 
 export const createBrandingVersion = (
@@ -25,6 +26,6 @@ export const createBrandingVersion = (
   branding: unknown,
 ): string =>
   createHash('sha256')
-    .update(JSON.stringify([restaurantId, getFaviconValue(branding)]))
+    .update(JSON.stringify([restaurantId, getBrandingFaviconUrl(branding)]))
     .digest('hex')
     .slice(0, 16);

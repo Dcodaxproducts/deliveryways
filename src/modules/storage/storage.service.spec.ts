@@ -54,6 +54,31 @@ describe('StorageService', () => {
     expect(getSignedUrl).toHaveBeenCalled();
   });
 
+  it('resolves only configured storage URLs for public server-side fetches', async () => {
+    await expect(
+      service.resolveTrustedPublicViewUrl(
+        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/favicon.webp',
+      ),
+    ).resolves.toBe('https://signed-url.example');
+
+    await expect(
+      service.resolveTrustedPublicViewUrl(
+        'https://deliveryway.s3.eu-west-2.amazonaws.com.evil.test/uploads/favicon.webp',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      service.resolveTrustedPublicViewUrl(
+        'https://127.0.0.1/internal/favicon.webp',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      service.resolveTrustedPublicViewUrl('../private/favicon.webp'),
+    ).resolves.toBeNull();
+    await expect(
+      service.resolveTrustedPublicViewUrl('restaurant-logos/favicon.webp'),
+    ).resolves.toBeNull();
+  });
+
   it('creates signed view URL from stored S3 object key', async () => {
     const result = await service.resolveViewUrl(
       'uploads/tenant-1/restaurant-1/user-1/2026-03-16/burger.png',

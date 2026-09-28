@@ -58,7 +58,10 @@ import {
   UpdateTableReservationStatusDto,
 } from './dto';
 import { CustomerAppRepository } from './customer-app.repository';
-import { createBrandingVersion } from './branding-version.util';
+import {
+  createBrandingVersion,
+  getBrandingFaviconUrl,
+} from './branding-version.util';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import { StorageService } from '../storage/storage.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -358,6 +361,9 @@ export class CustomerAppService {
         brandingVersion: createBrandingVersion(
           restaurant.id,
           restaurant.branding,
+        ),
+        faviconUrl: await this.storageService.resolveTrustedPublicViewUrl(
+          getBrandingFaviconUrl(restaurant.branding),
         ),
       },
       message: 'Domain context resolved successfully',
