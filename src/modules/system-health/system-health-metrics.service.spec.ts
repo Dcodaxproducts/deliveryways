@@ -1,5 +1,5 @@
-import { mkdtempSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SystemHealthMetricsService } from './system-health-metrics.service';
@@ -74,6 +74,37 @@ describe('SystemHealthMetricsService', () => {
 
     expect(overview.webhook.failedCount).toBe(1);
     expect(logs.items[0]?.message).toBe('Webhook delivery failed');
+  });
+
+  it('coalesces request persistence and replaces the store atomically', async () => {
+    jest.useFakeTimers();
+
+    try {
+      await service.onModuleInit();
+      for (let index = 0; index < 100; index += 1) {
+        service.recordRequest({
+          method: 'GET',
+          path: '/api/v1/health/live',
+          statusCode: 200,
+          durationMs: 5,
+          success: true,
+        });
+      }
+
+      await jest.advanceTimersByTimeAsync(500);
+      expect(existsSync(storePath)).toBe(false);
+
+      await jest.advanceTimersByTimeAsync(299_500);
+      await service.onModuleDestroy();
+      const persisted = JSON.parse(await readFile(storePath, 'utf8')) as {
+        requestMetrics: unknown[];
+      };
+
+      expect(persisted.requestMetrics).toHaveLength(100);
+      expect(existsSync(`${storePath}.tmp`)).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('loads persisted metrics across service restart without schema changes', async () => {

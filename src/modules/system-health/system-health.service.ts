@@ -88,6 +88,7 @@ export class SystemHealthService {
     );
 
     const disk = this.readDiskStats();
+    const processMemory = process.memoryUsage();
 
     return {
       uptimeSeconds: Math.floor(uptime()),
@@ -101,6 +102,17 @@ export class SystemHealthService {
         freeBytes: freeMemoryBytes,
         usedBytes: usedMemoryBytes,
         usedPercent: memoryUsedPercent,
+        process: {
+          rssBytes: processMemory.rss,
+          heapTotalBytes: processMemory.heapTotal,
+          heapUsedBytes: processMemory.heapUsed,
+          heapUsedPercent: this.toPercent(
+            processMemory.heapUsed,
+            processMemory.heapTotal,
+          ),
+          externalBytes: processMemory.external,
+          arrayBuffersBytes: processMemory.arrayBuffers,
+        },
       },
       disk,
     };
