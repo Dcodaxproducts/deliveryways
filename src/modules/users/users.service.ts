@@ -50,6 +50,13 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto, tx?: PrismaTx) {
+    const revokeSession =
+      dto.password !== undefined ||
+      dto.role !== undefined ||
+      dto.isActive !== undefined ||
+      dto.tenantId !== undefined ||
+      dto.restaurantId !== undefined ||
+      dto.branchId !== undefined;
     return this.usersRepository.update(
       id,
       {
@@ -66,6 +73,8 @@ export class UsersService {
         isApproved: dto.isApproved,
         isActive: dto.isActive,
         isGuest: dto.isGuest,
+        refreshTokenHash: revokeSession ? null : undefined,
+        authVersion: revokeSession ? { increment: 1 } : undefined,
         tenant: dto.tenantId ? { connect: { id: dto.tenantId } } : undefined,
         restaurant: dto.restaurantId
           ? { connect: { id: dto.restaurantId } }
@@ -239,7 +248,11 @@ export class UsersService {
   }
 
   async setActiveStatus(userId: string, isActive: boolean) {
-    return this.usersRepository.update(userId, { isActive });
+    return this.usersRepository.update(userId, {
+      isActive,
+      refreshTokenHash: null,
+      authVersion: { increment: 1 },
+    });
   }
 
   async forceDeleteUsersByEmails(emails: string[]) {
@@ -291,7 +304,15 @@ export class UsersService {
 
   async updatePassword(userId: string, plainPassword: string, tx?: PrismaTx) {
     const hashed = await bcrypt.hash(plainPassword, 10);
-    return this.usersRepository.update(userId, { password: hashed }, tx);
+    return this.usersRepository.update(
+      userId,
+      {
+        password: hashed,
+        refreshTokenHash: null,
+        authVersion: { increment: 1 },
+      },
+      tx,
+    );
   }
 
   async softDeleteUser(userId: string) {

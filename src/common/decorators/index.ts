@@ -1,4 +1,8 @@
 export { Roles, ROLES_KEY } from './roles.decorator';
+export {
+  PosPrinterAccess,
+  POS_PRINTER_ACCESS_KEY,
+} from './pos-printer-access.decorator';
 export { CurrentUser, AuthUserContext } from './current-user.decorator';
 export { Public, IS_PUBLIC_KEY } from './public.decorator';
 export {

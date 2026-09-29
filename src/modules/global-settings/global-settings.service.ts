@@ -328,6 +328,27 @@ export class GlobalSettingsService {
     };
   }
 
+  async getLandingPackagePlanIds(): Promise<string[] | null> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    const value = this.readPath(data.landingPageSettings, [
+      'packages',
+      'packagePlanIds',
+    ]);
+    if (!Array.isArray(value)) return null;
+
+    return Array.from(
+      new Set(
+        value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, 3);
+  }
+
   async getDefaultCurrencyCode(): Promise<string> {
     const data = await this.globalSettingsRepository.ensureSingleton(
       this.buildDefaultCreateInput(),

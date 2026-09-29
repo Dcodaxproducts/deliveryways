@@ -462,6 +462,7 @@ export class UsersRepository {
         deletedAt: new Date(),
         isActive: false,
         refreshTokenHash: null,
+        authVersion: { increment: 1 },
         deleteAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     });
@@ -473,6 +474,8 @@ export class UsersRepository {
       data: {
         deletedAt: null,
         isActive: true,
+        refreshTokenHash: null,
+        authVersion: { increment: 1 },
         deleteAfter: null,
       },
     });

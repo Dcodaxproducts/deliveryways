@@ -39,6 +39,7 @@ import { StaffActivityLogsModule } from './modules/staff-activity-logs/staff-act
 import { ChatModule } from './modules/chat/chat.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
 import { PosModule } from './modules/pos/pos.module';
+import { PosPrinterModule } from './modules/pos-printer/pos-printer.module';
 import { GlobalSettingsModule } from './modules/global-settings/global-settings.module';
 import { LoyaltyWalletModule } from './modules/loyalty-wallet/loyalty-wallet.module';
 import { SystemHealthModule } from './modules/system-health/system-health.module';
@@ -48,6 +49,7 @@ import { ContactSubmissionsModule } from './modules/contact-submissions/contact-
 import { WinOrderIntegrationModule } from './modules/winorder-integration/winorder-integration.module';
 import {
   JwtAuthGuard,
+  PosPrinterAccessGuard,
   RolesGuard,
   SubscriptionFeaturesGuard,
   TenantAccessGuard,
@@ -113,6 +115,7 @@ import { AppController } from './app.controller';
     ChatModule,
     GroupOrdersModule,
     PosModule,
+    PosPrinterModule,
     GlobalSettingsModule,
     LoyaltyWalletModule,
     SystemHealthModule,
@@ -129,6 +132,10 @@ import { AppController } from './app.controller';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PosPrinterAccessGuard,
     },
     {
       provide: APP_GUARD,

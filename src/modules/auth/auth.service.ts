@@ -13,10 +13,14 @@ import {
   PackageBillingModel,
   PaymentStatus,
   Prisma,
+  StaffAccountType,
   SubscriptionStatus,
   UserRole,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+
+const DUMMY_PASSWORD_HASH =
+  '$2b$10$7EqJtq98hPqEX7fNZaFWoO5uGQmJ9Q7KQZl0qvC3vYVdM4qfM7QeK';
 import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database';
 import { AuthUserContext } from '../../common/decorators';
@@ -643,6 +647,7 @@ export class AuthService {
       rid: createdUser.restaurantId,
       bid: createdUser.branchId,
       isGuest: createdUser.isGuest,
+      authVersion: createdUser.authVersion,
     });
 
     return {
@@ -659,6 +664,7 @@ export class AuthService {
           isVerified: createdUser.isVerified,
           isApproved: createdUser.isApproved,
           isGuest: createdUser.isGuest,
+          authVersion: createdUser.authVersion,
         },
         verificationOtp: shouldExposeDevToken ? verificationOtp : undefined,
         verificationEmailSent: emailEnabled ? verificationEmailSent : undefined,
@@ -727,6 +733,7 @@ export class AuthService {
       rid: createdUser.restaurantId,
       bid: createdUser.branchId,
       isGuest: createdUser.isGuest,
+      authVersion: createdUser.authVersion,
     });
 
     return {
@@ -744,6 +751,7 @@ export class AuthService {
           isApproved: createdUser.isApproved,
           isActive: createdUser.isActive,
           isGuest: createdUser.isGuest,
+          authVersion: createdUser.authVersion,
           profile: {
             firstName,
             lastName: dto.lastName?.trim() || 'Customer',
@@ -847,6 +855,7 @@ export class AuthService {
     const user = await this.resolveLoginUser(dto);
 
     if (!user) {
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -881,6 +890,7 @@ export class AuthService {
       rid: user.restaurantId,
       bid: user.branchId,
       isGuest: user.isGuest,
+      authVersion: user.authVersion,
     });
 
     return {
@@ -898,6 +908,7 @@ export class AuthService {
           isVerified: user.isVerified,
           isApproved: user.isApproved,
           isGuest: user.isGuest,
+          authVersion: user.authVersion,
           profile: user.profile,
           deletionScheduled: !!loginDeletionState,
           deleteAfter: loginDeletionState?.deleteAfter ?? null,
@@ -974,6 +985,7 @@ export class AuthService {
       rid: user.restaurantId,
       bid: user.branchId,
       isGuest: user.isGuest,
+      authVersion: user.authVersion,
     });
 
     return {
@@ -991,6 +1003,7 @@ export class AuthService {
           isVerified: user.isVerified,
           isApproved: user.isApproved,
           isGuest: user.isGuest,
+          authVersion: user.authVersion,
           profile: user.profile,
           deletionScheduled: !!loginDeletionState,
           deleteAfter: loginDeletionState?.deleteAfter ?? null,
@@ -1041,6 +1054,7 @@ export class AuthService {
       rid: user.restaurantId,
       bid: user.branchId,
       isGuest: user.isGuest,
+      authVersion: user.authVersion,
     });
 
     return {
@@ -1058,6 +1072,7 @@ export class AuthService {
           isVerified: user.isVerified,
           isApproved: user.isApproved,
           isGuest: user.isGuest,
+          authVersion: user.authVersion,
           profile: user.profile,
           deletionScheduled: false,
           deleteAfter: null,
@@ -1134,11 +1149,15 @@ export class AuthService {
     );
 
     if (!staff || staff.deletedAt) {
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const isValidPassword = await bcrypt.compare(dto.password, staff.password);
-    if (!isValidPassword) {
+    if (
+      !isValidPassword ||
+      staff.accountType === StaffAccountType.POS_PRINTER
+    ) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -1164,6 +1183,8 @@ export class AuthService {
       ownerUserId: staff.ownerUserId,
       staffRoleId: staff.staffRoleId,
       panelType: staff.panelType,
+      accountType: staff.accountType,
+      authVersion: staff.authVersion,
     });
 
     return {
@@ -1178,6 +1199,8 @@ export class AuthService {
           ownerUserId: staff.ownerUserId,
           staffRoleId: staff.staffRoleId,
           panelType: staff.panelType,
+          accountType: staff.accountType,
+          authVersion: staff.authVersion,
           tenantId: staff.tenantId,
           restaurantId: staff.restaurantId,
           branchId: staff.branchId,
@@ -1197,6 +1220,74 @@ export class AuthService {
         },
       }),
       message: 'Staff login successful',
+    };
+  }
+
+  async loginPosPrinter(dto: LoginDto) {
+    const staff = await this.staffManagementRepository.findByEmail(
+      dto.email.trim().toLowerCase(),
+    );
+
+    if (!staff || staff.deletedAt) {
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isValidPassword = await bcrypt.compare(dto.password, staff.password);
+    if (
+      !isValidPassword ||
+      staff.accountType !== StaffAccountType.POS_PRINTER
+    ) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!staff.isActive) {
+      throw new ForbiddenException('Your POS printer account is inactive');
+    }
+    if (
+      !staff.staffRole ||
+      staff.staffRole.deletedAt ||
+      !staff.staffRole.isActive ||
+      !staff.tenantId ||
+      !staff.restaurantId ||
+      !staff.branchId
+    ) {
+      throw new ForbiddenException('POS printer account scope is inactive');
+    }
+
+    const auth = await this.issueAuthTokens({
+      uid: staff.id,
+      actorType: 'STAFF',
+      role: UserRoleEnum.STAFF,
+      tid: staff.tenantId,
+      rid: staff.restaurantId,
+      bid: staff.branchId,
+      ownerUserId: staff.ownerUserId,
+      staffRoleId: staff.staffRoleId,
+      panelType: staff.panelType,
+      accountType: StaffAccountType.POS_PRINTER,
+      authVersion: staff.authVersion,
+    });
+
+    return {
+      data: {
+        accessToken: auth.accessToken,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: staff.id,
+          email: staff.email,
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          accountType: StaffAccountType.POS_PRINTER,
+          authVersion: staff.authVersion,
+          tenantId: staff.tenantId,
+          restaurantId: staff.restaurantId,
+          branchId: staff.branchId,
+          permissions: ['order-management', 'table-reservations'],
+          isActive: staff.isActive,
+        },
+      },
+      message: 'POS printer login successful',
     };
   }
 
@@ -1266,6 +1357,7 @@ export class AuthService {
       tid: deliveryman.tenantId,
       rid: deliveryman.restaurantId,
       bid: deliveryman.branchId,
+      authVersion: deliveryman.authVersion,
     });
 
     return {
@@ -1333,6 +1425,7 @@ export class AuthService {
       tid: deliveryman.tenantId,
       rid: deliveryman.restaurantId,
       bid: deliveryman.branchId,
+      authVersion: deliveryman.authVersion,
     });
 
     return {
@@ -1402,6 +1495,15 @@ export class AuthService {
       uid: string;
       type?: string;
       actorType?: 'USER' | 'STAFF' | 'DELIVERYMAN';
+      role?: string;
+      tid?: string | null;
+      rid?: string | null;
+      bid?: string | null;
+      ownerUserId?: string;
+      staffRoleId?: string;
+      panelType?: string;
+      accountType?: StaffAccountType;
+      ver?: number;
     };
 
     try {
@@ -1409,6 +1511,15 @@ export class AuthService {
         uid: string;
         type?: string;
         actorType?: 'USER' | 'STAFF' | 'DELIVERYMAN';
+        role?: string;
+        tid?: string | null;
+        rid?: string | null;
+        bid?: string | null;
+        ownerUserId?: string;
+        staffRoleId?: string;
+        panelType?: string;
+        accountType?: StaffAccountType;
+        ver?: number;
       }>(dto.refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
       });
@@ -1422,7 +1533,28 @@ export class AuthService {
 
     if (payload.actorType === 'STAFF') {
       const staff = await this.staffManagementRepository.findById(payload.uid);
-      if (!staff || !staff.refreshTokenHash || staff.deletedAt) {
+      if (
+        !staff ||
+        !staff.refreshTokenHash ||
+        staff.deletedAt ||
+        !staff.isActive ||
+        !staff.staffRole?.isActive ||
+        staff.staffRole.deletedAt
+      ) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      if (
+        payload.ver !== staff.authVersion ||
+        payload.role !== UserRoleEnum.STAFF ||
+        payload.tid !== staff.tenantId ||
+        payload.rid !== staff.restaurantId ||
+        payload.bid !== staff.branchId ||
+        payload.ownerUserId !== staff.ownerUserId ||
+        payload.staffRoleId !== staff.staffRoleId ||
+        payload.panelType !== staff.panelType ||
+        payload.accountType !== staff.accountType
+      ) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
@@ -1444,6 +1576,8 @@ export class AuthService {
         ownerUserId: staff.ownerUserId,
         staffRoleId: staff.staffRoleId,
         panelType: staff.panelType,
+        accountType: staff.accountType,
+        authVersion: staff.authVersion,
       });
 
       return {
@@ -1463,7 +1597,18 @@ export class AuthService {
       if (
         !deliveryman ||
         !deliveryman.refreshTokenHash ||
+        !deliveryman.isActive ||
         deliveryman.deletedAt
+      ) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      if (
+        payload.ver !== deliveryman.authVersion ||
+        payload.role !== 'DELIVERYMAN' ||
+        payload.tid !== deliveryman.tenantId ||
+        payload.rid !== deliveryman.restaurantId ||
+        payload.bid !== deliveryman.branchId
       ) {
         throw new UnauthorizedException('Invalid refresh token');
       }
@@ -1483,6 +1628,7 @@ export class AuthService {
         tid: deliveryman.tenantId,
         rid: deliveryman.restaurantId,
         bid: deliveryman.branchId,
+        authVersion: deliveryman.authVersion,
       });
 
       return {
@@ -1495,7 +1641,17 @@ export class AuthService {
     }
 
     const dbUser = await this.usersService.findById(payload.uid);
-    if (!dbUser || !dbUser.refreshTokenHash) {
+    if (!dbUser || !dbUser.refreshTokenHash || !dbUser.isActive) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (
+      payload.ver !== dbUser.authVersion ||
+      payload.role !== dbUser.role ||
+      payload.tid !== dbUser.tenantId ||
+      payload.rid !== dbUser.restaurantId ||
+      payload.bid !== dbUser.branchId
+    ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -1517,6 +1673,7 @@ export class AuthService {
       rid: dbUser.restaurantId,
       bid: dbUser.branchId,
       isGuest: dbUser.isGuest,
+      authVersion: dbUser.authVersion,
     });
 
     return {
@@ -1887,6 +2044,8 @@ export class AuthService {
 
       await this.staffManagementRepository.update(staff.id, {
         password: await bcrypt.hash(dto.newPassword, 10),
+        refreshTokenHash: null,
+        authVersion: { increment: 1 },
       });
 
       return {
@@ -1914,7 +2073,11 @@ export class AuthService {
 
       await this.prisma.deliveryman.update({
         where: { id: deliveryman.id },
-        data: { password: await bcrypt.hash(dto.newPassword, 10) },
+        data: {
+          password: await bcrypt.hash(dto.newPassword, 10),
+          refreshTokenHash: null,
+          authVersion: { increment: 1 },
+        },
       });
 
       return {
@@ -1938,6 +2101,7 @@ export class AuthService {
     }
 
     await this.usersService.updatePassword(dbUser.id, dto.newPassword);
+    await this.usersService.setRefreshTokenHash(dbUser.id, null);
 
     return {
       data: null,
@@ -1962,6 +2126,8 @@ export class AuthService {
             ownerUserId: staff.ownerUserId,
             staffRoleId: staff.staffRoleId,
             panelType: staff.panelType,
+            accountType: staff.accountType,
+            authVersion: staff.authVersion,
             tenantId: staff.tenantId,
             restaurantId: staff.restaurantId,
             branchId: staff.branchId,
@@ -2028,6 +2194,7 @@ export class AuthService {
           isVerified: dbUser.isVerified,
           isApproved: dbUser.isApproved,
           isGuest: dbUser.isGuest,
+          authVersion: dbUser.authVersion,
           profile: dbUser.profile,
           isActive: dbUser.isActive,
           deletedAt: dbUser.deletedAt,
@@ -2354,13 +2521,18 @@ export class AuthService {
     ownerUserId?: string;
     staffRoleId?: string;
     panelType?: string;
+    accountType?: StaffAccountType;
     isGuest?: boolean;
+    authVersion?: number;
   }) {
-    const normalizedPayload = this.normalizeAuthPayload(payload);
+    const normalizedPayload = this.normalizeAuthPayload({
+      ...payload,
+      ver: payload.authVersion ?? 0,
+    });
     const accessToken = await this.jwtService.signAsync(normalizedPayload);
 
     const refreshToken = await this.jwtService.signAsync(
-      { uid: payload.uid, type: 'refresh', actorType: payload.actorType },
+      { ...normalizedPayload, type: 'refresh' },
       {
         expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as never,
         secret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
@@ -2439,7 +2611,9 @@ export class AuthService {
     ownerUserId?: string;
     staffRoleId?: string;
     panelType?: string;
+    accountType?: StaffAccountType;
     isGuest?: boolean;
+    ver: number;
   }) {
     if (payload.actorType === 'STAFF') {
       return payload;
@@ -2590,9 +2764,7 @@ export class AuthService {
     );
 
     if (adminCandidates.length > 1) {
-      throw new BadRequestException(
-        'Multiple admin accounts use this email. Specify role to login.',
-      );
+      return null;
     }
 
     return adminCandidates[0] ?? candidates[0] ?? null;

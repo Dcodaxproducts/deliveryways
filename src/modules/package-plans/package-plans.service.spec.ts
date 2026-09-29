@@ -293,12 +293,15 @@ describe('PackagePlansService', () => {
       sortOrder: 'DESC',
     });
 
-    expect(repository.listPublicPlans).toHaveBeenCalledWith({
-      page: 1,
-      limit: 10,
-      sortBy: 'createdAt',
-      sortOrder: 'DESC',
-    });
+    expect(repository.listPublicPlans).toHaveBeenCalledWith(
+      {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      },
+      null,
+    );
     expect(result.data).toHaveLength(1);
     expect(result.meta).toEqual({
       page: 1,
@@ -308,6 +311,66 @@ describe('PackagePlansService', () => {
       hasNext: false,
       hasPrevious: false,
     });
+  });
+
+  it('passes the explicit landing plan selection to the repository in order', async () => {
+    const repository = {
+      listPublicPlans: jest.fn().mockResolvedValue({
+        items: [makePlan({ id: 'plan-1' }), makePlan({ id: 'plan-3' })],
+        total: 2,
+      }),
+    };
+    const globalSettingsService = {
+      getLandingPackagePlanIds: jest
+        .fn()
+        .mockResolvedValue(['plan-3', 'deleted-plan', 'plan-1']),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      globalSettingsService as never,
+    );
+    const query = {
+      page: 1,
+      limit: 100,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC' as const,
+      landingOnly: true,
+    };
+
+    const result = await service.listPublicPlans(query);
+
+    expect(repository.listPublicPlans).toHaveBeenCalledWith(query, [
+      'plan-3',
+      'deleted-plan',
+      'plan-1',
+    ]);
+    expect(result.data.map((plan) => plan.id)).toEqual(['plan-3', 'plan-1']);
+  });
+
+  it('passes an explicit empty landing selection without falling back', async () => {
+    const repository = {
+      listPublicPlans: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const globalSettingsService = {
+      getLandingPackagePlanIds: jest.fn().mockResolvedValue([]),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      globalSettingsService as never,
+    );
+    const query = {
+      page: 1,
+      limit: 100,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC' as const,
+      landingOnly: true,
+    };
+
+    await service.listPublicPlans(query);
+
+    expect(repository.listPublicPlans).toHaveBeenCalledWith(query, []);
   });
 
   it('cancels existing active subscription when assigning a new package', async () => {

@@ -20,6 +20,11 @@ enum StaffPanelType {
   BRANCH_ADMIN
 }
 
+enum StaffAccountType {
+  STANDARD
+  POS_PRINTER
+}
+
 enum StaffActivityAction {
   LOGIN
   LOGOUT
@@ -595,6 +600,7 @@ model User {
   resetPasswordOtpExpiresAt DateTime? @map("reset_password_otp_expires_at") @db.Timestamptz
   resetPasswordOtpAttempts  Int       @default(0) @map("reset_password_otp_attempts")
   refreshTokenHash          String?   @map("refresh_token_hash")
+  authVersion               Int       @default(0) @map("auth_version")
   deleteAfter               DateTime? @map("delete_after") @db.Timestamptz
   tenantId                  String?   @map("tenant_id")
   restaurantId              String?   @map("restaurant_id")
@@ -1351,6 +1357,7 @@ model StaffRole {
   restaurantId     String?        @map("restaurant_id")
   branchId         String?        @map("branch_id")
   name             String
+  systemKey        String?        @unique @map("system_key")
   description      String?
   permissions      Json
   restaurantAccess Json?          @map("restaurant_access")
@@ -1386,29 +1393,31 @@ model PermissionModule {
 }
 
 model StaffUser {
-  id               String         @id @default(cuid())
-  ownerUserId      String         @map("owner_user_id")
-  staffRoleId      String         @map("staff_role_id")
-  panelType        StaffPanelType @map("panel_type")
+  id               String           @id @default(cuid())
+  ownerUserId      String           @map("owner_user_id")
+  staffRoleId      String           @map("staff_role_id")
+  panelType        StaffPanelType   @map("panel_type")
+  accountType      StaffAccountType @default(STANDARD) @map("account_type")
   email            String
   password         String
-  plainPassword    String?        @map("plain_password")
-  firstName        String         @map("first_name")
-  lastName         String         @map("last_name")
+  plainPassword    String?          @map("plain_password")
+  firstName        String           @map("first_name")
+  lastName         String           @map("last_name")
   phone            String?
-  avatarUrl        String?        @map("avatar_url")
+  avatarUrl        String?          @map("avatar_url")
   bio              String?
-  refreshTokenHash String?        @map("refresh_token_hash")
-  restaurantAccess Json?          @map("restaurant_access")
-  tenantId         String?        @map("tenant_id")
-  restaurantId     String?        @map("restaurant_id")
-  branchId         String?        @map("branch_id")
-  isVerified       Boolean        @default(true) @map("is_verified")
-  isApproved       Boolean        @default(true) @map("is_approved")
-  isActive         Boolean        @default(true) @map("is_active")
-  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz
-  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  refreshTokenHash String?          @map("refresh_token_hash")
+  authVersion      Int              @default(0) @map("auth_version")
+  restaurantAccess Json?            @map("restaurant_access")
+  tenantId         String?          @map("tenant_id")
+  restaurantId     String?          @map("restaurant_id")
+  branchId         String?          @map("branch_id")
+  isVerified       Boolean          @default(true) @map("is_verified")
+  isApproved       Boolean          @default(true) @map("is_approved")
+  isActive         Boolean          @default(true) @map("is_active")
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
   ownerUser           User          @relation("StaffUserOwner", fields: [ownerUserId], references: [id])
   staffRole           StaffRole     @relation(fields: [staffRoleId], references: [id])
@@ -1420,6 +1429,7 @@ model StaffUser {
 
   @@unique([email])
   @@index([ownerUserId, panelType, isActive])
+  @@index([accountType, tenantId, restaurantId, branchId, isActive], map: "staff_pos_printer_scope_active_idx")
   @@index([tenantId, restaurantId, branchId, isActive])
   @@map("staff_users")
 }
@@ -1471,6 +1481,7 @@ model Deliveryman {
   avatarUrl             String?           @map("avatar_url")
   password              String?
   refreshTokenHash      String?           @map("refresh_token_hash")
+  authVersion           Int               @default(0) @map("auth_version")
   twoFactorEnabled      Boolean           @default(false) @map("two_factor_enabled")
   twoFactorOtp          String?           @map("two_factor_otp")
   twoFactorOtpExpiresAt DateTime?         @map("two_factor_otp_expires_at") @db.Timestamptz

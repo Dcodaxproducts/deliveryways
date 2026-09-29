@@ -17,6 +17,7 @@ import {
   PaymentStatus,
   PaymentTransactionType,
   Prisma,
+  StaffAccountType,
   ServiceChargeType,
   CouponDealSelectionMode,
   CouponCampaignKind,
@@ -699,9 +700,22 @@ export class OrdersService {
     const customerId =
       user.role === UserRoleEnum.CUSTOMER ? user.uid : undefined;
     const deliverymanId = isDeliveryman ? user.uid : undefined;
+    if (
+      user.accountType === StaffAccountType.POS_PRINTER &&
+      query.branchId &&
+      query.branchId !== user.bid
+    ) {
+      throw new ForbiddenException(
+        'POS printer accounts can only access their assigned branch',
+      );
+    }
+    const scopedQuery: ListOrdersDto =
+      user.accountType === StaffAccountType.POS_PRINTER
+        ? { ...query, branchId: user.bid }
+        : query;
     const { items, total } = await this.ordersRepository.list(
       restaurantId,
-      query,
+      scopedQuery,
       customerId,
       deliverymanId,
       excludeUnpaidOnlineOrders,

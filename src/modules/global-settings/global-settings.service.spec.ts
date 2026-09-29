@@ -185,6 +185,29 @@ describe('GlobalSettingsService', () => {
     service = moduleRef.get(GlobalSettingsService);
   });
 
+  it('returns the nested ordered landing package-plan selection', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {
+        packages: { packagePlanIds: ['plan-pro', 'plan-starter'] },
+      },
+    });
+
+    await expect(service.getLandingPackagePlanIds()).resolves.toEqual([
+      'plan-pro',
+      'plan-starter',
+    ]);
+  });
+
+  it('keeps legacy landing package plans unconfigured when IDs are absent', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {},
+    });
+
+    await expect(service.getLandingPackagePlanIds()).resolves.toBeNull();
+  });
+
   it('creates/returns singleton settings on get', async () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',

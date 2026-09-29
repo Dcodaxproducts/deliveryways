@@ -166,8 +166,20 @@ export class PackagePlansService {
   }
 
   async listPublicPlans(query: ListPackagePlansDto) {
-    const { items, total } =
-      await this.packagePlansRepository.listPublicPlans(query);
+    const selectedPlanIds = query.landingOnly
+      ? ((await this.globalSettingsService?.getLandingPackagePlanIds()) ?? null)
+      : null;
+    const { items: fetchedItems, total } =
+      await this.packagePlansRepository.listPublicPlans(query, selectedPlanIds);
+    const items =
+      query.landingOnly && selectedPlanIds !== null
+        ? selectedPlanIds
+            .flatMap((id) => {
+              const plan = fetchedItems.find((item) => item.id === id);
+              return plan ? [plan] : [];
+            })
+            .slice((query.page - 1) * query.limit, query.page * query.limit)
+        : fetchedItems;
 
     return {
       data: items,

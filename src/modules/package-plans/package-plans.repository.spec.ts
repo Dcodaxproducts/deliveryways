@@ -7,29 +7,81 @@ import {
 import { PackagePlansRepository } from './package-plans.repository';
 
 describe('PackagePlansRepository public landing visibility', () => {
-  it('filters landing requests to explicitly selected active plans', async () => {
+  const query = {
+    page: 1,
+    limit: 10,
+    sortBy: 'createdAt',
+    sortOrder: 'DESC' as const,
+    landingOnly: true,
+  };
+
+  const makeRepository = (
+    items: Array<{ id: string }>,
+    total = items.length,
+  ) => {
     const findMany = jest
-      .fn<Promise<unknown[]>, [Prisma.PackagePlanFindManyArgs]>()
-      .mockResolvedValue([]);
-    const count = jest.fn().mockResolvedValue(0);
+      .fn<Promise<Array<{ id: string }>>, [Prisma.PackagePlanFindManyArgs]>()
+      .mockResolvedValue(items);
+    const count = jest.fn().mockResolvedValue(total);
     const prisma = {
       packagePlan: { findMany, count },
-      $transaction: jest.fn().mockResolvedValue([[], 0]),
+      $transaction: jest
+        .fn()
+        .mockImplementation((operations) =>
+          Promise.all(operations as Array<Promise<unknown>>),
+        ),
     };
-    const repository = new PackagePlansRepository(prisma as never);
 
-    await repository.listPublicPlans({
-      page: 1,
-      limit: 10,
-      sortBy: 'createdAt',
-      sortOrder: 'DESC',
-      landingOnly: true,
+    return {
+      repository: new PackagePlansRepository(prisma as never),
+      findMany,
+    };
+  };
+
+  it('uses showOnLanding only for the legacy unconfigured selection', async () => {
+    const { repository, findMany } = makeRepository([]);
+
+    await repository.listPublicPlans(query, null);
+
+    const args = findMany.mock.calls[0]?.[0];
+    expect(args.where?.deletedAt).toBeNull();
+    expect(args.where?.isActive).toBe(true);
+    expect(args.where?.showOnLanding).toBe(true);
+    expect(args.skip).toBe(0);
+    expect(args.take).toBe(10);
+  });
+
+  it('queries only selected active plans without database pagination', async () => {
+    const { repository, findMany } = makeRepository([
+      { id: 'plan-1' },
+      { id: 'plan-3' },
+    ]);
+
+    const result = await repository.listPublicPlans(query, [
+      'plan-3',
+      'deleted-plan',
+      'plan-1',
+    ]);
+
+    expect(result.items.map((plan) => plan.id)).toEqual(['plan-1', 'plan-3']);
+    const args = findMany.mock.calls[0]?.[0];
+    expect(args.where?.id).toEqual({
+      in: ['plan-3', 'deleted-plan', 'plan-1'],
     });
+    expect(args.where?.showOnLanding).toBeUndefined();
+    expect(args.skip).toBeUndefined();
+    expect(args.take).toBeUndefined();
+  });
 
-    const where = findMany.mock.calls[0]?.[0].where;
-    expect(where?.deletedAt).toBeNull();
-    expect(where?.isActive).toBe(true);
-    expect(where?.showOnLanding).toBe(true);
+  it('keeps an explicit empty selection empty without fallback', async () => {
+    const { repository, findMany } = makeRepository([], 0);
+
+    const result = await repository.listPublicPlans(query, []);
+
+    expect(result).toEqual({ items: [], total: 0 });
+    const args = findMany.mock.calls[0]?.[0];
+    expect(args.where?.id).toEqual({ in: [] });
+    expect(args.where?.showOnLanding).toBeUndefined();
   });
 });
 

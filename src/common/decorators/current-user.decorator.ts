@@ -1,4 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { StaffAccountType } from '@prisma/client';
 import { UserRoleEnum } from '../enums';
 
 export type AuthActorType = 'USER' | 'STAFF' | 'DELIVERYMAN';
@@ -14,6 +15,8 @@ export interface AuthUserContext {
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;
+  accountType?: StaffAccountType;
+  ver?: number;
   restaurantAccess?: {
     restaurantIds?: string[];
     branchIds?: string[];

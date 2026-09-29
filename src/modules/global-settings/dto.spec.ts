@@ -14,6 +14,29 @@ describe('UpdateGlobalSettingsDto', () => {
     expect(dto.secondaryColor).toBe('');
   });
 
+  it('rejects more than three ordered landing pricing plans', async () => {
+    const dto = plainToInstance(UpdateGlobalSettingsDto, {
+      landingPageSettings: {
+        packages: {
+          packagePlanIds: ['plan-1', 'plan-2', 'plan-3', 'plan-4'],
+        },
+      },
+    });
+
+    const errors = await validate(dto);
+    const landingError = errors.find(
+      (error) => error.property === 'landingPageSettings',
+    );
+    const packageError = landingError?.children?.find(
+      (error) => error.property === 'packages',
+    );
+    const idsError = packageError?.children?.find(
+      (error) => error.property === 'packagePlanIds',
+    );
+
+    expect(idsError?.constraints?.arrayMaxSize).toBeDefined();
+  });
+
   it('returns readable validation messages for invalid colors', async () => {
     const dto = plainToInstance(UpdateGlobalSettingsDto, {
       primaryColor: 'orange',
