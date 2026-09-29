@@ -173,12 +173,16 @@ describe('StaffManagementService', () => {
         tid: 'tenant-1',
       },
       'managed-staff-1',
-      { firstName: ' Updated ' },
+      { firstName: ' Updated ', allRestaurants: true },
     );
 
     expect(repository.update.mock.calls[0]?.[0]).toBe('managed-staff-1');
     expect(repository.update.mock.calls[0]?.[1]).toEqual(
-      expect.objectContaining({ firstName: 'Updated' }),
+      expect.objectContaining({
+        firstName: 'Updated',
+        refreshTokenHash: null,
+        authVersion: { increment: 1 },
+      }),
     );
   });
 
@@ -368,7 +372,7 @@ describe('StaffManagementService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('restores a deleted staff account when creating with the same email', async () => {
+  it('rejects deleted-email reuse instead of reviving identity state', async () => {
     const staffRolesService = {
       getManageableRoleOrThrow: jest.fn().mockResolvedValue({
         id: 'role-1',
@@ -404,33 +408,25 @@ describe('StaffManagementService', () => {
     } as never);
     jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed-password' as never);
 
-    await service.create(
-      {
-        uid: 'admin-1',
-        role: UserRoleEnum.BUSINESS_ADMIN,
-        tid: 'tenant-1',
-      },
-      {
-        staffRoleId: 'role-1',
-        email: 'Employee@Example.com',
-        password: 'Employee@123',
-        firstName: 'New',
-        lastName: 'Employee',
-      },
-    );
+    await expect(
+      service.create(
+        {
+          uid: 'admin-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+          tid: 'tenant-1',
+        },
+        {
+          staffRoleId: 'role-1',
+          email: 'Employee@Example.com',
+          password: 'Employee@123',
+          firstName: 'New',
+          lastName: 'Employee',
+        },
+      ),
+    ).rejects.toThrow('Email is unavailable');
 
     expect(repository.create.mock.calls).toHaveLength(0);
-    expect(repository.update.mock.calls[0]).toEqual([
-      'staff-deleted',
-      expect.objectContaining({
-        email: 'employee@example.com',
-        password: 'hashed-password',
-        plainPassword: 'Employee@123',
-        deletedAt: null,
-        refreshTokenHash: null,
-        isActive: true,
-      }),
-    ]);
+    expect(repository.update.mock.calls).toHaveLength(0);
   });
 
   it('stores all-restaurants staff access without expanding restaurant ids', async () => {

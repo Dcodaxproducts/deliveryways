@@ -2,6 +2,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,7 +28,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
 
-    if (isPublic) {
+    const request = context.switchToHttp().getRequest<{
+      headers?: { authorization?: string };
+      user?: AuthUserContext;
+    }>();
+    const hasBearerToken = /^Bearer\s+\S+$/i.test(
+      request.headers?.authorization ?? '',
+    );
+
+    if (isPublic && !hasBearerToken) {
       return true;
     }
 
@@ -41,29 +50,55 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return false;
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<{ user?: AuthUserContext }>();
     const user = request.user;
 
     if (!user?.uid) {
       return true;
     }
 
-    await this.assertSoftDeleteAccess(user, !!isAllowedForSoftDeleted);
+    await this.assertCurrentSession(user, !!isAllowedForSoftDeleted);
 
     return true;
   }
 
-  private async assertSoftDeleteAccess(
+  private async assertCurrentSession(
     user: AuthUserContext,
     allowSoftDeleted: boolean,
   ) {
     if (user.actorType === 'STAFF') {
       const staff = await this.prisma.staffUser.findUnique({
         where: { id: user.uid },
-        select: { deletedAt: true },
+        select: {
+          authVersion: true,
+          deletedAt: true,
+          isActive: true,
+          tenantId: true,
+          restaurantId: true,
+          branchId: true,
+          ownerUserId: true,
+          staffRoleId: true,
+          panelType: true,
+          accountType: true,
+          staffRole: { select: { isActive: true, deletedAt: true } },
+        },
       });
+
+      if (
+        !staff ||
+        staff.authVersion !== user.ver ||
+        !staff.isActive ||
+        staff.tenantId !== (user.tid ?? null) ||
+        staff.restaurantId !== (user.rid ?? null) ||
+        staff.branchId !== (user.bid ?? null) ||
+        staff.ownerUserId !== user.ownerUserId ||
+        staff.staffRoleId !== user.staffRoleId ||
+        staff.panelType !== user.panelType ||
+        staff.accountType !== user.accountType ||
+        !staff.staffRole.isActive ||
+        staff.staffRole.deletedAt
+      ) {
+        throw new UnauthorizedException('Session is no longer valid');
+      }
 
       if (staff?.deletedAt && !allowSoftDeleted) {
         throw new ForbiddenException({
@@ -82,8 +117,26 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (user.actorType === 'DELIVERYMAN' || user.role === 'DELIVERYMAN') {
       const deliveryman = await this.prisma.deliveryman.findUnique({
         where: { id: user.uid },
-        select: { deletedAt: true },
+        select: {
+          authVersion: true,
+          deletedAt: true,
+          isActive: true,
+          tenantId: true,
+          restaurantId: true,
+          branchId: true,
+        },
       });
+
+      if (
+        !deliveryman ||
+        deliveryman.authVersion !== user.ver ||
+        !deliveryman.isActive ||
+        deliveryman.tenantId !== user.tid ||
+        deliveryman.restaurantId !== user.rid ||
+        deliveryman.branchId !== user.bid
+      ) {
+        throw new UnauthorizedException('Session is no longer valid');
+      }
 
       if (deliveryman?.deletedAt && !allowSoftDeleted) {
         throw new ForbiddenException({
@@ -108,8 +161,22 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         tenantId: true,
         restaurantId: true,
         branchId: true,
+        authVersion: true,
+        isActive: true,
       },
     });
+
+    if (
+      !dbUser ||
+      dbUser.authVersion !== user.ver ||
+      !dbUser.isActive ||
+      String(dbUser.role) !== String(user.role) ||
+      dbUser.tenantId !== (user.tid ?? null) ||
+      dbUser.restaurantId !== (user.rid ?? null) ||
+      dbUser.branchId !== (user.bid ?? null)
+    ) {
+      throw new UnauthorizedException('Session is no longer valid');
+    }
 
     if (allowSoftDeleted) {
       return;

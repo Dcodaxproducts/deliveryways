@@ -85,6 +85,7 @@ export class StaffRolesService {
 
   async update(user: AuthUserContext, id: string, dto: UpdateStaffRoleDto) {
     const role = await this.getManageableRoleOrThrow(user, id);
+    await this.assertNotPosPrinterRole(role.id);
 
     if (dto.name) {
       await this.assertUniqueRoleName(
@@ -100,7 +101,7 @@ export class StaffRolesService {
       );
     }
 
-    const data = await this.staffRolesRepository.update(id, {
+    const updateData: Prisma.StaffRoleUpdateInput = {
       name: dto.name?.trim(),
       description:
         dto.description !== undefined
@@ -127,7 +128,20 @@ export class StaffRolesService {
               dto,
             )
           : undefined,
-    });
+    };
+    const revokeAssignedSessions =
+      dto.isActive !== undefined ||
+      dto.permissions !== undefined ||
+      dto.restaurantIds !== undefined ||
+      dto.branchIds !== undefined ||
+      dto.allRestaurants !== undefined ||
+      dto.hasAllRestaurantsAccess !== undefined;
+    const data = revokeAssignedSessions
+      ? await this.staffRolesRepository.updateAndRevokeAssignedSessions(
+          id,
+          updateData,
+        )
+      : await this.staffRolesRepository.update(id, updateData);
 
     return {
       data,
@@ -137,6 +151,7 @@ export class StaffRolesService {
 
   async remove(user: AuthUserContext, id: string) {
     const role = await this.getManageableRoleOrThrow(user, id);
+    await this.assertNotPosPrinterRole(role.id);
     const assignedCount = await this.staffRolesRepository.countAssignedUsers(
       role.id,
     );
@@ -162,6 +177,10 @@ export class StaffRolesService {
       throw new NotFoundException('Staff role not found');
     }
 
+    if (role.systemKey) {
+      throw new NotFoundException('Staff role not found');
+    }
+
     const scope = this.resolveScopeForUser(user);
 
     if (role.ownerUserId !== scope.ownerUserId) {
@@ -173,6 +192,14 @@ export class StaffRolesService {
     this.assertRoleMatchesScope(role, scope);
 
     return role;
+  }
+
+  private async assertNotPosPrinterRole(id: string): Promise<void> {
+    if ((await this.staffRolesRepository.countPosPrinterUsers(id)) > 0) {
+      throw new ForbiddenException(
+        'POS printer roles are system-managed and cannot be changed',
+      );
+    }
   }
 
   private buildListWhere(
@@ -188,6 +215,7 @@ export class StaffRolesService {
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
       deletedAt: null,
+      systemKey: null,
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.search
         ? {

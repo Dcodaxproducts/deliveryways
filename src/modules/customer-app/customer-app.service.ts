@@ -13,6 +13,7 @@ import {
   LocalizationEntityType,
   ModifierSelectionType,
   Prisma,
+  StaffAccountType,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
@@ -2565,7 +2566,11 @@ export class CustomerAppService {
     user: AuthUserContext,
     requestedBranchId?: string,
   ) {
-    if (user.role === UserRoleEnum.BRANCH_ADMIN && user.bid) {
+    if (
+      (user.role === UserRoleEnum.BRANCH_ADMIN ||
+        user.accountType === StaffAccountType.POS_PRINTER) &&
+      user.bid
+    ) {
       if (requestedBranchId && requestedBranchId !== user.bid) {
         throw new ForbiddenException(
           'You cannot access resources outside your branch',

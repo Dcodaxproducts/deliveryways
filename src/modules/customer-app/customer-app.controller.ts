@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   AuthUserContext,
   CurrentUser,
+  PosPrinterAccess,
   Public,
   Roles,
 } from '../../common/decorators';
@@ -542,6 +543,7 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
   )
   @Get('admin/table-reservations')
+  @PosPrinterAccess()
   @ApiOperation({
     summary: 'List table reservations for admin/branch-admin panels',
   })
@@ -560,6 +562,7 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
   )
   @Patch('admin/table-reservations/:reservationId/status')
+  @PosPrinterAccess()
   @ApiOperation({
     summary: 'Update table reservation status for admin/branch-admin panels',
   })
