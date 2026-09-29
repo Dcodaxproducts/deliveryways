@@ -75,11 +75,19 @@ export class PackagePlansRepository {
     return { items, total };
   }
 
-  async listPublicPlans(query: ListPackagePlansDto) {
+  async listPublicPlans(
+    query: ListPackagePlansDto,
+    selectedPlanIds: string[] | null = null,
+  ) {
+    const usesExplicitSelection = query.landingOnly && selectedPlanIds !== null;
     const where: Prisma.PackagePlanWhereInput = {
       deletedAt: null,
       isActive: true,
-      ...(query.landingOnly ? { showOnLanding: true } : {}),
+      ...(usesExplicitSelection
+        ? { id: { in: selectedPlanIds } }
+        : query.landingOnly
+          ? { showOnLanding: true }
+          : {}),
       ...(query.billingModel ? { billingModel: query.billingModel } : {}),
       ...(query.search
         ? {
@@ -99,8 +107,12 @@ export class PackagePlansRepository {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.packagePlan.findMany({
         where,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
+        ...(usesExplicitSelection
+          ? {}
+          : {
+              skip: (query.page - 1) * query.limit,
+              take: query.limit,
+            }),
         orderBy: [
           { isDefault: 'desc' },
           {

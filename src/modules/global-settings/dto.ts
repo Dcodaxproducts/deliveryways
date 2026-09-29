@@ -8,7 +8,9 @@ import {
 } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -642,6 +644,18 @@ class GlobalLegalProfileDto {
 }
 
 export class LandingPageSettingsDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Ordered package-plan IDs shown on the public pricing page. An empty array explicitly hides all plans.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsString({ each: true })
+  packagePlanIds?: string[];
+
   @ApiPropertyOptional({ example: 'DeliveryWay' })
   @IsOptional()
   @Transform(normalizeOptionalString)

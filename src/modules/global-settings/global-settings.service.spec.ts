@@ -173,6 +173,7 @@ describe('GlobalSettingsService', () => {
         scopeKey: 'GLOBAL',
         defaultCurrency: 'PKR',
         landingPageSettings: {
+          packagePlanIds: null,
           businessName: 'DeliveryWay',
           logoUrl: null,
           footerDescription: null,
@@ -426,6 +427,7 @@ describe('GlobalSettingsService', () => {
     await expect(service.getPublicLandingPageSettings()).resolves.toEqual({
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({
+        packagePlanIds: null,
         businessName: 'DeliveryWay Germany',
         logoUrl: 'https://signed.example.com/logo.png',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -440,6 +442,39 @@ describe('GlobalSettingsService', () => {
     expect(resolveViewUrl).toHaveBeenCalledWith(
       'https://cdn.example.com/logo.png',
     );
+  });
+
+  it('preserves an explicit empty package-plan selection', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: { packagePlanIds: ['plan-1'] },
+    });
+    updateSingletonSpy.mockImplementation((update) =>
+      Promise.resolve({
+        scopeKey: 'GLOBAL',
+        landingPageSettings: update.landingPageSettings,
+      }),
+    );
+
+    const result = await service.updateLandingPageSettings(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      { packagePlanIds: [] },
+    );
+
+    expect(result.data.packagePlanIds).toEqual([]);
+    const updateInput = updateSingletonSpy.mock.calls[0]?.[0] as unknown as {
+      landingPageSettings: { packagePlanIds?: string[] };
+    };
+    expect(updateInput.landingPageSettings.packagePlanIds).toEqual([]);
+  });
+
+  it('returns null for the legacy unconfigured package-plan selection', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: { businessName: 'DeliveryWay' },
+    });
+
+    await expect(service.getLandingPackagePlanIds()).resolves.toBeNull();
   });
 
   it('merges landing-page settings without clearing unspecified values', async () => {

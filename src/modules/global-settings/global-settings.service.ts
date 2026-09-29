@@ -67,6 +67,8 @@ export interface ServiceChargeSettingsShape {
 }
 
 export interface LandingPageSettingsShape {
+  /** null means legacy/unconfigured; [] is an explicit empty selection. */
+  packagePlanIds: string[] | null;
   businessName: string;
   logoUrl: string | null;
   footerDescription: string | null;
@@ -304,6 +306,15 @@ export class GlobalSettingsService {
       data: this.extractLandingPageSettings(data.landingPageSettings),
       message: 'Landing page settings fetched successfully',
     };
+  }
+
+  async getLandingPackagePlanIds(): Promise<string[] | null> {
+    const data = await this.globalSettingsRepository.ensureSingleton(
+      this.buildDefaultCreateInput(),
+    );
+
+    return this.extractLandingPageSettings(data.landingPageSettings)
+      .packagePlanIds;
   }
 
   async getDefaultCurrencyCode(): Promise<string> {
@@ -745,6 +756,7 @@ export class GlobalSettingsService {
 
   private defaultLandingPageSettings(): LandingPageSettingsShape {
     return {
+      packagePlanIds: null,
       businessName: 'DeliveryWay',
       logoUrl: null,
       footerDescription: null,
@@ -1217,6 +1229,14 @@ export class GlobalSettingsService {
     const current = this.extractLandingPageSettings(currentSource);
 
     const merged = {
+      packagePlanIds:
+        updates.packagePlanIds !== undefined
+          ? Array.from(
+              new Set(
+                updates.packagePlanIds.map((id) => id.trim()).filter(Boolean),
+              ),
+            )
+          : current.packagePlanIds,
       businessName:
         updates.businessName !== undefined
           ? this.resolveOptionalString(updates.businessName) || 'DeliveryWay'
@@ -1320,6 +1340,7 @@ export class GlobalSettingsService {
     const defaults = this.defaultLandingPageSettings();
 
     return {
+      packagePlanIds: this.extractOptionalStringArray(source, 'packagePlanIds'),
       businessName:
         this.readStringValue(source, [['businessName']]) ??
         defaults.businessName,
@@ -1342,6 +1363,23 @@ export class GlobalSettingsService {
       legalProfile: this.extractGlobalLegalProfile(source),
       faqs: this.extractLandingPageFaqs(source),
     };
+  }
+
+  private extractOptionalStringArray(
+    source: Prisma.JsonValue | null | undefined,
+    key: string,
+  ): string[] | null {
+    const value = this.readPath(source, [key]);
+    if (!Array.isArray(value)) return null;
+
+    return Array.from(
+      new Set(
+        value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    );
   }
 
   private mergeGlobalLegalProfile(
