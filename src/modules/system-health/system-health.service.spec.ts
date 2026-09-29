@@ -120,4 +120,30 @@ describe('SystemHealthService', () => {
       'System health request metrics fetched successfully',
     );
   });
+  it('reports process heap usage for OOM diagnostics', () => {
+    const stats = (
+      service as unknown as {
+        readServerStats: () => {
+          memory: {
+            process: {
+              rssBytes: number;
+              heapTotalBytes: number;
+              heapUsedBytes: number;
+              heapUsedPercent: number;
+              externalBytes: number;
+              arrayBuffersBytes: number;
+            };
+          };
+        };
+      }
+    ).readServerStats();
+
+    expect(stats.memory.process.rssBytes).toBeGreaterThan(0);
+    expect(stats.memory.process.heapTotalBytes).toBeGreaterThan(0);
+    expect(stats.memory.process.heapUsedBytes).toBeGreaterThan(0);
+    expect(stats.memory.process.heapUsedPercent).toBeGreaterThanOrEqual(0);
+    expect(stats.memory.process.heapUsedPercent).toBeLessThanOrEqual(100);
+    expect(stats.memory.process.externalBytes).toBeGreaterThanOrEqual(0);
+    expect(stats.memory.process.arrayBuffersBytes).toBeGreaterThanOrEqual(0);
+  });
 });

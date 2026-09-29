@@ -4,7 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { SystemHealthIntegrationType, SystemHealthRange } from './dto';
 
@@ -47,6 +47,8 @@ export class SystemHealthMetricsService
 
   private readonly maxRequestMetrics = 20000;
   private readonly maxIntegrationLogs = 1000;
+  private readonly flushIntervalMs = 5 * 60_000;
+  private dirty = false;
   private flushTimer: NodeJS.Timeout | null = null;
   private flushPromise: Promise<void> | null = null;
   private readonly storePath =
@@ -63,7 +65,13 @@ export class SystemHealthMetricsService
       this.flushTimer = null;
     }
 
-    await this.flushToDisk();
+    if (this.flushPromise) {
+      await this.flushPromise;
+    }
+
+    if (this.dirty) {
+      await this.flushToDisk();
+    }
   }
 
   recordRequest(
@@ -76,6 +84,7 @@ export class SystemHealthMetricsService
     });
 
     this.trimArray(this.requestMetrics, this.maxRequestMetrics);
+    this.dirty = true;
     this.scheduleFlush();
   }
 
@@ -95,6 +104,7 @@ export class SystemHealthMetricsService
     });
 
     this.trimArray(this.integrationLogs[type], this.maxIntegrationLogs);
+    this.dirty = true;
     this.scheduleFlush();
   }
 
@@ -274,7 +284,7 @@ export class SystemHealthMetricsService
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
       void this.flushToDisk();
-    }, 500);
+    }, this.flushIntervalMs);
   }
 
   private async loadStateFromDisk() {
@@ -314,22 +324,27 @@ export class SystemHealthMetricsService
       return this.flushPromise;
     }
 
+    if (!this.dirty) {
+      return;
+    }
+
+    this.dirty = false;
     this.flushPromise = (async () => {
+      const temporaryStorePath = `${this.storePath}.tmp`;
+
       try {
         await mkdir(dirname(this.storePath), { recursive: true });
         await writeFile(
-          this.storePath,
-          JSON.stringify(
-            {
-              requestMetrics: this.requestMetrics,
-              integrationLogs: this.integrationLogs,
-            } satisfies PersistedMetricsState,
-            null,
-            2,
-          ),
+          temporaryStorePath,
+          JSON.stringify({
+            requestMetrics: this.requestMetrics,
+            integrationLogs: this.integrationLogs,
+          } satisfies PersistedMetricsState),
           'utf8',
         );
+        await rename(temporaryStorePath, this.storePath);
       } catch (error) {
+        this.dirty = true;
         const message =
           error instanceof Error ? error.message : 'Unknown error';
         this.logger.warn(`Failed to persist system-health metrics: ${message}`);
