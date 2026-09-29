@@ -70,6 +70,27 @@ export class StaffRolesRepository {
     });
   }
 
+  async updateAndRevokeAssignedSessions(
+    id: string,
+    data: Prisma.StaffRoleUpdateInput,
+  ) {
+    const [role] = await this.prisma.$transaction([
+      this.prisma.staffRole.update({
+        where: { id },
+        data,
+        include: this.includeConfig,
+      }),
+      this.prisma.staffUser.updateMany({
+        where: { staffRoleId: id, deletedAt: null },
+        data: {
+          refreshTokenHash: null,
+          authVersion: { increment: 1 },
+        },
+      }),
+    ]);
+    return role;
+  }
+
   async softDelete(id: string) {
     return this.prisma.staffRole.update({
       where: { id },
@@ -84,6 +105,12 @@ export class StaffRolesRepository {
         staffRoleId: id,
         deletedAt: null,
       },
+    });
+  }
+
+  async countPosPrinterUsers(id: string) {
+    return this.prisma.staffUser.count({
+      where: { staffRoleId: id, accountType: 'POS_PRINTER' },
     });
   }
 

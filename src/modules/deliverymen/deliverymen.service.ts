@@ -372,6 +372,11 @@ export class DeliverymenService {
       deliveryman.id,
     );
 
+    const revokeSession =
+      dto.email !== undefined ||
+      dto.password !== undefined ||
+      dto.isActive !== undefined ||
+      dto.branchId !== undefined;
     const data = await this.deliverymenRepository.update(id, {
       firstName: dto.firstName,
       lastName: dto.lastName,
@@ -382,6 +387,8 @@ export class DeliverymenService {
       password: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
       isActive: dto.isActive,
       branch: dto.branchId ? { connect: { id: dto.branchId } } : undefined,
+      refreshTokenHash: revokeSession ? null : undefined,
+      authVersion: revokeSession ? { increment: 1 } : undefined,
     });
 
     return {
@@ -419,9 +426,12 @@ export class DeliverymenService {
 
     await this.getAccessibleDeliveryman(user, id);
 
+    const deactivate = dto.status === DeliverymanStatus.INACTIVE;
     const data = await this.deliverymenRepository.update(id, {
       status: dto.status as DeliverymanStatus,
-      isActive: dto.status === DeliverymanStatus.INACTIVE ? false : undefined,
+      isActive: deactivate ? false : undefined,
+      refreshTokenHash: deactivate ? null : undefined,
+      authVersion: deactivate ? { increment: 1 } : undefined,
     });
 
     return {

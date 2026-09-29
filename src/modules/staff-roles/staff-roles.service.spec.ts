@@ -15,8 +15,10 @@ describe('StaffRolesService', () => {
       findByNameWithinScope: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
+      updateAndRevokeAssignedSessions: jest.fn(),
       softDelete: jest.fn(),
       countAssignedUsers: jest.fn(),
+      countPosPrinterUsers: jest.fn(),
       countRestaurants: jest.fn(),
       findBranches: jest.fn(),
     } as unknown as jest.Mocked<StaffRolesRepository>;
@@ -141,5 +143,38 @@ describe('StaffRolesService', () => {
         },
       }),
     );
+  });
+  it('revokes assigned staff sessions when role access changes', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'role-1',
+      ownerUserId: 'admin-1',
+      panelType: StaffPanelType.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: null,
+      branchId: null,
+      systemKey: null,
+      deletedAt: null,
+      isActive: true,
+      permissions: [{ access: 'employees', operations: ['read'] }],
+    } as never);
+    repository.updateAndRevokeAssignedSessions.mockResolvedValue({
+      id: 'role-1',
+      isActive: false,
+    } as never);
+
+    await service.update(
+      {
+        uid: 'admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+      },
+      'role-1',
+      { isActive: false },
+    );
+
+    expect(repository.updateAndRevokeAssignedSessions.mock.calls).toHaveLength(
+      1,
+    );
+    expect(repository.update.mock.calls).toHaveLength(0);
   });
 });

@@ -75,6 +75,7 @@ export class StaffManagementRepository {
         deletedAt: new Date(),
         isActive: false,
         refreshTokenHash: null,
+        authVersion: { increment: 1 },
       },
       include: this.includeConfig,
     });
@@ -114,6 +115,7 @@ export class StaffManagementRepository {
         restaurantId: true,
         branchId: true,
         name: true,
+        systemKey: true,
         description: true,
         permissions: true,
         restaurantAccess: true,

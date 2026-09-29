@@ -1,5 +1,6 @@
 export { JwtAuthGuard } from './jwt-auth.guard';
 export { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
+export { PosPrinterAccessGuard } from './pos-printer-access.guard';
 export { RolesGuard } from './roles.guard';
 export { SubscriptionFeaturesGuard } from './subscription-features.guard';
 export { TenantAccessGuard } from './tenant-access.guard';

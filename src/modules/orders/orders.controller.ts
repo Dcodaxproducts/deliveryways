@@ -9,7 +9,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import {
+  AuthUserContext,
+  CurrentUser,
+  PosPrinterAccess,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -67,6 +72,7 @@ export class OrdersController {
     RolesEnum.DELIVERYMAN,
   )
   @Get()
+  @PosPrinterAccess()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListOrdersDto) {
     return this.ordersService.list(user, query);
   }
@@ -81,6 +87,7 @@ export class OrdersController {
     RolesEnum.DELIVERYMAN,
   )
   @Get(':id')
+  @PosPrinterAccess()
   details(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.ordersService.details(user, id);
   }
@@ -122,6 +129,7 @@ export class OrdersController {
     RolesEnum.DELIVERYMAN,
   )
   @Patch(':id/status')
+  @PosPrinterAccess()
   updateStatus(
     @CurrentUser() user: AuthUserContext,
     @Param('id') id: string,

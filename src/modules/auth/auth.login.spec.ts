@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { StaffAccountType } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { UserRoleEnum } from '../../common/enums';
 import { UsersService } from '../users/users.service';
@@ -580,6 +581,76 @@ describe('AuthService login', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('rejects POS printer accounts on the generic staff login endpoint', async () => {
+    staffManagementRepository.findByEmail!.mockResolvedValue({
+      id: 'printer-1',
+      email: 'printer@example.com',
+      password: 'hashed-password',
+      accountType: StaffAccountType.POS_PRINTER,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.loginStaff({
+        email: 'printer@example.com',
+        password: 'Password@123',
+      }),
+    ).rejects.toThrow('Invalid credentials');
+  });
+
+  it('rejects standard staff on the POS printer login endpoint', async () => {
+    staffManagementRepository.findByEmail!.mockResolvedValue({
+      id: 'staff-1',
+      email: 'staff@example.com',
+      accountType: StaffAccountType.STANDARD,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.loginPosPrinter({
+        email: 'staff@example.com',
+        password: 'Password@123',
+      }),
+    ).rejects.toThrow('Invalid credentials');
+  });
+
+  it('issues a branch-scoped token to a POS printer account', async () => {
+    staffManagementRepository.findByEmail!.mockResolvedValue({
+      id: 'printer-1',
+      email: 'printer@example.com',
+      password: 'hashed-password',
+      ownerUserId: 'admin-1',
+      staffRoleId: 'role-1',
+      panelType: 'BUSINESS_ADMIN',
+      accountType: StaffAccountType.POS_PRINTER,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      isActive: true,
+      deletedAt: null,
+      staffRole: { isActive: true, deletedAt: null },
+    });
+
+    const result = await service.loginPosPrinter({
+      email: 'printer@example.com',
+      password: 'Password@123',
+    });
+
+    expect(jwtService.signAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        accountType: StaffAccountType.POS_PRINTER,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      }),
+    );
+    expect(result.data.user.permissions).toEqual([
+      'order-management',
+      'table-reservations',
+    ]);
+  });
+
   it('logs in deliveryman with the password stored on the deliveryman record', async () => {
     prismaService.deliveryman.findFirst.mockResolvedValue({
       id: 'deliveryman-1',
@@ -717,6 +788,11 @@ describe('AuthService login', () => {
       uid: 'deliveryman-1',
       type: 'refresh',
       actorType: 'DELIVERYMAN',
+      role: 'DELIVERYMAN',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      bid: 'branch-1',
+      ver: 0,
     });
     prismaService.deliveryman.findUnique.mockResolvedValue({
       id: 'deliveryman-1',
@@ -724,6 +800,8 @@ describe('AuthService login', () => {
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
       refreshTokenHash: 'hashed-refresh',
+      authVersion: 0,
+      isActive: true,
       deletedAt: null,
     });
 
@@ -740,5 +818,65 @@ describe('AuthService login', () => {
     });
     expect(result.data.accessToken).toBe('access-token');
     expect(result.data.refreshToken).toBe('refresh-token');
+  });
+
+  it('performs a dummy password comparison for an unknown generic login', async () => {
+    usersService.findManyForDevResolution!.mockResolvedValue([]);
+
+    await expect(
+      service.login({
+        email: 'missing@example.com',
+        password: 'Password@123',
+      }),
+    ).rejects.toThrow('Invalid credentials');
+
+    expect(bcrypt.compare).toHaveBeenCalledWith(
+      'Password@123',
+      expect.stringMatching(/^\$2[aby]\$/),
+    );
+  });
+
+  it('performs a dummy password comparison for an unknown POS login', async () => {
+    staffManagementRepository.findByEmail!.mockResolvedValue(null);
+
+    await expect(
+      service.loginPosPrinter({
+        email: 'missing-printer@example.com',
+        password: 'Password@123',
+      }),
+    ).rejects.toThrow('Invalid credentials');
+
+    expect(bcrypt.compare).toHaveBeenCalledWith(
+      'Password@123',
+      expect.stringMatching(/^\$2[aby]\$/),
+    );
+  });
+
+  it('rejects refresh after delivery scope changes', async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      uid: 'deliveryman-1',
+      type: 'refresh',
+      actorType: 'DELIVERYMAN',
+      role: 'DELIVERYMAN',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      bid: 'old-branch',
+      ver: 0,
+    });
+    prismaService.deliveryman.findUnique.mockResolvedValue({
+      id: 'deliveryman-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      refreshTokenHash: 'hashed-refresh',
+      authVersion: 0,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.refreshTokens({ refreshToken: 'refresh-token' }),
+    ).rejects.toThrow('Invalid refresh token');
+    expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 });

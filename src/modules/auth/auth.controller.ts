@@ -39,6 +39,7 @@ import {
   AllowSoftDeleted,
   AllowUnverified,
   CurrentUser,
+  PosPrinterAccess,
   Public,
   Roles,
 } from '../../common/decorators';
@@ -137,6 +138,13 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post('pos-printer/login')
+  posPrinterLogin(@Body() dto: LoginDto) {
+    return this.authService.loginPosPrinter(dto);
+  }
+
+  @Public()
   @Post('deliveryman/login')
   deliverymanLogin(@Body() dto: LoginDto) {
     return this.authService.loginDeliveryman(dto);
@@ -163,6 +171,7 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @PosPrinterAccess()
   @Post('logout')
   logout(@CurrentUser() user: AuthUserContext) {
     return this.authService.logout(user);
@@ -247,6 +256,7 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @PosPrinterAccess()
   @Patch('change-password')
   changePassword(
     @CurrentUser() user: AuthUserContext,
@@ -257,6 +267,7 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @PosPrinterAccess()
   @Get('me')
   me(@CurrentUser() user: AuthUserContext) {
     return this.authService.me(user);

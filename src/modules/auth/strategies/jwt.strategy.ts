@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { StaffAccountType } from '@prisma/client';
 import { UserRoleEnum } from '../../../common/enums';
 
 interface JwtPayload {
@@ -15,6 +16,8 @@ interface JwtPayload {
   ownerUserId?: string;
   staffRoleId?: string;
   panelType?: string;
+  accountType?: StaffAccountType;
+  ver: number;
   isGuest?: boolean;
 }
 
@@ -29,7 +32,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: JwtPayload): JwtPayload {
-    if (!payload?.uid || !payload?.role) {
+    if (!payload?.uid || !payload?.role || !Number.isInteger(payload.ver)) {
       throw new UnauthorizedException('Invalid token payload');
     }
 

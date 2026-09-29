@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { Prisma, StaffPanelType } from '@prisma/client';
+import { Prisma, StaffAccountType, StaffPanelType } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { buildPaginationMeta } from '../../common/utils';
@@ -44,8 +44,8 @@ export class StaffManagementService {
   async create(user: AuthUserContext, dto: CreateStaffDto) {
     const email = dto.email.trim().toLowerCase();
     const existing = await this.staffManagementRepository.findByEmail(email);
-    if (existing && !existing.deletedAt) {
-      throw new BadRequestException('Email already exists');
+    if (existing) {
+      throw new BadRequestException('Email is unavailable');
     }
 
     const staffRole = await this.staffRolesService.getManageableRoleOrThrow(
@@ -84,10 +84,18 @@ export class StaffManagementService {
       deletedAt: null,
       refreshTokenHash: null,
     };
-    const data =
-      existing && existing.deletedAt
-        ? await this.staffManagementRepository.update(existing.id, staffPayload)
-        : await this.staffManagementRepository.create(staffPayload);
+    let data: Awaited<ReturnType<StaffManagementRepository['create']>>;
+    try {
+      data = await this.staffManagementRepository.create(staffPayload);
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException('Email is unavailable');
+      }
+      throw error;
+    }
 
     return {
       data: await this.resolveMediaResponse(this.toStaffResponse(data)),
@@ -127,8 +135,8 @@ export class StaffManagementService {
       const existing = await this.staffManagementRepository.findByEmail(
         dto.email.trim().toLowerCase(),
       );
-      if (existing && existing.id !== staff.id && !existing.deletedAt) {
-        throw new BadRequestException('Email already exists');
+      if (existing && existing.id !== staff.id) {
+        throw new BadRequestException('Email is unavailable');
       }
     }
 
@@ -143,52 +151,79 @@ export class StaffManagementService {
       throw new BadRequestException('Staff role is inactive');
     }
 
-    const data = await this.staffManagementRepository.update(id, {
-      email: dto.email?.trim().toLowerCase(),
-      password: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
-      plainPassword: dto.password,
-      firstName: dto.firstName?.trim(),
-      lastName: dto.lastName?.trim(),
-      phone:
-        dto.phone !== undefined
-          ? this.resolveOptionalString(dto.phone)
+    let data: Awaited<ReturnType<StaffManagementRepository['update']>>;
+    try {
+      data = await this.staffManagementRepository.update(id, {
+        email: dto.email?.trim().toLowerCase(),
+        password: dto.password
+          ? await bcrypt.hash(dto.password, 10)
           : undefined,
-      avatarUrl:
-        dto.avatarUrl !== undefined
-          ? this.resolveOptionalString(dto.avatarUrl)
-          : undefined,
-      bio:
-        dto.bio !== undefined ? this.resolveOptionalString(dto.bio) : undefined,
-      isActive: dto.isActive,
-      panelType: nextRole.panelType,
-      restaurantAccess:
-        dto.restaurantIds !== undefined ||
-        dto.branchIds !== undefined ||
-        dto.allRestaurants !== undefined ||
-        dto.hasAllRestaurantsAccess !== undefined ||
-        dto.staffRoleId !== undefined
-          ? await this.resolveRestaurantAccessForStaff(nextRole, dto)
-          : undefined,
-      staffRole: { connect: { id: nextRole.id } },
-      tenant:
-        nextRole.tenantId !== undefined
-          ? nextRole.tenantId
-            ? { connect: { id: nextRole.tenantId } }
-            : { disconnect: true }
-          : undefined,
-      restaurant:
-        nextRole.restaurantId !== undefined
-          ? nextRole.restaurantId
-            ? { connect: { id: nextRole.restaurantId } }
-            : { disconnect: true }
-          : undefined,
-      branch:
-        nextRole.branchId !== undefined
-          ? nextRole.branchId
-            ? { connect: { id: nextRole.branchId } }
-            : { disconnect: true }
-          : undefined,
-    });
+        plainPassword: dto.password,
+        firstName: dto.firstName?.trim(),
+        lastName: dto.lastName?.trim(),
+        phone:
+          dto.phone !== undefined
+            ? this.resolveOptionalString(dto.phone)
+            : undefined,
+        avatarUrl:
+          dto.avatarUrl !== undefined
+            ? this.resolveOptionalString(dto.avatarUrl)
+            : undefined,
+        bio:
+          dto.bio !== undefined
+            ? this.resolveOptionalString(dto.bio)
+            : undefined,
+        isActive: dto.isActive,
+        panelType: nextRole.panelType,
+        restaurantAccess:
+          dto.restaurantIds !== undefined ||
+          dto.branchIds !== undefined ||
+          dto.allRestaurants !== undefined ||
+          dto.hasAllRestaurantsAccess !== undefined ||
+          dto.staffRoleId !== undefined
+            ? await this.resolveRestaurantAccessForStaff(nextRole, dto)
+            : undefined,
+        staffRole: { connect: { id: nextRole.id } },
+        refreshTokenHash:
+          dto.password !== undefined ||
+          dto.isActive !== undefined ||
+          dto.staffRoleId !== undefined
+            ? null
+            : undefined,
+        authVersion:
+          dto.password !== undefined ||
+          dto.isActive !== undefined ||
+          dto.staffRoleId !== undefined
+            ? { increment: 1 }
+            : undefined,
+        tenant:
+          nextRole.tenantId !== undefined
+            ? nextRole.tenantId
+              ? { connect: { id: nextRole.tenantId } }
+              : { disconnect: true }
+            : undefined,
+        restaurant:
+          nextRole.restaurantId !== undefined
+            ? nextRole.restaurantId
+              ? { connect: { id: nextRole.restaurantId } }
+              : { disconnect: true }
+            : undefined,
+        branch:
+          nextRole.branchId !== undefined
+            ? nextRole.branchId
+              ? { connect: { id: nextRole.branchId } }
+              : { disconnect: true }
+            : undefined,
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException('Email is unavailable');
+      }
+      throw error;
+    }
 
     return {
       data: await this.resolveMediaResponse(this.toStaffResponse(data)),
@@ -205,6 +240,8 @@ export class StaffManagementService {
 
     const data = await this.staffManagementRepository.update(id, {
       isActive: dto.isActive,
+      refreshTokenHash: null,
+      authVersion: { increment: 1 },
     });
 
     return {
@@ -233,6 +270,12 @@ export class StaffManagementService {
 
     if (!staff || staff.deletedAt) {
       throw new NotFoundException('Staff account not found');
+    }
+
+    if (staff.accountType === StaffAccountType.POS_PRINTER) {
+      throw new ForbiddenException(
+        'POS printer accounts must be managed through the POS printer account endpoints',
+      );
     }
 
     const scope = this.resolveScopeForUser(user);
@@ -274,6 +317,7 @@ export class StaffManagementService {
       tenantId: scope.tenantId,
       restaurantId: scope.restaurantId,
       branchId: scope.branchId,
+      accountType: StaffAccountType.STANDARD,
       deletedAt: null,
       ...(query.staffRoleId ? { staffRoleId: query.staffRoleId } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
