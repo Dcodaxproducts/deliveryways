@@ -187,13 +187,21 @@ export class StaffManagementService {
         refreshTokenHash:
           dto.password !== undefined ||
           dto.isActive !== undefined ||
-          dto.staffRoleId !== undefined
+          dto.staffRoleId !== undefined ||
+          dto.restaurantIds !== undefined ||
+          dto.branchIds !== undefined ||
+          dto.allRestaurants !== undefined ||
+          dto.hasAllRestaurantsAccess !== undefined
             ? null
             : undefined,
         authVersion:
           dto.password !== undefined ||
           dto.isActive !== undefined ||
-          dto.staffRoleId !== undefined
+          dto.staffRoleId !== undefined ||
+          dto.restaurantIds !== undefined ||
+          dto.branchIds !== undefined ||
+          dto.allRestaurants !== undefined ||
+          dto.hasAllRestaurantsAccess !== undefined
             ? { increment: 1 }
             : undefined,
         tenant:

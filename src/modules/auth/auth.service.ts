@@ -2734,9 +2734,7 @@ export class AuthService {
     );
 
     if (adminCandidates.length > 1) {
-      throw new BadRequestException(
-        'Multiple admin accounts use this email. Specify role to login.',
-      );
+      return null;
     }
 
     return adminCandidates[0] ?? candidates[0] ?? null;

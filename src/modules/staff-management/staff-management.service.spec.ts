@@ -173,12 +173,16 @@ describe('StaffManagementService', () => {
         tid: 'tenant-1',
       },
       'managed-staff-1',
-      { firstName: ' Updated ' },
+      { firstName: ' Updated ', allRestaurants: true },
     );
 
     expect(repository.update.mock.calls[0]?.[0]).toBe('managed-staff-1');
     expect(repository.update.mock.calls[0]?.[1]).toEqual(
-      expect.objectContaining({ firstName: 'Updated' }),
+      expect.objectContaining({
+        firstName: 'Updated',
+        refreshTokenHash: null,
+        authVersion: { increment: 1 },
+      }),
     );
   });
 

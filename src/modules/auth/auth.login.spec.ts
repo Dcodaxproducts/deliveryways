@@ -436,7 +436,7 @@ describe('AuthService login', () => {
     expect(result.data.user.branchId).toBe('branch-1');
   });
 
-  it('requires role when email is shared by multiple admin accounts', async () => {
+  it('returns a generic authentication error when an email is ambiguous', async () => {
     usersService.findManyForDevResolution!.mockResolvedValue([
       {
         id: 'branch-admin-1',
@@ -477,8 +477,10 @@ describe('AuthService login', () => {
         email: 'shared.admin@example.com',
         password: 'Password@123',
       }),
-    ).rejects.toThrow(
-      'Multiple admin accounts use this email. Specify role to login.',
+    ).rejects.toThrow('Invalid credentials');
+    expect(bcrypt.compare).toHaveBeenCalledWith(
+      'Password@123',
+      expect.stringMatching(/^\$2[aby]\$/),
     );
   });
 
