@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, StaffAccountType } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { SystemHealthMetricsService } from '../system-health/system-health-metrics.service';
@@ -262,6 +262,32 @@ export class AdminPrintingService {
     requestedRestaurantId?: string,
     requestedBranchId?: string,
   ): Promise<AdminPrintingScope> {
+    if (user.accountType === StaffAccountType.POS_PRINTER) {
+      if (!user.tid || !user.rid || !user.bid) {
+        throw new ForbiddenException(
+          'POS printer tenant, restaurant, and branch context is required',
+        );
+      }
+
+      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
+        throw new ForbiddenException(
+          'POS printer cannot access resources outside its restaurant',
+        );
+      }
+
+      if (requestedBranchId && requestedBranchId !== user.bid) {
+        throw new ForbiddenException(
+          'POS printer cannot access resources outside its branch',
+        );
+      }
+
+      return {
+        tenantId: user.tid,
+        restaurantId: user.rid,
+        branchId: user.bid,
+      };
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       if (requestedBranchId) {
         const branch =

@@ -9,7 +9,12 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import {
+  AuthUserContext,
+  CurrentUser,
+  PosPrinterAccess,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -38,6 +43,7 @@ export class AdminPrintingController {
   ) {}
 
   @Get('qz/certificate')
+  @PosPrinterAccess()
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
@@ -53,6 +59,7 @@ export class AdminPrintingController {
   }
 
   @Post('qz/signature')
+  @PosPrinterAccess()
   @Throttle({ default: { ttl: 60_000, limit: 120 } })
   @Roles(
     RolesEnum.SUPER_ADMIN,
@@ -69,10 +76,12 @@ export class AdminPrintingController {
   }
 
   @Get('settings')
+  @PosPrinterAccess()
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @ApiOperation({ summary: 'Get admin auto-printing settings' })
   getSettings(
@@ -98,10 +107,12 @@ export class AdminPrintingController {
   }
 
   @Post('events')
+  @PosPrinterAccess()
   @Roles(
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @ApiOperation({ summary: 'Report a local printer discovery or test event' })
   reportEvent(

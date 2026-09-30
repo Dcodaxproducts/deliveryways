@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { StaffAccountType } from '@prisma/client';
 import { AdminPrintingService } from './admin-printing.service';
 
 describe('AdminPrintingService', () => {
@@ -378,5 +379,123 @@ describe('AdminPrintingService', () => {
         printerName: 'Kitchen USB',
       },
     });
+  });
+
+  it('forces POS printer settings reads to the token scope without a scope lookup', async () => {
+    const repository = {
+      findBranchScope: jest.fn(),
+      findRestaurantScope: jest.fn(),
+      getRestaurantWithSettings: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        settings: { printing: { enabled: true } },
+      }),
+      getBranchWithSettings: jest.fn().mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        settings: {},
+      }),
+    };
+    const service = new AdminPrintingService(
+      repository as never,
+      { getIntegrationLogs: jest.fn().mockReturnValue({ items: [] }) } as never,
+    );
+
+    const result = await service.getSettings(
+      {
+        uid: 'printer-1',
+        role: 'STAFF',
+        accountType: StaffAccountType.POS_PRINTER,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      } as never,
+      {},
+    );
+
+    expect(result.data.scope).toEqual({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+    expect(repository.findBranchScope).not.toHaveBeenCalled();
+    expect(repository.findRestaurantScope).not.toHaveBeenCalled();
+    expect(repository.getBranchWithSettings).toHaveBeenCalledWith('branch-1');
+  });
+
+  it.each([{ restaurantId: 'restaurant-2' }, { branchId: 'branch-2' }])(
+    'rejects a POS printer cross-scope %s request before repository lookup',
+    async (query) => {
+      const repository = {
+        findBranchScope: jest.fn(),
+        findRestaurantScope: jest.fn(),
+        getRestaurantWithSettings: jest.fn(),
+        getBranchWithSettings: jest.fn(),
+      };
+      const service = new AdminPrintingService(
+        repository as never,
+        {} as never,
+      );
+
+      await expect(
+        service.getSettings(
+          {
+            uid: 'printer-1',
+            role: 'STAFF',
+            accountType: StaffAccountType.POS_PRINTER,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            bid: 'branch-1',
+          } as never,
+          query,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(repository.findBranchScope).not.toHaveBeenCalled();
+      expect(repository.findRestaurantScope).not.toHaveBeenCalled();
+      expect(repository.getRestaurantWithSettings).not.toHaveBeenCalled();
+      expect(repository.getBranchWithSettings).not.toHaveBeenCalled();
+    },
+  );
+
+  it('records POS printer events with token scope and no repository lookup', async () => {
+    const repository = {
+      findBranchScope: jest.fn(),
+      findRestaurantScope: jest.fn(),
+    };
+    const metrics = { recordIntegrationLog: jest.fn() };
+    const service = new AdminPrintingService(
+      repository as never,
+      metrics as never,
+    );
+
+    await service.reportEvent(
+      {
+        uid: 'printer-1',
+        role: 'STAFF',
+        accountType: StaffAccountType.POS_PRINTER,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      } as never,
+      {},
+      {
+        event: 'order_print',
+        status: 'success',
+        message: 'Printed accepted order',
+      },
+    );
+
+    expect(metrics.recordIntegrationLog).toHaveBeenCalledWith('printer', {
+      status: 'success',
+      message: 'Printed accepted order',
+      meta: {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        event: 'order_print',
+      },
+    });
+    expect(repository.findBranchScope).not.toHaveBeenCalled();
+    expect(repository.findRestaurantScope).not.toHaveBeenCalled();
   });
 });
