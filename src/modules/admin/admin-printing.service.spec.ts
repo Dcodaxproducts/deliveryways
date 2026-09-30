@@ -379,4 +379,87 @@ describe('AdminPrintingService', () => {
       },
     });
   });
+
+  it('forces POS printer settings to JWT restaurant and branch scope', async () => {
+    const repository = {
+      findBranchScope: jest.fn(),
+      findRestaurantScope: jest.fn(),
+      getRestaurantWithSettings: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        settings: {},
+      }),
+      getBranchWithSettings: jest.fn().mockResolvedValue({
+        id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        settings: {},
+      }),
+    };
+    const service = new AdminPrintingService(
+      repository as never,
+      { getIntegrationLogs: jest.fn().mockReturnValue({ items: [] }) } as never,
+    );
+
+    await expect(
+      service.getSettings(
+        {
+          uid: 'printer-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: 'STAFF',
+          accountType: 'POS_PRINTER',
+        } as never,
+        {},
+      ),
+    ).resolves.toMatchObject({
+      data: {
+        scope: {
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+        },
+      },
+    });
+    expect(repository.findBranchScope).not.toHaveBeenCalled();
+    expect(repository.findRestaurantScope).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ restaurantId: 'restaurant-2' }, 'another restaurant'],
+    [{ branchId: 'branch-2' }, 'another branch'],
+  ])(
+    'rejects POS printer cross-scope request before repository lookup: %s',
+    async (query, message) => {
+      const repository = {
+        findBranchScope: jest.fn(),
+        findRestaurantScope: jest.fn(),
+        getRestaurantWithSettings: jest.fn(),
+        getBranchWithSettings: jest.fn(),
+      };
+      const service = new AdminPrintingService(
+        repository as never,
+        { getIntegrationLogs: jest.fn() } as never,
+      );
+
+      await expect(
+        service.getSettings(
+          {
+            uid: 'printer-1',
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            bid: 'branch-1',
+            role: 'STAFF',
+            accountType: 'POS_PRINTER',
+          } as never,
+          query,
+        ),
+      ).rejects.toThrow(message);
+      expect(repository.findBranchScope).not.toHaveBeenCalled();
+      expect(repository.findRestaurantScope).not.toHaveBeenCalled();
+      expect(repository.getRestaurantWithSettings).not.toHaveBeenCalled();
+      expect(repository.getBranchWithSettings).not.toHaveBeenCalled();
+    },
+  );
 });
