@@ -541,6 +541,7 @@ export class CustomerAppController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @Get('admin/table-reservations')
   @PosPrinterAccess()
@@ -560,6 +561,7 @@ export class CustomerAppController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @Patch('admin/table-reservations/:reservationId/status')
   @PosPrinterAccess()

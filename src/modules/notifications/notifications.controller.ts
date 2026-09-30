@@ -9,7 +9,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AuthUserContext, CurrentUser, Roles } from '../../common/decorators';
+import {
+  AuthUserContext,
+  CurrentUser,
+  PosPrinterAccess,
+  Roles,
+} from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
   JwtAuthGuard,
@@ -69,8 +74,10 @@ export class NotificationsController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.DELIVERYMAN,
+    RolesEnum.STAFF,
   )
   @Post('push-token')
+  @PosPrinterAccess()
   registerPushToken(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: RegisterPushTokenDto,
@@ -82,6 +89,7 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN, RolesEnum.STAFF)
   @Post('claim-pending-orders')
+  @PosPrinterAccess()
   claimPendingOrders(
     @CurrentUser() user: AuthUserContext,
     @Query() query: ListNotificationsDto,
@@ -96,8 +104,10 @@ export class NotificationsController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.DELIVERYMAN,
+    RolesEnum.STAFF,
   )
   @Delete('push-token')
+  @PosPrinterAccess()
   unregisterPushToken(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: UnregisterPushTokenDto,
@@ -127,8 +137,10 @@ export class NotificationsController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.DELIVERYMAN,
+    RolesEnum.STAFF,
   )
   @Post(':id/seen')
+  @PosPrinterAccess()
   markSeen(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.notificationsService.markSeen(user, id);
   }

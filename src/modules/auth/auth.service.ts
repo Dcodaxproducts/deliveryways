@@ -43,6 +43,7 @@ import {
   GoogleLoginDto,
   ListCustomersDto,
   LoginDto,
+  PosPrinterLoginDto,
   RefreshDto,
   RegisterCustomerDto,
   RegisterGuestCustomerDto,
@@ -1199,10 +1200,16 @@ export class AuthService {
     };
   }
 
-  async loginPosPrinter(dto: LoginDto) {
-    const staff = await this.staffManagementRepository.findByEmail(
-      dto.email.trim().toLowerCase(),
-    );
+  async loginPosPrinter(dto: PosPrinterLoginDto) {
+    const loginIdentifier = dto.usernameOrEmail ?? dto.email;
+    if (!loginIdentifier) {
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const staff =
+      await this.staffManagementRepository.findPosPrinterByLoginIdentifier(
+        loginIdentifier,
+      );
 
     if (!staff || staff.deletedAt) {
       await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
@@ -1212,15 +1219,8 @@ export class AuthService {
     const isValidPassword = await bcrypt.compare(dto.password, staff.password);
     if (
       !isValidPassword ||
-      staff.accountType !== StaffAccountType.POS_PRINTER
-    ) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!staff.isActive) {
-      throw new ForbiddenException('Your POS printer account is inactive');
-    }
-    if (
+      staff.accountType !== StaffAccountType.POS_PRINTER ||
+      !staff.isActive ||
       !staff.staffRole ||
       staff.staffRole.deletedAt ||
       !staff.staffRole.isActive ||
@@ -1228,7 +1228,7 @@ export class AuthService {
       !staff.restaurantId ||
       !staff.branchId
     ) {
-      throw new ForbiddenException('POS printer account scope is inactive');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const auth = await this.issueAuthTokens({
@@ -1252,6 +1252,8 @@ export class AuthService {
         user: {
           id: staff.id,
           email: staff.email,
+          username: staff.username,
+          displayName: staff.displayName,
           role: UserRoleEnum.STAFF,
           actorType: 'STAFF',
           accountType: StaffAccountType.POS_PRINTER,
@@ -2021,6 +2023,12 @@ export class AuthService {
         refreshTokenHash: null,
         authVersion: { increment: 1 },
       });
+      if (staff.accountType === StaffAccountType.POS_PRINTER) {
+        await this.prisma.pushDeviceToken.updateMany({
+          where: { staffUserId: staff.id, isActive: true },
+          data: { isActive: false },
+        });
+      }
 
       return {
         data: null,

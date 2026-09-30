@@ -23,15 +23,17 @@ describe('admin printing POS printer access contract', () => {
   const roles = (method: string): RolesEnum[] | undefined =>
     Reflect.getMetadata(ROLES_KEY, handler(method)) as RolesEnum[] | undefined;
 
-  it.each([
-    'getQzCertificate',
-    'signQzChallenge',
-    'getSettings',
-    'reportEvent',
-  ])('allows the local printing sequence handler %s', (method) => {
-    expect(allowsPosPrinter(method)).toBe(true);
-    expect(roles(method)).toContain(RolesEnum.STAFF);
+  it('allows only printer settings read for native POS devices', () => {
+    expect(allowsPosPrinter('getSettings')).toBe(true);
+    expect(roles('getSettings')).toContain(RolesEnum.STAFF);
   });
+
+  it.each(['getQzCertificate', 'signQzChallenge', 'reportEvent'])(
+    'keeps browser/admin printing handler %s denied to POS devices',
+    (method) => {
+      expect(allowsPosPrinter(method)).toBeUndefined();
+    },
+  );
 
   it.each(['updateSettings', 'getStatus', 'getLogs'])(
     'keeps privileged printing handler %s denied',

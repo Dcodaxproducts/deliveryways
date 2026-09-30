@@ -34,6 +34,13 @@ export class PosPrinterRepository {
     });
   }
 
+  findByUsernameNormalized(usernameNormalized: string) {
+    return this.prisma.staffUser.findUnique({
+      where: { usernameNormalized },
+      select: { id: true, deletedAt: true },
+    });
+  }
+
   create(input: {
     ownerUserId: string;
     panelType: StaffPanelType;
@@ -41,6 +48,9 @@ export class PosPrinterRepository {
     restaurantId: string;
     branchId: string;
     email: string;
+    username?: string;
+    usernameNormalized?: string;
+    displayName: string;
     password: string;
     firstName: string;
     lastName: string;
@@ -82,6 +92,9 @@ export class PosPrinterRepository {
           panelType: input.panelType,
           accountType: StaffAccountType.POS_PRINTER,
           email: input.email,
+          username: input.username,
+          usernameNormalized: input.usernameNormalized,
+          displayName: input.displayName,
           password: input.password,
           plainPassword: null,
           firstName: input.firstName,
@@ -111,6 +124,13 @@ export class PosPrinterRepository {
       where,
       include: { branch: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  deactivatePushTokens(id: string) {
+    return this.prisma.pushDeviceToken.updateMany({
+      where: { staffUserId: id, isActive: true },
+      data: { isActive: false },
     });
   }
 

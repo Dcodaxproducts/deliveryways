@@ -28,6 +28,7 @@ describe('PosPrinterRepository system role identity', () => {
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
       email: 'printer@example.com',
+      displayName: 'Front Counter',
       password: 'hash',
       firstName: 'POS',
       lastName: 'Printer',

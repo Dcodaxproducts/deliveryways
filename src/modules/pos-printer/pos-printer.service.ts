@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, StaffAccountType, StaffPanelType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
@@ -28,11 +29,37 @@ export class PosPrinterService {
     }
     this.assertBranchScope(user, branch);
 
-    const email = dto.email.trim().toLowerCase();
-    const existing = await this.repository.findByEmail(email);
-    if (existing) {
-      throw new ConflictException('Email is unavailable');
+    const username = dto.username?.trim();
+    const usernameNormalized = username?.toLowerCase();
+    const requestedEmail = dto.email?.trim().toLowerCase();
+    if (!usernameNormalized && !requestedEmail) {
+      throw new BadRequestException('username or email is required');
     }
+
+    const [existingUsername, existingEmail] = await Promise.all([
+      usernameNormalized
+        ? this.repository.findByUsernameNormalized(usernameNormalized)
+        : Promise.resolve(null),
+      requestedEmail
+        ? this.repository.findByEmail(requestedEmail)
+        : Promise.resolve(null),
+    ]);
+    if (existingUsername || existingEmail) {
+      throw new ConflictException('Login identifier is unavailable');
+    }
+
+    const displayName =
+      dto.displayName?.trim() ||
+      [dto.firstName?.trim(), dto.lastName?.trim()].filter(Boolean).join(' ') ||
+      username ||
+      requestedEmail!;
+    const nameParts = displayName.split(/\s+/);
+    const firstName = dto.firstName?.trim() || nameParts[0] || 'Printer';
+    const lastName =
+      dto.lastName?.trim() || nameParts.slice(1).join(' ') || 'Device';
+    const email =
+      requestedEmail ||
+      `pos-${randomBytes(12).toString('hex')}@pos-device.invalid`;
 
     let data: Awaited<ReturnType<PosPrinterRepository['create']>>;
     try {
@@ -43,16 +70,19 @@ export class PosPrinterService {
         restaurantId: branch.restaurantId,
         branchId: branch.id,
         email,
+        username,
+        usernameNormalized,
+        displayName,
         password: await bcrypt.hash(dto.password, 10),
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName.trim(),
+        firstName,
+        lastName,
       });
     } catch (error: unknown) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('Email is unavailable');
+        throw new ConflictException('Login identifier is unavailable');
       }
       throw error;
     }
@@ -83,6 +113,7 @@ export class PosPrinterService {
       refreshTokenHash: null,
       authVersion: { increment: 1 },
     });
+    await this.repository.deactivatePushTokens(id);
     return {
       data: this.toResponse(data),
       message: 'POS printer account status updated successfully',
@@ -101,6 +132,7 @@ export class PosPrinterService {
       refreshTokenHash: null,
       authVersion: { increment: 1 },
     });
+    await this.repository.deactivatePushTokens(id);
     return { data: null, message: 'POS printer password reset successfully' };
   }
 
@@ -202,6 +234,8 @@ export class PosPrinterService {
   private toResponse(account: {
     id: string;
     email: string;
+    username: string | null;
+    displayName: string | null;
     firstName: string;
     lastName: string;
     accountType: StaffAccountType;
@@ -215,7 +249,11 @@ export class PosPrinterService {
   }) {
     return {
       id: account.id,
-      email: account.email,
+      email: account.email.endsWith('@pos-device.invalid')
+        ? null
+        : account.email,
+      username: account.username,
+      displayName: account.displayName,
       firstName: account.firstName,
       lastName: account.lastName,
       accountType: account.accountType,

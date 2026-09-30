@@ -208,7 +208,9 @@ export class NotificationsService {
 
     const notifications =
       await this.notificationsRepository.claimPendingOrderNotifications({
-        userId: user.uid,
+        ...(this.isStaff(user)
+          ? { staffUserId: user.uid }
+          : { userId: user.uid }),
         tenantId: user.tid,
         restaurantId: scope.restaurantId,
         branchId: scope.branchId,
@@ -254,8 +256,12 @@ export class NotificationsService {
       tenantId: user.tid,
       restaurantId: user.rid,
       branchId: user.bid,
-      userId: user.role === 'DELIVERYMAN' ? undefined : user.uid,
+      userId:
+        user.role === 'DELIVERYMAN' || this.isStaff(user)
+          ? undefined
+          : user.uid,
       deliverymanId: user.role === 'DELIVERYMAN' ? user.uid : undefined,
+      staffUserId: this.isStaff(user) ? user.uid : undefined,
       deviceId: dto.deviceId,
       appPackageName: dto.appPackageName,
     });
@@ -279,8 +285,12 @@ export class NotificationsService {
     const data = await this.notificationsRepository.deactivatePushTokenForOwner(
       {
         token: dto.token,
-        userId: user.role === 'DELIVERYMAN' ? undefined : user.uid,
+        userId:
+          user.role === 'DELIVERYMAN' || this.isStaff(user)
+            ? undefined
+            : user.uid,
         deliverymanId: user.role === 'DELIVERYMAN' ? user.uid : undefined,
+        staffUserId: this.isStaff(user) ? user.uid : undefined,
       },
     );
 
@@ -1466,6 +1476,7 @@ export class NotificationsService {
       restaurantId: string;
       branchId: string;
       recipientUserId: string | null;
+      claimedByStaffUserId?: string | null;
       deliverymanId?: string | null;
     },
   ) {
@@ -1512,6 +1523,11 @@ export class NotificationsService {
     }
 
     if (this.isStaff(user)) {
+      if (notification.claimedByStaffUserId !== user.uid) {
+        throw new ForbiddenException(
+          'You do not have access to this notification',
+        );
+      }
       this.assertStaffNotificationScope(
         user,
         notification.restaurantId,

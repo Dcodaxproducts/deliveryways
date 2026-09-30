@@ -17,6 +17,7 @@ type PosPrinterRequestUser = {
   tid?: string | null;
   rid?: string | null;
   bid?: string | null;
+  ver?: number;
 };
 
 @Injectable()
@@ -59,6 +60,7 @@ export class PosPrinterAccessGuard implements CanActivate {
         branchId: true,
         isActive: true,
         deletedAt: true,
+        authVersion: true,
         staffRole: {
           select: { isActive: true, deletedAt: true },
         },
@@ -71,7 +73,8 @@ export class PosPrinterAccessGuard implements CanActivate {
       !staff.isActive ||
       staff.deletedAt ||
       !staff.staffRole.isActive ||
-      staff.staffRole.deletedAt
+      staff.staffRole.deletedAt ||
+      user.ver !== staff.authVersion
     ) {
       throw new UnauthorizedException('POS printer account is inactive');
     }

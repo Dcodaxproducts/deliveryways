@@ -2,7 +2,7 @@ export { RegisterTenantDto } from './register-tenant.dto';
 export { CheckEmailRoleDto } from './check-email-role.dto';
 export { RegisterCustomerDto } from './register-customer.dto';
 export { RegisterGuestCustomerDto } from './register-guest-customer.dto';
-export { LoginDto } from './login.dto';
+export { LoginDto, PosPrinterLoginDto } from './login.dto';
 export { GoogleLoginDto } from './google-login.dto';
 export { CancelDeletionByLoginDto } from './cancel-deletion-by-login.dto';
 export { DevTokenDto } from './dev-token.dto';

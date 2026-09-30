@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 import { UserRoleEnum } from '../../../common/enums';
@@ -36,4 +37,26 @@ export class LoginDto {
   @IsOptional()
   @IsEnum(UserRoleEnum)
   role?: UserRoleEnum;
+}
+
+export class PosPrinterLoginDto {
+  @ApiProperty({ description: 'POS printer username or legacy account email' })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(191)
+  usernameOrEmail?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Legacy email field; usernameOrEmail is preferred',
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(8)
+  password!: string;
 }

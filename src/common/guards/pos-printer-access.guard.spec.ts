@@ -13,6 +13,7 @@ describe('PosPrinterAccessGuard', () => {
     branchId: 'branch-1',
     isActive: true,
     deletedAt: null,
+    authVersion: 0,
     staffRole: { isActive: true, deletedAt: null },
   };
 
@@ -30,6 +31,7 @@ describe('PosPrinterAccessGuard', () => {
             tid: 'tenant-1',
             rid: 'restaurant-1',
             bid: 'branch-1',
+            ver: 0,
           },
         }),
       }),

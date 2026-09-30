@@ -13,10 +13,12 @@ describe('PosPrinterService security boundaries', () => {
   const repository = {
     findBranch: jest.fn(),
     findByEmail: jest.fn(),
+    findByUsernameNormalized: jest.fn(),
     create: jest.fn(),
     findById: jest.fn(),
     list: jest.fn(),
     update: jest.fn(),
+    deactivatePushTokens: jest.fn(),
   };
   const service = new PosPrinterService(
     repository as unknown as PosPrinterRepository,
@@ -44,6 +46,8 @@ describe('PosPrinterService security boundaries', () => {
     id: 'printer-1',
     ownerUserId: 'owner-1',
     email: dto.email,
+    username: null,
+    displayName: 'POS Printer',
     firstName: 'POS',
     lastName: 'Printer',
     accountType: StaffAccountType.POS_PRINTER,
@@ -60,6 +64,7 @@ describe('PosPrinterService security boundaries', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repository.findByEmail.mockResolvedValue(null);
+    repository.findByUsernameNormalized.mockResolvedValue(null);
     repository.findBranch.mockResolvedValue({
       id: 'branch-1',
       name: 'Main',
@@ -69,11 +74,32 @@ describe('PosPrinterService security boundaries', () => {
     repository.create.mockResolvedValue(account);
     repository.findById.mockResolvedValue(account);
     repository.update.mockResolvedValue(account);
+    repository.deactivatePushTokens.mockResolvedValue({ count: 1 });
     repository.list.mockResolvedValue([account]);
     jest.spyOn(bcrypt, 'hash').mockResolvedValue('hash' as never);
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('normalizes a globally unique username and persists display name', async () => {
+    await service.create(businessAdmin, {
+      username: 'Front.Counter',
+      displayName: 'Front Counter Printer',
+      password: 'Password@123',
+      branchId: 'branch-1',
+    });
+
+    expect(repository.findByUsernameNormalized).toHaveBeenCalledWith(
+      'front.counter',
+    );
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'Front.Counter',
+        usernameNormalized: 'front.counter',
+        displayName: 'Front Counter Printer',
+      }),
+    );
+  });
 
   it('rejects provisioning across tenant boundaries', async () => {
     repository.findBranch.mockResolvedValue({

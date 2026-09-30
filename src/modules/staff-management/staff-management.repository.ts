@@ -30,6 +30,20 @@ export class StaffManagementRepository {
     });
   }
 
+  async findPosPrinterByLoginIdentifier(identifier: string) {
+    const normalized = identifier.trim().toLowerCase();
+    return this.prisma.staffUser.findFirst({
+      where: {
+        accountType: 'POS_PRINTER',
+        OR: [
+          { usernameNormalized: normalized },
+          { email: { equals: normalized, mode: 'insensitive' } },
+        ],
+      },
+      include: this.includeConfig,
+    });
+  }
+
   async countRestaurants(ids: string[]) {
     return this.prisma.restaurant.count({
       where: { id: { in: ids }, deletedAt: null },

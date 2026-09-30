@@ -24,6 +24,7 @@ import {
   ForgotPasswordDto,
   GoogleLoginDto,
   LoginDto,
+  PosPrinterLoginDto,
   RefreshDto,
   RegisterCustomerDto,
   RegisterGuestCustomerDto,
@@ -140,7 +141,7 @@ export class AuthController {
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('pos-printer/login')
-  posPrinterLogin(@Body() dto: LoginDto) {
+  posPrinterLogin(@Body() dto: PosPrinterLoginDto) {
     return this.authService.loginPosPrinter(dto);
   }
 
@@ -267,7 +268,6 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @PosPrinterAccess()
   @Get('me')
   me(@CurrentUser() user: AuthUserContext) {
     return this.authService.me(user);

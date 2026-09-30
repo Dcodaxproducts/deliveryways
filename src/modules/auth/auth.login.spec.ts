@@ -39,6 +39,7 @@ describe('AuthService login', () => {
 
     staffManagementRepository = {
       findByEmail: jest.fn(),
+      findPosPrinterByLoginIdentifier: jest.fn(),
       update: jest.fn(),
     };
 
@@ -601,40 +602,44 @@ describe('AuthService login', () => {
   });
 
   it('rejects standard staff on the POS printer login endpoint', async () => {
-    staffManagementRepository.findByEmail!.mockResolvedValue({
-      id: 'staff-1',
-      email: 'staff@example.com',
-      accountType: StaffAccountType.STANDARD,
-      deletedAt: null,
-    });
+    staffManagementRepository.findPosPrinterByLoginIdentifier!.mockResolvedValue(
+      {
+        id: 'staff-1',
+        email: 'staff@example.com',
+        accountType: StaffAccountType.STANDARD,
+        deletedAt: null,
+      },
+    );
 
     await expect(
       service.loginPosPrinter({
-        email: 'staff@example.com',
+        usernameOrEmail: 'staff@example.com',
         password: 'Password@123',
       }),
     ).rejects.toThrow('Invalid credentials');
   });
 
   it('issues a branch-scoped token to a POS printer account', async () => {
-    staffManagementRepository.findByEmail!.mockResolvedValue({
-      id: 'printer-1',
-      email: 'printer@example.com',
-      password: 'hashed-password',
-      ownerUserId: 'admin-1',
-      staffRoleId: 'role-1',
-      panelType: 'BUSINESS_ADMIN',
-      accountType: StaffAccountType.POS_PRINTER,
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-      isActive: true,
-      deletedAt: null,
-      staffRole: { isActive: true, deletedAt: null },
-    });
+    staffManagementRepository.findPosPrinterByLoginIdentifier!.mockResolvedValue(
+      {
+        id: 'printer-1',
+        email: 'printer@example.com',
+        password: 'hashed-password',
+        ownerUserId: 'admin-1',
+        staffRoleId: 'role-1',
+        panelType: 'BUSINESS_ADMIN',
+        accountType: StaffAccountType.POS_PRINTER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isActive: true,
+        deletedAt: null,
+        staffRole: { isActive: true, deletedAt: null },
+      },
+    );
 
     const result = await service.loginPosPrinter({
-      email: 'printer@example.com',
+      usernameOrEmail: 'printer@example.com',
       password: 'Password@123',
     });
 
@@ -651,6 +656,36 @@ describe('AuthService login', () => {
       'order-management',
       'table-reservations',
     ]);
+  });
+
+  it('accepts the legacy email field for existing POS printer accounts', async () => {
+    staffManagementRepository.findPosPrinterByLoginIdentifier!.mockResolvedValue(
+      {
+        id: 'printer-1',
+        email: 'printer@example.com',
+        password: 'hashed-password',
+        ownerUserId: 'admin-1',
+        staffRoleId: 'role-1',
+        panelType: 'BUSINESS_ADMIN',
+        accountType: StaffAccountType.POS_PRINTER,
+        authVersion: 0,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isActive: true,
+        deletedAt: null,
+        staffRole: { isActive: true, deletedAt: null },
+      },
+    );
+
+    await service.loginPosPrinter({
+      email: 'printer@example.com',
+      password: 'Password@123',
+    });
+
+    expect(
+      staffManagementRepository.findPosPrinterByLoginIdentifier,
+    ).toHaveBeenCalledWith('printer@example.com');
   });
 
   it('logs in deliveryman with the password stored on the deliveryman record', async () => {
@@ -839,11 +874,13 @@ describe('AuthService login', () => {
   });
 
   it('performs a dummy password comparison for an unknown POS login', async () => {
-    staffManagementRepository.findByEmail!.mockResolvedValue(null);
+    staffManagementRepository.findPosPrinterByLoginIdentifier!.mockResolvedValue(
+      null,
+    );
 
     await expect(
       service.loginPosPrinter({
-        email: 'missing-printer@example.com',
+        usernameOrEmail: 'missing-printer@example.com',
         password: 'Password@123',
       }),
     ).rejects.toThrow('Invalid credentials');
