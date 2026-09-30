@@ -1399,6 +1399,7 @@ model StaffUser {
   panelType        StaffPanelType   @map("panel_type")
   accountType      StaffAccountType @default(STANDARD) @map("account_type")
   email            String
+  loginUsername    String?          @map("login_username") @db.VarChar(32)
   password         String
   plainPassword    String?          @map("plain_password")
   firstName        String           @map("first_name")
@@ -1566,6 +1567,8 @@ model Order {
   customerId                  String             @map("customer_id")
   checkoutIdempotencyKey      String?            @map("checkout_idempotency_key") @db.VarChar(36)
   checkoutRequestHash         String?            @map("checkout_request_hash") @db.VarChar(64)
+  sourceKey                   String?            @unique(map: "orders_source_key_key") @map("source_key") @db.VarChar(255)
+  sourceRequestHash           String?            @map("source_request_hash") @db.VarChar(64)
   couponId                    String?            @map("coupon_id")
   deliveryAddressId           String?            @map("delivery_address_id")
   deliverymanId               String?            @map("deliveryman_id")
@@ -1934,6 +1937,7 @@ model GroupOrderSession {
   couponCode        String?          @map("coupon_code")
   orderTime         DateTime?        @map("order_time") @db.Timestamptz
   hostNote          String?          @map("host_note")
+  participantLimit  Int              @default(20) @map("participant_limit")
   inviteCode        String           @unique @map("invite_code")
   status            GroupOrderStatus @default(OPEN)
   expiresAt         DateTime         @map("expires_at") @db.Timestamptz

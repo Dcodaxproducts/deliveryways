@@ -11,6 +11,8 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsUUID,
+  Max,
   IsOptional,
   IsString,
   Min,
@@ -18,6 +20,7 @@ import {
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 import { OrderTypeEnum, PaymentMethodEnum } from '../../common/enums';
+import { GuestOrderContactDto } from '../orders/dto';
 
 export const GROUP_ORDER_ITEM_SECTION_SLOT_VALUES = ['LEFT', 'RIGHT'] as const;
 
@@ -71,6 +74,13 @@ export class CreateGroupOrderSessionDto {
   @IsOptional()
   @IsString()
   hostNote?: string | null;
+
+  @ApiPropertyOptional({ default: 20, minimum: 2, maximum: 50 })
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(50)
+  participantLimit?: number;
 }
 
 export class UpdateGroupOrderSessionDto {
@@ -215,6 +225,17 @@ export class CheckoutGroupOrderDto {
   @IsOptional()
   @IsString()
   couponCode?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  idempotencyKey?: string;
+
+  @ApiPropertyOptional({ type: GuestOrderContactDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestOrderContactDto)
+  guestContact?: GuestOrderContactDto;
 }
 
 export class ListGroupOrdersDto extends QueryDto {

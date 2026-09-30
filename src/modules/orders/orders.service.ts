@@ -277,6 +277,13 @@ export interface CheckoutIdempotencyContext {
   cartVersion: Date;
 }
 
+export interface OrderSourceContext {
+  sourceKey: string;
+  requestHash: string;
+  tenantId: string;
+  restaurantId: string;
+}
+
 class CheckoutCartVersionConflict extends Error {}
 
 @Injectable()
@@ -388,7 +395,12 @@ export class OrdersService {
     user: AuthUserContext,
     dto: CreateOrderDto,
     idempotency?: CheckoutIdempotencyContext,
+    source?: OrderSourceContext,
   ) {
+    if (source) {
+      const replay = await this.resolveOrderSource(source);
+      if (replay) return replay;
+    }
     const quote = await this.buildQuote(user, dto);
     const currency = await this.resolveRestaurantCurrency(
       quote.branch.restaurantId,
@@ -425,6 +437,15 @@ export class OrdersService {
     ) {
       throw new ForbiddenException(
         'Checkout idempotency scope does not match the order scope',
+      );
+    }
+    if (
+      source &&
+      (source.tenantId !== quote.branch.tenantId ||
+        source.restaurantId !== quote.branch.restaurantId)
+    ) {
+      throw new ForbiddenException(
+        'Order source scope does not match order scope',
       );
     }
     const initialPaymentStatus = this.resolveInitialPaymentStatus(
@@ -488,6 +509,8 @@ export class OrdersService {
             customer: { connect: { id: customerId } },
             checkoutIdempotencyKey: idempotency?.idempotencyKey,
             checkoutRequestHash: idempotency?.requestHash,
+            sourceKey: source?.sourceKey,
+            sourceRequestHash: source?.requestHash,
             coupon: quote.couponId
               ? { connect: { id: quote.couponId } }
               : undefined,
@@ -595,6 +618,10 @@ export class OrdersService {
         return order;
       });
     } catch (error: unknown) {
+      if (source && this.isCheckoutIdempotencyConflict(error)) {
+        const replay = await this.resolveOrderSource(source);
+        if (replay) return replay;
+      }
       if (
         idempotency &&
         (this.isCheckoutIdempotencyConflict(error) ||
@@ -674,6 +701,32 @@ export class OrdersService {
     return {
       data: this.toOrderMutationResponse(responseData),
       message: 'Order created successfully',
+      ...(source ? { sourceReplay: false } : {}),
+    };
+  }
+
+  private async resolveOrderSource(context: OrderSourceContext) {
+    const existing = await this.ordersRepository.findBySourceKey(
+      context.sourceKey,
+    );
+    if (!existing) return null;
+    if (
+      existing.tenantId !== context.tenantId ||
+      existing.restaurantId !== context.restaurantId
+    ) {
+      throw new ForbiddenException(
+        'Order source scope does not match order scope',
+      );
+    }
+    if (existing.sourceRequestHash !== context.requestHash) {
+      throw new ConflictException(
+        'Order source was already checked out with a different request',
+      );
+    }
+    return {
+      data: this.toOrderMutationResponse(existing),
+      message: 'Order created successfully',
+      sourceReplay: true,
     };
   }
 
@@ -3138,11 +3191,15 @@ export class OrdersService {
       deliveryOtp?: string | null;
       checkoutIdempotencyKey?: string | null;
       checkoutRequestHash?: string | null;
+      sourceKey?: string | null;
+      sourceRequestHash?: string | null;
     };
     delete rest.tenantId;
     delete rest.deliveryOtp;
     delete rest.checkoutIdempotencyKey;
     delete rest.checkoutRequestHash;
+    delete rest.sourceKey;
+    delete rest.sourceRequestHash;
 
     const payableAmount = rest.totalAmount;
     if (

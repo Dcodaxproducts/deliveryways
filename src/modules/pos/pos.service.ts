@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import {
   OrderType,
   PaymentMethod,
@@ -460,7 +460,9 @@ export class PosService {
   async checkout(user: AuthUserContext, draftId: string) {
     this.assertPosActor(user);
     const draft = await this.getScopedDraftOrThrow(user, draftId);
-    this.assertDraftMutable(draft.status);
+    if (draft.status === PosOrderDraftStatus.CANCELLED) {
+      throw new BadRequestException('POS draft is cancelled');
+    }
     this.assertDraftHasItems(draft.items.length);
 
     if (!draft.paymentMethod) {
@@ -470,7 +472,7 @@ export class PosService {
     }
 
     const checkoutCustomerId = await this.ensureDraftCheckoutCustomer(draft);
-    const orderResult = await this.ordersService.create(user, {
+    const orderPayload = {
       branchId: draft.branchId,
       customerId: checkoutCustomerId,
       orderType: draft.orderType as never,
@@ -486,7 +488,36 @@ export class PosService {
       orderTime: new Date().toISOString(),
       paymentMethod: draft.paymentMethod as never,
       customerNote: draft.note ?? undefined,
-    });
+    };
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          branchId: draft.branchId,
+          orderType: draft.orderType,
+          paymentMethod: draft.paymentMethod,
+          couponCode: draft.couponCode,
+          note: draft.note,
+          items: draft.items.map((item) => ({
+            menuItemId: item.menuItemId,
+            variationId: item.variationId,
+            quantity: item.quantity,
+            modifiers: item.modifiers,
+            note: item.note,
+          })),
+        }),
+      )
+      .digest('hex');
+    const orderResult = await this.ordersService.create(
+      user,
+      orderPayload,
+      undefined,
+      {
+        sourceKey: 'POS_DRAFT:' + draft.id,
+        requestHash,
+        tenantId: draft.tenantId,
+        restaurantId: draft.restaurantId,
+      },
+    );
 
     const updatedDraft = await this.posRepository.updateDraft(draft.id, {
       status: PosOrderDraftStatus.CHECKED_OUT,
@@ -614,11 +645,15 @@ export class PosService {
       },
     );
 
-    await this.posRepository.updateDraft(draft.id, {
-      customer: { connect: { id: guestCustomerId } },
-    });
+    const claimedDraft = await this.posRepository.attachDraftCustomerIfMissing(
+      draft.id,
+      guestCustomerId,
+    );
+    if (!claimedDraft?.customerId) {
+      throw new NotFoundException('POS draft not found');
+    }
 
-    return guestCustomerId;
+    return claimedDraft.customerId;
   }
 
   private async createGuestCustomerForBranch(

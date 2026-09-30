@@ -27,6 +27,15 @@ export class PosPrinterRepository {
     });
   }
 
+  findByUsername(username: string) {
+    return this.prisma.staffUser.findFirst({
+      where: {
+        loginUsername: { equals: username, mode: 'insensitive' },
+      },
+      select: { id: true, deletedAt: true },
+    });
+  }
+
   findByEmail(email: string) {
     return this.prisma.staffUser.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
@@ -41,6 +50,7 @@ export class PosPrinterRepository {
     restaurantId: string;
     branchId: string;
     email: string;
+    loginUsername: string;
     password: string;
     firstName: string;
     lastName: string;
@@ -82,6 +92,7 @@ export class PosPrinterRepository {
           panelType: input.panelType,
           accountType: StaffAccountType.POS_PRINTER,
           email: input.email,
+          loginUsername: input.loginUsername,
           password: input.password,
           plainPassword: null,
           firstName: input.firstName,

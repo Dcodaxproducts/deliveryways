@@ -170,6 +170,19 @@ export class PosRepository {
     });
   }
 
+  async attachDraftCustomerIfMissing(id: string, customerId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.posOrderDraft.updateMany({
+        where: { id, customerId: null },
+        data: { customerId },
+      });
+      return tx.posOrderDraft.findUnique({
+        where: { id },
+        select: { customerId: true },
+      });
+    });
+  }
+
   async findCustomerProfileMetadata(userId: string) {
     return this.prisma.profile.findUnique({
       where: { userId },

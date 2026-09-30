@@ -27,6 +27,8 @@ import {
   resolveAvailablePaymentMethods,
 } from '../../common/utils';
 import {
+  AssignAdminTableReservationDto,
+  CreateAdminWalkInReservationDto,
   CreateTableReservationDto,
   HomeScreenQueryDto,
   ListAdminTableReservationsQueryDto,
@@ -221,6 +223,9 @@ export interface TableReservationRecord {
   status: TableReservationStatus;
   createdAt: string;
   cancelledAt: string | null;
+  isWalkIn: boolean;
+  queueState: 'WAITING' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+  tableLabel: string | null;
 }
 
 export interface TableReservationResponse extends TableReservationRecord {
@@ -1925,6 +1930,144 @@ export class CustomerAppService {
     };
   }
 
+  async getTableReservation(
+    user: AuthUserContext,
+    reservationId: string,
+    requestedCustomerId?: string,
+  ) {
+    const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const reservation = this.readTableReservations(
+      customer.profile?.metadata,
+    ).find((item) => item.id === reservationId);
+    if (!reservation)
+      throw new NotFoundException('Table reservation not found');
+    const branch = customer.restaurantId
+      ? await this.customerAppRepository.findBranchPublicContent(
+          reservation.branchId,
+          customer.restaurantId,
+        )
+      : null;
+    return {
+      data: {
+        ...reservation,
+        branch: await this.resolveBranchMedia(
+          this.toReservationBranchPublic(branch),
+        ),
+      },
+      message: 'Table reservation fetched successfully',
+    };
+  }
+
+  async getAdminTableReservation(
+    user: AuthUserContext,
+    reservationId: string,
+    query: ListAdminTableReservationsQueryDto,
+  ) {
+    const found = await this.findAdminTableReservation(
+      user,
+      reservationId,
+      query,
+    );
+    return {
+      data: await this.toAdminTableReservationResponse(found),
+      message: 'Table reservation fetched successfully',
+    };
+  }
+
+  async createAdminWalkInReservation(
+    user: AuthUserContext,
+    dto: CreateAdminWalkInReservationDto,
+  ) {
+    const restaurantId = await this.resolveAdminReservationRestaurantId(
+      user,
+      dto.restaurantId,
+    );
+    const branchId = this.resolveAdminReservationBranchId(user, dto.branchId);
+    if (branchId !== dto.branchId) {
+      throw new ForbiddenException('Walk-in branch is outside assigned scope');
+    }
+    const branch = await this.customerAppRepository.findBranchPublicContent(
+      dto.branchId,
+      restaurantId,
+    );
+    if (!branch) throw new NotFoundException('Branch not found');
+    const customers =
+      await this.customerAppRepository.findCustomersForTableReservations({
+        restaurantId,
+        customerId: dto.customerId,
+      });
+    const customer = customers[0];
+    if (!customer) throw new NotFoundException('Customer not found');
+    const reservation: TableReservationRecord = {
+      id: randomUUID(),
+      branchId: dto.branchId,
+      reservationDate: new Date().toISOString(),
+      guestCount: dto.guestCount,
+      note: dto.note?.trim() || null,
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString(),
+      cancelledAt: null,
+      isWalkIn: true,
+      queueState: 'WAITING',
+      tableLabel: dto.tableLabel?.trim() || null,
+    };
+    const reservations = [
+      reservation,
+      ...this.readTableReservations(customer.profile?.metadata),
+    ].slice(0, 20);
+    await this.customerAppRepository.upsertCustomerProfile(
+      customer.id,
+      this.writeCustomerAppMetadata(customer.profile?.metadata, {
+        tableReservations: reservations,
+      }),
+    );
+    return {
+      data: reservation,
+      message: 'Walk-in reservation created successfully',
+    };
+  }
+
+  async assignAdminTableReservation(
+    user: AuthUserContext,
+    reservationId: string,
+    dto: AssignAdminTableReservationDto,
+  ) {
+    const found = await this.findAdminTableReservation(
+      user,
+      reservationId,
+      dto,
+    );
+    if (
+      found.reservation.status === 'COMPLETED' ||
+      found.reservation.status === 'CANCELLED' ||
+      found.reservation.status === 'NO_SHOW'
+    ) {
+      throw new BadRequestException('Terminal reservation cannot be assigned');
+    }
+    const tableLabel = dto.tableLabel.trim();
+    if (!tableLabel) throw new BadRequestException('tableLabel is required');
+    const reservations = this.readTableReservations(
+      found.customer.profile?.metadata,
+    ).map((item) =>
+      item.id === reservationId ? { ...item, tableLabel } : item,
+    );
+    await this.customerAppRepository.upsertCustomerProfile(
+      found.customer.id,
+      this.writeCustomerAppMetadata(found.customer.profile?.metadata, {
+        tableReservations: reservations,
+      }),
+    );
+    const refreshed = await this.findAdminTableReservation(
+      user,
+      reservationId,
+      dto,
+    );
+    return {
+      data: await this.toAdminTableReservationResponse(refreshed),
+      message: 'Table reservation assigned successfully',
+    };
+  }
+
   async updateAdminTableReservationStatus(
     user: AuthUserContext,
     reservationId: string,
@@ -1963,6 +2106,8 @@ export class CustomerAppService {
         throw new NotFoundException('Table reservation not found');
       }
 
+      this.assertTableReservationTransition(reservation.status, dto.status);
+
       if (dto.status === 'CONFIRMED') {
         const branches =
           await this.customerAppRepository.findBranchesPublicContent(
@@ -1987,7 +2132,12 @@ export class CustomerAppService {
           : null;
       const reservations = existingReservations.map((item) =>
         item.id === reservationId
-          ? { ...item, status: dto.status, cancelledAt }
+          ? {
+              ...item,
+              status: dto.status,
+              cancelledAt,
+              queueState: this.toTableReservationQueueState(dto.status),
+            }
           : item,
       );
       const updatedReservation =
@@ -2126,6 +2276,9 @@ export class CustomerAppService {
       status: canAutoAccept ? 'CONFIRMED' : 'REQUESTED',
       createdAt: new Date().toISOString(),
       cancelledAt: null,
+      isWalkIn: false,
+      queueState: 'WAITING',
+      tableLabel: null,
     };
 
     const reservations = [reservation, ...existingReservations].slice(0, 20);
@@ -2185,9 +2338,7 @@ export class CustomerAppService {
       throw new NotFoundException('Table reservation not found');
     }
 
-    if (reservation.status === 'CANCELLED') {
-      throw new BadRequestException('Table reservation is already cancelled');
-    }
+    this.assertTableReservationTransition(reservation.status, 'CANCELLED');
 
     const cancelledAt = new Date().toISOString();
     const reservations = existingReservations.map((item) =>
@@ -2196,6 +2347,7 @@ export class CustomerAppService {
             ...item,
             status: 'CANCELLED' as const,
             cancelledAt,
+            queueState: 'CANCELLED' as const,
           }
         : item,
     );
@@ -2813,6 +2965,96 @@ export class CustomerAppService {
     };
   }
 
+  private async findAdminTableReservation(
+    user: AuthUserContext,
+    reservationId: string,
+    scope: {
+      restaurantId?: string;
+      branchId?: string;
+      customerId?: string;
+    },
+  ) {
+    if (user.role === UserRoleEnum.CUSTOMER) {
+      throw new ForbiddenException(
+        'Customers cannot access reservation admin data',
+      );
+    }
+    const restaurantId = await this.resolveAdminReservationRestaurantId(
+      user,
+      scope.restaurantId,
+    );
+    const branchId = this.resolveAdminReservationBranchId(user, scope.branchId);
+    const customers =
+      await this.customerAppRepository.findCustomersForTableReservations({
+        restaurantId,
+        customerId: scope.customerId,
+      });
+    for (const customer of customers) {
+      const reservation = this.readTableReservations(
+        customer.profile?.metadata,
+      ).find((item) => item.id === reservationId);
+      if (!reservation) continue;
+      if (branchId && reservation.branchId !== branchId) {
+        throw new NotFoundException('Table reservation not found');
+      }
+      const branch = await this.customerAppRepository.findBranchPublicContent(
+        reservation.branchId,
+        restaurantId,
+      );
+      if (!branch) throw new NotFoundException('Table reservation not found');
+      return { restaurantId, customer, reservation, branch };
+    }
+    throw new NotFoundException('Table reservation not found');
+  }
+
+  private async toAdminTableReservationResponse(
+    found: Awaited<ReturnType<CustomerAppService['findAdminTableReservation']>>,
+  ) {
+    return {
+      ...found.reservation,
+      customer: {
+        id: found.customer.id,
+        email: found.customer.email,
+        firstName: found.customer.profile?.firstName ?? null,
+        lastName: found.customer.profile?.lastName ?? null,
+        phone: found.customer.profile?.phone ?? null,
+        avatarUrl: found.customer.profile?.avatarUrl ?? null,
+      },
+      branch: await this.resolveBranchMedia(
+        this.toReservationBranchPublic(found.branch),
+      ),
+    };
+  }
+
+  private assertTableReservationTransition(
+    from: TableReservationStatus,
+    to: TableReservationStatus,
+  ) {
+    const allowed: Record<TableReservationStatus, TableReservationStatus[]> = {
+      REQUESTED: ['CONFIRMED', 'CANCELLED', 'NO_SHOW'],
+      CONFIRMED: ['SEATED', 'CANCELLED', 'NO_SHOW'],
+      SEATED: ['COMPLETED'],
+      COMPLETED: [],
+      CANCELLED: [],
+      NO_SHOW: [],
+    };
+    if (!allowed[from].includes(to)) {
+      throw new BadRequestException(
+        'Invalid table reservation transition from ' + from + ' to ' + to,
+      );
+    }
+  }
+
+  private toTableReservationQueueState(
+    status: TableReservationStatus,
+  ): TableReservationRecord['queueState'] {
+    if (status === 'SEATED') return 'SEATED';
+    if (status === 'COMPLETED') return 'COMPLETED';
+    if (status === 'CANCELLED') return 'CANCELLED';
+    if (status === 'NO_SHOW') return 'NO_SHOW';
+    return 'WAITING';
+  }
+
   private sortAdminTableReservations(
     reservations: Array<
       TableReservationRecord & {
@@ -2882,6 +3124,18 @@ export class CustomerAppService {
           cancelledAt:
             typeof reservation.cancelledAt === 'string'
               ? reservation.cancelledAt
+              : null,
+          isWalkIn: reservation.isWalkIn === true,
+          queueState:
+            typeof reservation.queueState === 'string' &&
+            ['WAITING', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(
+              reservation.queueState,
+            )
+              ? (reservation.queueState as TableReservationRecord['queueState'])
+              : this.toTableReservationQueueState(status),
+          tableLabel:
+            typeof reservation.tableLabel === 'string'
+              ? reservation.tableLabel
               : null,
         };
       })

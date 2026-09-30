@@ -116,6 +116,16 @@ export class GroupOrdersController {
   }
 
   @Roles(RolesEnum.CUSTOMER)
+  @Delete(':id/participants/:participantId')
+  removeParticipant(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Param('participantId') participantId: string,
+  ) {
+    return this.groupOrdersService.removeParticipant(user, id, participantId);
+  }
+
+  @Roles(RolesEnum.CUSTOMER)
   @Patch(':id/participants/me/status')
   updateMyParticipantStatus(
     @CurrentUser() user: AuthUserContext,

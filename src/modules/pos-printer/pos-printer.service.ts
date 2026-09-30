@@ -28,11 +28,20 @@ export class PosPrinterService {
     }
     this.assertBranchScope(user, branch);
 
-    const email = dto.email.trim().toLowerCase();
-    const existing = await this.repository.findByEmail(email);
-    if (existing) {
-      throw new ConflictException('Email is unavailable');
+    const username = dto.username.trim().toLowerCase();
+    const existingUsername = await this.repository.findByUsername(username);
+    if (existingUsername) {
+      throw new ConflictException('Username is unavailable');
     }
+    const email =
+      dto.email?.trim().toLowerCase() ??
+      username + '@pos-printer.feastflow.local';
+    const existingEmail = await this.repository.findByEmail(email);
+    if (existingEmail) {
+      throw new ConflictException('Account identifier is unavailable');
+    }
+    const displayName = dto.displayName.trim();
+    const displayParts = displayName.split(/\s+/).filter(Boolean);
 
     let data: Awaited<ReturnType<PosPrinterRepository['create']>>;
     try {
@@ -43,16 +52,18 @@ export class PosPrinterService {
         restaurantId: branch.restaurantId,
         branchId: branch.id,
         email,
+        loginUsername: username,
         password: await bcrypt.hash(dto.password, 10),
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName.trim(),
+        firstName: dto.firstName?.trim() || displayParts[0] || displayName,
+        lastName:
+          dto.lastName?.trim() || displayParts.slice(1).join(' ') || 'Printer',
       });
     } catch (error: unknown) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('Email is unavailable');
+        throw new ConflictException('Account identifier is unavailable');
       }
       throw error;
     }
@@ -202,6 +213,7 @@ export class PosPrinterService {
   private toResponse(account: {
     id: string;
     email: string;
+    loginUsername: string | null;
     firstName: string;
     lastName: string;
     accountType: StaffAccountType;
@@ -216,6 +228,10 @@ export class PosPrinterService {
     return {
       id: account.id,
       email: account.email,
+      username: account.loginUsername,
+      displayName: [account.firstName, account.lastName]
+        .filter(Boolean)
+        .join(' '),
       firstName: account.firstName,
       lastName: account.lastName,
       accountType: account.accountType,

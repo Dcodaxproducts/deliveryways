@@ -39,6 +39,7 @@ describe('AuthService login', () => {
 
     staffManagementRepository = {
       findByEmail: jest.fn(),
+      findPosPrinterByIdentifier: jest.fn(),
       update: jest.fn(),
     };
 
@@ -609,7 +610,7 @@ describe('AuthService login', () => {
   });
 
   it('rejects standard staff on the POS printer login endpoint', async () => {
-    staffManagementRepository.findByEmail!.mockResolvedValue({
+    staffManagementRepository.findPosPrinterByIdentifier!.mockResolvedValue({
       id: 'staff-1',
       email: 'staff@example.com',
       accountType: StaffAccountType.STANDARD,
@@ -618,14 +619,14 @@ describe('AuthService login', () => {
 
     await expect(
       service.loginPosPrinter({
-        email: 'staff@example.com',
+        identifier: 'staff@example.com',
         password: 'Password@123',
       }),
     ).rejects.toThrow('Invalid credentials');
   });
 
   it('issues a branch-scoped token to a POS printer account', async () => {
-    staffManagementRepository.findByEmail!.mockResolvedValue({
+    staffManagementRepository.findPosPrinterByIdentifier!.mockResolvedValue({
       id: 'printer-1',
       email: 'printer@example.com',
       password: 'hashed-password',
@@ -642,7 +643,7 @@ describe('AuthService login', () => {
     });
 
     const result = await service.loginPosPrinter({
-      email: 'printer@example.com',
+      identifier: 'printer@example.com',
       password: 'Password@123',
     });
 
@@ -659,6 +660,44 @@ describe('AuthService login', () => {
       'order-management',
       'table-reservations',
     ]);
+  });
+
+  it('logs in a POS printer by normalized username', async () => {
+    staffManagementRepository.findPosPrinterByIdentifier!.mockResolvedValue({
+      id: 'printer-1',
+      email: 'printer@example.com',
+      loginUsername: 'kitchen-printer-1',
+      password: 'hashed-password',
+      firstName: 'Kitchen',
+      lastName: 'Printer',
+      ownerUserId: 'admin-1',
+      staffRoleId: 'role-1',
+      panelType: 'BUSINESS_ADMIN',
+      accountType: StaffAccountType.POS_PRINTER,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      authVersion: 0,
+      isActive: true,
+      deletedAt: null,
+      staffRole: { isActive: true, deletedAt: null },
+    });
+
+    const result = await service.loginPosPrinter({
+      identifier: ' KITCHEN-PRINTER-1 ',
+      password: 'Password@123',
+    });
+
+    expect(
+      staffManagementRepository.findPosPrinterByIdentifier,
+    ).toHaveBeenCalledWith('kitchen-printer-1');
+    expect(result.data.user).toEqual(
+      expect.objectContaining({
+        username: 'kitchen-printer-1',
+        displayName: 'Kitchen Printer',
+        branchId: 'branch-1',
+      }),
+    );
   });
 
   it('logs in deliveryman with the password stored on the deliveryman record', async () => {
@@ -847,11 +886,13 @@ describe('AuthService login', () => {
   });
 
   it('performs a dummy password comparison for an unknown POS login', async () => {
-    staffManagementRepository.findByEmail!.mockResolvedValue(null);
+    staffManagementRepository.findPosPrinterByIdentifier!.mockResolvedValue(
+      null,
+    );
 
     await expect(
       service.loginPosPrinter({
-        email: 'missing-printer@example.com',
+        identifier: 'missing-printer@example.com',
         password: 'Password@123',
       }),
     ).rejects.toThrow('Invalid credentials');

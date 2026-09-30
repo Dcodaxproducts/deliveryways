@@ -428,6 +428,7 @@ export const TABLE_RESERVATION_STATUS_VALUES = [
   'SEATED',
   'COMPLETED',
   'CANCELLED',
+  'NO_SHOW',
 ] as const;
 
 export type TableReservationStatus =
@@ -466,6 +467,59 @@ export class ListAdminTableReservationsQueryDto extends ListTableReservationsQue
   @IsOptional()
   @IsIn(TABLE_RESERVATION_STATUS_VALUES)
   status?: (typeof TABLE_RESERVATION_STATUS_VALUES)[number];
+}
+
+export class CreateAdminWalkInReservationDto {
+  @ApiProperty()
+  @IsString()
+  customerId!: string;
+
+  @ApiProperty()
+  @IsString()
+  branchId!: string;
+
+  @ApiProperty({ minimum: 1, maximum: 50 })
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  guestCount!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  tableLabel?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+}
+
+export class AssignAdminTableReservationDto {
+  @ApiProperty()
+  @IsString()
+  tableLabel!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  customerId?: string;
 }
 
 export class UpdateTableReservationStatusDto {

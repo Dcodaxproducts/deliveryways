@@ -21,6 +21,19 @@ export class StaffManagementRepository {
     });
   }
 
+  async findPosPrinterByIdentifier(identifier: string) {
+    return this.prisma.staffUser.findFirst({
+      where: {
+        accountType: 'POS_PRINTER',
+        OR: [
+          { loginUsername: { equals: identifier, mode: 'insensitive' } },
+          { email: { equals: identifier, mode: 'insensitive' } },
+        ],
+      },
+      include: this.includeConfig,
+    });
+  }
+
   async findByEmail(email: string) {
     return this.prisma.staffUser.findFirst({
       where: {

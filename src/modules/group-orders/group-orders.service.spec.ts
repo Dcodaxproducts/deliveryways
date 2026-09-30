@@ -19,6 +19,8 @@ describe('GroupOrdersService', () => {
       updateSession: jest.fn(),
       findSessionByInviteCode: jest.fn(),
       findParticipant: jest.fn(),
+      joinParticipantWithLimit: jest.fn().mockResolvedValue('JOINED'),
+      removeParticipantAndDeleteItems: jest.fn(),
       listForUser: jest.fn(),
       listForAdmin: jest.fn(),
       createParticipant: jest.fn(),
@@ -167,12 +169,9 @@ describe('GroupOrdersService', () => {
         },
       ],
     });
-    groupOrdersRepository.findParticipant.mockResolvedValue({
-      id: 'participant-1',
-      sessionId: 'session-1',
-      userId: 'customer-1',
-      status: GroupOrderParticipantStatus.ACTIVE,
-    });
+    groupOrdersRepository.joinParticipantWithLimit.mockResolvedValue(
+      'ALREADY_ACTIVE',
+    );
 
     await expect(
       service.join(customerUser, { inviteCode: 'INVITE123' }),
@@ -2110,6 +2109,94 @@ describe('GroupOrdersService', () => {
       },
     ],
     items: [],
+  });
+
+  it('replays one order for concurrent checkout calls from the same group session', async () => {
+    const { service, groupOrdersRepository, ordersService } = makeService();
+    const session = {
+      ...makeCompletionSession(),
+      participantLimit: 20,
+      items: [
+        {
+          id: 'item-1',
+          participantId: 'participant-host',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    groupOrdersRepository.findSessionById.mockResolvedValue(session);
+    jest
+      .spyOn(
+        service as unknown as {
+          pruneInvalidActiveItems: () => Promise<typeof session>;
+        },
+        'pruneInvalidActiveItems',
+      )
+      .mockResolvedValue(session);
+    jest
+      .spyOn(
+        service as unknown as {
+          buildSessionResponseOrThrow: () => Promise<{ id: string }>;
+        },
+        'buildSessionResponseOrThrow',
+      )
+      .mockResolvedValue({ id: session.id });
+    groupOrdersRepository.updateSession.mockResolvedValue(session);
+    let createdOrders = 0;
+    let durableOrder: { data: { id: string }; message: string } | null = null;
+    ordersService.create.mockImplementation(
+      async (
+        _user: unknown,
+        _payload: unknown,
+        _cartIdempotency: unknown,
+        source?: { sourceKey: string },
+      ) => {
+        await Promise.resolve();
+        if (!source) {
+          createdOrders += 1;
+          return {
+            data: { id: 'order-' + createdOrders },
+            message: 'Order created successfully',
+          };
+        }
+        if (!durableOrder) {
+          createdOrders += 1;
+          durableOrder = {
+            data: { id: 'order-' + createdOrders },
+            message: 'Order created successfully',
+          };
+        }
+        return durableOrder;
+      },
+    );
+    const host = {
+      uid: 'host-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    };
+    const checkout = { paymentMethod: 'COD' as never };
+
+    const [first, second] = await Promise.all([
+      service.checkout(host, session.id, checkout),
+      service.checkout(host, session.id, checkout),
+    ]);
+
+    expect(createdOrders).toBe(1);
+    expect(first.data.order.id).toBe(second.data.order.id);
+    expect(ordersService.create).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ sourceKey: 'GROUP_ORDER:session-1' }),
+    );
   });
 
   it('notifies host when a participant completes their group order selection', async () => {

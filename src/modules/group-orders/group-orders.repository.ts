@@ -157,6 +157,58 @@ export class GroupOrdersRepository {
     return this.client(tx).groupOrderParticipant.create({ data });
   }
 
+  async joinParticipantWithLimit(sessionId: string, userId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "group_order_sessions" WHERE "id" = ${sessionId} FOR UPDATE`,
+      );
+      const session = await tx.groupOrderSession.findUnique({
+        where: { id: sessionId },
+        select: { participantLimit: true, status: true, expiresAt: true },
+      });
+      if (!session) return 'NOT_FOUND' as const;
+      if (session.status !== 'OPEN' || session.expiresAt <= new Date()) {
+        return 'CLOSED' as const;
+      }
+      const existing = await tx.groupOrderParticipant.findUnique({
+        where: { sessionId_userId: { sessionId, userId } },
+      });
+      if (existing?.status === GroupOrderParticipantStatus.ACTIVE) {
+        return 'ALREADY_ACTIVE' as const;
+      }
+      if (existing?.status === GroupOrderParticipantStatus.REMOVED) {
+        return 'REMOVED' as const;
+      }
+      const count = await tx.groupOrderParticipant.count({
+        where: {
+          sessionId,
+          status: {
+            in: [
+              GroupOrderParticipantStatus.ACTIVE,
+              GroupOrderParticipantStatus.COMPLETED,
+            ],
+          },
+        },
+      });
+      if (count >= session.participantLimit) return 'FULL' as const;
+      if (existing) {
+        await tx.groupOrderParticipant.update({
+          where: { id: existing.id },
+          data: { status: GroupOrderParticipantStatus.ACTIVE, leftAt: null },
+        });
+      } else {
+        await tx.groupOrderParticipant.create({
+          data: {
+            sessionId,
+            userId,
+            status: GroupOrderParticipantStatus.ACTIVE,
+          },
+        });
+      }
+      return 'JOINED' as const;
+    });
+  }
+
   async updateParticipant(
     id: string,
     data: Prisma.GroupOrderParticipantUpdateInput,
@@ -176,6 +228,19 @@ export class GroupOrdersRepository {
         where: { id },
         data: {
           status: GroupOrderParticipantStatus.LEFT,
+          leftAt,
+        },
+      });
+    });
+  }
+
+  async removeParticipantAndDeleteItems(id: string, leftAt: Date) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.groupOrderItem.deleteMany({ where: { participantId: id } });
+      return tx.groupOrderParticipant.update({
+        where: { id },
+        data: {
+          status: GroupOrderParticipantStatus.REMOVED,
           leftAt,
         },
       });

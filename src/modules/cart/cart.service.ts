@@ -3201,9 +3201,7 @@ export class CartService {
     if (!branch) return [];
 
     const globalMethods = this.globalSettingsService
-      ? (await this.globalSettingsService.getPaymentMethods()).data
-          .filter((method) => method.isActive)
-          .map((method) => method.code)
+      ? await this.globalSettingsService.getEffectiveCheckoutPaymentMethods()
       : Object.values(PaymentMethod);
 
     return resolveAvailablePaymentMethods({

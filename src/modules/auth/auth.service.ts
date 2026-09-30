@@ -44,6 +44,7 @@ import {
   GoogleLoginDto,
   ListCustomersDto,
   LoginDto,
+  PosPrinterLoginDto,
   RefreshDto,
   RegisterCustomerDto,
   RegisterGuestCustomerDto,
@@ -1223,10 +1224,12 @@ export class AuthService {
     };
   }
 
-  async loginPosPrinter(dto: LoginDto) {
-    const staff = await this.staffManagementRepository.findByEmail(
-      dto.email.trim().toLowerCase(),
-    );
+  async loginPosPrinter(dto: PosPrinterLoginDto) {
+    const identifier = dto.identifier.trim().toLowerCase();
+    const staff =
+      await this.staffManagementRepository.findPosPrinterByIdentifier(
+        identifier,
+      );
 
     if (!staff || staff.deletedAt) {
       await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
@@ -1276,6 +1279,10 @@ export class AuthService {
         user: {
           id: staff.id,
           email: staff.email,
+          username: staff.loginUsername,
+          displayName: [staff.firstName, staff.lastName]
+            .filter(Boolean)
+            .join(' '),
           role: UserRoleEnum.STAFF,
           actorType: 'STAFF',
           accountType: StaffAccountType.POS_PRINTER,

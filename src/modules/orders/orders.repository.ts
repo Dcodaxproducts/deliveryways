@@ -93,6 +93,16 @@ export class OrdersRepository {
     });
   }
 
+  async findBySourceKey(sourceKey: string) {
+    return this.prisma.order.findUnique({
+      where: { sourceKey },
+      include: {
+        items: true,
+        coupon: true,
+      },
+    });
+  }
+
   async findIntegrationExportCandidates(
     scope: IntegrationScope,
     limit: number,

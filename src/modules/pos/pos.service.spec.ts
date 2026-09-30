@@ -45,6 +45,9 @@ describe('PosService', () => {
       listDrafts: jest.fn(),
       findDraftById: jest.fn(),
       updateDraft: jest.fn(),
+      attachDraftCustomerIfMissing: jest
+        .fn()
+        .mockResolvedValue({ customerId: 'guest-customer-1' }),
       createDraftItem: jest.fn(),
       findDraftItem: jest.fn(),
       updateDraftItem: jest.fn(),
@@ -535,9 +538,10 @@ describe('PosService', () => {
     );
 
     expect(usersService.create).toHaveBeenCalled();
-    expect(posRepository.updateDraft).toHaveBeenCalledWith('draft-1', {
-      customer: { connect: { id: 'guest-customer-1' } },
-    });
+    expect(posRepository.attachDraftCustomerIfMissing).toHaveBeenCalledWith(
+      'draft-1',
+      'guest-customer-1',
+    );
     expect(ordersService.quote).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -873,9 +877,105 @@ describe('PosService', () => {
         branchId: 'branch-1',
         paymentMethod: 'COD',
       }),
+      undefined,
+      expect.objectContaining({ sourceKey: 'POS_DRAFT:draft-1' }),
     );
     expect(result.data.order.id).toBe('order-1');
     expect(result.data.draft.finalOrderId).toBe('order-1');
     expect(result.message).toBe('POS order checked out successfully');
+  });
+
+  it('replays one order for concurrent checkout calls from the same draft', async () => {
+    const { service, posRepository, ordersService, usersService } =
+      makeService();
+    const draft = makeDraft({
+      customerId: null,
+      paymentMethod: 'COD',
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    posRepository.findDraftById.mockResolvedValue(draft);
+    let generatedCustomers = 0;
+    usersService.create.mockImplementation(() => ({
+      id: 'guest-' + ++generatedCustomers,
+    }));
+    let claimedCustomerId: string | null = null;
+    posRepository.attachDraftCustomerIfMissing.mockImplementation(
+      (_id: string, customerId: string) => {
+        claimedCustomerId ??= customerId;
+        return { customerId: claimedCustomerId };
+      },
+    );
+    posRepository.updateDraft.mockImplementation(
+      (_id: string, data: { finalOrderId?: string }) =>
+        makeDraft({
+          ...draft,
+          status: 'CHECKED_OUT',
+          finalOrderId: data.finalOrderId ?? 'order-1',
+        }),
+    );
+    let createdOrders = 0;
+    let durableOrder: {
+      data: { id: string; status: string };
+      message: string;
+    } | null = null;
+    ordersService.create.mockImplementation(
+      async (
+        _user: unknown,
+        _payload: unknown,
+        _cartIdempotency: unknown,
+        source?: { sourceKey: string },
+      ) => {
+        await Promise.resolve();
+        if (!source) {
+          createdOrders += 1;
+          return {
+            data: { id: 'order-' + createdOrders, status: 'PLACED' },
+            message: 'Order created successfully',
+          };
+        }
+        if (!durableOrder) {
+          createdOrders += 1;
+          durableOrder = {
+            data: { id: 'order-' + createdOrders, status: 'PLACED' },
+            message: 'Order created successfully',
+          };
+        }
+        return durableOrder;
+      },
+    );
+    const actor = {
+      uid: 'staff-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      bid: 'branch-1',
+      role: UserRoleEnum.STAFF,
+    };
+
+    const [first, second] = await Promise.all([
+      service.checkout(actor, 'draft-1'),
+      service.checkout(actor, 'draft-1'),
+    ]);
+
+    expect(createdOrders).toBe(1);
+    expect(first.data.order.id).toBe(second.data.order.id);
+    expect(ordersService.create).toHaveBeenCalledTimes(2);
+    expect(ordersService.create).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ sourceKey: 'POS_DRAFT:draft-1' }),
+    );
   });
 });

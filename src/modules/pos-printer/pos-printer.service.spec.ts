@@ -13,6 +13,7 @@ describe('PosPrinterService security boundaries', () => {
   const repository = {
     findBranch: jest.fn(),
     findByEmail: jest.fn(),
+    findByUsername: jest.fn(),
     create: jest.fn(),
     findById: jest.fn(),
     list: jest.fn(),
@@ -34,6 +35,8 @@ describe('PosPrinterService security boundaries', () => {
     bid: 'branch-1',
   };
   const dto = {
+    username: 'kitchen-printer-1',
+    displayName: 'Kitchen Printer',
     email: 'printer@example.com',
     password: 'Password@123',
     firstName: 'POS',
@@ -44,6 +47,7 @@ describe('PosPrinterService security boundaries', () => {
     id: 'printer-1',
     ownerUserId: 'owner-1',
     email: dto.email,
+    loginUsername: dto.username,
     firstName: 'POS',
     lastName: 'Printer',
     accountType: StaffAccountType.POS_PRINTER,
@@ -60,6 +64,7 @@ describe('PosPrinterService security boundaries', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repository.findByEmail.mockResolvedValue(null);
+    repository.findByUsername.mockResolvedValue(null);
     repository.findBranch.mockResolvedValue({
       id: 'branch-1',
       name: 'Main',
@@ -74,6 +79,40 @@ describe('PosPrinterService security boundaries', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('normalizes a device username and creates without a legacy email', async () => {
+    await service.create(businessAdmin, {
+      username: ' Kitchen.Printer-1 ',
+      displayName: 'Kitchen Printer',
+      password: 'Password@123',
+      branchId: 'branch-1',
+    });
+
+    expect(repository.findByUsername).toHaveBeenCalledWith('kitchen.printer-1');
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loginUsername: 'kitchen.printer-1',
+        email: 'kitchen.printer-1@pos-printer.feastflow.local',
+        firstName: 'Kitchen',
+        lastName: 'Printer',
+      }),
+    );
+  });
+
+  it('rejects a case-insensitive username collision', async () => {
+    repository.findByUsername.mockResolvedValue({
+      id: 'existing-printer',
+      deletedAt: null,
+    });
+
+    await expect(
+      service.create(businessAdmin, {
+        ...dto,
+        username: 'KITCHEN-PRINTER-1',
+      }),
+    ).rejects.toThrow('Username is unavailable');
+    expect(repository.create).not.toHaveBeenCalled();
+  });
 
   it('rejects provisioning across tenant boundaries', async () => {
     repository.findBranch.mockResolvedValue({

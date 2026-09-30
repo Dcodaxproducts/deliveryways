@@ -4175,4 +4175,29 @@ describe('CustomerAppService', () => {
     expect(result.data?.status).toBe('CANCELLED');
     expect(result.message).toBe('Table reservation cancelled successfully');
   });
+
+  it('enforces the explicit reservation transition graph including no-show', () => {
+    const { service } = makeService();
+    const transition = (
+      service as unknown as {
+        assertTableReservationTransition: (from: string, to: string) => void;
+      }
+    ).assertTableReservationTransition.bind(service);
+
+    expect(() => transition('REQUESTED', 'CONFIRMED')).not.toThrow();
+    expect(() => transition('REQUESTED', 'NO_SHOW')).not.toThrow();
+    expect(() => transition('CONFIRMED', 'SEATED')).not.toThrow();
+    expect(() => transition('SEATED', 'COMPLETED')).not.toThrow();
+    expect(() => transition('REQUESTED', 'SEATED')).toThrow(
+      BadRequestException,
+    );
+    expect(() => transition('SEATED', 'CANCELLED')).toThrow(
+      BadRequestException,
+    );
+    for (const terminal of ['COMPLETED', 'CANCELLED', 'NO_SHOW']) {
+      expect(() => transition(terminal, 'CONFIRMED')).toThrow(
+        BadRequestException,
+      );
+    }
+  });
 });

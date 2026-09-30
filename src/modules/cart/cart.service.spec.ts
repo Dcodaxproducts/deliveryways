@@ -69,12 +69,9 @@ describe('CartService', () => {
 
     const globalSettingsService = {
       getCartExpiryMinutes: jest.fn().mockResolvedValue(720),
-      getPaymentMethods: jest.fn().mockResolvedValue({
-        data: Object.values(PaymentMethodEnum).map((code) => ({
-          code,
-          isActive: true,
-        })),
-      }),
+      getEffectiveCheckoutPaymentMethods: jest
+        .fn()
+        .mockResolvedValue(Object.values(PaymentMethodEnum)),
     };
 
     const service = new CartService(
@@ -120,13 +117,44 @@ describe('CartService', () => {
         },
       },
     });
-    globalSettingsService.getPaymentMethods.mockResolvedValue({
-      data: [
-        { code: PaymentMethodEnum.COD, isActive: true },
-        { code: PaymentMethodEnum.PAYPAL, isActive: true },
-        { code: PaymentMethodEnum.STRIPE, isActive: true },
-      ],
+    globalSettingsService.getEffectiveCheckoutPaymentMethods.mockResolvedValue([
+      PaymentMethodEnum.COD,
+      PaymentMethodEnum.PAYPAL,
+      PaymentMethodEnum.STRIPE,
+    ]);
+
+    await expect(
+      (
+        service as unknown as {
+          resolveCartAvailablePaymentMethods: (
+            branchId: string,
+          ) => Promise<PaymentMethodEnum[]>;
+        }
+      ).resolveCartAvailablePaymentMethods('branch-1'),
+    ).resolves.toEqual([PaymentMethodEnum.COD]);
+  });
+
+  it('does not advertise globally unconfigured Stripe or PayPal methods', async () => {
+    const { service, cartRepository, globalSettingsService } = makeService();
+    cartRepository.findPaymentSettingsForBranch.mockResolvedValue({
+      settings: null,
+      restaurant: {
+        settings: {
+          payments: {
+            methods: {
+              allowedPaymentMethods: [
+                PaymentMethodEnum.COD,
+                PaymentMethodEnum.STRIPE,
+                PaymentMethodEnum.PAYPAL,
+              ],
+            },
+          },
+        },
+      },
     });
+    globalSettingsService.getEffectiveCheckoutPaymentMethods.mockResolvedValue([
+      PaymentMethodEnum.COD,
+    ]);
 
     await expect(
       (

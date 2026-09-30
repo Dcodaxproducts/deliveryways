@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import {
   GroupOrderParticipantStatus,
   GroupOrderStatus,
@@ -106,6 +107,7 @@ export class GroupOrdersService {
         : undefined,
       orderTime: dto.orderTime ? new Date(dto.orderTime) : undefined,
       hostNote: this.resolveOptionalString(dto.hostNote),
+      participantLimit: dto.participantLimit ?? 20,
       inviteCode,
       expiresAt,
       participants: {
@@ -146,30 +148,25 @@ export class GroupOrdersService {
       throw new BadRequestException('Host is already part of this group order');
     }
 
-    const existingParticipant =
-      await this.groupOrdersRepository.findParticipant(session.id, user.uid);
-    if (!existingParticipant) {
-      await this.groupOrdersRepository.createParticipant({
-        session: { connect: { id: session.id } },
-        user: { connect: { id: user.uid } },
-        status: GroupOrderParticipantStatus.ACTIVE,
-      });
-    } else if (
-      existingParticipant.status === GroupOrderParticipantStatus.ACTIVE
-    ) {
-      throw new BadRequestException('You are already part of this group order');
-    } else if (
-      existingParticipant.status === GroupOrderParticipantStatus.REMOVED
-    ) {
-      throw new BadRequestException('You cannot rejoin this group order');
-    } else {
-      await this.groupOrdersRepository.updateParticipant(
-        existingParticipant.id,
-        {
-          status: GroupOrderParticipantStatus.ACTIVE,
-          leftAt: null,
-        },
+    const joinResult =
+      await this.groupOrdersRepository.joinParticipantWithLimit(
+        session.id,
+        user.uid,
       );
+    if (joinResult === 'ALREADY_ACTIVE') {
+      throw new BadRequestException('You are already part of this group order');
+    }
+    if (joinResult === 'REMOVED') {
+      throw new BadRequestException('You cannot rejoin this group order');
+    }
+    if (joinResult === 'FULL') {
+      throw new BadRequestException('Group order participant limit reached');
+    }
+    if (joinResult === 'CLOSED') {
+      throw new BadRequestException('Group order is not open for participants');
+    }
+    if (joinResult === 'NOT_FOUND') {
+      throw new NotFoundException('Group order not found');
     }
 
     return {
@@ -528,6 +525,30 @@ export class GroupOrdersService {
     };
   }
 
+  async removeParticipant(
+    user: AuthUserContext,
+    id: string,
+    participantId: string,
+  ) {
+    const session = await this.getSessionForHostOrThrow(user, id);
+    this.assertSessionMutable(session.status, session.expiresAt);
+    const participant = session.participants.find(
+      (item) => item.id === participantId,
+    );
+    if (!participant) throw new NotFoundException('Participant not found');
+    if (participant.isHost || participant.userId === session.hostUserId) {
+      throw new BadRequestException('The group order host cannot be removed');
+    }
+    await this.groupOrdersRepository.removeParticipantAndDeleteItems(
+      participant.id,
+      new Date(),
+    );
+    return {
+      data: await this.buildSessionResponseOrThrow(user, id),
+      message: 'Group order participant removed successfully',
+    };
+  }
+
   async updateMyParticipantStatus(
     user: AuthUserContext,
     id: string,
@@ -655,7 +676,25 @@ export class GroupOrdersService {
       ...dto,
       couponCode,
     });
-    const order = await this.ordersService.create(user, payload);
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          sessionId: session.id,
+          idempotencyKey: dto.idempotencyKey ?? null,
+          paymentMethod: dto.paymentMethod,
+          orderTime: dto.orderTime ?? session.orderTime?.toISOString() ?? null,
+          customerNote: dto.customerNote ?? null,
+          couponCode: dto.couponCode ?? session.couponCode ?? null,
+          guestContact: dto.guestContact ?? null,
+        }),
+      )
+      .digest('hex');
+    const order = await this.ordersService.create(user, payload, undefined, {
+      sourceKey: 'GROUP_ORDER:' + session.id,
+      requestHash,
+      tenantId: session.tenantId,
+      restaurantId: session.restaurantId,
+    });
 
     await this.groupOrdersRepository.updateSession(id, {
       status: GroupOrderStatus.CHECKED_OUT,
@@ -937,6 +976,7 @@ export class GroupOrdersService {
     status: GroupOrderStatus,
     expiresAt: Date,
   ) {
+    if (status === GroupOrderStatus.CHECKED_OUT) return;
     this.assertSessionAvailable(status, expiresAt);
     if (
       status !== GroupOrderStatus.OPEN &&
@@ -1417,6 +1457,7 @@ export class GroupOrdersService {
           })),
       })),
       participantCount: participantIds.size,
+      participantLimit: session.participantLimit,
       itemCount: activeItems.length,
     };
   }
@@ -1677,6 +1718,7 @@ export class GroupOrdersService {
         this.resolveOptionalString(dto.customerNote) ??
         session.hostNote ??
         undefined,
+      guestContact: dto.guestContact,
     };
   }
 

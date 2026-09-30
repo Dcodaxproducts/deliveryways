@@ -27,6 +27,8 @@ import {
   TenantAccessGuard,
 } from '../../common/guards';
 import {
+  AssignAdminTableReservationDto,
+  CreateAdminWalkInReservationDto,
   CreateTableReservationDto,
   CustomerAppCustomerScopeDto,
   DomainContextQueryDto,
@@ -561,6 +563,64 @@ export class CustomerAppController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
   )
+  @Get('admin/table-reservations/:reservationId')
+  @PosPrinterAccess()
+  getAdminTableReservation(
+    @CurrentUser() user: AuthUserContext,
+    @Param('reservationId') reservationId: string,
+    @Query() query: ListAdminTableReservationsQueryDto,
+  ) {
+    return this.customerAppService.getAdminTableReservation(
+      user,
+      reservationId,
+      query,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Post('admin/table-reservations/walk-ins')
+  @PosPrinterAccess()
+  createAdminWalkInReservation(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: CreateAdminWalkInReservationDto,
+  ) {
+    return this.customerAppService.createAdminWalkInReservation(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
+  @Patch('admin/table-reservations/:reservationId/assignment')
+  @PosPrinterAccess()
+  assignAdminTableReservation(
+    @CurrentUser() user: AuthUserContext,
+    @Param('reservationId') reservationId: string,
+    @Body() dto: AssignAdminTableReservationDto,
+  ) {
+    return this.customerAppService.assignAdminTableReservation(
+      user,
+      reservationId,
+      dto,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+  )
   @Patch('admin/table-reservations/:reservationId/status')
   @PosPrinterAccess()
   @ApiOperation({
@@ -596,6 +656,27 @@ export class CustomerAppController {
     return this.customerAppService.listTableReservations(
       user,
       query,
+      scope.customerId,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.CUSTOMER,
+  )
+  @Get('table-reservations/:reservationId')
+  getTableReservation(
+    @CurrentUser() user: AuthUserContext,
+    @Param('reservationId') reservationId: string,
+    @Query() scope: CustomerAppCustomerScopeDto,
+  ) {
+    return this.customerAppService.getTableReservation(
+      user,
+      reservationId,
       scope.customerId,
     );
   }
