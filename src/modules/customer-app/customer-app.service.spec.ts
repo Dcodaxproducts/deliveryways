@@ -3856,6 +3856,86 @@ describe('CustomerAppService', () => {
     });
   });
 
+  it('filters customer table reservations by status before pagination', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: {
+        metadata: {
+          customerApp: {
+            tableReservations: [
+              {
+                id: 'reservation-requested',
+                branchId: 'branch-1',
+                reservationDate: '2099-03-30T19:30:00.000Z',
+                guestCount: 2,
+                note: null,
+                status: 'REQUESTED',
+                createdAt: '2099-03-29T10:00:00.000Z',
+                cancelledAt: null,
+              },
+              {
+                id: 'reservation-confirmed',
+                branchId: 'branch-2',
+                reservationDate: '2099-03-31T19:30:00.000Z',
+                guestCount: 4,
+                note: null,
+                status: 'CONFIRMED',
+                createdAt: '2099-03-29T11:00:00.000Z',
+                cancelledAt: null,
+              },
+            ],
+          },
+        },
+      },
+    });
+    repository.findBranchesPublicContent.mockResolvedValue([]);
+
+    const result = await service.listTableReservations(
+      {
+        uid: 'customer-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      {
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+        status: 'CONFIRMED',
+      },
+    );
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.id).toBe('reservation-confirmed');
+    expect(result.meta.total).toBe(1);
+    expect(repository.findBranchesPublicContent).toHaveBeenCalledWith(
+      ['branch-2'],
+      'restaurant-1',
+    );
+  });
+
+  it('denies customer reservation list access across customer scope', async () => {
+    const { service, repository } = makeService();
+
+    await expect(
+      service.listTableReservations(
+        {
+          uid: 'customer-1',
+          rid: 'restaurant-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'DESC' },
+        'customer-2',
+      ),
+    ).rejects.toThrow('Customers can only manage their own customer app data');
+    expect(repository.findCustomerProfile).not.toHaveBeenCalled();
+  });
+
   it('creates a table reservation request in customer metadata', async () => {
     const { service, repository, notificationsService } = makeService({
       notifications: true,

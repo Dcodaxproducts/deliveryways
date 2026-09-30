@@ -20,3 +20,27 @@ describe('CustomerAppController menu item throttling', () => {
     );
   });
 });
+
+describe('CustomerAppController reservation query contract', () => {
+  it('passes the validated customer scope from the pagination query', async () => {
+    const listTableReservations = jest.fn();
+    const controller = new CustomerAppController({
+      listTableReservations,
+    } as never);
+    const user = { uid: 'admin-1' } as never;
+    const query = {
+      page: 2,
+      limit: 20,
+      customerId: 'customer-1',
+      status: 'CONFIRMED',
+    } as never;
+
+    await controller.listTableReservations(user, query);
+
+    expect(listTableReservations).toHaveBeenCalledWith(
+      user,
+      query,
+      'customer-1',
+    );
+  });
+});

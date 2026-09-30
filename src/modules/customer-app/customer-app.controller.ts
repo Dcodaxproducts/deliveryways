@@ -651,12 +651,11 @@ export class CustomerAppController {
   listTableReservations(
     @CurrentUser() user: AuthUserContext,
     @Query() query: ListTableReservationsQueryDto,
-    @Query() scope: CustomerAppCustomerScopeDto,
   ) {
     return this.customerAppService.listTableReservations(
       user,
       query,
-      scope.customerId,
+      query.customerId,
     );
   }
 

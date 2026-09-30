@@ -442,6 +442,19 @@ export class ListTableReservationsQueryDto extends QueryDto {
   @Min(1)
   @Max(50)
   limit = 20;
+
+  @ApiPropertyOptional({
+    description:
+      'Target customer id when admin/staff lists reservations on behalf of a customer',
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @ApiPropertyOptional({ enum: TABLE_RESERVATION_STATUS_VALUES })
+  @IsOptional()
+  @IsIn(TABLE_RESERVATION_STATUS_VALUES)
+  status?: TableReservationStatus;
 }
 
 export class ListAdminTableReservationsQueryDto extends ListTableReservationsQueryDto {
@@ -457,16 +470,6 @@ export class ListAdminTableReservationsQueryDto extends ListTableReservationsQue
   @IsOptional()
   @IsString()
   branchId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  customerId?: string;
-
-  @ApiPropertyOptional({ enum: TABLE_RESERVATION_STATUS_VALUES })
-  @IsOptional()
-  @IsIn(TABLE_RESERVATION_STATUS_VALUES)
-  status?: (typeof TABLE_RESERVATION_STATUS_VALUES)[number];
 }
 
 export class CreateAdminWalkInReservationDto {

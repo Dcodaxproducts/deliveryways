@@ -1900,7 +1900,11 @@ export class CustomerAppService {
     requestedCustomerId?: string,
   ) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
-    const reservations = this.readTableReservations(customer.profile?.metadata);
+    const reservations = this.readTableReservations(
+      customer.profile?.metadata,
+    ).filter((reservation) =>
+      query.status ? reservation.status === query.status : true,
+    );
     const branchIds = [...new Set(reservations.map((item) => item.branchId))];
     const branches = customer.restaurantId
       ? await this.customerAppRepository.findBranchesPublicContent(
