@@ -1225,10 +1225,14 @@ export class AuthService {
   }
 
   async loginPosPrinter(dto: PosPrinterLoginDto) {
-    const identifier = dto.identifier.trim().toLowerCase();
+    const identifier = dto.usernameOrEmail ?? dto.email ?? dto.identifier;
+    if (!identifier) {
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
+      throw new UnauthorizedException('Invalid credentials');
+    }
     const staff =
       await this.staffManagementRepository.findPosPrinterByIdentifier(
-        identifier,
+        identifier.trim().toLowerCase(),
       );
 
     if (!staff || staff.deletedAt) {
@@ -1239,15 +1243,8 @@ export class AuthService {
     const isValidPassword = await bcrypt.compare(dto.password, staff.password);
     if (
       !isValidPassword ||
-      staff.accountType !== StaffAccountType.POS_PRINTER
-    ) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!staff.isActive) {
-      throw new ForbiddenException('Your POS printer account is inactive');
-    }
-    if (
+      staff.accountType !== StaffAccountType.POS_PRINTER ||
+      !staff.isActive ||
       !staff.staffRole ||
       staff.staffRole.deletedAt ||
       !staff.staffRole.isActive ||
@@ -1255,7 +1252,7 @@ export class AuthService {
       !staff.restaurantId ||
       !staff.branchId
     ) {
-      throw new ForbiddenException('POS printer account scope is inactive');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const auth = await this.issueAuthTokens({
@@ -2054,6 +2051,12 @@ export class AuthService {
         refreshTokenHash: null,
         authVersion: { increment: 1 },
       });
+      if (staff.accountType === StaffAccountType.POS_PRINTER) {
+        await this.prisma.pushDeviceToken.updateMany({
+          where: { staffUserId: staff.id, isActive: true },
+          data: { isActive: false },
+        });
+      }
 
       return {
         data: null,

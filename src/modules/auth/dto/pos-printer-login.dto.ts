@@ -1,19 +1,44 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+
+const normalizeIdentifier = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : value;
 
 export class PosPrinterLoginDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'POS printer username or legacy account email',
     example: 'kitchen-printer-1',
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
+  @Transform(normalizeIdentifier)
+  @IsOptional()
   @IsString()
   @MinLength(3)
   @MaxLength(254)
-  identifier!: string;
+  identifier?: string;
+
+  @ApiPropertyOptional({
+    description: 'Native printer username or legacy account email',
+    example: 'kitchen-printer-1',
+  })
+  @Transform(normalizeIdentifier)
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(254)
+  usernameOrEmail?: string;
+
+  @ApiPropertyOptional({ description: 'Legacy printer account email' })
+  @Transform(normalizeIdentifier)
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
   @ApiProperty()
   @IsString()

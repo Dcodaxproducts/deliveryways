@@ -24,9 +24,11 @@ describe('NotificationsRepository', () => {
         claimedNotification,
         { id: 'notification-2', order: { id: 'order-2' } },
       ]);
-    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const updateManyAndReturn = jest
+      .fn()
+      .mockResolvedValue([{ id: 'notification-1' }]);
     const transactionClient = {
-      notification: { findMany, updateMany },
+      notification: { findMany, updateManyAndReturn },
     };
     const prisma = {
       $transaction: jest.fn(
@@ -38,6 +40,7 @@ describe('NotificationsRepository', () => {
 
     const result = await repository.claimPendingOrderNotifications({
       userId: 'business-admin-1',
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
     });
 
@@ -46,7 +49,9 @@ describe('NotificationsRepository', () => {
         audience: NotificationAudience.ADMIN,
         channel: NotificationChannel.IN_APP,
         type: NotificationType.ORDER_PLACED,
+        tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
+        claimedByStaffUserId: null,
         OR: [
           { recipientUserId: null },
           { recipientUserId: 'business-admin-1' },
@@ -58,16 +63,22 @@ describe('NotificationsRepository', () => {
           },
         },
       },
-      select: { id: true, recipientUserId: true },
+      select: {
+        id: true,
+        recipientUserId: true,
+        claimedByStaffUserId: true,
+      },
       orderBy: { createdAt: 'asc' },
       take: 20,
     });
-    expect(updateMany).toHaveBeenCalledWith({
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
       where: {
         id: { in: ['notification-1', 'notification-2'] },
         recipientUserId: null,
+        claimedByStaffUserId: null,
       },
       data: { recipientUserId: 'business-admin-1' },
+      select: { id: true },
     });
     expect(findMany).toHaveBeenNthCalledWith(
       2,
@@ -84,7 +95,58 @@ describe('NotificationsRepository', () => {
     ]);
   });
 
-  it('selects restaurant Business Admins and branch-scoped Branch Admins for admin push', async () => {
+  it('claims an order for only one POS staff device and recovers its own claim', async () => {
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: 'notification-1',
+          recipientUserId: null,
+          claimedByStaffUserId: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'notification-1' }]);
+    const updateManyAndReturn = jest
+      .fn()
+      .mockResolvedValue([{ id: 'notification-1' }]);
+    const transactionClient = {
+      notification: { findMany, updateManyAndReturn },
+    };
+    const repository = new NotificationsRepository({
+      $transaction: jest.fn(
+        (callback: (tx: typeof transactionClient) => Promise<unknown>) =>
+          callback(transactionClient),
+      ),
+    } as never);
+
+    await repository.claimPendingOrderNotifications({
+      staffUserId: 'printer-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['notification-1'] },
+        recipientUserId: null,
+        claimedByStaffUserId: null,
+      },
+      data: { claimedByStaffUserId: 'printer-1' },
+      select: { id: true },
+    });
+    expect(findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          id: { in: ['notification-1'] },
+          claimedByStaffUserId: 'printer-1',
+        },
+      }),
+    );
+  });
+
+  it('selects tenant Business Admins and branch-scoped Branch Admins for admin push', async () => {
     const findUsers = jest
       .fn()
       .mockResolvedValue([
@@ -104,6 +166,7 @@ describe('NotificationsRepository', () => {
 
     const result = await repository.listPushTokensForNotification({
       audience: NotificationAudience.ADMIN,
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
     });
@@ -127,9 +190,22 @@ describe('NotificationsRepository', () => {
     });
     expect(findTokens).toHaveBeenCalledWith({
       where: {
-        userId: { in: ['business-admin-1', 'branch-admin-1'] },
         isActive: true,
         platform: PushPlatform.ANDROID,
+        OR: [
+          { userId: { in: ['business-admin-1', 'branch-admin-1'] } },
+          {
+            staffUser: {
+              accountType: 'POS_PRINTER',
+              tenantId: 'tenant-1',
+              restaurantId: 'restaurant-1',
+              branchId: 'branch-1',
+              isActive: true,
+              deletedAt: null,
+              staffRole: { isActive: true, deletedAt: null },
+            },
+          },
+        ],
       },
       select: { token: true },
     });

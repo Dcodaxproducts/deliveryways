@@ -125,6 +125,13 @@ export class PosPrinterRepository {
     });
   }
 
+  deactivatePushTokens(id: string) {
+    return this.prisma.pushDeviceToken.updateMany({
+      where: { staffUserId: id, isActive: true },
+      data: { isActive: false },
+    });
+  }
+
   update(id: string, data: Prisma.StaffUserUpdateInput) {
     return this.prisma.staffUser.update({
       where: { id },

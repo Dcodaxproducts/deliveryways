@@ -1420,13 +1420,15 @@ model StaffUser {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
-  ownerUser           User          @relation("StaffUserOwner", fields: [ownerUserId], references: [id])
-  staffRole           StaffRole     @relation(fields: [staffRoleId], references: [id])
-  tenant              Tenant?       @relation(fields: [tenantId], references: [id])
-  restaurant          Restaurant?   @relation(fields: [restaurantId], references: [id])
-  branch              Branch?       @relation(fields: [branchId], references: [id])
-  assignedChatThreads ChatThread[]  @relation("ChatThreadAssignedStaff")
-  sentChatMessages    ChatMessage[] @relation("ChatMessageStaffSender")
+  ownerUser            User              @relation("StaffUserOwner", fields: [ownerUserId], references: [id])
+  staffRole            StaffRole         @relation(fields: [staffRoleId], references: [id])
+  tenant               Tenant?           @relation(fields: [tenantId], references: [id])
+  restaurant           Restaurant?       @relation(fields: [restaurantId], references: [id])
+  branch               Branch?           @relation(fields: [branchId], references: [id])
+  assignedChatThreads  ChatThread[]      @relation("ChatThreadAssignedStaff")
+  sentChatMessages     ChatMessage[]     @relation("ChatMessageStaffSender")
+  pushDeviceTokens     PushDeviceToken[] @relation("StaffPushDeviceTokens")
+  claimedNotifications Notification[]    @relation("NotificationClaimedByStaff")
 
   @@unique([email])
   @@index([ownerUserId, panelType, isActive])
@@ -2306,6 +2308,7 @@ model Notification {
   paymentTransactionId String?              @map("payment_transaction_id")
   recipientUserId      String?              @map("recipient_user_id")
   deliverymanId        String?              @map("deliveryman_id")
+  claimedByStaffUserId String?              @map("claimed_by_staff_user_id")
   recipientEmail       String?              @map("recipient_email")
   channel              NotificationChannel  @default(EMAIL)
   audience             NotificationAudience @default(CUSTOMER)
@@ -2328,6 +2331,7 @@ model Notification {
   paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
   recipientUser      User?               @relation("NotificationRecipient", fields: [recipientUserId], references: [id])
   deliveryman        Deliveryman?        @relation("NotificationDeliverymanRecipient", fields: [deliverymanId], references: [id])
+  claimedByStaffUser StaffUser?          @relation("NotificationClaimedByStaff", fields: [claimedByStaffUserId], references: [id])
 
   @@index([tenantId, status, createdAt])
   @@index([restaurantId, branchId, createdAt])
@@ -2338,6 +2342,7 @@ model Notification {
   @@index([audience, restaurantId, branchId, createdAt])
   @@index([audience, seenAt, createdAt])
   @@index([orderId, createdAt])
+  @@index([claimedByStaffUserId, seenAt, createdAt])
   @@index([paymentTransactionId, createdAt])
   @@map("notifications")
 }
@@ -2349,6 +2354,7 @@ model PushDeviceToken {
   branchId       String?      @map("branch_id")
   userId         String?      @map("user_id")
   deliverymanId  String?      @map("deliveryman_id")
+  staffUserId    String?      @map("staff_user_id")
   platform       PushPlatform
   token          String       @unique
   deviceId       String?      @map("device_id")
@@ -2363,9 +2369,11 @@ model PushDeviceToken {
   branch      Branch?      @relation(fields: [branchId], references: [id])
   user        User?        @relation("UserPushDeviceTokens", fields: [userId], references: [id])
   deliveryman Deliveryman? @relation("DeliverymanPushDeviceTokens", fields: [deliverymanId], references: [id])
+  staffUser   StaffUser?   @relation("StaffPushDeviceTokens", fields: [staffUserId], references: [id])
 
   @@index([userId, isActive, platform])
   @@index([deliverymanId, isActive, platform])
+  @@index([staffUserId, isActive, platform])
   @@index([restaurantId, branchId, isActive, platform])
   @@map("push_device_tokens")
 }

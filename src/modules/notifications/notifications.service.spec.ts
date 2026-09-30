@@ -140,6 +140,7 @@ describe('NotificationsService', () => {
       notificationsRepository.claimPendingOrderNotifications,
     ).toHaveBeenCalledWith({
       userId: 'business-admin-1',
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: undefined,
     });

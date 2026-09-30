@@ -268,7 +268,6 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  @PosPrinterAccess()
   @Get('me')
   me(@CurrentUser() user: AuthUserContext) {
     return this.authService.me(user);

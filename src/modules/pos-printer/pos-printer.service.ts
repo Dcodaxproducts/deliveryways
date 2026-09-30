@@ -94,6 +94,7 @@ export class PosPrinterService {
       refreshTokenHash: null,
       authVersion: { increment: 1 },
     });
+    await this.repository.deactivatePushTokens(id);
     return {
       data: this.toResponse(data),
       message: 'POS printer account status updated successfully',
@@ -112,6 +113,7 @@ export class PosPrinterService {
       refreshTokenHash: null,
       authVersion: { increment: 1 },
     });
+    await this.repository.deactivatePushTokens(id);
     return { data: null, message: 'POS printer password reset successfully' };
   }
 

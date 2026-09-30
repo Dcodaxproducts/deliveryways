@@ -684,7 +684,7 @@ describe('AuthService login', () => {
     });
 
     const result = await service.loginPosPrinter({
-      identifier: ' KITCHEN-PRINTER-1 ',
+      usernameOrEmail: ' KITCHEN-PRINTER-1 ',
       password: 'Password@123',
     });
 

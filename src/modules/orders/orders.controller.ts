@@ -70,6 +70,7 @@ export class OrdersController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.DELIVERYMAN,
+    RolesEnum.STAFF,
   )
   @Get()
   @PosPrinterAccess()
@@ -85,6 +86,7 @@ export class OrdersController {
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.CUSTOMER,
     RolesEnum.DELIVERYMAN,
+    RolesEnum.STAFF,
   )
   @Get(':id')
   @PosPrinterAccess()
@@ -127,6 +129,7 @@ export class OrdersController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.DELIVERYMAN,
+    RolesEnum.STAFF,
   )
   @Patch(':id/status')
   @PosPrinterAccess()

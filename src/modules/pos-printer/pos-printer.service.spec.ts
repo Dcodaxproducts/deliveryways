@@ -18,6 +18,7 @@ describe('PosPrinterService security boundaries', () => {
     findById: jest.fn(),
     list: jest.fn(),
     update: jest.fn(),
+    deactivatePushTokens: jest.fn(),
   };
   const service = new PosPrinterService(
     repository as unknown as PosPrinterRepository,
@@ -74,6 +75,7 @@ describe('PosPrinterService security boundaries', () => {
     repository.create.mockResolvedValue(account);
     repository.findById.mockResolvedValue(account);
     repository.update.mockResolvedValue(account);
+    repository.deactivatePushTokens.mockResolvedValue({ count: 1 });
     repository.list.mockResolvedValue([account]);
     jest.spyOn(bcrypt, 'hash').mockResolvedValue('hash' as never);
   });

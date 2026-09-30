@@ -35,23 +35,26 @@ describe('AdminPrintingController POS printer access', () => {
       switchToHttp: () => ({ getRequest: () => ({ user: printerUser }) }),
     }) as unknown as ExecutionContext;
 
+  it.each([['GET settings', AdminPrintingController.prototype.getSettings]])(
+    'allows the native printing configuration step %s',
+    async (_label, handler) => {
+      const prisma = {
+        staffUser: { findUnique: jest.fn().mockResolvedValue(activeAccount) },
+      };
+      const guard = new PosPrinterAccessGuard(new Reflector(), prisma as never);
+
+      await expect(guard.canActivate(contextFor(handler))).resolves.toBe(true);
+      expect(Reflect.getMetadata(POS_PRINTER_ACCESS_KEY, handler)).toBe(true);
+      expect(Reflect.getMetadata(ROLES_KEY, handler)).toContain(
+        RolesEnum.STAFF,
+      );
+    },
+  );
+
   it.each([
     ['GET certificate', AdminPrintingController.prototype.getQzCertificate],
     ['POST signature', AdminPrintingController.prototype.signQzChallenge],
-    ['GET settings', AdminPrintingController.prototype.getSettings],
     ['POST events', AdminPrintingController.prototype.reportEvent],
-  ])('allows the local printing sequence step %s', async (_label, handler) => {
-    const prisma = {
-      staffUser: { findUnique: jest.fn().mockResolvedValue(activeAccount) },
-    };
-    const guard = new PosPrinterAccessGuard(new Reflector(), prisma as never);
-
-    await expect(guard.canActivate(contextFor(handler))).resolves.toBe(true);
-    expect(Reflect.getMetadata(POS_PRINTER_ACCESS_KEY, handler)).toBe(true);
-    expect(Reflect.getMetadata(ROLES_KEY, handler)).toContain(RolesEnum.STAFF);
-  });
-
-  it.each([
     ['PATCH settings', AdminPrintingController.prototype.updateSettings],
     ['GET status', AdminPrintingController.prototype.getStatus],
     ['GET logs', AdminPrintingController.prototype.getLogs],
@@ -63,9 +66,6 @@ describe('AdminPrintingController POS printer access', () => {
       ForbiddenException,
     );
     expect(Reflect.getMetadata(POS_PRINTER_ACCESS_KEY, handler)).not.toBe(true);
-    expect(Reflect.getMetadata(ROLES_KEY, handler)).not.toContain(
-      RolesEnum.STAFF,
-    );
     expect(prisma.staffUser.findUnique).not.toHaveBeenCalled();
   });
 });

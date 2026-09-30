@@ -543,6 +543,7 @@ export class CustomerAppController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @Get('admin/table-reservations')
   @PosPrinterAccess()
@@ -564,7 +565,6 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
   )
   @Get('admin/table-reservations/:reservationId')
-  @PosPrinterAccess()
   getAdminTableReservation(
     @CurrentUser() user: AuthUserContext,
     @Param('reservationId') reservationId: string,
@@ -585,7 +585,6 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
   )
   @Post('admin/table-reservations/walk-ins')
-  @PosPrinterAccess()
   createAdminWalkInReservation(
     @CurrentUser() user: AuthUserContext,
     @Body() dto: CreateAdminWalkInReservationDto,
@@ -601,7 +600,6 @@ export class CustomerAppController {
     RolesEnum.BRANCH_ADMIN,
   )
   @Patch('admin/table-reservations/:reservationId/assignment')
-  @PosPrinterAccess()
   assignAdminTableReservation(
     @CurrentUser() user: AuthUserContext,
     @Param('reservationId') reservationId: string,
@@ -620,6 +618,7 @@ export class CustomerAppController {
     RolesEnum.SUPER_ADMIN,
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
   )
   @Patch('admin/table-reservations/:reservationId/status')
   @PosPrinterAccess()

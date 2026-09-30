@@ -277,41 +277,101 @@ export class NotificationsRepository {
   }
 
   async claimPendingOrderNotifications(input: {
-    userId: string;
-    restaurantId: string;
+    userId?: string;
+    staffUserId?: string;
+    tenantId: string;
+    restaurantId?: string;
     branchId?: string;
   }) {
+    const ownerFilter: Prisma.NotificationWhereInput = input.staffUserId
+      ? {
+          recipientUserId: null,
+          OR: [
+            { claimedByStaffUserId: null },
+            { claimedByStaffUserId: input.staffUserId },
+          ],
+        }
+      : {
+          claimedByStaffUserId: null,
+          OR: [{ recipientUserId: null }, { recipientUserId: input.userId }],
+        };
+
     return this.prisma.$transaction(async (tx) => {
       const candidates = await tx.notification.findMany({
         where: {
           audience: NotificationAudience.ADMIN,
           channel: NotificationChannel.IN_APP,
           type: NotificationType.ORDER_PLACED,
+          tenantId: input.tenantId,
           restaurantId: input.restaurantId,
           ...(input.branchId ? { branchId: input.branchId } : {}),
-          OR: [{ recipientUserId: null }, { recipientUserId: input.userId }],
+          ...ownerFilter,
           seenAt: null,
           order: {
-            status: {
-              in: [OrderStatus.PAYMENT_PENDING, OrderStatus.PLACED],
-            },
+            status: { in: [OrderStatus.PAYMENT_PENDING, OrderStatus.PLACED] },
           },
         },
-        select: { id: true, recipientUserId: true },
+        select: {
+          id: true,
+          recipientUserId: true,
+          claimedByStaffUserId: true,
+        },
         orderBy: { createdAt: 'asc' },
         take: 20,
       });
       const ids = candidates.map(({ id }) => id);
-
       if (!ids.length) return [];
 
-      await tx.notification.updateMany({
-        where: { id: { in: ids }, recipientUserId: null },
-        data: { recipientUserId: input.userId },
-      });
+      let recoverableIds: string[];
+      if (input.staffUserId) {
+        const claimed = await tx.notification.updateManyAndReturn({
+          where: {
+            id: { in: ids },
+            recipientUserId: null,
+            claimedByStaffUserId: null,
+          },
+          data: { claimedByStaffUserId: input.staffUserId },
+          select: { id: true },
+        });
+        recoverableIds = [
+          ...new Set([
+            ...claimed.map(({ id }) => id),
+            ...candidates
+              .filter(
+                ({ claimedByStaffUserId }) =>
+                  claimedByStaffUserId === input.staffUserId,
+              )
+              .map(({ id }) => id),
+          ]),
+        ];
+      } else {
+        const claimed = await tx.notification.updateManyAndReturn({
+          where: {
+            id: { in: ids },
+            recipientUserId: null,
+            claimedByStaffUserId: null,
+          },
+          data: { recipientUserId: input.userId },
+          select: { id: true },
+        });
+        recoverableIds = [
+          ...new Set([
+            ...claimed.map(({ id }) => id),
+            ...candidates
+              .filter(({ recipientUserId }) => recipientUserId === input.userId)
+              .map(({ id }) => id),
+          ]),
+        ];
+      }
 
+      if (!recoverableIds.length) return [];
       return tx.notification.findMany({
-        where: { id: { in: ids }, recipientUserId: input.userId },
+        where: {
+          id: { in: recoverableIds },
+          ...(input.staffUserId
+            ? { claimedByStaffUserId: input.staffUserId }
+            : { recipientUserId: input.userId }),
+        },
         include: {
           order: {
             select: {
@@ -396,6 +456,7 @@ export class NotificationsRepository {
     branchId?: string;
     userId?: string;
     deliverymanId?: string;
+    staffUserId?: string;
     deviceId?: string;
     appPackageName?: string;
   }) {
@@ -409,6 +470,7 @@ export class NotificationsRepository {
         branchId: input.branchId,
         userId: input.userId,
         deliverymanId: input.deliverymanId,
+        staffUserId: input.staffUserId,
         deviceId: input.deviceId,
         appPackageName: input.appPackageName,
         isActive: true,
@@ -421,6 +483,7 @@ export class NotificationsRepository {
         branchId: input.branchId,
         userId: input.userId,
         deliverymanId: input.deliverymanId,
+        staffUserId: input.staffUserId,
         deviceId: input.deviceId,
         appPackageName: input.appPackageName,
         isActive: true,
@@ -442,13 +505,16 @@ export class NotificationsRepository {
     token: string;
     userId?: string;
     deliverymanId?: string;
+    staffUserId?: string;
   }) {
     return this.prisma.pushDeviceToken.updateMany({
       where: {
         token: input.token,
         ...(input.deliverymanId
           ? { deliverymanId: input.deliverymanId }
-          : { userId: input.userId }),
+          : input.staffUserId
+            ? { staffUserId: input.staffUserId }
+            : { userId: input.userId }),
       },
       data: {
         isActive: false,
@@ -458,6 +524,7 @@ export class NotificationsRepository {
 
   async listPushTokensForNotification(input: {
     audience: NotificationAudience;
+    tenantId: string;
     restaurantId: string;
     branchId: string;
     recipientUserId?: string | null;
@@ -514,15 +581,24 @@ export class NotificationsRepository {
     });
     const adminUserIds = adminUsers.map((user) => user.id);
 
-    if (!adminUserIds.length) {
-      return [];
-    }
-
     return this.prisma.pushDeviceToken.findMany({
       where: {
-        userId: { in: adminUserIds },
         isActive: true,
         platform: PushPlatform.ANDROID,
+        OR: [
+          { userId: { in: adminUserIds } },
+          {
+            staffUser: {
+              accountType: 'POS_PRINTER',
+              tenantId: input.tenantId,
+              restaurantId: input.restaurantId,
+              branchId: input.branchId,
+              isActive: true,
+              deletedAt: null,
+              staffRole: { isActive: true, deletedAt: null },
+            },
+          },
+        ],
       },
       select: { token: true },
     });
