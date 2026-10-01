@@ -13,6 +13,39 @@ import {
   IS_PUBLIC_KEY,
 } from '../decorators';
 
+type PersistedUserSession = {
+  authVersion: number;
+  isActive: boolean;
+  role: string;
+  tenantId: string | null;
+  restaurantId: string | null;
+  branchId: string | null;
+};
+
+export const isCurrentUserSession = (
+  dbUser: PersistedUserSession | null,
+  user: AuthUserContext,
+) => {
+  if (
+    !dbUser ||
+    dbUser.authVersion !== user.ver ||
+    !dbUser.isActive ||
+    dbUser.role !== String(user.role) ||
+    dbUser.tenantId !== (user.tid ?? null)
+  ) {
+    return false;
+  }
+
+  if (String(user.role) === 'BUSINESS_ADMIN') {
+    return user.rid == null && user.bid == null;
+  }
+
+  return (
+    dbUser.restaurantId === (user.rid ?? null) &&
+    dbUser.branchId === (user.bid ?? null)
+  );
+};
+
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
   constructor(
@@ -166,15 +199,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       },
     });
 
-    if (
-      !dbUser ||
-      dbUser.authVersion !== user.ver ||
-      !dbUser.isActive ||
-      String(dbUser.role) !== String(user.role) ||
-      dbUser.tenantId !== (user.tid ?? null) ||
-      dbUser.restaurantId !== (user.rid ?? null) ||
-      dbUser.branchId !== (user.bid ?? null)
-    ) {
+    if (!isCurrentUserSession(dbUser, user)) {
       throw new UnauthorizedException('Session is no longer valid');
     }
 
