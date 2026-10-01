@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { UserRoleEnum } from '../../common/enums';
 import { StorageService } from './storage.service';
+import { ImageOptimizerService } from './image-optimizer.service';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn(),
@@ -33,7 +34,7 @@ describe('StorageService', () => {
       get: jest.fn(getConfig),
     } as unknown as ConfigService;
 
-    service = new StorageService(configService);
+    service = new StorageService(configService, new ImageOptimizerService());
     (getSignedUrl as jest.Mock).mockResolvedValue('https://signed-url.example');
     jest
       .spyOn(S3Client.prototype, 'send')

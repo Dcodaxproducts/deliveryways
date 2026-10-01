@@ -110,3 +110,19 @@ export class DeleteStoredFileDto {
   @IsNotEmpty()
   fileUrl?: string;
 }
+
+export class FinalizeImageUploadDto {
+  @ApiPropertyOptional({ description: 'Stored image object key' })
+  @ValidateIf((dto: FinalizeImageUploadDto) => !dto.fileUrl)
+  @IsString()
+  @IsNotEmpty()
+  key?: string;
+
+  @ApiPropertyOptional({
+    description: 'Stored image URL returned by the presigned upload API',
+  })
+  @ValidateIf((dto: FinalizeImageUploadDto) => !dto.key)
+  @IsString()
+  @IsNotEmpty()
+  fileUrl?: string;
+}

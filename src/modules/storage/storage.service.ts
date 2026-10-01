@@ -20,12 +20,14 @@ import {
   CreatePresignedUploadUrlDto,
   CreatePresignedViewUrlDto,
   DeleteStoredFileDto,
+  FinalizeImageUploadDto,
   StorageFolderEnum,
 } from './dto';
 import {
   MAX_UPLOAD_FILE_SIZE_BYTES,
   MAX_UPLOAD_FILE_SIZE_MB,
 } from './storage.constants';
+import { ImageOptimizerService } from './image-optimizer.service';
 
 interface S3Config {
   accessKeyId?: string;
@@ -41,7 +43,10 @@ export class StorageService {
   private s3Client: S3Client | null = null;
   private s3ClientSignature = '';
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly imageOptimizer: ImageOptimizerService,
+  ) {}
 
   async resolveMediaUrlsDeep<T>(value: T): Promise<T> {
     const cache = new Map<string, Promise<string | null>>();
@@ -203,6 +208,56 @@ export class StorageService {
       key,
       fileUrl: this.buildFileUrl(bucket, s3Config.region, key),
       expiresIn,
+    };
+  }
+
+  async finalizeImageUpload(
+    user: AuthUserContext,
+    dto: FinalizeImageUploadDto,
+  ) {
+    const s3Config = this.getS3Config();
+    const bucket = s3Config.bucket;
+    if (!bucket || !s3Config.region) {
+      throw new InternalServerErrorException(
+        'S3 bucket configuration is incomplete',
+      );
+    }
+
+    const key = this.resolveObjectKey(dto.key, dto.fileUrl, s3Config);
+    this.ensureObjectAccess(user, key);
+    if (!key.toLowerCase().endsWith('.webp')) {
+      throw new BadRequestException('Image target must use the WebP format');
+    }
+
+    const client = this.createS3Client(s3Config);
+    const source = await client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+    );
+    if (!source.Body)
+      throw new BadRequestException('Uploaded image could not be read');
+
+    const bytes = await source.Body.transformToByteArray();
+    const optimized = await this.imageOptimizer.optimize(Buffer.from(bytes));
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: optimized.buffer,
+        ContentType: optimized.contentType,
+        CacheControl: 'public, max-age=31536000, immutable',
+      }),
+    );
+
+    return {
+      data: {
+        key,
+        fileUrl: this.buildFileUrl(bucket, s3Config.region, key),
+        contentType: optimized.contentType,
+        width: optimized.width,
+        height: optimized.height,
+        size: optimized.buffer.length,
+      },
+      message: 'Image optimized successfully',
     };
   }
 

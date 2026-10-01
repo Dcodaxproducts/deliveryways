@@ -16,6 +16,7 @@ import {
   CreatePresignedUploadUrlDto,
   CreatePresignedViewUrlDto,
   DeleteStoredFileDto,
+  FinalizeImageUploadDto,
 } from './dto';
 import { StorageService } from './storage.service';
 import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
@@ -50,6 +51,23 @@ export class StorageController {
     @Body() dto: CreatePresignedViewUrlDto,
   ) {
     return this.storageService.createPresignedViewUrl(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(
+    RolesEnum.SUPER_ADMIN,
+    RolesEnum.BUSINESS_ADMIN,
+    RolesEnum.BRANCH_ADMIN,
+    RolesEnum.STAFF,
+    RolesEnum.CUSTOMER,
+  )
+  @Post('finalize-image')
+  finalizeImageUpload(
+    @CurrentUser() user: AuthUserContext,
+    @Body() dto: FinalizeImageUploadDto,
+  ) {
+    return this.storageService.finalizeImageUpload(user, dto);
   }
 
   @ApiBearerAuth()
