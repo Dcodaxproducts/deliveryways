@@ -61,6 +61,18 @@ const GERMAN_STATUS_MESSAGES: Record<number, string> = {
     'Ein interner Serverfehler ist aufgetreten.',
 };
 
+const HTTP_STATUS_ERROR_CODES: Partial<Record<HttpStatus, string>> = {
+  [HttpStatus.BAD_REQUEST]: 'BAD_REQUEST',
+  [HttpStatus.UNAUTHORIZED]: 'UNAUTHORIZED',
+  [HttpStatus.FORBIDDEN]: 'FORBIDDEN',
+  [HttpStatus.NOT_FOUND]: 'NOT_FOUND',
+  [HttpStatus.CONFLICT]: 'CONFLICT',
+  [HttpStatus.UNPROCESSABLE_ENTITY]: 'UNPROCESSABLE_ENTITY',
+  [HttpStatus.TOO_MANY_REQUESTS]: 'TOO_MANY_REQUESTS',
+  [HttpStatus.BAD_GATEWAY]: 'BAD_GATEWAY',
+  [HttpStatus.SERVICE_UNAVAILABLE]: 'SERVICE_UNAVAILABLE',
+};
+
 const FIELD_LABELS: Record<string, string> = {
   restaurantId: 'restaurant',
   restaurant_id: 'restaurant',
@@ -265,6 +277,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
+      code = HTTP_STATUS_ERROR_CODES[status] ?? code;
       const exceptionResponse = exception.getResponse();
 
       if (typeof exceptionResponse === 'string') {
@@ -311,6 +324,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         `Unhandled exception: ${exception.message}`,
         exception.stack,
       );
+    }
+
+    if (status === HttpStatus.TOO_MANY_REQUESTS) {
+      code = 'TOO_MANY_REQUESTS';
+      message = 'Too many requests. Please wait before trying again.';
     }
 
     const locale = this.resolveLocale(request.headers['accept-language']);
