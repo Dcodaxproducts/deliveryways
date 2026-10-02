@@ -134,12 +134,17 @@ export class GuestOrderContactDto {
   @MaxLength(100)
   lastName?: string;
 
-  @ApiProperty({ example: 'guest@example.com' })
+  @ApiPropertyOptional({
+    example: 'guest@example.com',
+    description:
+      'Optional for staff-created pickup and dine-in walk-ins; required by the service for customer-app and delivery guest checkout.',
+  })
+  @IsOptional()
   @Transform(({ value }) => normalizeEmailValue(value as unknown))
   @IsEmail()
   @MaxLength(254)
   @Matches(/^(?!.*@guest\.deliveryways?(?:\.local)?$).+$/i)
-  email!: string;
+  email?: string;
 
   @ApiPropertyOptional({ example: '+49 151 23456789' })
   @IsOptional()

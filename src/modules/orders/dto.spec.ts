@@ -141,6 +141,30 @@ describe('Order DTO validation', () => {
     });
   });
 
+  it('allows staff walk-in contact without an email at DTO validation', async () => {
+    await expect(
+      validationPipe.transform(
+        {
+          branchId: 'branch-1',
+          orderType: OrderTypeEnum.TAKEAWAY,
+          paymentMethod: PaymentMethodEnum.COD,
+          guestContact: {
+            firstName: 'Bilal Shah',
+            phone: '+49 151 23456789',
+            privacyPolicyAccepted: true,
+          },
+          items: [{ menuItemId: 'menu-1', quantity: 1 }],
+        },
+        { type: 'body', metatype: CreateOrderDto },
+      ),
+    ).resolves.toMatchObject({
+      guestContact: {
+        firstName: 'Bilal Shah',
+        phone: '+49 151 23456789',
+      },
+    });
+  });
+
   it('rejects generated guest identities and invalid contact details', async () => {
     await expect(
       validationPipe.transform(

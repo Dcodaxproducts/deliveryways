@@ -5783,6 +5783,39 @@ describe('OrdersService - admin customer resolution', () => {
     ).not.toThrow();
   });
 
+  it('allows named internal pickup walk-ins without email', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      (
+        service as unknown as {
+          assertGuestContactForOrder: (
+            user: { role: UserRoleEnum },
+            customer: { customerId: string; isGuest: boolean },
+            guestContact?: unknown,
+            orderType?: string,
+          ) => void;
+        }
+      ).assertGuestContactForOrder(
+        { role: UserRoleEnum.BRANCH_ADMIN },
+        { customerId: 'guest-1', isGuest: true },
+        {
+          firstName: 'Bilal Shah',
+          phone: '+49123456789',
+          privacyPolicyAccepted: true,
+        },
+        'TAKEAWAY',
+      ),
+    ).not.toThrow();
+  });
+
   it('still requires contact for internal guest delivery orders', () => {
     const service = new OrdersService(
       {} as never,
@@ -5847,6 +5880,39 @@ describe('OrdersService - admin customer resolution', () => {
     ).toThrow('privacyPolicyAccepted is required for guest orders');
   });
 
+  it('requires email for customer-app guest checkout', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      (
+        service as unknown as {
+          assertGuestContactForOrder: (
+            user: { role: UserRoleEnum },
+            customer: { customerId: string; isGuest: boolean },
+            guestContact?: unknown,
+            orderType?: string,
+          ) => void;
+        }
+      ).assertGuestContactForOrder(
+        { role: UserRoleEnum.CUSTOMER },
+        { customerId: 'guest-1', isGuest: true },
+        {
+          firstName: 'Guest',
+          phone: '+49123456789',
+          privacyPolicyAccepted: true,
+        },
+        'TAKEAWAY',
+      ),
+    ).toThrow('email is required for guest orders');
+  });
+
   it('stores guest contact consent metadata with privacy policy link', () => {
     const service = new OrdersService(
       {} as never,
@@ -5890,6 +5956,37 @@ describe('OrdersService - admin customer resolution', () => {
       (metadata.guestContact as { privacyPolicyAcceptedAt?: unknown })
         .privacyPolicyAcceptedAt,
     ).toEqual(expect.any(String));
+  });
+
+  it('stores named walk-in phone metadata without inventing an email', () => {
+    const service = new OrdersService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const metadata = (
+      service as unknown as {
+        toGuestContactMetadata: (
+          existingMetadata: unknown,
+          dto: { phone: string; privacyPolicyAccepted: boolean },
+          restaurantId: string,
+        ) => Record<string, unknown>;
+      }
+    ).toGuestContactMetadata(
+      {},
+      { phone: '+49123456789', privacyPolicyAccepted: true },
+      'restaurant-1',
+    );
+
+    expect(metadata.guestContact).toMatchObject({
+      phone: '+49123456789',
+      privacyPolicyAccepted: true,
+    });
+    expect(metadata.guestContact).not.toHaveProperty('email');
   });
 
   it('rejects customer override for another customer', async () => {

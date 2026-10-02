@@ -4244,6 +4244,10 @@ export class OrdersService {
       );
     }
 
+    if (!isInternalWalkIn && !guestContact.email?.trim()) {
+      throw new BadRequestException('email is required for guest orders');
+    }
+
     if (!isInternalWalkIn && !guestContact.phone?.trim()) {
       throw new BadRequestException('phone is required for guest orders');
     }
@@ -4324,7 +4328,7 @@ export class OrdersService {
     return {
       ...metadata,
       guestContact: {
-        email: dto.email.trim().toLowerCase(),
+        ...(dto.email ? { email: dto.email.trim().toLowerCase() } : {}),
         ...(dto.phone ? { phone: dto.phone } : {}),
         privacyPolicyAccepted: true,
         privacyPolicyAcceptedAt: new Date().toISOString(),
