@@ -27,6 +27,14 @@ export class PosPrinterRepository {
     });
   }
 
+  listBranches(where: Prisma.BranchWhereInput) {
+    return this.prisma.branch.findMany({
+      where: { ...where, deletedAt: null, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   findByEmail(email: string) {
     return this.prisma.staffUser.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },

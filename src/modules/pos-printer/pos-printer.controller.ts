@@ -29,6 +29,11 @@ export class PosPrinterController {
     return this.service.list(user);
   }
 
+  @Get('branches')
+  listBranches(@CurrentUser() user: AuthUserContext) {
+    return this.service.listBranches(user);
+  }
+
   @Patch(':id/status')
   updateStatus(
     @CurrentUser() user: AuthUserContext,
