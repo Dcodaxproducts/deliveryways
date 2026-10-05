@@ -101,6 +101,23 @@ describe('MenuItemRepository', () => {
     });
   });
 
+  it('omits repeated category item collections from each list row', async () => {
+    const { repository, findMany } = createRepository();
+
+    await repository.list('restaurant-1', {
+      page: 1,
+      limit: 25,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    } as never);
+
+    const include = findMany.mock.calls[0][0].include as unknown as {
+      category: { select: Record<string, unknown> };
+    };
+
+    expect(include.category.select).not.toHaveProperty('items');
+  });
+
   it('loads shared and item-scoped variation modifier prices separately', async () => {
     const { repository, findMany } = createRepository();
 
