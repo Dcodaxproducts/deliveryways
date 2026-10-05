@@ -1,12 +1,18 @@
 import { ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsOptional, ValidateNested } from 'class-validator';
-import { CreateBranchAdminDto, CreateBranchDto } from './create-branch.dto';
+import {
+  BranchSettingsDto,
+  CreateBranchAdminDto,
+  CreateBranchDto,
+} from './create-branch.dto';
 
 export class UpdateBranchAdminDto extends PartialType(CreateBranchAdminDto) {}
 
+export class UpdateBranchSettingsDto extends PartialType(BranchSettingsDto) {}
+
 export class UpdateBranchDto extends PartialType(
-  OmitType(CreateBranchDto, ['branchAdmin'] as const),
+  OmitType(CreateBranchDto, ['branchAdmin', 'settings'] as const),
 ) {
   @ApiPropertyOptional({
     type: UpdateBranchAdminDto,
@@ -16,4 +22,13 @@ export class UpdateBranchDto extends PartialType(
   @ValidateNested()
   @Type(() => UpdateBranchAdminDto)
   branchAdmin?: UpdateBranchAdminDto;
+
+  @ApiPropertyOptional({
+    type: UpdateBranchSettingsDto,
+    description: 'Only branch settings included in the patch are updated.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateBranchSettingsDto)
+  settings?: UpdateBranchSettingsDto;
 }
