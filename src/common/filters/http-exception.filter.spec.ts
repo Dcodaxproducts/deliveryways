@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { GlobalExceptionFilter } from './http-exception.filter';
 
 describe('GlobalExceptionFilter', () => {
@@ -22,6 +22,38 @@ describe('GlobalExceptionFilter', () => {
         'status must be one of the following values: PLACED, CONFIRMED, DELIVERED',
       allowedValues: ['PLACED', 'CONFIRMED', 'DELIVERED'],
     });
+  });
+
+  it('maps throttler responses to a stable 429 envelope', () => {
+    const filter = new GlobalExceptionFilter();
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          url: '/api/v1/notifications/claim-pending-orders',
+          headers: { 'accept-language': 'en' },
+        }),
+      }),
+    };
+
+    filter.catch(
+      new HttpException('ThrottlerException: Too Many Requests', 429),
+      host as never,
+    );
+
+    expect(status).toHaveBeenCalledWith(HttpStatus.TOO_MANY_REQUESTS);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        message: 'Too many requests. Please wait before trying again.',
+        error: expect.objectContaining({
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many requests. Please wait before trying again.',
+        }) as unknown,
+      }),
+    );
   });
 
   it('localizes known API errors from the global Accept-Language contract', () => {

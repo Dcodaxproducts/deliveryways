@@ -39,6 +39,7 @@ export class AdminUsersController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @ApiOperation({ summary: 'List customers for admin/staff management' })
   listCustomers(
@@ -53,6 +54,7 @@ export class AdminUsersController {
     RolesEnum.BUSINESS_ADMIN,
     RolesEnum.BRANCH_ADMIN,
     RolesEnum.SUPER_ADMIN,
+    RolesEnum.STAFF,
   )
   @ApiOperation({ summary: 'Get customer details for admin/staff management' })
   customerDetails(

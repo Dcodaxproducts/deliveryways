@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import {
   AuthUserContext,
   CurrentUser,
@@ -89,6 +90,7 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
   @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN, RolesEnum.STAFF)
   @Post('claim-pending-orders')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @PosPrinterAccess()
   claimPendingOrders(
     @CurrentUser() user: AuthUserContext,
