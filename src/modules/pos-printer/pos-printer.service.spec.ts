@@ -14,6 +14,7 @@ describe('PosPrinterService security boundaries', () => {
     findBranch: jest.fn(),
     findByEmail: jest.fn(),
     findByUsername: jest.fn(),
+    listBranches: jest.fn(),
     create: jest.fn(),
     findById: jest.fn(),
     list: jest.fn(),
@@ -77,6 +78,9 @@ describe('PosPrinterService security boundaries', () => {
     repository.update.mockResolvedValue(account);
     repository.deactivatePushTokens.mockResolvedValue({ count: 1 });
     repository.list.mockResolvedValue([account]);
+    repository.listBranches.mockResolvedValue([
+      { id: 'branch-1', name: 'Main' },
+    ]);
     jest.spyOn(bcrypt, 'hash').mockResolvedValue('hash' as never);
   });
 
@@ -114,6 +118,71 @@ describe('PosPrinterService security boundaries', () => {
       }),
     ).rejects.toThrow('Username is unavailable');
     expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('allows scoped super admin staff to create a username credential', async () => {
+    const staff = {
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      ownerUserId: 'owner-1',
+      panelType: 'SUPER_ADMIN',
+      tid: 'tenant-1',
+      restaurantAccess: {
+        restaurantIds: ['restaurant-1'],
+        branchIds: ['branch-1'],
+      },
+    };
+
+    await service.create(staff, {
+      username: 'Kitchen.Printer',
+      displayName: 'Kitchen Printer',
+      password: 'Password@123',
+      branchId: 'branch-1',
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUserId: 'owner-1',
+        loginUsername: 'kitchen.printer',
+      }),
+    );
+  });
+
+  it('limits branch choices to the scoped super admin staff assignment', async () => {
+    await service.listBranches({
+      uid: 'staff-1',
+      role: UserRoleEnum.STAFF,
+      ownerUserId: 'owner-1',
+      panelType: 'SUPER_ADMIN',
+      tid: 'tenant-1',
+      restaurantAccess: { branchIds: ['branch-1'] },
+    });
+
+    expect(repository.listBranches).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      OR: [{ id: { in: ['branch-1'] } }],
+    });
+  });
+
+  it('rejects scoped staff provisioning outside assigned branches', async () => {
+    await expect(
+      service.create(
+        {
+          uid: 'staff-1',
+          role: UserRoleEnum.STAFF,
+          ownerUserId: 'owner-1',
+          panelType: 'SUPER_ADMIN',
+          tid: 'tenant-1',
+          restaurantAccess: { branchIds: ['branch-2'] },
+        },
+        {
+          username: 'Kitchen.Printer',
+          displayName: 'Kitchen Printer',
+          password: 'Password@123',
+          branchId: 'branch-1',
+        },
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('rejects provisioning across tenant boundaries', async () => {

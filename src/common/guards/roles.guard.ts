@@ -567,6 +567,7 @@ export class RolesGuard implements CanActivate {
       ['admin/users/customers', ['customer-management', 'customers']],
       ['admin/loyalty', ['loyalty-program', 'customers']],
       ['admin/printing', ['auto-printing-pos', 'pos-management', 'pos']],
+      ['pos-printer/accounts', ['auto-printing-pos']],
       ['admin/integrations/winorder', ['winorder-integration', 'winorder']],
       ['admin/reports', ['reports-payouts', 'reports']],
       ['admin/package-plans/payouts', ['reports-payouts', 'reports']],

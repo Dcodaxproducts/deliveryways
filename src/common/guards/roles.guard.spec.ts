@@ -1315,4 +1315,62 @@ describe('RolesGuard staff role permissions', () => {
       ),
     ).rejects.toThrow('Your role does not have access to this action');
   });
+
+  it('allows scoped staff to create printer credentials with create permission', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'auto-printing-pos', operations: ['create'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN],
+      controllerPath: 'pos-printer/accounts',
+      method: RequestMethod.POST,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { body: { branchId: 'branch-1' } },
+        ),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('does not let printer read permission create credentials', async () => {
+    const prisma: PrismaMock = {
+      staffUser: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            activeStaffRole([
+              { access: 'auto-printing-pos', operations: ['read'] },
+            ]),
+          ),
+      },
+    };
+    const guard = createGuard({
+      roles: [RolesEnum.BUSINESS_ADMIN, RolesEnum.BRANCH_ADMIN],
+      controllerPath: 'pos-printer/accounts',
+      method: RequestMethod.POST,
+      prisma,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext(
+          { uid: 'staff-1', role: RolesEnum.STAFF },
+          { body: { branchId: 'branch-1' } },
+        ),
+      ),
+    ).rejects.toThrow('Your role does not have access to this action');
+  });
 });

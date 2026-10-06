@@ -46,7 +46,7 @@ export class PosPrinterService {
     let data: Awaited<ReturnType<PosPrinterRepository['create']>>;
     try {
       data = await this.repository.create({
-        ownerUserId: user.uid,
+        ownerUserId: this.resolveOwnerUserId(user),
         panelType: this.resolvePanelType(user),
         tenantId: branch.tenantId,
         restaurantId: branch.restaurantId,
@@ -80,6 +80,16 @@ export class PosPrinterService {
     return {
       data: accounts.map((account) => this.toResponse(account)),
       message: 'POS printer accounts fetched successfully',
+    };
+  }
+
+  async listBranches(user: AuthUserContext) {
+    const branches = await this.repository.listBranches(
+      this.buildBranchScopeWhere(user),
+    );
+    return {
+      data: branches,
+      message: 'POS printer branches fetched successfully',
     };
   }
 
@@ -122,7 +132,7 @@ export class PosPrinterService {
     if (!account || account.deletedAt) {
       throw new NotFoundException('POS printer account not found');
     }
-    if (account.ownerUserId !== user.uid) {
+    if (account.ownerUserId !== this.resolveOwnerUserId(user)) {
       throw new ForbiddenException(
         'You cannot manage POS printer accounts created by another admin',
       );
@@ -155,6 +165,35 @@ export class PosPrinterService {
         deletedAt: null,
       };
     }
+    if (user.role === UserRoleEnum.STAFF && user.ownerUserId) {
+      const scope = this.resolveStaffScope(user);
+      return {
+        ownerUserId: user.ownerUserId,
+        ...(user.tid ? { tenantId: user.tid } : {}),
+        accountType: StaffAccountType.POS_PRINTER,
+        deletedAt: null,
+        ...this.buildStaffScopeFilter(scope, 'branchId'),
+      };
+    }
+    throw new ForbiddenException('Restaurant admin scope is required');
+  }
+
+  private buildBranchScopeWhere(
+    user: AuthUserContext,
+  ): Prisma.BranchWhereInput {
+    if (user.role === UserRoleEnum.BUSINESS_ADMIN && user.tid) {
+      return { tenantId: user.tid };
+    }
+    if (user.role === UserRoleEnum.BRANCH_ADMIN && user.tid && user.bid) {
+      return { tenantId: user.tid, id: user.bid };
+    }
+    if (user.role === UserRoleEnum.STAFF && user.ownerUserId) {
+      const scope = this.resolveStaffScope(user);
+      return {
+        ...(user.tid ? { tenantId: user.tid } : {}),
+        ...this.buildStaffScopeFilter(scope, 'id'),
+      };
+    }
     throw new ForbiddenException('Restaurant admin scope is required');
   }
 
@@ -175,6 +214,12 @@ export class PosPrinterService {
     }
     if (user.role === UserRoleEnum.BUSINESS_ADMIN && requestedBranchId) {
       return requestedBranchId;
+    }
+    if (user.role === UserRoleEnum.STAFF) {
+      const branchId = requestedBranchId ?? user.bid;
+      if (branchId) {
+        return branchId;
+      }
     }
     throw new BadRequestException('branchId is required');
   }
@@ -200,6 +245,16 @@ export class PosPrinterService {
         'Branch admins can only manage their own branch',
       );
     }
+    if (user.role === UserRoleEnum.STAFF) {
+      const scope = this.resolveStaffScope(user);
+      if (
+        !scope.hasAllRestaurantsAccess &&
+        !scope.branchIds.includes(branchId ?? '') &&
+        !scope.restaurantIds.includes(branch.restaurantId ?? '')
+      ) {
+        throw new ForbiddenException('Branch is outside your staff scope');
+      }
+    }
   }
 
   private resolvePanelType(user: AuthUserContext): StaffPanelType {
@@ -209,7 +264,62 @@ export class PosPrinterService {
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
       return StaffPanelType.BRANCH_ADMIN;
     }
+    if (
+      user.role === UserRoleEnum.STAFF &&
+      user.panelType &&
+      Object.values(StaffPanelType).includes(user.panelType as StaffPanelType)
+    ) {
+      return user.panelType as StaffPanelType;
+    }
     throw new ForbiddenException('Restaurant admin scope is required');
+  }
+
+  private resolveOwnerUserId(user: AuthUserContext): string {
+    return user.role === UserRoleEnum.STAFF
+      ? (user.ownerUserId ?? user.uid)
+      : user.uid;
+  }
+
+  private resolveStaffScope(user: AuthUserContext) {
+    const branchIds = [
+      user.bid,
+      ...(user.restaurantAccess?.branchIds ?? []),
+    ].filter((id): id is string => Boolean(id));
+    const restaurantIds = [
+      user.rid,
+      ...(user.restaurantAccess?.restaurantIds ?? []),
+    ].filter((id): id is string => Boolean(id));
+    const hasAllRestaurantsAccess = Boolean(
+      user.restaurantAccess?.allRestaurants ||
+      user.restaurantAccess?.hasAllRestaurantsAccess,
+    );
+    if (
+      !hasAllRestaurantsAccess &&
+      !branchIds.length &&
+      !restaurantIds.length
+    ) {
+      throw new ForbiddenException('Restaurant staff scope is required');
+    }
+    return { branchIds, restaurantIds, hasAllRestaurantsAccess };
+  }
+
+  private buildStaffScopeFilter(
+    scope: ReturnType<PosPrinterService['resolveStaffScope']>,
+    branchField: 'id' | 'branchId',
+  ) {
+    if (scope.hasAllRestaurantsAccess) {
+      return {};
+    }
+    return {
+      OR: [
+        ...(scope.branchIds.length
+          ? [{ [branchField]: { in: scope.branchIds } }]
+          : []),
+        ...(scope.restaurantIds.length
+          ? [{ restaurantId: { in: scope.restaurantIds } }]
+          : []),
+      ],
+    };
   }
 
   private toResponse(account: {
