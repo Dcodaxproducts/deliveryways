@@ -488,24 +488,25 @@ export class CartRepository {
         id: { in: menuItemIds },
         restaurantId,
       },
-      include: {
+      select: {
+        id: true,
+        categoryId: true,
+        name: true,
+        slug: true,
+        description: true,
+        imageUrl: true,
+        pricingMode: true,
+        basePrice: true,
+        deliveryPriceAdjustment: true,
+        takeawayPriceAdjustment: true,
+        prepTimeMinutes: true,
+        dietaryFlags: true,
+        depositAmount: true,
         category: {
           select: {
             id: true,
             name: true,
             imageUrl: true,
-            items: {
-              where: {
-                deletedAt: null,
-                isActive: true,
-              },
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-              orderBy: [{ createdAt: 'asc' }],
-            },
             variations: {
               where: {
                 deletedAt: null,
@@ -618,6 +619,37 @@ export class CartRepository {
         : this.resolveCategoryVariations(item.category),
     }));
   }
+
+  async findSplitFlavorCategories(categoryIds: string[], restaurantId: string) {
+    if (!categoryIds.length) {
+      return [];
+    }
+
+    return this.prisma.menuCategory.findMany({
+      where: {
+        id: { in: categoryIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        items: {
+          where: {
+            deletedAt: null,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+          orderBy: [{ createdAt: 'asc' }],
+        },
+      },
+    });
+  }
+
   private resolveItemVariations(
     menuItemId: string,
     overrides: Array<{

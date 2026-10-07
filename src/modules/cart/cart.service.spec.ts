@@ -24,6 +24,7 @@ describe('CartService', () => {
       findRestaurantMenuById: jest.fn(),
       findMenuItemForCart: jest.fn(),
       findSplitSectionItems: jest.fn().mockResolvedValue([]),
+      findSplitFlavorCategories: jest.fn().mockResolvedValue([]),
       findMenuItemsForResponse: jest.fn().mockResolvedValue([]),
       findActiveCustomer: jest.fn(),
       findOwnedAddress: jest.fn(),
@@ -3104,7 +3105,7 @@ describe('CartService', () => {
     });
   });
 
-  it('uses pickup variation prices and highest section price for split pizza cart totals', async () => {
+  it('batches Pizzeria-sized split cart metadata while preserving section pricing', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
       id: 'cart-1',
@@ -3135,11 +3136,26 @@ describe('CartService', () => {
             ],
           },
         },
+        {
+          id: 'item-2',
+          menuItemId: 'menu-parent',
+          variationId: 'var-large',
+          quantity: 1,
+          note: null,
+          modifiers: {
+            modifiers: [],
+            sections: [
+              { slot: 'LEFT', menuItemId: 'flavor-2' },
+              { slot: 'RIGHT', menuItemId: 'flavor-1' },
+            ],
+          },
+        },
       ],
     });
     cartRepository.findMenuItemsForResponse.mockResolvedValue([
       {
         id: 'menu-parent',
+        categoryId: 'cat-pizza',
         name: 'Half And Half Pizza',
         slug: 'half-and-half-pizza',
         description: null,
@@ -3154,14 +3170,6 @@ describe('CartService', () => {
           id: 'cat-pizza',
           name: 'Pizza',
           imageUrl: null,
-          items: [
-            { id: 'flavor-1', name: 'Fajita Pizza', slug: 'fajita-pizza' },
-            {
-              id: 'flavor-2',
-              name: 'Pepperoni Pizza',
-              slug: 'pepperoni-pizza',
-            },
-          ],
         },
         variations: [
           {
@@ -3175,6 +3183,14 @@ describe('CartService', () => {
         modifierLinks: [],
         branchOverrides: [],
       },
+    ]);
+    const pizzeriaFlavors = Array.from({ length: 120 }, (_, index) => ({
+      id: 'flavor-' + (index + 1),
+      name: 'Pizza ' + (index + 1),
+      slug: 'pizza-' + (index + 1),
+    }));
+    cartRepository.findSplitFlavorCategories.mockResolvedValue([
+      { id: 'cat-pizza', items: pizzeriaFlavors },
     ]);
     cartRepository.findSplitSectionItems.mockResolvedValue([
       {
@@ -3282,6 +3298,24 @@ describe('CartService', () => {
     ]);
     expect(firstItem.unitPrice).toBe(1500);
     expect(firstItem.lineTotal).toBe(1500);
+    expect(cartRepository.findSplitSectionItems).toHaveBeenCalledTimes(1);
+    expect(cartRepository.findSplitSectionItems).toHaveBeenCalledWith(
+      ['flavor-1', 'flavor-2'],
+      'restaurant-1',
+      'branch-1',
+    );
+    expect(cartRepository.findSplitFlavorCategories).toHaveBeenCalledTimes(1);
+    expect(cartRepository.findSplitFlavorCategories).toHaveBeenCalledWith(
+      ['cat-pizza'],
+      'restaurant-1',
+    );
+    expect(
+      (
+        result.data.items[1] as {
+          menuItem: { splitPizza: { allowedFlavors: unknown[] } };
+        }
+      ).menuItem.splitPizza.allowedFlavors,
+    ).toHaveLength(120);
   });
 
   it('includes the configured group quantity and prices remaining units from the modifier base price', async () => {
