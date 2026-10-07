@@ -1533,12 +1533,51 @@ export class CartService {
       cart.branchId,
     );
     const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
+    const sectionsByCartItemId = new Map(
+      cart.items.map((item) => [item.id, this.readSections(item.modifiers)]),
+    );
+    const splitCategoryIds = [
+      ...new Set(
+        menuItems
+          .filter((item) => this.supportsSplitPizza(item))
+          .map((item) => item.categoryId),
+      ),
+    ];
+    const splitSectionItemIds = [
+      ...new Set(
+        cart.items.flatMap((item) => {
+          const menuItem = menuItemMap.get(item.menuItemId);
+          if (!menuItem || !this.supportsSplitPizza(menuItem)) {
+            return [];
+          }
+
+          return (sectionsByCartItemId.get(item.id) ?? []).map(
+            (section) => section.menuItemId,
+          );
+        }),
+      ),
+    ];
+    const [splitFlavorCategories, splitItems] = await Promise.all([
+      this.cartRepository.findSplitFlavorCategories(
+        splitCategoryIds,
+        cart.restaurantId,
+      ),
+      this.cartRepository.findSplitSectionItems(
+        splitSectionItemIds,
+        cart.restaurantId,
+        cart.branchId,
+      ),
+    ]);
+    const splitFlavorCategoryMap = new Map(
+      splitFlavorCategories.map((category) => [category.id, category.items]),
+    );
+    const splitItemMap = new Map(splitItems.map((item) => [item.id, item]));
     const defaultAddressId = await this.getDefaultAddressId(cart.customerId);
     const effectiveDeliveryAddressId =
       cart.deliveryAddressId ?? defaultAddressId;
 
     const items = await Promise.all(
-      cart.items.map(async (cartItem) => {
+      cart.items.map((cartItem) => {
         const menuItem = menuItemMap.get(cartItem.menuItemId);
         const selectedVariation = menuItem?.variations.find(
           (variation) => variation.id === cartItem.variationId,
@@ -1577,7 +1616,7 @@ export class CartService {
         const modifierSelections = this.readModifierSelections(
           cartItem.modifiers,
         );
-        const sections = this.readSections(cartItem.modifiers);
+        const sections = sectionsByCartItemId.get(cartItem.id);
         const modifierAllocationQueues = menuItem
           ? this.buildModifierAllocationQueues(
               menuItem,
@@ -1619,14 +1658,6 @@ export class CartService {
         const selectedSectionDetails = [];
 
         if (menuItem && sections?.length && this.supportsSplitPizza(menuItem)) {
-          const splitItems = await this.cartRepository.findSplitSectionItems(
-            [...new Set(sections.map((section) => section.menuItemId))],
-            cart.restaurantId,
-            cart.branchId,
-          );
-          const splitItemMap = new Map(
-            splitItems.map((item) => [item.id, item]),
-          );
           const sectionUnitPrices: Prisma.Decimal[] = [];
 
           for (const section of sections) {
@@ -1721,7 +1752,7 @@ export class CartService {
           ? unitPriceWithModifiers.mul(cartItem.quantity).plus(depositTotal)
           : null;
 
-        return {
+        return Promise.resolve({
           id: cartItem.id,
           type: 'ITEM' as const,
           menuItemId: cartItem.menuItemId,
@@ -1789,13 +1820,13 @@ export class CartService {
                       enabled: true,
                       slots: ['LEFT', 'RIGHT'],
                       pricingRule: 'HIGHEST_HALF',
-                      allowedFlavors: (menuItem.category.items ?? []).map(
-                        (candidate) => ({
-                          id: candidate.id,
-                          name: candidate.name,
-                          slug: candidate.slug,
-                        }),
-                      ),
+                      allowedFlavors: (
+                        splitFlavorCategoryMap.get(menuItem.categoryId) ?? []
+                      ).map((candidate) => ({
+                        id: candidate.id,
+                        name: candidate.name,
+                        slug: candidate.slug,
+                      })),
                     }
                   : null,
                 selectedVariation: selectedVariation
@@ -1829,7 +1860,7 @@ export class CartService {
                 ),
               }
             : null,
-        };
+        });
       }),
     );
     const pricedItems = await this.applyFixedDealPricingToCartItems(
