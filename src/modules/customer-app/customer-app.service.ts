@@ -1227,16 +1227,18 @@ export class CustomerAppService {
       throw new NotFoundException('Menu item not found');
     }
 
-    const promotionContext = await this.loadPromotionContext(
-      resolvedQuery.restaurantId,
-      resolvedQuery.branchId,
-      user,
-    );
-    const translationContext = await this.loadTranslationContext(
-      resolvedQuery.restaurantId,
-      resolvedQuery.locale,
-      this.collectMenuItemTranslationRefs(item),
-    );
+    const [promotionContext, translationContext] = await Promise.all([
+      this.loadPromotionContext(
+        resolvedQuery.restaurantId,
+        resolvedQuery.branchId,
+        user,
+      ),
+      this.loadTranslationContext(
+        resolvedQuery.restaurantId,
+        resolvedQuery.locale,
+        this.collectMenuItemTranslationRefs(item),
+      ),
+    ]);
 
     const mappedItem = await this.mapMenuItem(
       item,

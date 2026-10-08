@@ -2344,6 +2344,41 @@ describe('CustomerAppService', () => {
     );
   });
 
+  it('loads item promotions and translations concurrently', async () => {
+    const { service, repository, couponsService, localizationsService } =
+      makeService({ localizations: true });
+    repository.findPublicMenuItemBySlug.mockResolvedValue(itemFixture);
+    let releasePromotions: (value: never[]) => void = () => undefined;
+    let releaseTranslations: (value: never[]) => void = () => undefined;
+    couponsService.getActiveAutoApplyPromotions.mockReturnValue(
+      new Promise<never[]>((resolve) => {
+        releasePromotions = resolve;
+      }),
+    );
+    localizationsService.findActiveTranslations.mockReturnValue(
+      new Promise<never[]>((resolve) => {
+        releaseTranslations = resolve;
+      }),
+    );
+
+    const request = service.getItemBySlug('zinger-burger', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      locale: 'de',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(couponsService.getActiveAutoApplyPromotions).toHaveBeenCalled();
+    expect(localizationsService.findActiveTranslations).toHaveBeenCalled();
+
+    releasePromotions([]);
+    releaseTranslations([]);
+    await expect(request).resolves.toMatchObject({
+      data: { id: itemFixture.id },
+    });
+  });
+
   it('fetches public item details with inherited category add-on groups', async () => {
     const { service, repository } = makeService();
     repository.findPublicMenuItemBySlug.mockResolvedValue({

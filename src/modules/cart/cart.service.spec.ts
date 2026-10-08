@@ -97,6 +97,78 @@ describe('CartService', () => {
     };
   };
 
+  it('runs add-response quote and payment lookups concurrently', async () => {
+    const {
+      service,
+      ordersService,
+      profilesRepository,
+      globalSettingsService,
+    } = makeService();
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+    let releaseQuote: (value: { data: Record<string, unknown> }) => void = () =>
+      undefined;
+    let releasePaymentMethods: (value: {
+      data: Array<{ code: PaymentMethodEnum; isActive: boolean }>;
+    }) => void = () => undefined;
+    ordersService.quote.mockReturnValue(
+      new Promise<{ data: Record<string, unknown> }>((resolve) => {
+        releaseQuote = resolve;
+      }),
+    );
+    globalSettingsService.getPaymentMethods.mockReturnValue(
+      new Promise((resolve) => {
+        releasePaymentMethods = resolve;
+      }),
+    );
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      restaurantMenuId: null,
+      orderType: 'DELIVERY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      tipAmount: new Prisma.Decimal(0),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [],
+    };
+
+    const response = (
+      service as unknown as {
+        buildCartResponse: (
+          snapshot: typeof cart,
+          user: {
+            uid: string;
+            tid: string;
+            rid: string;
+            role: UserRoleEnum;
+          },
+        ) => Promise<unknown>;
+      }
+    ).buildCartResponse(cart, {
+      uid: 'user-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.CUSTOMER,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(ordersService.quote).toHaveBeenCalled();
+    expect(globalSettingsService.getPaymentMethods).toHaveBeenCalled();
+
+    releaseQuote({ data: {} });
+    releasePaymentMethods({
+      data: [{ code: PaymentMethodEnum.COD, isActive: true }],
+    });
+    await expect(response).resolves.toBeDefined();
+  });
+
   it('returns the platform and restaurant-wide customer methods for every branch', async () => {
     const { service, cartRepository, globalSettingsService } = makeService();
     cartRepository.findPaymentSettingsForBranch.mockResolvedValue({

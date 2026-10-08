@@ -1577,22 +1577,23 @@ export class CartService {
         }),
       ),
     ];
-    const [splitFlavorCategories, splitItems] = await Promise.all([
-      this.cartRepository.findSplitFlavorCategories(
-        splitCategoryIds,
-        cart.restaurantId,
-      ),
-      this.cartRepository.findSplitSectionItems(
-        splitSectionItemIds,
-        cart.restaurantId,
-        cart.branchId,
-      ),
-    ]);
+    const [splitFlavorCategories, splitItems, defaultAddressId] =
+      await Promise.all([
+        this.cartRepository.findSplitFlavorCategories(
+          splitCategoryIds,
+          cart.restaurantId,
+        ),
+        this.cartRepository.findSplitSectionItems(
+          splitSectionItemIds,
+          cart.restaurantId,
+          cart.branchId,
+        ),
+        this.getDefaultAddressId(cart.customerId),
+      ]);
     const splitFlavorCategoryMap = new Map(
       splitFlavorCategories.map((category) => [category.id, category.items]),
     );
     const splitItemMap = new Map(splitItems.map((item) => [item.id, item]));
-    const defaultAddressId = await this.getDefaultAddressId(cart.customerId);
     const effectiveDeliveryAddressId =
       cart.deliveryAddressId ?? defaultAddressId;
 
@@ -1883,18 +1884,15 @@ export class CartService {
         });
       }),
     );
-    const pricedItems = await this.applyFixedDealPricingToCartItems(
-      items,
-      cart,
-    );
-    const displayItems = await this.groupDealItemsForCartResponse(
-      pricedItems,
-      cart,
-    );
-
-    const quote = user?.uid
-      ? await this.getCartQuoteForResponse(user, cart)
-      : null;
+    const [displayItems, quote, availablePaymentMethods] = await Promise.all([
+      this.applyFixedDealPricingToCartItems(items, cart).then((pricedItems) =>
+        this.groupDealItemsForCartResponse(pricedItems, cart),
+      ),
+      user?.uid
+        ? this.getCartQuoteForResponse(user, cart)
+        : Promise.resolve(null),
+      this.resolveCartAvailablePaymentMethods(cart.branchId),
+    ]);
 
     const cartQuote = quote ? this.toCartQuoteResponse(quote.data) : null;
     const annotatedDisplayItems = await this.withCartLineDiscountMetadata(
@@ -1905,9 +1903,6 @@ export class CartService {
     const alignedCartQuote = cartQuote
       ? this.alignQuoteSubtotalWithCartItems(cartQuote, annotatedDisplayItems)
       : null;
-    const availablePaymentMethods =
-      await this.resolveCartAvailablePaymentMethods(cart.branchId);
-
     return this.resolveMediaResponse({
       id: cart.id,
       restaurantId: cart.restaurantId,
