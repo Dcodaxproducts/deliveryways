@@ -1885,6 +1885,7 @@ export class CustomerAppRepository {
               OR: [{ menuItemId: item.id }, { menuItemId: null }],
             },
             select: {
+              id: true,
               menuItemId: true,
               variationId: true,
               modifierId: true,
@@ -1903,13 +1904,7 @@ export class CustomerAppRepository {
     const modifiers = modifierIds.length
       ? await this.prisma.modifier.findMany({
           where: { id: { in: modifierIds }, restaurantId },
-          select: {
-            ...publicMenuItemDetailModifierSelect,
-            itemPriceOverrides: {
-              where: { menuItemId: item.id },
-              select: { menuItemId: true, priceDelta: true },
-            },
-          },
+          select: publicMenuItemDetailModifierSelect,
         })
       : [];
     const modifiersById = new Map(
