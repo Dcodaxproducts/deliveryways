@@ -3104,6 +3104,220 @@ describe('CartService', () => {
     });
   });
 
+  it('preserves variation, modifier, and split graphs from a prefetched item', async () => {
+    const { service, cartRepository, profilesRepository } = makeService();
+    const cart = {
+      id: 'cart-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'user-1',
+      restaurantMenuId: null,
+      orderType: 'TAKEAWAY',
+      deliveryAddressId: null,
+      couponCode: null,
+      paymentMethod: null,
+      orderTime: null,
+      tipAmount: new Prisma.Decimal(0),
+      customerNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [
+        {
+          id: 'cart-item-1',
+          menuItemId: 'menu-parent',
+          variationId: 'var-large',
+          quantity: 1,
+          note: null,
+          modifiers: {
+            modifiers: [{ modifierId: 'modifier-cheese', quantity: 1 }],
+            sections: [
+              { slot: 'LEFT', menuItemId: 'flavor-1' },
+              { slot: 'RIGHT', menuItemId: 'flavor-2' },
+            ],
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    };
+    const prefetchedMenuItem = {
+      id: 'menu-parent',
+      categoryId: 'cat-pizza',
+      name: 'Half And Half Pizza',
+      slug: 'half-and-half-pizza',
+      description: 'Choose two flavors',
+      imageUrl: 'pizza.png',
+      pricingMode: 'MULTIPLE',
+      basePrice: new Prisma.Decimal(10),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      depositAmount: new Prisma.Decimal(0),
+      dietaryFlags: ['__SPLIT_PIZZA_ENABLED__'],
+      category: {
+        id: 'cat-pizza',
+        name: 'Pizza',
+        imageUrl: null,
+        items: [],
+        variations: [],
+        modifierLinks: [],
+      },
+      categoryLinks: [],
+      variations: [
+        {
+          id: 'var-large',
+          name: 'Large',
+          description: 'Large base',
+          price: new Prisma.Decimal(12),
+          itemPriceOverrides: [
+            {
+              menuItemId: 'menu-parent',
+              price: new Prisma.Decimal(12),
+              pickupPrice: new Prisma.Decimal(14),
+              displayText: 'Large pickup',
+            },
+          ],
+        },
+      ],
+      modifierLinks: [],
+      modifierPriceOverrides: [
+        {
+          modifierId: 'modifier-cheese',
+          priceDelta: new Prisma.Decimal(2),
+          isRequired: false,
+          modifier: {
+            id: 'modifier-cheese',
+            name: 'Extra cheese',
+            priceDelta: new Prisma.Decimal(1),
+            itemPriceOverrides: [],
+            variationPriceOverrides: [],
+          },
+        },
+      ],
+      branchOverrides: [],
+    };
+    const makeSectionItem = (
+      id: string,
+      name: string,
+      pickupPrice: number,
+    ) => ({
+      id,
+      name,
+      basePrice: new Prisma.Decimal(10),
+      pricingMode: 'MULTIPLE',
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      variations: [
+        {
+          id: 'var-large',
+          name: 'Large',
+          description: null,
+          price: new Prisma.Decimal(pickupPrice - 1),
+          itemPriceOverrides: [
+            {
+              menuItemId: id,
+              price: new Prisma.Decimal(pickupPrice - 1),
+              pickupPrice: new Prisma.Decimal(pickupPrice),
+              displayText: name + ' large pickup',
+            },
+          ],
+        },
+      ],
+      category: { variations: [] },
+      branchOverrides: [],
+    });
+    cartRepository.findSplitFlavorCategories.mockResolvedValue([
+      {
+        id: 'cat-pizza',
+        items: [
+          { id: 'flavor-1', name: 'Fajita', slug: 'fajita' },
+          { id: 'flavor-2', name: 'Pepperoni', slug: 'pepperoni' },
+        ],
+      },
+    ]);
+    cartRepository.findSplitSectionItems.mockResolvedValue([
+      makeSectionItem('flavor-1', 'Fajita', 15),
+      makeSectionItem('flavor-2', 'Pepperoni', 16),
+    ]);
+    profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
+
+    const response = await (
+      service as unknown as {
+        buildCartResponse(
+          cartSnapshot: unknown,
+          user: undefined,
+          prefetchedMenuItems: unknown[],
+        ): Promise<{ items: unknown[] }>;
+      }
+    ).buildCartResponse(cart, undefined, [prefetchedMenuItem]);
+
+    expect(cartRepository.findMenuItemsForResponse).toHaveBeenCalledWith(
+      [],
+      'restaurant-1',
+      'branch-1',
+    );
+    expect(response.items[0]).toMatchObject({
+      unitPrice: 16,
+      modifiersTotal: 2,
+      unitPriceWithModifiers: 18,
+      lineTotal: 18,
+      selectedModifiers: [
+        {
+          modifierId: 'modifier-cheese',
+          name: 'Extra cheese',
+          quantity: 1,
+          unitPrice: 2,
+          total: 2,
+        },
+      ],
+      selectedSections: [
+        {
+          slot: 'LEFT',
+          menuItemId: 'flavor-1',
+          unitPrice: 15,
+          selectedVariation: {
+            id: 'var-large',
+            pickupPrice: 15,
+          },
+        },
+        {
+          slot: 'RIGHT',
+          menuItemId: 'flavor-2',
+          unitPrice: 16,
+          selectedVariation: {
+            id: 'var-large',
+            pickupPrice: 16,
+          },
+        },
+      ],
+      menuItem: {
+        id: 'menu-parent',
+        name: 'Half And Half Pizza',
+        selectedVariation: {
+          id: 'var-large',
+          name: 'Large',
+          displayText: 'Large pickup',
+          price: 14,
+          pickupPrice: 14,
+        },
+        modifiers: [
+          {
+            id: 'modifier-cheese',
+            name: 'Extra cheese',
+            priceDelta: 2,
+          },
+        ],
+        splitPizza: {
+          enabled: true,
+          allowedFlavors: [
+            { id: 'flavor-1', name: 'Fajita', slug: 'fajita' },
+            { id: 'flavor-2', name: 'Pepperoni', slug: 'pepperoni' },
+          ],
+        },
+      },
+    });
+  });
+
   it('batches Pizzeria-sized split cart metadata while preserving section pricing', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     cartRepository.findByCustomerId.mockResolvedValue({
@@ -4816,7 +5030,7 @@ describe('CartService', () => {
     });
   });
 
-  it('reuses one hydrated menu graph when incrementing an identical cart item', async () => {
+  it('reuses one hydrated graph and rejects aggregate maxQuantity on identical increments', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const existingCart = {
       id: 'cart-1',
@@ -4893,6 +5107,37 @@ describe('CartService', () => {
       expect.objectContaining({ uid: 'user-1' }),
       [expect.objectContaining({ id: 'menu-1' })],
     );
+
+    cartRepository.findByCustomerId.mockResolvedValue(existingCart);
+    cartRepository.findMenuItemForCart.mockResolvedValue({
+      id: 'menu-1',
+      name: 'Burger',
+      maxQuantity: 4,
+      category: { id: 'category-1', items: [], modifierLinks: [] },
+      variations: [{ id: 'variation-1', isActive: true }],
+      modifierLinks: [],
+      modifierPriceOverrides: [{ modifier: { id: 'modifier-1' } }],
+      branchOverrides: [],
+    });
+
+    await expect(
+      service.addItem(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          menuItemId: 'menu-1',
+          variationId: 'variation-1',
+          quantity: 3,
+          modifiers: [{ modifierId: 'modifier-1', quantity: 1 }],
+        },
+      ),
+    ).rejects.toThrow('Burger allows at most 4 item(s)');
+    expect(cartRepository.updateItem).toHaveBeenCalledTimes(1);
   });
 
   it('allows modifiers inherited from the item category', async () => {
@@ -5147,7 +5392,7 @@ describe('CartService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('allows adding another item to an existing cart from the same branch', async () => {
+  it('merges a prefetched item graph with missing graphs in a mixed cart response', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const existingCart = {
       id: 'cart-1',
@@ -5192,16 +5437,60 @@ describe('CartService', () => {
       });
     cartRepository.findMenuItemForCart.mockResolvedValue({
       id: 'menu-2',
+      categoryId: 'category-2',
       name: 'Fries',
+      slug: 'fries',
+      description: null,
+      imageUrl: null,
+      pricingMode: 'SINGLE',
+      basePrice: new Prisma.Decimal(4),
+      deliveryPriceAdjustment: new Prisma.Decimal(0),
+      takeawayPriceAdjustment: new Prisma.Decimal(0),
+      depositAmount: new Prisma.Decimal(0),
+      category: {
+        id: 'category-2',
+        name: 'Sides',
+        imageUrl: null,
+        items: [],
+        variations: [],
+        modifierLinks: [],
+      },
+      categoryLinks: [],
       variations: [],
       modifierLinks: [],
+      modifierPriceOverrides: [],
       branchOverrides: [],
     });
+    cartRepository.findMenuItemsForResponse.mockResolvedValue([
+      {
+        id: 'menu-1',
+        categoryId: 'category-1',
+        name: 'Burger',
+        slug: 'burger',
+        description: null,
+        imageUrl: null,
+        pricingMode: 'SINGLE',
+        basePrice: new Prisma.Decimal(10),
+        deliveryPriceAdjustment: new Prisma.Decimal(0),
+        takeawayPriceAdjustment: new Prisma.Decimal(0),
+        depositAmount: new Prisma.Decimal(0),
+        category: {
+          id: 'category-1',
+          name: 'Burgers',
+          imageUrl: null,
+          items: [],
+          variations: [],
+          modifierLinks: [],
+        },
+        categoryLinks: [],
+        variations: [],
+        modifierLinks: [],
+        modifierPriceOverrides: [],
+        branchOverrides: [],
+      },
+    ]);
     cartRepository.createItem.mockResolvedValue({ id: 'item-2' });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
-    jest
-      .spyOn(service as never, 'buildCartResponse' as never)
-      .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
     const result = await service.addItem(
       {
@@ -5226,6 +5515,24 @@ describe('CartService', () => {
       note: undefined,
       modifiers: undefined,
     });
+    expect(cartRepository.findMenuItemsForResponse).toHaveBeenCalledWith(
+      ['menu-1'],
+      'restaurant-1',
+      'branch-1',
+    );
+    const mixedItems = result.data.items as Array<{
+      menuItemId: string;
+      menuItem: { name: string } | null;
+    }>;
+    expect(
+      mixedItems.map((item) => ({
+        menuItemId: item.menuItemId,
+        name: item.menuItem?.name,
+      })),
+    ).toEqual([
+      { menuItemId: 'menu-1', name: 'Burger' },
+      { menuItemId: 'menu-2', name: 'Fries' },
+    ]);
     expect(result.message).toBe('Item added to cart successfully');
   });
 
