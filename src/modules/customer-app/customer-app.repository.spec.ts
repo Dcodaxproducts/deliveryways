@@ -149,7 +149,15 @@ describe('CustomerAppRepository', () => {
     const directModifierOverrides = jest.fn().mockResolvedValue([]);
     const categoryVariations = jest.fn().mockResolvedValue([]);
     const modifierLinks = jest.fn().mockResolvedValue(groupModifierLinks);
-    const variationModifierOverrides = jest.fn().mockResolvedValue([]);
+    const variationModifierOverrides = jest.fn().mockResolvedValue([
+      {
+        id: 'variation-modifier-override-1',
+        menuItemId: 'item-1',
+        variationId: 'variation-0',
+        modifierId: 'modifier-0',
+        priceDelta: new Prisma.Decimal(2),
+      },
+    ]);
     const modifiers = jest.fn().mockResolvedValue(
       groupModifierLinks.map((link) => ({
         id: link.modifierId,
@@ -157,7 +165,6 @@ describe('CustomerAppRepository', () => {
         priceDelta: new Prisma.Decimal(1),
         sortOrder: link.sortOrder,
         isActive: true,
-        itemPriceOverrides: [],
       })),
     );
     const repository = new CustomerAppRepository({
@@ -190,12 +197,19 @@ describe('CustomerAppRepository', () => {
     expect(JSON.stringify(modifiers.mock.calls)).toContain(
       '"restaurantId":"restaurant-1"',
     );
-    expect(JSON.stringify(modifiers.mock.calls)).toContain(
-      '"menuItemId":"item-1"',
+    expect(JSON.stringify(modifiers.mock.calls)).not.toContain(
+      'itemPriceOverrides',
     );
     expect(JSON.stringify(variationModifierOverrides.mock.calls)).toContain(
       '"OR":[{"menuItemId":"item-1"},{"menuItemId":null}]',
     );
+    expect(JSON.stringify(variationModifierOverrides.mock.calls)).toContain(
+      '"id":true',
+    );
+    expect(JSON.stringify(result)).toContain(
+      '"id":"variation-modifier-override-1"',
+    );
+    expect(JSON.stringify(result)).not.toContain('itemPriceOverrides');
     expect(
       [
         findFirst,
@@ -209,6 +223,103 @@ describe('CustomerAppRepository', () => {
         modifiers,
       ].reduce((total, query) => total + query.mock.calls.length, 0),
     ).toBe(9);
+  });
+
+  it('uses at most ten scoped queries for legacy categories without variation links', async () => {
+    const variations = Array.from({ length: 40 }, (_, index) => ({
+      id: `legacy-variation-${index}`,
+      name: `Legacy variation ${index}`,
+      description: null,
+      price: new Prisma.Decimal(index + 1),
+      sortOrder: index,
+      isDefault: index === 0,
+      isActive: true,
+    }));
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 'legacy-item-1',
+      categoryId: 'legacy-category-1',
+      category: { id: 'legacy-category-1', name: 'Legacy', imageUrl: null },
+    });
+    const variationPriceOverrides = jest.fn().mockResolvedValue([]);
+    const variationLinks = jest.fn().mockResolvedValue([]);
+    const itemModifierLinks = jest.fn().mockResolvedValue([]);
+    const categoryModifierGroups = jest.fn().mockResolvedValue([
+      {
+        id: 'category-group-link-1',
+        sortOrder: 0,
+        selectionType: 'MULTIPLE',
+        minSelect: 0,
+        maxSelect: 1,
+        modifierGroup: {
+          id: 'group-1',
+          name: 'Extras',
+          description: null,
+          minSelect: 0,
+          maxSelect: 1,
+          includedSelect: 0,
+          isRequired: false,
+          sortOrder: 0,
+          isActive: true,
+        },
+      },
+    ]);
+    const directModifierOverrides = jest.fn().mockResolvedValue([]);
+    const categoryVariations = jest.fn().mockResolvedValue(variations);
+    const modifierLinks = jest.fn().mockResolvedValue([
+      {
+        id: 'group-modifier-link-1',
+        modifierGroupId: 'group-1',
+        modifierId: 'modifier-1',
+        sortOrder: 0,
+      },
+    ]);
+    const variationModifierOverrides = jest.fn().mockResolvedValue([]);
+    const modifiers = jest.fn().mockResolvedValue([
+      {
+        id: 'modifier-1',
+        name: 'Extra',
+        priceDelta: new Prisma.Decimal(1),
+        sortOrder: 0,
+        isActive: true,
+      },
+    ]);
+    const repository = new CustomerAppRepository({
+      menuItem: { findFirst },
+      menuItemVariationPriceOverride: { findMany: variationPriceOverrides },
+      menuCategoryVariation: { findMany: variationLinks },
+      menuItemModifierGroup: { findMany: itemModifierLinks },
+      menuCategoryModifierGroup: { findMany: categoryModifierGroups },
+      menuItemModifierPriceOverride: { findMany: directModifierOverrides },
+      menuItemVariation: { findMany: categoryVariations },
+      modifierGroupModifier: { findMany: modifierLinks },
+      menuVariationModifierPriceOverride: {
+        findMany: variationModifierOverrides,
+      },
+      modifier: { findMany: modifiers },
+    } as unknown as PrismaService);
+
+    const result = await repository.findPublicMenuItemBySlug('legacy-item', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(result?.category.variationLinks).toHaveLength(0);
+    expect(result?.category.variations).toHaveLength(40);
+    expect(categoryVariations).toHaveBeenCalledTimes(1);
+    expect(
+      [
+        findFirst,
+        variationPriceOverrides,
+        variationLinks,
+        itemModifierLinks,
+        categoryModifierGroups,
+        directModifierOverrides,
+        categoryVariations,
+        modifierLinks,
+        variationModifierOverrides,
+        modifiers,
+      ].reduce((total, query) => total + query.mock.calls.length, 0),
+    ).toBe(10);
   });
 
   it('keeps newly created categories after older categories with equal sort order', async () => {
