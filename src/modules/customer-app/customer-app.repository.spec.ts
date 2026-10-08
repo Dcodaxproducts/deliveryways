@@ -6,9 +6,6 @@ type FindManyMenuItems = (
   args: Prisma.MenuItemFindManyArgs,
 ) => Promise<unknown[]>;
 type CountMenuItems = (args: Prisma.MenuItemCountArgs) => Promise<number>;
-type FindFirstMenuItem = (
-  args: Prisma.MenuItemFindFirstArgs,
-) => Promise<unknown>;
 type FindManyMenuCategories = (
   args: Prisma.MenuCategoryFindManyArgs,
 ) => Promise<unknown[]>;
@@ -38,27 +35,6 @@ type CompactMenuItemInclude = {
     select: {
       variation: {
         select: Record<string, boolean>;
-      };
-    };
-  };
-};
-
-type DetailMenuItemInclude = {
-  variationPriceOverrides: {
-    select: {
-      variation: {
-        select: {
-          modifierPriceOverrides: {
-            where: Prisma.MenuVariationModifierPriceOverrideWhereInput;
-          };
-        };
-      };
-    };
-  };
-  modifierPriceOverrides: {
-    select: {
-      modifier: {
-        select: Record<string, unknown>;
       };
     };
   };
@@ -118,96 +94,121 @@ describe('CustomerAppRepository', () => {
     });
   });
 
-  it('loads inherited category modifier groups for public item details', async () => {
-    const findFirst = jest
-      .fn<ReturnType<FindFirstMenuItem>, Parameters<FindFirstMenuItem>>()
-      .mockResolvedValue(null);
-    const repository = new CustomerAppRepository({
-      menuItem: { findFirst },
-    } as unknown as PrismaService);
-
-    await repository.findPublicMenuItemBySlug('item-1', {
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-    });
-
-    const query = findFirst.mock.calls[0]?.[0];
-    const categoryInclude = query?.include?.category;
-    const categorySelect =
-      typeof categoryInclude === 'object' && categoryInclude !== null
-        ? categoryInclude.select
-        : undefined;
-
-    const modifierLinks = categorySelect?.modifierLinks;
-
-    expect(modifierLinks).toBeDefined();
-
-    if (typeof modifierLinks !== 'object' || modifierLinks === null) {
-      throw new Error('Category modifier links must be included');
-    }
-
-    const modifierGroup = modifierLinks.include?.modifierGroup;
-
-    if (typeof modifierGroup !== 'object' || modifierGroup === null) {
-      throw new Error('Modifier group details must be included');
-    }
-
-    const groupModifierLinks = modifierGroup.include?.modifierLinks;
-
-    if (typeof groupModifierLinks !== 'object' || groupModifierLinks === null) {
-      throw new Error('Active modifier details must be included');
-    }
-
-    expect(groupModifierLinks.where).toEqual({
-      modifier: { deletedAt: null, isActive: true },
-    });
-  });
-
-  it('bounds public item detail pricing relations to the requested item', async () => {
-    const findFirst = jest
-      .fn<ReturnType<FindFirstMenuItem>, Parameters<FindFirstMenuItem>>()
-      .mockResolvedValue(null);
-    const repository = new CustomerAppRepository({
-      menuItem: { findFirst },
-    } as unknown as PrismaService);
-
-    await repository.findPublicMenuItemBySlug('pizza-salami', {
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-    });
-
-    const include = findFirst.mock.calls[0]?.[0]
-      ?.include as unknown as DetailMenuItemInclude;
-    const currentMenuItemWhere = {
-      restaurantId: 'restaurant-1',
-      deletedAt: null,
+  it('hydrates Pizzeria-sized item details with fixed ID-scoped queries', async () => {
+    const variation = (index: number) => ({
+      id: `variation-${index}`,
+      name: `Variation ${index}`,
+      description: null,
+      price: new Prisma.Decimal(index + 1),
+      sortOrder: index,
+      isDefault: index === 0,
       isActive: true,
-      OR: [
-        { id: 'pizza-salami' },
-        {
-          slug: {
-            equals: 'pizza-salami',
-            mode: Prisma.QueryMode.insensitive,
-          },
-        },
-      ],
-    };
-    const scopedVariationModifierWhere = {
-      OR: [{ menuItemId: null }, { menuItem: { is: currentMenuItemWhere } }],
-    };
+    });
+    const group = (index: number) => ({
+      id: `group-${index}`,
+      name: `Group ${index}`,
+      description: null,
+      minSelect: 0,
+      maxSelect: 12,
+      includedSelect: 0,
+      isRequired: false,
+      sortOrder: index,
+      isActive: true,
+    });
+    const categoryVariationLinks = Array.from({ length: 40 }, (_, index) => ({
+      sortOrder: index,
+      isDefault: index === 0,
+      isActive: true,
+      variation: variation(index),
+    }));
+    const categoryModifierLinks = Array.from({ length: 18 }, (_, index) => ({
+      id: `category-group-${index}`,
+      sortOrder: index,
+      selectionType: 'MULTIPLE' as const,
+      minSelect: 0,
+      maxSelect: 12,
+      modifierGroup: group(index),
+    }));
+    const groupModifierLinks = Array.from({ length: 216 }, (_, index) => ({
+      id: `group-modifier-${index}`,
+      modifierGroupId: `group-${Math.floor(index / 12)}`,
+      modifierId: `modifier-${index}`,
+      sortOrder: index % 12,
+    }));
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 'item-1',
+      categoryId: 'category-1',
+      category: { id: 'category-1', name: 'Pizza', imageUrl: null },
+    });
+    const variationPriceOverrides = jest.fn().mockResolvedValue([]);
+    const variationLinks = jest.fn().mockResolvedValue(categoryVariationLinks);
+    const itemModifierLinks = jest.fn().mockResolvedValue([]);
+    const categoryModifierGroups = jest
+      .fn()
+      .mockResolvedValue(categoryModifierLinks);
+    const directModifierOverrides = jest.fn().mockResolvedValue([]);
+    const categoryVariations = jest.fn().mockResolvedValue([]);
+    const modifierLinks = jest.fn().mockResolvedValue(groupModifierLinks);
+    const variationModifierOverrides = jest.fn().mockResolvedValue([]);
+    const modifiers = jest.fn().mockResolvedValue(
+      groupModifierLinks.map((link) => ({
+        id: link.modifierId,
+        name: link.modifierId,
+        priceDelta: new Prisma.Decimal(1),
+        sortOrder: link.sortOrder,
+        isActive: true,
+        itemPriceOverrides: [],
+      })),
+    );
+    const repository = new CustomerAppRepository({
+      menuItem: { findFirst },
+      menuItemVariationPriceOverride: { findMany: variationPriceOverrides },
+      menuCategoryVariation: { findMany: variationLinks },
+      menuItemModifierGroup: { findMany: itemModifierLinks },
+      menuCategoryModifierGroup: { findMany: categoryModifierGroups },
+      menuItemModifierPriceOverride: { findMany: directModifierOverrides },
+      menuItemVariation: { findMany: categoryVariations },
+      modifierGroupModifier: { findMany: modifierLinks },
+      menuVariationModifierPriceOverride: {
+        findMany: variationModifierOverrides,
+      },
+      modifier: { findMany: modifiers },
+    } as unknown as PrismaService);
 
+    const result = await repository.findPublicMenuItemBySlug('pizza-salami', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(result?.category.variationLinks).toHaveLength(40);
+    expect(result?.category.modifierLinks).toHaveLength(18);
+    expect(categoryVariations).not.toHaveBeenCalled();
+    expect(JSON.stringify(findFirst.mock.calls)).not.toContain('variations');
+    expect(variationPriceOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { menuItemId: 'item-1' } }),
+    );
+    expect(JSON.stringify(modifiers.mock.calls)).toContain(
+      '"restaurantId":"restaurant-1"',
+    );
+    expect(JSON.stringify(modifiers.mock.calls)).toContain(
+      '"menuItemId":"item-1"',
+    );
+    expect(JSON.stringify(variationModifierOverrides.mock.calls)).toContain(
+      '"OR":[{"menuItemId":"item-1"},{"menuItemId":null}]',
+    );
     expect(
-      include.variationPriceOverrides.select.variation.select
-        .modifierPriceOverrides.where,
-    ).toEqual(scopedVariationModifierWhere);
-    const modifierSelect =
-      include.modifierPriceOverrides.select.modifier.select;
-    expect(modifierSelect).not.toHaveProperty('itemPriceOverrides');
-    expect(modifierSelect).not.toHaveProperty('variationPriceOverrides');
-
-    const serializedInclude = JSON.stringify(include);
-    expect(serializedInclude).not.toContain('"itemPriceOverrides":true');
-    expect(serializedInclude).not.toContain('"variationPriceOverrides":true');
+      [
+        findFirst,
+        variationPriceOverrides,
+        variationLinks,
+        itemModifierLinks,
+        categoryModifierGroups,
+        directModifierOverrides,
+        modifierLinks,
+        variationModifierOverrides,
+        modifiers,
+      ].reduce((total, query) => total + query.mock.calls.length, 0),
+    ).toBe(9);
   });
 
   it('keeps newly created categories after older categories with equal sort order', async () => {

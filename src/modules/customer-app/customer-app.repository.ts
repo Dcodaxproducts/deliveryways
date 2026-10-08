@@ -65,77 +65,52 @@ const publicMenuItemScheduleSelect = {
   },
 } satisfies Prisma.MenuItemSelect;
 
+const publicMenuItemDetailVariationSelect = {
+  id: true,
+  name: true,
+  description: true,
+  price: true,
+  sortOrder: true,
+  isDefault: true,
+  isActive: true,
+} satisfies Prisma.MenuItemVariationSelect;
+
+const publicMenuItemDetailModifierSelect = {
+  id: true,
+  name: true,
+  priceDelta: true,
+  sortOrder: true,
+  isActive: true,
+} satisfies Prisma.ModifierSelect;
+
+const publicMenuItemDetailModifierGroupSelect = {
+  id: true,
+  name: true,
+  description: true,
+  minSelect: true,
+  maxSelect: true,
+  includedSelect: true,
+  isRequired: true,
+  sortOrder: true,
+  isActive: true,
+} satisfies Prisma.ModifierGroupSelect;
+
 @Injectable()
 export class CustomerAppRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  private buildPublicMenuItemDetailInclude(
-    identifier: string,
-    restaurantId: string,
-    branchId?: string,
-  ) {
-    const menuItemWhere: Prisma.MenuItemWhereInput = {
-      restaurantId,
-      deletedAt: null,
-      isActive: true,
-      OR: [
-        { id: identifier },
-        { slug: { equals: identifier, mode: Prisma.QueryMode.insensitive } },
-      ],
-    };
-    const variationModifierOverrideWhere: Prisma.MenuVariationModifierPriceOverrideWhereInput =
-      {
-        OR: [{ menuItemId: null }, { menuItem: { is: menuItemWhere } }],
-      };
-    const modifierSelect = {
-      id: true,
-      name: true,
-      priceDelta: true,
-      sortOrder: true,
-      isActive: true,
-    } satisfies Prisma.ModifierSelect;
-    const variationSelect = {
-      id: true,
-      name: true,
-      description: true,
-      price: true,
-      sortOrder: true,
-      isDefault: true,
-      isActive: true,
-      modifierPriceOverrides: {
-        where: variationModifierOverrideWhere,
-        select: {
-          id: true,
-          menuItemId: true,
-          variationId: true,
-          modifierId: true,
-          priceDelta: true,
-          modifier: { select: modifierSelect },
-        },
-      },
-    } satisfies Prisma.MenuItemVariationSelect;
-    const modifierLinksInclude = {
-      orderBy: [{ sortOrder: 'asc' as const }],
-      include: {
-        modifierGroup: {
-          include: {
-            modifierLinks: {
-              where: {
-                modifier: { deletedAt: null, isActive: true },
-              },
-              include: {
-                modifier: { select: modifierSelect },
-              },
-              orderBy: [
-                { sortOrder: 'asc' as const },
-                { modifier: { createdAt: 'asc' as const } },
-              ],
-            },
-          },
-        },
-      },
-    } satisfies Prisma.MenuItem$modifierLinksArgs;
+  private groupBy<T>(rows: T[], key: (row: T) => string) {
+    const grouped = new Map<string, T[]>();
+    for (const row of rows) {
+      const rowKey = key(row);
+      const values = grouped.get(rowKey) ?? [];
+      values.push(row);
+      grouped.set(rowKey, values);
+    }
+    return grouped;
+  }
 
+  private buildPublicMenuItemDetailInclude(branchId?: string) {
     return {
       restaurant: {
         select: {
@@ -152,22 +127,6 @@ export class CustomerAppRepository {
           id: true,
           name: true,
           imageUrl: true,
-          variations: {
-            where: { deletedAt: null, isActive: true },
-            select: variationSelect,
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          },
-          variationLinks: {
-            where: { isActive: true },
-            select: {
-              sortOrder: true,
-              isDefault: true,
-              isActive: true,
-              variation: { select: variationSelect },
-            },
-            orderBy: [{ sortOrder: 'asc' }],
-          },
-          modifierLinks: modifierLinksInclude,
           menuLinks: {
             include: {
               restaurantMenu: {
@@ -176,30 +135,6 @@ export class CustomerAppRepository {
             },
           },
         },
-      },
-      modifierLinks: modifierLinksInclude,
-      modifierPriceOverrides: {
-        select: {
-          id: true,
-          menuItemId: true,
-          modifierId: true,
-          priceDelta: true,
-          isRequired: true,
-          modifier: { select: modifierSelect },
-        },
-        orderBy: [{ modifier: { sortOrder: 'asc' } }],
-      },
-      variationPriceOverrides: {
-        select: {
-          id: true,
-          menuItemId: true,
-          variationId: true,
-          price: true,
-          pickupPrice: true,
-          displayText: true,
-          variation: { select: variationSelect },
-        },
-        orderBy: [{ variation: { sortOrder: 'asc' } }],
       },
       categoryLinks: {
         include: {
@@ -1802,7 +1737,7 @@ export class CustomerAppRepository {
     const now = new Date();
     const identifier = slug.trim();
 
-    return this.prisma.menuItem.findFirst({
+    const item = await this.prisma.menuItem.findFirst({
       where: {
         restaurantId,
         deletedAt: null,
@@ -1826,12 +1761,220 @@ export class CustomerAppRepository {
           },
         ],
       },
-      include: this.buildPublicMenuItemDetailInclude(
-        identifier,
-        restaurantId,
-        branchId,
-      ),
+      include: this.buildPublicMenuItemDetailInclude(branchId),
     });
+
+    if (!item) {
+      return null;
+    }
+
+    const [
+      variationPriceOverrides,
+      categoryVariationLinks,
+      itemModifierLinks,
+      categoryModifierLinks,
+      modifierPriceOverrides,
+    ] = await Promise.all([
+      this.prisma.menuItemVariationPriceOverride.findMany({
+        where: { menuItemId: item.id },
+        select: {
+          id: true,
+          menuItemId: true,
+          variationId: true,
+          price: true,
+          pickupPrice: true,
+          displayText: true,
+          variation: { select: publicMenuItemDetailVariationSelect },
+        },
+        orderBy: [{ variation: { sortOrder: 'asc' } }],
+      }),
+      this.prisma.menuCategoryVariation.findMany({
+        where: {
+          categoryId: item.categoryId,
+          isActive: true,
+          variation: { deletedAt: null, isActive: true },
+        },
+        select: {
+          sortOrder: true,
+          isDefault: true,
+          isActive: true,
+          variation: { select: publicMenuItemDetailVariationSelect },
+        },
+        orderBy: [{ sortOrder: 'asc' }],
+      }),
+      this.prisma.menuItemModifierGroup.findMany({
+        where: { menuItemId: item.id },
+        select: {
+          id: true,
+          sortOrder: true,
+          selectionType: true,
+          minSelect: true,
+          maxSelect: true,
+          modifierGroup: { select: publicMenuItemDetailModifierGroupSelect },
+        },
+        orderBy: [{ sortOrder: 'asc' }],
+      }),
+      this.prisma.menuCategoryModifierGroup.findMany({
+        where: { categoryId: item.categoryId },
+        select: {
+          id: true,
+          sortOrder: true,
+          selectionType: true,
+          minSelect: true,
+          maxSelect: true,
+          modifierGroup: { select: publicMenuItemDetailModifierGroupSelect },
+        },
+        orderBy: [{ sortOrder: 'asc' }],
+      }),
+      this.prisma.menuItemModifierPriceOverride.findMany({
+        where: { menuItemId: item.id },
+        select: {
+          id: true,
+          menuItemId: true,
+          modifierId: true,
+          priceDelta: true,
+          isRequired: true,
+        },
+      }),
+    ]);
+
+    const categoryVariations = categoryVariationLinks.length
+      ? []
+      : await this.prisma.menuItemVariation.findMany({
+          where: {
+            categoryId: item.categoryId,
+            deletedAt: null,
+            isActive: true,
+          },
+          select: publicMenuItemDetailVariationSelect,
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        });
+    const modifierGroupIds = [
+      ...new Set([
+        ...itemModifierLinks.map((link) => link.modifierGroup.id),
+        ...categoryModifierLinks.map((link) => link.modifierGroup.id),
+      ]),
+    ];
+    const variationIds = [
+      ...new Set([
+        ...variationPriceOverrides.map((override) => override.variationId),
+        ...categoryVariationLinks.map((link) => link.variation.id),
+        ...categoryVariations.map((variation) => variation.id),
+      ]),
+    ];
+    const [groupModifierLinks, variationModifierOverrides] = await Promise.all([
+      modifierGroupIds.length
+        ? this.prisma.modifierGroupModifier.findMany({
+            where: {
+              modifierGroupId: { in: modifierGroupIds },
+              modifier: { deletedAt: null, isActive: true },
+            },
+            select: {
+              id: true,
+              modifierGroupId: true,
+              modifierId: true,
+              sortOrder: true,
+            },
+            orderBy: [{ sortOrder: 'asc' }, { modifier: { createdAt: 'asc' } }],
+          })
+        : Promise.resolve([]),
+      variationIds.length
+        ? this.prisma.menuVariationModifierPriceOverride.findMany({
+            where: {
+              variationId: { in: variationIds },
+              OR: [{ menuItemId: item.id }, { menuItemId: null }],
+            },
+            select: {
+              menuItemId: true,
+              variationId: true,
+              modifierId: true,
+              priceDelta: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+    const modifierIds = [
+      ...new Set([
+        ...groupModifierLinks.map((link) => link.modifierId),
+        ...modifierPriceOverrides.map((override) => override.modifierId),
+        ...variationModifierOverrides.map((override) => override.modifierId),
+      ]),
+    ];
+    const modifiers = modifierIds.length
+      ? await this.prisma.modifier.findMany({
+          where: { id: { in: modifierIds }, restaurantId },
+          select: {
+            ...publicMenuItemDetailModifierSelect,
+            itemPriceOverrides: {
+              where: { menuItemId: item.id },
+              select: { menuItemId: true, priceDelta: true },
+            },
+          },
+        })
+      : [];
+    const modifiersById = new Map(
+      modifiers.map((modifier) => [modifier.id, modifier]),
+    );
+    const groupModifierLinksByGroupId = this.groupBy(
+      groupModifierLinks,
+      (link) => link.modifierGroupId,
+    );
+    const attachModifierGroup = <
+      T extends {
+        modifierGroup: (typeof itemModifierLinks)[number]['modifierGroup'];
+      },
+    >(
+      link: T,
+    ) => ({
+      ...link,
+      modifierGroup: {
+        ...link.modifierGroup,
+        modifierLinks: (
+          groupModifierLinksByGroupId.get(link.modifierGroup.id) ?? []
+        ).flatMap((groupLink) => {
+          const modifier = modifiersById.get(groupLink.modifierId);
+          return modifier ? [{ ...groupLink, modifier }] : [];
+        }),
+      },
+    });
+    const variationModifierOverridesByVariationId = this.groupBy(
+      variationModifierOverrides.flatMap((override) => {
+        const modifier = modifiersById.get(override.modifierId);
+        return modifier ? [{ ...override, modifier }] : [];
+      }),
+      (override) => override.variationId,
+    );
+    const attachVariationModifiers = <
+      T extends (typeof categoryVariations)[number],
+    >(
+      variation: T,
+    ) => ({
+      ...variation,
+      modifierPriceOverrides:
+        variationModifierOverridesByVariationId.get(variation.id) ?? [],
+    });
+
+    return {
+      ...item,
+      category: {
+        ...item.category,
+        variations: categoryVariations.map(attachVariationModifiers),
+        variationLinks: categoryVariationLinks.map((link) => ({
+          ...link,
+          variation: attachVariationModifiers(link.variation),
+        })),
+        modifierLinks: categoryModifierLinks.map(attachModifierGroup),
+      },
+      modifierLinks: itemModifierLinks.map(attachModifierGroup),
+      modifierPriceOverrides: modifierPriceOverrides.flatMap((override) => {
+        const modifier = modifiersById.get(override.modifierId);
+        return modifier ? [{ ...override, modifier }] : [];
+      }),
+      variationPriceOverrides: variationPriceOverrides.map((override) => ({
+        ...override,
+        variation: attachVariationModifiers(override.variation),
+      })),
+    };
   }
 
   async listPublicDealScopeMenuItems(
