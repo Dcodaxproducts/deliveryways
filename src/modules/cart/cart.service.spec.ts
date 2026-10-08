@@ -3746,6 +3746,7 @@ describe('CartService', () => {
     expect(buildCartResponseSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'cart-1' }),
       user,
+      [expect.objectContaining({ id: 'menu-1' })],
     );
     expect(result.message).toBe('Item added to cart successfully');
   });
@@ -4815,7 +4816,7 @@ describe('CartService', () => {
     });
   });
 
-  it('increments quantity for identical cart item selections', async () => {
+  it('reuses one hydrated menu graph when incrementing an identical cart item', async () => {
     const { service, cartRepository, profilesRepository } = makeService();
     const existingCart = {
       id: 'cart-1',
@@ -4860,7 +4861,7 @@ describe('CartService', () => {
       branchOverrides: [],
     });
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
-    jest
+    const buildCartResponse = jest
       .spyOn(service as never, 'buildCartResponse' as never)
       .mockResolvedValue({ id: 'cart-1', items: [] } as never);
 
@@ -4884,6 +4885,14 @@ describe('CartService', () => {
       quantity: 5,
     });
     expect(cartRepository.createItem).not.toHaveBeenCalled();
+    expect(cartRepository.findMenuItemForCart).toHaveBeenCalledTimes(1);
+    expect(buildCartResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ quantity: 5 })],
+      }),
+      expect.objectContaining({ uid: 'user-1' }),
+      [expect.objectContaining({ id: 'menu-1' })],
+    );
   });
 
   it('allows modifiers inherited from the item category', async () => {
@@ -7259,7 +7268,17 @@ describe('CartService', () => {
       jest.spyOn(batchService, 'getCartForAddItem').mockResolvedValue(cart);
       const validateSpy = jest
         .spyOn(batchService, 'assertValidCartItem')
-        .mockImplementation((...args: unknown[]) => Promise.resolve(args[2]));
+        .mockImplementation((...args: unknown[]) => {
+          const dto = args[2] as { menuItemId: string };
+          return Promise.resolve({
+            dto,
+            menuItem: {
+              id: dto.menuItemId,
+              modifierLinks: [],
+              branchOverrides: [],
+            },
+          });
+        });
       jest
         .spyOn(batchService, 'getExistingCartOrThrow')
         .mockResolvedValue(cart);
@@ -7294,7 +7313,14 @@ describe('CartService', () => {
             new BadRequestException('Menu item unavailable'),
           );
         }
-        return Promise.resolve(dto);
+        return Promise.resolve({
+          dto,
+          menuItem: {
+            id: dto.menuItemId,
+            modifierLinks: [],
+            branchOverrides: [],
+          },
+        });
       });
 
       await expect(

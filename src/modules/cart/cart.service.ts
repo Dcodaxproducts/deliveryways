@@ -74,7 +74,12 @@ interface PreparedCartBatchItem {
   dto: AddCartItemDto;
   selection: CartSelectionIdentity;
   quantity: number;
+  menuItem: CartMenuItem;
 }
+
+type CartMenuItem = NonNullable<
+  Awaited<ReturnType<CartRepository['findMenuItemForCart']>>
+>;
 
 interface CartSnapshot {
   id: string;
@@ -608,7 +613,7 @@ export class CartService {
     skipResponse = false,
   ) {
     const cart = await this.getCartForAddItem(user, dto, requestedCustomerId);
-    const validatedDto = await this.assertValidCartItem(
+    const { dto: validatedDto, menuItem } = await this.assertValidCartItem(
       cart.restaurantId,
       cart.branchId,
       {
@@ -633,11 +638,10 @@ export class CartService {
     );
 
     if (matchingItem) {
-      await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
-        ...validatedDto,
-        quantity: matchingItem.quantity + dto.quantity,
-        restaurantMenuId: cart.restaurantMenuId ?? dto.restaurantMenuId,
-      });
+      this.assertItemQuantityLimits(
+        menuItem,
+        matchingItem.quantity + dto.quantity,
+      );
 
       await this.cartRepository.updateItem(matchingItem.id, {
         quantity: matchingItem.quantity + dto.quantity,
@@ -667,7 +671,7 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart, user),
+      data: await this.buildCartResponse(updatedCart, user, [menuItem]),
       message: 'Item added to cart successfully',
     };
   }
@@ -721,7 +725,7 @@ export class CartService {
 
     for (const item of items) {
       this.assertBatchItemScope(cart, item);
-      const validatedDto = await this.assertValidCartItem(
+      const { dto: validatedDto, menuItem } = await this.assertValidCartItem(
         cart.restaurantId,
         cart.branchId,
         {
@@ -754,6 +758,7 @@ export class CartService {
         dto: validatedDto,
         selection,
         quantity: validatedDto.quantity,
+        menuItem,
       });
     }
 
@@ -777,12 +782,7 @@ export class CartService {
         (matchingItem?.quantity ?? 0) + preparedItem.quantity;
 
       if (finalQuantity !== preparedItem.dto.quantity) {
-        await this.assertValidCartItem(cart.restaurantId, cart.branchId, {
-          ...preparedItem.dto,
-          quantity: finalQuantity,
-          restaurantMenuId:
-            cart.restaurantMenuId ?? preparedItem.dto.restaurantMenuId,
-        });
+        this.assertItemQuantityLimits(preparedItem.menuItem, finalQuantity);
       }
 
       if (matchingItem) {
@@ -833,7 +833,11 @@ export class CartService {
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart, user),
+      data: await this.buildCartResponse(updatedCart, user, [
+        ...new Map(
+          preparedItems.map((item) => [item.menuItem.id, item.menuItem]),
+        ).values(),
+      ]),
       message: 'Items added to cart successfully',
     };
   }
@@ -1526,13 +1530,29 @@ export class CartService {
     );
   }
 
-  private async buildCartResponse(cart: CartSnapshot, user?: AuthUserContext) {
-    const menuItems = await this.cartRepository.findMenuItemsForResponse(
-      [...new Set(cart.items.map((item) => item.menuItemId))],
+  private async buildCartResponse(
+    cart: CartSnapshot,
+    user?: AuthUserContext,
+    prefetchedMenuItems: CartMenuItem[] = [],
+  ) {
+    const menuItemIds = [...new Set(cart.items.map((item) => item.menuItemId))];
+    const menuItemMap = new Map(
+      prefetchedMenuItems
+        .filter((item) => menuItemIds.includes(item.id))
+        .map((item) => [item.id, item]),
+    );
+    const missingMenuItemIds = menuItemIds.filter(
+      (menuItemId) => !menuItemMap.has(menuItemId),
+    );
+    const loadedMenuItems = await this.cartRepository.findMenuItemsForResponse(
+      missingMenuItemIds,
       cart.restaurantId,
       cart.branchId,
     );
-    const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
+    for (const menuItem of loadedMenuItems) {
+      menuItemMap.set(menuItem.id, menuItem);
+    }
+    const menuItems = [...menuItemMap.values()];
     const sectionsByCartItemId = new Map(
       cart.items.map((item) => [item.id, this.readSections(item.modifiers)]),
     );
@@ -3518,7 +3538,7 @@ export class CartService {
     restaurantId: string,
     branchId: string,
     dto: AddCartItemDto,
-  ): Promise<AddCartItemDto> {
+  ): Promise<{ dto: AddCartItemDto; menuItem: CartMenuItem }> {
     const menuItem = await this.cartRepository.findMenuItemForCart(
       dto.menuItemId,
       restaurantId,
@@ -3616,7 +3636,7 @@ export class CartService {
 
     await this.assertValidSplitSections(menuItem, branchId, validatedDto);
 
-    return validatedDto;
+    return { dto: validatedDto, menuItem };
   }
 
   private async getReadyMadeDealItemOptions(
