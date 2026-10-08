@@ -4,6 +4,26 @@ import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
 import { ListRestaurantMenuItemsDto, ListRestaurantMenusDto } from './dto';
 
+const restaurantMenuSelect = {
+  id: true,
+  restaurantId: true,
+  name: true,
+  slug: true,
+  description: true,
+  isTimed: true,
+  timingConfig: true,
+  sortOrder: true,
+  isActive: true,
+  deletedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: { select: { items: true, categories: true } },
+} satisfies Prisma.RestaurantMenuSelect;
+
+type RestaurantMenuRow = Prisma.RestaurantMenuGetPayload<{
+  select: typeof restaurantMenuSelect;
+}>;
+
 @Injectable()
 export class RestaurantMenuRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -34,149 +54,22 @@ export class RestaurantMenuRepository {
   }
 
   async findById(id: string) {
-    return this.prisma.restaurantMenu.findUnique({
+    const menu = await this.prisma.restaurantMenu.findUnique({
       where: { id },
-      include: {
-        items: {
-          where: {
-            menuItem: {
-              deletedAt: null,
-            },
-          },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: {
-            menuItem: {
-              include: {
-                category: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                    imageUrl: true,
-                    items: {
-                      where: {
-                        deletedAt: null,
-                        isActive: true,
-                      },
-                      select: {
-                        id: true,
-                        name: true,
-                        slug: true,
-                      },
-                      orderBy: [{ createdAt: 'asc' }],
-                    },
-                    variations: {
-                      where: { deletedAt: null, isActive: true },
-                      include: {
-                        itemPriceOverrides: true,
-                      },
-                      orderBy: { sortOrder: 'asc' },
-                    },
-                    variationLinks: {
-                      where: {
-                        isActive: true,
-                        variation: { deletedAt: null, isActive: true },
-                      },
-                      include: {
-                        variation: { include: { itemPriceOverrides: true } },
-                      },
-                      orderBy: [{ sortOrder: 'asc' }],
-                    },
-                    modifierLinks: {
-                      orderBy: [{ sortOrder: 'asc' }],
-                      include: {
-                        modifierGroup: {
-                          include: {
-                            modifierLinks: {
-                              where: {
-                                modifier: { deletedAt: null, isActive: true },
-                              },
-                              orderBy: [
-                                { sortOrder: 'asc' },
-                                { modifier: { createdAt: 'asc' } },
-                              ],
-                              include: {
-                                modifier: {
-                                  include: {
-                                    itemPriceOverrides: true,
-                                    variationPriceOverrides: true,
-                                  },
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-                modifierLinks: {
-                  orderBy: [{ sortOrder: 'asc' }],
-                  include: {
-                    modifierGroup: {
-                      include: {
-                        modifierLinks: {
-                          where: {
-                            modifier: { deletedAt: null, isActive: true },
-                          },
-                          include: {
-                            modifier: {
-                              include: {
-                                itemPriceOverrides: true,
-                                variationPriceOverrides: true,
-                              },
-                            },
-                          },
-                          orderBy: [
-                            { sortOrder: 'asc' },
-                            { modifier: { createdAt: 'asc' } },
-                          ],
-                        },
-                      },
-                    },
-                  },
-                },
-                modifierPriceOverrides: {
-                  include: {
-                    modifier: true,
-                  },
-                  orderBy: [{ modifier: { sortOrder: 'asc' } }],
-                },
-                variationPriceOverrides: {
-                  include: {
-                    variation: {
-                      include: {
-                        itemPriceOverrides: true,
-                      },
-                    },
-                  },
-                  orderBy: [{ variation: { sortOrder: 'asc' } }],
-                },
-              },
-            },
-          },
-        },
-        categories: {
-          where: {
-            menuCategory: {
-              deletedAt: null,
-            },
-          },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: {
-            menuCategory: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                imageUrl: true,
-                isActive: true,
-              },
-            },
-          },
-        },
-      },
+      select: restaurantMenuSelect,
     });
+
+    if (!menu) {
+      return null;
+    }
+
+    return (
+      await this.hydrateMenus([menu], {
+        includeInactiveItems: true,
+        includeInactiveLinks: true,
+        categoryModifierOverrides: true,
+      })
+    )[0];
   }
 
   async list(restaurantId: string | undefined, query: ListRestaurantMenusDto) {
@@ -194,7 +87,7 @@ export class RestaurantMenuRepository {
         : {}),
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [menus, total] = await Promise.all([
       this.prisma.restaurantMenu.findMany({
         where,
         skip: (query.page - 1) * query.limit,
@@ -203,149 +96,264 @@ export class RestaurantMenuRepository {
           { sortOrder: 'asc' },
           { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
         ],
-        include: {
-          _count: { select: { items: true, categories: true } },
-          items: {
-            where: {
-              ...(query.includeInactive ? {} : { isActive: true }),
-              menuItem: {
-                deletedAt: null,
-                ...(query.includeInactive ? {} : { isActive: true }),
-              },
-            },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            include: {
-              menuItem: {
-                include: {
-                  category: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                      imageUrl: true,
-                      items: {
-                        where: {
-                          deletedAt: null,
-                          isActive: true,
-                        },
-                        select: {
-                          id: true,
-                          name: true,
-                          slug: true,
-                        },
-                        orderBy: [{ createdAt: 'asc' }],
-                      },
-                      variations: {
-                        where: { deletedAt: null, isActive: true },
-                        include: {
-                          itemPriceOverrides: true,
-                        },
-                        orderBy: { sortOrder: 'asc' },
-                      },
-                      variationLinks: {
-                        where: {
-                          isActive: true,
-                          variation: { deletedAt: null, isActive: true },
-                        },
-                        include: {
-                          variation: { include: { itemPriceOverrides: true } },
-                        },
-                        orderBy: [{ sortOrder: 'asc' }],
-                      },
-                      modifierLinks: {
-                        orderBy: [{ sortOrder: 'asc' }],
-                        include: {
-                          modifierGroup: {
-                            include: {
-                              modifierLinks: {
-                                where: {
-                                  modifier: { deletedAt: null, isActive: true },
-                                },
-                                orderBy: [
-                                  { sortOrder: 'asc' },
-                                  { modifier: { createdAt: 'asc' } },
-                                ],
-                                include: {
-                                  modifier: true,
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                  modifierLinks: {
-                    orderBy: [{ sortOrder: 'asc' }],
-                    include: {
-                      modifierGroup: {
-                        include: {
-                          modifierLinks: {
-                            where: {
-                              modifier: { deletedAt: null, isActive: true },
-                            },
-                            include: {
-                              modifier: {
-                                include: {
-                                  itemPriceOverrides: true,
-                                  variationPriceOverrides: true,
-                                },
-                              },
-                            },
-                            orderBy: [
-                              { sortOrder: 'asc' },
-                              { modifier: { createdAt: 'asc' } },
-                            ],
-                          },
-                        },
-                      },
-                    },
-                  },
-                  modifierPriceOverrides: {
-                    include: {
-                      modifier: true,
-                    },
-                    orderBy: [{ modifier: { sortOrder: 'asc' } }],
-                  },
-                  variationPriceOverrides: {
-                    include: {
-                      variation: {
-                        include: {
-                          itemPriceOverrides: true,
-                        },
-                      },
-                    },
-                    orderBy: [{ variation: { sortOrder: 'asc' } }],
-                  },
-                },
-              },
-            },
-          },
-          categories: {
-            where: {
-              menuCategory: {
-                deletedAt: null,
-              },
-            },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            include: {
-              menuCategory: {
-                select: {
-                  id: true,
-                  name: true,
-                  slug: true,
-                  imageUrl: true,
-                  isActive: true,
-                },
-              },
-            },
-          },
-        },
+        select: restaurantMenuSelect,
       }),
       this.prisma.restaurantMenu.count({ where }),
     ]);
 
+    const items = await this.hydrateMenus(menus, {
+      includeInactiveItems: Boolean(query.includeInactive),
+      includeInactiveLinks: Boolean(query.includeInactive),
+      categoryModifierOverrides: false,
+    });
+
     return { items, total };
+  }
+
+  private async hydrateMenus(
+    menus: RestaurantMenuRow[],
+    options: {
+      includeInactiveItems: boolean;
+      includeInactiveLinks: boolean;
+      categoryModifierOverrides: boolean;
+    },
+  ) {
+    if (menus.length === 0) {
+      return [];
+    }
+
+    const menuIds = menus.map((menu) => menu.id);
+    const [itemLinks, categoryLinks] = await Promise.all([
+      this.prisma.restaurantMenuItem.findMany({
+        where: {
+          restaurantMenuId: { in: menuIds },
+          ...(options.includeInactiveLinks ? {} : { isActive: true }),
+          menuItem: {
+            deletedAt: null,
+            ...(options.includeInactiveItems ? {} : { isActive: true }),
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        include: { menuItem: true },
+      }),
+      this.prisma.restaurantMenuCategory.findMany({
+        where: {
+          restaurantMenuId: { in: menuIds },
+          menuCategory: { deletedAt: null },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        include: {
+          menuCategory: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              imageUrl: true,
+              isActive: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const itemIds = [...new Set(itemLinks.map((link) => link.menuItemId))];
+    const categoryIds = [
+      ...new Set([
+        ...itemLinks.map((link) => link.menuItem.categoryId),
+        ...categoryLinks.map((link) => link.menuCategoryId),
+      ]),
+    ];
+
+    const [categories, itemVariationOverrides] = await Promise.all([
+      this.prisma.menuCategory.findMany({
+        where: { id: { in: categoryIds } },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          imageUrl: true,
+          items: {
+            where: { deletedAt: null, isActive: true },
+            select: { id: true, name: true, slug: true },
+            orderBy: [{ createdAt: 'asc' }],
+          },
+          variations: {
+            where: { deletedAt: null, isActive: true },
+            include: {
+              itemPriceOverrides: { where: { menuItemId: { in: itemIds } } },
+            },
+            orderBy: { sortOrder: 'asc' },
+          },
+          variationLinks: {
+            where: {
+              isActive: true,
+              variation: { deletedAt: null, isActive: true },
+            },
+            include: {
+              variation: {
+                include: {
+                  itemPriceOverrides: {
+                    where: { menuItemId: { in: itemIds } },
+                  },
+                },
+              },
+            },
+            orderBy: [{ sortOrder: 'asc' }],
+          },
+        },
+      }),
+      this.prisma.menuItemVariationPriceOverride.findMany({
+        where: { menuItemId: { in: itemIds } },
+        include: {
+          variation: {
+            include: {
+              itemPriceOverrides: { where: { menuItemId: { in: itemIds } } },
+            },
+          },
+        },
+        orderBy: [{ variation: { sortOrder: 'asc' } }],
+      }),
+    ]);
+
+    const variationIds = [
+      ...new Set([
+        ...categories.flatMap((category) =>
+          category.variations.map((variation) => variation.id),
+        ),
+        ...categories.flatMap((category) =>
+          category.variationLinks.map((link) => link.variationId),
+        ),
+        ...itemVariationOverrides.map((override) => override.variationId),
+      ]),
+    ];
+    const variationOverrideWhere: Prisma.MenuVariationModifierPriceOverrideWhereInput =
+      {
+        variationId: { in: variationIds },
+        OR: [{ menuItemId: null }, { menuItemId: { in: itemIds } }],
+      };
+
+    const modifierInclude = {
+      itemPriceOverrides: { where: { menuItemId: { in: itemIds } } },
+      variationPriceOverrides: { where: variationOverrideWhere },
+    } satisfies Prisma.ModifierInclude;
+
+    const [categoryModifierLinks, itemModifierLinks, itemModifierOverrides] =
+      await Promise.all([
+        this.prisma.menuCategoryModifierGroup.findMany({
+          where: { categoryId: { in: categoryIds } },
+          orderBy: [{ sortOrder: 'asc' }],
+          include: {
+            modifierGroup: {
+              include: {
+                modifierLinks: {
+                  where: { modifier: { deletedAt: null, isActive: true } },
+                  orderBy: [
+                    { sortOrder: 'asc' },
+                    { modifier: { createdAt: 'asc' } },
+                  ],
+                  include: {
+                    modifier: options.categoryModifierOverrides
+                      ? { include: modifierInclude }
+                      : true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.menuItemModifierGroup.findMany({
+          where: { menuItemId: { in: itemIds } },
+          orderBy: [{ sortOrder: 'asc' }],
+          include: {
+            modifierGroup: {
+              include: {
+                modifierLinks: {
+                  where: { modifier: { deletedAt: null, isActive: true } },
+                  orderBy: [
+                    { sortOrder: 'asc' },
+                    { modifier: { createdAt: 'asc' } },
+                  ],
+                  include: { modifier: { include: modifierInclude } },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.menuItemModifierPriceOverride.findMany({
+          where: { menuItemId: { in: itemIds } },
+          include: { modifier: true },
+          orderBy: [{ modifier: { sortOrder: 'asc' } }],
+        }),
+      ]);
+
+    const groupBy = <T, K>(rows: T[], key: (row: T) => K) => {
+      const grouped = new Map<K, T[]>();
+      for (const row of rows) {
+        const group = grouped.get(key(row));
+        if (group) {
+          group.push(row);
+        } else {
+          grouped.set(key(row), [row]);
+        }
+      }
+      return grouped;
+    };
+
+    const categoryModifiersByCategory = groupBy(
+      categoryModifierLinks,
+      (link) => link.categoryId,
+    );
+    const categoryById = new Map(
+      categories.map((category) => [
+        category.id,
+        {
+          ...category,
+          modifierLinks: categoryModifiersByCategory.get(category.id) ?? [],
+        },
+      ]),
+    );
+    const itemModifiersByItem = groupBy(
+      itemModifierLinks,
+      (link) => link.menuItemId,
+    );
+    const modifierOverridesByItem = groupBy(
+      itemModifierOverrides,
+      (override) => override.menuItemId,
+    );
+    const variationOverridesByItem = groupBy(
+      itemVariationOverrides,
+      (override) => override.menuItemId,
+    );
+    const menuItemById = new Map(
+      itemLinks.map((link) => {
+        const item = link.menuItem;
+        return [
+          item.id,
+          {
+            ...item,
+            category: categoryById.get(item.categoryId)!,
+            modifierLinks: itemModifiersByItem.get(item.id) ?? [],
+            modifierPriceOverrides: modifierOverridesByItem.get(item.id) ?? [],
+            variationPriceOverrides:
+              variationOverridesByItem.get(item.id) ?? [],
+          },
+        ];
+      }),
+    );
+    const itemLinksByMenu = groupBy(itemLinks, (link) => link.restaurantMenuId);
+    const categoryLinksByMenu = groupBy(
+      categoryLinks,
+      (link) => link.restaurantMenuId,
+    );
+
+    return menus.map((menu) => ({
+      ...menu,
+      items: (itemLinksByMenu.get(menu.id) ?? []).map((link) => ({
+        ...link,
+        menuItem: menuItemById.get(link.menuItemId)!,
+      })),
+      categories: categoryLinksByMenu.get(menu.id) ?? [],
+    }));
   }
 
   async update(
