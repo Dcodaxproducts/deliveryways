@@ -1,5 +1,15 @@
-import { Body, Controller, Delete, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import {
   AuthUserContext,
   CurrentUser,
@@ -16,7 +26,12 @@ import {
   CreatePresignedUploadUrlDto,
   CreatePresignedViewUrlDto,
   DeleteStoredFileDto,
+  UploadImageDto,
 } from './dto';
+import {
+  MAX_IMAGE_UPLOAD_BYTES,
+  UploadedImageFile,
+} from './image-processor.service';
 import { StorageService } from './storage.service';
 import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
 
@@ -28,11 +43,36 @@ export class StorageController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Post('presigned-upload')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   createPresignedUploadUrl(
     @CurrentUser() user: AuthUserContext | undefined,
     @Body() dto: CreatePresignedUploadUrlDto,
   ) {
     return this.storageService.createPresignedUploadUrl(user, dto);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('upload-image')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES, files: 1 },
+      fileFilter: (_request, file, callback) =>
+        callback(
+          null,
+          ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(
+            file.mimetype.toLowerCase(),
+          ),
+        ),
+    }),
+  )
+  uploadImage(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @UploadedFile() file: UploadedImageFile | undefined,
+    @Body() dto: UploadImageDto,
+  ) {
+    return this.storageService.uploadImage(user, file, dto);
   }
 
   @ApiBearerAuth()

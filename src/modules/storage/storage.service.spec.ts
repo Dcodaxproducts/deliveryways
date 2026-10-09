@@ -3,6 +3,11 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { UserRoleEnum } from '../../common/enums';
+import {
+  ImageAssetType,
+  ImageProcessorService,
+} from './image-processor.service';
+import * as sharp from 'sharp';
 import { StorageService } from './storage.service';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
@@ -33,7 +38,7 @@ describe('StorageService', () => {
       get: jest.fn(getConfig),
     } as unknown as ConfigService;
 
-    service = new StorageService(configService);
+    service = new StorageService(configService, new ImageProcessorService());
     (getSignedUrl as jest.Mock).mockResolvedValue('https://signed-url.example');
     jest
       .spyOn(S3Client.prototype, 'send')
@@ -206,6 +211,59 @@ describe('StorageService', () => {
       /^uploads\/tenant-1\/restaurant-1\/branch-1\/staff-1\/\d{4}-\d{2}-\d{2}\//,
     );
     expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
+  });
+
+  it('marks legacy direct image uploads as deprecated with a fixed sunset', async () => {
+    const result = await service.createPresignedUploadUrl(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      { fileName: 'legacy.png', contentType: 'image/png', fileSize: 1024 },
+    );
+
+    expect(result).toMatchObject({
+      deprecated: true,
+      sunsetAt: '2027-01-31T00:00:00.000Z',
+      replacementEndpoint: '/storage/upload-image',
+    });
+  });
+
+  it('uploads an optimized image and cleans the replaced owned object', async () => {
+    const fixture = await sharp({
+      create: {
+        width: 1800,
+        height: 900,
+        channels: 3,
+        background: '#3388cc',
+      },
+    })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+    const send = jest.spyOn(S3Client.prototype, 'send');
+
+    const result = await service.uploadImage(
+      {
+        uid: 'user-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      { buffer: fixture, mimetype: 'image/jpeg', originalname: 'hero.jpg' },
+      {
+        assetType: ImageAssetType.HERO,
+        replaceFileUrl:
+          'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/user-1/2026-03-16/old.webp',
+      },
+    );
+
+    expect(result.capability).toBe('optimized-image-v1');
+    expect(result.contentType).toBe('image/webp');
+    expect(result.key).toMatch(/\.webp$/);
+    expect(result.width).toBeLessThanOrEqual(2400);
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('rejects non-image and non-PDF upload content types', async () => {
