@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -10,6 +11,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { ImageAssetType } from './image-processor.service';
 
 export enum StorageFolderEnum {
   UPLOADS = 'uploads',
@@ -37,6 +39,21 @@ export class CreatePresignedUploadUrlDto {
   @IsNotEmpty()
   @MaxLength(100)
   contentType!: string;
+}
+
+export class UploadImageDto {
+  @ApiPropertyOptional({ enum: ImageAssetType, default: ImageAssetType.CARD })
+  @IsOptional()
+  @IsEnum(ImageAssetType)
+  assetType: ImageAssetType = ImageAssetType.CARD;
+
+  @ApiPropertyOptional({
+    description: 'Owned storage URL to replace after the new upload succeeds',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  replaceFileUrl?: string;
 }
 
 export class CreatePresignedViewUrlDto {

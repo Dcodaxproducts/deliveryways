@@ -21,7 +21,12 @@ import {
   CreatePresignedViewUrlDto,
   DeleteStoredFileDto,
   StorageFolderEnum,
+  UploadImageDto,
 } from './dto';
+import {
+  ImageProcessorService,
+  UploadedImageFile,
+} from './image-processor.service';
 
 interface S3Config {
   accessKeyId?: string;
@@ -34,7 +39,10 @@ interface S3Config {
 
 @Injectable()
 export class StorageService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly imageProcessorService: ImageProcessorService,
+  ) {}
 
   async resolveMediaUrlsDeep<T>(value: T): Promise<T> {
     const cache = new Map<string, Promise<string | null>>();
@@ -99,10 +107,12 @@ export class StorageService {
     dto: CreatePresignedUploadUrlDto,
   ) {
     const normalizedContentType = dto.contentType.toLowerCase();
-    if (
-      !normalizedContentType.startsWith('image/') &&
-      normalizedContentType !== 'application/pdf'
-    ) {
+    if (normalizedContentType.startsWith('image/')) {
+      throw new BadRequestException(
+        'Images must use the server-optimized /storage/upload-image endpoint',
+      );
+    }
+    if (normalizedContentType !== 'application/pdf') {
       throw new BadRequestException('Only image and PDF uploads are supported');
     }
 
@@ -145,6 +155,93 @@ export class StorageService {
       headers: {
         'Content-Type': dto.contentType,
       },
+    };
+  }
+
+  async uploadImage(
+    user: AuthUserContext | undefined,
+    file: UploadedImageFile | undefined,
+    dto: UploadImageDto,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Image file is required');
+    }
+
+    const folder = StorageFolderEnum.UPLOADS;
+    if (user) {
+      this.ensureFolderAccess(user, folder);
+    }
+
+    const optimized = await this.imageProcessorService.optimize(
+      file.buffer,
+      file.mimetype,
+      dto.assetType,
+    );
+    const s3Config = this.getS3Config();
+    const bucket = s3Config.bucket;
+    if (!bucket || !s3Config.region) {
+      throw new InternalServerErrorException(
+        'S3 bucket configuration is incomplete',
+      );
+    }
+
+    const optimizedFileName = this.withExtension(
+      file.originalname,
+      optimized.extension,
+    );
+    const key = user
+      ? this.buildObjectKey(user, optimizedFileName, folder)
+      : this.buildPublicRegistrationObjectKey(optimizedFileName, folder);
+    const client = this.createS3Client(s3Config);
+
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: optimized.buffer,
+        ContentLength: optimized.buffer.length,
+        ContentType: optimized.contentType,
+        CacheControl: 'public, max-age=31536000, immutable',
+        ContentDisposition: 'inline',
+        Metadata: {
+          width: String(optimized.width),
+          height: String(optimized.height),
+          'source-bytes': String(optimized.sourceBytes),
+        },
+      }),
+    );
+
+    if (dto.replaceFileUrl) {
+      if (!user) {
+        await this.deleteKey(client, bucket, key);
+        throw new ForbiddenException(
+          'Authentication is required to replace an image',
+        );
+      }
+      try {
+        const oldKey = this.resolveObjectKey(
+          undefined,
+          dto.replaceFileUrl,
+          s3Config,
+        );
+        this.ensureObjectAccess(user, oldKey);
+        if (oldKey !== key) {
+          await this.deleteKey(client, bucket, oldKey);
+        }
+      } catch (error: unknown) {
+        await this.deleteKey(client, bucket, key);
+        throw error;
+      }
+    }
+
+    return {
+      key,
+      fileUrl: this.buildFileUrl(bucket, s3Config.region, key),
+      contentType: optimized.contentType,
+      width: optimized.width,
+      height: optimized.height,
+      sourceBytes: optimized.sourceBytes,
+      bytes: optimized.buffer.length,
     };
   }
 
@@ -502,6 +599,19 @@ export class StorageService {
     }
 
     return trimmed.replace(/\\/g, '/').split('/').pop() ?? trimmed;
+  }
+
+  private withExtension(fileName: string, extension: string): string {
+    const safeFileName = this.sanitizeFileName(fileName);
+    const currentExtension = extname(safeFileName);
+    const baseName = currentExtension
+      ? safeFileName.slice(0, -currentExtension.length)
+      : safeFileName;
+    return `${baseName || 'image'}${extension}`;
+  }
+
+  private async deleteKey(client: S3Client, bucket: string, key: string) {
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   }
 
   private slugify(value: string) {
