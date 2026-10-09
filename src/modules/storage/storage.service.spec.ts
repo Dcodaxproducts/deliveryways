@@ -108,7 +108,7 @@ describe('StorageService', () => {
     expect(getSignedUrl).toHaveBeenCalled();
   });
 
-  it('targets WebP object uploads for image content types', async () => {
+  it('preserves declared legacy image type during the compatibility window', async () => {
     const result = await service.createPresignedUploadUrl(
       {
         uid: 'user-1',
@@ -126,13 +126,13 @@ describe('StorageService', () => {
     expect(result.method).toBe('PUT');
     expect(result.uploadUrl).toBe('https://signed-url.example');
     expect(result.key).toMatch(
-      /^uploads\/tenant-1\/restaurant-1\/user-1\/\d{4}-\d{2}-\d{2}\/.*-burger\.webp$/,
+      /^uploads\/tenant-1\/restaurant-1\/user-1\/\d{4}-\d{2}-\d{2}\/.*-burger\.png$/,
     );
     expect(result.fileUrl).toContain(result.key);
-    expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
+    expect(result.headers).toEqual({ 'Content-Type': 'image/png' });
   });
 
-  it('targets WebP public uploads for unauthenticated business registration images', async () => {
+  it('preserves public registration image type during the compatibility window', async () => {
     const result = await service.createPresignedUploadUrl(undefined, {
       fileName: 'business-logo.png',
       contentType: 'image/png',
@@ -142,10 +142,10 @@ describe('StorageService', () => {
     expect(result.method).toBe('PUT');
     expect(result.uploadUrl).toBe('https://signed-url.example');
     expect(result.key).toMatch(
-      /^uploads\/public\/tenant-registration\/\d{4}-\d{2}-\d{2}\/.*-business-logo\.webp$/,
+      /^uploads\/public\/tenant-registration\/\d{4}-\d{2}-\d{2}\/.*-business-logo\.png$/,
     );
     expect(result.fileUrl).toContain(result.key);
-    expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
+    expect(result.headers).toEqual({ 'Content-Type': 'image/png' });
   });
 
   it('allows PDF upload content types', async () => {
@@ -210,7 +210,25 @@ describe('StorageService', () => {
     expect(result.key).toMatch(
       /^uploads\/tenant-1\/restaurant-1\/branch-1\/staff-1\/\d{4}-\d{2}-\d{2}\//,
     );
-    expect(result.headers).toEqual({ 'Content-Type': 'image/webp' });
+    expect(result.headers).toEqual({ 'Content-Type': 'image/png' });
+  });
+
+  it('accepts the installed mobile image payload without fileSize during the bridge', async () => {
+    const result = await service.createPresignedUploadUrl(
+      {
+        uid: 'mobile-user',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: UserRoleEnum.CUSTOMER,
+      },
+      { fileName: 'avatar.jpg', contentType: 'image/jpeg' },
+    );
+
+    expect(result).toMatchObject({
+      deprecated: true,
+      replacementEndpoint: '/storage/upload-image',
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
   });
 
   it('marks legacy direct image uploads as deprecated with a fixed sunset', async () => {
@@ -326,6 +344,20 @@ describe('StorageService', () => {
       'uploads/tenant-1/restaurant-1/branch-1/user-2/2026-03-16/profile.png',
     );
     expect(result.expiresIn).toBe(180);
+  });
+
+  it('rejects storage keys with traversal-like dot segments', async () => {
+    await expect(
+      service.deleteObject(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        { key: 'uploads/tenant-1/restaurant-1/../restaurant-2/image.webp' },
+      ),
+    ).rejects.toThrow('dot segments');
   });
 
   it('blocks cross-scope delete access', async () => {

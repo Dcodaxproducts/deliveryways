@@ -189,7 +189,9 @@ export class ImageProcessorService {
       return;
     }
     if (this.waiters.length >= this.maxQueuedJobs) {
-      throw new ServiceUnavailableException('Image processing is busy; retry later');
+      throw new ServiceUnavailableException(
+        'Image processing is busy; retry later',
+      );
     }
 
     await new Promise<void>((resolve, reject) => {

@@ -159,19 +159,29 @@ export class StorageService {
     user: AuthUserContext | undefined,
     dto: CreatePresignedUploadUrlDto,
   ) {
+    const normalizedContentType = dto.contentType.toLowerCase();
     if (
-      !Number.isInteger(dto.fileSize) ||
-      dto.fileSize < 1 ||
-      dto.fileSize > MAX_UPLOAD_FILE_SIZE_BYTES
+      !normalizedContentType.startsWith('image/') &&
+      dto.fileSize === undefined
+    ) {
+      throw new BadRequestException('fileSize is required');
+    }
+    if (
+      dto.fileSize !== undefined &&
+      (!Number.isInteger(dto.fileSize) ||
+        dto.fileSize < 1 ||
+        dto.fileSize > MAX_UPLOAD_FILE_SIZE_BYTES)
     ) {
       throw new BadRequestException(
         `File size must be less than or equal to ${MAX_UPLOAD_FILE_SIZE_MB}MB`,
       );
     }
 
-    const normalizedContentType = dto.contentType.toLowerCase();
     const isLegacyImageUpload = normalizedContentType.startsWith('image/');
-    if (isLegacyImageUpload && Date.now() >= LEGACY_IMAGE_PRESIGNED_SUNSET.getTime()) {
+    if (
+      isLegacyImageUpload &&
+      Date.now() >= LEGACY_IMAGE_PRESIGNED_SUNSET.getTime()
+    ) {
       throw new BadRequestException(
         'Image presigning has been retired; use /storage/upload-image',
       );
@@ -185,6 +195,7 @@ export class StorageService {
           event: 'legacy_image_presigned_upload_issued',
           authenticated: Boolean(user),
           role: user?.role ?? 'public-registration',
+          sizeDeclared: dto.fileSize !== undefined,
           sunsetAt: LEGACY_IMAGE_PRESIGNED_SUNSET.toISOString(),
           replacement: '/storage/upload-image',
         }),
@@ -192,10 +203,10 @@ export class StorageService {
     }
 
     const folder = StorageFolderEnum.UPLOADS;
-    const uploadTarget = this.resolveUploadTarget(
-      dto.fileName,
-      normalizedContentType,
-    );
+    const uploadTarget = {
+      fileName: dto.fileName,
+      contentType: normalizedContentType,
+    };
 
     if (user) {
       this.ensureFolderAccess(user, folder);
@@ -441,23 +452,6 @@ export class StorageService {
     return this.s3Client;
   }
 
-  private resolveUploadTarget(fileName: string, contentType: string) {
-    if (!contentType.startsWith('image/')) {
-      return { fileName, contentType };
-    }
-
-    const safeFileName = this.sanitizeFileName(fileName);
-    const extension = extname(safeFileName);
-    const baseName = extension
-      ? safeFileName.slice(0, safeFileName.length - extension.length)
-      : safeFileName;
-
-    return {
-      fileName: `${baseName || 'file'}.webp`,
-      contentType: 'image/webp',
-    };
-  }
-
   private buildObjectKey(
     user: AuthUserContext,
     fileName: string,
@@ -587,7 +581,12 @@ export class StorageService {
       return this.normalizeObjectKey(fileUrl);
     }
 
-    const pathname = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ''));
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ''));
+    } catch {
+      throw new BadRequestException('fileUrl contains invalid URL encoding');
+    }
 
     if (!pathname) {
       throw new BadRequestException('Invalid fileUrl path');
@@ -628,11 +627,14 @@ export class StorageService {
   }
 
   private normalizeObjectKey(key: string) {
-    return key
+    const segments = key
       .split('/')
       .map((segment) => segment.trim())
-      .filter(Boolean)
-      .join('/');
+      .filter(Boolean);
+    if (segments.some((segment) => segment === '.' || segment === '..')) {
+      throw new BadRequestException('Storage key cannot contain dot segments');
+    }
+    return segments.join('/');
   }
 
   private ensureObjectAccess(user: AuthUserContext, key: string) {

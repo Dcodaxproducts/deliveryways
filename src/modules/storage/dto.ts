@@ -45,17 +45,18 @@ export class CreatePresignedUploadUrlDto {
   @MaxLength(100)
   contentType!: string;
 
-  @ApiProperty({
-    description: `Upload file size in bytes. Maximum supported size is ${MAX_UPLOAD_FILE_SIZE_MB} MB.`,
+  @ApiPropertyOptional({
+    description: `Upload file size in bytes. Required for updated clients; legacy mobile clients may omit it until the image presign sunset. Maximum supported size is ${MAX_UPLOAD_FILE_SIZE_MB} MB.`,
     example: 1048576,
     minimum: 1,
     maximum: MAX_UPLOAD_FILE_SIZE_BYTES,
   })
+  @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(1)
   @Max(MAX_UPLOAD_FILE_SIZE_BYTES)
-  fileSize!: number;
+  fileSize?: number;
 }
 
 export class UploadImageDto {
