@@ -16,6 +16,9 @@ type FindManyCuisines = (
   args: Prisma.CuisineFindManyArgs,
 ) => Promise<unknown[]>;
 type CountCuisines = (args: Prisma.CuisineCountArgs) => Promise<number>;
+type FindFirstRestaurant = (
+  args: Prisma.RestaurantFindFirstArgs,
+) => Promise<unknown>;
 
 type CompactMenuItemInclude = {
   category: {
@@ -41,6 +44,68 @@ type CompactMenuItemInclude = {
 };
 
 describe('CustomerAppRepository', () => {
+  it('canonicalizes apex and www custom domains to the same verified restaurant', async () => {
+    const findFirst = jest
+      .fn<ReturnType<FindFirstRestaurant>, Parameters<FindFirstRestaurant>>()
+      .mockResolvedValue({ id: 'restaurant-1' });
+    const repository = new CustomerAppRepository({
+      restaurant: { findFirst },
+    } as unknown as PrismaService);
+
+    await repository.findRestaurantDomainContext('pizzeriafourstar.de');
+
+    expect(findFirst.mock.calls[0]?.[0]?.where).toMatchObject({
+      customDomainVerifiedAt: { not: null },
+      OR: [
+        {
+          customDomain: {
+            equals: 'pizzeriafourstar.de',
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+        {
+          customDomain: {
+            equals: 'www.pizzeriafourstar.de',
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+      ],
+    });
+  });
+
+  it('uses the schema-backed dietary flag for public split-pizza queries', async () => {
+    const findMany = jest
+      .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
+      .mockResolvedValue([]);
+    const count = jest
+      .fn<ReturnType<CountMenuItems>, Parameters<CountMenuItems>>()
+      .mockResolvedValue(0);
+    const repository = new CustomerAppRepository({
+      menuItem: { findMany, count },
+    } as unknown as PrismaService);
+
+    await repository.listPublicMenuItems({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      supportsSplitPizza: true,
+      page: 1,
+      limit: 50,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(where).toEqual(
+      expect.objectContaining({
+        dietaryFlags: {
+          array_contains: ['__SPLIT_PIZZA_ENABLED__'],
+        },
+      }),
+    );
+    expect(where).not.toHaveProperty('supportsSplitPizza');
+    expect(count).toHaveBeenCalledWith({ where });
+  });
+
   it('loads cuisine schedule data without a read transaction or item detail graph', async () => {
     const findMany = jest
       .fn<ReturnType<FindManyCuisines>, Parameters<FindManyCuisines>>()

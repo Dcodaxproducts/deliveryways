@@ -797,6 +797,9 @@ export class CustomerAppRepository {
   }
 
   async findRestaurantDomainContext(hostname: string, subdomain?: string) {
+    const customDomainCandidates = hostname.startsWith('www.')
+      ? [hostname, hostname.slice(4)]
+      : [hostname, `www.${hostname}`];
     const select = {
       id: true,
       tenantId: true,
@@ -818,7 +821,12 @@ export class CustomerAppRepository {
       where: {
         deletedAt: null,
         isActive: true,
-        customDomain: { equals: hostname, mode: 'insensitive' },
+        OR: customDomainCandidates.map((customDomain) => ({
+          customDomain: {
+            equals: customDomain,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        })),
         customDomainVerifiedAt: { not: null },
       },
       select,
@@ -1701,7 +1709,11 @@ export class CustomerAppRepository {
       isActive: true,
       AND: requiredFilters,
       ...(query.supportsSplitPizza === true
-        ? { supportsSplitPizza: true }
+        ? {
+            dietaryFlags: {
+              array_contains: ['__SPLIT_PIZZA_ENABLED__'],
+            },
+          }
         : {}),
     };
     const itemOrderBy: Prisma.MenuItemOrderByWithRelationInput[] =
