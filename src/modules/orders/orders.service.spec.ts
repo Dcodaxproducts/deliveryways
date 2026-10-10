@@ -63,6 +63,75 @@ describe('OrdersService - quote menu loading', () => {
     expect(findFirst).not.toHaveBeenCalled();
     expect([...result.keys()]).toEqual(['menu-1', 'menu-2']);
   });
+
+  it('bounds configured-item pricing graph hydration to quoted menu items', async () => {
+    let receivedQuery: { include: Record<string, unknown> } | undefined;
+    const findMany = jest.fn((query: { include: Record<string, unknown> }) => {
+      receivedQuery = query;
+      return Promise.resolve([{ id: 'pizza-schinken' }]);
+    });
+    const service = new OrdersService(
+      { menuItem: { findMany, findFirst: jest.fn() } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const loadQuoteMenuItems = (
+      service as unknown as {
+        loadQuoteMenuItems: (
+          menuItemIds: string[],
+          restaurantId: string,
+          branchId: string,
+        ) => Promise<Map<string, { id: string }>>;
+      }
+    ).loadQuoteMenuItems.bind(service);
+
+    await loadQuoteMenuItems(
+      ['pizza-schinken', 'pizza-schinken'],
+      'restaurant-1',
+      'branch-1',
+    );
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    if (!receivedQuery) {
+      throw new Error('Expected quote menu query to be captured');
+    }
+    const expectedItemScope = {
+      where: { menuItemId: { in: ['pizza-schinken'] } },
+    };
+    const expectedVariationScope = {
+      where: {
+        OR: [{ menuItemId: { in: ['pizza-schinken'] } }, { menuItemId: null }],
+      },
+    };
+
+    const assertPricingRelationsAreScoped = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+
+      for (const [key, child] of Object.entries(value)) {
+        if (key === 'itemPriceOverrides') {
+          expect(child).toMatchObject(expectedItemScope);
+        }
+        const childRecord =
+          child && typeof child === 'object'
+            ? (child as Record<string, unknown>)
+            : null;
+        const childInclude = childRecord?.include;
+        const isMenuItemVariationOverride =
+          childInclude !== null &&
+          typeof childInclude === 'object' &&
+          'variation' in childInclude;
+        if (key === 'variationPriceOverrides' && !isMenuItemVariationOverride) {
+          expect(child).toMatchObject(expectedVariationScope);
+        }
+        assertPricingRelationsAreScoped(child);
+      }
+    };
+
+    assertPricingRelationsAreScoped(receivedQuery.include);
+  });
 });
 
 describe('OrdersService - delivery radius', () => {
