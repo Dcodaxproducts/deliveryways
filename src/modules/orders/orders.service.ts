@@ -1968,6 +1968,16 @@ export class OrdersService {
     branchId: string,
   ) {
     const uniqueMenuItemIds = [...new Set(menuItemIds)];
+    // These relations are restaurant-wide. Quote pricing only needs overrides
+    // for the requested items, plus global variation overrides.
+    const scopedItemPriceOverrides = {
+      where: { menuItemId: { in: uniqueMenuItemIds } },
+    };
+    const scopedVariationPriceOverrides = {
+      where: {
+        OR: [{ menuItemId: { in: uniqueMenuItemIds } }, { menuItemId: null }],
+      },
+    };
     const include = {
       category: {
         select: {
@@ -1976,16 +1986,17 @@ export class OrdersService {
             where: { deletedAt: null, isActive: true },
             include: {
               modifierPriceOverrides: {
+                ...scopedVariationPriceOverrides,
                 include: {
                   modifier: {
                     include: {
-                      itemPriceOverrides: true,
-                      variationPriceOverrides: true,
+                      itemPriceOverrides: scopedItemPriceOverrides,
+                      variationPriceOverrides: scopedVariationPriceOverrides,
                     },
                   },
                 },
               },
-              itemPriceOverrides: true,
+              itemPriceOverrides: scopedItemPriceOverrides,
             },
           },
           variationLinks: {
@@ -1997,16 +2008,18 @@ export class OrdersService {
               variation: {
                 include: {
                   modifierPriceOverrides: {
+                    ...scopedVariationPriceOverrides,
                     include: {
                       modifier: {
                         include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
+                          itemPriceOverrides: scopedItemPriceOverrides,
+                          variationPriceOverrides:
+                            scopedVariationPriceOverrides,
                         },
                       },
                     },
                   },
-                  itemPriceOverrides: true,
+                  itemPriceOverrides: scopedItemPriceOverrides,
                 },
               },
             },
@@ -2024,8 +2037,9 @@ export class OrdersService {
                     include: {
                       modifier: {
                         include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
+                          itemPriceOverrides: scopedItemPriceOverrides,
+                          variationPriceOverrides:
+                            scopedVariationPriceOverrides,
                         },
                       },
                     },
@@ -2047,8 +2061,8 @@ export class OrdersService {
                 include: {
                   modifier: {
                     include: {
-                      itemPriceOverrides: true,
-                      variationPriceOverrides: true,
+                      itemPriceOverrides: scopedItemPriceOverrides,
+                      variationPriceOverrides: scopedVariationPriceOverrides,
                     },
                   },
                 },
@@ -2061,8 +2075,8 @@ export class OrdersService {
         include: {
           modifier: {
             include: {
-              itemPriceOverrides: true,
-              variationPriceOverrides: true,
+              itemPriceOverrides: scopedItemPriceOverrides,
+              variationPriceOverrides: scopedVariationPriceOverrides,
             },
           },
         },
@@ -2072,16 +2086,17 @@ export class OrdersService {
           variation: {
             include: {
               modifierPriceOverrides: {
+                ...scopedVariationPriceOverrides,
                 include: {
                   modifier: {
                     include: {
-                      itemPriceOverrides: true,
-                      variationPriceOverrides: true,
+                      itemPriceOverrides: scopedItemPriceOverrides,
+                      variationPriceOverrides: scopedVariationPriceOverrides,
                     },
                   },
                 },
               },
-              itemPriceOverrides: true,
+              itemPriceOverrides: scopedItemPriceOverrides,
             },
           },
         },
