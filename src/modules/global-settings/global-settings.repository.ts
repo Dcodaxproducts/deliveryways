@@ -13,6 +13,11 @@ export class GlobalSettingsRepository {
   }
 
   async ensureSingleton(data: Prisma.GlobalSettingCreateInput) {
+    const existing = await this.findSingleton();
+    if (existing) {
+      return existing;
+    }
+
     return this.prisma.globalSetting.upsert({
       where: { scopeKey: 'GLOBAL' },
       update: {},
