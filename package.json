@@ -12,6 +12,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/main.js",
+    "start:realtime": "node dist/src/realtime-main.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -38,7 +39,8 @@
     "sync:server": "bash scripts/sync-server.sh",
     "deploy:safe": "bash scripts/deploy-safe.sh",
     "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev",
-    "test:realtime-stress": "node --expose-gc -r ts-node/register stress/socket-io-admission.stress.ts"
+    "test:realtime-stress": "node --expose-gc -r ts-node/register stress/socket-io-admission.stress.ts",
+    "test:realtime-isolation": "bash scripts/test-realtime-process-isolation.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1009.0",
@@ -57,6 +59,7 @@
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
     "@prisma/driver-adapter-utils": "7.4.2",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
@@ -68,6 +71,7 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
+    "redis": "^5.12.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "^0.34.4",

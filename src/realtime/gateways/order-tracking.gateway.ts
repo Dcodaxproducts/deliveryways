@@ -13,9 +13,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Server, Socket } from 'socket.io';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
-import { NotificationsRealtimeService } from '../notifications';
-import { OrdersService } from './orders.service';
-import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
+import { OrdersService } from '../../modules/orders/public-api';
+import { RealtimeRooms } from '../../common/realtime/realtime-events';
 import { RealtimeAdmissionService } from '../../common/realtime/realtime-admission.service';
 
 type OrderTrackingSocket = Socket & {
@@ -45,15 +44,8 @@ export class OrderTrackingGateway
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly ordersService: OrdersService,
-    private readonly orderTrackingRealtimeService: OrderTrackingRealtimeService,
-    private readonly notificationsRealtimeService: NotificationsRealtimeService,
     private readonly admission: RealtimeAdmissionService,
   ) {}
-
-  afterInit(server: Server) {
-    this.orderTrackingRealtimeService.registerServer(server);
-    this.notificationsRealtimeService.registerServer(server);
-  }
 
   async handleConnection(client: OrderTrackingSocket) {
     const socketKey = this.socketKey(client);
@@ -120,7 +112,7 @@ export class OrderTrackingGateway
         user,
         body.orderId,
       );
-      const room = this.orderTrackingRealtimeService.getOrderRoom(body.orderId);
+      const room = RealtimeRooms.orderTracking(body.orderId);
 
       await client.join(room);
       client.emit('order.tracking.snapshot', snapshot);
@@ -142,7 +134,7 @@ export class OrderTrackingGateway
         throw new UnauthorizedException('orderId is required');
       }
 
-      const room = this.orderTrackingRealtimeService.getOrderRoom(body.orderId);
+      const room = RealtimeRooms.orderTracking(body.orderId);
       await client.leave(room);
 
       return {
@@ -170,13 +162,8 @@ export class OrderTrackingGateway
       }
 
       const room = scope.branchId
-        ? this.notificationsRealtimeService.getBranchOrdersRoom(
-            scope.restaurantId,
-            scope.branchId,
-          )
-        : this.notificationsRealtimeService.getRestaurantOrdersRoom(
-            scope.restaurantId,
-          );
+        ? RealtimeRooms.branchOrders(scope.restaurantId, scope.branchId)
+        : RealtimeRooms.restaurantOrders(scope.restaurantId);
       await client.join(room);
 
       return { ...scope, room };
@@ -218,14 +205,11 @@ export class OrderTrackingGateway
 
   private getAdminOrdersRoom(user: AuthUserContext) {
     if (user.role === UserRoleEnum.BUSINESS_ADMIN && user.tid) {
-      return this.notificationsRealtimeService.getTenantOrdersRoom(user.tid);
+      return RealtimeRooms.tenantOrders(user.tid);
     }
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN && user.rid && user.bid) {
-      return this.notificationsRealtimeService.getBranchOrdersRoom(
-        user.rid,
-        user.bid,
-      );
+      return RealtimeRooms.branchOrders(user.rid, user.bid);
     }
 
     return null;

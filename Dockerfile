@@ -69,3 +69,11 @@ USER node
 EXPOSE 3000
 
 CMD ["node", "dist/src/main.js"]
+
+FROM production AS realtime
+
+ENV REALTIME_PORT=3001
+
+EXPOSE 3001
+
+CMD ["node", "dist/src/realtime-main.js"]

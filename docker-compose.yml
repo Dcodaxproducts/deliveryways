@@ -1,14 +1,80 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'allkeys-lru']
+    volumes:
+      - deliveryways_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: production
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://deliveryways:deliveryways@postgres:5432/deliveryways
+    ports:
+      - '${API_PORT:-3000}:3000'
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 1g
+    cpus: 1.5
+
+  realtime:
+    build:
+      context: .
+      target: realtime
+    restart: always
+    environment:
+      REALTIME_PORT: 3001
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://deliveryways:deliveryways@postgres:5432/deliveryways
+    ports:
+      - '${REALTIME_HOST_PORT:-3001}:3001'
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    mem_limit: 384m
+    cpus: 0.75
+  migration:
+    build:
+      context: .
+      target: migration
+    environment:
+      DATABASE_URL: postgresql://deliveryways:deliveryways@postgres:5432/deliveryways
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
   postgres:
     image: postgres:16
-    container_name: deliveryways-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: deliveryways
       POSTGRES_PASSWORD: deliveryways
       POSTGRES_DB: deliveryways
-    ports:
-      - '127.0.0.1:5434:5432'
     volumes:
       - deliveryways_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,3 +85,4 @@ services:
 
 volumes:
   deliveryways_postgres_data:
+  deliveryways_redis_data:

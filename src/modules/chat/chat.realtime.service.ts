@@ -5,6 +5,11 @@ import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import { ChatRepository } from './chat.repository';
 import { ListChatThreadsDto } from './dto';
+import { RealtimeEventBusService } from '../../common/realtime/realtime-event-bus.service';
+import {
+  RealtimeEventName,
+  RealtimeRooms,
+} from '../../common/realtime/realtime-events';
 
 type ThreadPayload = {
   id: string;
@@ -54,7 +59,10 @@ export class ChatRealtimeService {
   private readonly logger = new Logger(ChatRealtimeService.name);
   private server: Server | null = null;
 
-  constructor(private readonly chatRepository: ChatRepository) {}
+  constructor(
+    private readonly chatRepository: ChatRepository,
+    private readonly eventBus: RealtimeEventBusService,
+  ) {}
 
   registerServer(server: Server) {
     this.server = server;
@@ -89,31 +97,31 @@ export class ChatRealtimeService {
       return user.tid ? [this.getTenantRoom(user.tid)] : [];
     }
 
-    return [this.getGlobalRoom()];
+    return [];
   }
 
   getThreadRoom(threadId: string): string {
-    return `chat:thread:${threadId}`;
+    return RealtimeRooms.chatThread(threadId);
   }
 
   getUserRoom(customerId: string): string {
-    return `chat:user:${customerId}`;
+    return RealtimeRooms.chatCustomer(customerId);
   }
 
   getDeliverymanRoom(deliverymanId: string): string {
-    return `chat:deliveryman:${deliverymanId}`;
+    return RealtimeRooms.chatDeliveryman(deliverymanId);
   }
 
   getTenantRoom(tenantId: string): string {
-    return `chat:tenant:${tenantId}`;
+    return RealtimeRooms.chatTenant(tenantId);
   }
 
   getBranchRoom(branchId: string): string {
-    return `chat:branch:${branchId}`;
+    return RealtimeRooms.chatBranch(branchId);
   }
 
   getGlobalRoom(): string {
-    return 'chat:global';
+    return RealtimeRooms.chatGlobal();
   }
 
   async emitInitialSummary(socket: Socket, user: AuthUserContext) {
@@ -126,27 +134,22 @@ export class ChatRealtimeService {
     );
   }
 
-  async emitThreadCreated(thread: ThreadPayload) {
-    this.emitToSupportAndCustomerRooms('chat.thread.created', thread);
-    await this.emitSummariesForThread(thread);
+  emitThreadCreated(thread: ThreadPayload): Promise<void> {
+    this.eventBus.publish(RealtimeEventName.CHAT_THREAD_CREATED, thread);
+    return Promise.resolve();
   }
 
-  async emitThreadUpdated(thread: ThreadPayload) {
-    this.emitToSupportAndCustomerRooms('chat.thread.updated', thread);
-    this.emitToRoom(
-      this.getThreadRoom(thread.id),
-      'chat.thread.updated',
-      thread,
-    );
-    await this.emitSummariesForThread(thread);
+  emitThreadUpdated(thread: ThreadPayload): Promise<void> {
+    this.eventBus.publish(RealtimeEventName.CHAT_THREAD_UPDATED, thread);
+    return Promise.resolve();
   }
 
-  async emitMessageCreated(thread: ThreadPayload) {
+  emitMessageCreated(thread: ThreadPayload): Promise<void> {
     const latestMessage =
       thread.messages?.at(-1) ?? thread.latestMessage ?? null;
 
     if (!latestMessage) {
-      return;
+      return Promise.resolve();
     }
 
     const payload = {
@@ -155,16 +158,11 @@ export class ChatRealtimeService {
       thread,
     };
 
-    this.emitToSupportAndCustomerRooms('chat.message.created', payload);
-    this.emitToRoom(
-      this.getThreadRoom(thread.id),
-      'chat.message.created',
-      payload,
-    );
-    await this.emitSummariesForThread(thread);
+    this.eventBus.publish(RealtimeEventName.CHAT_MESSAGE_CREATED, payload);
+    return Promise.resolve();
   }
 
-  async emitThreadRead(thread: ThreadPayload) {
+  emitThreadRead(thread: ThreadPayload): Promise<void> {
     const payload = {
       threadId: thread.id,
       customerUnreadCount: thread.customerUnreadCount,
@@ -173,9 +171,51 @@ export class ChatRealtimeService {
       staffLastReadAt: thread.staffLastReadAt,
     };
 
-    this.emitToSupportAndCustomerRooms('chat.thread.read', payload);
-    this.emitToRoom(this.getThreadRoom(thread.id), 'chat.thread.read', payload);
-    await this.emitSummariesForThread(thread);
+    this.eventBus.publish(RealtimeEventName.CHAT_THREAD_READ, {
+      ...payload,
+      thread,
+    });
+    return Promise.resolve();
+  }
+
+  async deliverEvent(event: string, payload: unknown): Promise<void> {
+    if (!this.server || !payload || typeof payload !== 'object') return;
+    if (
+      event === RealtimeEventName.CHAT_THREAD_CREATED ||
+      event === RealtimeEventName.CHAT_THREAD_UPDATED
+    ) {
+      const thread = payload as ThreadPayload;
+      this.emitToSupportAndCustomerRooms(event, thread);
+      if (event === RealtimeEventName.CHAT_THREAD_UPDATED) {
+        this.emitToRoom(this.getThreadRoom(thread.id), event, thread);
+      }
+      await this.emitSummariesForThread(thread);
+      return;
+    }
+    if (
+      event === RealtimeEventName.CHAT_MESSAGE_CREATED ||
+      event === RealtimeEventName.CHAT_THREAD_READ
+    ) {
+      const wrapped = payload as { thread?: ThreadPayload };
+      if (!wrapped.thread) return;
+      const clientPayload =
+        event === RealtimeEventName.CHAT_THREAD_READ
+          ? this.withoutThread(wrapped)
+          : payload;
+      this.emitToSupportAndCustomerRooms(event, payload);
+      this.emitToRoom(
+        this.getThreadRoom(wrapped.thread.id),
+        event,
+        clientPayload,
+      );
+      await this.emitSummariesForThread(wrapped.thread);
+    }
+  }
+
+  private withoutThread(payload: { thread?: ThreadPayload }): unknown {
+    const clientPayload = { ...payload };
+    delete clientPayload.thread;
+    return clientPayload;
   }
 
   private emitToSupportAndCustomerRooms(event: string, payload: unknown) {
@@ -204,12 +244,12 @@ export class ChatRealtimeService {
     }
 
     rooms.forEach((room) => {
-      this.server?.to(room).emit(event, payload);
+      this.server?.local.to(room).emit(event, payload);
     });
   }
 
   private emitToRoom(room: string, event: string, payload: unknown) {
-    this.server?.to(room).emit(event, payload);
+    this.server?.local.to(room).emit(event, payload);
   }
 
   private getSummaryScopesForThread(thread: ThreadPayload): SummaryScope[] {
@@ -333,7 +373,7 @@ export class ChatRealtimeService {
       ];
     }
 
-    return [{ type: 'global', room: this.getGlobalRoom() }];
+    return [];
   }
 
   private async emitSummariesForThread(thread: ThreadPayload) {

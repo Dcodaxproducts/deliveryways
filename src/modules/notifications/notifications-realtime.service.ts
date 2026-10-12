@@ -1,5 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { Server } from 'socket.io';
+import { Injectable } from '@nestjs/common';
+import { RealtimeEventBusService } from '../../common/realtime/realtime-event-bus.service';
+import {
+  RealtimeEventName,
+  RealtimeRooms,
+} from '../../common/realtime/realtime-events';
 
 export interface OrderCreatedRealtimePayload {
   id: string;
@@ -45,66 +49,29 @@ export interface OrderUpdatedRealtimePayload {
 
 @Injectable()
 export class NotificationsRealtimeService {
-  private readonly logger = new Logger(NotificationsRealtimeService.name);
-  private server: Server | null = null;
-
-  registerServer(server: Server) {
-    this.server = server;
-  }
+  constructor(private readonly eventBus: RealtimeEventBusService) {}
 
   getRestaurantOrdersRoom(restaurantId: string) {
-    return `orders:restaurant:${restaurantId}`;
+    return RealtimeRooms.restaurantOrders(restaurantId);
   }
 
   getTenantOrdersRoom(tenantId: string) {
-    return `orders:tenant:${tenantId}`;
+    return RealtimeRooms.tenantOrders(tenantId);
   }
 
   getBranchOrdersRoom(restaurantId: string, branchId: string) {
-    return `orders:restaurant:${restaurantId}:branch:${branchId}`;
+    return RealtimeRooms.branchOrders(restaurantId, branchId);
   }
 
   emitOrderCreated(payload: OrderCreatedRealtimePayload) {
-    if (!this.server) {
-      return;
-    }
-
-    this.server
-      .to(this.getTenantOrdersRoom(payload.tenantId))
-      .to(this.getRestaurantOrdersRoom(payload.restaurantId))
-      .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
-      .emit('order.created', payload);
-
-    this.logger.debug(
-      `Emitted new order ${payload.id} for restaurant ${payload.restaurantId}`,
-    );
+    this.eventBus.publish(RealtimeEventName.ORDER_CREATED, payload);
   }
 
   emitOrderStatusUpdated(payload: OrderStatusRealtimePayload) {
-    if (!this.server) {
-      return;
-    }
-
-    this.server
-      .to(this.getTenantOrdersRoom(payload.tenantId))
-      .to(this.getRestaurantOrdersRoom(payload.restaurantId))
-      .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
-      .emit('order.status.updated', payload);
+    this.eventBus.publish(RealtimeEventName.ORDER_STATUS_UPDATED, payload);
   }
 
   emitOrderUpdated(payload: OrderUpdatedRealtimePayload) {
-    if (!this.server) {
-      return;
-    }
-
-    this.server
-      .to(this.getTenantOrdersRoom(payload.tenantId))
-      .to(this.getRestaurantOrdersRoom(payload.restaurantId))
-      .to(this.getBranchOrdersRoom(payload.restaurantId, payload.branchId))
-      .emit('order.updated', payload);
-
-    this.logger.debug(
-      `Emitted order update ${payload.id} for restaurant ${payload.restaurantId}`,
-    );
+    this.eventBus.publish(RealtimeEventName.ORDER_UPDATED, payload);
   }
 }

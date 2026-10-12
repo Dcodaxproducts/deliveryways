@@ -9,7 +9,6 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { ResponseInterceptor } from './common/interceptors';
 import { RequestMetricsInterceptor } from './modules/system-health/request-metrics.interceptor';
-import { BoundedSocketIoAdapter } from './common/realtime/bounded-socket-io.adapter';
 
 const compression: typeof import('compression') = (
   'default' in compressionModule ? compressionModule.default : compressionModule
@@ -25,8 +24,6 @@ async function bootstrap(): Promise<void> {
     });
 
     const configService = app.get(ConfigService);
-    app.useWebSocketAdapter(new BoundedSocketIoAdapter(app));
-
     // Security
     app.use(
       helmet({

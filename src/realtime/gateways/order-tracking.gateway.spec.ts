@@ -11,19 +11,6 @@ describe('OrderTrackingGateway', () => {
     actorType?: string;
     panelType?: string;
   }) => {
-    const realtimeService = {
-      registerServer: jest.fn(),
-      getRestaurantOrdersRoom: jest.fn(
-        (restaurantId: string) => `orders:restaurant:${restaurantId}`,
-      ),
-      getTenantOrdersRoom: jest.fn(
-        (tenantId: string) => `orders:tenant:${tenantId}`,
-      ),
-      getBranchOrdersRoom: jest.fn(
-        (restaurantId: string, branchId: string) =>
-          `orders:restaurant:${restaurantId}:branch:${branchId}`,
-      ),
-    };
     const ordersService = {
       resolveRealtimeAdminOrderScope: jest.fn(),
     };
@@ -41,8 +28,6 @@ describe('OrderTrackingGateway', () => {
         get: jest.fn().mockReturnValue('test-secret'),
       } as never,
       ordersService as never,
-      {} as never,
-      realtimeService as never,
       admission as never,
     );
     const client = {
@@ -65,7 +50,6 @@ describe('OrderTrackingGateway', () => {
     return {
       gateway,
       client,
-      realtimeService,
       ordersService,
       jwtService,
       admission,
@@ -181,8 +165,7 @@ describe('OrderTrackingGateway', () => {
       actorType: 'STAFF',
       tid: 'tenant-1',
     };
-    const { gateway, client, realtimeService, ordersService } =
-      makeGateway(user);
+    const { gateway, client, ordersService } = makeGateway(user);
     ordersService.resolveRealtimeAdminOrderScope.mockResolvedValue({
       restaurantId: 'restaurant-1',
     });
@@ -196,9 +179,6 @@ describe('OrderTrackingGateway', () => {
       user,
       'restaurant-1',
       undefined,
-    );
-    expect(realtimeService.getRestaurantOrdersRoom).toHaveBeenCalledWith(
-      'restaurant-1',
     );
     expect(client.join).toHaveBeenCalledWith('orders:restaurant:restaurant-1');
     expect(result).toEqual({

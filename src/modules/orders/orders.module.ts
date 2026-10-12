@@ -7,7 +7,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { LoyaltyWalletModule } from '../loyalty-wallet/loyalty-wallet.module';
 import { GlobalSettingsModule } from '../global-settings/global-settings.module';
 import { StorageModule } from '../storage/storage.module';
-import { OrderTrackingGateway } from './order-tracking.gateway';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
 import { OrdersController } from './orders.controller';
 import { OrdersRepository } from './orders.repository';
@@ -42,8 +41,11 @@ import { OrdersIntegrationService } from './orders-integration.service';
     },
     OrdersRepository,
     OrderTrackingRealtimeService,
-    OrderTrackingGateway,
   ],
-  exports: [OrdersService, ORDERS_INTEGRATION_PORT],
+  exports: [
+    OrdersService,
+    OrderTrackingRealtimeService,
+    ORDERS_INTEGRATION_PORT,
+  ],
 })
 export class OrdersModule {}

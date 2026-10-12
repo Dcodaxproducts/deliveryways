@@ -22,9 +22,9 @@ import {
   CreateChatMessageDto,
   CreateChatThreadDto,
   UpdateChatThreadStatusDto,
-} from './dto';
-import { ChatRealtimeService } from './chat.realtime.service';
-import { ChatService } from './chat.service';
+  ChatRealtimeService,
+  ChatService,
+} from '../../modules/chat/public-api';
 import { RealtimeAdmissionService } from '../../common/realtime/realtime-admission.service';
 
 type ChatSocket = Socket & {
@@ -79,7 +79,6 @@ export class ChatGateway
 
       const rooms = this.chatRealtimeService.getInboxRoomsForUser(user);
       await Promise.all(rooms.map(async (room) => client.join(room)));
-      await this.chatRealtimeService.emitInitialSummary(client, user);
     } catch {
       this.admission.release(socketKey);
       client.emit('chat.error', {
@@ -113,8 +112,7 @@ export class ChatGateway
 
   @SubscribeMessage('chat.inbox.subscribe')
   async subscribeInbox(@ConnectedSocket() client: ChatSocket) {
-    return this.handleSocketRequest(client, async (user) => {
-      await this.chatRealtimeService.emitInitialSummary(client, user);
+    return this.handleSocketRequest(client, (user) => {
       return {
         rooms: this.chatRealtimeService.getInboxRoomsForUser(user),
       };
@@ -273,7 +271,7 @@ export class ChatGateway
 
   private async handleSocketRequest<T>(
     client: ChatSocket,
-    handler: (user: AuthUserContext) => Promise<T>,
+    handler: (user: AuthUserContext) => Promise<T> | T,
   ) {
     try {
       const user = this.getSocketUser(client);

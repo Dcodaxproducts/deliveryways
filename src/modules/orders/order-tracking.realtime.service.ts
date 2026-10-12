@@ -1,30 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { Server } from 'socket.io';
+import { Injectable } from '@nestjs/common';
+import { RealtimeEventBusService } from '../../common/realtime/realtime-event-bus.service';
+import {
+  RealtimeEventName,
+  RealtimeRooms,
+} from '../../common/realtime/realtime-events';
 
 @Injectable()
 export class OrderTrackingRealtimeService {
-  private readonly logger = new Logger(OrderTrackingRealtimeService.name);
-  private server: Server | null = null;
-
-  registerServer(server: Server) {
-    this.server = server;
-  }
+  constructor(private readonly eventBus: RealtimeEventBusService) {}
 
   getOrderRoom(orderId: string) {
-    return `orders:tracking:${orderId}`;
+    return RealtimeRooms.orderTracking(orderId);
   }
 
   emitTrackingUpdate(payload: unknown) {
     const orderId = this.readOrderId(payload);
-    if (!orderId || !this.server) {
-      return;
-    }
-
-    this.server
-      .to(this.getOrderRoom(orderId))
-      .emit('order.tracking.updated', payload);
-
-    this.logger.debug(`Emitted live tracking update for order ${orderId}`);
+    if (!orderId) return;
+    this.eventBus.publish(RealtimeEventName.ORDER_TRACKING_UPDATED, payload);
   }
 
   private readOrderId(payload: unknown) {

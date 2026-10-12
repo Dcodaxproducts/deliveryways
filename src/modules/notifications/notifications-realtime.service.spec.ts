@@ -1,24 +1,21 @@
-import type { Server } from 'socket.io';
 import {
   NotificationsRealtimeService,
   OrderCreatedRealtimePayload,
   OrderUpdatedRealtimePayload,
 } from './notifications-realtime.service';
+import { RealtimeEventName } from '../../common/realtime/realtime-events';
 
 describe('NotificationsRealtimeService', () => {
-  it('emits a new order to the tenant, restaurant, and branch rooms', () => {
-    const emit = jest.fn();
-    const branchTarget = { emit };
-    const restaurantTarget = {
-      to: jest.fn().mockReturnValue(branchTarget),
+  const createService = () => {
+    const eventBus = { publish: jest.fn() };
+    return {
+      eventBus,
+      service: new NotificationsRealtimeService(eventBus as never),
     };
-    const tenantTarget = {
-      to: jest.fn().mockReturnValue(restaurantTarget),
-    };
-    const server = {
-      to: jest.fn().mockReturnValue(tenantTarget),
-    };
-    const service = new NotificationsRealtimeService();
+  };
+
+  it('publishes order creation without requiring an in-process namespace', () => {
+    const { service, eventBus } = createService();
     const payload: OrderCreatedRealtimePayload = {
       id: 'order-1',
       status: 'PLACED',
@@ -30,52 +27,16 @@ describe('NotificationsRealtimeService', () => {
       totalAmount: 42.5,
       createdAt: new Date('2026-07-23T12:00:00.000Z'),
     };
-
-    service.registerServer(server as unknown as Server);
     service.emitOrderCreated(payload);
-
-    expect(server.to).toHaveBeenCalledWith('orders:tenant:tenant-1');
-    expect(tenantTarget.to).toHaveBeenCalledWith(
-      'orders:restaurant:restaurant-1',
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      RealtimeEventName.ORDER_CREATED,
+      payload,
     );
-    expect(restaurantTarget.to).toHaveBeenCalledWith(
-      'orders:restaurant:restaurant-1:branch:branch-1',
-    );
-    expect(emit).toHaveBeenCalledWith('order.created', payload);
   });
 
-  it('does nothing until the Socket.IO server is registered', () => {
-    const service = new NotificationsRealtimeService();
-
-    expect(() =>
-      service.emitOrderCreated({
-        id: 'order-1',
-        status: 'PLACED',
-        tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
-        branchId: 'branch-1',
-        orderType: 'PICKUP',
-        paymentStatus: 'PAID',
-        totalAmount: 10,
-        createdAt: new Date(),
-      }),
-    ).not.toThrow();
-  });
-
-  it('emits order status updates to the same scoped rooms', () => {
-    const emit = jest.fn();
-    const branchTarget = { emit };
-    const restaurantTarget = {
-      to: jest.fn().mockReturnValue(branchTarget),
-    };
-    const tenantTarget = {
-      to: jest.fn().mockReturnValue(restaurantTarget),
-    };
-    const server = {
-      to: jest.fn().mockReturnValue(tenantTarget),
-    };
-    const service = new NotificationsRealtimeService();
-    const payload = {
+  it('publishes status and general order updates with existing event names', () => {
+    const { service, eventBus } = createService();
+    const statusPayload = {
       id: 'order-1',
       status: 'REJECTED',
       tenantId: 'tenant-1',
@@ -83,46 +44,21 @@ describe('NotificationsRealtimeService', () => {
       branchId: 'branch-1',
       updatedAt: new Date('2026-07-31T07:00:00.000Z'),
     };
-
-    service.registerServer(server as unknown as Server);
-    service.emitOrderStatusUpdated(payload);
-
-    expect(emit).toHaveBeenCalledWith('order.status.updated', payload);
-  });
-
-  it('emits order updates to the restaurant and branch rooms', () => {
-    const emit = jest.fn();
-    const branchTarget = { emit };
-    const restaurantTarget = {
-      to: jest.fn().mockReturnValue(branchTarget),
-    };
-    const tenantTarget = {
-      to: jest.fn().mockReturnValue(restaurantTarget),
-    };
-    const server = {
-      to: jest.fn().mockReturnValue(tenantTarget),
-    };
-    const service = new NotificationsRealtimeService();
-    const payload: OrderUpdatedRealtimePayload = {
-      id: 'order-1',
-      status: 'CONFIRMED',
-      tenantId: 'tenant-1',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
+    const updatedPayload: OrderUpdatedRealtimePayload = {
+      ...statusPayload,
       paymentStatus: 'PAID',
-      updatedAt: new Date('2026-08-18T09:00:00.000Z'),
     };
-
-    service.registerServer(server as unknown as Server);
-    service.emitOrderUpdated(payload);
-
-    expect(server.to).toHaveBeenCalledWith('orders:tenant:tenant-1');
-    expect(tenantTarget.to).toHaveBeenCalledWith(
-      'orders:restaurant:restaurant-1',
+    service.emitOrderStatusUpdated(statusPayload);
+    service.emitOrderUpdated(updatedPayload);
+    expect(eventBus.publish).toHaveBeenNthCalledWith(
+      1,
+      RealtimeEventName.ORDER_STATUS_UPDATED,
+      statusPayload,
     );
-    expect(restaurantTarget.to).toHaveBeenCalledWith(
-      'orders:restaurant:restaurant-1:branch:branch-1',
+    expect(eventBus.publish).toHaveBeenNthCalledWith(
+      2,
+      RealtimeEventName.ORDER_UPDATED,
+      updatedPayload,
     );
-    expect(emit).toHaveBeenCalledWith('order.updated', payload);
   });
 });
