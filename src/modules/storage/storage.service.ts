@@ -30,8 +30,13 @@ import {
 } from './storage.constants';
 import {
   ImageProcessorService,
+  OptimizedImage,
   UploadedImageFile,
 } from './image-processor.service';
+import {
+  createImageTempReadStream,
+  removeImageTempFile,
+} from './image-upload-temp.storage';
 
 const LEGACY_IMAGE_PRESIGNED_SUNSET = new Date('2027-01-31T00:00:00.000Z');
 
@@ -269,78 +274,86 @@ export class StorageService {
       this.ensureFolderAccess(user, folder);
     }
 
-    const optimized = await this.imageProcessorService.optimize(
-      file.buffer,
-      file.mimetype,
-      dto.assetType,
-    );
-    const s3Config = this.getS3Config();
-    const bucket = s3Config.bucket;
-    if (!bucket || !s3Config.region) {
-      throw new InternalServerErrorException(
-        'S3 bucket configuration is incomplete',
+    let optimized: OptimizedImage | undefined;
+    try {
+      optimized = await this.imageProcessorService.optimize(
+        file.path,
+        file.mimetype,
+        dto.assetType,
       );
-    }
-
-    const optimizedFileName = this.withExtension(
-      file.originalname,
-      optimized.extension,
-    );
-    const key = user
-      ? this.buildObjectKey(user, optimizedFileName, folder)
-      : this.buildPublicRegistrationObjectKey(optimizedFileName, folder);
-    const client = this.createS3Client(s3Config);
-
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: optimized.buffer,
-        ContentLength: optimized.buffer.length,
-        ContentType: optimized.contentType,
-        CacheControl: 'public, max-age=31536000, immutable',
-        ContentDisposition: 'inline',
-        Metadata: {
-          width: String(optimized.width),
-          height: String(optimized.height),
-          'source-bytes': String(optimized.sourceBytes),
-        },
-      }),
-    );
-
-    if (dto.replaceFileUrl) {
-      if (!user) {
-        await this.deleteKey(client, bucket, key);
-        throw new ForbiddenException(
-          'Authentication is required to replace an image',
+      const s3Config = this.getS3Config();
+      const bucket = s3Config.bucket;
+      if (!bucket || !s3Config.region) {
+        throw new InternalServerErrorException(
+          'S3 bucket configuration is incomplete',
         );
       }
-      try {
-        const oldKey = this.resolveObjectKey(
-          undefined,
-          dto.replaceFileUrl,
-          s3Config,
-        );
-        this.ensureObjectAccess(user, oldKey);
-        if (oldKey !== key) {
-          await this.deleteKey(client, bucket, oldKey);
+
+      const optimizedFileName = this.withExtension(
+        file.originalname,
+        optimized.extension,
+      );
+      const key = user
+        ? this.buildObjectKey(user, optimizedFileName, folder)
+        : this.buildPublicRegistrationObjectKey(optimizedFileName, folder);
+      const client = this.createS3Client(s3Config);
+
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: createImageTempReadStream(optimized.path),
+          ContentLength: optimized.bytes,
+          ContentType: optimized.contentType,
+          CacheControl: 'public, max-age=31536000, immutable',
+          ContentDisposition: 'inline',
+          Metadata: {
+            width: String(optimized.width),
+            height: String(optimized.height),
+            'source-bytes': String(optimized.sourceBytes),
+          },
+        }),
+      );
+
+      if (dto.replaceFileUrl) {
+        if (!user) {
+          await this.deleteKey(client, bucket, key);
+          throw new ForbiddenException(
+            'Authentication is required to replace an image',
+          );
         }
-      } catch (error: unknown) {
-        await this.deleteKey(client, bucket, key);
-        throw error;
+        try {
+          const oldKey = this.resolveObjectKey(
+            undefined,
+            dto.replaceFileUrl,
+            s3Config,
+          );
+          this.ensureObjectAccess(user, oldKey);
+          if (oldKey !== key) {
+            await this.deleteKey(client, bucket, oldKey);
+          }
+        } catch (error: unknown) {
+          await this.deleteKey(client, bucket, key);
+          throw error;
+        }
       }
-    }
 
-    return {
-      capability: 'optimized-image-v1',
-      key,
-      fileUrl: this.buildFileUrl(bucket, s3Config.region, key),
-      contentType: optimized.contentType,
-      width: optimized.width,
-      height: optimized.height,
-      sourceBytes: optimized.sourceBytes,
-      bytes: optimized.buffer.length,
-    };
+      return {
+        capability: 'optimized-image-v1',
+        key,
+        fileUrl: this.buildFileUrl(bucket, s3Config.region, key),
+        contentType: optimized.contentType,
+        width: optimized.width,
+        height: optimized.height,
+        sourceBytes: optimized.sourceBytes,
+        bytes: optimized.bytes,
+      };
+    } finally {
+      await Promise.all([
+        removeImageTempFile(file.path),
+        removeImageTempFile(optimized?.path),
+      ]);
+    }
   }
 
   async createPresignedViewUrl(

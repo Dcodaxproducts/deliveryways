@@ -4,6 +4,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import * as sharp from 'sharp';
+import {
+  createImageTempPath,
+  getImageTempFileSize,
+  readImageMagic,
+  removeImageTempFile,
+} from './image-upload-temp.storage';
 
 export const MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGE_INPUT_PIXELS = 40_000_000;
@@ -22,13 +28,15 @@ interface ImageLimits {
 }
 
 export interface UploadedImageFile {
-  buffer: Buffer;
   mimetype: string;
   originalname: string;
+  path: string;
+  size: number;
 }
 
 export interface OptimizedImage {
-  buffer: Buffer;
+  path: string;
+  bytes: number;
   contentType: 'image/webp';
   extension: '.webp';
   width: number;
@@ -57,7 +65,7 @@ export class ImageProcessorService {
   private activeJobs = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly maxConcurrentJobs = 2;
-  private readonly maxQueuedJobs = 20;
+  private readonly maxQueuedJobs = 2;
   private readonly queueTimeoutMilliseconds = 10_000;
 
   constructor() {
@@ -66,17 +74,18 @@ export class ImageProcessorService {
   }
 
   async optimize(
-    input: Buffer,
+    inputPath: string,
     declaredMimeType: string,
     assetType: ImageAssetType = ImageAssetType.CARD,
   ): Promise<OptimizedImage> {
-    if (!input.length || input.length > MAX_IMAGE_UPLOAD_BYTES) {
+    const sourceBytes = await getImageTempFileSize(inputPath);
+    if (!sourceBytes || sourceBytes > MAX_IMAGE_UPLOAD_BYTES) {
       throw new BadRequestException(
         'Image size must be between 1 byte and 20MB',
       );
     }
 
-    const magicType = this.detectMagicType(input);
+    const magicType = this.detectMagicType(await readImageMagic(inputPath));
     if (!magicType) {
       throw new BadRequestException(
         'Unsupported image bytes. JPEG, PNG, and WebP are supported',
@@ -92,12 +101,12 @@ export class ImageProcessorService {
     }
 
     await this.acquire();
+    const outputPath = createImageTempPath();
     try {
-      return await this.process(input, assetType);
+      return await this.process(inputPath, outputPath, sourceBytes, assetType);
     } catch (error: unknown) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
+      await removeImageTempFile(outputPath);
+      if (error instanceof BadRequestException) throw error;
       throw new BadRequestException('Image is corrupt or cannot be processed');
     } finally {
       this.release();
@@ -105,10 +114,12 @@ export class ImageProcessorService {
   }
 
   private async process(
-    input: Buffer,
+    inputPath: string,
+    outputPath: string,
+    sourceBytes: number,
     assetType: ImageAssetType,
   ): Promise<OptimizedImage> {
-    const source = sharp(input, {
+    const source = sharp(inputPath, {
       animated: true,
       failOn: 'warning',
       limitInputPixels: MAX_IMAGE_INPUT_PIXELS,
@@ -129,7 +140,7 @@ export class ImageProcessorService {
     }
 
     const limits = ASSET_LIMITS[assetType];
-    const { data, info } = await source
+    const info = await source
       .rotate()
       .resize({
         width: limits.width,
@@ -138,15 +149,16 @@ export class ImageProcessorService {
         withoutEnlargement: true,
       })
       .webp({ quality: 82, alphaQuality: 90, effort: 4, smartSubsample: true })
-      .toBuffer({ resolveWithObject: true });
+      .toFile(outputPath);
 
     return {
-      buffer: data,
+      path: outputPath,
+      bytes: info.size,
       contentType: 'image/webp',
       extension: '.webp',
       width: info.width,
       height: info.height,
-      sourceBytes: input.length,
+      sourceBytes,
     };
   }
 

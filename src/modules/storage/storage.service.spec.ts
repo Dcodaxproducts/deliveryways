@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
@@ -9,6 +9,11 @@ import {
 } from './image-processor.service';
 import * as sharp from 'sharp';
 import { StorageService } from './storage.service';
+import { access, writeFile } from 'fs/promises';
+import {
+  createImageTempPath,
+  ensureImageUploadTempDirectory,
+} from './image-upload-temp.storage';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn(),
@@ -261,6 +266,10 @@ describe('StorageService', () => {
       .jpeg({ quality: 95 })
       .toBuffer();
     const send = jest.spyOn(S3Client.prototype, 'send');
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+    await ensureImageUploadTempDirectory();
+    const inputPath = createImageTempPath();
+    await writeFile(inputPath, fixture, { mode: 0o600 });
 
     const result = await service.uploadImage(
       {
@@ -269,7 +278,12 @@ describe('StorageService', () => {
         rid: 'restaurant-1',
         role: UserRoleEnum.BUSINESS_ADMIN,
       },
-      { buffer: fixture, mimetype: 'image/jpeg', originalname: 'hero.jpg' },
+      {
+        path: inputPath,
+        size: fixture.length,
+        mimetype: 'image/jpeg',
+        originalname: 'hero.jpg',
+      },
       {
         assetType: ImageAssetType.HERO,
         replaceFileUrl:
@@ -282,6 +296,49 @@ describe('StorageService', () => {
     expect(result.key).toMatch(/\.webp$/);
     expect(result.width).toBeLessThanOrEqual(2400);
     expect(send).toHaveBeenCalledTimes(2);
+    expect(warn).not.toHaveBeenCalled();
+    await expect(access(inputPath)).rejects.toThrow();
+  });
+
+  it('rolls back the new object and temp files when replacement deletion fails', async () => {
+    const fixture = await sharp({
+      create: { width: 200, height: 100, channels: 3, background: '#112233' },
+    })
+      .jpeg()
+      .toBuffer();
+    await ensureImageUploadTempDirectory();
+    const inputPath = createImageTempPath();
+    await writeFile(inputPath, fixture, { mode: 0o600 });
+    const send = jest
+      .spyOn(S3Client.prototype, 'send')
+      .mockResolvedValueOnce({ $metadata: {} } as never)
+      .mockRejectedValueOnce(new Error('replacement delete failed') as never)
+      .mockResolvedValueOnce({ $metadata: {} } as never);
+
+    await expect(
+      service.uploadImage(
+        {
+          uid: 'user-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        {
+          path: inputPath,
+          size: fixture.length,
+          mimetype: 'image/jpeg',
+          originalname: 'replacement.jpg',
+        },
+        {
+          assetType: ImageAssetType.CARD,
+          replaceFileUrl:
+            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/user-1/2026-03-16/old.webp',
+        },
+      ),
+    ).rejects.toThrow('replacement delete failed');
+
+    expect(send).toHaveBeenCalledTimes(3);
+    await expect(access(inputPath)).rejects.toThrow();
   });
 
   it('rejects non-image and non-PDF upload content types', async () => {

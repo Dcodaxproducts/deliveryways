@@ -34,6 +34,12 @@ import {
 } from './image-processor.service';
 import { StorageService } from './storage.service';
 import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
+import { ImageUploadAdmissionGuard } from './image-upload-admission.guard';
+import { ImageUploadTempCleanupInterceptor } from './image-upload-temp-cleanup.interceptor';
+import {
+  ImageUploadTempStorage,
+  imageUploadFileFilter,
+} from './image-upload-temp.storage';
 
 @ApiTags('Storage')
 @Controller('storage')
@@ -52,19 +58,21 @@ export class StorageController {
   }
 
   @Public()
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(ImageUploadAdmissionGuard, OptionalJwtAuthGuard)
   @Post('upload-image')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseInterceptors(
+    ImageUploadTempCleanupInterceptor,
     FileInterceptor('file', {
-      limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES, files: 1 },
-      fileFilter: (_request, file, callback) =>
-        callback(
-          null,
-          ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(
-            file.mimetype.toLowerCase(),
-          ),
-        ),
+      storage: new ImageUploadTempStorage(),
+      limits: {
+        fileSize: MAX_IMAGE_UPLOAD_BYTES,
+        files: 1,
+        fields: 2,
+        parts: 3,
+        fieldSize: 2 * 1024,
+        headerPairs: 50,
+      },
+      fileFilter: imageUploadFileFilter,
     }),
   )
   uploadImage(
