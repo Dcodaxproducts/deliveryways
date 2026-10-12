@@ -13,6 +13,7 @@ import { OptionalJwtAuthGuard } from '../../modules/storage/optional-jwt-auth.gu
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PosPrinterAccessGuard } from './pos-printer-access.guard';
 import { ConfigService } from '@nestjs/config';
+import { CurrentSessionValidator } from '../auth';
 
 @Controller('guard-order')
 class GuardOrderController {
@@ -82,6 +83,7 @@ describe('global POS guard order (integration)', () => {
           },
         },
         { provide: PrismaService, useValue: prisma },
+        CurrentSessionValidator,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: PosPrinterAccessGuard },
       ],

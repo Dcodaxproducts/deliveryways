@@ -1,6 +1,12 @@
 name: deliveryway-staging
 
 services:
+  realtime:
+    environment:
+      APP_ENV: staging
+    ports:
+      - 127.0.0.1:6055:3001
+
   api:
     environment:
       APP_ENV: staging

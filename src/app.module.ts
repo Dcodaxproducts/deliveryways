@@ -59,6 +59,7 @@ import { TenantDiscoveryMiddleware } from './common/middleware/tenant-discovery.
 import { AuthenticatedApiCacheMiddleware } from './common/middleware/authenticated-api-cache.middleware';
 import { AppController } from './app.controller';
 import { RealtimeEventsModule } from './common/realtime/realtime-events.module';
+import { CurrentSessionModule } from './common/auth';
 
 @Module({
   controllers: [AppController],
@@ -79,6 +80,7 @@ import { RealtimeEventsModule } from './common/realtime/realtime-events.module';
     ScheduleModule.forRoot(),
 
     RealtimeEventsModule,
+    CurrentSessionModule,
 
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],

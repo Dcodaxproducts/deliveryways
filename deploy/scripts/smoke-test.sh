@@ -14,6 +14,7 @@ command -v curl >/dev/null 2>&1 || dw_fail "curl is required for smoke tests"
 case "${DW_ENVIRONMENT}" in
   development)
     readonly API_PORT=7050
+    readonly REALTIME_PORT=7055
     readonly RESTAURANT_ADMIN_PORT=7051
     readonly SUPERADMIN_PORT=7052
     readonly CUSTOMER_PORT=7053
@@ -21,6 +22,7 @@ case "${DW_ENVIRONMENT}" in
     ;;
   staging)
     readonly API_PORT=6050
+    readonly REALTIME_PORT=6055
     readonly RESTAURANT_ADMIN_PORT=6051
     readonly SUPERADMIN_PORT=6052
     readonly CUSTOMER_PORT=6053
@@ -28,6 +30,7 @@ case "${DW_ENVIRONMENT}" in
     ;;
   production)
     readonly API_PORT=5050
+    readonly REALTIME_PORT=5055
     readonly RESTAURANT_ADMIN_PORT=5051
     readonly SUPERADMIN_PORT=5052
     readonly CUSTOMER_PORT=5053
@@ -35,7 +38,7 @@ case "${DW_ENVIRONMENT}" in
     ;;
 esac
 
-readonly SERVICES=(postgres api restaurant-admin superadmin customer landing)
+readonly SERVICES=(postgres api realtime restaurant-admin superadmin customer landing)
 for service in "${SERVICES[@]}"; do
   container_id="$(dw_compose ps --quiet "${service}")"
   [[ -n "${container_id}" ]] || dw_fail "${service} container is missing"
@@ -64,6 +67,8 @@ probe() {
 
 printf 'Running %s localhost smoke tests...\n' "${DW_ENVIRONMENT}"
 probe api "http://127.0.0.1:${API_PORT}/api/v1/health/live"
+probe realtime-live "http://127.0.0.1:${REALTIME_PORT}/health"
+probe realtime-ready "http://127.0.0.1:${REALTIME_PORT}/ready"
 probe restaurant-admin "http://127.0.0.1:${RESTAURANT_ADMIN_PORT}/login"
 probe superadmin "http://127.0.0.1:${SUPERADMIN_PORT}/auth/login"
 probe customer "http://127.0.0.1:${CUSTOMER_PORT}/auth/login"

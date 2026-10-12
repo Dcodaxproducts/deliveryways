@@ -78,6 +78,7 @@ dw_verify_backup() {
 dw_image_keys() {
   printf '%s\n' \
     API_IMAGE \
+    REALTIME_IMAGE \
     MIGRATION_IMAGE \
     RESTAURANT_ADMIN_IMAGE \
     SUPERADMIN_IMAGE \
@@ -107,6 +108,7 @@ dw_manifest_value() {
 dw_image_key_for_service() {
   case "$1" in
     api) printf '%s\n' API_IMAGE ;;
+    realtime) printf '%s\n' REALTIME_IMAGE ;;
     migration) printf '%s\n' MIGRATION_IMAGE ;;
     restaurant-admin) printf '%s\n' RESTAURANT_ADMIN_IMAGE ;;
     superadmin) printf '%s\n' SUPERADMIN_IMAGE ;;

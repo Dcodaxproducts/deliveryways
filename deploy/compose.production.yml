@@ -7,6 +7,12 @@ services:
     ports:
       - 127.0.0.1:5050:3000
 
+  realtime:
+    environment:
+      APP_ENV: production
+    ports:
+      - 127.0.0.1:5055:3001
+
   restaurant-admin:
     ports:
       - 127.0.0.1:5051:3000

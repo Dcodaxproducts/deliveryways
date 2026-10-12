@@ -14,7 +14,6 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import type { Server, Socket } from 'socket.io';
 import { AuthUserContext } from '../../common/decorators';
 import {
@@ -26,6 +25,7 @@ import {
   ChatService,
 } from '../../modules/chat/public-api';
 import { RealtimeAdmissionService } from '../../common/realtime/realtime-admission.service';
+import { CurrentSessionValidator } from '../../common/auth';
 
 type ChatSocket = Socket & {
   data: {
@@ -50,7 +50,7 @@ export class ChatGateway
 
   constructor(
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly currentSessionValidator: CurrentSessionValidator,
     private readonly chatService: ChatService,
     private readonly chatRealtimeService: ChatRealtimeService,
     private readonly admission: RealtimeAdmissionService,
@@ -241,9 +241,9 @@ export class ChatGateway
       throw new UnauthorizedException('Missing access token');
     }
 
-    return this.jwtService.verifyAsync<AuthUserContext>(token, {
-      secret: this.configService.get<string>('JWT_ACCESS_SECRET', 'change-me'),
-    });
+    const user = await this.jwtService.verifyAsync<AuthUserContext>(token);
+    await this.currentSessionValidator.assertCurrentSession(user);
+    return user;
   }
 
   private extractToken(client: ChatSocket) {

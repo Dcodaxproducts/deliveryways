@@ -10,6 +10,10 @@ import { ChatGateway } from './gateways/chat.gateway';
 import { OrderTrackingGateway } from './gateways/order-tracking.gateway';
 import { RealtimeDeliveryService } from './realtime-delivery.service';
 import { RealtimeHealthController } from './realtime-health.controller';
+import {
+  CurrentSessionModule,
+  getRequiredJwtAccessSecret,
+} from '../common/auth';
 
 @Module({
   imports: [
@@ -18,12 +22,13 @@ import { RealtimeHealthController } from './realtime-health.controller';
       envFilePath: ['.env.local', '.env'],
     }),
     DatabaseModule,
+    CurrentSessionModule,
     RealtimeAdmissionModule,
     RealtimeEventsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_ACCESS_SECRET', 'change-me'),
+        secret: getRequiredJwtAccessSecret(config),
       }),
     }),
     ChatModule,

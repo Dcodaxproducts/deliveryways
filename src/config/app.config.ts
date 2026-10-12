@@ -10,7 +10,7 @@ export default registerAs('app', () => ({
   corsOrigins: process.env.CORS_ORIGINS || '*',
   emailEnabled: process.env.EMAIL_ENABLED === 'true',
   jwt: {
-    accessSecret: process.env.JWT_ACCESS_SECRET || 'change-me-access',
+    accessSecret: process.env.JWT_ACCESS_SECRET,
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '1d',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',

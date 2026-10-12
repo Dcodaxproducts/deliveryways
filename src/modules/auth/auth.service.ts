@@ -2554,7 +2554,6 @@ export class AuthService {
       },
       {
         expiresIn: '10m',
-        secret: process.env.JWT_ACCESS_SECRET || 'change-me',
       },
     );
   }
@@ -2565,9 +2564,7 @@ export class AuthService {
         uid?: string;
         actorType?: string;
         purpose?: string;
-      }>(token, {
-        secret: process.env.JWT_ACCESS_SECRET || 'change-me',
-      });
+      }>(token);
 
       if (
         !payload.uid ||

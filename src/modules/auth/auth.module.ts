@@ -12,6 +12,7 @@ import { BranchesModule } from '../branches/branches.module';
 import { UsersModule } from '../users/users.module';
 import { StaffManagementModule } from '../staff-management/staff-management.module';
 import { StorageModule } from '../storage/storage.module';
+import { getRequiredJwtAccessSecret } from '../../common/auth';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { StorageModule } from '../storage/storage.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_ACCESS_SECRET', 'change-me'),
+        secret: getRequiredJwtAccessSecret(configService),
         signOptions: {
           expiresIn: configService.get<string>(
             'JWT_ACCESS_EXPIRES_IN',

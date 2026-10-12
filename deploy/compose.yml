@@ -82,6 +82,41 @@ services:
       - application
       - database
 
+  realtime:
+    <<: *runtime-service
+    image: ${REALTIME_IMAGE:-deliveryway-realtime:local}
+    build:
+      context: ..
+      target: realtime
+    env_file:
+      - ${DELIVERYWAY_ENV_FILE:?DELIVERYWAY_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      APP_ENV: ${APP_ENV:-unspecified}
+      HOST: 0.0.0.0
+      REALTIME_PORT: 3001
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    cpus: "1.0"
+    mem_limit: 768m
+    pids_limit: 256
+    networks:
+      - application
+      - database
+
   migration:
     image: ${MIGRATION_IMAGE:-deliveryway-migration:local}
     build:

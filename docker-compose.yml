@@ -20,6 +20,7 @@ services:
       PORT: 3000
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://deliveryways:deliveryways@postgres:5432/deliveryways
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
     ports:
       - '${API_PORT:-3000}:3000'
     depends_on:
@@ -41,6 +42,7 @@ services:
       REALTIME_PORT: 3001
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://deliveryways:deliveryways@postgres:5432/deliveryways
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
     ports:
       - '${REALTIME_HOST_PORT:-3001}:3001'
     depends_on:

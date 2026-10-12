@@ -22,11 +22,12 @@ describe('OrderTrackingGateway', () => {
       bindUser: jest.fn().mockReturnValue({ allowed: true }),
       release: jest.fn(),
     };
+    const currentSessionValidator = {
+      assertCurrentSession: jest.fn().mockResolvedValue(undefined),
+    };
     const gateway = new OrderTrackingGateway(
       jwtService as never,
-      {
-        get: jest.fn().mockReturnValue('test-secret'),
-      } as never,
+      currentSessionValidator as never,
       ordersService as never,
       admission as never,
     );
@@ -53,6 +54,7 @@ describe('OrderTrackingGateway', () => {
       ordersService,
       jwtService,
       admission,
+      currentSessionValidator,
     };
   };
 
@@ -113,13 +115,13 @@ describe('OrderTrackingGateway', () => {
     expect(client.disconnect).not.toHaveBeenCalled();
   });
 
-  it('does not perform database work for concurrent socket connections', async () => {
+  it('validates current sessions for concurrent socket connections', async () => {
     const user = {
       uid: 'owner-1',
       role: UserRoleEnum.BUSINESS_ADMIN,
       tid: 'tenant-1',
     };
-    const { gateway, client, ordersService } = makeGateway(user);
+    const { gateway, client, currentSessionValidator } = makeGateway(user);
     const firstClient = client as never;
     const secondClient = {
       ...client,
@@ -133,7 +135,9 @@ describe('OrderTrackingGateway', () => {
       gateway.handleConnection(secondClient),
     ]);
 
-    expect(ordersService.resolveRealtimeAdminOrderScope).not.toHaveBeenCalled();
+    expect(currentSessionValidator.assertCurrentSession).toHaveBeenCalledTimes(
+      2,
+    );
   });
 
   it('rejects reconnect bursts before JWT verification', async () => {

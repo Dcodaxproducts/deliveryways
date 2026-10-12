@@ -42,7 +42,7 @@ while IFS= read -r key; do
   export "${key}"
 done < <(dw_image_keys)
 
-readonly APP_SERVICES=(api restaurant-admin superadmin customer landing)
+readonly APP_SERVICES=(api realtime restaurant-admin superadmin customer landing)
 if [[ "${SKIP_IMAGE_PULL:-}" != "yes" ]]; then
   dw_compose pull "${APP_SERVICES[@]}"
 fi

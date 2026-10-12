@@ -33,7 +33,7 @@ fi
 
 dw_preflight
 
-readonly APP_SERVICES=(api restaurant-admin superadmin customer landing)
+readonly APP_SERVICES=(api realtime restaurant-admin superadmin customer landing)
 readonly PULL_SERVICES=(postgres migration "${APP_SERVICES[@]}")
 
 if [[ "${USE_LOCAL_RELEASE_IMAGES:-no}" == "yes" ]]; then

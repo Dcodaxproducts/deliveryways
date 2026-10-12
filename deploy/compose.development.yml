@@ -8,6 +8,13 @@ services:
     ports:
       - 127.0.0.1:7050:3000
 
+  realtime:
+    environment:
+      APP_ENV: development
+      NODE_ENV: development
+    ports:
+      - 127.0.0.1:7055:3001
+
   restaurant-admin:
     ports:
       - 127.0.0.1:7051:3000
