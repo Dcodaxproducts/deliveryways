@@ -44,10 +44,19 @@ inspect_api(){
   docker inspect -f 'id={{.Id}} image={{.Config.Image}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} started={{.State.StartedAt}}' "${cid}"
   docker stats --no-stream --format 'memory={{.MemUsage}} cpu={{.CPUPerc}} pids={{.PIDs}}' "${cid}"
 }
+restore_token_from_global(){
+  [[ -f "${GLOBAL}" ]] || return 0
+  local token
+  token="$(sed -n 's/.*"\([^"]*\)"[[:space:]]*1;.*/\1/p' "${GLOBAL}" | head -1)"
+  [[ -n "${token}" ]] || return 0
+  printf '%s\n' "${token}" >"${STATE}/canary.token"
+  chmod 600 "${STATE}/canary.token"
+}
 write_global(){
   local token="$1" tmp; tmp="$(mktemp)"
   cat >"${tmp}" <<EOF
 # Managed by deliveryways-nginx-ws-canary.sh. HTTP-context only.
+map_hash_bucket_size 128;
 limit_conn_zone \$binary_remote_addr zone=dw_ws_ip_conn:10m;
 limit_conn_zone \$server_name zone=dw_ws_global_conn:1m;
 limit_req_zone \$binary_remote_addr zone=dw_ws_ip_rate:10m rate=${PER_IP_RATE};
@@ -177,7 +186,7 @@ print(secrets.token_urlsafe(32))
 PY
       chmod 600 "${STATE}/canary.token"; }
     vb="$(backup_file "${VHOST}" "${ts}")"; gb="$(backup_file "${GLOBAL}" "${ts}")"
-    trap 'cp -a -- "${vb}" "${VHOST}"; if [[ -e "${gb}.ABSENT" ]]; then rm -f "${GLOBAL}"; else cp -a -- "${gb}" "${GLOBAL}"; fi; nginx_test && nginx_reload || true' ERR
+    trap 'cp -a -- "${vb}" "${VHOST}"; if [[ -e "${gb}.ABSENT" ]]; then rm -f "${GLOBAL}"; else cp -a -- "${gb}" "${GLOBAL}"; fi; restore_token_from_global || true; nginx_test && nginx_reload || true' ERR
     write_global "$(<"${STATE}/canary.token")"
     tmp="$(mktemp)"; strip_marked "${VHOST}" '# DW_CANARY_SOCKETIO_BEGIN' '# DW_CANARY_SOCKETIO_END' "${tmp}"; printf '
 %s
