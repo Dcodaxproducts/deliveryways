@@ -14,6 +14,7 @@ import { WinOrderStatusRepository } from './winorder-status.repository';
 import { WinOrderStatusService } from './winorder-status.service';
 import { WinOrderHealthRepository } from './winorder-health.repository';
 import { WinOrderHealthService } from './winorder-health.service';
+import { WinOrderAdmissionService } from './winorder-admission.service';
 
 @Module({
   imports: [OrdersModule, MenuModule],
@@ -21,6 +22,7 @@ import { WinOrderHealthService } from './winorder-health.service';
   providers: [
     WinOrderConnectionRepository,
     WinOrderConnectionService,
+    WinOrderAdmissionService,
     WinOrderBasicAuthGuard,
     WinOrderMappingRepository,
     WinOrderMappingService,

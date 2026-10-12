@@ -6,15 +6,28 @@ import {
 } from '@nestjs/common';
 import { WinOrderConnectionService } from './winorder-connection.service';
 import { WinOrderMachineContext } from './winorder-machine-context';
+import {
+  WinOrderAdmissionService,
+  WinOrderRateLimitException,
+} from './winorder-admission.service';
 
 @Injectable()
 export class WinOrderBasicAuthGuard implements CanActivate {
-  constructor(private readonly connectionService: WinOrderConnectionService) {}
+  constructor(
+    private readonly connectionService: WinOrderConnectionService,
+    private readonly admission: WinOrderAdmissionService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<{
+    const http = context.switchToHttp();
+    const request = http.getRequest<{
       headers: Record<string, string | string[] | undefined>;
+      ip?: string;
+      socket?: { remoteAddress?: string };
       winOrderMachine?: WinOrderMachineContext;
+    }>();
+    const response = http.getResponse<{
+      setHeader(name: string, value: string): void;
     }>();
     const authorization = request.headers.authorization;
     const value = Array.isArray(authorization)
@@ -22,6 +35,12 @@ export class WinOrderBasicAuthGuard implements CanActivate {
       : authorization;
     if (!value?.startsWith('Basic ')) {
       throw new UnauthorizedException('Invalid integration credentials');
+    }
+
+    const admission = this.admission.admitPreAuthentication(request, value);
+    if (!admission.allowed) {
+      response.setHeader('Retry-After', String(admission.retryAfterSeconds));
+      throw new WinOrderRateLimitException(admission.retryAfterSeconds);
     }
 
     let decoded: string;

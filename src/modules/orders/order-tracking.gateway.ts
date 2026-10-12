@@ -16,6 +16,7 @@ import { UserRoleEnum } from '../../common/enums';
 import { NotificationsRealtimeService } from '../notifications';
 import { OrdersService } from './orders.service';
 import { OrderTrackingRealtimeService } from './order-tracking.realtime.service';
+import { RealtimeAdmissionService } from '../../common/realtime/realtime-admission.service';
 
 type OrderTrackingSocket = Socket & {
   data: {
@@ -46,6 +47,7 @@ export class OrderTrackingGateway
     private readonly ordersService: OrdersService,
     private readonly orderTrackingRealtimeService: OrderTrackingRealtimeService,
     private readonly notificationsRealtimeService: NotificationsRealtimeService,
+    private readonly admission: RealtimeAdmissionService,
   ) {}
 
   afterInit(server: Server) {
@@ -54,30 +56,54 @@ export class OrderTrackingGateway
   }
 
   async handleConnection(client: OrderTrackingSocket) {
+    const socketKey = this.socketKey(client);
+    const networkAdmission = this.admission.begin(socketKey, client);
+    if (!networkAdmission.allowed) {
+      this.rejectConnection(client, networkAdmission.retryAfterSeconds);
+      return;
+    }
+
     try {
       const user = await this.authenticate(client);
+      const userAdmission = this.admission.bindUser(socketKey, user.uid);
+      if (!userAdmission.allowed) {
+        this.rejectConnection(client, userAdmission.retryAfterSeconds);
+        return;
+      }
       this.setSocketUser(client, user);
       const adminOrdersRoom = this.getAdminOrdersRoom(user);
       if (adminOrdersRoom) {
         await client.join(adminOrdersRoom);
       }
-      this.logger.log(
-        `Order tracking socket connected: ${client.id} (${user.uid})`,
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Socket authentication failed';
-      this.logger.warn(`Order tracking socket rejected: ${message}`);
+    } catch {
+      this.admission.release(socketKey);
       client.emit('order.tracking.error', {
         code: 'UNAUTHORIZED',
-        message,
+        message: 'Socket authentication failed',
       });
       client.disconnect(true);
     }
   }
 
   handleDisconnect(client: OrderTrackingSocket) {
-    this.logger.log(`Order tracking socket disconnected: ${client.id}`);
+    this.admission.release(this.socketKey(client));
+  }
+
+  private socketKey(client: OrderTrackingSocket): string {
+    return `orders:${client.id}`;
+  }
+
+  private rejectConnection(
+    client: OrderTrackingSocket,
+    retryAfterSeconds: number,
+  ): void {
+    this.admission.release(this.socketKey(client));
+    client.emit('order.tracking.error', {
+      code: 'RATE_LIMITED',
+      message: 'Too many realtime connections',
+      retryAfterSeconds,
+    });
+    client.disconnect(true);
   }
 
   @SubscribeMessage('order.tracking.subscribe')
