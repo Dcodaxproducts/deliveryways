@@ -9,6 +9,9 @@ import type {
 import { Server, ServerOptions } from 'socket.io';
 
 const REQUEST_WINDOW_MS = 10_000;
+const FRESH_HANDSHAKES_PER_WINDOW = 48;
+const FRESH_HANDSHAKES_PER_NETWORK_WINDOW = 4;
+const MAX_FRESH_HANDSHAKE_KEYS = 128;
 const NETWORK_REQUESTS_PER_WINDOW = 160;
 const SESSION_REQUESTS_PER_WINDOW = 40;
 const GLOBAL_REQUESTS_PER_WINDOW = 1_200;
@@ -16,8 +19,8 @@ const MAX_NETWORK_REQUEST_KEYS = 512;
 const MAX_INFLIGHT_REQUESTS = 192;
 const MAX_INFLIGHT_PER_NETWORK = 24;
 const MAX_INFLIGHT_PER_SESSION = 3;
-const MAX_ACTIVE_PER_NETWORK = 8;
-const MAX_ENGINE_SESSIONS = 96;
+const MAX_ACTIVE_PER_NETWORK = 4;
+const MAX_ENGINE_SESSIONS = 32;
 const PENDING_RESERVATION_MS = 10_000;
 const REQUEST_LEASE_MS = 50_000;
 const MAX_FORWARDED_HEADER_BYTES = 1_024;
@@ -50,6 +53,9 @@ type RequestKind = 'handshake' | 'polling-get' | 'polling-post' | 'upgrade';
 
 export type AdmissionOptions = {
   requestWindowMs: number;
+  freshHandshakesPerWindow: number;
+  freshHandshakesPerNetworkWindow: number;
+  maxFreshHandshakeKeys: number;
   networkRequestsPerWindow: number;
   sessionRequestsPerWindow: number;
   globalRequestsPerWindow: number;
@@ -83,6 +89,12 @@ export type EngineRequestAdmissionStats = {
   inflightNetworkKeys: number;
   pollingGets: number;
   upgrades: number;
+  freshHandshakeKeys: number;
+  freshHandshakeAttempts: number;
+  freshHandshakeAccepted: number;
+  freshHandshakeRejected: number;
+  middlewareRequests: number;
+  engineConnections: number;
 };
 
 type AddressSource = {
@@ -108,6 +120,9 @@ type EngineWithClients = {
 
 const DEFAULT_ADMISSION_OPTIONS: AdmissionOptions = {
   requestWindowMs: REQUEST_WINDOW_MS,
+  freshHandshakesPerWindow: FRESH_HANDSHAKES_PER_WINDOW,
+  freshHandshakesPerNetworkWindow: FRESH_HANDSHAKES_PER_NETWORK_WINDOW,
+  maxFreshHandshakeKeys: MAX_FRESH_HANDSHAKE_KEYS,
   networkRequestsPerWindow: NETWORK_REQUESTS_PER_WINDOW,
   sessionRequestsPerWindow: SESSION_REQUESTS_PER_WINDOW,
   globalRequestsPerWindow: GLOBAL_REQUESTS_PER_WINDOW,
@@ -122,6 +137,7 @@ const DEFAULT_ADMISSION_OPTIONS: AdmissionOptions = {
 };
 
 export class EngineRequestAdmission {
+  private readonly freshHandshakeRequests = new Map<string, RequestWindow>();
   private readonly networkRequests = new Map<string, RequestWindow>();
   private readonly activeByNetwork = new Map<string, number>();
   private readonly pendingByNetwork = new Map<string, number>();
@@ -130,8 +146,14 @@ export class EngineRequestAdmission {
   private readonly requestReservations = new WeakMap<IncomingMessage, number>();
   private readonly sessions = new Map<string, SessionState>();
   private globalRequests: RequestWindow = { count: 0, resetAt: 0 };
+  private globalFreshHandshakes: RequestWindow = { count: 0, resetAt: 0 };
   private inflightRequests = 0;
   private reservationSequence = 0;
+  private freshHandshakeAttempts = 0;
+  private freshHandshakeAccepted = 0;
+  private freshHandshakeRejected = 0;
+  private middlewareRequests = 0;
+  private engineConnections = 0;
 
   constructor(
     private readonly options: AdmissionOptions = DEFAULT_ADMISSION_OPTIONS,
@@ -150,8 +172,6 @@ export class EngineRequestAdmission {
       remoteAddress: request.socket.remoteAddress,
       headers: request.headers,
     });
-    const commonLimit = this.consumeCommonRequestBudgets(networkKey, now);
-    if (commonLimit) return commonLimit;
     const kind = this.requestKind(
       request,
       query.transport,
@@ -159,28 +179,92 @@ export class EngineRequestAdmission {
     );
     if (!kind || (rawSid && !sid)) return this.invalidSession();
 
-    if (sid) {
-      const session = this.sessions.get(sid);
-      if (
-        !session ||
-        !engineHasSession(sid) ||
-        session.networkKey !== networkKey
-      ) {
-        return this.invalidSession();
+    if (!sid) {
+      if (kind !== 'handshake') return this.invalidSession();
+      if (!this.reservationFor(request)) {
+        const earlyResult = this.admitFreshHandshake(request, now);
+        if (!earlyResult.allowed) return earlyResult;
       }
-      const sessionLimit = this.consumeSessionRequestBudget(session, now);
-      if (sessionLimit) return sessionLimit;
-      if (
-        session.inflight >= this.options.maxInflightPerSession ||
-        (kind === 'polling-get' && session.pollingGetActive) ||
-        (kind === 'upgrade' && session.upgradeActive)
-      ) {
-        return this.rateLimited(1);
-      }
-      return this.reserveRequest(networkKey, session, kind);
+      return this.reserveRequest(networkKey, undefined, kind);
     }
 
-    if (kind !== 'handshake') return this.invalidSession();
+    this.middlewareRequests += 1;
+    const commonLimit = this.consumeCommonRequestBudgets(networkKey, now);
+    if (commonLimit) return commonLimit;
+    const session = this.sessions.get(sid);
+    if (
+      !session ||
+      !engineHasSession(sid) ||
+      session.networkKey !== networkKey
+    ) {
+      return this.invalidSession();
+    }
+    const sessionLimit = this.consumeSessionRequestBudget(session, now);
+    if (sessionLimit) return sessionLimit;
+    if (
+      session.inflight >= this.options.maxInflightPerSession ||
+      (kind === 'polling-get' && session.pollingGetActive) ||
+      (kind === 'upgrade' && session.upgradeActive)
+    ) {
+      return this.rateLimited(1);
+    }
+    return this.reserveRequest(networkKey, session, kind);
+  }
+
+  admitFreshHandshake(
+    request: PreparedEngineRequest,
+    now = Date.now(),
+  ): EngineRequestAdmissionResult {
+    this.freshHandshakeAttempts += 1;
+    this.prune(now);
+    const query = request._query ?? this.queryFromUrl(request.url);
+    if (
+      query.sid !== undefined ||
+      (query.transport !== 'polling' && query.transport !== 'websocket')
+    ) {
+      this.freshHandshakeRejected += 1;
+      return this.invalidSession();
+    }
+    if (this.reservationFor(request)) {
+      return { allowed: true, release: () => undefined };
+    }
+
+    const networkKey = trustedNetworkKey({
+      remoteAddress: request.socket.remoteAddress,
+      headers: request.headers,
+    });
+    const globalLimit = this.consumeWindow(
+      this.globalFreshHandshakes,
+      this.options.freshHandshakesPerWindow,
+      now,
+    );
+    if (globalLimit) {
+      this.freshHandshakeRejected += 1;
+      return globalLimit;
+    }
+
+    let network = this.freshHandshakeRequests.get(networkKey);
+    if (!network || network.resetAt <= now) {
+      if (
+        !network &&
+        this.freshHandshakeRequests.size >= this.options.maxFreshHandshakeKeys
+      ) {
+        this.freshHandshakeRejected += 1;
+        return this.rateLimited(1);
+      }
+      network = { count: 0, resetAt: now + this.options.requestWindowMs };
+      this.freshHandshakeRequests.set(networkKey, network);
+    }
+    const networkLimit = this.consumeWindow(
+      network,
+      this.options.freshHandshakesPerNetworkWindow,
+      now,
+    );
+    if (networkLimit) {
+      this.freshHandshakeRejected += 1;
+      return networkLimit;
+    }
+
     const activeForNetwork = this.activeByNetwork.get(networkKey) ?? 0;
     const pendingForNetwork = this.pendingByNetwork.get(networkKey) ?? 0;
     if (
@@ -188,6 +272,7 @@ export class EngineRequestAdmission {
         this.options.maxEngineSessions ||
       activeForNetwork + pendingForNetwork >= this.options.maxActivePerNetwork
     ) {
+      this.freshHandshakeRejected += 1;
       return this.rateLimited(1);
     }
 
@@ -198,7 +283,8 @@ export class EngineRequestAdmission {
     });
     this.requestReservations.set(request, reservationId);
     this.increment(this.pendingByNetwork, networkKey);
-    return this.reserveRequest(networkKey, undefined, kind);
+    this.freshHandshakeAccepted += 1;
+    return { allowed: true, release: () => undefined };
   }
 
   connected(sessionId: string, request: IncomingMessage): boolean {
@@ -216,6 +302,10 @@ export class EngineRequestAdmission {
     });
     this.increment(this.activeByNetwork, reservation.networkKey);
     return true;
+  }
+
+  recordEngineConnection(): void {
+    this.engineConnections += 1;
   }
 
   releaseSession(sessionId: string): void {
@@ -249,6 +339,12 @@ export class EngineRequestAdmission {
       inflightNetworkKeys: this.inflightByNetwork.size,
       pollingGets,
       upgrades,
+      freshHandshakeKeys: this.freshHandshakeRequests.size,
+      freshHandshakeAttempts: this.freshHandshakeAttempts,
+      freshHandshakeAccepted: this.freshHandshakeAccepted,
+      freshHandshakeRejected: this.freshHandshakeRejected,
+      middlewareRequests: this.middlewareRequests,
+      engineConnections: this.engineConnections,
     };
   }
 
@@ -398,6 +494,9 @@ export class EngineRequestAdmission {
   }
 
   private prune(now: number): void {
+    for (const [key, window] of this.freshHandshakeRequests) {
+      if (window.resetAt <= now) this.freshHandshakeRequests.delete(key);
+    }
     for (const [key, window] of this.networkRequests) {
       if (window.resetAt <= now) this.networkRequests.delete(key);
     }
@@ -419,6 +518,15 @@ export class EngineRequestAdmission {
     this.pending.delete(reservationId);
     this.decrement(this.pendingByNetwork, reservation.networkKey);
     return reservation;
+  }
+
+  private reservationFor(
+    request: IncomingMessage,
+  ): PendingReservation | undefined {
+    const reservationId = this.requestReservations.get(request);
+    return reservationId === undefined
+      ? undefined
+      : this.pending.get(reservationId);
   }
 
   private nextReservationId(): number {
@@ -451,10 +559,44 @@ export class BoundedSocketIoAdapter extends IoAdapter {
     this.requestLeaseMs = options.requestLeaseMs;
   }
 
-  createIOServer(port: number, options?: ServerOptions): Server {
+  createIOServer(port: number, options?: Partial<ServerOptions>): Server {
+    const existingAllowRequest = options?.allowRequest;
+    const allowRequest: NonNullable<ServerOptions['allowRequest']> = (
+      request,
+      callback,
+    ) => {
+      const result = this.admission.admitFreshHandshake(
+        request as PreparedEngineRequest,
+      );
+      if (!result.allowed) {
+        callback('Too many realtime connection attempts', false);
+        return;
+      }
+      if (!existingAllowRequest) {
+        callback(null, true);
+        return;
+      }
+
+      let completed = false;
+      const complete = (
+        message: string | null | undefined,
+        allowed: boolean,
+      ): void => {
+        if (completed) return;
+        completed = true;
+        if (!allowed) this.admission.failed(request);
+        callback(message, allowed);
+      };
+      try {
+        existingAllowRequest(request, complete);
+      } catch {
+        complete('Realtime connection rejected', false);
+      }
+    };
     const server = super.createIOServer(port, {
       ...options,
       ...SOCKET_OPTIONS,
+      allowRequest,
     }) as Server;
     const engine = server.engine as unknown as EngineWithClients;
 
@@ -464,9 +606,13 @@ export class BoundedSocketIoAdapter extends IoAdapter {
         response: ServerResponse,
         next: (error?: Error) => void,
       ) => {
-        const result = this.admission.admit(
-          request as PreparedEngineRequest,
-          (sid) => Object.prototype.hasOwnProperty.call(engine.clients, sid),
+        const prepared = request as PreparedEngineRequest;
+        if (!prepared._query?.sid) {
+          next();
+          return;
+        }
+        const result = this.admission.admit(prepared, (sid) =>
+          Object.prototype.hasOwnProperty.call(engine.clients, sid),
         );
         if (!result.allowed) {
           this.rejectRequest(response, result);
@@ -478,6 +624,7 @@ export class BoundedSocketIoAdapter extends IoAdapter {
     );
 
     server.engine.on('connection', (session: EngineSession) => {
+      this.admission.recordEngineConnection();
       if (!this.admission.connected(session.id, session.request)) {
         session.close(true);
         return;

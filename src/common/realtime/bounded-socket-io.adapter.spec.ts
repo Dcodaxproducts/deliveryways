@@ -15,6 +15,9 @@ import {
 
 const generousOptions: AdmissionOptions = {
   requestWindowMs: 10_000,
+  freshHandshakesPerWindow: 20_000,
+  freshHandshakesPerNetworkWindow: 20_000,
+  maxFreshHandshakeKeys: 2_048,
   networkRequestsPerWindow: 20_000,
   sessionRequestsPerWindow: 20_000,
   globalRequestsPerWindow: 20_000,
@@ -56,6 +59,7 @@ describe('EngineRequestAdmission', () => {
     const admission = new EngineRequestAdmission({
       ...generousOptions,
       maxNetworkRequestKeys: 512,
+      maxFreshHandshakeKeys: 512,
     });
     let accepted = 0;
 
@@ -75,12 +79,48 @@ describe('EngineRequestAdmission', () => {
     expect(accepted).toBeGreaterThan(0);
     expect(admission.getStats(1_000)).toMatchObject({
       activeSessions: 0,
-      networkRequestKeys: 512,
+      networkRequestKeys: 0,
+      freshHandshakeKeys: 512,
       sessionRequestKeys: 0,
       pendingReservations: 0,
       pendingNetworkKeys: 0,
       inflightRequests: 0,
     });
+  });
+
+  it('stops a 50,000-attempt residential WebSocket storm before middleware', () => {
+    const admission = new EngineRequestAdmission({
+      ...generousOptions,
+      freshHandshakesPerWindow: 48,
+      freshHandshakesPerNetworkWindow: 4,
+      maxFreshHandshakeKeys: 128,
+      maxEngineSessions: 32,
+      maxActivePerNetwork: 4,
+    });
+
+    for (let index = 0; index < 50_000; index += 1) {
+      const request = engineRequest('172.18.0.2', {
+        transport: 'websocket',
+        forwardedFor:
+          '100.' + (Math.floor(index / 256) % 200) + '.' + (index % 256) + '.1',
+      });
+      const result = admission.admitFreshHandshake(request, 1_000);
+      if (result.allowed) admission.failed(request);
+    }
+
+    expect(admission.getStats(1_000)).toMatchObject({
+      freshHandshakeAttempts: 50_000,
+      freshHandshakeAccepted: 48,
+      freshHandshakeRejected: 49_952,
+      middlewareRequests: 0,
+      engineConnections: 0,
+      pendingReservations: 0,
+      pendingNetworkKeys: 0,
+    });
+    expect(admission.getStats(1_000).freshHandshakeKeys).toBeLessThanOrEqual(
+      48,
+    );
+    expect(admission.getStats(11_001).freshHandshakeKeys).toBe(0);
   });
 
   it('admits every existing-session request and blocks duplicate long-polls without blocking upgrade', () => {
@@ -238,7 +278,10 @@ describe('BoundedSocketIoAdapter integration', () => {
   beforeEach(async () => {
     httpServer = createServer();
     adapter = new BoundedSocketIoAdapter(httpServer as never);
-    socketServer = adapter.createIOServer(0);
+    socketServer = adapter.createIOServer(0, {
+      allowRequest: (request, callback) =>
+        callback(null, request.headers['x-existing-deny'] !== 'true'),
+    });
     socketServer.of('/authorized').use((socket, next) => {
       if (socket.handshake.auth.token === 'test-token') next();
       else next(new Error('Unauthorized'));
@@ -258,6 +301,22 @@ describe('BoundedSocketIoAdapter integration', () => {
         httpServer.close((error) => (error ? reject(error) : resolve())),
       );
     }
+  });
+
+  it('composes an existing allowRequest and releases its denied reservation', async () => {
+    await expect(
+      engineCall(origin + '/socket.io/?EIO=4&transport=polling', {
+        headers: { 'x-existing-deny': 'true' },
+      }),
+    ).resolves.toMatchObject({ statusCode: 403 });
+    expect(adapter.getAdmissionStats()).toMatchObject({
+      freshHandshakeAttempts: 1,
+      freshHandshakeAccepted: 1,
+      pendingReservations: 0,
+      pendingNetworkKeys: 0,
+      middlewareRequests: 0,
+      engineConnections: 0,
+    });
   });
 
   it('permits authorized polling and a concurrent websocket upgrade', async () => {
