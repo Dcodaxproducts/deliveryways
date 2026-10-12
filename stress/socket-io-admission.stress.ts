@@ -85,6 +85,24 @@ async function main(): Promise<void> {
     const before = process.memoryUsage();
     delay.enable();
 
+    const packetStatsBefore = adapter.getPacketAdmissionStats();
+    await runPacketAttack(origin);
+    await assertValidClients(validClients);
+    await waitFor(
+      () => adapter.getPacketAdmissionStats().activeSessions === 4,
+      5_000,
+    );
+    const packetStatsAfter = adapter.getPacketAdmissionStats();
+    if (
+      packetStatsAfter.rejectedSessions - packetStatsBefore.rejectedSessions !==
+      16
+    ) {
+      throw new Error(
+        'Packet admission did not close every abusive session: ' +
+          JSON.stringify({ packetStatsBefore, packetStatsAfter }),
+      );
+    }
+
     const statuses = new Map<number, number>();
     const beforeAttackStats = adapter.getAdmissionStats();
     const attackStartedAt = Date.now();
@@ -208,6 +226,8 @@ async function main(): Promise<void> {
           attackAccepted,
           attackElapsedMs,
           attackAdmissionCap,
+          packetStatsBefore,
+          packetStatsAfter,
           settledStats: cleaned,
           validClients: 4,
         },
@@ -226,6 +246,37 @@ async function main(): Promise<void> {
         httpServer.close((error) => (error ? reject(error) : resolve())),
       );
     }
+  }
+}
+
+async function runPacketAttack(origin: string): Promise<void> {
+  const clients = Array.from({ length: 16 }, (_, index) =>
+    createClient(origin + '/authorized', {
+      auth: { token: 'stress-token' },
+      transports: ['websocket'],
+      reconnection: false,
+      timeout: 3_000,
+      extraHeaders: {
+        'x-forwarded-for': '198.' + (30 + index) + '.1.2',
+      },
+    }),
+  );
+  try {
+    await Promise.all(clients.map(connected));
+    const disconnected = clients.map(
+      (client) =>
+        new Promise<void>((resolve) =>
+          client.once('disconnect', () => resolve()),
+        ),
+    );
+    for (const client of clients) {
+      for (let packet = 0; packet < 512; packet += 1) {
+        client.emit('amplify', packet);
+      }
+    }
+    await Promise.all(disconnected);
+  } finally {
+    clients.forEach((client) => client.disconnect());
   }
 }
 

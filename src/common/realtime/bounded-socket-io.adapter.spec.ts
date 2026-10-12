@@ -274,10 +274,12 @@ describe('BoundedSocketIoAdapter integration', () => {
   let socketServer: ReturnType<BoundedSocketIoAdapter['createIOServer']>;
   let origin: string;
   let url: string;
+  let amplifiedEvents: number;
 
   beforeEach(async () => {
+    amplifiedEvents = 0;
     httpServer = createServer();
-    adapter = new BoundedSocketIoAdapter(httpServer as never);
+    adapter = new BoundedSocketIoAdapter(httpServer as never, generousOptions);
     socketServer = adapter.createIOServer(0, {
       allowRequest: (request, callback) =>
         callback(null, request.headers['x-existing-deny'] !== 'true'),
@@ -286,6 +288,42 @@ describe('BoundedSocketIoAdapter integration', () => {
       if (socket.handshake.auth.token === 'test-token') next();
       else next(new Error('Unauthorized'));
     });
+    socketServer.of('/authorized').on('connection', (socket) => {
+      socket.on('amplify', () => {
+        amplifiedEvents += 1;
+      });
+    });
+    for (const namespace of ['/orders-tracking', '/chat']) {
+      socketServer.of(namespace).use((socket, next) => {
+        if (socket.handshake.auth.token === 'test-token') next();
+        else next(new Error('Unauthorized'));
+      });
+    }
+    socketServer
+      .of('/orders-tracking')
+      .on('connection', (socket) =>
+        socket.on(
+          'order.tracking.subscribe',
+          (
+            body: { orderId?: string },
+            acknowledge: (value: {
+              orderId?: string;
+              subscribed: boolean;
+            }) => void,
+          ) => acknowledge({ orderId: body.orderId, subscribed: true }),
+        ),
+      );
+    socketServer
+      .of('/chat')
+      .on('connection', (socket) =>
+        socket.on(
+          'chat.message.send',
+          (
+            body: { threadId?: string },
+            acknowledge: (value: { threadId?: string; sent: boolean }) => void,
+          ) => acknowledge({ threadId: body.threadId, sent: true }),
+        ),
+      );
     await new Promise<void>((resolve) =>
       httpServer.listen(0, '127.0.0.1', resolve),
     );
@@ -416,6 +454,71 @@ describe('BoundedSocketIoAdapter integration', () => {
     expect(message).toBe('Unauthorized');
     invalid.disconnect();
   });
+
+  it('keeps authorized order and chat clients connected through normal events', async () => {
+    const orders = authorizedClient(origin + '/orders-tracking');
+    const chat = authorizedClient(origin + '/chat');
+    await Promise.all([connected(orders), connected(chat)]);
+
+    await expect(
+      emitWithAck(orders, 'order.tracking.subscribe', { orderId: 'order-1' }),
+    ).resolves.toEqual({ orderId: 'order-1', subscribed: true });
+    await expect(
+      emitWithAck(chat, 'chat.message.send', { threadId: 'thread-1' }),
+    ).resolves.toEqual({ threadId: 'thread-1', sent: true });
+    expect(orders.connected).toBe(true);
+    expect(chat.connected).toBe(true);
+
+    orders.disconnect();
+    chat.disconnect();
+    await waitFor(() => adapter.getPacketAdmissionStats().activeSessions === 0);
+  });
+
+  it('closes 16 packet-amplifying sessions early without leaking across cycles', async () => {
+    const engine = socketServer.engine as unknown as {
+      clientsCount: number;
+      listenerCount(event: string): number;
+    };
+    const connectionListeners = engine.listenerCount('connection');
+    const resourcesBefore = timerResourceCount();
+    const memoryBefore = process.memoryUsage();
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const clients = Array.from({ length: 16 }, () =>
+        authorizedClient(origin + '/authorized'),
+      );
+      await Promise.all(clients.map(connected));
+      const disconnected = clients.map(disconnectedOnce);
+
+      for (const client of clients) {
+        for (let packet = 0; packet < 512; packet += 1) {
+          client.emit('amplify', packet);
+        }
+      }
+
+      await Promise.all(disconnected);
+      await waitFor(
+        () =>
+          adapter.getPacketAdmissionStats().activeSessions === 0 &&
+          engine.clientsCount === 0,
+      );
+      clients.forEach((client) => client.disconnect());
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const memoryAfter = process.memoryUsage();
+    expect(adapter.getPacketAdmissionStats()).toMatchObject({
+      activeSessions: 0,
+      rejectedSessions: 48,
+    });
+    expect(amplifiedEvents).toBeLessThanOrEqual(48 * 64);
+    expect(engine.listenerCount('connection')).toBe(connectionListeners);
+    expect(timerResourceCount()).toBeLessThanOrEqual(resourcesBefore + 2);
+    expect(memoryAfter.heapUsed - memoryBefore.heapUsed).toBeLessThan(
+      64 * 1024 * 1024,
+    );
+    expect(memoryAfter.rss - memoryBefore.rss).toBeLessThan(128 * 1024 * 1024);
+  });
 });
 
 type EngineCallOptions = {
@@ -484,6 +587,39 @@ function connected(client: ClientSocket): Promise<void> {
     client.once('connect', resolve);
     client.once('connect_error', reject);
   });
+}
+
+function authorizedClient(endpoint: string): ClientSocket {
+  return createClient(endpoint, {
+    auth: { token: 'test-token' },
+    transports: ['websocket'],
+    reconnection: false,
+    timeout: 3_000,
+  });
+}
+
+function disconnectedOnce(client: ClientSocket): Promise<void> {
+  return new Promise((resolve) => client.once('disconnect', () => resolve()));
+}
+
+function emitWithAck(
+  client: ClientSocket,
+  event: string,
+  body: Record<string, string>,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Ack timed out')), 2_000);
+    client.emit(event, body, (value: unknown) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
+}
+
+function timerResourceCount(): number {
+  return process
+    .getActiveResourcesInfo()
+    .filter((resource) => resource === 'Timeout').length;
 }
 
 function upgraded(client: ClientSocket): Promise<void> {

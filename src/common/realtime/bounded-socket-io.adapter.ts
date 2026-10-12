@@ -26,6 +26,10 @@ const REQUEST_LEASE_MS = 50_000;
 const MAX_FORWARDED_HEADER_BYTES = 1_024;
 const MAX_FORWARDED_HOPS = 16;
 const MAX_SID_BYTES = 128;
+const PACKET_BURST_WINDOW_MS = 1_000;
+const PACKETS_PER_BURST_WINDOW = 64;
+const PACKET_SUSTAINED_WINDOW_MS = 10_000;
+const PACKETS_PER_SUSTAINED_WINDOW = 240;
 
 const SOCKET_OPTIONS: Partial<ServerOptions> = {
   transports: ['polling', 'websocket'],
@@ -109,7 +113,13 @@ type PreparedEngineRequest = IncomingMessage & {
 type EngineSession = {
   id: string;
   request: IncomingMessage;
+  on(event: 'packet', listener: () => void): void;
   once(event: 'close' | 'error', listener: () => void): void;
+  removeListener(
+    event: 'packet' | 'close' | 'error',
+    listener: () => void,
+  ): void;
+  removeAllListeners(event: 'data'): void;
   close(discard?: boolean): void;
 };
 
@@ -117,6 +127,106 @@ type EngineConnectionError = { req: IncomingMessage };
 type EngineWithClients = {
   clients: Record<string, unknown>;
 };
+
+export type EnginePacketAdmissionStats = {
+  activeSessions: number;
+  admittedPackets: number;
+  rejectedSessions: number;
+};
+
+type PacketWindow = {
+  count: number;
+  resetAt: number;
+};
+
+class EnginePacketAdmission {
+  private activeSessions = 0;
+  private admittedPackets = 0;
+  private rejectedSessions = 0;
+
+  attach(session: EngineSession): void {
+    let active = true;
+    const now = Date.now();
+    const burst: PacketWindow = {
+      count: 0,
+      resetAt: now + PACKET_BURST_WINDOW_MS,
+    };
+    const sustained: PacketWindow = {
+      count: 0,
+      resetAt: now + PACKET_SUSTAINED_WINDOW_MS,
+    };
+    this.activeSessions += 1;
+
+    const cleanup = (): void => {
+      if (!active) return;
+      active = false;
+      this.activeSessions = Math.max(0, this.activeSessions - 1);
+      session.removeListener('packet', onPacket);
+      session.removeListener('close', cleanup);
+      session.removeListener('error', cleanup);
+    };
+    const reject = (): void => {
+      this.rejectedSessions += 1;
+      session.removeAllListeners('data');
+      cleanup();
+      session.close(true);
+    };
+    const onPacket = (): void => {
+      if (!active) return;
+      const packetNow = Date.now();
+      if (
+        this.consume(
+          burst,
+          PACKETS_PER_BURST_WINDOW,
+          PACKET_BURST_WINDOW_MS,
+          packetNow,
+        )
+      ) {
+        reject();
+        return;
+      }
+      if (
+        this.consume(
+          sustained,
+          PACKETS_PER_SUSTAINED_WINDOW,
+          PACKET_SUSTAINED_WINDOW_MS,
+          packetNow,
+        )
+      ) {
+        reject();
+        return;
+      }
+      this.admittedPackets += 1;
+    };
+
+    session.on('packet', onPacket);
+    session.once('close', cleanup);
+    session.once('error', cleanup);
+  }
+
+  getStats(): EnginePacketAdmissionStats {
+    return {
+      activeSessions: this.activeSessions,
+      admittedPackets: this.admittedPackets,
+      rejectedSessions: this.rejectedSessions,
+    };
+  }
+
+  private consume(
+    window: PacketWindow,
+    limit: number,
+    windowMs: number,
+    now: number,
+  ): boolean {
+    if (window.resetAt <= now) {
+      window.count = 0;
+      window.resetAt = now + windowMs;
+    }
+    if (window.count >= limit) return true;
+    window.count += 1;
+    return false;
+  }
+}
 
 const DEFAULT_ADMISSION_OPTIONS: AdmissionOptions = {
   requestWindowMs: REQUEST_WINDOW_MS,
@@ -548,6 +658,7 @@ export class EngineRequestAdmission {
 
 export class BoundedSocketIoAdapter extends IoAdapter {
   private readonly admission: EngineRequestAdmission;
+  private readonly packetAdmission = new EnginePacketAdmission();
   private readonly requestLeaseMs: number;
 
   constructor(
@@ -629,6 +740,7 @@ export class BoundedSocketIoAdapter extends IoAdapter {
         session.close(true);
         return;
       }
+      this.packetAdmission.attach(session);
       const release = (): void => this.admission.releaseSession(session.id);
       session.once('close', release);
       session.once('error', release);
@@ -641,6 +753,10 @@ export class BoundedSocketIoAdapter extends IoAdapter {
 
   getAdmissionStats(): EngineRequestAdmissionStats {
     return this.admission.getStats();
+  }
+
+  getPacketAdmissionStats(): EnginePacketAdmissionStats {
+    return this.packetAdmission.getStats();
   }
 
   private releaseOnCompletion(
