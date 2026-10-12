@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Socket } from 'socket.io';
+import { trustedNetworkKey } from './bounded-socket-io.adapter';
 
 type AttemptWindow = {
   count: number;
@@ -124,10 +125,10 @@ export class RealtimeAdmissionService {
   }
 
   private networkKey(client: Socket): string {
-    const forwarded = client.handshake.headers['x-forwarded-for'];
-    const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-    const proxyAppendedAddress = value?.split(',').at(-1)?.trim();
-    return proxyAppendedAddress || client.handshake.address || 'unknown';
+    return trustedNetworkKey({
+      remoteAddress: client.handshake.address,
+      headers: client.handshake.headers,
+    });
   }
 
   private increment(map: Map<string, number>, key: string): void {
