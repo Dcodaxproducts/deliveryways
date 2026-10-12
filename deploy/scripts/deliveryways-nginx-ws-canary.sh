@@ -137,7 +137,7 @@ for m in re.finditer(r'(?m)^[ \t]*location\s+[^\n{]*?/socket\.io/[^\n{]*\{',src)
         i+=1
     if depth: raise SystemExit('unbalanced socket.io location')
     text=src[m.start():i]
-    if re.search(r'(?m)^\s*return\s+503\s*;',text): candidates.append((m.start(),i,text))
+    if re.search(r'\breturn\s+503\s*;', text): candidates.append((m.start(), i, text))
 if len(candidates)!=1: raise SystemExit(f'expected exactly one blocked /socket.io/ location, found {len(candidates)}')
 a,b,_=candidates[0]; out.write_text(src[:a]+block.rstrip()+"\n"+src[b:])
 PY
