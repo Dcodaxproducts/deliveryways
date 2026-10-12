@@ -2,6 +2,7 @@ import { createServer, request as httpRequest, Agent } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { io as createClient, Socket as ClientSocket } from 'socket.io-client';
+import { WebSocket } from 'ws';
 import {
   BoundedSocketIoAdapter,
   EngineRequestAdmissionStats,
@@ -85,15 +86,16 @@ async function main(): Promise<void> {
     delay.enable();
 
     const statuses = new Map<number, number>();
+    const beforeAttackStats = adapter.getAdmissionStats();
+    const attackStartedAt = Date.now();
     const firstWaveCount = Math.floor(REQUEST_COUNT / 2);
-    await runRequestWave(origin, agent, 0, firstWaveCount, statuses);
+    await runRequestWave(origin, 0, firstWaveCount, statuses);
     await assertValidClients(validClients);
     await settleMemory();
     const afterFirstWave = process.memoryUsage();
 
     await runRequestWave(
       origin,
-      agent,
       firstWaveCount,
       REQUEST_COUNT - firstWaveCount,
       statuses,
@@ -136,8 +138,50 @@ async function main(): Promise<void> {
     if (p99Ms > MAX_EVENT_LOOP_P99_MS) {
       throw new Error('Event-loop p99 exceeded bound: ' + p99Ms + ' ms');
     }
-    if ((statuses.get(400) ?? 0) + (statuses.get(429) ?? 0) !== REQUEST_COUNT) {
-      throw new Error('Spoofed requests escaped admission');
+    if (
+      (statuses.get(101) ?? 0) +
+        (statuses.get(400) ?? 0) +
+        (statuses.get(403) ?? 0) !==
+      REQUEST_COUNT
+    ) {
+      throw new Error(
+        'Direct WebSocket attempts did not complete cleanly: ' +
+          JSON.stringify(Object.fromEntries(statuses)),
+      );
+    }
+    const attackMiddlewareRequests =
+      settled.middlewareRequests - beforeAttackStats.middlewareRequests;
+    const attackEngineConnections =
+      settled.engineConnections - beforeAttackStats.engineConnections;
+    const attackAccepted =
+      settled.freshHandshakeAccepted - beforeAttackStats.freshHandshakeAccepted;
+    const attackElapsedMs = Date.now() - attackStartedAt;
+    const attackAdmissionCap =
+      Math.max(1, Math.ceil(attackElapsedMs / 10_000)) * 48;
+    if (
+      attackMiddlewareRequests !== 0 ||
+      attackEngineConnections > attackAdmissionCap ||
+      attackAccepted > attackAdmissionCap
+    ) {
+      throw new Error(
+        'Fresh handshake work escaped pre-upgrade cap: ' +
+          JSON.stringify({
+            attackMiddlewareRequests,
+            attackEngineConnections,
+            attackAccepted,
+            attackElapsedMs,
+            attackAdmissionCap,
+          }),
+      );
+    }
+    await sleep(10_100);
+    const cleaned = adapter.getAdmissionStats();
+    if (
+      cleaned.freshHandshakeKeys !== 0 ||
+      cleaned.pendingReservations !== 0 ||
+      cleaned.pendingNetworkKeys !== 0
+    ) {
+      throw new Error('Fresh handshake maps did not clean up');
     }
 
     process.stdout.write(
@@ -159,7 +203,12 @@ async function main(): Promise<void> {
           secondWaveRssGrowth,
           eventLoopP99Ms: Number(p99Ms.toFixed(2)),
           maxStats,
-          settledStats: settled,
+          attackMiddlewareRequests,
+          attackEngineConnections,
+          attackAccepted,
+          attackElapsedMs,
+          attackAdmissionCap,
+          settledStats: cleaned,
           validClients: 4,
         },
         null,
@@ -182,7 +231,6 @@ async function main(): Promise<void> {
 
 async function runRequestWave(
   origin: string,
-  agent: Agent,
   start: number,
   count: number,
   statuses: Map<number, number>,
@@ -198,9 +246,9 @@ async function runRequestWave(
         if (index >= end) return;
         const third = index % 256;
         const second = Math.floor(index / 256) % 200;
-        const result = await engineCall(
-          origin + '/socket.io/?EIO=4&transport=polling&sid=spoofed_' + index,
-          agent,
+        const result = await directWebSocketAttempt(
+          origin.replace('http://', 'ws://') +
+            '/socket.io/?EIO=4&transport=websocket',
           { 'x-forwarded-for': '100.' + second + '.' + third + '.1' },
         );
         statuses.set(result, (statuses.get(result) ?? 0) + 1);
@@ -306,14 +354,14 @@ function assertBounded(
   maximum: EngineRequestAdmissionStats,
   settled: EngineRequestAdmissionStats,
 ): void {
-  if (maximum.activeSessions > 96) throw new Error('Session cap exceeded');
+  if (maximum.activeSessions > 32) throw new Error('Session cap exceeded');
   if (maximum.networkRequestKeys > 512)
     throw new Error('Network map cap exceeded');
-  if (maximum.sessionRequestKeys > 96)
+  if (maximum.sessionRequestKeys > 32)
     throw new Error('Session map cap exceeded');
-  if (maximum.pendingReservations > 96) throw new Error('Pending cap exceeded');
+  if (maximum.pendingReservations > 32) throw new Error('Pending cap exceeded');
   if (maximum.inflightRequests > 192) throw new Error('Inflight cap exceeded');
-  if (maximum.pollingGets > 96 || maximum.upgrades > 96) {
+  if (maximum.pollingGets > 32 || maximum.upgrades > 32) {
     throw new Error('Per-session operation maps exceeded session cap');
   }
   if (
@@ -342,14 +390,33 @@ function maximumStats(
   ) as EngineRequestAdmissionStats;
 }
 
-function engineCall(
+function directWebSocketAttempt(
   endpoint: string,
-  agent: Agent,
   headers: Record<string, string>,
 ): Promise<number> {
-  return engineCallWithBody(endpoint, agent, headers).then(
-    (response) => response.statusCode,
-  );
+  return new Promise((resolve) => {
+    const socket = new WebSocket(endpoint, {
+      headers,
+      handshakeTimeout: 3_000,
+    });
+    let completed = false;
+    const finish = (statusCode: number): void => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timer);
+      if (socket.readyState === WebSocket.OPEN) socket.close();
+      else if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
+      resolve(statusCode);
+    };
+    const timer = setTimeout(() => finish(0), 5_000);
+    socket.once('open', () => finish(101));
+    socket.once('unexpected-response', (_request, response) => {
+      response.resume();
+      finish(response.statusCode ?? 0);
+    });
+    socket.once('error', () => finish(0));
+    socket.once('close', () => finish(0));
+  });
 }
 
 function engineCallWithBody(
