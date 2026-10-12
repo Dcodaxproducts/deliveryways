@@ -5,9 +5,11 @@ import {
   Headers,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBasicAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { Public, RawResponse } from '../../common/decorators';
 import { WinOrderBasicAuthGuard } from './winorder-basic-auth.guard';
 import {
@@ -18,6 +20,10 @@ import { WinOrderPollingService } from './winorder-polling.service';
 import { WinOrderStoreRouteDto, WinOrderTrackingStatusDto } from './dto';
 import { WinOrderConnectionService } from './winorder-connection.service';
 import { WinOrderStatusService } from './winorder-status.service';
+import {
+  WinOrderAdmissionService,
+  WinOrderRateLimitException,
+} from './winorder-admission.service';
 
 @Public()
 @ApiTags('WinOrder Machine API')
@@ -30,15 +36,26 @@ export class WinOrderMachineController {
     private readonly pollingService: WinOrderPollingService,
     private readonly statusService: WinOrderStatusService,
     private readonly connectionService: WinOrderConnectionService,
+    private readonly admission: WinOrderAdmissionService,
   ) {}
 
   @Get('GetNewOrders')
-  getNewOrders(
+  async getNewOrders(
     @WinOrderMachine() machine: WinOrderMachineContext,
     @Param() route: WinOrderStoreRouteDto,
+    @Res({ passthrough: true }) response: Response,
   ) {
     this.connectionService.assertStoreRoute(machine, route.storeId);
-    return this.pollingService.getNewOrders(machine);
+    try {
+      return await this.admission.executePoll(machine.connectionId, () =>
+        this.pollingService.getNewOrders(machine),
+      );
+    } catch (error) {
+      if (error instanceof WinOrderRateLimitException) {
+        response.setHeader('Retry-After', String(error.retryAfterSeconds));
+      }
+      throw error;
+    }
   }
 
   @Post('SendTrackingStatus')

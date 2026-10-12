@@ -25,6 +25,7 @@ import {
 } from './dto';
 import { ChatRealtimeService } from './chat.realtime.service';
 import { ChatService } from './chat.service';
+import { RealtimeAdmissionService } from '../../common/realtime/realtime-admission.service';
 
 type ChatSocket = Socket & {
   data: {
@@ -52,6 +53,7 @@ export class ChatGateway
     private readonly configService: ConfigService,
     private readonly chatService: ChatService,
     private readonly chatRealtimeService: ChatRealtimeService,
+    private readonly admission: RealtimeAdmissionService,
   ) {}
 
   afterInit(server: Server) {
@@ -59,29 +61,54 @@ export class ChatGateway
   }
 
   async handleConnection(client: ChatSocket) {
+    const socketKey = this.socketKey(client);
+    const networkAdmission = this.admission.begin(socketKey, client);
+    if (!networkAdmission.allowed) {
+      this.rejectConnection(client, networkAdmission.retryAfterSeconds);
+      return;
+    }
+
     try {
       const user = await this.authenticate(client);
+      const userAdmission = this.admission.bindUser(socketKey, user.uid);
+      if (!userAdmission.allowed) {
+        this.rejectConnection(client, userAdmission.retryAfterSeconds);
+        return;
+      }
       this.setSocketUser(client, user);
 
       const rooms = this.chatRealtimeService.getInboxRoomsForUser(user);
       await Promise.all(rooms.map(async (room) => client.join(room)));
       await this.chatRealtimeService.emitInitialSummary(client, user);
-
-      this.logger.log(`Socket connected: ${client.id} (${user.uid})`);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Socket authentication failed';
-      this.logger.warn(`Socket rejected: ${message}`);
+    } catch {
+      this.admission.release(socketKey);
       client.emit('chat.error', {
         code: 'UNAUTHORIZED',
-        message,
+        message: 'Socket authentication failed',
       });
       client.disconnect(true);
     }
   }
 
   handleDisconnect(client: ChatSocket) {
-    this.logger.log(`Socket disconnected: ${client.id}`);
+    this.admission.release(this.socketKey(client));
+  }
+
+  private socketKey(client: ChatSocket): string {
+    return `chat:${client.id}`;
+  }
+
+  private rejectConnection(
+    client: ChatSocket,
+    retryAfterSeconds: number,
+  ): void {
+    this.admission.release(this.socketKey(client));
+    client.emit('chat.error', {
+      code: 'RATE_LIMITED',
+      message: 'Too many realtime connections',
+      retryAfterSeconds,
+    });
+    client.disconnect(true);
   }
 
   @SubscribeMessage('chat.inbox.subscribe')

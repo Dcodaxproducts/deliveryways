@@ -27,16 +27,23 @@ describe('OrderTrackingGateway', () => {
     const ordersService = {
       resolveRealtimeAdminOrderScope: jest.fn(),
     };
+    const jwtService = {
+      verifyAsync: jest.fn().mockResolvedValue(user),
+    };
+    const admission = {
+      begin: jest.fn().mockReturnValue({ allowed: true }),
+      bindUser: jest.fn().mockReturnValue({ allowed: true }),
+      release: jest.fn(),
+    };
     const gateway = new OrderTrackingGateway(
-      {
-        verifyAsync: jest.fn().mockResolvedValue(user),
-      } as never,
+      jwtService as never,
       {
         get: jest.fn().mockReturnValue('test-secret'),
       } as never,
       ordersService as never,
       {} as never,
       realtimeService as never,
+      admission as never,
     );
     const client = {
       id: 'socket-1',
@@ -48,13 +55,21 @@ describe('OrderTrackingGateway', () => {
           branchId: 'branch-1',
         },
         headers: {},
+        address: '198.51.100.1',
       },
       join: jest.fn().mockResolvedValue(undefined),
       emit: jest.fn(),
       disconnect: jest.fn(),
     };
 
-    return { gateway, client, realtimeService, ordersService };
+    return {
+      gateway,
+      client,
+      realtimeService,
+      ordersService,
+      jwtService,
+      admission,
+    };
   };
 
   it('joins business admins to their authenticated tenant order room without a database query', async () => {
@@ -135,6 +150,28 @@ describe('OrderTrackingGateway', () => {
     ]);
 
     expect(ordersService.resolveRealtimeAdminOrderScope).not.toHaveBeenCalled();
+  });
+
+  it('rejects reconnect bursts before JWT verification', async () => {
+    const { gateway, client, jwtService, admission } = makeGateway({
+      uid: 'owner-1',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      tid: 'tenant-1',
+    });
+    admission.begin.mockReturnValue({
+      allowed: false,
+      retryAfterSeconds: 8,
+    });
+
+    await gateway.handleConnection(client as never);
+
+    expect(jwtService.verifyAsync).not.toHaveBeenCalled();
+    expect(client.emit).toHaveBeenCalledWith('order.tracking.error', {
+      code: 'RATE_LIMITED',
+      message: 'Too many realtime connections',
+      retryAfterSeconds: 8,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
   });
 
   it('joins staff to a validated restaurant order room after explicit subscription', async () => {
