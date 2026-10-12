@@ -28,7 +28,8 @@ container_id(){
 nginx_test(){ nginx -t; }
 nginx_reload(){ systemctl reload nginx; }
 backup_file(){
-  local f="$1" ts="$2" out="${STATE}/backups/${ts}${f////_}"
+  local f="$1" ts="$2" out
+  out="${STATE}/backups/${ts}${f////_}"
   if [[ -e "${f}" ]]; then cp -a -- "${f}" "${out}"; else : >"${out}.ABSENT"; fi
   printf '%s' "${out}"
 }
