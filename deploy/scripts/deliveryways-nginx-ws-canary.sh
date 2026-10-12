@@ -158,7 +158,11 @@ action="${1:-audit}"; ts="$(date -u +%Y%m%dT%H%M%SZ)"
 case "${action}" in
   audit)
     echo "domain=${DOMAIN} vhost=${VHOST} upstream=${UPSTREAM}"
-    [[ -f "${VHOST}" ]]; nginx -T 2>&1 | grep -n -A35 -B8 -E 'server_name .*api\.delivery-way\.de|location .*socket\.io|proxy_pass' | head -220
+    [[ -f "${VHOST}" ]]
+    echo '--- custom vhost ---'
+    sed -n '1,240p' "${VHOST}"
+    echo '--- nginx include and active domain references ---'
+    nginx -T 2>&1 | grep -n -A45 -B8 -E "configuration file .*api\.delivery-way\.de|server_name .*api\.delivery-way\.de|location .*socket\.io|proxy_pass.*5050" | head -260 || true
     echo "api_health=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 3 https://${DOMAIN}/api/v1/health/live) public_socket=$(public_socket_code)"
     inspect_api
     ;;
