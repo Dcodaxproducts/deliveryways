@@ -1,7 +1,7 @@
 {
-  "name": "feastflow",
+  "name": "deliveryways",
   "version": "0.1.0",
-  "description": "FeastFlow - Modular Monolith Backend",
+  "description": "DeliveryWays - Modular Monolith Backend",
   "author": "Dcodax Technologies",
   "private": true,
   "license": "MIT",
@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:p0": "NODE_ENV=test APP_ENV=test EMAIL_ENABLED=false JWT_ACCESS_SECRET=p0-acceptance-access-secret JWT_REFRESH_SECRET=p0-acceptance-refresh-secret JWT_ACCESS_EXPIRES_IN=15m JWT_REFRESH_EXPIRES_IN=1h THROTTLE_LIMIT=10000 jest --config ./test/jest-p0.json --runInBand",
+    "test:deploy": "bash deploy/scripts/deploy-local-images.test.sh",
     "db:up": "docker compose up --detach postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
@@ -37,10 +37,10 @@
     "db:restore": "bash scripts/restore-db.sh",
     "sync:server": "bash scripts/sync-server.sh",
     "deploy:safe": "bash scripts/deploy-safe.sh",
-    "rollout:payout:verify": "psql \"$DATABASE_URL\" -X -v ON_ERROR_STOP=1 -f scripts/verify-payout-indexes-predeploy.sql",
-    "rollout:payout:rehearse": "bash scripts/rehearse-payout-rollout.sh",
     "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev",
-    "qa:partner-branch": "ts-node scripts/qa/partner-branch-fixture.ts"
+    "test:realtime-stress": "node --expose-gc -r ts-node/register stress/socket-io-admission.stress.ts",
+    "rollout:payout:verify": "psql \"$DATABASE_URL\" -X -v ON_ERROR_STOP=1 -f scripts/verify-payout-indexes-predeploy.sql",
+    "rollout:payout:rehearse": "bash scripts/rehearse-payout-rollout.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1009.0",
@@ -72,7 +72,7 @@
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sharp": "0.34.4",
+    "sharp": "^0.34.4",
     "socket.io": "^4.8.3",
     "stripe": "^22.0.1"
   },
@@ -89,6 +89,7 @@
     "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/multer": "^2.3.0",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^7.0.11",
     "@types/passport-jwt": "^4.0.1",
