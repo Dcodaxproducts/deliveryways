@@ -370,6 +370,24 @@ export class OrdersRepository {
     });
   }
 
+  async findRealtimeSummaryById(id: string) {
+    return this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        restaurantId: true,
+        branchId: true,
+        status: true,
+        orderType: true,
+        paymentStatus: true,
+        totalAmount: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
   async findTrackingById(id: string) {
     return this.prisma.order.findUnique({
       where: { id },

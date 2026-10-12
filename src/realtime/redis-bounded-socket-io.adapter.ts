@@ -4,18 +4,29 @@ import { createClient, type RedisClientType } from 'redis';
 import type { Server, ServerOptions } from 'socket.io';
 import { BoundedSocketIoAdapter } from '../common/realtime/bounded-socket-io.adapter';
 
-export class RedisBoundedSocketIoAdapter extends BoundedSocketIoAdapter {
+export interface SocketIoAdapterHealth {
+  pubReady: boolean;
+  subReady: boolean;
+}
+
+/** Readiness surface of the Socket.IO transport; implemented by the Redis adapter. */
+export interface SocketIoAdapterProbe {
+  getHealth(): SocketIoAdapterHealth;
+}
+
+export class RedisBoundedSocketIoAdapter
+  extends BoundedSocketIoAdapter
+  implements SocketIoAdapterProbe
+{
   private readonly logger = new Logger(RedisBoundedSocketIoAdapter.name);
   private readonly pubClient: RedisClientType;
   private readonly subClient: RedisClientType;
-  private connected = false;
 
   constructor(app: INestApplicationContext, redisUrl: string) {
     super(app);
     this.pubClient = createClient({ url: redisUrl });
     this.subClient = this.pubClient.duplicate();
     const onError = (error: Error): void => {
-      this.connected = false;
       this.logger.warn('Socket.IO Redis adapter unavailable: ' + error.message);
     };
     this.pubClient.on('error', onError);
@@ -24,7 +35,6 @@ export class RedisBoundedSocketIoAdapter extends BoundedSocketIoAdapter {
 
   async connect(): Promise<void> {
     await Promise.all([this.pubClient.connect(), this.subClient.connect()]);
-    this.connected = true;
   }
 
   createIOServer(port: number, options?: Partial<ServerOptions>): Server {
@@ -33,8 +43,17 @@ export class RedisBoundedSocketIoAdapter extends BoundedSocketIoAdapter {
     return server;
   }
 
+  /** Each client reports `isReady` live, so a reconnect recovers readiness without extra state. */
+  getHealth(): SocketIoAdapterHealth {
+    return {
+      pubReady: this.pubClient.isReady,
+      subReady: this.subClient.isReady,
+    };
+  }
+
   isReady(): boolean {
-    return this.connected && this.pubClient.isReady && this.subClient.isReady;
+    const health = this.getHealth();
+    return health.pubReady && health.subReady;
   }
 
   async close(): Promise<void> {

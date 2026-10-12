@@ -86,6 +86,20 @@ export class ChatGateway
         message: 'Socket authentication failed',
       });
       client.disconnect(true);
+      return;
+    }
+
+    // The summary is a convenience snapshot: a failure must not drop an authenticated socket.
+    const user = this.getSocketUser(client);
+    if (!user) return;
+    try {
+      await this.chatRealtimeService.emitInitialSummary(client, user);
+    } catch (error) {
+      this.logger.warn(
+        `Initial chat inbox summary failed: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
     }
   }
 
@@ -112,7 +126,8 @@ export class ChatGateway
 
   @SubscribeMessage('chat.inbox.subscribe')
   async subscribeInbox(@ConnectedSocket() client: ChatSocket) {
-    return this.handleSocketRequest(client, (user) => {
+    return this.handleSocketRequest(client, async (user) => {
+      await this.chatRealtimeService.emitInitialSummary(client, user);
       return {
         rooms: this.chatRealtimeService.getInboxRoomsForUser(user),
       };

@@ -8,9 +8,11 @@ import { ChatModule } from '../modules/chat/public-api';
 import { OrdersModule } from '../modules/orders/public-api';
 import { ChatGateway } from './gateways/chat.gateway';
 import { OrderTrackingGateway } from './gateways/order-tracking.gateway';
+import { RealtimeAdapterReadinessService } from './realtime-adapter-readiness.service';
 import { RealtimeDeliveryService } from './realtime-delivery.service';
 import { RealtimeHealthController } from './realtime-health.controller';
 import { RealtimeDeliveryAuthorizationService } from './realtime-delivery-authorization.service';
+import { RealtimeOutboxDispatcherService } from './realtime-outbox-dispatcher.service';
 import {
   CurrentSessionModule,
   getRequiredJwtAccessSecret,
@@ -40,6 +42,8 @@ import {
     ChatGateway,
     OrderTrackingGateway,
     RealtimeDeliveryAuthorizationService,
+    RealtimeOutboxDispatcherService,
+    RealtimeAdapterReadinessService,
     RealtimeDeliveryService,
   ],
 })

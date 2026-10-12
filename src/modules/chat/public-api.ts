@@ -7,3 +7,12 @@ export {
   CreateChatThreadDto,
   UpdateChatThreadStatusDto,
 } from './dto';
+export type {
+  ChatMessageCreatedPayload,
+  ChatRealtimeThreadPayload,
+  ChatThreadReadPayload,
+} from './chat.realtime.service';
+export type {
+  ChatRealtimeEventName,
+  ChatRealtimeEventPayload,
+} from './chat.service';

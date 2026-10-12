@@ -11,7 +11,7 @@ import {
   RealtimeRooms,
 } from '../../common/realtime/realtime-events';
 
-type ThreadPayload = {
+export type ChatRealtimeThreadPayload = {
   id: string;
   tenantId: string;
   restaurantId: string;
@@ -39,6 +39,21 @@ type ThreadPayload = {
   deliveryman: Record<string, unknown> | null;
   latestMessage?: Record<string, unknown> | null;
   messages?: Record<string, unknown>[];
+};
+
+export type ChatMessageCreatedPayload = {
+  threadId: string;
+  message: Record<string, unknown>;
+  thread: ChatRealtimeThreadPayload;
+};
+
+export type ChatThreadReadPayload = {
+  threadId: string;
+  customerUnreadCount: number;
+  staffUnreadCount: number;
+  customerLastReadAt: Date | null;
+  staffLastReadAt: Date | null;
+  thread: ChatRealtimeThreadPayload;
 };
 
 type SummaryScope =
@@ -134,47 +149,61 @@ export class ChatRealtimeService {
     );
   }
 
-  emitThreadCreated(thread: ThreadPayload): Promise<void> {
+  emitThreadCreated(thread: ChatRealtimeThreadPayload): Promise<void> {
     this.eventBus.publish(RealtimeEventName.CHAT_THREAD_CREATED, thread);
     return Promise.resolve();
   }
 
-  emitThreadUpdated(thread: ThreadPayload): Promise<void> {
+  emitThreadUpdated(thread: ChatRealtimeThreadPayload): Promise<void> {
     this.eventBus.publish(RealtimeEventName.CHAT_THREAD_UPDATED, thread);
     return Promise.resolve();
   }
 
-  emitMessageCreated(thread: ThreadPayload): Promise<void> {
-    const latestMessage =
-      thread.messages?.at(-1) ?? thread.latestMessage ?? null;
+  /**
+   * `messageId` selects the exact message an outbox event refers to; without it
+   * (or when it is no longer in the thread) the latest message is used.
+   */
+  buildMessageCreatedPayload(
+    thread: ChatRealtimeThreadPayload,
+    messageId?: string,
+  ): ChatMessageCreatedPayload | null {
+    const message =
+      (messageId
+        ? thread.messages?.find((candidate) => candidate.id === messageId)
+        : undefined) ??
+      thread.messages?.at(-1) ??
+      thread.latestMessage ??
+      null;
 
-    if (!latestMessage) {
-      return Promise.resolve();
-    }
-
-    const payload = {
-      threadId: thread.id,
-      message: latestMessage,
-      thread,
-    };
-
-    this.eventBus.publish(RealtimeEventName.CHAT_MESSAGE_CREATED, payload);
-    return Promise.resolve();
+    return message ? { threadId: thread.id, message, thread } : null;
   }
 
-  emitThreadRead(thread: ThreadPayload): Promise<void> {
-    const payload = {
+  buildThreadReadPayload(
+    thread: ChatRealtimeThreadPayload,
+  ): ChatThreadReadPayload {
+    return {
       threadId: thread.id,
       customerUnreadCount: thread.customerUnreadCount,
       staffUnreadCount: thread.staffUnreadCount,
       customerLastReadAt: thread.customerLastReadAt,
       staffLastReadAt: thread.staffLastReadAt,
-    };
-
-    this.eventBus.publish(RealtimeEventName.CHAT_THREAD_READ, {
-      ...payload,
       thread,
-    });
+    };
+  }
+
+  emitMessageCreated(thread: ChatRealtimeThreadPayload): Promise<void> {
+    const payload = this.buildMessageCreatedPayload(thread);
+    if (payload) {
+      this.eventBus.publish(RealtimeEventName.CHAT_MESSAGE_CREATED, payload);
+    }
+    return Promise.resolve();
+  }
+
+  emitThreadRead(thread: ChatRealtimeThreadPayload): Promise<void> {
+    this.eventBus.publish(
+      RealtimeEventName.CHAT_THREAD_READ,
+      this.buildThreadReadPayload(thread),
+    );
     return Promise.resolve();
   }
 
@@ -184,7 +213,7 @@ export class ChatRealtimeService {
       event === RealtimeEventName.CHAT_THREAD_CREATED ||
       event === RealtimeEventName.CHAT_THREAD_UPDATED
     ) {
-      const thread = payload as ThreadPayload;
+      const thread = payload as ChatRealtimeThreadPayload;
       this.emitToSupportAndCustomerRooms(event, thread);
       if (event === RealtimeEventName.CHAT_THREAD_UPDATED) {
         this.emitToRoom(this.getThreadRoom(thread.id), event, thread);
@@ -196,7 +225,7 @@ export class ChatRealtimeService {
       event === RealtimeEventName.CHAT_MESSAGE_CREATED ||
       event === RealtimeEventName.CHAT_THREAD_READ
     ) {
-      const wrapped = payload as { thread?: ThreadPayload };
+      const wrapped = payload as { thread?: ChatRealtimeThreadPayload };
       if (!wrapped.thread) return;
       const clientPayload =
         event === RealtimeEventName.CHAT_THREAD_READ
@@ -212,7 +241,9 @@ export class ChatRealtimeService {
     }
   }
 
-  private withoutThread(payload: { thread?: ThreadPayload }): unknown {
+  private withoutThread(payload: {
+    thread?: ChatRealtimeThreadPayload;
+  }): unknown {
     const clientPayload = { ...payload };
     delete clientPayload.thread;
     return clientPayload;
@@ -223,11 +254,13 @@ export class ChatRealtimeService {
       return;
     }
 
-    const thread = payload as ThreadPayload | { thread?: ThreadPayload };
+    const thread = payload as
+      | ChatRealtimeThreadPayload
+      | { thread?: ChatRealtimeThreadPayload };
     const threadPayload =
       'thread' in thread && thread.thread
         ? thread.thread
-        : (thread as ThreadPayload);
+        : (thread as ChatRealtimeThreadPayload);
 
     const rooms = new Set<string>([
       this.getUserRoom(threadPayload.customerId),
@@ -252,7 +285,9 @@ export class ChatRealtimeService {
     this.server?.local.to(room).emit(event, payload);
   }
 
-  private getSummaryScopesForThread(thread: ThreadPayload): SummaryScope[] {
+  private getSummaryScopesForThread(
+    thread: ChatRealtimeThreadPayload,
+  ): SummaryScope[] {
     const scopes: SummaryScope[] = [
       {
         type: 'customer',
@@ -376,7 +411,7 @@ export class ChatRealtimeService {
     return [];
   }
 
-  private async emitSummariesForThread(thread: ThreadPayload) {
+  private async emitSummariesForThread(thread: ChatRealtimeThreadPayload) {
     if (!this.server) {
       return;
     }

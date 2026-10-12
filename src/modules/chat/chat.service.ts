@@ -25,10 +25,25 @@ import {
   UpdateChatThreadStatusDto,
 } from './dto';
 import { ChatRepository } from './chat.repository';
-import { ChatRealtimeService } from './chat.realtime.service';
+import {
+  ChatMessageCreatedPayload,
+  ChatRealtimeService,
+  ChatRealtimeThreadPayload,
+  ChatThreadReadPayload,
+} from './chat.realtime.service';
 import { StorageService } from '../storage/storage.service';
 
 type StaffPermissionOperation = 'read' | 'reply' | 'assign' | 'resolve';
+
+export type ChatRealtimeEventName =
+  | 'chat.thread.created'
+  | 'chat.thread.updated'
+  | 'chat.message.created'
+  | 'chat.thread.read';
+export type ChatRealtimeEventPayload =
+  | ChatRealtimeThreadPayload
+  | ChatMessageCreatedPayload
+  | ChatThreadReadPayload;
 
 @Injectable()
 export class ChatService {
@@ -367,6 +382,31 @@ export class ChatService {
       },
       message: 'Support conversation summary fetched successfully',
     };
+  }
+
+  /**
+   * Rebuilds the exact socket payload for an outbox intent from current state.
+   * Returns null when the thread (or, for message events, its message) is gone.
+   */
+  async getRealtimeEventPayload(
+    event: ChatRealtimeEventName,
+    threadId: string,
+    messageId?: string,
+  ): Promise<ChatRealtimeEventPayload | null> {
+    const found = await this.chatRepository.findThreadById(threadId);
+    if (!found) return null;
+    const thread = this.toThreadDetails(found);
+
+    if (event === 'chat.message.created') {
+      return this.chatRealtimeService.buildMessageCreatedPayload(
+        thread,
+        messageId,
+      );
+    }
+    if (event === 'chat.thread.read') {
+      return this.chatRealtimeService.buildThreadReadPayload(thread);
+    }
+    return thread;
   }
 
   private async getThreadPayloadOrThrow(id: string) {

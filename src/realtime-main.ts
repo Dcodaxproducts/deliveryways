@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import type { NextFunction, Request, Response } from 'express';
+import { RealtimeAdapterReadinessService } from './realtime/realtime-adapter-readiness.service';
 import { RealtimeAppModule } from './realtime/realtime-app.module';
 import { RedisBoundedSocketIoAdapter } from './realtime/redis-bounded-socket-io.adapter';
 
@@ -16,6 +17,7 @@ async function bootstrap(): Promise<void> {
     config.get<string>('REDIS_URL', 'redis://redis:6379'),
   );
   await adapter.connect();
+  app.get(RealtimeAdapterReadinessService).register(adapter);
   app.useWebSocketAdapter(adapter);
   app.enableShutdownHooks();
   app.use((request: Request, response: Response, next: NextFunction): void => {

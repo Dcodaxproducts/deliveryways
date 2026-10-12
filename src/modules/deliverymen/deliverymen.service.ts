@@ -559,8 +559,6 @@ export class DeliverymenService {
       locationUpdatedAt: new Date(),
     });
 
-    await this.ordersService.emitTrackingUpdatesForDeliveryman(deliveryman.id);
-
     return {
       data: this.withDeletionState(data),
       message: 'Deliveryman live location updated successfully',

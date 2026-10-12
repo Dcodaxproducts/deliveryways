@@ -38,7 +38,12 @@ case "${DW_ENVIRONMENT}" in
     ;;
 esac
 
-readonly SERVICES=(postgres api realtime restaurant-admin superadmin customer landing)
+# A rollback to a pre-realtime release removes the realtime container on purpose.
+case "${SMOKE_REALTIME:-yes}" in
+  yes) readonly SERVICES=(postgres api realtime restaurant-admin superadmin customer landing) ;;
+  no) readonly SERVICES=(postgres api restaurant-admin superadmin customer landing) ;;
+  *) dw_fail "SMOKE_REALTIME must be yes or no" ;;
+esac
 for service in "${SERVICES[@]}"; do
   container_id="$(dw_compose ps --quiet "${service}")"
   [[ -n "${container_id}" ]] || dw_fail "${service} container is missing"
@@ -67,8 +72,10 @@ probe() {
 
 printf 'Running %s localhost smoke tests...\n' "${DW_ENVIRONMENT}"
 probe api "http://127.0.0.1:${API_PORT}/api/v1/health/live"
-probe realtime-live "http://127.0.0.1:${REALTIME_PORT}/health"
-probe realtime-ready "http://127.0.0.1:${REALTIME_PORT}/ready"
+if [[ "${SMOKE_REALTIME:-yes}" == "yes" ]]; then
+  probe realtime-live "http://127.0.0.1:${REALTIME_PORT}/health"
+  probe realtime-ready "http://127.0.0.1:${REALTIME_PORT}/ready"
+fi
 probe restaurant-admin "http://127.0.0.1:${RESTAURANT_ADMIN_PORT}/login"
 probe superadmin "http://127.0.0.1:${SUPERADMIN_PORT}/auth/login"
 probe customer "http://127.0.0.1:${CUSTOMER_PORT}/auth/login"

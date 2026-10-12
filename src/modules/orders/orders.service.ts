@@ -39,6 +39,11 @@ import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../../database';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import type {
+  OrderCreatedRealtimePayload,
+  OrderStatusRealtimePayload,
+  OrderUpdatedRealtimePayload,
+} from '../notifications/notifications-realtime.service';
 import { LoyaltyWalletService } from '../loyalty-wallet/loyalty-wallet.service';
 import {
   GlobalSettingsService,
@@ -265,6 +270,17 @@ type BuildQuoteOptions = {
   enforceMinimumOrderAmount?: boolean;
   skipOrderTimeAvailabilityValidation?: boolean;
 };
+
+export type OrderRealtimeEventName =
+  | 'order.created'
+  | 'order.status.updated'
+  | 'order.updated'
+  | 'order.tracking.updated';
+export type OrderRealtimeEventPayload =
+  | OrderCreatedRealtimePayload
+  | OrderStatusRealtimePayload
+  | OrderUpdatedRealtimePayload
+  | Awaited<ReturnType<OrdersService['getTrackingSnapshotForRealtime']>>;
 
 @Injectable()
 export class OrdersService {
@@ -1056,16 +1072,63 @@ export class OrdersService {
     return this.toOrderTrackingResponse(order);
   }
 
-  async emitTrackingUpdatesForDeliveryman(deliverymanId: string) {
-    const orders = await this.prisma.order.findMany({
-      where: {
-        deliverymanId,
-        status: OrderStatus.OUT_FOR_DELIVERY,
-      },
-      select: { id: true },
-    });
+  /**
+   * Rebuilds the exact socket payload for an outbox intent from current state.
+   * Returns null when the order no longer exists so callers can drop the event.
+   */
+  async getRealtimeEventPayload(
+    event: OrderRealtimeEventName,
+    id: string,
+  ): Promise<OrderRealtimeEventPayload | null> {
+    if (event === 'order.tracking.updated') {
+      try {
+        return await this.getTrackingSnapshotForRealtime(id);
+      } catch (error) {
+        if (error instanceof NotFoundException) return null;
+        throw error;
+      }
+    }
 
-    await Promise.all(orders.map((order) => this.emitTrackingUpdate(order.id)));
+    const order = await this.ordersRepository.findRealtimeSummaryById(id);
+    if (!order) return null;
+
+    if (event === 'order.created') {
+      const payload: OrderCreatedRealtimePayload = {
+        id: order.id,
+        status: order.status,
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
+        orderType: order.orderType,
+        paymentStatus: order.paymentStatus,
+        totalAmount: Number(order.totalAmount),
+        createdAt: order.createdAt,
+      };
+      return payload;
+    }
+
+    if (event === 'order.status.updated') {
+      const payload: OrderStatusRealtimePayload = {
+        id: order.id,
+        status: order.status,
+        tenantId: order.tenantId,
+        restaurantId: order.restaurantId,
+        branchId: order.branchId,
+        updatedAt: order.updatedAt,
+      };
+      return payload;
+    }
+
+    const payload: OrderUpdatedRealtimePayload = {
+      id: order.id,
+      status: order.status,
+      tenantId: order.tenantId,
+      restaurantId: order.restaurantId,
+      branchId: order.branchId,
+      paymentStatus: order.paymentStatus,
+      updatedAt: order.updatedAt,
+    };
+    return payload;
   }
 
   private async buildQuote(

@@ -214,3 +214,50 @@ dw_verify_running_release_images() {
       || dw_fail "running image does not match approval: ${service}"
   done
 }
+
+# --- realtime outbox helpers -------------------------------------------------------------------
+
+readonly DW_OUTBOX_MIGRATION="20261013003000_add_realtime_transactional_outbox"
+
+# Runs psql inside the postgres container (stdin is forwarded).
+dw_psql() {
+  dw_compose exec --no-TTY postgres \
+    psql --username "$(dw_read_env POSTGRES_USER)" --dbname "$(dw_read_env POSTGRES_DB)" \
+    --no-psqlrc --quiet --set ON_ERROR_STOP=1 "$@"
+}
+
+# Rows the dispatcher still has to deliver. Empty output (e.g. table absent) is treated as an error.
+dw_outbox_pending() {
+  local pending
+
+  pending="$(dw_psql --tuples-only --no-align \
+    <<<"SELECT count(*) FROM realtime_outbox_events WHERE published_at IS NULL AND failed_at IS NULL" | tr -d '[:space:]')"
+  [[ "${pending}" =~ ^[0-9]+$ ]] || dw_fail "could not read the realtime outbox backlog"
+  printf '%s\n' "${pending}"
+}
+
+dw_wait_outbox_drained() {
+  local timeout_seconds="$1"
+  local waited=0
+  local pending
+
+  while true; do
+    pending="$(dw_outbox_pending)"
+    [[ "${pending}" == "0" ]] && return 0
+    [[ "${waited}" -lt "${timeout_seconds}" ]] || return 1
+    printf '  waiting for the realtime outbox to drain (%s pending)\n' "${pending}"
+    sleep "${DW_DRAIN_POLL_SECONDS:-2}"
+    waited=$((waited + ${DW_DRAIN_POLL_SECONDS:-2}))
+  done
+}
+
+dw_verify_running_healthy() {
+  local service="$1"
+  local container_id
+  local state
+
+  container_id="$(dw_compose ps --quiet "${service}")"
+  [[ -n "${container_id}" ]] || dw_fail "${service} container is not running"
+  state="$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "${container_id}")"
+  [[ "${state}" == "running healthy" ]] || dw_fail "${service} is not healthy (${state})"
+}
