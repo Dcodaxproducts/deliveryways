@@ -15,7 +15,6 @@ const outboxHealth = (overrides: Partial<OutboxHealth> = {}): OutboxHealth => ({
   },
   delivery: { consecutiveFailedCycles: 0, healthy: true, lastError: null },
   retrying: 0,
-  deadLetter: { total: 0, sinceStart: 0, last: null, action: null },
   backlog: null,
   published: 0,
   dropped: 0,

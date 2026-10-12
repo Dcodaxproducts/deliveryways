@@ -1,7 +1,7 @@
 import {
   OUTBOX_DELIVERY_CONCURRENCY,
+  OUTBOX_BACKLOG_MAX_AGE_MS,
   OUTBOX_LEASE_STALE_MS,
-  OUTBOX_MAX_ATTEMPTS,
   OUTBOX_MAX_FAILED_CYCLES,
   OUTBOX_RETRY_BASE_MS,
   OUTBOX_RETRY_MAX_MS,
@@ -27,8 +27,6 @@ class FakeSession implements OutboxSession {
   published: string[] = [];
   /** Ids of rows that got a persisted failed attempt (still retryable). */
   failedRecords: string[] = [];
-  /** Ids of rows dead-lettered (failed_at set). */
-  dead: string[] = [];
   exclusions: string[][] = [];
   markSql: string[] = [];
   /** Simulates the database going away (connection reset) for every query. */
@@ -78,7 +76,6 @@ class FakeSession implements OutboxSession {
           .filter(
             (candidate) =>
               !this.published.includes(candidate.id) &&
-              !this.dead.includes(candidate.id) &&
               !excluded.includes(
                 candidate.aggregate_type + ':' + candidate.aggregate_id,
               ),
@@ -86,34 +83,31 @@ class FakeSession implements OutboxSession {
           .slice(0, values[0] as number),
       );
     }
-    if (text.includes('count(*) FILTER'))
+    if (text.includes('SELECT count(*) AS pending')) {
+      const pending = this.rows.filter(
+        (candidate) => !this.published.includes(candidate.id),
+      );
       return reply([
         {
-          pending: this.rows.filter(
-            (candidate) =>
-              !this.published.includes(candidate.id) &&
-              !this.dead.includes(candidate.id),
-          ).length,
-          dead: this.dead.length,
-          oldest: new Date('2026-10-12T00:00:00Z'),
+          pending: pending.length,
+          oldest:
+            pending.length > 0
+              ? new Date(
+                  Math.min(
+                    ...pending.map((candidate) =>
+                      candidate.created_at.getTime(),
+                    ),
+                  ),
+                )
+              : null,
         },
       ]);
+    }
     if (text.includes('SET published_at = now(), attempts')) {
       if (this.failMarks)
         return Promise.reject(new Error('connection terminated'));
       this.markSql.push(text);
       this.published.push(...(values[0] as string[]));
-    }
-    if (text.includes('SET failed_at = now()')) {
-      if (this.failUpdates)
-        return Promise.reject(new Error('connection terminated'));
-      this.dead.push(String(values[0]));
-      this.updates.push({
-        id: String(values[0]),
-        attempts: values[1] as number,
-        error: values[2] as string,
-      });
-      this.rowById(String(values[0])).attempts = values[1] as number;
     }
     if (text.includes('SET attempts = $2, last_error = $3')) {
       if (this.failUpdates)
@@ -259,7 +253,9 @@ describe('RealtimeOutboxDispatcherService', () => {
       await service.tick();
       jest.setSystemTime(Date.now() + 1_000);
     }
-    expect(service.getHealth().ready).toBe(true);
+    // Any active retry is immediately unready; repeated systemic cycles also trip
+    // the persisted delivery-health threshold.
+    expect(service.getHealth().ready).toBe(false);
     await service.tick();
     const failing = service.getHealth();
     expect(failing.ready).toBe(false);
@@ -290,7 +286,7 @@ describe('RealtimeOutboxDispatcherService', () => {
     expect(service.getHealth().ready).toBe(false);
   });
 
-  it('does not take the gateway out of rotation for a single poison aggregate', async () => {
+  it('fails readiness while even one aggregate is retrying and recovers after delivery', async () => {
     const session = new FakeSession();
     session.rows = [row(1, 'poison'), row(2, 'good')];
     const handler = jest.fn((event: { eventId: string }) =>
@@ -301,11 +297,12 @@ describe('RealtimeOutboxDispatcherService', () => {
     const { service } = make(session, handler);
     await service.tick();
     expect(session.published).toEqual(['2']);
-    for (let i = 0; i < OUTBOX_MAX_ATTEMPTS; i += 1) {
-      jest.setSystemTime(Date.now() + OUTBOX_RETRY_MAX_MS);
-      await service.tick();
-      expect(service.getHealth().ready).toBe(true);
-    }
+    expect(service.getHealth().ready).toBe(false);
+    handler.mockResolvedValue(undefined);
+    jest.setSystemTime(Date.now() + OUTBOX_RETRY_MAX_MS);
+    await service.tick();
+    expect(service.getHealth().ready).toBe(true);
+    expect(session.published.sort()).toEqual(['1', '2']);
   });
 
   it('keeps later events of a failed aggregate pending but delivers other aggregates', async () => {
@@ -364,7 +361,7 @@ describe('RealtimeOutboxDispatcherService', () => {
     expect(session.published).toHaveLength(42);
   });
 
-  it('marks oversized payloads failed instead of delivering them', async () => {
+  it('keeps oversized payloads visible, retrying, and unready', async () => {
     const session = new FakeSession();
     const big = row(1, 'a');
     big.payload = { blob: 'x'.repeat(70 * 1024) };
@@ -372,172 +369,98 @@ describe('RealtimeOutboxDispatcherService', () => {
     const { service, handler } = make(session);
     await service.tick();
     expect(handler).not.toHaveBeenCalled();
-    expect(service.getHealth().dropped).toBe(1);
-    expect(session.dead).toEqual(['1']);
-    expect(service.getHealth().deadLetter.last).toMatchObject({
-      id: '1',
-      error: 'payload exceeds 64KiB hard limit',
+    expect(service.getHealth()).toMatchObject({
+      dropped: 1,
+      ready: false,
+      retrying: 1,
     });
+    expect(session.failedRecords).toEqual(['1']);
+    expect(session.published).toEqual([]);
   });
 
-  describe('bounded retry and dead-letter', () => {
-    const failing = (ids: string[]) =>
-      jest.fn((event: { eventId: string }) =>
-        ids.includes(event.eventId)
-          ? Promise.reject(new Error('cannot hydrate order'))
-          : Promise.resolve(),
-      );
+  describe('indefinite capped retry', () => {
+    const failing = () =>
+      jest.fn().mockRejectedValue(new Error('cannot hydrate order'));
 
-    it('backs off exponentially, capped, and persists every attempt', async () => {
+    it('persists every attempt and continues beyond the former cutoff', async () => {
       const session = new FakeSession();
       session.rows = [row(1, 'a')];
-      const handler = failing(['1']);
+      const handler = failing();
       const { service } = make(session, handler);
-      const delays: number[] = [];
-      for (let attempt = 1; attempt < OUTBOX_MAX_ATTEMPTS; attempt += 1) {
+      for (let attempt = 1; attempt <= 20; attempt += 1) {
         await service.tick();
-        const delay = Math.min(
-          OUTBOX_RETRY_BASE_MS * 2 ** (attempt - 1),
-          OUTBOX_RETRY_MAX_MS,
-        );
-        delays.push(delay);
         expect(session.updates.at(-1)).toMatchObject({
           id: '1',
           attempts: attempt,
-          error: 'cannot hydrate order',
         });
-        // Just before the backoff elapses nothing is attempted...
-        jest.setSystemTime(Date.now() + delay - 1);
-        await service.tick();
-        expect(handler).toHaveBeenCalledTimes(attempt);
-        // ...and right at it the row is retried.
-        jest.setSystemTime(Date.now() + 1);
-      }
-      expect(delays[0]).toBe(OUTBOX_RETRY_BASE_MS);
-      expect(delays.at(-1)).toBe(OUTBOX_RETRY_MAX_MS);
-      expect(delays.every((delay) => delay <= OUTBOX_RETRY_MAX_MS)).toBe(true);
-    });
-
-    it('dead-letters a poison row at the attempt limit, then stops retrying it', async () => {
-      const session = new FakeSession();
-      session.rows = [row(1, 'a')];
-      const handler = failing(['1']);
-      const { service } = make(session, handler);
-      for (let attempt = 1; attempt <= OUTBOX_MAX_ATTEMPTS; attempt += 1) {
-        await service.tick();
+        expect(session.published).toEqual([]);
         jest.setSystemTime(Date.now() + OUTBOX_RETRY_MAX_MS);
       }
-      expect(handler).toHaveBeenCalledTimes(OUTBOX_MAX_ATTEMPTS);
-      expect(session.dead).toEqual(['1']);
-      expect(session.updates.at(-1)).toMatchObject({
-        attempts: OUTBOX_MAX_ATTEMPTS,
-        error: 'cannot hydrate order',
-      });
-      expect(session.published).toEqual([]);
-
-      await service.tick();
-      expect(handler).toHaveBeenCalledTimes(OUTBOX_MAX_ATTEMPTS);
-      const health = service.getHealth();
-      expect(health.ready).toBe(true);
-      expect(health.retrying).toBe(0);
-      expect(health.deadLetter).toMatchObject({
-        total: 1,
-        sinceStart: 1,
-        last: {
-          id: '1',
-          event: 'order.updated',
-          aggregateKey: 'order:a',
-          attempts: OUTBOX_MAX_ATTEMPTS,
-          error: 'cannot hydrate order',
-        },
-      });
-      expect(health.deadLetter.action).toContain('failed_at IS NOT NULL');
-      expect(health.backlog).toMatchObject({ pending: 0 });
+      expect(handler).toHaveBeenCalledTimes(20);
+      expect(service.getHealth().ready).toBe(false);
     });
 
-    it('honours attempts persisted by a previous leader instead of restarting the budget', async () => {
-      const session = new FakeSession();
-      const used = row(1, 'a');
-      used.attempts = OUTBOX_MAX_ATTEMPTS - 1;
-      session.rows = [used];
-      const { service, handler } = make(session, failing(['1']));
-      await service.tick();
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(session.dead).toEqual(['1']);
-    });
-
-    it('keeps per-aggregate order: later events wait for the earlier one and proceed once it is dead-lettered', async () => {
+    it('keeps later events of the same aggregate blocked indefinitely', async () => {
       const session = new FakeSession();
       session.rows = [row(1, 'a'), row(2, 'a'), row(3, 'b')];
-      const handler = failing(['1']);
+      const handler = jest.fn((event: { eventId: string }) =>
+        event.eventId === '1'
+          ? Promise.reject(new Error('poison'))
+          : Promise.resolve(),
+      );
       const { service } = make(session, handler);
-      const order: string[] = [];
-      handler.mockImplementation((event: { eventId: string }) => {
-        order.push(event.eventId);
-        return event.eventId === '1'
-          ? Promise.reject(new Error('cannot hydrate order'))
-          : Promise.resolve();
-      });
-      for (let attempt = 1; attempt <= OUTBOX_MAX_ATTEMPTS; attempt += 1) {
+      for (let attempt = 0; attempt < 15; attempt += 1) {
         await service.tick();
-        // While row 1 is retrying, row 2 of the same aggregate is never attempted.
-        if (attempt < OUTBOX_MAX_ATTEMPTS)
-          expect(session.published).toEqual(['3']);
         jest.setSystemTime(Date.now() + OUTBOX_RETRY_MAX_MS);
       }
-      expect(order.filter((id) => id === '2')).toEqual(['2']);
-      // Row 2 is only delivered after row 1 was attempted for the last time.
-      expect(order.lastIndexOf('1')).toBeLessThan(order.indexOf('2'));
-      expect(session.dead).toEqual(['1']);
-      expect(session.published.sort()).toEqual(['2', '3']);
-    });
-
-    it('lets other aggregates progress while many poison aggregates are parked', async () => {
-      const session = new FakeSession();
-      const poison = Array.from({ length: 60 }, (_, index) =>
-        row(index + 1, 'poison-' + index),
+      expect(handler.mock.calls.some(([event]) => event.eventId === '2')).toBe(
+        false,
       );
-      session.rows = [...poison, row(1000, 'healthy')];
-      const handler = failing(poison.map((candidate) => candidate.id));
-      const { service } = make(session, handler);
-      // 60 poison aggregates exceed the 50-row batch, so the healthy one is only reached
-      // once the parked aggregates are excluded from the next query.
-      await service.tick();
-      expect(session.published).toEqual([]);
-      await service.tick();
-      expect(session.published).toEqual(['1000']);
+      expect(session.published).toEqual(['3']);
     });
 
-    it('does not retry forever when the failed attempt cannot be persisted: the session is dropped', async () => {
+    it('fails readiness for an old pending backlog even without an in-memory retry', async () => {
+      const session = new FakeSession();
+      session.rows = [row(1, 'a')];
+      session.rows[0].created_at = new Date(
+        Date.now() - OUTBOX_BACKLOG_MAX_AGE_MS - 1,
+      );
+      const { service } = make(
+        session,
+        jest.fn().mockRejectedValue(new Error('still unavailable')),
+      );
+      await service.tick();
+      expect(service.getHealth().backlog).toMatchObject({ healthy: false });
+      expect(service.getHealth().ready).toBe(false);
+    });
+
+    it('drops the session if failure telemetry cannot be persisted', async () => {
       const session = new FakeSession();
       session.rows = [row(1, 'a')];
       session.failUpdates = true;
-      const { service } = make(session, failing(['1']));
+      const { service } = make(session, failing());
       expect(await service.tick()).toBe(false);
       expect(session.ended).toBe(true);
-      expect(service.getHealth()).toMatchObject({
-        ready: false,
-        sessionReady: false,
-      });
-    });
-
-    it('starts a new leader clean: backoff is in memory, the persisted attempts remain', async () => {
-      const first = new FakeSession();
-      first.rows = [row(1, 'a')];
-      const second = new FakeSession();
-      second.rows = first.rows;
-      const handler = failing(['1']);
-      const { service } = makeReconnecting([first, second], handler);
-      await service.tick();
-      expect(service.getHealth().retrying).toBe(1);
-      first.emit('end');
-      expect(service.getHealth().retrying).toBe(0);
-      await service.tick();
-      expect(handler).toHaveBeenCalledTimes(2);
-      expect(second.rows[0].attempts).toBe(2);
+      expect(service.getHealth().ready).toBe(false);
     });
   });
+
   describe('crash replay and duplicate idempotency', () => {
+    it('delivers a later-visible lower id after a higher id without treating ids as a high-water mark', async () => {
+      const session = new FakeSession();
+      session.rows = [row(20, 'committed-first')];
+      const { service, handler } = make(session);
+      await service.tick();
+      session.rows.push(row(10, 'committed-later'));
+      jest.setSystemTime(Date.now() + 5_000);
+      await service.tick();
+      expect(handler.mock.calls.map(([event]) => event.eventId)).toEqual([
+        '20',
+        '10',
+      ]);
+      expect(session.published).toEqual(['20', '10']);
+    });
+
     it('replays rows whose delivery was never marked, with the same stable event ids', async () => {
       const crashed = new FakeSession();
       crashed.rows = [row(1, 'a'), row(2, 'b')];

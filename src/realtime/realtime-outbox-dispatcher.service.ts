@@ -23,11 +23,11 @@ export const OUTBOX_BATCH_SIZE = 50;
 export const OUTBOX_DELIVERY_CONCURRENCY = 8;
 /** Consecutive dispatch cycles with a systemic delivery/database failure before readiness fails. */
 export const OUTBOX_MAX_FAILED_CYCLES = 10;
-/** Delivery attempts per row; the failing attempt that reaches this dead-letters the row (`failed_at`). */
-export const OUTBOX_MAX_ATTEMPTS = 12;
-/** Exponential retry backoff per failing aggregate: 1s, 2s, 4s ... capped (about 6 minutes in total). */
+/** Exponential retry backoff per failing aggregate: 1s, 2s, 4s ... capped indefinitely. */
 export const OUTBOX_RETRY_BASE_MS = 1_000;
 export const OUTBOX_RETRY_MAX_MS = 60_000;
+/** A pending row this old makes readiness fail even when no retry is currently in memory. */
+export const OUTBOX_BACKLOG_MAX_AGE_MS = 5 * 60_000;
 /** Distinct aggregates failing in one cycle with no delivery at all marks the cycle systemic. */
 export const OUTBOX_SYSTEMIC_AGGREGATES = 2;
 /** A lease observation older than this no longer counts as verified. */
@@ -63,7 +63,7 @@ type OutboxRow = {
   attempts: number;
 };
 type CycleResult = {
-  /** A delivery failed (and will be retried or was dead-lettered) in this cycle. */
+  /** A delivery failed and remains pending for retry in this cycle. */
   failed: boolean;
   /** At least two aggregates failed and nothing was delivered: not a single poison row. */
   systemic: boolean;
@@ -71,14 +71,6 @@ type CycleResult = {
   /** Nothing pending and nothing waiting out a retry backoff. */
   idle: boolean;
 };
-export interface OutboxDeadLetter {
-  id: string;
-  event: string;
-  aggregateKey: string;
-  attempts: number;
-  error: string;
-  at: string;
-}
 type Handler = (event: RealtimeEventEnvelope) => Promise<void> | void;
 export type OutboxLeaseState = 'leader' | 'follower' | 'none';
 export interface OutboxHealth {
@@ -95,29 +87,17 @@ export interface OutboxHealth {
   };
   /** Aggregates currently waiting out a retry backoff (their later events stay parked). */
   retrying: number;
-  /**
-   * Rows that exhausted OUTBOX_MAX_ATTEMPTS or exceeded the size limit carry `failed_at`
-   * and are never retried automatically. They do not fail readiness (one poison row must
-   * not unroute the gateway) but are surfaced here until an operator resolves them.
-   */
-  deadLetter: {
-    total: number | null;
-    sinceStart: number;
-    last: OutboxDeadLetter | null;
-    action: string | null;
-  };
   backlog: {
     pending: number;
     oldestPendingAt: string | null;
     refreshedAt: string;
+    healthy: boolean;
+    oldestAgeMs: number | null;
   } | null;
   published: number;
   dropped: number;
   failures: number;
 }
-
-export const OUTBOX_DEAD_LETTER_ACTION =
-  'Inspect: SELECT id, event_name, aggregate_id, attempts, last_error FROM realtime_outbox_events WHERE failed_at IS NOT NULL ORDER BY id. After fixing the cause requeue with: UPDATE realtime_outbox_events SET failed_at = NULL, attempts = 0 WHERE id = <id>.';
 
 @Injectable()
 export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
@@ -135,12 +115,9 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
   private failures = 0;
   private consecutiveFailedCycles = 0;
   private systemicFailure = false;
-  private deadLettered = 0;
-  private lastDeadLetter: OutboxDeadLetter | null = null;
-  /** Aggregates waiting out a retry backoff; in memory only, the persisted `attempts` is the real bound. */
+  /** Aggregates waiting out a retry backoff; attempts remain persisted as telemetry. */
   private readonly retrying = new Map<string, number>();
   private backlog: OutboxHealth['backlog'] = null;
-  private deadLetterTotal: number | null = null;
   private lastStatsAt = 0;
   private lastError: string | null = null;
   private leaseVerifiedAt = 0;
@@ -282,7 +259,7 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
     // Aggregates in backoff are excluded as a whole so a later event never overtakes a
     // parked earlier one, and parked aggregates cannot fill the batch and starve the rest.
     const { rows } = await session.query<OutboxRow>(
-      "SELECT id::text, aggregate_type, aggregate_id, event_name, payload, created_at, attempts FROM realtime_outbox_events WHERE published_at IS NULL AND failed_at IS NULL AND (aggregate_type || ':' || aggregate_id) <> ALL($2::text[]) ORDER BY id LIMIT $1",
+      "SELECT id::text, aggregate_type, aggregate_id, event_name, payload, created_at, attempts FROM realtime_outbox_events WHERE published_at IS NULL AND (aggregate_type || ':' || aggregate_id) <> ALL($2::text[]) ORDER BY id LIMIT $1",
       [OUTBOX_BATCH_SIZE, [...this.retrying.keys()]],
     );
     // Rows of one aggregate form a serial queue (a failure parks its later events so
@@ -312,9 +289,6 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
           else if (outcome === 'failed') {
             failedAggregates.add(aggregateKey);
             break;
-          } else if (outcome === 'dead') {
-            // The poisoned row is out of the queue, so the aggregate's later events may proceed.
-            failedAggregates.add(aggregateKey);
           }
         }
       }
@@ -353,7 +327,7 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
     handler: Handler,
     aggregateKey: string,
     row: OutboxRow,
-  ): Promise<'delivered' | 'dropped' | 'dead' | 'failed'> {
+  ): Promise<'delivered' | 'failed'> {
     const envelope: RealtimeEventEnvelope = {
       version: 2,
       eventId: row.id,
@@ -363,15 +337,14 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
       publishedAt: row.created_at.toISOString(),
     };
     if (Buffer.byteLength(JSON.stringify(envelope)) > MAX_EVENT_BYTES) {
-      await this.deadLetter(
+      await this.recordFailure(
         session,
         row,
         aggregateKey,
-        row.attempts + 1,
         'payload exceeds 64KiB hard limit',
       );
       this.dropped += 1;
-      return 'dropped';
+      return 'failed';
     }
     try {
       await handler(envelope);
@@ -388,28 +361,21 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
   }
 
   /**
-   * Persists the attempt before anything else so the retry bound survives restarts and
-   * leader changes; a database error propagates and drops the session instead of
-   * silently granting unbounded retries.
+   * Persists telemetry before retrying. Delivery failures never remove a row from
+   * automatic dispatch; capped backoff continues until delivery or explicit obsolete resolution.
    */
   private async recordFailure(
     session: OutboxSession,
     row: OutboxRow,
     aggregateKey: string,
     message: string,
-  ): Promise<'dead' | 'failed'> {
-    const attempts = row.attempts + 1;
-    if (attempts >= OUTBOX_MAX_ATTEMPTS) {
-      await this.deadLetter(session, row, aggregateKey, attempts, message);
-      return 'dead';
-    }
+  ): Promise<'failed'> {
+    const attempts = Math.min(row.attempts + 1, 2_147_483_647);
     this.logger.warn(
       'Realtime delivery failed for outbox ' +
         row.id +
         ' (attempt ' +
         attempts +
-        '/' +
-        OUTBOX_MAX_ATTEMPTS +
         '): ' +
         message,
     );
@@ -428,43 +394,6 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
     return 'failed';
   }
 
-  private async deadLetter(
-    session: OutboxSession,
-    row: OutboxRow,
-    aggregateKey: string,
-    attempts: number,
-    message: string,
-  ): Promise<void> {
-    await session.query(
-      'UPDATE realtime_outbox_events SET failed_at = now(), attempts = $2, last_error = $3 WHERE id = $1::bigint AND published_at IS NULL',
-      [row.id, attempts, message],
-    );
-    this.retrying.delete(aggregateKey);
-    this.deadLettered += 1;
-    this.lastDeadLetter = {
-      id: row.id,
-      event: row.event_name,
-      aggregateKey,
-      attempts,
-      error: message,
-      at: new Date().toISOString(),
-    };
-    this.logger.error(
-      'Realtime outbox ' +
-        row.id +
-        ' (' +
-        row.event_name +
-        ' ' +
-        aggregateKey +
-        ') dead-lettered after ' +
-        attempts +
-        ' attempt(s): ' +
-        message +
-        '. ' +
-        OUTBOX_DEAD_LETTER_ACTION,
-    );
-  }
-
   /** Cheap periodic snapshot for health; it must never fail a dispatch cycle. */
   private async refreshBacklog(session: OutboxSession): Promise<void> {
     const now = Date.now();
@@ -473,18 +402,23 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
     try {
       const { rows } = await session.query<{
         pending: string | number;
-        dead: string | number;
         oldest: Date | null;
       }>(
-        'SELECT count(*) FILTER (WHERE failed_at IS NULL) AS pending, count(*) FILTER (WHERE failed_at IS NOT NULL) AS dead, min(created_at) FILTER (WHERE failed_at IS NULL) AS oldest FROM realtime_outbox_events WHERE published_at IS NULL',
+        'SELECT count(*) AS pending, min(created_at) AS oldest FROM realtime_outbox_events WHERE published_at IS NULL',
       );
       const stats = rows[0];
       if (!stats) return;
-      this.deadLetterTotal = Number(stats.dead);
+      const oldestAgeMs = stats.oldest
+        ? Math.max(0, now - stats.oldest.getTime())
+        : null;
       this.backlog = {
         pending: Number(stats.pending),
         oldestPendingAt: stats.oldest ? stats.oldest.toISOString() : null,
         refreshedAt: new Date(now).toISOString(),
+        healthy:
+          this.retrying.size === 0 &&
+          (oldestAgeMs === null || oldestAgeMs <= OUTBOX_BACKLOG_MAX_AGE_MS),
+        oldestAgeMs,
       };
     } catch (error) {
       this.logger.warn(
@@ -515,7 +449,7 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
     this.session = null;
     this.leader = false;
     this.holderObserved = false;
-    // A new leader starts clean; the persisted attempts keep the retry bound.
+    // A new leader starts clean; persisted attempts remain useful telemetry.
     this.retrying.clear();
     this.systemicFailure = false;
     if (session) void session.end().catch(() => undefined);
@@ -536,13 +470,15 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
           : 'none';
     const deliveryHealthy =
       this.consecutiveFailedCycles < OUTBOX_MAX_FAILED_CYCLES;
+    const backlogHealthy = this.backlog?.healthy !== false;
     return {
       ready:
         subscriberReady &&
         sessionReady &&
         fresh &&
         state !== 'none' &&
-        deliveryHealthy,
+        deliveryHealthy &&
+        backlogHealthy,
       subscriberReady,
       sessionReady,
       leader: this.leader,
@@ -562,15 +498,6 @@ export class RealtimeOutboxDispatcherService implements OnApplicationShutdown {
       retrying: [...this.retrying.values()].filter(
         (until) => until > Date.now(),
       ).length,
-      deadLetter: {
-        total: this.deadLetterTotal,
-        sinceStart: this.deadLettered,
-        last: this.lastDeadLetter,
-        action:
-          this.deadLettered > 0 || (this.deadLetterTotal ?? 0) > 0
-            ? OUTBOX_DEAD_LETTER_ACTION
-            : null,
-      },
       backlog: this.backlog,
       published: this.published,
       dropped: this.dropped,

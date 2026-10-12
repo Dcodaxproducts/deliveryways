@@ -13,6 +13,7 @@ describe('OrderTrackingGateway', () => {
   }) => {
     const ordersService = {
       resolveRealtimeAdminOrderScope: jest.fn(),
+      getTrackingSnapshot: jest.fn().mockResolvedValue({ id: 'order-1' }),
     };
     const jwtService = {
       verifyAsync: jest.fn().mockResolvedValue(user),
@@ -193,4 +194,40 @@ describe('OrderTrackingGateway', () => {
       },
     });
   });
+
+  it.each([
+    [
+      'tracking',
+      (gateway: OrderTrackingGateway, client: unknown) =>
+        gateway.subscribeToOrder(client as never, { orderId: 'order-1' }),
+    ],
+    [
+      'admin',
+      (gateway: OrderTrackingGateway, client: unknown) =>
+        gateway.subscribeToAdminOrders(client as never, {
+          restaurantId: 'restaurant-1',
+        }),
+    ],
+  ])(
+    'rejects and disconnects a session revoked after connect before %s subscribe',
+    async (_name, command) => {
+      const ctx = makeGateway({
+        uid: 'staff-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        tid: 'tenant-1',
+      });
+      await ctx.gateway.handleConnection(ctx.client as never);
+      ctx.currentSessionValidator.assertCurrentSession.mockRejectedValue(
+        new Error('Session is no longer valid'),
+      );
+      const result = await command(ctx.gateway, ctx.client);
+      expect(result).toMatchObject({ success: false });
+      expect(ctx.client.disconnect).toHaveBeenCalledWith(true);
+      expect(ctx.ordersService.getTrackingSnapshot).not.toHaveBeenCalled();
+      expect(
+        ctx.ordersService.resolveRealtimeAdminOrderScope,
+      ).not.toHaveBeenCalled();
+    },
+  );
 });

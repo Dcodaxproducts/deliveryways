@@ -7,6 +7,7 @@ import {
   RealtimeRooms,
 } from '../common/realtime/realtime-events';
 import { ChatRealtimeEventName, ChatService } from '../modules/chat/public-api';
+import type { ChatRealtimeThreadPayload } from '../modules/chat/chat.realtime.service';
 import {
   OrderRealtimeEventName,
   OrdersService,
@@ -88,13 +89,14 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
         envelope.payload,
         envelope.eventId,
       );
+    else throw new Error('unsupported realtime event: ' + envelope.event);
   }
 
   /**
    * Adds the stable outbox id to the client payload. It is the only new field: every
    * existing field is preserved. Delivery is at-least-once, so a crash replay re-emits the
-   * same id; ids increase per aggregate (order/thread), so clients may drop an id they have
-   * already seen for that aggregate.
+   * same id. IDs identify duplicates only; concurrent aggregate delivery means numeric
+   * order is not commit or visibility order.
    */
   private withEventId<T extends object>(
     payload: T,
@@ -109,17 +111,23 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
     eventId: string,
   ): Promise<void> {
     const orderId = this.readString(intent, 'id');
-    if (!orderId) return;
-    const payload = await this.ordersService.getRealtimeEventPayload(
-      event as OrderRealtimeEventName,
-      orderId,
-    );
-    if (!payload) return;
+    if (!orderId) throw new Error('malformed order outbox intent: missing id');
     const entity = await this.authorization.resolveEntity({
       kind: 'order',
       id: orderId,
     });
-    if (!entity) return;
+    if (!entity) {
+      this.resolveObsolete(eventId, event, orderId);
+      return;
+    }
+    const payload = await this.ordersService.getRealtimeEventPayload(
+      event as OrderRealtimeEventName,
+      orderId,
+    );
+    if (!payload)
+      throw new Error(
+        'order realtime payload unavailable for existing entity ' + orderId,
+      );
     const stamped = this.withEventId(payload, eventId);
     const tracking = event === RealtimeEventName.ORDER_TRACKING_UPDATED;
     await this.fanout({
@@ -152,19 +160,26 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
   ): Promise<void> {
     const threadId =
       this.readString(intent, 'threadId') ?? this.readString(intent, 'id');
-    if (!threadId) return;
+    if (!threadId)
+      throw new Error('malformed chat outbox intent: missing thread id');
     const message = (intent as { message?: unknown }).message;
+    const entity = await this.authorization.resolveEntity({
+      kind: 'chat',
+      id: threadId,
+    });
+    if (!entity) {
+      this.resolveObsolete(eventId, event, threadId);
+      return;
+    }
     const payload = await this.chatService.getRealtimeEventPayload(
       event as ChatRealtimeEventName,
       threadId,
       this.readString(message, 'id') ?? undefined,
     );
-    if (!payload) return;
-    const entity = await this.authorization.resolveEntity({
-      kind: 'chat',
-      id: threadId,
-    });
-    if (!entity) return;
+    if (!payload)
+      throw new Error(
+        'chat realtime payload unavailable for existing entity ' + threadId,
+      );
     const threadRoom = RealtimeRooms.chatThread(threadId);
     const stamped = this.withEventId(payload, eventId);
     const threadOnly =
@@ -194,6 +209,10 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
           ? threadOnly
           : stamped,
     });
+    const thread = (payload as { thread?: unknown }).thread ?? payload;
+    await this.chatGateway.deliverInboxSummaries(
+      thread as ChatRealtimeThreadPayload,
+    );
   }
 
   /**
@@ -264,6 +283,16 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
   private requireServer(server: Server | undefined): Server {
     if (!server) throw new Error('Realtime gateway server is not ready');
     return server;
+  }
+
+  private resolveObsolete(
+    eventId: string,
+    event: RealtimeEventName,
+    entityId: string,
+  ): void {
+    this.logger.log(
+      `Realtime outbox ${eventId} (${event} ${entityId}) resolved as delivered because the entity no longer exists`,
+    );
   }
 
   private readString(value: unknown, field: string): string | null {

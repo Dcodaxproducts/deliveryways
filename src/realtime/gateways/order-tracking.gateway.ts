@@ -237,6 +237,17 @@ export class OrderTrackingGateway
         throw new UnauthorizedException('Socket is not authenticated');
       }
 
+      try {
+        await this.currentSessionValidator.assertCurrentSession(user);
+      } catch (error) {
+        client.emit('order.tracking.error', {
+          code: 'UNAUTHORIZED',
+          message: 'Session is no longer valid',
+        });
+        client.disconnect(true);
+        throw error;
+      }
+
       const data = await handler(user);
       return { success: true, data };
     } catch (error) {

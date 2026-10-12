@@ -88,4 +88,62 @@ describe('ChatRealtimeService room isolation', () => {
       thread,
     );
   });
+
+  it('computes exact legacy summaries once for every affected inbox scope', async () => {
+    const repository = {
+      buildWhere: jest.fn((value: unknown) => value),
+      count: jest.fn().mockResolvedValue(7),
+    };
+    const service = new ChatRealtimeService(
+      repository as never,
+      { publish: jest.fn() } as never,
+    );
+    const summaries = await service.getInboxSummariesForThread({
+      id: 'thread-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      orderId: null,
+      deliverymanId: 'driver-1',
+      source: 'CUSTOMER',
+      subject: null,
+      status: 'OPEN',
+      assignedStaffUserId: null,
+      lastMessagePreview: null,
+      lastMessageAt: new Date(),
+      customerUnreadCount: 0,
+      staffUnreadCount: 0,
+      customerLastReadAt: null,
+      staffLastReadAt: null,
+      resolvedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      customer: {},
+      branch: {},
+      order: null,
+      assignedStaff: null,
+      deliveryman: {},
+    });
+    expect(summaries).toEqual(
+      [
+        ['chat:user:customer-1', 'customer'],
+        ['chat:deliveryman:driver-1', 'deliveryman'],
+        ['chat:tenant:tenant-1', 'tenant'],
+        ['chat:global', 'global'],
+        ['chat:branch:branch-1', 'branch'],
+      ].map(([room, scope]) => ({
+        room,
+        summary: {
+          scope,
+          total: 7,
+          open: 7,
+          inProgress: 7,
+          resolved: 7,
+          unread: 7,
+        },
+      })),
+    );
+    expect(repository.count).toHaveBeenCalledTimes(25);
+  });
 });

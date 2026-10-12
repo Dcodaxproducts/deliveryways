@@ -12,10 +12,19 @@ const makeGateway = (summaryError?: Error) => {
       return Promise.resolve();
     }),
   };
+  const currentSessionValidator = {
+    assertCurrentSession: jest.fn().mockResolvedValue(undefined),
+  };
+  const chatService = {
+    details: jest.fn().mockResolvedValue({ data: {} }),
+    reply: jest.fn().mockResolvedValue({ data: {} }),
+    markRead: jest.fn().mockResolvedValue({ data: {} }),
+    assign: jest.fn().mockResolvedValue({ data: {} }),
+  };
   const gateway = new ChatGateway(
     { verifyAsync: jest.fn().mockResolvedValue(user) } as never,
-    { assertCurrentSession: jest.fn().mockResolvedValue(undefined) } as never,
-    {} as never,
+    currentSessionValidator as never,
+    chatService as never,
     chatRealtimeService as never,
     {
       begin: jest.fn().mockReturnValue({ allowed: true }),
@@ -35,7 +44,14 @@ const makeGateway = (summaryError?: Error) => {
     emit: jest.fn(),
     disconnect: jest.fn(),
   };
-  return { gateway, client, chatRealtimeService, user };
+  return {
+    gateway,
+    client,
+    chatRealtimeService,
+    chatService,
+    currentSessionValidator,
+    user,
+  };
 };
 
 describe('ChatGateway inbox summary', () => {
@@ -100,4 +116,46 @@ describe('ChatGateway inbox summary', () => {
       error: { code: 'CHAT_SOCKET_ERROR', message: 'db slow' },
     });
   });
+
+  it.each([
+    [
+      'join',
+      (gateway: ChatGateway, client: unknown) =>
+        gateway.joinThread(client as never, { threadId: 'thread-1' }),
+    ],
+    [
+      'send',
+      (gateway: ChatGateway, client: unknown) =>
+        gateway.sendMessage(client as never, {
+          threadId: 'thread-1',
+          message: 'x',
+        }),
+    ],
+    [
+      'read',
+      (gateway: ChatGateway, client: unknown) =>
+        gateway.markRead(client as never, { threadId: 'thread-1' }),
+    ],
+    [
+      'assign',
+      (gateway: ChatGateway, client: unknown) =>
+        gateway.assignThread(client as never, { threadId: 'thread-1' }),
+    ],
+  ])(
+    'rejects and disconnects a session revoked after connect before chat %s',
+    async (_name, command) => {
+      const ctx = makeGateway();
+      await ctx.gateway.handleConnection(ctx.client as never);
+      ctx.currentSessionValidator.assertCurrentSession.mockRejectedValue(
+        new Error('Session is no longer valid'),
+      );
+      const result = await command(ctx.gateway, ctx.client);
+      expect(result).toMatchObject({ success: false });
+      expect(ctx.client.disconnect).toHaveBeenCalledWith(true);
+      expect(ctx.chatService.details).not.toHaveBeenCalled();
+      expect(ctx.chatService.reply).not.toHaveBeenCalled();
+      expect(ctx.chatService.markRead).not.toHaveBeenCalled();
+      expect(ctx.chatService.assign).not.toHaveBeenCalled();
+    },
+  );
 });

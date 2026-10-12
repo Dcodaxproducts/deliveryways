@@ -36,8 +36,8 @@ assert() { # assert <label> <sql returning t/f>
 
 assert_installed() {
   assert 'outbox table has BIGSERIAL id' "SELECT data_type = 'bigint' AND column_default LIKE 'nextval(%' FROM information_schema.columns WHERE table_name = 'realtime_outbox_events' AND column_name = 'id'"
-  assert 'dispatch index is (published_at, failed_at, id)' "SELECT indexdef LIKE '%(published_at, failed_at, id)' FROM pg_indexes WHERE indexname = 'realtime_outbox_dispatch_idx'"
-  assert 'no legacy columns/indexes' "SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'realtime_outbox_events' AND column_name = 'available_at') AND to_regclass('realtime_outbox_aggregate_idx') IS NULL"
+  assert 'dispatch index is (published_at, id)' "SELECT indexdef LIKE '%(published_at, id)' FROM pg_indexes WHERE indexname = 'realtime_outbox_dispatch_idx'"
+  assert 'no dead-letter or legacy columns/indexes' "SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'realtime_outbox_events' AND column_name IN ('available_at', 'failed_at')) AND to_regclass('realtime_outbox_aggregate_idx') IS NULL"
   assert 'six outbox triggers installed and enabled' "SELECT count(*) = 6 FROM pg_trigger WHERE NOT tgisinternal AND tgenabled = 'O' AND tgname IN ('orders_realtime_outbox_insert','orders_realtime_outbox_update','deliverymen_realtime_outbox_location','chat_threads_realtime_outbox_insert','chat_threads_realtime_outbox_update','chat_messages_realtime_outbox')"
   assert 'update triggers carry WHEN guards' "SELECT count(*) = 2 FROM pg_trigger WHERE tgname IN ('orders_realtime_outbox_update','chat_threads_realtime_outbox_update') AND tgqual IS NOT NULL"
   assert 'order insert trigger only announces PLACED orders' "SELECT tgqual IS NOT NULL FROM pg_trigger WHERE tgname = 'orders_realtime_outbox_insert'"

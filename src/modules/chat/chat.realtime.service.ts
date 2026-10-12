@@ -56,6 +56,15 @@ export type ChatThreadReadPayload = {
   thread: ChatRealtimeThreadPayload;
 };
 
+export type ChatInboxSummary = {
+  scope: 'customer' | 'deliveryman' | 'tenant' | 'branch' | 'global';
+  total: number;
+  open: number;
+  inProgress: number;
+  resolved: number;
+  unread: number;
+};
+
 type SummaryScope =
   | { type: 'customer'; room: string; customerId: string; restaurantId: string }
   | {
@@ -416,17 +425,28 @@ export class ChatRealtimeService {
       return;
     }
 
-    const scopes = this.getSummaryScopesForThread(thread);
+    const summaries = await this.getInboxSummariesForThread(thread);
+    for (const { room, summary } of summaries)
+      this.emitToRoom(room, 'chat.inbox.summary', summary);
+  }
 
-    await Promise.all(
-      scopes.map(async (scope) => {
-        const summary = await this.buildSummary(scope);
-        this.emitToRoom(scope.room, 'chat.inbox.summary', summary);
-      }),
+  /**
+   * Computes one legacy summary per affected scope. The scope count is bounded
+   * (customer, optional deliveryman, tenant, optional branch, global), independent
+   * of connected socket count.
+   */
+  async getInboxSummariesForThread(
+    thread: ChatRealtimeThreadPayload,
+  ): Promise<Array<{ room: string; summary: ChatInboxSummary }>> {
+    return Promise.all(
+      this.getSummaryScopesForThread(thread).map(async (scope) => ({
+        room: scope.room,
+        summary: await this.buildSummary(scope),
+      })),
     );
   }
 
-  private async buildSummary(scope: SummaryScope) {
+  private async buildSummary(scope: SummaryScope): Promise<ChatInboxSummary> {
     const query = new ListChatThreadsDto();
 
     const baseWhere =

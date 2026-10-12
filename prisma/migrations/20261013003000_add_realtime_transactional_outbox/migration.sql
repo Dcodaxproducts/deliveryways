@@ -15,12 +15,11 @@ CREATE TABLE "realtime_outbox_events" (
   "payload" JSONB NOT NULL,
   "attempts" INTEGER NOT NULL DEFAULT 0,
   "published_at" TIMESTAMPTZ,
-  "failed_at" TIMESTAMPTZ,
   "last_error" VARCHAR(1000),
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "realtime_outbox_events_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "realtime_outbox_dispatch_idx" ON "realtime_outbox_events" ("published_at", "failed_at", "id");
+CREATE INDEX "realtime_outbox_dispatch_idx" ON "realtime_outbox_events" ("published_at", "id");
 
 -- Orders ---------------------------------------------------------------------------------
 -- Events mirror the legacy application emit points:

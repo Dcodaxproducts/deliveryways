@@ -148,10 +148,14 @@ const setup = (options: {
           : options.chatPayload,
       ),
   };
+  const chatGateway = {
+    server: chat.server,
+    deliverInboxSummaries: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new RealtimeDeliveryService(
     dispatcher as never,
     { server: order.server } as never,
-    { server: chat.server } as never,
+    chatGateway as never,
     authorization as never,
     ordersService as never,
     chatService as never,
@@ -161,6 +165,7 @@ const setup = (options: {
     authorization,
     ordersService,
     chatService,
+    chatGateway,
     order,
     chat,
     run: async (event: RealtimeEventEnvelope) => {
@@ -405,19 +410,38 @@ describe('RealtimeDeliveryService', () => {
     ]);
   });
 
-  it('skips events whose entity or hydrated payload no longer exists', async () => {
-    const gone = setup({ orderPayload: null });
-    await gone.run(
-      envelope(RealtimeEventName.ORDER_UPDATED, { id: 'order-1' }),
-    );
-    expect(gone.authorization.resolveEntity).not.toHaveBeenCalled();
-    expect(gone.order.server.in).not.toHaveBeenCalled();
+  it('keeps impossible missing payloads retrying but resolves proven deleted entities', async () => {
+    const missingPayload = setup({ orderPayload: null });
+    await expect(
+      missingPayload.run(
+        envelope(RealtimeEventName.ORDER_UPDATED, { id: 'order-1' }),
+      ),
+    ).rejects.toThrow('payload unavailable for existing entity');
+    expect(missingPayload.order.server.in).not.toHaveBeenCalled();
 
     const noEntity = setup({ entity: null });
     await noEntity.run(
       envelope(RealtimeEventName.ORDER_UPDATED, { id: 'order-1' }),
     );
     expect(noEntity.order.server.in).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed intents so they remain visible for retry', async () => {
+    const ctx = setup({});
+    await expect(
+      ctx.run(envelope(RealtimeEventName.ORDER_UPDATED, {})),
+    ).rejects.toThrow('malformed order outbox intent');
+    await expect(
+      ctx.run(envelope(RealtimeEventName.CHAT_THREAD_UPDATED, {})),
+    ).rejects.toThrow('malformed chat outbox intent');
+  });
+
+  it('explicitly resolves deleted entities without emitting', async () => {
+    const gone = setup({ entity: null });
+    await expect(
+      gone.run(envelope(RealtimeEventName.ORDER_UPDATED, { id: 'order-1' })),
+    ).resolves.toBeUndefined();
+    expect(gone.order.server.in).not.toHaveBeenCalled();
   });
 
   it('propagates hydration and authorization failures so the outbox retries', async () => {
@@ -467,6 +491,22 @@ describe('RealtimeDeliveryService', () => {
         RealtimeRooms.chatDeliveryman('deliveryman-1'),
         RealtimeRooms.chatBranch('branch-1'),
       ]);
+    });
+
+    it.each([
+      RealtimeEventName.CHAT_THREAD_CREATED,
+      RealtimeEventName.CHAT_THREAD_UPDATED,
+      RealtimeEventName.CHAT_MESSAGE_CREATED,
+      RealtimeEventName.CHAT_THREAD_READ,
+    ])('emits legacy inbox summaries after %s delivery', async (event) => {
+      const thread = { id: 'thread-1' };
+      const payload = { threadId: 'thread-1', thread };
+      const ctx = setup({ chatSockets: [], chatPayload: payload });
+      await ctx.run(envelope(event, { id: 'thread-1' }));
+      expect(ctx.chatGateway.deliverInboxSummaries).toHaveBeenCalledWith(
+        thread,
+      );
+      expect(ctx.chatGateway.deliverInboxSummaries).toHaveBeenCalledTimes(1);
     });
 
     it('uses the compact thread id for thread events', async () => {

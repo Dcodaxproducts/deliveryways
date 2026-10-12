@@ -107,6 +107,16 @@ export class ChatGateway
     this.admission.release(this.socketKey(client));
   }
 
+  /** Isolated outbox hook: mutation event is emitted before these legacy summaries. */
+  async deliverInboxSummaries(
+    thread: Parameters<ChatRealtimeService['getInboxSummariesForThread']>[0],
+  ): Promise<void> {
+    const summaries =
+      await this.chatRealtimeService.getInboxSummariesForThread(thread);
+    for (const { room, summary } of summaries)
+      this.server.local.to(room).emit('chat.inbox.summary', summary);
+  }
+
   private socketKey(client: ChatSocket): string {
     return `chat:${client.id}`;
   }
@@ -292,6 +302,17 @@ export class ChatGateway
       const user = this.getSocketUser(client);
       if (!user) {
         throw new UnauthorizedException('Socket is not authenticated');
+      }
+
+      try {
+        await this.currentSessionValidator.assertCurrentSession(user);
+      } catch (error) {
+        client.emit('chat.error', {
+          code: 'UNAUTHORIZED',
+          message: 'Session is no longer valid',
+        });
+        client.disconnect(true);
+        throw error;
       }
 
       const data = await handler(user);

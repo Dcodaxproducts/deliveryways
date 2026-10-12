@@ -2094,11 +2094,10 @@ model RealtimeOutboxEvent {
   payload       Json
   attempts      Int       @default(0)
   publishedAt   DateTime? @map("published_at") @db.Timestamptz
-  failedAt      DateTime? @map("failed_at") @db.Timestamptz
   lastError     String?   @map("last_error") @db.VarChar(1000)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  @@index([publishedAt, failedAt, id], map: "realtime_outbox_dispatch_idx")
+  @@index([publishedAt, id], map: "realtime_outbox_dispatch_idx")
   @@map("realtime_outbox_events")
 }
 
