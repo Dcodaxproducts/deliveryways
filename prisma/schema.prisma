@@ -2086,6 +2086,24 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+model RealtimeOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aggregateType String    @map("aggregate_type") @db.VarChar(40)
+  aggregateId   String    @map("aggregate_id")
+  eventName     String    @map("event_name") @db.VarChar(80)
+  payload       Json
+  attempts      Int       @default(0)
+  availableAt   DateTime  @default(now()) @map("available_at") @db.Timestamptz
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz
+  failedAt      DateTime? @map("failed_at") @db.Timestamptz
+  lastError     String?   @map("last_error") @db.VarChar(1000)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([publishedAt, failedAt, availableAt, createdAt], map: "realtime_outbox_dispatch_idx")
+  @@index([aggregateType, aggregateId, createdAt], map: "realtime_outbox_aggregate_idx")
+  @@map("realtime_outbox_events")
+}
+
 model PackagePlan {
   id                    String                @id @default(cuid())
   tenantId              String?               @map("tenant_id")

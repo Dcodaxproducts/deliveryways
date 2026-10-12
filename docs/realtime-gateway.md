@@ -2,7 +2,7 @@
 
 The core API (`dist/src/main.js`, port 3000) does not install a Socket.IO adapter and does not accept Socket.IO connections. The independently deployable realtime process (`dist/src/realtime-main.js`, port 3001) owns `/orders-tracking` and `/chat`.
 
-Domain writers publish versioned envelopes to `deliveryways:realtime:v1`. Every gateway instance subscribes and emits locally to its authorized rooms. Publication is best-effort and never rejects an order, payment, or chat write.
+PostgreSQL order/chat triggers append compact versioned envelopes to `realtime_outbox_events` in the domain transaction. A bounded dispatcher replays rows to the capped `deliveryways:realtime:v2` Redis Stream. The gateway consumer group acknowledges after delivery, retries pending records, deduplicates stable event IDs, and dead-letters poison records. Redis outages never reject committed writes.
 
 ## Client contracts
 

@@ -1,5 +1,3 @@
-export const REALTIME_REDIS_CHANNEL = 'deliveryways:realtime:v1';
-
 export const RealtimeEventName = {
   ORDER_CREATED: 'order.created',
   ORDER_STATUS_UPDATED: 'order.status.updated',
@@ -15,7 +13,9 @@ export type RealtimeEventName =
   (typeof RealtimeEventName)[keyof typeof RealtimeEventName];
 
 export interface RealtimeEventEnvelope {
-  version: 1;
+  version: 2;
+  eventId: string;
+  aggregateKey: string;
   event: RealtimeEventName;
   payload: unknown;
   publishedAt: string;

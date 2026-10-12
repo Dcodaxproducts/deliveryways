@@ -1,18 +1,20 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
-import { ChatRealtimeService } from '../modules/chat/public-api';
+import { AuthUserContext } from '../common/decorators';
 import { RealtimeEventBusService } from '../common/realtime/realtime-event-bus.service';
-import {
-  RealtimeEventEnvelope,
-  RealtimeEventName,
-  RealtimeRooms,
-} from '../common/realtime/realtime-events';
+import { RealtimeEventEnvelope } from '../common/realtime/realtime-events';
+import { ChatGateway } from './gateways/chat.gateway';
 import { OrderTrackingGateway } from './gateways/order-tracking.gateway';
+import { RealtimeDeliveryAuthorizationService } from './realtime-delivery-authorization.service';
 
-type OrderRoomPayload = {
+type EntityPayload = {
   id?: unknown;
-  tenantId?: unknown;
-  restaurantId?: unknown;
-  branchId?: unknown;
+  threadId?: unknown;
+  thread?: { id?: unknown };
+};
+type SocketLike = {
+  data: { user?: AuthUserContext };
+  emit: (event: string, payload: unknown) => void;
+  disconnect: (close?: boolean) => void;
 };
 
 @Injectable()
@@ -20,7 +22,8 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
   constructor(
     private readonly eventBus: RealtimeEventBusService,
     private readonly orderGateway: OrderTrackingGateway,
-    private readonly chatRealtime: ChatRealtimeService,
+    private readonly chatGateway: ChatGateway,
+    private readonly authorization: RealtimeDeliveryAuthorizationService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -28,30 +31,34 @@ export class RealtimeDeliveryService implements OnApplicationBootstrap {
   }
 
   private async deliver(envelope: RealtimeEventEnvelope): Promise<void> {
-    if (envelope.event.startsWith('chat.')) {
-      await this.chatRealtime.deliverEvent(envelope.event, envelope.payload);
-      return;
+    const isChat = envelope.event.startsWith('chat.');
+    const id = this.entityId(envelope.payload, isChat);
+    if (!id) return;
+    const server = isChat ? this.chatGateway.server : this.orderGateway.server;
+    const sockets = (await server.fetchSockets()) as unknown as SocketLike[];
+    const users = sockets
+      .map((socket) => socket.data.user)
+      .filter((user): user is AuthUserContext => Boolean(user));
+    const allowed = await this.authorization.authorize(users, {
+      kind: isChat ? 'chat' : 'order',
+      id,
+    });
+    for (const socket of sockets) {
+      const user = socket.data.user;
+      if (user && allowed.has(user.uid))
+        socket.emit(envelope.event, envelope.payload);
+      else if (user) socket.disconnect(true);
     }
-    const payload = envelope.payload as OrderRoomPayload;
-    if (envelope.event === RealtimeEventName.ORDER_TRACKING_UPDATED) {
-      if (typeof payload?.id === 'string') {
-        this.orderGateway.server.local
-          .to(RealtimeRooms.orderTracking(payload.id))
-          .emit(envelope.event, envelope.payload);
-      }
-      return;
-    }
-    if (
-      typeof payload?.tenantId !== 'string' ||
-      typeof payload.restaurantId !== 'string' ||
-      typeof payload.branchId !== 'string'
-    ) {
-      return;
-    }
-    this.orderGateway.server.local
-      .to(RealtimeRooms.tenantOrders(payload.tenantId))
-      .to(RealtimeRooms.restaurantOrders(payload.restaurantId))
-      .to(RealtimeRooms.branchOrders(payload.restaurantId, payload.branchId))
-      .emit(envelope.event, envelope.payload);
+  }
+
+  private entityId(payload: unknown, isChat: boolean): string | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const value = payload as EntityPayload;
+    const candidate = isChat
+      ? (value.threadId ?? value.thread?.id ?? value.id)
+      : value.id;
+    return typeof candidate === 'string' && candidate.length > 0
+      ? candidate
+      : null;
   }
 }

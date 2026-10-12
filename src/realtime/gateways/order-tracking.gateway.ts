@@ -170,6 +170,14 @@ export class OrderTrackingGateway
     });
   }
 
+  @SubscribeMessage('orders.restaurant.subscribe')
+  async subscribeToRestaurantOrdersAlias(
+    @ConnectedSocket() client: OrderTrackingSocket,
+    @MessageBody() body: { restaurantId?: string; branchId?: string },
+  ) {
+    return this.subscribeToAdminOrders(client, body);
+  }
+
   private async authenticate(
     client: OrderTrackingSocket,
   ): Promise<AuthUserContext> {

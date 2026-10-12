@@ -10,6 +10,7 @@ import { ChatGateway } from './gateways/chat.gateway';
 import { OrderTrackingGateway } from './gateways/order-tracking.gateway';
 import { RealtimeDeliveryService } from './realtime-delivery.service';
 import { RealtimeHealthController } from './realtime-health.controller';
+import { RealtimeDeliveryAuthorizationService } from './realtime-delivery-authorization.service';
 import {
   CurrentSessionModule,
   getRequiredJwtAccessSecret,
@@ -35,6 +36,11 @@ import {
     OrdersModule,
   ],
   controllers: [RealtimeHealthController],
-  providers: [ChatGateway, OrderTrackingGateway, RealtimeDeliveryService],
+  providers: [
+    ChatGateway,
+    OrderTrackingGateway,
+    RealtimeDeliveryAuthorizationService,
+    RealtimeDeliveryService,
+  ],
 })
 export class RealtimeAppModule {}
