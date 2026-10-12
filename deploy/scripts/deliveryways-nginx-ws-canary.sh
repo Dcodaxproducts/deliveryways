@@ -34,7 +34,7 @@ backup_file(){
   printf '%s' "${out}"
 }
 api_health(){ curl -fsS --max-time 3 "https://${DOMAIN}/api/v1/health/live" >/dev/null; }
-public_socket_code(){ curl -sk --http1.1 --max-time 3 -o /dev/null -w '%{http_code}' "https://${DOMAIN}/socket.io/?EIO=4&transport=websocket" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: ZHctZWRnZS1wcm9iZS0xMg=='; }
+public_socket_code(){ curl -sk --http1.1 --max-time 3 -o /dev/null -w '%{http_code}' "https://${DOMAIN}/socket.io/?EIO=4&transport=websocket" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: ZHctZWRnZS1wcm9iZS0xMg==' || true; }
 canary_code(){
   local token; token="$(<"${STATE}/canary.token")"
   curl -sk --http1.1 --max-time 3 -o /dev/null -w '%{http_code}' "https://${DOMAIN}${CANARY_PREFIX}?EIO=4&transport=websocket" -H "X-DW-Canary-Token: ${token}" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: MDEyMzQ1Njc4OWFiY2RlZg==' || true
@@ -213,8 +213,12 @@ PY
     api_health; [[ "$(public_socket_code)" == 503 ]]; [[ "$(canary_code)" == 101 ]]
     vb="$(backup_file "${VHOST}" "${ts}-pre-public")"; block="$(mktemp)"; out="$(mktemp)"; location_block yes >"${block}"
     replace_public_503 "${VHOST}" "${block}" "${out}"; install -o root -g root -m 600 "${out}" "${VHOST}"; rm -f "${block}" "${out}"
-    if ! nginx_test || ! nginx_reload || ! sleep 1 || [[ "$(public_socket_code)" != 101 ]] || ! watch_api "${WATCH_SECONDS}"; then
-      echo 'public stage failed; restoring exact pre-stage vhost' >&2; cp -a -- "${vb}" "${VHOST}"; nginx_test; nginx_reload; exit 1
+    if ! nginx_test || ! nginx_reload || ! sleep 1; then
+      echo 'public stage failed before health watch; restoring exact pre-stage vhost' >&2; cp -a -- "${vb}" "${VHOST}"; nginx_test; nginx_reload; exit 1
+    fi
+    public_code="$(public_socket_code)"
+    if [[ "${public_code}" != 101 && "${public_code}" != 429 ]] || ! watch_api "${WATCH_SECONDS}"; then
+      echo "public stage failed (socket=${public_code}); restoring exact pre-stage vhost" >&2; cp -a -- "${vb}" "${VHOST}"; nginx_test; nginx_reload; exit 1
     fi
     echo "PASS public staged; rollback=${vb}"
     ;;
