@@ -26,6 +26,12 @@ COPY src ./src
 RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npx prisma generate \
   && npm run build
 
+FROM build AS realtime-stress
+
+COPY stress ./stress
+
+CMD ["node", "--expose-gc", "-r", "ts-node/register", "stress/socket-io-admission.stress.ts"]
+
 FROM dependencies AS migration
 
 ENV NODE_ENV=production

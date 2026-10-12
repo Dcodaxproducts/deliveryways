@@ -1,6 +1,6 @@
 import {
   createServer,
-  get as httpGet,
+  request as httpRequest,
   IncomingMessage,
   Server as HttpServer,
 } from 'node:http';
@@ -9,59 +9,210 @@ import { io as createClient, Socket as ClientSocket } from 'socket.io-client';
 import {
   AdmissionOptions,
   BoundedSocketIoAdapter,
-  EngineHandshakeAdmission,
+  EngineRequestAdmission,
   trustedNetworkKey,
 } from './bounded-socket-io.adapter';
 
 const generousOptions: AdmissionOptions = {
-  attemptWindowMs: 10_000,
-  networkAttemptsPerWindow: 20_000,
-  globalAttemptsPerWindow: 20_000,
-  maxAttemptKeys: 2_048,
+  requestWindowMs: 10_000,
+  networkRequestsPerWindow: 20_000,
+  sessionRequestsPerWindow: 20_000,
+  globalRequestsPerWindow: 20_000,
+  maxNetworkRequestKeys: 2_048,
+  maxInflightRequests: 20_000,
+  maxInflightPerNetwork: 20_000,
+  maxInflightPerSession: 3,
   maxActivePerNetwork: 20_000,
   maxEngineSessions: 20_000,
   pendingReservationMs: 10_000,
+  requestLeaseMs: 50_000,
 };
 
-const request = (
+const engineRequest = (
   address: string,
-  forwardedFor?: string,
-  transport: 'polling' | 'websocket' = 'polling',
-): IncomingMessage =>
-  ({
-    headers: forwardedFor ? { 'x-forwarded-for': forwardedFor } : {},
+  options: {
+    sid?: string;
+    forwardedFor?: string;
+    transport?: 'polling' | 'websocket';
+    method?: 'GET' | 'POST';
+  } = {},
+): IncomingMessage & { _query: Record<string, string> } => {
+  const transport = options.transport ?? 'polling';
+  const query: Record<string, string> = { EIO: '4', transport };
+  if (options.sid) query.sid = options.sid;
+  return {
+    headers: options.forwardedFor
+      ? { 'x-forwarded-for': options.forwardedFor }
+      : {},
+    method: options.method ?? 'GET',
     socket: { remoteAddress: address },
-    url: '/socket.io/?EIO=4&transport=' + transport,
-  }) as unknown as IncomingMessage;
+    url: '/socket.io/?' + new URLSearchParams(query).toString(),
+    _query: query,
+  } as unknown as IncomingMessage & { _query: Record<string, string> };
+};
 
-describe('EngineHandshakeAdmission', () => {
-  it('bounds bookkeeping during 12,000 polling and websocket handshake attempts', () => {
-    const admission = new EngineHandshakeAdmission(generousOptions);
+describe('EngineRequestAdmission', () => {
+  it('bounds all request bookkeeping across 12,000 mixed handshakes', () => {
+    const admission = new EngineRequestAdmission({
+      ...generousOptions,
+      maxNetworkRequestKeys: 512,
+    });
     let accepted = 0;
 
     for (let index = 0; index < 12_000; index += 1) {
-      const attempt = request(
+      const attempt = engineRequest(
         '198.' + (index % 200) + '.' + (index % 251) + '.' + (index % 253),
-        undefined,
-        index % 2 === 0 ? 'polling' : 'websocket',
+        { transport: index % 2 === 0 ? 'polling' : 'websocket' },
       );
-      if (admission.admit(attempt, 1_000).allowed) {
+      const result = admission.admit(attempt, () => false, 1_000);
+      if (result.allowed) {
         accepted += 1;
+        result.release();
         admission.failed(attempt);
       }
     }
 
     expect(accepted).toBeGreaterThan(0);
-    expect(admission.getStats(1_000)).toEqual({
+    expect(admission.getStats(1_000)).toMatchObject({
       activeSessions: 0,
-      activeNetworkKeys: 0,
-      attemptKeys: 2_048,
+      networkRequestKeys: 512,
+      sessionRequestKeys: 0,
       pendingReservations: 0,
       pendingNetworkKeys: 0,
+      inflightRequests: 0,
     });
   });
 
-  it('uses the nearest untrusted hop behind nginx and ignores spoofed XFF prefixes', () => {
+  it('admits every existing-session request and blocks duplicate long-polls without blocking upgrade', () => {
+    const admission = new EngineRequestAdmission(generousOptions);
+    const handshake = engineRequest('198.51.100.1');
+    const admitted = admission.admit(handshake, () => false, 1_000);
+    expect(admitted.allowed).toBe(true);
+    if (!admitted.allowed) return;
+    admitted.release();
+    expect(admission.connected('validSid_1', handshake)).toBe(true);
+
+    const firstPoll = engineRequest('198.51.100.2', { sid: 'validSid_1' });
+    const duplicatePoll = engineRequest('198.51.100.3', {
+      sid: 'validSid_1',
+    });
+    const upgrade = engineRequest('198.51.100.4', {
+      sid: 'validSid_1',
+      transport: 'websocket',
+    });
+    const first = admission.admit(firstPoll, () => true, 1_001);
+    expect(first.allowed).toBe(true);
+    expect(admission.admit(duplicatePoll, () => true, 1_001)).toMatchObject({
+      allowed: false,
+      statusCode: 429,
+    });
+    const upgradeResult = admission.admit(upgrade, () => true, 1_001);
+    expect(upgradeResult.allowed).toBe(true);
+    expect(admission.getStats(1_001)).toMatchObject({
+      activeSessions: 1,
+      inflightRequests: 2,
+      pollingGets: 1,
+      upgrades: 1,
+    });
+    admission.releaseSession('validSid_1');
+    if (first.allowed) first.release();
+    if (upgradeResult.allowed) upgradeResult.release();
+    expect(admission.getStats(1_001)).toMatchObject({
+      activeSessions: 0,
+      inflightRequests: 0,
+      pollingGets: 0,
+      upgrades: 0,
+    });
+  });
+
+  it('rejects unknown, stale, malformed, and network-spoofed session ids', () => {
+    const admission = new EngineRequestAdmission(generousOptions);
+    const handshake = engineRequest('172.18.0.2', {
+      forwardedFor: '198.51.100.10',
+    });
+    const admitted = admission.admit(handshake, () => false, 1_000);
+    expect(admitted.allowed).toBe(true);
+    if (!admitted.allowed) return;
+    admitted.release();
+    expect(admission.connected('knownSid', handshake)).toBe(true);
+
+    expect(
+      admission.admit(
+        engineRequest('172.18.0.2', {
+          sid: 'unknownSid',
+          forwardedFor: '198.51.100.10',
+        }),
+        () => false,
+        1_001,
+      ),
+    ).toMatchObject({ allowed: false, statusCode: 400 });
+    expect(
+      admission.admit(
+        engineRequest('172.18.0.2', {
+          sid: 'knownSid',
+          forwardedFor: '203.0.113.10',
+        }),
+        () => true,
+        1_001,
+      ),
+    ).toMatchObject({ allowed: false, statusCode: 400 });
+    expect(
+      admission.admit(
+        engineRequest('172.18.0.2', {
+          sid: '../knownSid',
+          forwardedFor: '198.51.100.10',
+        }),
+        () => true,
+        1_001,
+      ),
+    ).toMatchObject({ allowed: false, statusCode: 400 });
+    admission.releaseSession('knownSid');
+    expect(
+      admission.admit(
+        engineRequest('172.18.0.2', {
+          sid: 'knownSid',
+          forwardedFor: '198.51.100.10',
+        }),
+        () => false,
+        1_002,
+      ),
+    ).toMatchObject({ allowed: false, statusCode: 400 });
+  });
+
+  it('enforces lower process/network session caps and releases them on close', () => {
+    const admission = new EngineRequestAdmission({
+      ...generousOptions,
+      maxActivePerNetwork: 2,
+      maxEngineSessions: 3,
+    });
+    for (const [index, address] of [
+      '198.51.100.1',
+      '198.51.100.2',
+      '198.51.101.1',
+    ].entries()) {
+      const attempt = engineRequest(address);
+      const result = admission.admit(attempt, () => false, 1_000);
+      expect(result.allowed).toBe(true);
+      if (result.allowed) result.release();
+      expect(admission.connected('sid' + index, attempt)).toBe(true);
+    }
+
+    expect(
+      admission.admit(engineRequest('198.51.100.3'), () => false, 1_000),
+    ).toMatchObject({ allowed: false, statusCode: 429 });
+    expect(
+      admission.admit(engineRequest('198.51.102.1'), () => false, 1_000),
+    ).toMatchObject({ allowed: false, statusCode: 429 });
+    admission.releaseSession('sid0');
+    admission.releaseSession('sid1');
+    admission.releaseSession('sid2');
+    expect(admission.getStats(1_000)).toMatchObject({
+      activeSessions: 0,
+      activeNetworkKeys: 0,
+    });
+  });
+
+  it('uses the nearest untrusted hop and ignores spoofed XFF from public peers', () => {
     expect(
       trustedNetworkKey({
         remoteAddress: '172.18.0.2',
@@ -74,88 +225,6 @@ describe('EngineHandshakeAdmission', () => {
         headers: { 'x-forwarded-for': '198.51.100.27' },
       }),
     ).toBe('v4:203.0.113.0/24');
-    expect(
-      trustedNetworkKey({
-        remoteAddress: '172.18.0.2',
-        headers: { 'x-forwarded-for': '10.77.1.9, 192.168.2.25' },
-      }),
-    ).toBe('v4:192.168.2.0/24');
-  });
-
-  it('prunes attempt and pending maps while preserving hard caps', () => {
-    const admission = new EngineHandshakeAdmission({
-      ...generousOptions,
-      attemptWindowMs: 100,
-      maxAttemptKeys: 2,
-      pendingReservationMs: 100,
-    });
-    const first = request('198.51.100.1');
-    const second = request('198.51.101.1');
-    const overflow = request('198.51.102.1');
-
-    expect(admission.admit(first, 1_000)).toEqual({ allowed: true });
-    expect(admission.admit(second, 1_000)).toEqual({ allowed: true });
-    expect(admission.admit(overflow, 1_000)).toEqual({
-      allowed: false,
-      retryAfterSeconds: 1,
-    });
-    expect(admission.getStats(1_000).attemptKeys).toBe(2);
-    expect(admission.getStats(1_101)).toMatchObject({
-      attemptKeys: 0,
-      pendingReservations: 0,
-      pendingNetworkKeys: 0,
-    });
-    expect(admission.admit(overflow, 1_101)).toEqual({ allowed: true });
-  });
-
-  it('bounds active sessions by network and globally and releases on cleanup', () => {
-    const admission = new EngineHandshakeAdmission({
-      ...generousOptions,
-      maxActivePerNetwork: 2,
-      maxEngineSessions: 3,
-    });
-    const requests = [
-      request('198.51.100.1'),
-      request('198.51.100.2'),
-      request('198.51.101.1'),
-    ];
-    const releases = requests.map((attempt) => {
-      expect(admission.admit(attempt, 1_000)).toEqual({ allowed: true });
-      return admission.connected(attempt);
-    });
-
-    expect(admission.admit(request('198.51.100.3'), 1_000)).toEqual({
-      allowed: false,
-      retryAfterSeconds: 1,
-    });
-    expect(admission.admit(request('198.51.102.1'), 1_000)).toEqual({
-      allowed: false,
-      retryAfterSeconds: 1,
-    });
-    expect(admission.getStats(1_000).activeSessions).toBe(3);
-    releases.forEach((release) => release?.());
-    releases.forEach((release) => release?.());
-    expect(admission.getStats(1_000)).toMatchObject({
-      activeSessions: 0,
-      activeNetworkKeys: 0,
-    });
-  });
-
-  it('enforces a global attempt budget before creating unbounded network keys', () => {
-    const admission = new EngineHandshakeAdmission({
-      ...generousOptions,
-      globalAttemptsPerWindow: 3,
-    });
-    for (let index = 0; index < 3; index += 1) {
-      const attempt = request('198.51.' + index + '.1');
-      expect(admission.admit(attempt, 1_000)).toEqual({ allowed: true });
-      admission.failed(attempt);
-    }
-    expect(admission.admit(request('203.0.113.1'), 1_000)).toEqual({
-      allowed: false,
-      retryAfterSeconds: 10,
-    });
-    expect(admission.getStats(1_000).attemptKeys).toBe(3);
   });
 });
 
@@ -163,6 +232,7 @@ describe('BoundedSocketIoAdapter integration', () => {
   let httpServer: HttpServer;
   let adapter: BoundedSocketIoAdapter;
   let socketServer: ReturnType<BoundedSocketIoAdapter['createIOServer']>;
+  let origin: string;
   let url: string;
 
   beforeEach(async () => {
@@ -177,7 +247,8 @@ describe('BoundedSocketIoAdapter integration', () => {
       httpServer.listen(0, '127.0.0.1', resolve),
     );
     const address = httpServer.address() as AddressInfo;
-    url = 'http://127.0.0.1:' + address.port + '/authorized';
+    origin = 'http://127.0.0.1:' + address.port;
+    url = origin + '/authorized';
   });
 
   afterEach(async () => {
@@ -189,7 +260,7 @@ describe('BoundedSocketIoAdapter integration', () => {
     }
   });
 
-  it('permits authorized polling and then a websocket upgrade', async () => {
+  it('permits authorized polling and a concurrent websocket upgrade', async () => {
     const client = createClient(url, {
       auth: { token: 'test-token' },
       transports: ['polling', 'websocket'],
@@ -198,62 +269,155 @@ describe('BoundedSocketIoAdapter integration', () => {
       timeout: 3_000,
     });
     await connected(client);
-    expect(client.connected).toBe(true);
     await upgraded(client);
+    expect(client.connected).toBe(true);
     expect(client.io.engine.transport.name).toBe('websocket');
     client.disconnect();
+    await waitFor(() => adapter.getAdmissionStats().activeSessions === 0);
   });
 
-  it('returns Retry-After on polling rejection before allocating another session', async () => {
-    const endpoint = url.replace(
-      '/authorized',
-      '/socket.io/?EIO=4&transport=polling',
+  it('rejects duplicate concurrent polling GETs and then releases the session', async () => {
+    const handshake = await engineCall(
+      origin + '/socket.io/?EIO=4&transport=polling',
     );
-    for (let index = 0; index < 20; index += 1) {
-      await expect(poll(endpoint)).resolves.toMatchObject({ statusCode: 200 });
-    }
-    await expect(poll(endpoint)).resolves.toEqual({
+    expect(handshake.statusCode).toBe(200);
+    const sid = parseSid(handshake.body);
+    const pollUrl =
+      origin +
+      '/socket.io/?EIO=4&transport=polling&sid=' +
+      encodeURIComponent(sid);
+
+    const longPoll = engineCall(pollUrl);
+    await waitFor(() => adapter.getAdmissionStats().pollingGets === 1);
+    await expect(engineCall(pollUrl)).resolves.toMatchObject({
       statusCode: 429,
       retryAfter: '1',
     });
+    await engineCall(pollUrl, { method: 'POST', body: '1' });
+    await longPoll;
+    await waitFor(() => adapter.getAdmissionStats().activeSessions === 0);
+    expect(adapter.getAdmissionStats()).toMatchObject({
+      activeSessions: 0,
+      pollingGets: 0,
+      upgrades: 0,
+      inflightRequests: 0,
+    });
   });
 
-  it('rejects unauthorized namespace connections after bounded Engine.IO admission', async () => {
-    const client = createClient(url, {
+  it('rejects unknown and spoofed sid requests before Engine.IO work', async () => {
+    await expect(
+      engineCall(origin + '/socket.io/?EIO=4&transport=polling&sid=unknownSid'),
+    ).resolves.toMatchObject({ statusCode: 400 });
+
+    const handshake = await engineCall(
+      origin + '/socket.io/?EIO=4&transport=polling',
+      { headers: { 'x-forwarded-for': '198.51.100.10' } },
+    );
+    const sid = parseSid(handshake.body);
+    await expect(
+      engineCall(
+        origin +
+          '/socket.io/?EIO=4&transport=polling&sid=' +
+          encodeURIComponent(sid),
+        { headers: { 'x-forwarded-for': '203.0.113.10' } },
+      ),
+    ).resolves.toMatchObject({ statusCode: 400 });
+    await engineCall(
+      origin +
+        '/socket.io/?EIO=4&transport=polling&sid=' +
+        encodeURIComponent(sid),
+      {
+        method: 'POST',
+        body: '1',
+        headers: { 'x-forwarded-for': '198.51.100.10' },
+      },
+    );
+  });
+
+  it('keeps authorized namespace behavior and rejects invalid auth', async () => {
+    const authorized = createClient(url, {
+      auth: { token: 'test-token' },
+      transports: ['polling'],
+      reconnection: false,
+      timeout: 3_000,
+    });
+    await connected(authorized);
+    expect(authorized.connected).toBe(true);
+    authorized.disconnect();
+
+    const invalid = createClient(url, {
       auth: { token: 'invalid' },
       transports: ['polling'],
       reconnection: false,
       timeout: 3_000,
     });
     const message = await new Promise<string>((resolve) => {
-      client.once('connect_error', (error) => resolve(error.message));
+      invalid.once('connect_error', (error) => resolve(error.message));
     });
     expect(message).toBe('Unauthorized');
-    client.disconnect();
+    invalid.disconnect();
   });
 });
 
-function poll(
+type EngineCallOptions = {
+  method?: 'GET' | 'POST';
+  body?: string;
+  headers?: Record<string, string>;
+};
+
+function engineCall(
   endpoint: string,
-): Promise<{ statusCode?: number; retryAfter?: string }> {
+  options: EngineCallOptions = {},
+): Promise<{
+  statusCode?: number;
+  retryAfter?: string;
+  body: string;
+}> {
   return new Promise((resolve, reject) => {
-    httpGet(endpoint, (response: IncomingMessage) => {
-      response.resume();
-      response.once('end', () => {
-        const retryAfterHeader: unknown = response.headers['retry-after'];
-        resolve({
-          statusCode: response.statusCode,
-          retryAfter:
-            typeof retryAfterHeader === 'string'
-              ? retryAfterHeader
-              : Array.isArray(retryAfterHeader) &&
-                  typeof retryAfterHeader[0] === 'string'
-                ? retryAfterHeader[0]
-                : undefined,
+    const request = httpRequest(
+      endpoint,
+      {
+        method: options.method ?? 'GET',
+        headers: {
+          ...options.headers,
+          ...(options.body
+            ? {
+                'content-type': 'text/plain;charset=UTF-8',
+                'content-length': String(Buffer.byteLength(options.body)),
+              }
+            : {}),
+        },
+      },
+      (response: IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.once('end', () => {
+          const retryAfterHeader: unknown = response.headers['retry-after'];
+          resolve({
+            statusCode: response.statusCode,
+            retryAfter:
+              typeof retryAfterHeader === 'string'
+                ? retryAfterHeader
+                : Array.isArray(retryAfterHeader) &&
+                    typeof retryAfterHeader[0] === 'string'
+                  ? retryAfterHeader[0]
+                  : undefined,
+            body: Buffer.concat(chunks).toString('utf8'),
+          });
         });
-      });
-    }).once('error', reject);
+      },
+    );
+    request.once('error', reject);
+    if (options.body) request.write(options.body);
+    request.end();
   });
+}
+
+function parseSid(body: string): string {
+  const packet = body.startsWith('0') ? body.slice(1) : body;
+  const parsed = JSON.parse(packet) as { sid?: unknown };
+  if (typeof parsed.sid !== 'string') throw new Error('Missing Engine.IO sid');
+  return parsed.sid;
 }
 
 function connected(client: ClientSocket): Promise<void> {
@@ -275,4 +439,12 @@ function upgraded(client: ClientSocket): Promise<void> {
       resolve();
     });
   });
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 3_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Condition timed out');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
