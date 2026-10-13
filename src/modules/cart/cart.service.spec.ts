@@ -105,15 +105,14 @@ describe('CartService', () => {
     profilesRepository.findByUserId.mockResolvedValue({ metadata: {} });
     let releaseQuote: (value: { data: Record<string, unknown> }) => void = () =>
       undefined;
-    let releasePaymentMethods: (value: {
-      data: Array<{ code: PaymentMethodEnum; isActive: boolean }>;
-    }) => void = () => undefined;
+    let releasePaymentMethods: (value: PaymentMethodEnum[]) => void = () =>
+      undefined;
     ordersService.quote.mockReturnValue(
       new Promise<{ data: Record<string, unknown> }>((resolve) => {
         releaseQuote = resolve;
       }),
     );
-    globalSettingsService.getPaymentMethods.mockReturnValue(
+    globalSettingsService.getEffectiveCheckoutPaymentMethods.mockReturnValue(
       new Promise((resolve) => {
         releasePaymentMethods = resolve;
       }),
@@ -158,12 +157,12 @@ describe('CartService', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(ordersService.quote).toHaveBeenCalled();
-    expect(globalSettingsService.getPaymentMethods).toHaveBeenCalled();
+    expect(
+      globalSettingsService.getEffectiveCheckoutPaymentMethods,
+    ).toHaveBeenCalled();
 
     releaseQuote({ data: {} });
-    releasePaymentMethods({
-      data: [{ code: PaymentMethodEnum.COD, isActive: true }],
-    });
+    releasePaymentMethods([PaymentMethodEnum.COD]);
     await expect(response).resolves.toBeDefined();
   });
 
