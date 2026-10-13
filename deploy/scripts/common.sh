@@ -231,7 +231,7 @@ dw_outbox_pending() {
   local pending
 
   pending="$(dw_psql --tuples-only --no-align \
-    <<<"SELECT count(*) FROM realtime_outbox_events WHERE published_at IS NULL AND failed_at IS NULL" | tr -d '[:space:]')"
+    <<<"SELECT count(*) FROM realtime_outbox_events WHERE published_at IS NULL" | tr -d '[:space:]')"
   [[ "${pending}" =~ ^[0-9]+$ ]] || dw_fail "could not read the realtime outbox backlog"
   printf '%s\n' "${pending}"
 }

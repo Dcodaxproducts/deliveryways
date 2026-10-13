@@ -133,7 +133,7 @@ else
   # The dispatcher must be able to read orders/chat while it drains, so wait BEFORE taking table locks.
   dw_wait_outbox_drained "${OUTBOX_DRAIN_TIMEOUT_SECONDS:-120}" \
     || dw_fail "realtime outbox did not drain; fix the dispatcher or set OUTBOX_DISCARD_APPROVED=yes to discard pending rows"
-  pending_check="DO \$check\$ BEGIN IF EXISTS (SELECT 1 FROM realtime_outbox_events WHERE published_at IS NULL AND failed_at IS NULL) THEN RAISE EXCEPTION 'realtime outbox is not drained'; END IF; END \$check\$;"
+  pending_check="DO \$check\$ BEGIN IF EXISTS (SELECT 1 FROM realtime_outbox_events WHERE published_at IS NULL) THEN RAISE EXCEPTION 'realtime outbox is not drained'; END IF; END \$check\$;"
 fi
 
 # One transaction: lock the writers out of the three trigger tables, re-check the backlog under the lock,

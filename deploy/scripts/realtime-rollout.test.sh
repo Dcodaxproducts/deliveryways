@@ -58,9 +58,9 @@ if [[ "${args[0]}" == "compose" ]]; then
           elif grep -q 'json_build_object' <<<"${sql}"; then
             echo "compose psql soak-actor" >>"${MOCK_LOG}"
             printf '{"uid":"soak-user","role":"CUSTOMER","ver":0,"tid":"t1","rid":"r1","bid":null}\n'
-          elif grep -q "interval\|failed_at IS NOT NULL" <<<"${sql}"; then
+          elif grep -q "interval\|last_error IS NOT NULL" <<<"${sql}"; then
             printf '0\n'
-          elif grep -q 'published_at IS NULL AND failed_at IS NULL' <<<"${sql}"; then
+          elif grep -q 'published_at IS NULL' <<<"${sql}"; then
             echo "compose psql outbox-pending" >>"${MOCK_LOG}"
             printf '%s\n' "${MOCK_PENDING:-0}"
           fi ;;
