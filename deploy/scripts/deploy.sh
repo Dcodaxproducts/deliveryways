@@ -94,6 +94,9 @@ else
   dw_compose up --detach --no-build --wait postgres
 fi
 
+printf 'Starting isolated realtime Redis and waiting for health...\n'
+dw_compose up --detach --no-build --wait redis
+
 backup_output="$(env DELIVERYWAY_BACKUP_ROOT="${DW_BACKUP_ROOT}" \
   "${SCRIPT_DIR}/backup-db.sh" "${DW_ENVIRONMENT}" "${DW_ENV_FILE}")"
 printf '%s\n' "${backup_output}"
