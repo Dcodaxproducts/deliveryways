@@ -39,9 +39,9 @@ dw_compose exec --no-TTY \
   || dw_fail "realtime soak failed; do not switch clients or ingress"
 
 failed_rows="$(dw_psql --tuples-only --no-align \
-  <<<"SELECT count(*) FROM realtime_outbox_events WHERE failed_at IS NOT NULL" | tr -d '[:space:]')"
+  <<<"SELECT count(*) FROM realtime_outbox_events WHERE published_at IS NULL AND last_error IS NOT NULL" | tr -d '[:space:]')"
 stale_rows="$(dw_psql --tuples-only --no-align \
-  <<<"SELECT count(*) FROM realtime_outbox_events WHERE published_at IS NULL AND failed_at IS NULL AND created_at < now() - interval '60 seconds'" | tr -d '[:space:]')"
+  <<<"SELECT count(*) FROM realtime_outbox_events WHERE published_at IS NULL AND last_error IS NULL AND created_at < now() - interval '60 seconds'" | tr -d '[:space:]')"
 [[ "${failed_rows}" == "0" ]] || dw_fail "${failed_rows} realtime outbox row(s) failed delivery"
 [[ "${stale_rows}" == "0" ]] || dw_fail "${stale_rows} realtime outbox row(s) are stuck pending for over 60s"
 printf 'Realtime soak passed; outbox has no failed or stuck rows.\n'
