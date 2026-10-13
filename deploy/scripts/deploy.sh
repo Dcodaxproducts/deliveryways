@@ -44,7 +44,7 @@ readonly API_SERVICES=(api)
 readonly REALTIME_SERVICES=(realtime)
 readonly CLIENT_SERVICES=(restaurant-admin superadmin customer landing)
 readonly APP_SERVICES=("${API_SERVICES[@]}" "${REALTIME_SERVICES[@]}" "${CLIENT_SERVICES[@]}")
-readonly PULL_SERVICES=(postgres migration "${APP_SERVICES[@]}")
+readonly PULL_SERVICES=(postgres redis migration "${APP_SERVICES[@]}")
 
 # True when this release deploys the given service (everything, unless a partial local release).
 release_includes() {
