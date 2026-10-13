@@ -1,11 +1,20 @@
 import { TestingModule, Test } from '@nestjs/testing';
-import { OrderType, PaymentMethod, Prisma, UserRole } from '@prisma/client';
+import {
+  OrderType,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentTransactionType,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database';
+import { OrdersService } from '../src/modules/orders/orders.service';
 
 describe('P0 checkout idempotency persistence (isolated database)', () => {
   let moduleFixture: TestingModule;
   let prisma: PrismaService;
+  let ordersService: OrdersService;
   const runId = `${Date.now()}-${process.pid}`;
 
   beforeAll(async () => {
@@ -13,6 +22,7 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
       imports: [AppModule],
     }).compile();
     prisma = moduleFixture.get(PrismaService);
+    ordersService = moduleFixture.get(OrdersService);
   }, 60_000);
 
   afterAll(async () => {
@@ -143,12 +153,27 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
             restaurantId: restaurant.id,
             customerId: guest.id,
             updatedAt: checkoutCart.updatedAt,
+            revision: checkoutCart.revision,
           },
         });
         expect(consumed.count).toBe(1);
-        return tx.order.create({
+        const order = await tx.order.create({
           data: orderData(guest.id, atomicKey, 'c'.repeat(64)),
         });
+        await tx.paymentTransaction.create({
+          data: {
+            orderId: order.id,
+            tenantId: tenant.id,
+            restaurantId: restaurant.id,
+            branchId: branch.id,
+            paymentMethod: PaymentMethod.COD,
+            type: PaymentTransactionType.CHARGE,
+            status: PaymentStatus.PENDING,
+            amount: new Prisma.Decimal(10),
+            currency: 'EUR',
+          },
+        });
+        return order;
       });
 
     const atomicConcurrent = await Promise.allSettled([
@@ -168,6 +193,178 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
     ).resolves.toBe(1);
     await expect(
       prisma.cart.count({ where: { id: checkoutCart.id } }),
+    ).resolves.toBe(0);
+    const committedOrder = atomicConcurrent.find(
+      (result) => result.status === 'fulfilled',
+    );
+    if (!committedOrder || committedOrder.status !== 'fulfilled') {
+      throw new Error('Expected one committed checkout order');
+    }
+    const committedOrderId = committedOrder.value.id;
+    await expect(
+      prisma.paymentTransaction.count({
+        where: { orderId: committedOrderId },
+      }),
+    ).resolves.toBe(1);
+
+    const replayContext = {
+      tenantId: tenant.id,
+      restaurantId: restaurant.id,
+      customerId: guest.id,
+      idempotencyKey: atomicKey,
+      requestHash: 'c'.repeat(64),
+      cartId: checkoutCart.id,
+      cartVersion: checkoutCart.updatedAt,
+      cartRevision: checkoutCart.revision,
+    };
+    await expect(
+      ordersService.resolveCheckoutIdempotency(replayContext),
+    ).resolves.toMatchObject({ data: { id: committedOrderId } });
+    await expect(
+      ordersService.resolveCheckoutIdempotency({
+        ...replayContext,
+        requestHash: 'f'.repeat(64),
+      }),
+    ).rejects.toThrow(
+      'Idempotency key was already used with a different checkout request',
+    );
+
+    const [differentKeyCustomer, staleCustomer, rollbackCustomer] =
+      await Promise.all(
+        ['different-key', 'stale', 'rollback'].map((scope) =>
+          prisma.user.create({
+            data: {
+              email: `idem-${scope}-${runId}@example.test`,
+              password: 'not-used',
+              role: UserRole.CUSTOMER,
+              tenantId: tenant.id,
+              restaurantId: restaurant.id,
+              branchId: branch.id,
+              isVerified: true,
+              isApproved: true,
+            },
+          }),
+        ),
+      );
+
+    const differentKeyCart = await prisma.cart.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        customerId: differentKeyCustomer.id,
+        orderType: OrderType.TAKEAWAY,
+      },
+    });
+    const consumeWithKey = (idempotencyKey: string) =>
+      prisma.$transaction(async (tx) => {
+        const consumed = await tx.cart.deleteMany({
+          where: {
+            id: differentKeyCart.id,
+            tenantId: tenant.id,
+            restaurantId: restaurant.id,
+            customerId: differentKeyCustomer.id,
+            updatedAt: differentKeyCart.updatedAt,
+            revision: differentKeyCart.revision,
+          },
+        });
+        if (consumed.count !== 1) {
+          throw new Error('stale cart');
+        }
+        return tx.order.create({
+          data: orderData(
+            differentKeyCustomer.id,
+            idempotencyKey,
+            'd'.repeat(64),
+          ),
+        });
+      });
+    const differentKeys = await Promise.allSettled([
+      consumeWithKey('0b83a855-3e53-4d8b-8d36-7fa3678f2468'),
+      consumeWithKey('42e7a537-003d-45e8-9f57-a65394765b95'),
+    ]);
+    expect(
+      differentKeys.filter(({ status }) => status === 'fulfilled'),
+    ).toHaveLength(1);
+    await expect(
+      prisma.order.count({ where: { customerId: differentKeyCustomer.id } }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.cart.count({ where: { id: differentKeyCart.id } }),
+    ).resolves.toBe(0);
+
+    const staleCart = await prisma.cart.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        customerId: staleCustomer.id,
+        orderType: OrderType.TAKEAWAY,
+      },
+    });
+    await prisma.$transaction(async (tx) => {
+      await tx.cartItem.create({
+        data: {
+          cartId: staleCart.id,
+          menuItemId: `removed-menu-item-${runId}`,
+          quantity: 1,
+        },
+      });
+      await tx.cart.update({
+        where: { id: staleCart.id },
+        data: { revision: { increment: 1 } },
+      });
+    });
+    const staleConsume = await prisma.cart.deleteMany({
+      where: {
+        id: staleCart.id,
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        customerId: staleCustomer.id,
+        updatedAt: staleCart.updatedAt,
+        revision: staleCart.revision,
+      },
+    });
+    expect(staleConsume.count).toBe(0);
+    await expect(
+      prisma.cart.findUniqueOrThrow({ where: { id: staleCart.id } }),
+    ).resolves.toMatchObject({ revision: staleCart.revision + 1 });
+    await expect(
+      prisma.cartItem.count({ where: { cartId: staleCart.id } }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.order.count({ where: { customerId: staleCustomer.id } }),
+    ).resolves.toBe(0);
+
+    const rollbackCart = await prisma.cart.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        customerId: rollbackCustomer.id,
+        orderType: OrderType.TAKEAWAY,
+      },
+    });
+    const failedKey = '0e856b82-1655-4894-b621-cd9b2ddba6a3';
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.cart.delete({ where: { id: rollbackCart.id } });
+        await tx.order.create({
+          data: orderData(rollbackCustomer.id, failedKey, 'e'.repeat(64)),
+        });
+        throw new Error('forced checkout failure');
+      }),
+    ).rejects.toThrow('forced checkout failure');
+    await expect(
+      prisma.cart.count({ where: { id: rollbackCart.id } }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.order.count({
+        where: {
+          customerId: rollbackCustomer.id,
+          checkoutIdempotencyKey: failedKey,
+        },
+      }),
     ).resolves.toBe(0);
 
     await expect(

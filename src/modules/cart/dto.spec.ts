@@ -93,6 +93,30 @@ describe('Cart DTO validation', () => {
     ).resolves.toMatchObject({ cartId: 'cart-1' });
 
     await expect(
+      validationPipe.transform(
+        {
+          idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+          cartId: 'cart-1',
+          cartVersion: '2026-09-28T06:00:00.000Z',
+          cartRevision: '12',
+        },
+        checkoutMetadata,
+      ),
+    ).resolves.toMatchObject({ cartRevision: 12 });
+
+    await expect(
+      validationPipe.transform(
+        {
+          idempotencyKey: '8b5cb490-a31b-4d88-a8db-776e8a6eb1cb',
+          cartId: 'cart-1',
+          cartVersion: '2026-09-28T06:00:00.000Z',
+          cartRevision: -1,
+        },
+        checkoutMetadata,
+      ),
+    ).rejects.toBeDefined();
+
+    await expect(
       validationPipe.transform({ paymentMethod: 'COD' }, checkoutMetadata),
     ).rejects.toBeDefined();
   });

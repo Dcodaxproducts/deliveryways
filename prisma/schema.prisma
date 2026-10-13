@@ -1527,6 +1527,7 @@ model Cart {
   orderTime         DateTime?      @map("order_time") @db.Timestamptz
   tipAmount         Decimal        @default(0) @map("tip_amount") @db.Decimal(10, 2)
   customerNote      String?        @map("customer_note")
+  revision          Int            @default(0) @map("revision")
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 

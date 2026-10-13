@@ -275,6 +275,7 @@ export interface CheckoutIdempotencyContext {
   requestHash: string;
   cartId: string;
   cartVersion: Date;
+  cartRevision?: number;
 }
 
 export interface OrderSourceContext {
@@ -465,6 +466,9 @@ export class OrdersService {
               restaurantId: idempotency.restaurantId,
               customerId: idempotency.customerId,
               updatedAt: idempotency.cartVersion,
+              ...(idempotency.cartRevision !== undefined
+                ? { revision: idempotency.cartRevision }
+                : {}),
             },
           });
           if (consumedCart.count !== 1) {

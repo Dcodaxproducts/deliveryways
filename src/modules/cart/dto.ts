@@ -341,6 +341,17 @@ export class CheckoutCartDto {
   @IsDateString()
   cartVersion!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Exact monotonic cart revision returned by the server. Optional during the backwards-compatible rollout.',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(0)
+  cartRevision?: number;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()

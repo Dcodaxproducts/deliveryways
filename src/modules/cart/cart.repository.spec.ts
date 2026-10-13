@@ -1,5 +1,38 @@
 import { CartRepository } from './cart.repository';
 
+describe('CartRepository revision mutations', () => {
+  it('claims only the expected parent revision', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const repository = new CartRepository({} as never);
+
+    await repository.claimRevision(
+      {
+        id: 'cart-1',
+        revision: 3,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+      { cart: { updateMany } } as never,
+    );
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'cart-1',
+        revision: 3,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+      data: {
+        revision: { increment: 1 },
+        updatedAt: expect.any(Date) as unknown as Date,
+      },
+    });
+  });
+});
+
 describe('CartRepository cart response memory bounds', () => {
   const emptyQuery = () => jest.fn().mockResolvedValue([]);
 

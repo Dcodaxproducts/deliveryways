@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -13,6 +14,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { AuthUserContext } from '../../common/decorators';
+import { PrismaTx } from '../../common/types';
 import {
   OrderTypeEnum,
   PaymentMethodEnum,
@@ -24,6 +26,7 @@ import {
   type ModifierQuantityAllocation,
   resolveAvailablePaymentMethods,
 } from '../../common/utils';
+import { lockCartMenuItems } from '../../common/utils/cart-menu-lock.util';
 import { ProfilesRepository } from '../profiles/profiles.repository';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -96,6 +99,7 @@ interface CartSnapshot {
   orderTime: Date | null;
   tipAmount: Prisma.Decimal;
   customerNote: string | null;
+  revision: number;
   createdAt: Date;
   updatedAt: Date;
   items: CartSnapshotItem[];
@@ -643,20 +647,30 @@ export class CartService {
         menuItem,
         matchingItem.quantity + dto.quantity,
       );
-
-      await this.cartRepository.updateItem(matchingItem.id, {
-        quantity: matchingItem.quantity + dto.quantity,
-      });
-    } else {
-      await this.cartRepository.createItem({
-        cart: { connect: { id: cart.id } },
-        menuItemId: validatedDto.menuItemId,
-        variationId: validatedDto.variationId,
-        quantity: validatedDto.quantity,
-        note: this.resolveOptionalString(validatedDto.note),
-        modifiers: packedSelections as unknown as Prisma.InputJsonValue,
-      });
     }
+
+    await this.cartRepository.transaction(async (tx) => {
+      await this.claimCartMutation(cart, [validatedDto.menuItemId], tx, true);
+      if (matchingItem) {
+        await this.cartRepository.updateItem(
+          matchingItem.id,
+          { quantity: matchingItem.quantity + dto.quantity },
+          tx,
+        );
+      } else {
+        await this.cartRepository.createItem(
+          {
+            cart: { connect: { id: cart.id } },
+            menuItemId: validatedDto.menuItemId,
+            variationId: validatedDto.variationId,
+            quantity: validatedDto.quantity,
+            note: this.resolveOptionalString(validatedDto.note),
+            modifiers: packedSelections as unknown as Prisma.InputJsonValue,
+          },
+          tx,
+        );
+      }
+    });
 
     if (skipResponse) {
       return {
@@ -683,24 +697,15 @@ export class CartService {
     requestedCustomerId?: string,
     requestedRestaurantId?: string,
   ) {
-    for (const item of dto.items) {
-      await this.addItem(
-        user,
-        item,
-        requestedCustomerId,
-        requestedRestaurantId,
-        true,
-      );
-    }
-
-    const updatedCart = await this.getExistingCartOrThrow(
+    const result = await this.addItemsBatch(
       user,
+      dto.items,
       requestedCustomerId,
       requestedRestaurantId,
     );
 
     return {
-      data: await this.buildCartResponse(updatedCart, user),
+      ...result,
       message: 'Deal added to cart successfully',
     };
   }
@@ -798,6 +803,12 @@ export class CartService {
     }
 
     await this.cartRepository.transaction(async (tx) => {
+      await this.claimCartMutation(
+        cart,
+        preparedItems.map((item) => item.selection.menuItemId),
+        tx,
+        true,
+      );
       for (const write of writes) {
         if (write.type === 'update') {
           await this.cartRepository.updateItem(
@@ -903,35 +914,44 @@ export class CartService {
       nextPayload,
     );
 
-    await this.cartRepository.updateItem(item.id, {
-      variationId:
-        dto.variationId !== undefined
-          ? this.resolveOptionalString(dto.variationId)
-          : undefined,
-      quantity: dto.quantity,
-      note:
-        dto.note !== undefined
-          ? this.resolveOptionalString(dto.note)
-          : undefined,
-      modifiers:
-        dto.modifiers !== undefined ||
-        dto.sections !== undefined ||
-        dto.modifierSelections !== undefined
-          ? (this.packCartSelections(
-              dto.modifierSelections !== undefined
-                ? this.flattenModifierSelections(dto.modifierSelections ?? [])
-                : dto.modifiers !== undefined
-                  ? (dto.modifiers ?? undefined)
-                  : this.readModifiers(item.modifiers),
-              dto.sections !== undefined
-                ? (dto.sections ?? undefined)
-                : this.readSections(item.modifiers),
-              this.readDealId(item.modifiers),
-              dto.modifierSelections !== undefined
-                ? (dto.modifierSelections ?? undefined)
-                : this.readModifierSelections(item.modifiers),
-            ) as Prisma.InputJsonValue | undefined)
-          : undefined,
+    await this.cartRepository.transaction(async (tx) => {
+      await this.claimCartMutation(item.cart, [item.menuItemId], tx, true);
+      await this.cartRepository.updateItem(
+        item.id,
+        {
+          variationId:
+            dto.variationId !== undefined
+              ? this.resolveOptionalString(dto.variationId)
+              : undefined,
+          quantity: dto.quantity,
+          note:
+            dto.note !== undefined
+              ? this.resolveOptionalString(dto.note)
+              : undefined,
+          modifiers:
+            dto.modifiers !== undefined ||
+            dto.sections !== undefined ||
+            dto.modifierSelections !== undefined
+              ? (this.packCartSelections(
+                  dto.modifierSelections !== undefined
+                    ? this.flattenModifierSelections(
+                        dto.modifierSelections ?? [],
+                      )
+                    : dto.modifiers !== undefined
+                      ? (dto.modifiers ?? undefined)
+                      : this.readModifiers(item.modifiers),
+                  dto.sections !== undefined
+                    ? (dto.sections ?? undefined)
+                    : this.readSections(item.modifiers),
+                  this.readDealId(item.modifiers),
+                  dto.modifierSelections !== undefined
+                    ? (dto.modifierSelections ?? undefined)
+                    : this.readModifierSelections(item.modifiers),
+                ) as Prisma.InputJsonValue | undefined)
+              : undefined,
+        },
+        tx,
+      );
     });
 
     const updatedCart = await this.getExistingCartOrThrow(
@@ -966,7 +986,10 @@ export class CartService {
       throw new NotFoundException('Cart item not found');
     }
 
-    await this.cartRepository.deleteItem(item.id);
+    await this.cartRepository.transaction(async (tx) => {
+      await this.claimCartMutation(item.cart, [item.menuItemId], tx, false);
+      await this.cartRepository.deleteItem(item.id, tx);
+    });
     const cart = await this.findActiveCartByCustomerId(item.cart.customerId);
 
     return {
@@ -996,13 +1019,23 @@ export class CartService {
       throw new NotFoundException('Cart deal not found');
     }
 
-    await Promise.all(
-      dealItems.map((item) =>
-        this.cartRepository.updateItem(item.item.id, {
-          quantity: item.item.quantity - item.quantity + dto.quantity,
-        }),
-      ),
-    );
+    await this.cartRepository.transaction(async (tx) => {
+      await this.claimCartMutation(
+        cart,
+        dealItems.map((item) => item.item.menuItemId),
+        tx,
+        true,
+      );
+      await Promise.all(
+        dealItems.map((item) =>
+          this.cartRepository.updateItem(
+            item.item.id,
+            { quantity: item.item.quantity - item.quantity + dto.quantity },
+            tx,
+          ),
+        ),
+      );
+    });
 
     const updatedCart = await this.getExistingCartOrThrow(
       user,
@@ -1041,14 +1074,24 @@ export class CartService {
       (item) => item.item.quantity > item.quantity,
     );
 
-    await Promise.all([
-      this.cartRepository.deleteItems(itemsToDelete),
-      ...itemsToReduce.map((item) =>
-        this.cartRepository.updateItem(item.item.id, {
-          quantity: item.item.quantity - item.quantity,
-        }),
-      ),
-    ]);
+    await this.cartRepository.transaction(async (tx) => {
+      await this.claimCartMutation(
+        cart,
+        dealItems.map((item) => item.item.menuItemId),
+        tx,
+        false,
+      );
+      await Promise.all([
+        this.cartRepository.deleteItems(itemsToDelete, tx),
+        ...itemsToReduce.map((item) =>
+          this.cartRepository.updateItem(
+            item.item.id,
+            { quantity: item.item.quantity - item.quantity },
+            tx,
+          ),
+        ),
+      ]);
+    });
 
     const updatedCart = await this.findActiveCartByCustomerId(cart.customerId);
 
@@ -1073,7 +1116,15 @@ export class CartService {
     const cart = await this.findActiveCartByCustomerId(customerId);
 
     if (cart) {
-      await this.cartRepository.deleteByCustomerId(customerId);
+      await this.cartRepository.transaction(async (tx) => {
+        await this.claimCartMutation(
+          cart,
+          cart.items.map((item) => item.menuItemId),
+          tx,
+          false,
+        );
+        await this.cartRepository.deleteByCustomerId(customerId, tx);
+      });
     }
 
     return {
@@ -1136,6 +1187,7 @@ export class CartService {
       data: {
         ...this.alignQuoteSubtotalWithCartItems(quoteResponse, displayItems),
         id: cart.id,
+        cartRevision: cart.revision,
         updatedAt: cart.updatedAt,
       },
       message: 'Cart quote generated successfully',
@@ -1165,6 +1217,7 @@ export class CartService {
       requestHash,
       cartId: dto.cartId,
       cartVersion: new Date(dto.cartVersion),
+      cartRevision: dto.cartRevision,
     };
     const replay =
       await this.ordersService.resolveCheckoutIdempotency(idempotency);
@@ -1208,7 +1261,9 @@ export class CartService {
     }
 
     if (
-      cart.updatedAt.toISOString() !== new Date(dto.cartVersion).toISOString()
+      cart.updatedAt.toISOString() !==
+        new Date(dto.cartVersion).toISOString() ||
+      (dto.cartRevision !== undefined && cart.revision !== dto.cartRevision)
     ) {
       throw new BadRequestException(
         'Cart changed after checkout started. Refresh and try again',
@@ -1241,6 +1296,36 @@ export class CartService {
     }
 
     return value;
+  }
+
+  private async claimCartMutation(
+    cart: CartSnapshot,
+    menuItemIds: string[],
+    tx: PrismaTx,
+    revalidateAvailability: boolean,
+  ): Promise<void> {
+    await lockCartMenuItems(tx, menuItemIds);
+
+    if (revalidateAvailability) {
+      const availableIds = await this.cartRepository.findAvailableMenuItemIds(
+        menuItemIds,
+        cart.restaurantId,
+        cart.branchId,
+        tx,
+      );
+      if (new Set(availableIds).size !== new Set(menuItemIds).size) {
+        throw new ConflictException(
+          'Cart menu availability changed. Refresh and try again',
+        );
+      }
+    }
+
+    const claimed = await this.cartRepository.claimRevision(cart, tx);
+    if (claimed.count !== 1) {
+      throw new ConflictException(
+        'Cart changed while it was being updated. Refresh and try again',
+      );
+    }
   }
 
   private async getExistingCartOrThrow(
@@ -1995,6 +2080,7 @@ export class CartService {
       tipAmount: Number(cart.tipAmount),
       customerNote: cart.customerNote,
       note: cart.customerNote,
+      cartRevision: cart.revision,
       items: annotatedDisplayItems,
       availablePaymentMethods,
       ...(alignedCartQuote
@@ -4597,6 +4683,7 @@ export class CartService {
       tipAmount: 0,
       customerNote: null,
       note: null,
+      cartRevision: null,
       items: [],
       createdAt: null,
       updatedAt: null,

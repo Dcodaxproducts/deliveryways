@@ -1,0 +1,2 @@
+ALTER TABLE "carts"
+  ADD COLUMN "revision" INTEGER NOT NULL DEFAULT 0;

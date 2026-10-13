@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
+import { lockCartMenuItems } from '../../../common/utils/cart-menu-lock.util';
 import { ListMenuCategoriesDto } from './dto';
 
 @Injectable()
@@ -297,8 +298,16 @@ export class MenuCategoryRepository {
     return items.map((item) => item.id);
   }
 
-  deleteCartItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
-    return this.client(tx).cartItem.deleteMany({
+  async deleteCartItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
+    const client = this.client(tx);
+    if (tx) {
+      await lockCartMenuItems(tx, menuItemIds);
+    }
+    await client.cart.updateMany({
+      where: { items: { some: { menuItemId: { in: menuItemIds } } } },
+      data: { revision: { increment: 1 }, updatedAt: new Date() },
+    });
+    return client.cartItem.deleteMany({
       where: { menuItemId: { in: menuItemIds } },
     });
   }

@@ -102,7 +102,7 @@ export class CartRepository {
   async update(id: string, data: Prisma.CartUpdateInput, tx?: PrismaTx) {
     return this.client(tx).cart.update({
       where: { id },
-      data,
+      data: { ...data, revision: { increment: 1 } },
       include: {
         items: {
           orderBy: { createdAt: 'asc' },
@@ -138,12 +138,13 @@ export class CartRepository {
   async updateItems(
     ids: string[],
     data: Prisma.CartItemUpdateManyMutationInput,
+    tx?: PrismaTx,
   ) {
     if (!ids.length) {
       return { count: 0 };
     }
 
-    return this.prisma.cartItem.updateMany({
+    return this.client(tx).cartItem.updateMany({
       where: { id: { in: ids } },
       data,
     });
@@ -153,14 +154,63 @@ export class CartRepository {
     return this.client(tx).cartItem.delete({ where: { id } });
   }
 
-  async deleteItems(ids: string[]) {
+  async deleteItems(ids: string[], tx?: PrismaTx) {
     if (!ids.length) {
       return { count: 0 };
     }
 
-    return this.prisma.cartItem.deleteMany({
+    return this.client(tx).cartItem.deleteMany({
       where: { id: { in: ids } },
     });
+  }
+
+  async claimRevision(
+    cart: {
+      id: string;
+      revision: number;
+      tenantId: string;
+      restaurantId: string;
+      customerId: string;
+    },
+    tx: PrismaTx,
+  ) {
+    return tx.cart.updateMany({
+      where: {
+        id: cart.id,
+        revision: cart.revision,
+        tenantId: cart.tenantId,
+        restaurantId: cart.restaurantId,
+        customerId: cart.customerId,
+      },
+      data: { revision: { increment: 1 }, updatedAt: new Date() },
+    });
+  }
+
+  async findAvailableMenuItemIds(
+    menuItemIds: string[],
+    restaurantId: string,
+    branchId: string,
+    tx: PrismaTx,
+  ) {
+    if (!menuItemIds.length) {
+      return [];
+    }
+
+    const items = await tx.menuItem.findMany({
+      where: {
+        id: { in: menuItemIds },
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          { branchOverrides: { none: { branchId } } },
+          { branchOverrides: { some: { branchId, isAvailable: true } } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return items.map((item) => item.id);
   }
 
   async findItemByIdForCustomer(itemId: string, customerId: string) {

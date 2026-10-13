@@ -38,8 +38,29 @@ describe('CartService', () => {
       deleteItems: jest.fn(),
       deleteByCustomerId: jest.fn(),
       deleteExpiredBefore: jest.fn(),
-      transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) =>
-        callback({}),
+      touchRevision: jest.fn(),
+      claimRevision: jest.fn().mockResolvedValue({ count: 1 }),
+      findAvailableMenuItemIds: jest.fn((menuItemIds: string[]) =>
+        Promise.resolve(menuItemIds),
+      ),
+      transaction: jest.fn(
+        async (callback: (tx: unknown) => Promise<unknown>) => {
+          const tx = { $queryRaw: jest.fn().mockResolvedValue([]) };
+          const result = await callback(tx);
+          for (const mutation of [
+            cartRepository.createItem,
+            cartRepository.updateItem,
+            cartRepository.deleteItem,
+            cartRepository.deleteItems,
+          ]) {
+            for (const call of mutation.mock.calls as unknown[][]) {
+              if (call.at(-1) === tx) {
+                call.pop();
+              }
+            }
+          }
+          return result;
+        },
       ),
     };
 
@@ -7678,6 +7699,7 @@ describe('CartService', () => {
       orderTime: null,
       tipAmount: new Prisma.Decimal(0),
       customerNote: null,
+      revision: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
       items: [],
@@ -7725,7 +7747,27 @@ describe('CartService', () => {
 
       expect(cartRepository.transaction).toHaveBeenCalledTimes(1);
       expect(cartRepository.createItem).toHaveBeenCalledTimes(2);
+      expect(cartRepository.claimRevision).toHaveBeenCalledTimes(1);
+      expect(cartRepository.claimRevision).toHaveBeenCalledWith(
+        cart,
+        expect.any(Object),
+      );
       expect(responseSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a stale concurrent mutation before writing cart items', async () => {
+      const { service, cartRepository } = makeService();
+      mockBatchInternals(service);
+      cartRepository.claimRevision.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.addItemsBatch(user, [
+          { branchId: 'branch-1', menuItemId: 'menu-1', quantity: 1 },
+        ]),
+      ).rejects.toThrow('Cart changed while it was being updated');
+
+      expect(cartRepository.createItem).not.toHaveBeenCalled();
+      expect(cartRepository.updateItem).not.toHaveBeenCalled();
     });
 
     it('does not write any item when validation fails', async () => {
@@ -7772,7 +7814,6 @@ describe('CartService', () => {
       expect(cartRepository.createItem).toHaveBeenCalledTimes(1);
       expect(cartRepository.createItem).toHaveBeenCalledWith(
         expect.objectContaining({ quantity: 3 }),
-        expect.any(Object),
       );
     });
   });
@@ -7799,6 +7840,7 @@ describe('CartService', () => {
       orderTime: null,
       tipAmount: new Prisma.Decimal(0),
       customerNote: null,
+      revision: 7,
       createdAt: updatedAt,
       updatedAt,
       items: [
@@ -7901,6 +7943,29 @@ describe('CartService', () => {
         expect.any(Object),
         expect.objectContaining({ customerId: 'customer-1' }),
       );
+    });
+
+    it('passes an optional exact cart revision to checkout consumption', async () => {
+      const { service, ordersService } = makeService();
+      mockCheckoutInternals(service);
+      ordersService.create.mockResolvedValue({ data: { id: 'order-1' } });
+
+      await service.checkout(user as never, { ...dto, cartRevision: 7 });
+
+      expect(ordersService.create).toHaveBeenCalledWith(
+        user,
+        expect.any(Object),
+        expect.objectContaining({ cartRevision: 7 }),
+      );
+    });
+
+    it('rejects a reused attempt after the cart revision changes', async () => {
+      const { service } = makeService();
+      mockCheckoutInternals(service);
+
+      await expect(
+        service.checkout(user as never, { ...dto, cartRevision: 6 }),
+      ).rejects.toThrow('Cart changed after checkout started');
     });
 
     it('rejects a reused attempt after the cart version changes', async () => {
