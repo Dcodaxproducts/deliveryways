@@ -178,7 +178,7 @@ export class MailerService {
   async sendTransactionalEmail(
     to: string,
     input: TransactionalEmailInput,
-    options?: Pick<SendMailOptions, 'attachments'>,
+    options?: Pick<SendMailOptions, 'attachments' | 'messageId'>,
   ): Promise<void> {
     const rendered = await this.renderTransactionalEmail(input);
     await this.sendEmail(to, rendered.subject, rendered.body, options);

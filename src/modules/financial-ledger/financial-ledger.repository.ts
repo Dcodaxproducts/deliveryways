@@ -490,16 +490,37 @@ export class FinancialLedgerRepository {
         ? { orderId: input.orderId, type: input.type }
         : null;
     if (!naturalIdentity) return null;
+    const exactWhere: Prisma.WalletTransactionWhereInput = {
+      ...naturalIdentity,
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      customerId: input.customerId,
+      type: input.type,
+      amount: input.delta,
+      currency: input.currency,
+      branchId: input.branchId ?? null,
+      orderId: input.orderId ?? null,
+      paymentTransactionId: input.paymentTransactionId ?? null,
+      metadata: { path: ['source'], equals: input.source },
+    };
     const candidates = await tx.walletTransaction.findMany({
-      where: {
-        ...naturalIdentity,
-        tenantId: input.tenantId,
-        restaurantId: input.restaurantId,
-        customerId: input.customerId,
-      },
+      where: exactWhere,
       take: 2,
     });
-    return this.singleLegacyCandidate(candidates, input.source);
+    if (candidates.length > 1) {
+      throw new ConflictException('Legacy financial operation is ambiguous');
+    }
+    if (candidates[0]) return candidates[0];
+    const incompatible = await tx.walletTransaction.findFirst({
+      where: naturalIdentity,
+      select: { id: true },
+    });
+    if (incompatible) {
+      throw new ConflictException(
+        'Legacy customer wallet natural identity conflicts with replay',
+      );
+    }
+    return null;
   }
 
   private async findLegacyLoyaltyTransaction(
@@ -507,17 +528,38 @@ export class FinancialLedgerRepository {
     tx: PrismaTx,
   ): Promise<LoyaltyTransaction | null> {
     if (!input.orderId) return null;
+    const naturalIdentity: Prisma.LoyaltyTransactionWhereInput = {
+      orderId: input.orderId,
+      type: input.type,
+    };
     const candidates = await tx.loyaltyTransaction.findMany({
       where: {
-        orderId: input.orderId,
-        type: input.type,
+        ...naturalIdentity,
         tenantId: input.tenantId,
         restaurantId: input.restaurantId,
         customerId: input.customerId,
+        points: input.delta,
+        branchId: input.branchId ?? null,
+        paymentTransactionId: input.paymentTransactionId ?? null,
+        metadata: { path: ['source'], equals: input.source },
       },
-      take: 3,
+      take: 2,
     });
-    const candidate = this.singleLegacyCandidate(candidates, input.source);
+    if (candidates.length > 1) {
+      throw new ConflictException('Legacy financial operation is ambiguous');
+    }
+    const candidate = candidates[0] ?? null;
+    if (!candidate) {
+      const incompatible = await tx.loyaltyTransaction.findFirst({
+        where: naturalIdentity,
+        select: { id: true },
+      });
+      if (incompatible) {
+        throw new ConflictException(
+          'Legacy loyalty natural identity conflicts with replay',
+        );
+      }
+    }
     if (candidate && input.type === LoyaltyTransactionType.EARN) {
       const order = await tx.order.findUnique({
         where: { id: input.orderId },
@@ -547,21 +589,6 @@ export class FinancialLedgerRepository {
       );
     }
     return candidate;
-  }
-
-  private singleLegacyCandidate<T extends { metadata: Prisma.JsonValue }>(
-    candidates: T[],
-    source: string,
-  ): T | null {
-    if (candidates.length === 0) return null;
-    if (candidates.length === 1) return candidates[0];
-    const matching = candidates.filter(
-      (candidate) => sourceFromMetadata(candidate.metadata) === source,
-    );
-    if (matching.length !== 1) {
-      throw new ConflictException('Legacy financial operation is ambiguous');
-    }
-    return matching[0];
   }
 
   private async inTransaction<T>(

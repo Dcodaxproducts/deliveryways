@@ -122,6 +122,16 @@ describe('PaymentsService', () => {
     };
 
     let refundRecord: Record<string, unknown> | null = null;
+    let giftCardEffect: Record<string, unknown> = {
+      id: 'gift-card-email-effect-1',
+      paymentTransactionId: 'payment-gift-1',
+      messageId: '<gift-card-payment-gift-1@feastflow.app>',
+      claimToken: null,
+      leaseExpiresAt: null,
+      attempts: 0,
+      completedAt: null,
+      lastError: null,
+    };
     const transactionTx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'payment-1' }]),
       paymentTransaction: {
@@ -160,6 +170,24 @@ describe('PaymentsService', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
       },
+      giftCardEmailEffect: {
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            giftCardEffect = { ...giftCardEffect, ...data };
+            return Promise.resolve(giftCardEffect);
+          }),
+        upsert: jest.fn().mockResolvedValue(giftCardEffect),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockImplementation(() => Promise.resolve(giftCardEffect)),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            giftCardEffect = { ...giftCardEffect, ...data };
+            return Promise.resolve(giftCardEffect);
+          }),
+      },
       restaurantWalletAccount: {
         upsert: jest.fn().mockResolvedValue({
           id: 'wallet-1',
@@ -174,6 +202,14 @@ describe('PaymentsService', () => {
     };
 
     const prisma = {
+      giftCardEmailEffect: {
+        updateMany: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            giftCardEffect = { ...giftCardEffect, ...data };
+            return Promise.resolve({ count: 1 });
+          }),
+      },
       paymentTransaction: {
         findFirst: jest.fn(),
         update: jest
@@ -3023,6 +3059,7 @@ describe('PaymentsService', () => {
           code: 'GIFT-ABC123',
         }),
       }),
+      { messageId: '<gift-card-payment-gift-1@feastflow.app>' },
     );
     expect(paymentsRepository.updateStatus).toHaveBeenLastCalledWith(
       'payment-gift-1',
@@ -3174,6 +3211,10 @@ describe('PaymentsService', () => {
         variables: expect.objectContaining({
           code: 'GIFT-EXISTING',
         }),
+      }),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        messageId: expect.stringContaining('gift-card-'),
       }),
     );
   });

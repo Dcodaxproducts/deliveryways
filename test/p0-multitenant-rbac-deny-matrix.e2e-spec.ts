@@ -389,7 +389,7 @@ describe('P0 multi-tenant and RBAC deny matrix (isolated database)', () => {
     await request(app.getHttpServer())
       .get(`/api/v1/branches/${tenantA.mainBranchId}`)
       .set(auth(staffToken))
-      .expect(403);
+      .expect(401);
     await request(app.getHttpServer())
       .post('/api/v1/auth/staff/login')
       .send({ email: staff.email, password })
@@ -406,7 +406,7 @@ describe('P0 multi-tenant and RBAC deny matrix (isolated database)', () => {
     await request(app.getHttpServer())
       .get(`/api/v1/branches/${tenantA.mainBranchId}`)
       .set(auth(staffToken))
-      .expect(403);
+      .expect(401);
     await request(app.getHttpServer())
       .post('/api/v1/auth/staff/login')
       .send({ email: staff.email, password })
@@ -440,7 +440,7 @@ describe('P0 multi-tenant and RBAC deny matrix (isolated database)', () => {
     await request(app.getHttpServer())
       .get(`/api/v1/branches/${tenantA.mainBranchId}`)
       .set(auth(staffToken))
-      .expect(403);
+      .expect(401);
     await request(app.getHttpServer())
       .post('/api/v1/auth/staff/login')
       .send({ email: staff.email, password })

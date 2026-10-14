@@ -1,33 +1,36 @@
-# Financial ledger identity rollout
+# Financial ledger and payout-integrity rollout
 
-1. Deploy the expand migrations. They add nullable columns and build unique indexes with `CONCURRENTLY`; no full-table rewrite or blocking index build is used. The refund migration only adds schema/indexes—the historical refund data update is deliberately outside migration deploy.
-2. Deploy the application. Prisma keeps customer-wallet and restaurant-wallet `idempotencyKey` nullable during the rollout so legacy NULL rows decode safely. Every new canonical ledger write still supplies a non-NULL operation key, and database defaults protect remaining legacy write paths.
-3. Backfill wallet identities in bounded batches. The script opens and commits exactly one transaction per invocation:
-   - default (1,000 rows/table): `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/backfill-financial-ledger-identities.sql`
-   - override: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-financial-ledger-identities.sql`
-   Repeat until both NULL counts are zero. Monitor replica lag and lock waits between invocations.
-4. Link historical refunds separately with `scripts/backfill-refund-source-links.sql`. It locks at most `batch_size` refunds with `FOR UPDATE SKIP LOCKED`, links only rows with exactly one successful scope/currency-compatible charge, and commits exactly one transaction per invocation. Runtime never guesses: the existence of any unlinked legacy refund for an order returns 409 while linked refund capacity is computed by a database aggregate.
-5. Before any future NOT NULL validation, require zero NULL identities, no duplicate identities, and a completed replay rehearsal. This rollout intentionally does not add NOT NULL.
+## Expand (online-safe)
 
-## Refund-link invocations
+1. Apply Prisma migrations. Migrations `20261014190000` and `20261014193000` are metadata-only: they add nullable columns/types and a new empty outbox table. They perform no historical `UPDATE` and build no index on a populated hot table.
+2. Deploy the application. New gift-card emails use a durable effect with a lease/fencing token and deterministic RFC Message-ID. New refunds always receive a lifecycle and provider idempotency key. Legacy refund rows whose lifecycle is still NULL are quarantined by runtime and can only reconcile.
 
-- Default first page: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/backfill-refund-source-links.sql`
-- Override batch size: add `-v batch_size=500`.
-- The result reports `scanned_refunds`, `linked_refunds`, and `next_cursor`. Pass the returned cursor with `-v after_id='<next_cursor>'` to continue past ambiguous rows. Start again without `after_id` after reconciliation to pick up rows that became linkable. Stop a pass when `scanned_refunds` is zero.
+## Bounded backfills
 
-Ambiguous unlinked legacy refunds are intentionally not guessed. Reconcile them manually, then rerun the bounded linker.
+Each script locks at most `batch_size` rows with `FOR UPDATE SKIP LOCKED`, commits once, and reports a cursor. Repeat a cursor pass until `scanned=0`; restart without a cursor after manual reconciliation to revisit previously ambiguous rows.
 
-## Verification required for each rollout
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-financial-ledger-identities.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-gift-card-source-payments.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-refund-source-links.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-refund-lifecycle.sql
+```
 
-- Fresh database: apply all migrations.
-- Upgrade rehearsal: seed pre-Increment-3 wallet/restaurant-ledger NULL identities plus linked and unlinked refunds, apply Increment-3 migrations, verify Prisma can decode/adopt NULL identity rows, and run both backfill scripts exactly as documented.
-- Large legacy-refund fixture: verify the runtime existence lookup uses `payment_transactions_legacy_refund_capacity_idx`, returns one bounded row, and refund capacity uses the linked-refund aggregate index.
-- Confirm migration SQL contains no historical refund `UPDATE` and scripts affect no more than the configured batch size per invocation.
+Pass `-v after_id='<next_cursor>'` for the gift-card/refund scripts. Never run an unbounded historical update during deploy.
 
+## Audit and indexes
 
-## Verified evidence (2026-10-14)
+1. Run `scripts/audit-payout-integrity-rollout.sql`. Resolve every non-zero duplicate count. NULL/unlinked counts may remain only while the corresponding backfill is still running; runtime keeps those rows quarantined.
+2. From `psql` with no surrounding transaction, run `scripts/create-payout-integrity-indexes-concurrently.sql`. It creates the coupon source and provider idempotency unique indexes with `CONCURRENTLY`, plus the refund recovery index.
+3. Rerun the audit and verify the expected indexes are valid in `pg_index`.
 
-- Fresh PostgreSQL 16 rehearsal applied all 132 migrations successfully.
-- Seeded pre-Increment-3 upgrade preserved one customer-wallet NULL identity, one restaurant-wallet NULL identity, and one unlinked refund through schema migration; the default script invocations backfilled all three safely.
-- Batch-size rehearsal seeded two NULL rows per ledger and two unlinked refunds. One `batch_size=1` invocation left exactly one row in each category, proving bounded work and one commit per invocation.
-- A PostgreSQL P0 fixture seeded 5,000 unlinked refunds across 5,000 orders. The one-row existence query used `payment_transactions_legacy_refund_capacity_idx`; all 15 affected financial P0 tests passed, including NULL decode/adoption.
+## Gift-card email delivery semantics
+
+The payment/card/outbox effect commit atomically. A worker locks the effect, acquires a 60-second lease, sends outside the database transaction, and completes only with the same fencing token. Concurrent webhooks therefore produce one logical effect. A crash after SMTP acceptance but before local completion can require one controlled retry after lease expiry; every retry carries the same deterministic Message-ID (`<gift-card-<payment-id>@feastflow.app>`) so providers that deduplicate Message-ID do not redeliver. SMTP itself cannot provide a universal distributed exactly-once guarantee; the durable effect bounds retries and makes them auditable.
+
+## Required rehearsal
+
+- Fresh PostgreSQL: apply the complete migration history, run concurrent-index script, validate Prisma.
+- Seeded upgrade: stop before the two expand migrations, seed high-cardinality gift cards/refunds/ledger rows, apply migrations, prove NULL legacy rows decode safely, then run each backfill with `batch_size=1` and prove no invocation changes more than one target row.
+- P0 PostgreSQL: legacy replay later than previous limits and duplicates; concurrent gift-card webhooks; refund definitive failure release, ambiguous success/failure reconciliation, provider-success crash recovery, stale lease fencing, duplicate callback, and one stable provider idempotency key.
+- Compare the full P0 baseline before and after the change.

@@ -1760,6 +1760,7 @@ model PaymentTransaction {
   notifications            Notification[]
   sourcePaymentTransaction PaymentTransaction?  @relation("PaymentRefundSource", fields: [sourcePaymentTransactionId], references: [id])
   refundTransactions       PaymentTransaction[] @relation("PaymentRefundSource")
+  giftCardEmailEffect      GiftCardEmailEffect?
 
   @@index([orderId, status, createdAt])
   @@index([tenantId, createdAt])
@@ -1768,6 +1769,24 @@ model PaymentTransaction {
   @@index([refundLifecycleStatus, refundLeaseExpiresAt, createdAt], map: "payment_transactions_refund_recovery_idx")
   @@index([restaurantId, orderId, type, status], map: "payment_transactions_restaurant_order_payout_aggregate_idx")
   @@map("payment_transactions")
+}
+
+model GiftCardEmailEffect {
+  id                   String    @id @default(cuid())
+  paymentTransactionId String    @unique(map: "gift_card_email_effects_payment_key") @map("payment_transaction_id")
+  messageId            String    @map("message_id") @db.VarChar(320)
+  claimToken           String?   @map("claim_token") @db.VarChar(64)
+  leaseExpiresAt       DateTime? @map("lease_expires_at") @db.Timestamptz
+  attempts             Int       @default(0)
+  completedAt          DateTime? @map("completed_at") @db.Timestamptz
+  lastError            String?   @map("last_error") @db.VarChar(1000)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  paymentTransaction PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([completedAt, leaseExpiresAt, createdAt], map: "gift_card_email_effects_pending_idx")
+  @@map("gift_card_email_effects")
 }
 
 model WalletAccount {

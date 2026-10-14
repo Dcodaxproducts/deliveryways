@@ -144,5 +144,57 @@ describe('P0 Stripe gift-card webhook concurrency (isolated PostgreSQL)', () => 
         giftCardCode: firstCard.code,
       }),
     );
+    const emailEffect = await prisma.giftCardEmailEffect.findUniqueOrThrow({
+      where: { paymentTransactionId: payment.id },
+    });
+    expect(emailEffect).toMatchObject({
+      attempts: 1,
+      claimToken: null,
+      leaseExpiresAt: null,
+      messageId: `<gift-card-${payment.id}@feastflow.app>`,
+    });
+    expect(emailEffect.completedAt).toBeInstanceOf(Date);
+    expect(mailerService.sendTransactionalEmail).toHaveBeenCalledTimes(1);
+    expect(mailerService.sendTransactionalEmail).toHaveBeenCalledWith(
+      recipientEmail,
+      expect.objectContaining({ template: 'giftCard' }),
+      { messageId: `<gift-card-${payment.id}@feastflow.app>` },
+    );
+
+    await prisma.giftCardEmailEffect.update({
+      where: { id: emailEffect.id },
+      data: { completedAt: null, attempts: 0 },
+    });
+    const complete = jest
+      .spyOn(prisma.giftCardEmailEffect, 'updateMany')
+      .mockRejectedValueOnce(
+        new Error('simulated crash after SMTP acceptance'),
+      );
+    await expect(
+      service.handleStripeWebhook(Buffer.from('{}'), 'sig-crash'),
+    ).rejects.toThrow('simulated crash after SMTP acceptance');
+    complete.mockRestore();
+    await prisma.giftCardEmailEffect.update({
+      where: { id: emailEffect.id },
+      data: { leaseExpiresAt: new Date(Date.now() - 1) },
+    });
+    await service.handleStripeWebhook(Buffer.from('{}'), 'sig-retry');
+    const retriedEffect = await prisma.giftCardEmailEffect.findUniqueOrThrow({
+      where: { paymentTransactionId: payment.id },
+    });
+    expect(retriedEffect).toMatchObject({
+      attempts: 2,
+      claimToken: null,
+      leaseExpiresAt: null,
+    });
+    expect(retriedEffect.completedAt).toBeInstanceOf(Date);
+    const emailCalls = mailerService.sendTransactionalEmail.mock.calls as Array<
+      [string, unknown, { messageId: string }]
+    >;
+    const messageIds = emailCalls.map((call) => call[2].messageId);
+    expect(messageIds).toHaveLength(3);
+    expect(new Set(messageIds)).toEqual(
+      new Set([`<gift-card-${payment.id}@feastflow.app>`]),
+    );
   });
 });

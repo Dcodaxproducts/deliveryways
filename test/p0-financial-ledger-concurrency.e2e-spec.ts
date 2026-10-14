@@ -386,6 +386,106 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
     ).resolves.toMatchObject({ balance: new Prisma.Decimal(50) });
   });
 
+  it('finds an exact legacy replay after broad rows and rejects exact duplicates', async () => {
+    const scope = await createScope('ledger-late-exact-replay');
+    const payment = await prisma.paymentTransaction.create({
+      data: {
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        paymentMethod: PaymentMethod.STRIPE,
+        type: PaymentTransactionType.CHARGE,
+        status: PaymentStatus.PAID,
+        amount: new Prisma.Decimal(75),
+        currency: 'PKR',
+      },
+    });
+    const wallet = await prisma.walletAccount.create({
+      data: {
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        customerId: scope.customer.id,
+        balance: new Prisma.Decimal(75),
+        currency: 'PKR',
+      },
+    });
+    await prisma.walletTransaction.createMany({
+      data: Array.from({ length: 25 }, (_, index) => ({
+        id: 'legacy-broad-' + runId + '-' + String(index).padStart(2, '0'),
+        walletAccountId: wallet.id,
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        customerId: scope.customer.id,
+        paymentTransactionId: payment.id,
+        type: WalletTransactionType.DEBIT,
+        amount: new Prisma.Decimal(-1),
+        balanceAfter: new Prisma.Decimal(75),
+        currency: 'PKR',
+        metadata: { source: 'INCOMPATIBLE_' + index },
+        idempotencyKey: null,
+      })),
+    });
+    const exact = await prisma.walletTransaction.create({
+      data: {
+        id: 'legacy-late-exact-' + runId,
+        walletAccountId: wallet.id,
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        customerId: scope.customer.id,
+        paymentTransactionId: payment.id,
+        type: WalletTransactionType.CREDIT,
+        amount: new Prisma.Decimal(75),
+        balanceAfter: new Prisma.Decimal(75),
+        currency: 'PKR',
+        metadata: { source: 'LATE_EXACT' },
+        idempotencyKey: null,
+      },
+    });
+    const input = {
+      tenantId: scope.tenant.id,
+      restaurantId: scope.restaurant.id,
+      branchId: scope.branch.id,
+      customerId: scope.customer.id,
+      paymentTransactionId: payment.id,
+      operationKey: 'late-exact:' + runId,
+      requestHash: requestHash({ payment: payment.id, amount: 75 }),
+      allowNegative: false,
+      source: 'LATE_EXACT',
+      delta: new Prisma.Decimal(75),
+      currency: 'PKR',
+      type: WalletTransactionType.CREDIT,
+    };
+    await expect(ledger.applyCustomerWalletDelta(input)).resolves.toMatchObject(
+      {
+        replayed: true,
+        transaction: { id: exact.id },
+      },
+    );
+    await prisma.walletTransaction.create({
+      data: {
+        walletAccountId: wallet.id,
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        customerId: scope.customer.id,
+        paymentTransactionId: payment.id,
+        type: WalletTransactionType.CREDIT,
+        amount: new Prisma.Decimal(75),
+        balanceAfter: new Prisma.Decimal(75),
+        currency: 'PKR',
+        metadata: { source: 'LATE_EXACT' },
+        idempotencyKey: null,
+      },
+    });
+    await expect(
+      ledger.applyCustomerWalletDelta({
+        ...input,
+        operationKey: 'late-exact-duplicate:' + runId,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
   it('uses a bounded indexed existence query with 5,000 unlinked legacy refunds', async () => {
     const scope = await createScope('ledger-large-refund-capacity');
     const prefix = 'large-refund-' + runId;

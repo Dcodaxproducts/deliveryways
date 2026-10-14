@@ -3680,7 +3680,10 @@ export class PaymentsService {
       if (current.refundLifecycleStatus === 'FAILED_RELEASED') {
         return { action: 'FAILED' as const, refund: current };
       }
-      if (current.refundLifecycleStatus === 'LEGACY_QUARANTINED') {
+      if (
+        current.refundLifecycleStatus === null ||
+        current.refundLifecycleStatus === 'LEGACY_QUARANTINED'
+      ) {
         return { action: 'RECONCILE' as const, refund: current };
       }
       if (
@@ -4997,6 +5000,14 @@ export class PaymentsService {
             'Paid gift card purchase does not match its issued card',
           );
         }
+        await tx.giftCardEmailEffect.upsert({
+          where: { paymentTransactionId: payment.id },
+          create: {
+            paymentTransactionId: payment.id,
+            messageId: this.giftCardEmailMessageId(payment.id),
+          },
+          update: {},
+        });
         return payment;
       }
       if (payment.status !== PaymentStatus.PENDING || existingGiftCard) {
@@ -5066,6 +5077,12 @@ export class PaymentsService {
       if (transition.count !== 1) {
         throw new ConflictException('Gift card purchase was already fulfilled');
       }
+      await tx.giftCardEmailEffect.create({
+        data: {
+          paymentTransactionId: payment.id,
+          messageId: this.giftCardEmailMessageId(payment.id),
+        },
+      });
 
       return tx.paymentTransaction.findUniqueOrThrow({
         where: { id: payment.id },
@@ -5082,9 +5099,28 @@ export class PaymentsService {
     processedAt?: Date | null;
   }) {
     const providerData = this.asJsonObject(payment.providerData);
-    if (typeof providerData.giftCardEmailSentAt === 'string') {
-      return;
-    }
+    const claimToken = randomBytes(24).toString('hex');
+    const claim = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "gift_card_email_effects" WHERE "payment_transaction_id" = ${payment.id} FOR UPDATE`,
+      );
+      const effect = await tx.giftCardEmailEffect.findUniqueOrThrow({
+        where: { paymentTransactionId: payment.id },
+      });
+      if (effect.completedAt) return null;
+      if (effect.leaseExpiresAt && effect.leaseExpiresAt > new Date())
+        return null;
+      return tx.giftCardEmailEffect.update({
+        where: { id: effect.id },
+        data: {
+          claimToken,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+          attempts: { increment: 1 },
+          lastError: null,
+        },
+      });
+    });
+    if (!claim) return;
 
     const recipientEmail =
       typeof providerData.recipientEmail === 'string'
@@ -5126,21 +5162,54 @@ export class PaymentsService {
         ? providerData.expiresAt.trim()
         : '';
 
-    await this.mailerService.sendTransactionalEmail(recipientEmail, {
-      template: 'giftCard',
-      locale:
-        typeof providerData.locale === 'string' ? providerData.locale : null,
-      variables: {
-        buyerName,
-        buyerEmail,
-        title,
-        amount: Number(payment.amount).toFixed(2),
-        currency: payment.currency,
-        code,
-        expiresAt,
-        message,
+    try {
+      await this.mailerService.sendTransactionalEmail(
+        recipientEmail,
+        {
+          template: 'giftCard',
+          locale:
+            typeof providerData.locale === 'string'
+              ? providerData.locale
+              : null,
+          variables: {
+            buyerName,
+            buyerEmail,
+            title,
+            amount: Number(payment.amount).toFixed(2),
+            currency: payment.currency,
+            code,
+            expiresAt,
+            message,
+          },
+        },
+        { messageId: claim.messageId },
+      );
+    } catch (error: unknown) {
+      await this.prisma.giftCardEmailEffect.updateMany({
+        where: { id: claim.id, claimToken, completedAt: null },
+        data: {
+          claimToken: null,
+          leaseExpiresAt: null,
+          lastError:
+            error instanceof Error
+              ? error.message.slice(0, 1000)
+              : 'Gift card email delivery failed',
+        },
+      });
+      throw error;
+    }
+    const completed = await this.prisma.giftCardEmailEffect.updateMany({
+      where: { id: claim.id, claimToken, completedAt: null },
+      data: {
+        completedAt: new Date(),
+        claimToken: null,
+        leaseExpiresAt: null,
+        lastError: null,
       },
     });
+    if (completed.count !== 1) {
+      throw new ConflictException('Gift card email completion was fenced');
+    }
 
     await this.paymentsRepository.updateStatus(payment.id, {
       status: PaymentStatus.PAID,
@@ -5152,6 +5221,10 @@ export class PaymentsService {
       } as Prisma.InputJsonValue,
       processedAt: payment.processedAt ?? new Date(),
     });
+  }
+
+  private giftCardEmailMessageId(paymentId: string): string {
+    return `<gift-card-${paymentId}@feastflow.app>`;
   }
 
   private async generateUniqueGiftCardCode(
