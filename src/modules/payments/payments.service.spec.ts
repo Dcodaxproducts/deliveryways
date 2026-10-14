@@ -124,6 +124,7 @@ describe('PaymentsService', () => {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'payment-1' }]),
       paymentTransaction: {
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn(),
         findUnique: jest
           .fn()
@@ -1502,19 +1503,9 @@ describe('PaymentsService', () => {
         customerId: 'customer-1',
       },
     });
-    transactionTx.paymentTransaction.findMany
-      .mockResolvedValueOnce([
-        {
-          id: 'legacy-refund-1',
-          tenantId: 'tenant-1',
-          restaurantId: 'restaurant-1',
-          currency: 'EUR',
-        },
-      ])
-      .mockResolvedValueOnce([
-        { id: 'payment-legacy-1' },
-        { id: 'payment-legacy-2' },
-      ]);
+    transactionTx.paymentTransaction.findFirst.mockResolvedValue({
+      id: 'legacy-refund-1',
+    });
 
     await expect(
       service.refund(
@@ -1527,6 +1518,15 @@ describe('PaymentsService', () => {
     );
     expect(stripePaymentsService.refundPaymentIntent).not.toHaveBeenCalled();
     expect(transactionTx.paymentTransaction.create).not.toHaveBeenCalled();
+    expect(transactionTx.paymentTransaction.findFirst).toHaveBeenCalledWith({
+      where: {
+        orderId: 'order-legacy-1',
+        sourcePaymentTransactionId: null,
+        type: PaymentTransactionType.REFUND,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.REFUNDED] },
+      },
+      select: { id: true },
+    });
   });
 
   it('debits the restaurant wallet when a platform-collected order is refunded', async () => {

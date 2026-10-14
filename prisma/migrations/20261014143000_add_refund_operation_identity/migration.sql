@@ -10,26 +10,19 @@ CREATE UNIQUE INDEX CONCURRENTLY "payment_transactions_idempotency_key"
 CREATE INDEX CONCURRENTLY "payment_transactions_refund_source_status_idx"
   ON "payment_transactions"("source_payment_transaction_id", "type", "status");
 
--- Only adopt a refund when exactly one successful source charge exists.
-UPDATE "payment_transactions" AS refund
-SET "source_payment_transaction_id" = source."charge_id"
-FROM (
-  SELECT "order_id", MIN("id") AS "charge_id"
-  FROM "payment_transactions"
-  WHERE "type" = 'CHARGE'
-    AND "status" IN ('PAID', 'REFUNDED')
-    AND "order_id" IS NOT NULL
-  GROUP BY "order_id"
-  HAVING COUNT(*) = 1
-) AS source
-WHERE refund."type" = 'REFUND'
-  AND refund."status" IN ('PENDING', 'REFUNDED')
-  AND refund."source_payment_transaction_id" IS NULL
-  AND refund."order_id" = source."order_id";
+-- Historical refunds are linked after deploy by the bounded SKIP LOCKED
+-- backfill script. Keeping row updates out of the migration avoids a table-wide
+-- data rewrite during schema rollout.
 
 CREATE INDEX CONCURRENTLY "payment_transactions_legacy_refund_capacity_idx"
   ON "payment_transactions"("order_id", "type", "status")
   WHERE "source_payment_transaction_id" IS NULL AND "type" = 'REFUND';
+
+CREATE INDEX CONCURRENTLY "payment_transactions_legacy_refund_backfill_idx"
+  ON "payment_transactions"("id")
+  WHERE "source_payment_transaction_id" IS NULL
+    AND "type" = 'REFUND'
+    AND "status" IN ('PENDING', 'REFUNDED');
 
 ALTER TABLE "payment_transactions"
   ADD CONSTRAINT "payment_transactions_source_payment_transaction_id_fkey"

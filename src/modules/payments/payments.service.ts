@@ -3223,50 +3223,19 @@ export class PaymentsService {
       ) {
         throw new BadRequestException('Only paid transactions can be refunded');
       }
-      const unlinkedLegacyRefunds = await tx.paymentTransaction.findMany({
+      const unlinkedLegacyRefund = await tx.paymentTransaction.findFirst({
         where: {
           orderId,
           sourcePaymentTransactionId: null,
           type: PaymentTransactionType.REFUND,
           status: { in: [PaymentStatus.PENDING, PaymentStatus.REFUNDED] },
         },
-        select: {
-          id: true,
-          tenantId: true,
-          restaurantId: true,
-          currency: true,
-        },
+        select: { id: true },
       });
-      if (unlinkedLegacyRefunds.length > 0) {
-        const successfulCharges = await tx.paymentTransaction.findMany({
-          where: {
-            orderId,
-            type: PaymentTransactionType.CHARGE,
-            status: { in: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
-          },
-          select: { id: true },
-          take: 2,
-        });
-        const canAdopt =
-          successfulCharges.length === 1 &&
-          successfulCharges[0].id === payment.id &&
-          unlinkedLegacyRefunds.every(
-            (refund) =>
-              refund.tenantId === payment.tenantId &&
-              refund.restaurantId === payment.restaurantId &&
-              refund.currency.toUpperCase() === currency,
-          );
-        if (!canAdopt) {
-          throw new ConflictException(
-            'Legacy refunds are ambiguous and must be reconciled before another refund',
-          );
-        }
-        await tx.paymentTransaction.updateMany({
-          where: {
-            id: { in: unlinkedLegacyRefunds.map((refund) => refund.id) },
-          },
-          data: { sourcePaymentTransactionId: payment.id },
-        });
+      if (unlinkedLegacyRefund) {
+        throw new ConflictException(
+          'Legacy refunds are ambiguous and must be reconciled before another refund',
+        );
       }
       const reserved = await tx.paymentTransaction.aggregate({
         where: {

@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   LoyaltyTransactionType,
+  OrderType,
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
@@ -311,9 +312,7 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
         balanceAfter: new Prisma.Decimal(50),
         currency: 'PKR',
         metadata: { source: 'WALLET_TOP_UP' },
-        idempotencyKey: FinancialLedgerRepository.createOperationKey(
-          'legacy:customer-wallet:' + runId,
-        ),
+        idempotencyKey: null,
       },
     });
     const topUpHash = requestHash({ payment: payment.id, amount: 50 });
@@ -359,9 +358,7 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
         balanceAfter: new Prisma.Decimal(50),
         currency: 'PKR',
         metadata: { source: 'PLATFORM_COLLECTED_ORDER_PAYMENT' },
-        idempotencyKey: FinancialLedgerRepository.createOperationKey(
-          'legacy:restaurant-wallet:' + runId,
-        ),
+        idempotencyKey: null,
       },
     });
     const creditHash = requestHash({ payment: payment.id, amount: 50 });
@@ -388,6 +385,88 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
       }),
     ).resolves.toMatchObject({ balance: new Prisma.Decimal(50) });
   });
+
+  it('uses a bounded indexed existence query with 5,000 unlinked legacy refunds', async () => {
+    const scope = await createScope('ledger-large-refund-capacity');
+    const prefix = 'large-refund-' + runId;
+    await prisma.$executeRaw(
+      Prisma.sql`
+        WITH generated AS (
+          SELECT generate_series(1, 5000) AS sequence
+        ), inserted_orders AS (
+          INSERT INTO "orders" (
+            "id", "tenant_id", "restaurant_id", "branch_id", "customer_id",
+            "order_type", "payment_method", "subtotal", "total_amount",
+            "created_at", "updated_at"
+          )
+          SELECT
+            ${prefix} || ':order:' || sequence,
+            ${scope.tenant.id},
+            ${scope.restaurant.id},
+            ${scope.branch.id},
+            ${scope.customer.id},
+            ${OrderType.TAKEAWAY}::"OrderType",
+            ${PaymentMethod.STRIPE}::"PaymentMethod",
+            1.00,
+            1.00,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+          FROM generated
+          RETURNING "id"
+        )
+        INSERT INTO "payment_transactions" (
+          "id", "order_id", "tenant_id", "restaurant_id", "branch_id",
+          "payment_method", "type", "status", "amount", "currency",
+          "created_at", "updated_at"
+        )
+        SELECT
+          ${prefix} || ':payment:' || substring("id" from '[^:]+$'),
+          "id",
+          ${scope.tenant.id},
+          ${scope.restaurant.id},
+          ${scope.branch.id},
+          ${PaymentMethod.STRIPE}::"PaymentMethod",
+          ${PaymentTransactionType.REFUND}::"PaymentTransactionType",
+          ${PaymentStatus.REFUNDED}::"PaymentStatus",
+          1.00,
+          'PKR',
+          CURRENT_TIMESTAMP,
+          CURRENT_TIMESTAMP
+        FROM inserted_orders
+      `,
+    );
+    await prisma.$executeRaw(Prisma.sql`ANALYZE "payment_transactions"`);
+
+    const targetOrderId = prefix + ':order:5000';
+    const legacyRefund = await prisma.paymentTransaction.findFirst({
+      where: {
+        orderId: targetOrderId,
+        sourcePaymentTransactionId: null,
+        type: PaymentTransactionType.REFUND,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.REFUNDED] },
+      },
+      select: { id: true },
+    });
+    expect(legacyRefund).toEqual({ id: prefix + ':payment:5000' });
+
+    const plan = await prisma.$queryRaw<
+      Array<{ 'QUERY PLAN': Prisma.JsonValue }>
+    >(
+      Prisma.sql`
+        EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+        SELECT "id"
+        FROM "payment_transactions"
+        WHERE "order_id" = ${targetOrderId}
+          AND "source_payment_transaction_id" IS NULL
+          AND "type" = 'REFUND'
+          AND "status" IN ('PENDING', 'REFUNDED')
+        LIMIT 1
+      `,
+    );
+    expect(JSON.stringify(plan)).toContain(
+      'payment_transactions_legacy_refund_capacity_idx',
+    );
+  }, 60_000);
 
   it('acquires multi-account locks in sorted order without deadlock', async () => {
     const scope = await createScope('ledger-sorted-locks');
