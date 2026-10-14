@@ -8,16 +8,24 @@ Migration `20261014170000_add_payout_integrity_lifecycle` is metadata-only: enum
 
 1. Back up the database and verify restore metadata.
 2. Resolve the deployed image commit and prove it is an ancestor of the release.
-3. Run the legacy audit section of `scripts/backfill-payout-integrity.sql`. Zero-row, multiple-row, wrong-wallet, wrong-tenant, wrong-restaurant, wrong-currency, zero/non-negative, and wrong-amount matches are quarantined; never synthesize or choose a debit.
-4. Confirm no migration or concurrent index build is active.
+3. Confirm no migration or concurrent index build is active and that `psql` can connect with `ON_ERROR_STOP`.
+4. Keep the current application image and payout/refund workers running; do not deploy or enable the release image yet.
 
 ## Online rollout
 
+The order below is a hard release barrier. Migration success alone is not permission to start the new application.
+
 1. Apply Prisma migrations: `npx prisma migrate deploy`.
-2. Outside an explicit transaction, run `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/create-payout-indexes-concurrently.sql`. Monitor `pg_stat_progress_create_index` and retry only invalid/failed indexes after inspection.
-3. Run one bounded backfill batch at a time: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-payout-integrity.sql`. It uses `FOR UPDATE SKIP LOCKED`; repeat until `updated_rows = 0`.
-4. Re-run the audit and require zero unsafe rows, or explicitly quarantine and reconcile every returned payout.
-5. Start one payout worker, inspect reconciliation and expired leases, then scale workers.
+2. Outside an explicit transaction, run both required online index scripts, in order:
+   `psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/create-payout-indexes-concurrently.sql`, then
+   `psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/create-payout-integrity-indexes-concurrently.sql`.
+   Monitor `pg_stat_progress_create_index`; never wrap either script in `BEGIN`/`COMMIT`.
+3. Run the executable release gate: `npm run rollout:payout:verify`. It must report `payout predeploy index gate passed`. It fails if the obsolete `restaurant_wallet_transactions_payout_request_id_key` exists, any required index is absent, or any index on the rollout tables is invalid/incomplete.
+4. Run one bounded backfill batch at a time: `psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-payout-integrity.sql`. It uses `FOR UPDATE SKIP LOCKED`; repeat until `updated_rows = 0` where operationally appropriate. Zero-row, multiple-row, wrong-wallet, wrong-tenant, wrong-restaurant, wrong-currency, zero/non-negative, and wrong-amount matches are quarantined; never synthesize or choose a debit.
+5. Run `scripts/audit-payout-integrity-rollout.sql` and inspect the legacy audit output. Require zero duplicate identities; explicitly quarantine and reconcile every unsafe payout before allowing it to execute.
+6. Only after steps 1-5 succeed, deploy/enable the application API and start one payout/refund worker. Inspect reconciliation and expired leases before scaling workers.
+
+`npm run deploy:safe` encodes this barrier before its PM2 restart. The disposable proof is `npm run rollout:payout:rehearse`: migrations-only must fail the release gate, both concurrent scripts must make it pass, and payout P0 must then pass.
 
 ## Recovery
 
@@ -38,16 +46,25 @@ Migration `20261014170000_add_payout_integrity_lifecycle` is metadata-only: enum
 
 Stop new payout initiation, reconcile committed provider transfers, and roll back application instances. Keep additive columns, enum labels, and valid concurrent indexes during emergency rollback. Removing enum labels or lifecycle data is not an online rollback.
 
+### Partial failure before enablement
+
+- If migrations succeed but an index script or the predeploy gate fails, leave the old application image active and do not start new payout/refund workers. The additive schema may remain in place.
+- Inspect `pg_stat_progress_create_index` and `pg_index`. If a concurrent build left an invalid index, drop only that failed index with `DROP INDEX CONCURRENTLY`, rerun its owning script, and rerun `npm run rollout:payout:verify`.
+- Never recreate `restaurant_wallet_transactions_payout_request_id_key`: typed payout debit/release ledger entries must coexist for one payout request. Restoring that obsolete uniqueness reproduces payout P0 failures.
+- If a bounded backfill or audit stops, keep application enablement blocked, preserve its completed batches, reconcile reported rows, and resume from the next bounded batch. Do not undo completed metadata/index work.
+- If the new application was enabled accidentally, disable new payout/refund initiation and workers first, then roll back to the previously verified image while retaining additive migrations and valid indexes. Reconcile any provider-side transfer before changing reserved liability.
+
 ## Refund lifecycle and gift-card fulfillment integrity
 
 Migration: `20261014193000_add_refund_lifecycle`.
 
 ### Rollout
 
-1. Deploy the additive migration before application code. It adds nullable lifecycle/fencing columns, recovery indexes, the `REFUND_RELEASE` ledger type, and removes the obsolete one-entry-per-payout index so typed payout debit/release entries can coexist.
+1. Apply the additive migration before application code. It adds nullable lifecycle/fencing columns and the `REFUND_RELEASE` ledger type. The migration does **not** remove the obsolete one-entry-per-payout index or build the hot-table recovery indexes.
 2. The migration adopts completed legacy refunds as `COMPLETED`. Pending legacy refunds become `LEGACY_QUARANTINED`; they must never be submitted to a provider automatically.
 3. The preceding `20261014190000_add_gift_card_source_payment` migration owns the unique gift-card source-payment identity and its bounded legacy adoption.
-4. Deploy application workers/API, then monitor counts by `refund_lifecycle_status`, especially `NEEDS_RECONCILIATION` and `LEGACY_QUARANTINED`.
+4. Run both concurrent-index scripts and the predeploy index gate, then bounded backfills/audits, exactly as listed above.
+5. Only then deploy application workers/API; monitor counts by `refund_lifecycle_status`, especially `NEEDS_RECONCILIATION` and `LEGACY_QUARANTINED`.
 
 ### Refund state contract
 

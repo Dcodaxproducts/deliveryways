@@ -37,6 +37,8 @@
     "db:restore": "bash scripts/restore-db.sh",
     "sync:server": "bash scripts/sync-server.sh",
     "deploy:safe": "bash scripts/deploy-safe.sh",
+    "rollout:payout:verify": "psql \"$DATABASE_URL\" -X -v ON_ERROR_STOP=1 -f scripts/verify-payout-indexes-predeploy.sql",
+    "rollout:payout:rehearse": "bash scripts/rehearse-payout-rollout.sh",
     "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev",
     "qa:partner-branch": "ts-node scripts/qa/partner-branch-fixture.ts"
   },
