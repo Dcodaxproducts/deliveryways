@@ -164,6 +164,13 @@ export class StripePaymentsService {
     );
   }
 
+  async retrieveTransfer(
+    transferId: string,
+    credentials?: StripeCheckoutCredentials,
+  ) {
+    return this.requireStripe(credentials).transfers.retrieve(transferId);
+  }
+
   constructWebhookEvent(
     payload: Buffer | string,
     signature?: string,

@@ -260,6 +260,7 @@ enum RestaurantWalletTransactionType {
   ORDER_CREDIT
   REFUND_DEBIT
   PAYOUT_DEBIT
+  PAYOUT_RELEASE
   ADJUSTMENT
 }
 
@@ -269,6 +270,13 @@ enum RestaurantPayoutRequestStatus {
   REJECTED
   PAID
   CANCELLED
+  RESERVED
+  PROCESSING
+  PROVIDER_SUCCEEDED
+  COMPLETED
+  FAILED
+  RELEASED
+  NEEDS_RECONCILIATION
 }
 
 enum LoyaltyTransactionType {
@@ -1821,7 +1829,7 @@ model RestaurantWalletTransaction {
   branchId               String?                         @map("branch_id")
   orderId                String?                         @map("order_id")
   paymentTransactionId   String?                         @unique @map("payment_transaction_id")
-  payoutRequestId        String?                         @unique @map("payout_request_id")
+  payoutRequestId        String?                         @map("payout_request_id")
   subscriptionInvoiceKey String?                         @unique @map("subscription_invoice_key") @db.VarChar(255)
   type                   RestaurantWalletTransactionType
   amount                 Decimal                         @db.Decimal(10, 2)
@@ -1839,38 +1847,55 @@ model RestaurantWalletTransaction {
 
   @@index([walletAccountId, createdAt])
   @@index([restaurantId, createdAt])
+  @@index([payoutRequestId, type], map: "restaurant_wallet_transactions_payout_type_idx")
   @@map("restaurant_wallet_transactions")
 }
 
 model RestaurantPayoutRequest {
-  id                  String                        @id @default(cuid())
-  walletAccountId     String                        @map("wallet_account_id")
-  tenantId            String                        @map("tenant_id")
-  restaurantId        String                        @map("restaurant_id")
-  branchId            String?                       @map("branch_id")
-  requestedBy         String?                       @map("requested_by")
-  reviewedBy          String?                       @map("reviewed_by")
-  paidBy              String?                       @map("paid_by")
-  status              RestaurantPayoutRequestStatus @default(REQUESTED)
-  amount              Decimal                       @db.Decimal(10, 2)
-  currency            String                        @default("PKR")
-  bankDetails         Json                          @map("bank_details")
-  note                String?
-  rejectionReason     String?                       @map("rejection_reason")
-  approvalNote        String?                       @map("approval_note")
-  paymentReference    String?                       @map("payment_reference")
-  paidNote            String?                       @map("paid_note")
-  approvedAt          DateTime?                     @map("approved_at") @db.Timestamptz
-  rejectedAt          DateTime?                     @map("rejected_at") @db.Timestamptz
-  paidAt              DateTime?                     @map("paid_at") @db.Timestamptz
-  walletTransactionId String?                       @unique @map("wallet_transaction_id")
-  createdAt           DateTime                      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime                      @updatedAt @map("updated_at") @db.Timestamptz
+  id                     String                        @id @default(cuid())
+  walletAccountId        String                        @map("wallet_account_id")
+  tenantId               String                        @map("tenant_id")
+  restaurantId           String                        @map("restaurant_id")
+  branchId               String?                       @map("branch_id")
+  requestedBy            String?                       @map("requested_by")
+  reviewedBy             String?                       @map("reviewed_by")
+  paidBy                 String?                       @map("paid_by")
+  status                 RestaurantPayoutRequestStatus @default(REQUESTED)
+  amount                 Decimal                       @db.Decimal(10, 2)
+  currency               String                        @default("PKR")
+  bankDetails            Json                          @map("bank_details")
+  note                   String?
+  rejectionReason        String?                       @map("rejection_reason")
+  approvalNote           String?                       @map("approval_note")
+  paymentReference       String?                       @map("payment_reference")
+  paidNote               String?                       @map("paid_note")
+  approvedAt             DateTime?                     @map("approved_at") @db.Timestamptz
+  rejectedAt             DateTime?                     @map("rejected_at") @db.Timestamptz
+  paidAt                 DateTime?                     @map("paid_at") @db.Timestamptz
+  walletTransactionId    String?                       @unique @map("wallet_transaction_id")
+  releaseTransactionId   String?                       @unique @map("release_transaction_id")
+  operationKey           String?                       @unique @map("operation_key") @db.VarChar(64)
+  requestHash            String?                       @map("request_hash") @db.VarChar(64)
+  provider               String?                       @db.VarChar(32)
+  providerIdempotencyKey String?                       @unique @map("provider_idempotency_key") @db.VarChar(191)
+  providerReference      String?                       @map("provider_reference") @db.VarChar(191)
+  providerStatus         String?                       @map("provider_status") @db.VarChar(64)
+  providerSucceededAt    DateTime?                     @map("provider_succeeded_at") @db.Timestamptz
+  claimToken             String?                       @map("claim_token") @db.VarChar(64)
+  leaseExpiresAt         DateTime?                     @map("lease_expires_at") @db.Timestamptz
+  attempts               Int                           @default(0)
+  lastError              String?                       @map("last_error") @db.VarChar(1000)
+  releasedAt             DateTime?                     @map("released_at") @db.Timestamptz
+  cancelledAt            DateTime?                     @map("cancelled_at") @db.Timestamptz
+  createdAt              DateTime                      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                      @updatedAt @map("updated_at") @db.Timestamptz
 
   walletAccount RestaurantWalletAccount @relation(fields: [walletAccountId], references: [id])
 
   @@index([restaurantId, status, createdAt])
   @@index([tenantId, status, createdAt])
+  @@index([status, leaseExpiresAt, createdAt], map: "restaurant_payout_requests_recovery_idx")
+  @@index([provider, providerReference], map: "restaurant_payout_requests_provider_ref_idx")
   @@map("restaurant_payout_requests")
 }
 

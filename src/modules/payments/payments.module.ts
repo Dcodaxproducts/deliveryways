@@ -13,6 +13,7 @@ import { PayoutCredentialsService } from './payout-credentials.service';
 import { PaypalOrdersService } from './paypal-orders.service';
 import { OrdersModule } from '../orders/orders.module';
 import { FinancialLedgerModule } from '../financial-ledger';
+import { PayoutIntegrityRepository } from './payout-integrity.repository';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { FinancialLedgerModule } from '../financial-ledger';
     PaypalPayoutsService,
     PayoutCredentialsService,
     PaypalOrdersService,
+    PayoutIntegrityRepository,
   ],
   exports: [PaymentsService],
 })

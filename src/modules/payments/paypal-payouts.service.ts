@@ -4,6 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PaypalPayoutEnvironment } from './dto';
+import { PayoutProviderError } from './payout-provider.error';
 
 interface PaypalCredentials {
   clientId: string;
@@ -34,37 +35,48 @@ export class PaypalPayoutsService {
         ? 'https://api-m.sandbox.paypal.com'
         : 'https://api-m.paypal.com';
     const token = await this.getAccessToken(baseUrl, input.credentials);
-    const response = await fetch(`${baseUrl}/v1/payments/payouts`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sender_batch_header: {
-          sender_batch_id: input.idempotencyKey,
-          email_subject: 'FeastFlow restaurant payout',
-          email_message: input.description,
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}/v1/payments/payouts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        items: [
-          {
-            recipient_type: 'EMAIL',
-            receiver: input.credentials.recipientEmail,
-            amount: {
-              value: input.amount.toFixed(2),
-              currency: input.currency.toUpperCase(),
-            },
-            note: input.description,
-            sender_item_id: input.idempotencyKey,
+        body: JSON.stringify({
+          sender_batch_header: {
+            sender_batch_id: input.idempotencyKey,
+            email_subject: 'FeastFlow restaurant payout',
+            email_message: input.description,
           },
-        ],
-      }),
-    });
+          items: [
+            {
+              recipient_type: 'EMAIL',
+              receiver: input.credentials.recipientEmail,
+              amount: {
+                value: input.amount.toFixed(2),
+                currency: input.currency.toUpperCase(),
+              },
+              note: input.description,
+              sender_item_id: input.idempotencyKey,
+            },
+          ],
+        }),
+      });
+    } catch (error) {
+      throw new PayoutProviderError(
+        error instanceof Error ? error.message : 'PayPal payout request failed',
+        false,
+      );
+    }
     const payload: unknown = await response.json();
 
     if (!response.ok) {
-      throw new BadGatewayException(
+      throw new PayoutProviderError(
         this.readProviderError(payload, 'PayPal payout failed'),
+        response.status >= 400 &&
+          response.status < 500 &&
+          ![408, 409, 425, 429].includes(response.status),
       );
     }
 
@@ -79,6 +91,64 @@ export class PaypalPayoutsService {
     }
 
     return { id: batchId };
+  }
+
+  async retrievePayout(
+    payoutId: string,
+    credentials: PaypalCredentials,
+  ): Promise<{
+    id: string;
+    status: string;
+    amount: string | null;
+    currency: string | null;
+    recipient: string | null;
+  }> {
+    const baseUrl =
+      credentials.environment === PaypalPayoutEnvironment.SANDBOX
+        ? 'https://api-m.sandbox.paypal.com'
+        : 'https://api-m.paypal.com';
+    const token = await this.getAccessToken(baseUrl, credentials);
+    let response: Response;
+    try {
+      response = await fetch(
+        `${baseUrl}/v1/payments/payouts/${encodeURIComponent(payoutId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    } catch (error) {
+      throw new PayoutProviderError(
+        error instanceof Error ? error.message : 'PayPal payout lookup failed',
+        false,
+      );
+    }
+    const payload: unknown = await response.json();
+    if (!response.ok) {
+      throw new PayoutProviderError(
+        this.readProviderError(payload, 'PayPal payout lookup failed'),
+        response.status === 404,
+      );
+    }
+    const firstItem = this.readFirstObject(payload, 'items');
+    return {
+      id:
+        this.readNestedString(payload, ['batch_header', 'payout_batch_id']) ??
+        payoutId,
+      status:
+        this.readNestedString(payload, ['batch_header', 'batch_status']) ??
+        'UNKNOWN',
+      amount: firstItem
+        ? this.readNestedString(firstItem, ['payout_item', 'amount', 'value'])
+        : null,
+      currency: firstItem
+        ? this.readNestedString(firstItem, [
+            'payout_item',
+            'amount',
+            'currency',
+          ])
+        : null,
+      recipient: firstItem
+        ? this.readNestedString(firstItem, ['payout_item', 'receiver'])
+        : null,
+    };
   }
 
   private async getAccessToken(
@@ -115,6 +185,19 @@ export class PaypalPayoutsService {
     }
 
     return token;
+  }
+
+  private readFirstObject(
+    value: unknown,
+    key: string,
+  ): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      return null;
+    const items = (value as Record<string, unknown>)[key];
+    const first: unknown = Array.isArray(items) ? items.at(0) : null;
+    return first && typeof first === 'object' && !Array.isArray(first)
+      ? (first as Record<string, unknown>)
+      : null;
   }
 
   private readNestedString(value: unknown, path: string[]) {

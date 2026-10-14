@@ -551,6 +551,12 @@ export class CreateRestaurantPayoutRequestDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @ApiPropertyOptional({ maxLength: 191 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
 }
 
 export class ReviewRestaurantPayoutRequestDto {
