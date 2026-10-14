@@ -397,6 +397,17 @@ export class OrdersService {
       );
     }
 
+    if (existing.paymentStatus === PaymentStatus.PAID) {
+      await this.loyaltyWalletService!.awardPointsForPaidOrder(existing.id);
+    } else if (existing.status === OrderStatus.PLACED) {
+      await this.loyaltyWalletService!.awardPointsForPaidOrder(
+        existing.id,
+        undefined,
+        undefined,
+        { allowUnpaid: true },
+      );
+    }
+
     return {
       data: this.toOrderMutationResponse(existing),
       message: 'Order created successfully',
@@ -1243,7 +1254,20 @@ export class OrdersService {
       );
     }
 
-    const data = await this.ordersRepository.cancel(id, user.uid, order.status);
+    const data = await this.prisma.$transaction(async (tx) => {
+      await this.loyaltyWalletService!.restoreOrderBenefits(
+        id,
+        'PAYMENT_REVERSAL',
+        user.uid,
+        tx,
+      );
+      const current = await this.ordersRepository.findById(id, tx);
+      if (!current) throw new NotFoundException('Order not found');
+      if (current.status === OrderStatus.CANCELLED) {
+        return current;
+      }
+      return this.ordersRepository.cancel(id, user.uid, current.status, tx);
+    });
 
     await this.notificationsService.notifyOrderStatusChanged(data.id);
     await this.chatService.syncDeliveryThreadForOrderLifecycle(

@@ -1474,6 +1474,7 @@ describe('PaymentsService', () => {
       stripePaymentsService,
       transactionTx,
       financialLedgerRepository,
+      loyaltyWalletService,
     } = makeService();
 
     paymentsRepository.findById.mockResolvedValue({
@@ -1540,6 +1541,7 @@ describe('PaymentsService', () => {
       }),
       transactionTx,
     );
+    expect(loyaltyWalletService.restoreOrderBenefits).not.toHaveBeenCalled();
   });
 
   it('completes a PayPal provider refund before recording it locally', async () => {

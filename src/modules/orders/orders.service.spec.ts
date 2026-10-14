@@ -2765,7 +2765,16 @@ describe('OrdersService - deliveryman order access', () => {
       id: 'order-1',
       status: OrderStatus.CANCELLED,
     });
+    const tx = {};
+    const restoreOrderBenefits = jest.fn().mockResolvedValue(undefined);
     Object.assign(service as object, {
+      prisma: {
+        $transaction: jest.fn(
+          async (work: (transaction: typeof tx) => Promise<unknown>) =>
+            work(tx),
+        ),
+      },
+      loyaltyWalletService: { restoreOrderBenefits },
       toOrderMutationResponse: jest.fn().mockReturnValue({ id: 'order-1' }),
     });
 
@@ -2792,10 +2801,17 @@ describe('OrdersService - deliveryman order access', () => {
     ).resolves.toEqual(
       expect.objectContaining({ message: 'Order cancelled successfully' }),
     );
+    expect(restoreOrderBenefits).toHaveBeenCalledWith(
+      'order-1',
+      'PAYMENT_REVERSAL',
+      'super-1',
+      tx,
+    );
     expect(ordersRepository.cancel).toHaveBeenCalledWith(
       'order-1',
       'super-1',
       OrderStatus.DELIVERED,
+      tx,
     );
   });
 

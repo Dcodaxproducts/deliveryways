@@ -313,8 +313,8 @@ export class OrdersRepository {
     });
   }
 
-  async findById(id: string) {
-    return this.prisma.order.findUnique({
+  async findById(id: string, tx?: PrismaTx) {
+    return this.client(tx).order.findUnique({
       where: { id },
       include: {
         items: {

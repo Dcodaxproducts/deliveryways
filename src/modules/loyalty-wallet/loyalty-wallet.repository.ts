@@ -263,6 +263,7 @@ export class LoyaltyWalletRepository {
         subtotal: true,
         totalAmount: true,
         paymentStatus: true,
+        status: true,
         walletAppliedAmount: true,
         loyaltyDiscountAmount: true,
         loyaltyPointsRedeemed: true,

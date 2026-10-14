@@ -1072,6 +1072,14 @@ export class PaymentsService {
       throw new NotFoundException('PayPal payment order not found');
     }
     if (payment.status === PaymentStatus.PAID) {
+      if (payment.orderId) {
+        await this.creditRestaurantWalletForPayment(payment, 'paypal:replay');
+        await this.loyaltyWalletService!.awardPointsForPaidOrder(
+          payment.orderId,
+          payment.id,
+          'paypal:replay',
+        );
+      }
       return payment;
     }
     if (
@@ -3040,15 +3048,15 @@ export class PaymentsService {
         PaymentStatus.FAILED,
         tx,
       );
+      await this.loyaltyWalletService!.restoreOrderBenefits(
+        orderId,
+        'PAYMENT_REVERSAL',
+        user.uid,
+        tx,
+      );
 
       return updatedPayment;
     });
-
-    await this.loyaltyWalletService!.restoreOrderBenefits(
-      orderId,
-      'PAYMENT_REVERSAL',
-      user.uid,
-    );
     await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return {
@@ -3322,6 +3330,12 @@ export class PaymentsService {
         payment.amount,
       );
       if (fullyRefunded) {
+        await this.loyaltyWalletService!.restoreOrderBenefits(
+          orderId,
+          'REFUND',
+          user.uid,
+          tx,
+        );
         await this.paymentsRepository.updateStatus(
           payment.id,
           { status: PaymentStatus.REFUNDED, processedAt: new Date() },
@@ -3356,13 +3370,6 @@ export class PaymentsService {
       };
     });
 
-    if (finalized.fullyRefunded) {
-      await this.loyaltyWalletService!.restoreOrderBenefits(
-        orderId,
-        'REFUND',
-        user.uid,
-      );
-    }
     await this.notificationsService.notifyPaymentStatusChanged(
       finalized.data.id,
     );
@@ -3530,6 +3537,14 @@ export class PaymentsService {
     }
 
     if (payment.status === PaymentStatus.PAID) {
+      if (payment.orderId) {
+        await this.creditRestaurantWalletForPayment(payment, 'stripe:replay');
+        await this.loyaltyWalletService!.awardPointsForPaidOrder(
+          payment.orderId,
+          payment.id,
+          'stripe:replay',
+        );
+      }
       if (
         this.readPaymentTarget(payment.providerData) ===
         'GUEST_GIFT_CARD_PURCHASE'
@@ -3789,6 +3804,13 @@ export class PaymentsService {
         tx,
       );
 
+      await this.loyaltyWalletService!.restoreOrderBenefits(
+        orderId,
+        'PAYMENT_REVERSAL',
+        actorId,
+        tx,
+      );
+
       if (cancelOrder) {
         await this.paymentsRepository.updateOrderState(
           orderId,
@@ -3804,11 +3826,6 @@ export class PaymentsService {
       return updatedPayment;
     });
 
-    await this.loyaltyWalletService!.restoreOrderBenefits(
-      orderId,
-      'PAYMENT_REVERSAL',
-      actorId,
-    );
     await this.notificationsService.notifyPaymentStatusChanged(data.id);
 
     return data;

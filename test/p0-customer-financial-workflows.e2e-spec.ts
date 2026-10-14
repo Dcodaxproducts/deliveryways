@@ -340,7 +340,11 @@ describe('P0 customer financial workflows (isolated PostgreSQL)', () => {
     ]);
     await Promise.all([
       service.restoreOrderBenefits(order.id, 'REFUND', scope.customer.id),
-      service.restoreOrderBenefits(order.id, 'REFUND', scope.customer.id),
+      service.restoreOrderBenefits(
+        order.id,
+        'PAYMENT_REVERSAL',
+        scope.customer.id,
+      ),
     ]);
     const [wallet, loyalty, walletChain, loyaltyChain] = await Promise.all([
       prisma.walletAccount.findUniqueOrThrow({
@@ -369,12 +373,188 @@ describe('P0 customer financial workflows (isolated PostgreSQL)', () => {
       }),
     ]);
     expect(wallet.balance.toNumber()).toBe(50);
-    expect(loyalty.availablePoints).toBe(200);
+    expect(loyalty.availablePoints).toBe(100);
     expect(
       walletChain.map(({ balanceAfter }) => balanceAfter.toNumber()),
     ).toEqual([30, 50]);
     expect(loyaltyChain.map(({ balanceAfter }) => balanceAfter)).toEqual([
-      70, 170, 200,
+      70, 170, 200, 100,
     ]);
+    expect(loyaltyChain.map(({ type }) => type)).toEqual([
+      LoyaltyTransactionType.REDEEM,
+      LoyaltyTransactionType.EARN,
+      LoyaltyTransactionType.RESTORE,
+      LoyaltyTransactionType.ADJUSTMENT,
+    ]);
+  });
+
+  it('serializes storefront and unpaid POS effects, then cancels POS exactly once', async () => {
+    const scope = await createScope('customer-storefront-pos');
+    await Promise.all([seedWallet(scope, 100), seedLoyalty(scope, 100)]);
+    const createOrder = (paymentStatus: PaymentStatus) =>
+      prisma.order.create({
+        data: {
+          tenantId: scope.tenant.id,
+          restaurantId: scope.restaurant.id,
+          branchId: scope.branch.id,
+          customerId: scope.customer.id,
+          orderType: OrderType.TAKEAWAY,
+          paymentMethod: PaymentMethod.COD,
+          subtotal: new Prisma.Decimal(100),
+          walletAppliedAmount: new Prisma.Decimal(10),
+          loyaltyDiscountAmount: new Prisma.Decimal(10),
+          loyaltyPointsRedeemed: 10,
+          totalAmount: new Prisma.Decimal(90),
+          paymentStatus,
+        },
+      });
+    const [storefront, pos] = await Promise.all([
+      createOrder(PaymentStatus.PAID),
+      createOrder(PaymentStatus.PENDING),
+    ]);
+    await Promise.all(
+      [storefront, pos].map((order) =>
+        prisma.$transaction((tx) =>
+          service.applyOrderBenefits(
+            tx,
+            context(scope),
+            order,
+            scope.customer.id,
+          ),
+        ),
+      ),
+    );
+    await Promise.all([
+      service.awardPointsForPaidOrder(
+        storefront.id,
+        undefined,
+        scope.customer.id,
+      ),
+      service.awardPointsForPaidOrder(pos.id, undefined, scope.customer.id, {
+        allowUnpaid: true,
+        idempotencyKey: 'POS:' + pos.id + ':LOYALTY',
+      }),
+    ]);
+
+    await prisma.$transaction(async (tx) => {
+      await service.restoreOrderBenefits(
+        pos.id,
+        'PAYMENT_REVERSAL',
+        scope.customer.id,
+        tx,
+      );
+      await tx.order.update({
+        where: { id: pos.id },
+        data: { status: 'CANCELLED' },
+      });
+    });
+    await Promise.all([
+      service.restoreOrderBenefits(
+        pos.id,
+        'PAYMENT_REVERSAL',
+        scope.customer.id,
+      ),
+      service.awardPointsForPaidOrder(pos.id, undefined, scope.customer.id, {
+        allowUnpaid: true,
+        idempotencyKey: 'POS:' + pos.id + ':LOYALTY',
+      }),
+    ]);
+
+    const [wallet, loyalty, walletRows, loyaltyRows] = await Promise.all([
+      prisma.walletAccount.findUniqueOrThrow({
+        where: {
+          restaurantId_customerId: {
+            restaurantId: scope.restaurant.id,
+            customerId: scope.customer.id,
+          },
+        },
+      }),
+      prisma.loyaltyAccount.findUniqueOrThrow({
+        where: {
+          restaurantId_customerId: {
+            restaurantId: scope.restaurant.id,
+            customerId: scope.customer.id,
+          },
+        },
+      }),
+      prisma.walletTransaction.count({ where: { orderId: pos.id } }),
+      prisma.loyaltyTransaction.count({ where: { orderId: pos.id } }),
+    ]);
+    expect(wallet.balance.toNumber()).toBe(90);
+    expect(loyalty.availablePoints).toBe(190);
+    expect(walletRows).toBe(2);
+    expect(loyaltyRows).toBe(4);
+    await expect(
+      prisma.order.findUniqueOrThrow({ where: { id: pos.id } }),
+    ).resolves.toMatchObject({
+      status: 'CANCELLED',
+      loyaltyPointsAwarded: 0,
+    });
+  });
+
+  it('atomically rejects award clawback when later spending would go negative', async () => {
+    const scope = await createScope('customer-award-spent');
+    const order = await prisma.order.create({
+      data: {
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        customerId: scope.customer.id,
+        orderType: OrderType.TAKEAWAY,
+        paymentMethod: PaymentMethod.COD,
+        subtotal: new Prisma.Decimal(100),
+        totalAmount: new Prisma.Decimal(100),
+        paymentStatus: PaymentStatus.PAID,
+      },
+    });
+    await service.awardPointsForPaidOrder(
+      order.id,
+      undefined,
+      scope.customer.id,
+    );
+    await ledger.applyLoyaltyDelta({
+      ...context(scope),
+      orderId: order.id,
+      operationKey: 'spend-award-' + order.id,
+      requestHash: FinancialLedgerRepository.createCanonicalRequestHash({
+        orderId: order.id,
+        points: 80,
+      }),
+      allowNegative: false,
+      source: 'P0_LATER_SPEND',
+      delta: -80,
+      type: LoyaltyTransactionType.REDEEM,
+      loyaltyProgramId: scope.program.id,
+      lifetimeRedeemedDelta: 80,
+    });
+
+    await expect(
+      service.restoreOrderBenefits(
+        order.id,
+        'PAYMENT_REVERSAL',
+        scope.customer.id,
+      ),
+    ).rejects.toThrow('Insufficient loyalty points');
+    await expect(
+      prisma.loyaltyAccount.findUniqueOrThrow({
+        where: {
+          restaurantId_customerId: {
+            restaurantId: scope.restaurant.id,
+            customerId: scope.customer.id,
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ availablePoints: 20 });
+    await expect(
+      prisma.order.findUniqueOrThrow({ where: { id: order.id } }),
+    ).resolves.toMatchObject({ loyaltyPointsAwarded: 100 });
+    await expect(
+      prisma.loyaltyTransaction.count({
+        where: {
+          orderId: order.id,
+          type: LoyaltyTransactionType.ADJUSTMENT,
+        },
+      }),
+    ).resolves.toBe(0);
   });
 });

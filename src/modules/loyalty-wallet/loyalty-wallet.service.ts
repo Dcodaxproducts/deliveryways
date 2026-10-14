@@ -1189,6 +1189,9 @@ export class LoyaltyWalletService {
     return this.prisma.$transaction(async (tx) => {
       const order = await this.repository.findOrderWithBenefits(orderId, tx);
       if (!order) throw new NotFoundException('Order not found');
+      if (order.status === 'CANCELLED' || order.status === 'REJECTED') {
+        return null;
+      }
       if (order.paymentStatus !== PaymentStatus.PAID && !options.allowUnpaid) {
         return null;
       }
@@ -1271,9 +1274,13 @@ export class LoyaltyWalletService {
     orderId: string,
     reason: 'REFUND' | 'PAYMENT_REVERSAL',
     actorId?: string,
+    tx?: PrismaTx,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await this.repository.findOrderWithBenefits(orderId, tx);
+    const reconcile = async (transaction: PrismaTx) => {
+      const order = await this.repository.findOrderWithBenefits(
+        orderId,
+        transaction,
+      );
       if (!order) throw new NotFoundException('Order not found');
       const context = {
         customerId: order.customerId,
@@ -1281,25 +1288,28 @@ export class LoyaltyWalletService {
         restaurantId: order.restaurantId,
         branchId: order.branchId,
       };
-      const kinds: FinancialAccountKind[] = [];
-      if (order.walletAppliedAmount.greaterThan(0))
+      const kinds: FinancialAccountKind[] = ['LOYALTY'];
+      if (order.walletAppliedAmount.greaterThan(0)) {
         kinds.push('CUSTOMER_WALLET');
-      if (order.loyaltyPointsRedeemed > 0) kinds.push('LOYALTY');
-      if (!kinds.length) return;
-      const requestHash = this.requestHash({
-        customerId: context.customerId,
-        loyaltyDiscountAmount: order.loyaltyDiscountAmount.toFixed(2),
-        loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
-        orderId: order.id,
-        reason,
-        restaurantId: context.restaurantId,
-        tenantId: context.tenantId,
-        walletAppliedAmount: order.walletAppliedAmount.toFixed(2),
-      });
+      }
       await this.financialLedger.withFinancialLedgerTransaction(
         this.customerLedgerScopes(context, kinds),
         async (ledgerTx) => {
-          if (order.walletAppliedAmount.greaterThan(0)) {
+          const lockedOrder = await this.repository.findOrderWithBenefits(
+            orderId,
+            ledgerTx,
+          );
+          if (!lockedOrder) throw new NotFoundException('Order not found');
+          const requestHash = this.requestHash({
+            customerId: context.customerId,
+            loyaltyDiscountAmount: lockedOrder.loyaltyDiscountAmount.toFixed(2),
+            loyaltyPointsRedeemed: lockedOrder.loyaltyPointsRedeemed,
+            orderId: lockedOrder.id,
+            restaurantId: context.restaurantId,
+            tenantId: context.tenantId,
+            walletAppliedAmount: lockedOrder.walletAppliedAmount.toFixed(2),
+          });
+          if (lockedOrder.walletAppliedAmount.greaterThan(0)) {
             const account = await this.ensureWalletAccount(context, ledgerTx);
             await this.financialLedger.applyCustomerWalletDelta(
               {
@@ -1307,24 +1317,22 @@ export class LoyaltyWalletService {
                 restaurantId: context.restaurantId,
                 customerId: context.customerId,
                 branchId: context.branchId,
-                orderId: order.id,
-                operationKey: `order:${order.id}:wallet-benefit-restore`,
+                orderId: lockedOrder.id,
+                operationKey: `order:${lockedOrder.id}:wallet-benefit-restore`,
                 requestHash,
                 allowNegative: false,
                 source: 'ORDER_BENEFIT_RESTORE',
-                delta: order.walletAppliedAmount,
+                delta: lockedOrder.walletAppliedAmount,
                 currency: account.currency,
-                type:
-                  reason === 'REFUND'
-                    ? WalletTransactionType.REFUND
-                    : WalletTransactionType.PAYMENT_REVERSAL,
+                type: WalletTransactionType.PAYMENT_REVERSAL,
                 note: 'Wallet amount restored from order reversal',
+                metadata: { reason },
                 createdBy: actorId,
               },
               ledgerTx,
             );
           }
-          if (order.loyaltyPointsRedeemed > 0) {
+          if (lockedOrder.loyaltyPointsRedeemed > 0) {
             await this.ensureLoyaltyAccount(context, ledgerTx);
             const program = await this.ensureLoyaltyProgram(context, ledgerTx);
             await this.financialLedger.applyLoyaltyDelta(
@@ -1333,27 +1341,66 @@ export class LoyaltyWalletService {
                 restaurantId: context.restaurantId,
                 customerId: context.customerId,
                 branchId: context.branchId,
-                orderId: order.id,
-                operationKey: `order:${order.id}:loyalty-benefit-restore`,
+                orderId: lockedOrder.id,
+                operationKey: `order:${lockedOrder.id}:loyalty-benefit-restore`,
                 requestHash,
                 allowNegative: false,
                 source: 'ORDER_BENEFIT_RESTORE',
-                delta: order.loyaltyPointsRedeemed,
+                delta: lockedOrder.loyaltyPointsRedeemed,
                 type: LoyaltyTransactionType.RESTORE,
                 loyaltyProgramId: program.id,
-                monetaryValue: order.loyaltyDiscountAmount,
+                monetaryValue: lockedOrder.loyaltyDiscountAmount,
                 redemptionTarget: LoyaltyRedemptionTarget.ORDER_DISCOUNT,
-                lifetimeRedeemedDelta: -order.loyaltyPointsRedeemed,
+                lifetimeRedeemedDelta: -lockedOrder.loyaltyPointsRedeemed,
                 note: 'Loyalty points restored from order reversal',
+                metadata: { reason },
                 createdBy: actorId,
               },
               ledgerTx,
             );
           }
+          if (lockedOrder.loyaltyPointsAwarded > 0) {
+            await this.ensureLoyaltyAccount(context, ledgerTx);
+            const program = await this.ensureLoyaltyProgram(context, ledgerTx);
+            await this.financialLedger.applyLoyaltyDelta(
+              {
+                tenantId: context.tenantId,
+                restaurantId: context.restaurantId,
+                customerId: context.customerId,
+                branchId: context.branchId,
+                orderId: lockedOrder.id,
+                operationKey: `order:${lockedOrder.id}:loyalty-award-reversal`,
+                requestHash: this.requestHash({
+                  customerId: context.customerId,
+                  orderId: lockedOrder.id,
+                  pointsAwarded: lockedOrder.loyaltyPointsAwarded,
+                  restaurantId: context.restaurantId,
+                  tenantId: context.tenantId,
+                }),
+                allowNegative: false,
+                source: 'ORDER_LOYALTY_AWARD_REVERSAL',
+                delta: -lockedOrder.loyaltyPointsAwarded,
+                type: LoyaltyTransactionType.ADJUSTMENT,
+                loyaltyProgramId: program.id,
+                lifetimeEarnedDelta: -lockedOrder.loyaltyPointsAwarded,
+                note: 'Loyalty points earned for reversed order clawed back',
+                metadata: { reason },
+                createdBy: actorId,
+              },
+              ledgerTx,
+            );
+            await this.repository.updateOrderBenefits(
+              lockedOrder.id,
+              { loyaltyPointsAwarded: 0 },
+              ledgerTx,
+            );
+          }
         },
-        tx,
+        transaction,
       );
-    });
+    };
+
+    return tx ? reconcile(tx) : this.prisma.$transaction(reconcile);
   }
 
   private requestHash(value: CanonicalJson): string {
