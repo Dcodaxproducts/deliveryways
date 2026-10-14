@@ -1505,7 +1505,10 @@ export class PaymentsService {
           paymentTransactionId: data.id,
           orderId: null,
           customerId: dto.buyerEmail,
+          tenantId: context.tenantId,
           restaurantId: context.restaurantId,
+          branchId,
+          product: 'GUEST_GIFT_CARD_PURCHASE',
           giftCardPurchase: 'true',
           buyerEmail: dto.buyerEmail,
           recipientEmail: dto.recipientEmail,
@@ -4016,6 +4019,20 @@ export class PaymentsService {
       return;
     }
 
+    if (
+      this.readPaymentTarget(payment.providerData) ===
+      'GUEST_GIFT_CARD_PURCHASE'
+    ) {
+      const fulfilledPayment = await this.fulfillGuestGiftCardPurchase(
+        payment.id,
+        providerRef,
+        paymentIntent,
+      );
+      await this.sendGuestGiftCardEmail(fulfilledPayment);
+      await this.notificationsService.notifyPaymentStatusChanged(payment.id);
+      return;
+    }
+
     if (payment.status === PaymentStatus.PAID) {
       if (payment.orderId) {
         await this.creditRestaurantWalletForPayment(payment, 'stripe:replay');
@@ -4024,12 +4041,6 @@ export class PaymentsService {
           payment.id,
           'stripe:replay',
         );
-      }
-      if (
-        this.readPaymentTarget(payment.providerData) ===
-        'GUEST_GIFT_CARD_PURCHASE'
-      ) {
-        await this.sendGuestGiftCardEmail(payment);
       }
       return;
     }
@@ -4044,24 +4055,6 @@ export class PaymentsService {
           paymentIntent,
           PaymentStatus.PAID,
         );
-        await this.notificationsService.notifyPaymentStatusChanged(payment.id);
-        return;
-      }
-
-      if (
-        this.readPaymentTarget(payment.providerData) ===
-        'GUEST_GIFT_CARD_PURCHASE'
-      ) {
-        await this.fulfillGuestGiftCardPurchase(
-          payment,
-          providerRef,
-          paymentIntent,
-        );
-        const fulfilledPayment =
-          await this.paymentsRepository.findByProviderRef(providerRef);
-        if (fulfilledPayment) {
-          await this.sendGuestGiftCardEmail(fulfilledPayment);
-        }
         await this.notificationsService.notifyPaymentStatusChanged(payment.id);
         return;
       }
@@ -4397,37 +4390,92 @@ export class PaymentsService {
   }
 
   private async fulfillGuestGiftCardPurchase(
-    payment: {
-      id: string;
-      tenantId: string;
-      restaurantId: string;
-      branchId: string;
-      amount: Prisma.Decimal;
-      currency: string;
-      providerData: Prisma.JsonValue | null;
-    },
+    paymentId: string,
     providerRef: string,
     paymentIntent: Record<string, unknown>,
   ) {
-    const providerData =
-      payment.providerData &&
-      typeof payment.providerData === 'object' &&
-      !Array.isArray(payment.providerData)
-        ? (payment.providerData as Record<string, unknown>)
-        : {};
-    const code = await this.generateUniqueGiftCardCode(payment.restaurantId);
-    const now = new Date();
-    const requestedExpiry = providerData.expiresAt;
-    const expiresAt =
-      typeof requestedExpiry === 'string' && requestedExpiry.trim()
-        ? new Date(requestedExpiry)
-        : this.addDays(now, 365);
+    return this.prisma.$transaction(async (tx) => {
+      const lockedRows = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${paymentId} FOR UPDATE`,
+      );
+      if (lockedRows.length !== 1) {
+        throw new ConflictException(
+          'Gift card purchase reservation is missing',
+        );
+      }
 
-    if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
-      throw new BadRequestException('Gift card expiry must be in the future');
-    }
+      const payment = await tx.paymentTransaction.findUniqueOrThrow({
+        where: { id: paymentId },
+      });
+      const providerData = this.asJsonObject(payment.providerData);
+      const metadata = this.asJsonObject(paymentIntent.metadata);
+      const providerAmount =
+        typeof paymentIntent.amount_received === 'number'
+          ? paymentIntent.amount_received
+          : paymentIntent.amount;
+      const expectedMinorAmount = payment.amount.mul(100).toNumber();
+      if (
+        payment.orderId !== null ||
+        payment.type !== PaymentTransactionType.CHARGE ||
+        payment.paymentMethod !== PaymentMethod.STRIPE ||
+        payment.providerRef !== providerRef ||
+        this.readPaymentTarget(payment.providerData) !==
+          'GUEST_GIFT_CARD_PURCHASE' ||
+        providerRef !== this.readStripeIntentId(paymentIntent) ||
+        this.readString(paymentIntent.status) !== 'succeeded' ||
+        this.readString(metadata.paymentTransactionId) !== payment.id ||
+        this.readString(metadata.tenantId) !== payment.tenantId ||
+        this.readString(metadata.restaurantId) !== payment.restaurantId ||
+        this.readString(metadata.branchId) !== payment.branchId ||
+        this.readString(metadata.product) !== 'GUEST_GIFT_CARD_PURCHASE' ||
+        this.readString(metadata.giftCardPurchase) !== 'true' ||
+        this.readString(metadata.customerId)?.toLowerCase() !==
+          this.readString(providerData.buyerEmail)?.toLowerCase() ||
+        this.readString(metadata.recipientEmail)?.toLowerCase() !==
+          this.readString(providerData.recipientEmail)?.toLowerCase() ||
+        !Number.isSafeInteger(providerAmount) ||
+        providerAmount !== expectedMinorAmount ||
+        this.readString(paymentIntent.currency)?.toUpperCase() !==
+          payment.currency.toUpperCase()
+      ) {
+        throw new ConflictException(
+          'Stripe gift card payload does not match the purchase reservation',
+        );
+      }
 
-    await this.prisma.$transaction(async (tx) => {
+      const existingGiftCard = await tx.coupon.findUnique({
+        where: { sourcePaymentTransactionId: payment.id },
+        select: { id: true, code: true },
+      });
+      if (payment.status === PaymentStatus.PAID) {
+        if (
+          !existingGiftCard ||
+          this.readString(providerData.giftCardId) !== existingGiftCard.id ||
+          this.readString(providerData.giftCardCode) !== existingGiftCard.code
+        ) {
+          throw new ConflictException(
+            'Paid gift card purchase does not match its issued card',
+          );
+        }
+        return payment;
+      }
+      if (payment.status !== PaymentStatus.PENDING || existingGiftCard) {
+        throw new ConflictException('Gift card purchase cannot be fulfilled');
+      }
+
+      const now = new Date();
+      const requestedExpiry = providerData.expiresAt;
+      const expiresAt =
+        typeof requestedExpiry === 'string' && requestedExpiry.trim()
+          ? new Date(requestedExpiry)
+          : this.addDays(now, 365);
+      if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
+        throw new BadRequestException('Gift card expiry must be in the future');
+      }
+      const code = await this.generateUniqueGiftCardCode(
+        payment.restaurantId,
+        tx,
+      );
       const giftCard = await tx.coupon.create({
         data: {
           tenantId: payment.tenantId,
@@ -4454,12 +4502,13 @@ export class PaymentsService {
           startsAt: now,
           expiresAt,
           isActive: true,
+          sourcePaymentTransactionId: payment.id,
         },
       });
 
-      await this.paymentsRepository.updateStatus(
-        payment.id,
-        {
+      const transition = await tx.paymentTransaction.updateMany({
+        where: { id: payment.id, status: PaymentStatus.PENDING },
+        data: {
           status: PaymentStatus.PAID,
           providerRef,
           providerData: {
@@ -4473,11 +4522,15 @@ export class PaymentsService {
           } as Prisma.InputJsonValue,
           processedAt: now,
         },
-        tx,
-      );
-    });
+      });
+      if (transition.count !== 1) {
+        throw new ConflictException('Gift card purchase was already fulfilled');
+      }
 
-    void paymentIntent;
+      return tx.paymentTransaction.findUniqueOrThrow({
+        where: { id: payment.id },
+      });
+    });
   }
 
   private async sendGuestGiftCardEmail(payment: {
@@ -4561,10 +4614,13 @@ export class PaymentsService {
     });
   }
 
-  private async generateUniqueGiftCardCode(restaurantId: string) {
+  private async generateUniqueGiftCardCode(
+    restaurantId: string,
+    tx: Prisma.TransactionClient,
+  ) {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = `GIFT-${randomBytes(5).toString('hex').toUpperCase()}`;
-      const existing = await this.prisma.coupon.findUnique({
+      const existing = await tx.coupon.findUnique({
         where: {
           restaurantId_code: {
             restaurantId,

@@ -1228,42 +1228,43 @@ model MenuItemRecipe {
 }
 
 model Coupon {
-  id                   String                   @id @default(cuid())
-  tenantId             String                   @map("tenant_id")
-  restaurantId         String                   @map("restaurant_id")
-  branchId             String?                  @map("branch_id")
-  code                 String
-  title                String
-  description          String?
-  imageUrl             String?                  @map("image_url")
-  kind                 CouponCampaignKind       @default(PROMOTION)
-  audience             CouponAudience           @default(BOTH)
-  allowedOrderTypes    OrderType[]              @default([DELIVERY, TAKEAWAY, DINE_IN]) @map("allowed_order_types")
-  status               CouponStatus             @default(ACTIVE)
-  applyMode            CouponApplyMode          @default(ORDER_TOTAL) @map("apply_mode")
-  autoApply            Boolean                  @default(false) @map("auto_apply")
-  discountType         CouponDiscountType       @map("discount_type")
-  discountValue        Decimal                  @map("discount_value") @db.Decimal(10, 2)
-  maxDiscountAmount    Decimal?                 @map("max_discount_amount") @db.Decimal(10, 2)
-  minOrderAmount       Decimal?                 @map("min_order_amount") @db.Decimal(10, 2)
-  maxUses              Int?                     @map("max_uses")
-  maxUsesPerCustomer   Int?                     @map("max_uses_per_customer")
-  usedCount            Int                      @default(0) @map("used_count")
-  applicableOrderType  OrderType?               @map("applicable_order_type")
-  startsAt             DateTime?                @map("starts_at") @db.Timestamptz
-  expiresAt            DateTime?                @map("expires_at") @db.Timestamptz
-  activeDays           Json?                    @map("active_days")
-  dailyStartTime       String?                  @map("daily_start_time")
-  dailyEndTime         String?                  @map("daily_end_time")
-  scopeMenuItemId      String?                  @map("scope_menu_item_id")
-  scopeCategoryId      String?                  @map("scope_category_id")
-  dealSelectionMode    CouponDealSelectionMode? @map("deal_selection_mode")
-  dealRequiredQuantity Int?                     @map("deal_required_quantity")
-  sortOrder            Int                      @default(0) @map("sort_order")
-  isActive             Boolean                  @default(true) @map("is_active")
-  deletedAt            DateTime?                @map("deleted_at") @db.Timestamptz
-  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+  id                         String                   @id @default(cuid())
+  tenantId                   String                   @map("tenant_id")
+  restaurantId               String                   @map("restaurant_id")
+  branchId                   String?                  @map("branch_id")
+  code                       String
+  title                      String
+  description                String?
+  imageUrl                   String?                  @map("image_url")
+  kind                       CouponCampaignKind       @default(PROMOTION)
+  audience                   CouponAudience           @default(BOTH)
+  allowedOrderTypes          OrderType[]              @default([DELIVERY, TAKEAWAY, DINE_IN]) @map("allowed_order_types")
+  status                     CouponStatus             @default(ACTIVE)
+  applyMode                  CouponApplyMode          @default(ORDER_TOTAL) @map("apply_mode")
+  autoApply                  Boolean                  @default(false) @map("auto_apply")
+  discountType               CouponDiscountType       @map("discount_type")
+  discountValue              Decimal                  @map("discount_value") @db.Decimal(10, 2)
+  maxDiscountAmount          Decimal?                 @map("max_discount_amount") @db.Decimal(10, 2)
+  minOrderAmount             Decimal?                 @map("min_order_amount") @db.Decimal(10, 2)
+  maxUses                    Int?                     @map("max_uses")
+  maxUsesPerCustomer         Int?                     @map("max_uses_per_customer")
+  usedCount                  Int                      @default(0) @map("used_count")
+  applicableOrderType        OrderType?               @map("applicable_order_type")
+  startsAt                   DateTime?                @map("starts_at") @db.Timestamptz
+  expiresAt                  DateTime?                @map("expires_at") @db.Timestamptz
+  activeDays                 Json?                    @map("active_days")
+  dailyStartTime             String?                  @map("daily_start_time")
+  dailyEndTime               String?                  @map("daily_end_time")
+  scopeMenuItemId            String?                  @map("scope_menu_item_id")
+  scopeCategoryId            String?                  @map("scope_category_id")
+  dealSelectionMode          CouponDealSelectionMode? @map("deal_selection_mode")
+  dealRequiredQuantity       Int?                     @map("deal_required_quantity")
+  sortOrder                  Int                      @default(0) @map("sort_order")
+  isActive                   Boolean                  @default(true) @map("is_active")
+  deletedAt                  DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt                  DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                  DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+  sourcePaymentTransactionId String?                  @unique(map: "coupons_source_payment_transaction_id_key") @map("source_payment_transaction_id")
 
   tenant          Tenant                @relation(fields: [tenantId], references: [id])
   restaurant      Restaurant            @relation(fields: [restaurantId], references: [id])

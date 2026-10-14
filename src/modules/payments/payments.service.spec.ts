@@ -125,7 +125,7 @@ describe('PaymentsService', () => {
       paymentTransaction: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUnique: jest
           .fn()
           .mockImplementation(() => Promise.resolve(refundRecord)),
@@ -155,6 +155,7 @@ describe('PaymentsService', () => {
         update: jest.fn(),
       },
       coupon: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
       },
       restaurantWalletAccount: {
@@ -2442,6 +2443,8 @@ describe('PaymentsService', () => {
       amount: new Prisma.Decimal(50),
       currency: 'EUR',
       providerRef: 'pi_gift_123',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
       providerData: {
         target: 'GUEST_GIFT_CARD_PURCHASE',
         buyerEmail: 'buyer@example.com',
@@ -2465,16 +2468,52 @@ describe('PaymentsService', () => {
 
     stripePaymentsService.constructWebhookEvent.mockReturnValue({
       type: 'payment_intent.succeeded',
-      data: { object: { id: 'pi_gift_123' } },
+      data: {
+        object: {
+          id: 'pi_gift_123',
+          status: 'succeeded',
+          amount_received: 5000,
+          currency: 'eur',
+          metadata: {
+            paymentTransactionId: pendingPayment.id,
+            tenantId: pendingPayment.tenantId,
+            restaurantId: pendingPayment.restaurantId,
+            branchId: pendingPayment.branchId,
+            product: 'GUEST_GIFT_CARD_PURCHASE',
+            giftCardPurchase: 'true',
+            customerId: 'buyer@example.com',
+            recipientEmail: 'recipient@example.com',
+          },
+        },
+      },
     });
-    paymentsRepository.findByProviderRef
+    paymentsRepository.findByProviderRef.mockResolvedValue(pendingPayment);
+    transactionTx.$queryRaw.mockResolvedValue([{ id: pendingPayment.id }]);
+    transactionTx.paymentTransaction.findUniqueOrThrow
       .mockResolvedValueOnce(pendingPayment)
       .mockResolvedValueOnce(fulfilledPayment);
     transactionTx.coupon.create.mockResolvedValue({ id: 'gift-card-1' });
 
     await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
 
-    expect(transactionTx.coupon.create).toHaveBeenCalledTimes(1);
+    expect(transactionTx.coupon.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: expect.objectContaining({
+          sourcePaymentTransactionId: pendingPayment.id,
+        }),
+      }),
+    );
+    expect(transactionTx.paymentTransaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: pendingPayment.id,
+          status: PaymentStatus.PENDING,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: expect.objectContaining({ status: PaymentStatus.PAID }),
+      }),
+    );
     expect(mailerService.sendTransactionalEmail).toHaveBeenCalledWith(
       'recipient@example.com',
       expect.objectContaining({
@@ -2502,6 +2541,67 @@ describe('PaymentsService', () => {
     ).toHaveBeenCalledWith('payment-gift-1');
   });
 
+  it('rejects a mismatched Stripe gift-card webhook before issuing a card', async () => {
+    const {
+      service,
+      stripePaymentsService,
+      paymentsRepository,
+      transactionTx,
+    } = makeService();
+    const payment = {
+      id: 'payment-gift-mismatch',
+      orderId: null,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      amount: new Prisma.Decimal(50),
+      currency: 'EUR',
+      providerRef: 'pi_gift_mismatch',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      providerData: {
+        target: 'GUEST_GIFT_CARD_PURCHASE',
+        buyerEmail: 'buyer@example.com',
+        recipientEmail: 'recipient@example.com',
+      },
+      status: PaymentStatus.PENDING,
+    };
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_gift_mismatch',
+          status: 'succeeded',
+          amount_received: 4900,
+          currency: 'eur',
+          metadata: {
+            paymentTransactionId: payment.id,
+            tenantId: payment.tenantId,
+            restaurantId: payment.restaurantId,
+            branchId: payment.branchId,
+            product: 'GUEST_GIFT_CARD_PURCHASE',
+            giftCardPurchase: 'true',
+            customerId: 'buyer@example.com',
+            recipientEmail: 'recipient@example.com',
+          },
+        },
+      },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue(payment);
+    transactionTx.$queryRaw.mockResolvedValue([{ id: payment.id }]);
+    transactionTx.paymentTransaction.findUniqueOrThrow.mockResolvedValue(
+      payment,
+    );
+
+    await expect(
+      service.handleStripeWebhook(Buffer.from('{}'), 'sig_123'),
+    ).rejects.toThrow(
+      'Stripe gift card payload does not match the purchase reservation',
+    );
+    expect(transactionTx.coupon.create).not.toHaveBeenCalled();
+    expect(transactionTx.paymentTransaction.updateMany).not.toHaveBeenCalled();
+  });
+
   it('retries only gift-card email delivery for an already fulfilled payment', async () => {
     const {
       service,
@@ -2511,16 +2611,17 @@ describe('PaymentsService', () => {
       mailerService,
     } = makeService();
 
-    stripePaymentsService.constructWebhookEvent.mockReturnValue({
-      type: 'payment_intent.succeeded',
-      data: { object: { id: 'pi_gift_retry' } },
-    });
-    paymentsRepository.findByProviderRef.mockResolvedValue({
+    const replayedPayment = {
       id: 'payment-gift-retry',
       orderId: null,
       amount: new Prisma.Decimal(25),
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
       currency: 'EUR',
       providerRef: 'pi_gift_retry',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
       providerData: {
         target: 'GUEST_GIFT_CARD_PURCHASE',
         buyerEmail: 'buyer@example.com',
@@ -2530,6 +2631,36 @@ describe('PaymentsService', () => {
       },
       status: PaymentStatus.PAID,
       processedAt: new Date('2026-07-30T10:00:00.000Z'),
+    };
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_gift_retry',
+          status: 'succeeded',
+          amount_received: 2500,
+          currency: 'eur',
+          metadata: {
+            paymentTransactionId: replayedPayment.id,
+            tenantId: replayedPayment.tenantId,
+            restaurantId: replayedPayment.restaurantId,
+            branchId: replayedPayment.branchId,
+            product: 'GUEST_GIFT_CARD_PURCHASE',
+            giftCardPurchase: 'true',
+            customerId: 'buyer@example.com',
+            recipientEmail: 'recipient@example.com',
+          },
+        },
+      },
+    });
+    paymentsRepository.findByProviderRef.mockResolvedValue(replayedPayment);
+    transactionTx.$queryRaw.mockResolvedValue([{ id: replayedPayment.id }]);
+    transactionTx.paymentTransaction.findUniqueOrThrow.mockResolvedValue(
+      replayedPayment,
+    );
+    transactionTx.coupon.findUnique.mockResolvedValue({
+      id: 'gift-card-existing',
+      code: 'GIFT-EXISTING',
     });
 
     await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
