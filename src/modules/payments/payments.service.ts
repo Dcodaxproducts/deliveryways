@@ -3459,6 +3459,14 @@ export class PaymentsService {
       );
     }
 
+    if (payment.type === PaymentTransactionType.REFUND) {
+      const data = await this.cancelReservedRefund(payment, user.uid);
+      return {
+        data,
+        message: 'Refund reservation cancelled and released successfully',
+      };
+    }
+
     if (payment.status === PaymentStatus.PAID) {
       throw new BadRequestException('Paid transactions cannot be cancelled');
     }
@@ -3632,7 +3640,12 @@ export class PaymentsService {
           sourcePaymentTransactionId: payment.id,
           idempotencyKey: operationKey,
           requestHash,
+          refundLifecycleStatus: 'RESERVED',
         },
+      });
+      const reservedRefund = await tx.paymentTransaction.update({
+        where: { id: created.id },
+        data: { providerIdempotencyKey: `refund:${created.id}` },
       });
       await this.debitRestaurantWalletForRefund(
         {
@@ -3649,155 +3662,546 @@ export class PaymentsService {
         },
         tx,
       );
-      return created;
+      return reservedRefund;
     });
 
-    let providerRef = reservation.providerRef;
-    let providerData: Prisma.InputJsonValue | undefined =
-      reservation.providerData && reservation.status === PaymentStatus.REFUNDED
-        ? (reservation.providerData as Prisma.InputJsonValue)
-        : (dto.providerData as Prisma.InputJsonValue);
-    const providerIdempotencyKey = `refund:${reservation.id}`;
-    const persistedProviderData = this.asJsonObject(reservation.providerData);
-    const providerAlreadySucceeded =
-      persistedProviderData.providerRefundSucceeded === true;
-    if (
-      reservation.status !== PaymentStatus.REFUNDED &&
-      !providerAlreadySucceeded
-    ) {
-      if (
-        payment.paymentMethod === PaymentMethod.STRIPE &&
-        payment.providerRef
-      ) {
-        const credentials = await this.resolveGlobalStripeCheckoutCredentials();
-        const stripeRefund =
-          await this.stripePaymentsService.refundPaymentIntent(
-            payment.providerRef,
-            Number(refundAmount),
-            credentials,
-            providerIdempotencyKey,
-          );
-        providerRef = stripeRefund.id;
-        providerData = stripeRefund as unknown as Prisma.InputJsonValue;
-      }
-      if (payment.paymentMethod === PaymentMethod.PAYPAL) {
-        if (!this.paypalOrdersService) {
-          throw new ServiceUnavailableException(
-            'PayPal checkout is unavailable',
-          );
-        }
-        const captureId = this.readPaypalCaptureId(payment.providerData);
-        if (!captureId) {
-          throw new BadRequestException(
-            'PayPal capture reference is missing from this payment',
-          );
-        }
-        const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
-        const paypalRefund = await this.paypalOrdersService.refundCapture({
-          captureId,
-          amount: Number(refundAmount),
-          currency,
-          idempotencyKey: providerIdempotencyKey,
-          credentials,
-        });
-        providerRef = paypalRefund.id;
-        providerData = {
-          provider: 'paypal',
-          captureId,
-          refund: paypalRefund.payload as Prisma.InputJsonValue,
-        };
-      }
-      await this.prisma.paymentTransaction.update({
+    const claimToken = randomBytes(24).toString('hex');
+    const leaseExpiresAt = new Date(Date.now() + 60_000);
+    const claim = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${reservation.id} FOR UPDATE`,
+      );
+      const current = await tx.paymentTransaction.findUniqueOrThrow({
         where: { id: reservation.id },
-        data: {
-          providerRef,
-          providerData: {
-            providerRefundSucceeded: true,
-            payload: providerData ?? null,
+      });
+      if (current.refundLifecycleStatus === 'COMPLETED') {
+        return { action: 'COMPLETED' as const, refund: current };
+      }
+      if (current.refundLifecycleStatus === 'FAILED_RELEASED') {
+        return { action: 'FAILED' as const, refund: current };
+      }
+      if (current.refundLifecycleStatus === 'LEGACY_QUARANTINED') {
+        return { action: 'RECONCILE' as const, refund: current };
+      }
+      if (
+        current.refundLeaseToken &&
+        current.refundLeaseExpiresAt &&
+        current.refundLeaseExpiresAt > new Date()
+      ) {
+        return { action: 'BUSY' as const, refund: current };
+      }
+      if (current.refundLifecycleStatus === 'PROVIDER_SUCCEEDED') {
+        const refund = await tx.paymentTransaction.update({
+          where: { id: current.id },
+          data: {
+            refundLeaseToken: claimToken,
+            refundLeaseExpiresAt: leaseExpiresAt,
           },
+        });
+        return { action: 'FINALIZE' as const, refund };
+      }
+      if (
+        current.refundLifecycleStatus !== 'RESERVED' &&
+        current.refundLifecycleStatus !== 'PROCESSING' &&
+        current.refundLifecycleStatus !== 'NEEDS_RECONCILIATION'
+      ) {
+        throw new ConflictException('Refund lifecycle state is invalid');
+      }
+      const refund = await tx.paymentTransaction.update({
+        where: { id: current.id },
+        data: {
+          refundLifecycleStatus: 'PROCESSING',
+          refundLeaseToken: claimToken,
+          refundLeaseExpiresAt: leaseExpiresAt,
         },
       });
-    } else if (providerAlreadySucceeded) {
-      providerRef = reservation.providerRef;
-      providerData = persistedProviderData.payload as
-        | Prisma.InputJsonValue
-        | undefined;
+      return { action: 'CALL_PROVIDER' as const, refund };
+    });
+
+    if (claim.action === 'COMPLETED') {
+      return { data: claim.refund, message: 'Payment refunded successfully' };
+    }
+    if (claim.action === 'BUSY') {
+      return {
+        data: claim.refund,
+        message: 'Refund processing is already in progress',
+      };
+    }
+    if (claim.action === 'RECONCILE') {
+      return {
+        data: claim.refund,
+        message: 'Refund requires provider reconciliation',
+      };
+    }
+    if (claim.action === 'FAILED') {
+      throw new ConflictException(
+        'Refund failed and its liability was released',
+      );
     }
 
-    const finalized = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(
-        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${payment.id} FOR UPDATE`,
-      );
-      const refundTransaction = await tx.paymentTransaction.findUniqueOrThrow({
-        where: { id: reservation.id },
-      });
-      if (refundTransaction.status !== PaymentStatus.REFUNDED) {
-        await tx.paymentTransaction.update({
-          where: { id: refundTransaction.id },
+    let providerRef = claim.refund.providerRef;
+    let providerData = this.asJsonObject(
+      claim.refund.providerData,
+    ) as Prisma.InputJsonValue;
+    if (claim.action === 'CALL_PROVIDER') {
+      try {
+        const providerResult = await this.executeProviderRefund({
+          payment,
+          amount: refundAmount,
+          currency,
+          providerIdempotencyKey:
+            claim.refund.providerIdempotencyKey ?? `refund:${claim.refund.id}`,
+        });
+        providerRef = providerResult.providerRef;
+        providerData = providerResult.providerData;
+        const persisted = await this.prisma.paymentTransaction.updateMany({
+          where: {
+            id: claim.refund.id,
+            refundLifecycleStatus: 'PROCESSING',
+            refundLeaseToken: claimToken,
+          },
           data: {
-            status: PaymentStatus.REFUNDED,
+            refundLifecycleStatus: 'PROVIDER_SUCCEEDED',
             providerRef,
             providerData,
-            processedAt: new Date(),
+            providerSucceededAt: new Date(),
+            refundLeaseToken: null,
+            refundLeaseExpiresAt: null,
           },
         });
+        if (persisted.count !== 1) {
+          throw new ConflictException(
+            'Refund provider succeeded after its processing lease expired',
+          );
+        }
+      } catch (error: unknown) {
+        if (this.isDefinitiveRefundFailure(error)) {
+          await this.releaseFailedRefundLiability(
+            claim.refund.id,
+            payment,
+            refundAmount,
+            currency,
+            user.uid,
+            claimToken,
+            error,
+          );
+          throw error;
+        }
+        await this.prisma.paymentTransaction.updateMany({
+          where: {
+            id: claim.refund.id,
+            refundLifecycleStatus: 'PROCESSING',
+            refundLeaseToken: claimToken,
+          },
+          data: {
+            refundLifecycleStatus: 'NEEDS_RECONCILIATION',
+            refundLeaseToken: null,
+            refundLeaseExpiresAt: null,
+            note: this.refundFailureMessage(error),
+          },
+        });
+        throw new ServiceUnavailableException(
+          'Refund provider outcome is unknown; funds remain reserved for reconciliation',
+        );
       }
+    }
+
+    const finalized = await this.finalizeProviderSucceededRefund({
+      refundId: claim.refund.id,
+      sourcePaymentId: payment.id,
+      sourceAmount: payment.amount,
+      orderId,
+      actorId: user.uid,
+      providerRef,
+      providerData,
+    });
+    await this.notificationsService.notifyPaymentStatusChanged(
+      finalized.data.id,
+    );
+    return { data: finalized.data, message: 'Payment refunded successfully' };
+  }
+
+  private async executeProviderRefund(input: {
+    payment: {
+      paymentMethod: PaymentMethod;
+      providerRef: string | null;
+      providerData: Prisma.JsonValue | null;
+      tenantId: string;
+      restaurantId: string;
+      orderId?: string | null;
+      order?: { customerId: string } | null;
+    };
+    amount: Prisma.Decimal;
+    currency: string;
+    providerIdempotencyKey: string;
+  }): Promise<{ providerRef: string; providerData: Prisma.InputJsonValue }> {
+    if (input.payment.paymentMethod === PaymentMethod.STRIPE) {
+      if (!input.payment.providerRef) {
+        throw new BadRequestException(
+          'Stripe source payment reference is missing',
+        );
+      }
+      const credentials = await this.resolveGlobalStripeCheckoutCredentials();
+      const refund = await this.stripePaymentsService.refundPaymentIntent(
+        input.payment.providerRef,
+        Number(input.amount),
+        credentials,
+        input.providerIdempotencyKey,
+        {
+          refundTransactionId: input.providerIdempotencyKey.replace(
+            /^refund:/,
+            '',
+          ),
+          tenantId: input.payment.tenantId,
+          restaurantId: input.payment.restaurantId,
+          sourcePaymentReference: input.payment.providerRef,
+          orderId: input.payment.orderId ?? '',
+          customerId: input.payment.order?.customerId ?? '',
+          amount: input.amount.toFixed(2),
+          currency: input.currency,
+        },
+      );
+      const payload = refund as unknown as Record<string, unknown>;
+      const providerRef = this.readString(payload.id);
+      const sourceRef = this.readString(payload.payment_intent);
+      const amount = payload.amount;
+      const currency = this.readString(payload.currency);
+      const status = this.readString(payload.status);
+      if (
+        !providerRef ||
+        sourceRef !== input.payment.providerRef ||
+        !Number.isSafeInteger(amount) ||
+        amount !== input.amount.mul(100).toNumber() ||
+        currency?.toUpperCase() !== input.currency.toUpperCase() ||
+        status !== 'succeeded'
+      ) {
+        throw new PayoutProviderError(
+          'Stripe refund response does not match the reservation',
+          status === 'failed' || status === 'canceled',
+        );
+      }
+      return {
+        providerRef,
+        providerData: {
+          provider: 'stripe',
+          sourcePaymentReference: input.payment.providerRef,
+          refund: payload as Prisma.InputJsonValue,
+        },
+      };
+    }
+
+    if (input.payment.paymentMethod === PaymentMethod.PAYPAL) {
+      if (!this.paypalOrdersService) {
+        throw new ServiceUnavailableException('PayPal checkout is unavailable');
+      }
+      const captureId = this.readPaypalCaptureId(input.payment.providerData);
+      if (!captureId) {
+        throw new BadRequestException(
+          'PayPal capture reference is missing from this payment',
+        );
+      }
+      const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
+      const refund = await this.paypalOrdersService.refundCapture({
+        captureId,
+        amount: Number(input.amount),
+        currency: input.currency,
+        idempotencyKey: input.providerIdempotencyKey,
+        credentials,
+      });
+      const amount = this.asJsonObject(
+        this.asJsonObject(refund.payload).amount,
+      );
+      if (
+        refund.status !== 'COMPLETED' ||
+        this.readString(amount.currency_code)?.toUpperCase() !==
+          input.currency.toUpperCase() ||
+        this.readString(amount.value) !== input.amount.toFixed(2)
+      ) {
+        throw new PayoutProviderError(
+          'PayPal refund response does not match the reservation',
+          refund.status === 'FAILED' || refund.status === 'CANCELLED',
+        );
+      }
+      return {
+        providerRef: refund.id,
+        providerData: {
+          provider: 'paypal',
+          captureId,
+          refund: refund.payload as Prisma.InputJsonValue,
+        },
+      };
+    }
+
+    return {
+      providerRef:
+        input.payment.providerRef ?? `manual:${input.providerIdempotencyKey}`,
+      providerData: {
+        provider: 'manual',
+        sourcePaymentReference: input.payment.providerRef ?? null,
+      },
+    };
+  }
+
+  private async finalizeProviderSucceededRefund(input: {
+    refundId: string;
+    sourcePaymentId: string;
+    sourceAmount: Prisma.Decimal;
+    orderId: string;
+    actorId: string;
+    providerRef: string | null;
+    providerData: Prisma.InputJsonValue;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${input.sourcePaymentId} FOR UPDATE`,
+      );
+      const refund = await tx.paymentTransaction.findUniqueOrThrow({
+        where: { id: input.refundId },
+      });
+      if (refund.refundLifecycleStatus === 'COMPLETED') {
+        return { data: refund, fullyRefunded: false };
+      }
+      if (
+        refund.refundLifecycleStatus !== 'PROVIDER_SUCCEEDED' ||
+        refund.providerRef !== input.providerRef
+      ) {
+        throw new ConflictException('Refund is not ready for local completion');
+      }
+      const completed = await tx.paymentTransaction.update({
+        where: { id: refund.id },
+        data: {
+          status: PaymentStatus.REFUNDED,
+          refundLifecycleStatus: 'COMPLETED',
+          providerData: input.providerData,
+          processedAt: new Date(),
+          refundCompletedAt: new Date(),
+          refundLeaseToken: null,
+          refundLeaseExpiresAt: null,
+        },
+      });
       const total = await tx.paymentTransaction.aggregate({
         where: {
-          sourcePaymentTransactionId: payment.id,
+          sourcePaymentTransactionId: input.sourcePaymentId,
           type: PaymentTransactionType.REFUND,
-          status: PaymentStatus.REFUNDED,
+          refundLifecycleStatus: 'COMPLETED',
         },
         _sum: { amount: true },
       });
       const fullyRefunded = (total._sum.amount ?? new Prisma.Decimal(0)).equals(
-        payment.amount,
+        input.sourceAmount,
       );
       if (fullyRefunded) {
         await this.loyaltyWalletService!.restoreOrderBenefits(
-          orderId,
+          input.orderId,
           'REFUND',
-          user.uid,
+          input.actorId,
           tx,
         );
         await this.paymentsRepository.updateStatus(
-          payment.id,
+          input.sourcePaymentId,
           { status: PaymentStatus.REFUNDED, processedAt: new Date() },
           tx,
         );
         await this.paymentsRepository.updateOrderPaymentStatus(
-          orderId,
+          input.orderId,
           PaymentStatus.REFUNDED,
           tx,
         );
         await this.paymentsRepository.updateOrderState(
-          orderId,
+          input.orderId,
           {
             status: OrderStatus.CANCELLED,
             cancelledAt: new Date(),
-            cancelledByUserId: user.uid,
+            cancelledByUserId: input.actorId,
           },
           tx,
         );
       } else {
         await this.paymentsRepository.updateOrderPaymentStatus(
-          orderId,
+          input.orderId,
           PaymentStatus.PAID,
           tx,
         );
       }
-      return {
-        data: await tx.paymentTransaction.findUniqueOrThrow({
-          where: { id: reservation.id },
-        }),
-        fullyRefunded,
-      };
+      return { data: completed, fullyRefunded };
     });
+  }
 
-    await this.notificationsService.notifyPaymentStatusChanged(
-      finalized.data.id,
-    );
-    return { data: finalized.data, message: 'Payment refunded successfully' };
+  private async releaseFailedRefundLiability(
+    refundId: string,
+    payment: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      orderId: string | null;
+      paymentMethod: PaymentMethod;
+    },
+    amount: Prisma.Decimal,
+    currency: string,
+    actorId: string,
+    claimToken: string,
+    error: unknown,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${refundId} FOR UPDATE`,
+      );
+      const refund = await tx.paymentTransaction.findUniqueOrThrow({
+        where: { id: refundId },
+      });
+      if (refund.refundLifecycleStatus === 'FAILED_RELEASED') return;
+      if (
+        refund.refundLifecycleStatus !== 'PROCESSING' ||
+        refund.refundLeaseToken !== claimToken
+      ) {
+        throw new ConflictException('Stale refund worker cannot release funds');
+      }
+      const debit = await tx.restaurantWalletTransaction.findUnique({
+        where: { paymentTransactionId: refundId },
+        select: { id: true },
+      });
+      if (debit && payment.orderId) {
+        const requestHash =
+          FinancialLedgerRepository.createCanonicalRequestHash({
+            refundId,
+            tenantId: payment.tenantId,
+            restaurantId: payment.restaurantId,
+            amount: amount.toFixed(2),
+            currency,
+          });
+        await this.financialLedgerRepository!.applyRestaurantWalletDelta(
+          {
+            tenantId: payment.tenantId,
+            restaurantId: payment.restaurantId,
+            branchId: payment.branchId,
+            orderId: payment.orderId,
+            operationKey: `restaurant-refund-release:${refundId}`,
+            requestHash,
+            allowNegative: false,
+            source: 'ORDER_PAYMENT_REFUND_RELEASE',
+            delta: amount,
+            currency,
+            type: RestaurantWalletTransactionType.REFUND_RELEASE,
+            note: 'Released restaurant liability after definitive refund failure',
+            metadata: { sourcePaymentTransactionId: payment.id, refundId },
+            createdBy: actorId,
+          },
+          tx,
+        );
+      }
+      await tx.paymentTransaction.update({
+        where: { id: refundId },
+        data: {
+          status: PaymentStatus.FAILED,
+          refundLifecycleStatus: 'FAILED_RELEASED',
+          refundReleasedAt: new Date(),
+          refundLeaseToken: null,
+          refundLeaseExpiresAt: null,
+          note: this.refundFailureMessage(error),
+        },
+      });
+    });
+  }
+
+  private async cancelReservedRefund(
+    refund: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      branchId: string;
+      orderId: string | null;
+      sourcePaymentTransactionId: string | null;
+      amount: Prisma.Decimal;
+      currency: string;
+    },
+    actorId: string,
+  ) {
+    if (!refund.orderId || !refund.sourcePaymentTransactionId) {
+      throw new ConflictException('Refund reservation identity is incomplete');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${refund.id} FOR UPDATE`,
+      );
+      const current = await tx.paymentTransaction.findUniqueOrThrow({
+        where: { id: refund.id },
+      });
+      if (
+        current.refundLifecycleStatus === 'FAILED_RELEASED' &&
+        current.status === PaymentStatus.CANCELLED
+      ) {
+        return current;
+      }
+      if (current.refundLifecycleStatus !== 'RESERVED') {
+        throw new ConflictException(
+          'Refund can only be cancelled before provider processing begins',
+        );
+      }
+      const debit = await tx.restaurantWalletTransaction.findUnique({
+        where: { paymentTransactionId: refund.id },
+        select: { id: true },
+      });
+      if (!debit) {
+        throw new ConflictException('Refund liability reservation is missing');
+      }
+      const requestHash = FinancialLedgerRepository.createCanonicalRequestHash({
+        refundId: refund.id,
+        tenantId: refund.tenantId,
+        restaurantId: refund.restaurantId,
+        amount: refund.amount.toFixed(2),
+        currency: refund.currency,
+        reason: 'CANCELLED_BEFORE_PROVIDER_COMMITMENT',
+      });
+      await this.financialLedgerRepository!.applyRestaurantWalletDelta(
+        {
+          tenantId: refund.tenantId,
+          restaurantId: refund.restaurantId,
+          branchId: refund.branchId,
+          orderId: refund.orderId ?? undefined,
+          operationKey: `restaurant-refund-release:${refund.id}`,
+          requestHash,
+          allowNegative: false,
+          source: 'ORDER_PAYMENT_REFUND_RELEASE',
+          delta: refund.amount,
+          currency: refund.currency,
+          type: RestaurantWalletTransactionType.REFUND_RELEASE,
+          note: 'Released restaurant liability after refund cancellation',
+          metadata: {
+            sourcePaymentTransactionId: refund.sourcePaymentTransactionId,
+            refundId: refund.id,
+          },
+          createdBy: actorId,
+        },
+        tx,
+      );
+      return tx.paymentTransaction.update({
+        where: { id: refund.id },
+        data: {
+          status: PaymentStatus.CANCELLED,
+          refundLifecycleStatus: 'FAILED_RELEASED',
+          refundReleasedAt: new Date(),
+          refundLeaseToken: null,
+          refundLeaseExpiresAt: null,
+          note: 'Refund cancelled before provider commitment',
+        },
+      });
+    });
+  }
+
+  private isDefinitiveRefundFailure(error: unknown): boolean {
+    if (error instanceof PayoutProviderError) return error.definitive;
+    if (error instanceof BadRequestException) return true;
+    if (!error || typeof error !== 'object') return false;
+    const type = 'type' in error ? error.type : null;
+    return type === 'StripeInvalidRequestError' || type === 'StripeCardError';
+  }
+
+  private refundFailureMessage(error: unknown): string {
+    return error instanceof Error
+      ? error.message.slice(0, 500)
+      : 'Refund provider request failed';
   }
 
   private readPaypalCaptureId(
@@ -3939,6 +4343,12 @@ export class PaymentsService {
         );
         break;
       }
+      case 'refund.updated': {
+        await this.handleStripeRefundUpdated(
+          event.data.object as unknown as Record<string, unknown>,
+        );
+        break;
+      }
       case 'transfer.created':
       case 'transfer.updated': {
         await this.handleStripeTransferSucceeded(
@@ -3954,6 +4364,136 @@ export class PaymentsService {
       received: true,
       eventType: event.type,
     };
+  }
+
+  private async handleStripeRefundUpdated(
+    providerRefund: Record<string, unknown>,
+  ): Promise<void> {
+    const metadata = this.asJsonObject(providerRefund.metadata);
+    const refundId = this.readString(metadata.refundTransactionId);
+    const tenantId = this.readString(metadata.tenantId);
+    const restaurantId = this.readString(metadata.restaurantId);
+    const providerRef = this.readString(providerRefund.id);
+    if (!refundId || !tenantId || !restaurantId || !providerRef) {
+      throw new BadRequestException('Stripe refund identity is incomplete');
+    }
+    const refund = await this.prisma.paymentTransaction.findFirst({
+      where: {
+        id: refundId,
+        tenantId,
+        restaurantId,
+        type: PaymentTransactionType.REFUND,
+        paymentMethod: PaymentMethod.STRIPE,
+      },
+      include: {
+        sourcePaymentTransaction: true,
+        order: { select: { customerId: true } },
+      },
+    });
+    const source = refund?.sourcePaymentTransaction;
+    if (!refund || !source || !refund.orderId || !refund.order) {
+      throw new BadRequestException('Stripe refund scope is invalid');
+    }
+    const amount = providerRefund.amount;
+    const currency = this.readString(providerRefund.currency);
+    const sourceReference = this.readString(providerRefund.payment_intent);
+    if (
+      source.tenantId !== refund.tenantId ||
+      source.restaurantId !== refund.restaurantId ||
+      source.orderId !== refund.orderId ||
+      source.paymentMethod !== PaymentMethod.STRIPE ||
+      !Number.isSafeInteger(amount) ||
+      amount !== refund.amount.mul(100).toNumber() ||
+      currency?.toUpperCase() !== refund.currency.toUpperCase() ||
+      sourceReference !== source.providerRef ||
+      this.readString(metadata.sourcePaymentReference) !== source.providerRef ||
+      this.readString(metadata.orderId) !== refund.orderId ||
+      this.readString(metadata.customerId) !== refund.order.customerId ||
+      this.readString(metadata.amount) !== refund.amount.toFixed(2) ||
+      this.readString(metadata.currency)?.toUpperCase() !==
+        refund.currency.toUpperCase() ||
+      (refund.providerRef && refund.providerRef !== providerRef)
+    ) {
+      throw new ConflictException(
+        'Stripe refund webhook payload does not match the reservation',
+      );
+    }
+
+    const providerStatus = this.readString(providerRefund.status);
+    if (refund.refundLifecycleStatus === 'COMPLETED') return;
+    if (refund.refundLifecycleStatus === 'FAILED_RELEASED') {
+      if (providerStatus === 'failed' || providerStatus === 'canceled') return;
+      throw new ConflictException(
+        'Provider success conflicts with a released refund liability',
+      );
+    }
+    if (providerStatus === 'failed' || providerStatus === 'canceled') {
+      const claimToken = `stripe:webhook:${providerRef}`;
+      const claimed = await this.prisma.paymentTransaction.updateMany({
+        where: {
+          id: refund.id,
+          refundLifecycleStatus: {
+            in: ['RESERVED', 'PROCESSING', 'NEEDS_RECONCILIATION'],
+          },
+        },
+        data: {
+          refundLifecycleStatus: 'PROCESSING',
+          refundLeaseToken: claimToken,
+          refundLeaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException('Refund failure reconciliation was fenced');
+      }
+      await this.releaseFailedRefundLiability(
+        refund.id,
+        source,
+        refund.amount,
+        refund.currency,
+        'stripe:webhook',
+        claimToken,
+        new PayoutProviderError(
+          'Stripe definitively rejected the refund',
+          true,
+        ),
+      );
+      return;
+    }
+    if (providerStatus !== 'succeeded') return;
+
+    const providerData = {
+      provider: 'stripe',
+      sourcePaymentReference: source.providerRef,
+      refund: providerRefund as Prisma.InputJsonValue,
+    } as Prisma.InputJsonValue;
+    const persisted = await this.prisma.paymentTransaction.updateMany({
+      where: {
+        id: refund.id,
+        refundLifecycleStatus: {
+          in: ['PROCESSING', 'NEEDS_RECONCILIATION', 'PROVIDER_SUCCEEDED'],
+        },
+      },
+      data: {
+        refundLifecycleStatus: 'PROVIDER_SUCCEEDED',
+        providerRef,
+        providerData,
+        providerSucceededAt: new Date(),
+        refundLeaseToken: null,
+        refundLeaseExpiresAt: null,
+      },
+    });
+    if (persisted.count !== 1) {
+      throw new ConflictException('Refund success reconciliation was fenced');
+    }
+    await this.finalizeProviderSucceededRefund({
+      refundId: refund.id,
+      sourcePaymentId: source.id,
+      sourceAmount: source.amount,
+      orderId: refund.orderId,
+      actorId: 'stripe:webhook',
+      providerRef,
+      providerData,
+    });
   }
 
   private async handleStripeTransferSucceeded(

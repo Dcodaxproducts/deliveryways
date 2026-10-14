@@ -124,6 +124,7 @@ export class StripePaymentsService {
     amount?: number,
     credentials?: StripeCheckoutCredentials,
     idempotencyKey?: string,
+    metadata?: Record<string, string>,
   ) {
     const stripe = this.requireStripe(credentials);
 
@@ -133,6 +134,7 @@ export class StripePaymentsService {
         ...(amount !== undefined
           ? { amount: this.toMinorUnitAmount(amount) }
           : {}),
+        ...(metadata ? { metadata } : {}),
       },
       idempotencyKey ? { idempotencyKey } : {},
     );

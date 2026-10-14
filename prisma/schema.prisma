@@ -259,9 +259,20 @@ enum WalletTransactionType {
 enum RestaurantWalletTransactionType {
   ORDER_CREDIT
   REFUND_DEBIT
+  REFUND_RELEASE
   PAYOUT_DEBIT
   PAYOUT_RELEASE
   ADJUSTMENT
+}
+
+enum RefundLifecycleStatus {
+  RESERVED
+  PROCESSING
+  PROVIDER_SUCCEEDED
+  NEEDS_RECONCILIATION
+  FAILED_RELEASED
+  COMPLETED
+  LEGACY_QUARANTINED
 }
 
 enum RestaurantPayoutRequestStatus {
@@ -1730,6 +1741,13 @@ model PaymentTransaction {
   sourcePaymentTransactionId String?                @map("source_payment_transaction_id")
   idempotencyKey             String?                @unique(map: "payment_transactions_idempotency_key") @map("idempotency_key") @db.VarChar(64)
   requestHash                String?                @map("request_hash") @db.VarChar(64)
+  refundLifecycleStatus      RefundLifecycleStatus? @map("refund_lifecycle_status")
+  providerIdempotencyKey     String?                @unique(map: "payment_transactions_provider_idempotency_key") @map("provider_idempotency_key") @db.VarChar(191)
+  refundLeaseToken           String?                @map("refund_lease_token") @db.VarChar(191)
+  refundLeaseExpiresAt       DateTime?              @map("refund_lease_expires_at") @db.Timestamptz
+  providerSucceededAt        DateTime?              @map("provider_succeeded_at") @db.Timestamptz
+  refundReleasedAt           DateTime?              @map("refund_released_at") @db.Timestamptz
+  refundCompletedAt          DateTime?              @map("refund_completed_at") @db.Timestamptz
   createdAt                  DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                  DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -1747,6 +1765,7 @@ model PaymentTransaction {
   @@index([tenantId, createdAt])
   @@index([restaurantId, branchId, createdAt])
   @@index([sourcePaymentTransactionId, type, status], map: "payment_transactions_refund_source_status_idx")
+  @@index([refundLifecycleStatus, refundLeaseExpiresAt, createdAt], map: "payment_transactions_refund_recovery_idx")
   @@index([restaurantId, orderId, type, status], map: "payment_transactions_restaurant_order_payout_aggregate_idx")
   @@map("payment_transactions")
 }

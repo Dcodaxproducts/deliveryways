@@ -37,3 +37,34 @@ Migration `20261014170000_add_payout_integrity_lifecycle` is metadata-only: enum
 ## Rollback
 
 Stop new payout initiation, reconcile committed provider transfers, and roll back application instances. Keep additive columns, enum labels, and valid concurrent indexes during emergency rollback. Removing enum labels or lifecycle data is not an online rollback.
+
+## Refund lifecycle and gift-card fulfillment integrity
+
+Migration: `20261014193000_add_refund_lifecycle`.
+
+### Rollout
+
+1. Deploy the additive migration before application code. It adds nullable lifecycle/fencing columns, recovery indexes, the `REFUND_RELEASE` ledger type, and removes the obsolete one-entry-per-payout index so typed payout debit/release entries can coexist.
+2. The migration adopts completed legacy refunds as `COMPLETED`. Pending legacy refunds become `LEGACY_QUARANTINED`; they must never be submitted to a provider automatically.
+3. The preceding `20261014190000_add_gift_card_source_payment` migration owns the unique gift-card source-payment identity and its bounded legacy adoption.
+4. Deploy application workers/API, then monitor counts by `refund_lifecycle_status`, especially `NEEDS_RECONCILIATION` and `LEGACY_QUARANTINED`.
+
+### Refund state contract
+
+- `RESERVED`: restaurant liability was debited atomically with refund reservation.
+- `PROCESSING`: one lease/token holder may call the provider with the durable provider idempotency key.
+- `PROVIDER_SUCCEEDED`: provider success is durable; retries perform only local completion.
+- `NEEDS_RECONCILIATION`: timeout/transport outcome is ambiguous; liability remains reserved. Reconcile from a signed provider callback or provider lookup before changing state.
+- `FAILED_RELEASED`: definitive provider failure; liability was released through an idempotent `REFUND_RELEASE` ledger operation.
+- `COMPLETED`: local refund/order/benefit finalization completed.
+- `LEGACY_QUARANTINED`: pre-migration pending operation with unknown provider commitment.
+
+Cancellation is allowed only while `RESERVED`; never release a `PROCESSING`, `PROVIDER_SUCCEEDED`, or reconciliation reservation without definitive provider evidence. A stale lease holder cannot persist success or release liability because updates are fenced by its token.
+
+### Reconciliation checks
+
+Validate provider, source charge/capture, provider refund identity, tenant, restaurant, amount, and currency before adopting callbacks. For Stripe, `refund.updated` metadata carries the refund transaction and scope. Duplicate callbacks are safe: provider success and completion are idempotent. Quarantined legacy rows require provider-console evidence and a recorded operator decision before manual state repair.
+
+### Rollback
+
+Application rollback is safe because all new columns are nullable and public `PaymentStatus` values remain unchanged. Do not drop lifecycle columns, enum values, or unique indexes until all in-flight and quarantined refunds are resolved. Never roll back by releasing reservations in bulk.

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PaypalPayoutEnvironment } from './dto';
+import { PayoutProviderError } from './payout-provider.error';
 
 export interface PaypalOrderCredentials {
   clientId: string;
@@ -151,6 +152,12 @@ export class PaypalOrdersService {
     const id = this.readString(payload, ['id']);
     const status = this.readString(payload, ['status']);
 
+    if (status === 'FAILED' || status === 'CANCELLED') {
+      throw new PayoutProviderError(
+        'PayPal definitively rejected the refund',
+        true,
+      );
+    }
     if (!id || status !== 'COMPLETED') {
       throw new BadGatewayException(
         'PayPal did not confirm the refund as completed',

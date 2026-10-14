@@ -9,8 +9,10 @@ import {
   RestaurantWalletTransactionType,
 } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
+import { FinancialLedgerRepository } from '../financial-ledger';
 import { PaypalPayoutEnvironment, RestaurantPayoutProvider } from './dto';
 import { PaymentsService } from './payments.service';
+import { PayoutProviderError } from './payout-provider.error';
 
 describe('PaymentsService', () => {
   type RestaurantStripeSettingsUpdateArgs = {
@@ -173,11 +175,18 @@ describe('PaymentsService', () => {
 
     const prisma = {
       paymentTransaction: {
+        findFirst: jest.fn(),
         update: jest
           .fn()
           .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
             refundRecord = { ...refundRecord, ...data };
             return Promise.resolve(refundRecord);
+          }),
+        updateMany: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            refundRecord = { ...refundRecord, ...data };
+            return Promise.resolve({ count: 1 });
           }),
       },
       order: {
@@ -249,7 +258,15 @@ describe('PaymentsService', () => {
       cancelPaymentIntent: jest.fn(),
       refundPaymentIntent: jest
         .fn()
-        .mockResolvedValue({ id: 'stripe-refund-1' }),
+        .mockImplementation((paymentIntentId: string, amount?: number) =>
+          Promise.resolve({
+            id: 'stripe-refund-1',
+            payment_intent: paymentIntentId,
+            amount: Math.round((amount ?? 0) * 100),
+            currency: 'eur',
+            status: 'succeeded',
+          }),
+        ),
     };
     const paypalPayoutsService = {
       createPayout: jest.fn(),
@@ -1593,6 +1610,11 @@ describe('PaymentsService', () => {
       10,
       expect.any(Object),
       'refund:refund-transaction-1',
+      expect.objectContaining({
+        refundTransactionId: 'refund-transaction-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      }),
     );
     expect(
       financialLedgerRepository.applyRestaurantWalletDelta,
@@ -1646,7 +1668,11 @@ describe('PaymentsService', () => {
     paypalOrdersService.refundCapture.mockResolvedValue({
       id: 'paypal-refund-1',
       status: 'COMPLETED',
-      payload: { id: 'paypal-refund-1', status: 'COMPLETED' },
+      payload: {
+        id: 'paypal-refund-1',
+        status: 'COMPLETED',
+        amount: { currency_code: 'EUR', value: '10.00' },
+      },
     });
     paymentsRepository.create.mockResolvedValue({
       id: 'refund-paypal-1',
@@ -1690,8 +1716,8 @@ describe('PaymentsService', () => {
       where: { id: 'refund-transaction-1' },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({
-        providerRef: 'paypal-refund-1',
         status: PaymentStatus.REFUNDED,
+        refundLifecycleStatus: 'COMPLETED',
       }),
     });
   });
@@ -1735,10 +1761,73 @@ describe('PaymentsService', () => {
         'payment-paypal-1',
         { amount: 10, idempotencyKey: 'refund-test-10' },
       ),
-    ).rejects.toThrow('PayPal refund failed');
+    ).rejects.toThrow(
+      'Refund provider outcome is unknown; funds remain reserved for reconciliation',
+    );
 
     expect(paymentsRepository.create).not.toHaveBeenCalled();
     expect(transactionTx.order.update).not.toHaveBeenCalled();
+  });
+
+  it('releases restaurant liability exactly once after definitive provider failure', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+      financialLedgerRepository,
+    } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-definitive-failure',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_definitive_failure',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
+      id: 'wallet-entry',
+    });
+    stripePaymentsService.refundPaymentIntent.mockRejectedValue(
+      new PayoutProviderError('provider declined refund', true),
+    );
+
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-definitive-failure',
+        { amount: 10, idempotencyKey: 'definitive-failure' },
+      ),
+    ).rejects.toThrow('provider declined refund');
+
+    expect(
+      financialLedgerRepository.applyRestaurantWalletDelta,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: RestaurantWalletTransactionType.REFUND_RELEASE,
+        delta: new Prisma.Decimal(10),
+      }),
+      transactionTx,
+    );
+    expect(transactionTx.paymentTransaction.update).toHaveBeenCalledWith({
+      where: { id: 'refund-transaction-1' },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: expect.objectContaining({
+        status: PaymentStatus.FAILED,
+        refundLifecycleStatus: 'FAILED_RELEASED',
+      }),
+    });
   });
 
   it('reconciles persisted provider success without repeating the provider refund', async () => {
@@ -1774,20 +1863,13 @@ describe('PaymentsService', () => {
       transaction: { id: 'restaurant-wallet-refund-1' },
       replayed: false,
     });
-    transactionTx.paymentTransaction.update
-      .mockRejectedValueOnce(new Error('local ledger unavailable'))
-      .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
-        Promise.resolve(data),
-      );
     const request = { amount: 10, idempotencyKey: 'refund-retry-1' };
 
-    await expect(
-      service.refund(
-        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
-        'payment-retry-1',
-        request,
-      ),
-    ).rejects.toThrow('local ledger unavailable');
+    await service.refund(
+      { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'payment-retry-1',
+      request,
+    );
     await service.refund(
       { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
       'payment-retry-1',
@@ -1800,8 +1882,422 @@ describe('PaymentsService', () => {
       10,
       expect.any(Object),
       'refund:refund-transaction-1',
+      expect.objectContaining({
+        refundTransactionId: 'refund-transaction-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+      }),
     );
     expect(transactionTx.paymentTransaction.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles an ambiguous refund to success with the same provider idempotency key', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+    } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-ambiguous-success',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_ambiguous_success',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
+      id: 'wallet-entry',
+    });
+    stripePaymentsService.refundPaymentIntent
+      .mockRejectedValueOnce(new Error('socket timeout'))
+      .mockResolvedValueOnce({
+        id: 're_ambiguous_success',
+        payment_intent: 'pi_ambiguous_success',
+        amount: 1000,
+        currency: 'eur',
+        status: 'succeeded',
+      });
+    const request = { amount: 10, idempotencyKey: 'ambiguous-success' };
+
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-ambiguous-success',
+        request,
+      ),
+    ).rejects.toThrow('funds remain reserved for reconciliation');
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-ambiguous-success',
+        request,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ message: 'Payment refunded successfully' }),
+    );
+
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledTimes(2);
+    expect(
+      stripePaymentsService.refundPaymentIntent.mock.calls.map(
+        (call: unknown[]) => call[3],
+      ),
+    ).toEqual(['refund:refund-transaction-1', 'refund:refund-transaction-1']);
+  });
+
+  it('reconciles an ambiguous refund to definitive failure and releases once', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+      financialLedgerRepository,
+    } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-ambiguous-failure',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_ambiguous_failure',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
+      id: 'wallet-entry',
+    });
+    stripePaymentsService.refundPaymentIntent
+      .mockRejectedValueOnce(new Error('socket timeout'))
+      .mockRejectedValueOnce(
+        new PayoutProviderError('provider rejected refund', true),
+      );
+    const request = { amount: 10, idempotencyKey: 'ambiguous-failure' };
+
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-ambiguous-failure',
+        request,
+      ),
+    ).rejects.toThrow('funds remain reserved for reconciliation');
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-ambiguous-failure',
+        request,
+      ),
+    ).rejects.toThrow('provider rejected refund');
+
+    const releases =
+      financialLedgerRepository.applyRestaurantWalletDelta.mock.calls.filter(
+        (call: [{ type: RestaurantWalletTransactionType }]) =>
+          call[0].type === RestaurantWalletTransactionType.REFUND_RELEASE,
+      );
+    expect(releases).toHaveLength(1);
+  });
+
+  it('finishes local completion after a crash without calling the provider again', async () => {
+    const { service, prisma, paymentsRepository, stripePaymentsService } =
+      makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-provider-persisted',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_provider_persisted',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    const defaultTransaction = prisma.$transaction.getMockImplementation();
+    let transactionCount = 0;
+    prisma.$transaction.mockImplementation((input: unknown) => {
+      transactionCount += 1;
+      if (transactionCount === 3) {
+        return Promise.reject(new Error('crash before local completion'));
+      }
+      return defaultTransaction!(input);
+    });
+    const request = { amount: 10, idempotencyKey: 'provider-persisted' };
+
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-provider-persisted',
+        request,
+      ),
+    ).rejects.toThrow('crash before local completion');
+    prisma.$transaction.mockImplementation(defaultTransaction);
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-provider-persisted',
+        request,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ message: 'Payment refunded successfully' }),
+    );
+
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('quarantines an ambiguous legacy refund instead of adopting it', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+    } = makeService();
+    const source = {
+      id: 'payment-legacy-source',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_legacy',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    };
+    paymentsRepository.findById.mockResolvedValue(source);
+    const requestHash = FinancialLedgerRepository.createCanonicalRequestHash({
+      sourcePaymentTransactionId: source.id,
+      tenantId: source.tenantId,
+      restaurantId: source.restaurantId,
+      amount: '10.00',
+      currency: source.currency,
+      paymentMethod: source.paymentMethod,
+      providerRef: undefined,
+      note: undefined,
+    });
+    transactionTx.paymentTransaction.findUnique
+      .mockResolvedValueOnce(source)
+      .mockResolvedValueOnce({
+        id: 'legacy-refund',
+        sourcePaymentTransactionId: source.id,
+        requestHash,
+        type: PaymentTransactionType.REFUND,
+        status: PaymentStatus.PENDING,
+        refundLifecycleStatus: 'LEGACY_QUARANTINED',
+      });
+    transactionTx.paymentTransaction.findUniqueOrThrow.mockResolvedValue({
+      id: 'legacy-refund',
+      refundLifecycleStatus: 'LEGACY_QUARANTINED',
+    });
+
+    const result = await service.refund(
+      { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      source.id,
+      { amount: 10, idempotencyKey: 'legacy-refund' },
+    );
+
+    expect(result.message).toBe('Refund requires provider reconciliation');
+    expect(stripePaymentsService.refundPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('fences a stale refund worker after provider success', async () => {
+    const {
+      service,
+      prisma,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+    } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-stale-worker',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_stale_worker',
+      providerData: {},
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
+      id: 'wallet-entry',
+    });
+    prisma.paymentTransaction.updateMany
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-stale-worker',
+        { amount: 10, idempotencyKey: 'stale-worker' },
+      ),
+    ).rejects.toThrow('funds remain reserved for reconciliation');
+
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(transactionTx.paymentTransaction.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: expect.objectContaining({ status: PaymentStatus.REFUNDED }),
+      }),
+    );
+  });
+
+  it('cancels only a reserved refund and releases its liability once', async () => {
+    const {
+      service,
+      paymentsRepository,
+      transactionTx,
+      financialLedgerRepository,
+    } = makeService();
+    const refund = {
+      id: 'refund-cancel-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      sourcePaymentTransactionId: 'payment-source-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.REFUND,
+      status: PaymentStatus.PENDING,
+      refundLifecycleStatus: 'RESERVED',
+      amount: new Prisma.Decimal(10),
+      currency: 'EUR',
+      providerRef: null,
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    };
+    paymentsRepository.findById.mockResolvedValue(refund);
+    transactionTx.paymentTransaction.findUniqueOrThrow.mockResolvedValue(
+      refund,
+    );
+    transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
+      id: 'refund-debit-1',
+    });
+
+    const result = await service.cancel(
+      { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      refund.id,
+      {},
+    );
+
+    expect(result.message).toContain('cancelled and released');
+    expect(
+      financialLedgerRepository.applyRestaurantWalletDelta,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationKey: 'restaurant-refund-release:refund-cancel-1',
+        type: RestaurantWalletTransactionType.REFUND_RELEASE,
+        delta: new Prisma.Decimal(10),
+      }),
+      transactionTx,
+    );
+    expect(transactionTx.paymentTransaction.update).toHaveBeenCalledWith({
+      where: { id: refund.id },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: expect.objectContaining({
+        status: PaymentStatus.CANCELLED,
+        refundLifecycleStatus: 'FAILED_RELEASED',
+      }),
+    });
+  });
+
+  it('accepts a duplicate validated Stripe refund webhook without replaying effects', async () => {
+    const { service, prisma, stripePaymentsService, transactionTx } =
+      makeService();
+    stripePaymentsService.constructWebhookEvent.mockReturnValue({
+      type: 'refund.updated',
+      data: {
+        object: {
+          id: 're_completed',
+          payment_intent: 'pi_completed',
+          amount: 1000,
+          currency: 'eur',
+          status: 'succeeded',
+          metadata: {
+            refundTransactionId: 'refund-completed',
+            tenantId: 'tenant-1',
+            restaurantId: 'restaurant-1',
+            sourcePaymentReference: 'pi_completed',
+            orderId: 'order-1',
+            customerId: 'customer-1',
+            amount: '10.00',
+            currency: 'EUR',
+          },
+        },
+      },
+    });
+    prisma.paymentTransaction.findFirst.mockResolvedValue({
+      id: 'refund-completed',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      amount: new Prisma.Decimal(10),
+      currency: 'EUR',
+      providerRef: 're_completed',
+      refundLifecycleStatus: 'COMPLETED',
+      order: { customerId: 'customer-1' },
+      sourcePaymentTransaction: {
+        id: 'payment-source-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        orderId: 'order-1',
+        paymentMethod: PaymentMethod.STRIPE,
+        providerRef: 'pi_completed',
+        amount: new Prisma.Decimal(23),
+      },
+    });
+
+    await expect(
+      service.handleStripeWebhook(Buffer.from('{}'), 'sig_123'),
+    ).resolves.toEqual({ received: true, eventType: 'refund.updated' });
+    expect(prisma.paymentTransaction.updateMany).not.toHaveBeenCalled();
+    expect(transactionTx.paymentTransaction.update).not.toHaveBeenCalled();
   });
 
   it('does not debit the restaurant wallet for cash order refunds', async () => {
@@ -2442,8 +2938,8 @@ describe('PaymentsService', () => {
       branchId: 'branch-1',
       amount: new Prisma.Decimal(50),
       currency: 'EUR',
-      providerRef: 'pi_gift_123',
       paymentMethod: PaymentMethod.STRIPE,
+      providerRef: 'pi_gift_123',
       type: PaymentTransactionType.CHARGE,
       providerData: {
         target: 'GUEST_GIFT_CARD_PURCHASE',
@@ -2493,6 +2989,10 @@ describe('PaymentsService', () => {
       .mockResolvedValueOnce(pendingPayment)
       .mockResolvedValueOnce(fulfilledPayment);
     transactionTx.coupon.create.mockResolvedValue({ id: 'gift-card-1' });
+    transactionTx.coupon.findUnique.mockResolvedValue(null);
+    transactionTx.paymentTransaction.findUniqueOrThrow.mockResolvedValue(
+      pendingPayment,
+    );
 
     await service.handleStripeWebhook(Buffer.from('{}'), 'sig_123');
 
