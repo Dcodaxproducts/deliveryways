@@ -9,11 +9,15 @@ import {
 } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database';
+import { CartService } from '../src/modules/cart/cart.service';
+import { GlobalSettingsService } from '../src/modules/global-settings/global-settings.service';
 import { OrdersService } from '../src/modules/orders/orders.service';
 
 describe('P0 checkout idempotency persistence (isolated database)', () => {
   let moduleFixture: TestingModule;
   let prisma: PrismaService;
+  let cartService: CartService;
+  let globalSettingsService: GlobalSettingsService;
   let ordersService: OrdersService;
   const runId = `${Date.now()}-${process.pid}`;
 
@@ -22,11 +26,143 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
       imports: [AppModule],
     }).compile();
     prisma = moduleFixture.get(PrismaService);
+    cartService = moduleFixture.get(CartService);
+    globalSettingsService = moduleFixture.get(GlobalSettingsService);
     ordersService = moduleFixture.get(OrdersService);
   }, 60_000);
 
   afterAll(async () => {
     await moduleFixture.close();
+  });
+
+  it('replays concurrent CartService checkout with one order and one payment effect', async () => {
+    await globalSettingsService.getCartExpiryMinutes();
+    const tenant = await prisma.tenant.create({
+      data: {
+        name: `Checkout Service Tenant ${runId}`,
+        slug: `checkout-service-tenant-${runId}`,
+      },
+    });
+    const restaurant = await prisma.restaurant.create({
+      data: {
+        tenantId: tenant.id,
+        name: `Checkout Service Restaurant ${runId}`,
+        slug: `checkout-service-restaurant-${runId}`,
+        subdomain: `checkout-service-${runId}`,
+      },
+    });
+    const branch = await prisma.branch.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        name: 'Checkout Service Branch',
+      },
+    });
+    await prisma.loyaltyProgram.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        isActive: false,
+      },
+    });
+    const customer = await prisma.user.create({
+      data: {
+        email: `checkout-service-${runId}@example.test`,
+        password: 'not-used',
+        role: UserRole.CUSTOMER,
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        isVerified: true,
+        isApproved: true,
+      },
+    });
+    const category = await prisma.menuCategory.create({
+      data: {
+        restaurantId: restaurant.id,
+        name: 'Checkout Service',
+        slug: `checkout-service-${runId}`,
+      },
+    });
+    const menuItem = await prisma.menuItem.create({
+      data: {
+        restaurantId: restaurant.id,
+        categoryId: category.id,
+        name: 'Concurrent checkout item',
+        slug: `checkout-service-item-${runId}`,
+        basePrice: 10,
+      },
+    });
+    const cart = await prisma.cart.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        customerId: customer.id,
+        orderType: OrderType.TAKEAWAY,
+        paymentMethod: PaymentMethod.COD,
+        items: {
+          create: { menuItemId: menuItem.id, quantity: 2 },
+        },
+      },
+    });
+    const user = {
+      uid: customer.id,
+      tid: tenant.id,
+      rid: restaurant.id,
+      role: UserRole.CUSTOMER,
+    };
+    const dto = {
+      idempotencyKey: '717648d5-1084-4f4b-b8af-5b331584ee6e',
+      cartId: cart.id,
+      cartVersion: cart.updatedAt.toISOString(),
+      cartRevision: cart.revision,
+      paymentMethod: PaymentMethod.COD,
+    };
+
+    const results = await Promise.all([
+      cartService.checkout(user as never, dto as never),
+      cartService.checkout(user as never, dto as never),
+    ]);
+    expect(results[0].data.id).toBe(results[1].data.id);
+    const orderId = results[0].data.id;
+    await expect(
+      prisma.order.count({
+        where: {
+          customerId: customer.id,
+          checkoutIdempotencyKey: dto.idempotencyKey,
+        },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.paymentTransaction.count({ where: { orderId } }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.loyaltyTransaction.count({ where: { orderId } }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.loyaltyAccount.count({ where: { customerId: customer.id } }),
+    ).resolves.toBe(0);
+    await expect(prisma.cart.count({ where: { id: cart.id } })).resolves.toBe(
+      0,
+    );
+    await expect(
+      prisma.orderItem.findMany({
+        where: { orderId },
+        select: { menuItemId: true, quantity: true },
+      }),
+    ).resolves.toEqual([{ menuItemId: menuItem.id, quantity: 2 }]);
+    await expect(
+      cartService.checkout(
+        user as never,
+        {
+          ...dto,
+          customerNote: 'different request',
+        } as never,
+      ),
+    ).rejects.toThrow(
+      'Idempotency key was already used with a different checkout request',
+    );
   });
 
   it('arbitrates concurrent retries, rolls back failed attempts, and isolates authenticated and guest scopes', async () => {

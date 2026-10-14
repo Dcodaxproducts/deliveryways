@@ -300,16 +300,34 @@ export class MenuCategoryRepository {
 
   async deleteCartItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
     const client = this.client(tx);
+    if (!menuItemIds.length) {
+      return { count: 0 };
+    }
     if (tx) {
       await lockCartMenuItems(tx, menuItemIds);
     }
-    await client.cart.updateMany({
-      where: { items: { some: { menuItemId: { in: menuItemIds } } } },
-      data: { revision: { increment: 1 }, updatedAt: new Date() },
-    });
-    return client.cartItem.deleteMany({
-      where: { menuItemId: { in: menuItemIds } },
-    });
+    const [result] = await client.$queryRaw<
+      Array<{ count: number }>
+    >(Prisma.sql`
+      WITH deleted AS (
+        DELETE FROM cart_items
+        WHERE menu_item_id IN (${Prisma.join(menuItemIds)})
+        RETURNING cart_id
+      ),
+      affected AS (
+        SELECT DISTINCT cart_id FROM deleted
+      ),
+      advanced AS (
+        UPDATE carts
+        SET revision = carts.revision + 1,
+            updated_at = CURRENT_TIMESTAMP
+        FROM affected
+        WHERE carts.id = affected.cart_id
+        RETURNING carts.id
+      )
+      SELECT COUNT(*)::int AS count FROM deleted
+    `);
+    return { count: result?.count ?? 0 };
   }
 
   deleteGroupOrderItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {

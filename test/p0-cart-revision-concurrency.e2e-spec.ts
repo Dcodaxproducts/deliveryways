@@ -1,16 +1,13 @@
 import { TestingModule, Test } from '@nestjs/testing';
 import { OrderType, UserRole } from '@prisma/client';
-import { lockCartMenuItems } from '../src/common/utils/cart-menu-lock.util';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database';
-import { CartRepository } from '../src/modules/cart/cart.repository';
 import { CartService } from '../src/modules/cart/cart.service';
 import { MenuItemRepository } from '../src/modules/menu/item/item.repository';
 
 describe('P0 cart revision serialization (isolated database)', () => {
   let moduleFixture: TestingModule;
   let prisma: PrismaService;
-  let cartRepository: CartRepository;
   let cartService: CartService;
   let menuItemRepository: MenuItemRepository;
   const runId = `${Date.now()}-${process.pid}`;
@@ -20,7 +17,6 @@ describe('P0 cart revision serialization (isolated database)', () => {
       imports: [AppModule],
     }).compile();
     prisma = moduleFixture.get(PrismaService);
-    cartRepository = new CartRepository(prisma);
     cartService = moduleFixture.get(CartService);
     menuItemRepository = moduleFixture.get(MenuItemRepository);
   }, 60_000);
@@ -119,7 +115,7 @@ describe('P0 cart revision serialization (isolated database)', () => {
     const equivalentSuccesses = equivalentResults.filter(
       ({ status }) => status === 'fulfilled',
     );
-    if (equivalentSuccesses.length !== 1) {
+    if (equivalentSuccesses.length !== 2) {
       const reasons = equivalentResults
         .filter(
           (result): result is PromiseRejectedResult =>
@@ -129,15 +125,15 @@ describe('P0 cart revision serialization (isolated database)', () => {
           reason instanceof Error ? reason.message : String(reason),
         );
       throw new Error(
-        `Expected one equivalent add winner; failures: ${reasons.join(' | ')}`,
+        `Expected both equivalent adds to serialize; failures: ${reasons.join(' | ')}`,
       );
     }
     await expect(
       prisma.cart.findUniqueOrThrow({ where: { id: equivalentCart.id } }),
-    ).resolves.toMatchObject({ revision: 1 });
+    ).resolves.toMatchObject({ revision: 2 });
     await expect(
       prisma.cartItem.findMany({ where: { cartId: equivalentCart.id } }),
-    ).resolves.toMatchObject([{ menuItemId: menuItems[0].id, quantity: 1 }]);
+    ).resolves.toMatchObject([{ menuItemId: menuItems[0].id, quantity: 2 }]);
 
     const dealCart = await prisma.cart.create({
       data: {
@@ -150,34 +146,35 @@ describe('P0 cart revision serialization (isolated database)', () => {
           create: menuItems.slice(1, 3).map((item) => ({
             menuItemId: item.id,
             quantity: 1,
+            modifiers: { dealId: 'concurrent-deal' },
           })),
         },
       },
       include: { items: true },
     });
     const updateDealQuantity = (quantity: number) =>
-      prisma.$transaction(async (tx) => {
-        const ids = menuItems.slice(1, 3).map((item) => item.id);
-        await lockCartMenuItems(tx, ids);
-        const claimed = await cartRepository.claimRevision(dealCart, tx);
-        if (claimed.count !== 1) throw new Error('cart revision conflict');
-        return tx.cartItem.updateMany({
-          where: { id: { in: dealCart.items.map((item) => item.id) } },
-          data: { quantity },
-        });
-      });
+      cartService.updateDeal(
+        {
+          uid: customers[1].id,
+          tid: tenant.id,
+          rid: restaurant.id,
+          role: UserRole.CUSTOMER,
+        } as never,
+        'concurrent-deal',
+        { quantity },
+      );
     const dealResults = await Promise.allSettled([
       updateDealQuantity(2),
       updateDealQuantity(3),
     ]);
     expect(
       dealResults.filter(({ status }) => status === 'fulfilled'),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     const finalDealCart = await prisma.cart.findUniqueOrThrow({
       where: { id: dealCart.id },
       include: { items: { orderBy: { id: 'asc' } } },
     });
-    expect(finalDealCart.revision).toBe(1);
+    expect(finalDealCart.revision).toBe(2);
     expect(new Set(finalDealCart.items.map((item) => item.quantity)).size).toBe(
       1,
     );
@@ -193,25 +190,23 @@ describe('P0 cart revision serialization (isolated database)', () => {
       },
     });
     const addDuringCleanup = () =>
-      prisma.$transaction(async (tx) => {
-        await lockCartMenuItems(tx, [menuItems[3].id]);
-        const available = await cartRepository.findAvailableMenuItemIds(
-          [menuItems[3].id],
-          restaurant.id,
-          branch.id,
-          tx,
-        );
-        if (available.length !== 1) throw new Error('menu unavailable');
-        const claimed = await cartRepository.claimRevision(cleanupCart, tx);
-        if (claimed.count !== 1) throw new Error('cart revision conflict');
-        return tx.cartItem.create({
-          data: {
-            cartId: cleanupCart.id,
-            menuItemId: menuItems[3].id,
-            quantity: 1,
-          },
-        });
-      });
+      cartService.addItem(
+        {
+          uid: customers[2].id,
+          tid: tenant.id,
+          rid: restaurant.id,
+          role: UserRole.CUSTOMER,
+        } as never,
+        {
+          branchId: branch.id,
+          menuItemId: menuItems[3].id,
+          quantity: 1,
+          orderType: OrderType.TAKEAWAY,
+        } as never,
+        undefined,
+        undefined,
+        true,
+      );
     const cleanupMenuItem = () =>
       prisma.$transaction(async (tx) => {
         await menuItemRepository.deleteCartItems(menuItems[3].id, tx);

@@ -39,7 +39,9 @@ describe('CartService', () => {
       deleteByCustomerId: jest.fn(),
       deleteExpiredBefore: jest.fn(),
       touchRevision: jest.fn(),
-      claimRevision: jest.fn().mockResolvedValue({ count: 1 }),
+      claimAndFindForMutation: jest.fn((cart: unknown) =>
+        Promise.resolve(cart),
+      ),
       findAvailableMenuItemIds: jest.fn((menuItemIds: string[]) =>
         Promise.resolve(menuItemIds),
       ),
@@ -7747,8 +7749,8 @@ describe('CartService', () => {
 
       expect(cartRepository.transaction).toHaveBeenCalledTimes(1);
       expect(cartRepository.createItem).toHaveBeenCalledTimes(2);
-      expect(cartRepository.claimRevision).toHaveBeenCalledTimes(1);
-      expect(cartRepository.claimRevision).toHaveBeenCalledWith(
+      expect(cartRepository.claimAndFindForMutation).toHaveBeenCalledTimes(1);
+      expect(cartRepository.claimAndFindForMutation).toHaveBeenCalledWith(
         cart,
         expect.any(Object),
       );
@@ -7758,7 +7760,7 @@ describe('CartService', () => {
     it('rejects a stale concurrent mutation before writing cart items', async () => {
       const { service, cartRepository } = makeService();
       mockBatchInternals(service);
-      cartRepository.claimRevision.mockResolvedValueOnce({ count: 0 });
+      cartRepository.claimAndFindForMutation.mockResolvedValueOnce(null);
 
       await expect(
         service.addItemsBatch(user, [

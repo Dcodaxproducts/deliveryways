@@ -1,35 +1,34 @@
 import { CartRepository } from './cart.repository';
 
 describe('CartRepository revision mutations', () => {
-  it('claims only the expected parent revision', async () => {
-    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+  it('claims the scoped parent row and reloads current cart items', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([{ id: 'cart-1' }]);
+    const findUnique = jest.fn().mockResolvedValue({ id: 'cart-1', items: [] });
     const repository = new CartRepository({} as never);
 
-    await repository.claimRevision(
+    const result = await repository.claimAndFindForMutation(
       {
         id: 'cart-1',
-        revision: 3,
         tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
         customerId: 'customer-1',
       },
-      { cart: { updateMany } } as never,
+      { $queryRaw: queryRaw, cart: { findUnique } } as never,
     );
 
-    expect(updateMany).toHaveBeenCalledTimes(1);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        id: 'cart-1',
-        revision: 3,
-        tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
-        customerId: 'customer-1',
-      },
-      data: {
-        revision: { increment: 1 },
-        updatedAt: expect.any(Date) as unknown as Date,
-      },
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const rawCalls = queryRaw.mock.calls as Array<[{ values: unknown[] }]>;
+    expect(rawCalls[0]?.[0].values).toEqual([
+      'cart-1',
+      'tenant-1',
+      'restaurant-1',
+      'customer-1',
+    ]);
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: 'cart-1' },
+      include: { items: { orderBy: { createdAt: 'asc' } } },
     });
+    expect(result).toEqual({ id: 'cart-1', items: [] });
   });
 });
 

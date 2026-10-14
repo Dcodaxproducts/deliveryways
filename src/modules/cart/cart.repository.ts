@@ -164,25 +164,32 @@ export class CartRepository {
     });
   }
 
-  async claimRevision(
+  async claimAndFindForMutation(
     cart: {
       id: string;
-      revision: number;
       tenantId: string;
       restaurantId: string;
       customerId: string;
     },
     tx: PrismaTx,
   ) {
-    return tx.cart.updateMany({
-      where: {
-        id: cart.id,
-        revision: cart.revision,
-        tenantId: cart.tenantId,
-        restaurantId: cart.restaurantId,
-        customerId: cart.customerId,
-      },
-      data: { revision: { increment: 1 }, updatedAt: new Date() },
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      UPDATE carts
+      SET revision = revision + 1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${cart.id}
+        AND tenant_id = ${cart.tenantId}
+        AND restaurant_id = ${cart.restaurantId}
+        AND customer_id = ${cart.customerId}
+      RETURNING id
+    `);
+    if (locked.length !== 1) {
+      return null;
+    }
+
+    return tx.cart.findUnique({
+      where: { id: cart.id },
+      include: { items: { orderBy: { createdAt: 'asc' } } },
     });
   }
 
