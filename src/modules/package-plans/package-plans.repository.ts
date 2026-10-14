@@ -759,6 +759,113 @@ export class PackagePlansRepository {
     });
   }
 
+  /** PostgreSQL reduces full payout history before rows cross into Node.js. */
+  getRestaurantPayoutAvailabilityAggregates(
+    restaurantId: string,
+    periodFrom: Date,
+    periodTo: Date,
+    fixedCommissionAmount: Prisma.Decimal,
+    commissionPercentage: Prisma.Decimal,
+  ) {
+    return this.prisma.$queryRaw<
+      Array<{
+        billingMonth: string;
+        ordersCount: bigint;
+        totalOrderAmount: Prisma.Decimal;
+        platformCollectedAmount: Prisma.Decimal;
+        restaurantTransactionFeeAmount: Prisma.Decimal;
+        fixedCommissionAmount: Prisma.Decimal;
+        periodOrdersCount: bigint;
+        periodTotalOrderAmount: Prisma.Decimal;
+        periodPlatformCollectedAmount: Prisma.Decimal;
+        periodRestaurantTransactionFeeAmount: Prisma.Decimal;
+        periodFixedCommissionAmount: Prisma.Decimal;
+        periodPercentageCommissionAmount: Prisma.Decimal;
+      }>
+    >(Prisma.sql`
+      WITH transaction_totals AS (
+        SELECT pt."order_id",
+               COALESCE(SUM(CASE WHEN pt."type" = 'REFUND' THEN -pt."amount" ELSE pt."amount" END), 0)::numeric AS net_collected
+        FROM "payment_transactions" pt
+        WHERE pt."restaurant_id" = ${restaurantId}
+          AND ((pt."type" = 'CHARGE' AND pt."status" = 'PAID')
+            OR (pt."type" = 'REFUND' AND pt."status" = 'REFUNDED'))
+          AND pt."order_id" IS NOT NULL
+        GROUP BY pt."order_id"
+      ), eligible_orders AS (
+        SELECT COALESCE(o."paid_at", o."created_at") AS occurred_at,
+               CASE WHEN o."payment_method" IN ('COD', 'CARD_ON_DELIVERY', 'WALLET')
+                 THEN o."total_amount"
+                 ELSE GREATEST(LEAST(o."total_amount", COALESCE(tt.net_collected, 0)), 0)
+               END::numeric AS commissionable_amount,
+               CASE WHEN o."payment_method" IN ('COD', 'CARD_ON_DELIVERY', 'WALLET')
+                 THEN 0 ELSE GREATEST(COALESCE(tt.net_collected, 0), 0)
+               END::numeric AS platform_collected_amount,
+               CASE WHEN o."transaction_fee_payer" = 'RESTAURANT'
+                 THEN o."transaction_fee_amount" ELSE 0
+               END::numeric AS restaurant_transaction_fee_amount,
+               LEAST(${fixedCommissionAmount}, CASE
+                 WHEN o."payment_method" IN ('COD', 'CARD_ON_DELIVERY', 'WALLET') THEN o."total_amount"
+                 ELSE GREATEST(LEAST(o."total_amount", COALESCE(tt.net_collected, 0)), 0)
+               END)::numeric AS fixed_commission_amount,
+               ROUND((CASE
+                 WHEN o."payment_method" IN ('COD', 'CARD_ON_DELIVERY', 'WALLET') THEN o."total_amount"
+                 ELSE GREATEST(LEAST(o."total_amount", COALESCE(tt.net_collected, 0)), 0)
+               END) * ${commissionPercentage} / 100, 2)::numeric AS percentage_commission_amount
+        FROM "orders" o
+        LEFT JOIN transaction_totals tt ON tt."order_id" = o."id"
+        WHERE o."restaurant_id" = ${restaurantId}
+          AND o."status" IN (
+            'CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'PICKED_UP',
+            'READY_TO_SERVE', 'SERVED', 'OUT_FOR_DELIVERY', 'DELIVERED'
+          )
+      )
+      SELECT to_char(date_trunc('month', occurred_at AT TIME ZONE 'UTC'), 'YYYY-MM') AS "billingMonth",
+             COUNT(*)::bigint AS "ordersCount",
+             COALESCE(SUM(commissionable_amount), 0)::numeric AS "totalOrderAmount",
+             COALESCE(SUM(platform_collected_amount), 0)::numeric AS "platformCollectedAmount",
+             COALESCE(SUM(restaurant_transaction_fee_amount), 0)::numeric AS "restaurantTransactionFeeAmount",
+             COALESCE(SUM(fixed_commission_amount), 0)::numeric AS "fixedCommissionAmount",
+             COUNT(*) FILTER (WHERE occurred_at >= ${periodFrom} AND occurred_at < ${periodTo})::bigint AS "periodOrdersCount",
+             COALESCE(SUM(commissionable_amount) FILTER (WHERE occurred_at >= ${periodFrom} AND occurred_at < ${periodTo}), 0)::numeric AS "periodTotalOrderAmount",
+             COALESCE(SUM(platform_collected_amount) FILTER (WHERE occurred_at >= ${periodFrom} AND occurred_at < ${periodTo}), 0)::numeric AS "periodPlatformCollectedAmount",
+             COALESCE(SUM(restaurant_transaction_fee_amount) FILTER (WHERE occurred_at >= ${periodFrom} AND occurred_at < ${periodTo}), 0)::numeric AS "periodRestaurantTransactionFeeAmount",
+             COALESCE(SUM(fixed_commission_amount) FILTER (WHERE occurred_at >= ${periodFrom} AND occurred_at < ${periodTo}), 0)::numeric AS "periodFixedCommissionAmount",
+             COALESCE(SUM(percentage_commission_amount) FILTER (WHERE occurred_at >= ${periodFrom} AND occurred_at < ${periodTo}), 0)::numeric AS "periodPercentageCommissionAmount"
+      FROM eligible_orders
+      GROUP BY date_trunc('month', occurred_at AT TIME ZONE 'UTC')
+      ORDER BY date_trunc('month', occurred_at AT TIME ZONE 'UTC')
+    `);
+  }
+
+  getRestaurantSpecialPayoutAggregates(
+    restaurantId: string,
+    periodFrom: Date,
+    periodTo: Date,
+  ) {
+    return this.prisma.$queryRaw<
+      Array<{
+        totalAmount: Prisma.Decimal;
+        periodAmount: Prisma.Decimal;
+      }>
+    >(Prisma.sql`
+      SELECT COALESCE(SUM((line.item->>'restaurantPayoutAmount')::numeric), 0)::numeric AS "totalAmount",
+             COALESCE(SUM((line.item->>'restaurantPayoutAmount')::numeric) FILTER (
+               WHERE NULLIF(line.item->>'paidAt', '')::timestamptz >= ${periodFrom}
+                 AND NULLIF(line.item->>'paidAt', '')::timestamptz < ${periodTo}
+             ), 0)::numeric AS "periodAmount"
+      FROM "generated_invoices" gi
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(gi."snapshot"->'lineItems') = 'array'
+          THEN gi."snapshot"->'lineItems' ELSE '[]'::jsonb END
+      ) line(item)
+      WHERE gi."kind" = 'WEEKLY_PAYOUT'
+        AND gi."restaurant_id" = ${restaurantId}
+        AND gi."source_key" LIKE '%:special:%'
+        AND line.item ? 'restaurantPayoutAmount'
+    `);
+  }
+
   findRestaurantWalletAccount(restaurantId: string) {
     return this.prisma.restaurantWalletAccount.findUnique({
       where: { restaurantId },
@@ -795,6 +902,32 @@ export class PackagePlansRepository {
         restaurantId,
         periodFrom: { lt: monthTo },
         periodTo: { gt: monthFrom },
+        ...(excludeSourceKey ? { sourceKey: { not: excludeSourceKey } } : {}),
+      },
+      select: {
+        id: true,
+        sourceKey: true,
+        periodFrom: true,
+        periodTo: true,
+        snapshot: true,
+      },
+      orderBy: [{ periodFrom: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  listRestaurantPayoutInvoicesForRange(
+    restaurantId: string,
+    rangeFrom: Date,
+    rangeTo: Date,
+    excludeSourceKey?: string,
+  ) {
+    return this.prisma.generatedInvoice.findMany({
+      where: {
+        kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        status: GeneratedInvoiceStatus.SENT,
+        restaurantId,
+        periodFrom: { lt: rangeTo },
+        periodTo: { gt: rangeFrom },
         ...(excludeSourceKey ? { sourceKey: { not: excludeSourceKey } } : {}),
       },
       select: {

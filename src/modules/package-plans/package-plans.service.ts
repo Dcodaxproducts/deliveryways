@@ -663,6 +663,18 @@ export class PackagePlansService {
       subscription && plan
         ? this.resolveOpenSubscriptionBillingPeriod(subscription, plan, now)
         : this.resolveBillingMonthPeriod(this.toBillingMonth(now));
+    if (
+      typeof this.packagePlansRepository
+        .getRestaurantPayoutAvailabilityAggregates === 'function'
+    ) {
+      return this.getAggregatedRestaurantPayoutBalanceSummary(
+        restaurant.id,
+        subscription,
+        plan,
+        billingPeriod,
+        now,
+      );
+    }
     const [orders, specialPayouts, currency, walletAccount] = await Promise.all(
       [
         this.packagePlansRepository.listRestaurantWalletPayoutOrders(
@@ -1858,6 +1870,288 @@ export class PackagePlansService {
     };
   }
 
+  private async getAggregatedRestaurantPayoutBalanceSummary(
+    restaurantId: string,
+    subscription: TenantSubscriptionDetails | null,
+    plan: ReturnType<
+      PackagePlansService['resolveSubscriptionInvoicePlan']
+    > | null,
+    billingPeriod: { from: Date; to: Date },
+    now: Date,
+  ) {
+    const fixedCommissionAmount = new Prisma.Decimal(
+      plan?.commissionFixedAmount ?? 0,
+    );
+    const [rows, specialPayoutRows, currency, walletAccount] =
+      await Promise.all([
+        this.packagePlansRepository.getRestaurantPayoutAvailabilityAggregates(
+          restaurantId,
+          billingPeriod.from,
+          billingPeriod.to,
+          fixedCommissionAmount,
+          new Prisma.Decimal(plan?.commissionPercentage ?? 0),
+        ),
+        this.packagePlansRepository.getRestaurantSpecialPayoutAggregates(
+          restaurantId,
+          billingPeriod.from,
+          billingPeriod.to,
+        ),
+        this.resolveDefaultCurrency(),
+        this.packagePlansRepository.findRestaurantWalletAccount?.(
+          restaurantId,
+        ) ?? Promise.resolve(null),
+      ]);
+    const currentBillingMonth = this.toBillingMonth(now);
+    const billingMonths = [
+      ...new Set([currentBillingMonth, ...rows.map((row) => row.billingMonth)]),
+    ].sort();
+    const monthlyHistory = await this.listMonthlyBillingHistory(
+      restaurantId,
+      billingMonths,
+    );
+    const normalizedRows = rows.map((row) => {
+      const totalOrderAmount = new Prisma.Decimal(row.totalOrderAmount);
+      const history = this.getMonthlyBillingHistory(
+        monthlyHistory,
+        row.billingMonth,
+      );
+      const remainingCap =
+        plan?.commissionCapAmount !== null &&
+        plan?.commissionCapAmount !== undefined
+          ? Prisma.Decimal.max(
+              new Prisma.Decimal(plan.commissionCapAmount).minus(
+                history.commissionDeductedAmount,
+              ),
+              new Prisma.Decimal(0),
+            )
+          : null;
+      let commission = new Prisma.Decimal(0);
+      if (plan?.commissionType === PackageCommissionType.FIXED) {
+        commission = new Prisma.Decimal(row.fixedCommissionAmount);
+      } else if (plan) {
+        commission = totalOrderAmount.mul(plan.commissionPercentage).div(100);
+      }
+      if (remainingCap !== null) {
+        commission = Prisma.Decimal.min(commission, remainingCap);
+      }
+      commission = Prisma.Decimal.min(
+        commission,
+        totalOrderAmount,
+      ).toDecimalPlaces(2);
+      return {
+        ...row,
+        ordersCount: Number(row.ordersCount),
+        periodOrdersCount: Number(row.periodOrdersCount),
+        totalOrderAmount,
+        platformCollectedAmount: new Prisma.Decimal(
+          row.platformCollectedAmount,
+        ),
+        transactionFeeAmount: new Prisma.Decimal(
+          row.restaurantTransactionFeeAmount,
+        ),
+        platformCommissionAmount: commission,
+      };
+    });
+    const sum = (values: Prisma.Decimal[]) =>
+      values.reduce((total, value) => total.plus(value), new Prisma.Decimal(0));
+    const totalOrderAmount = sum(
+      normalizedRows.map((row) => row.totalOrderAmount),
+    );
+    const platformCollectedAmount = sum(
+      normalizedRows.map((row) => row.platformCollectedAmount),
+    );
+    const platformCommissionAmount = sum(
+      normalizedRows.map((row) => row.platformCommissionAmount),
+    );
+    const restaurantTransactionFeeAmount = sum(
+      normalizedRows.map((row) => row.transactionFeeAmount),
+    );
+    const vatPercentage = new Prisma.Decimal(plan?.vatPercentage ?? 0);
+    const payoutChargeVatAmount = platformCommissionAmount
+      .plus(restaurantTransactionFeeAmount)
+      .mul(vatPercentage)
+      .div(100)
+      .toDecimalPlaces(2);
+    const previousPayoutAmount = new Prisma.Decimal(
+      specialPayoutRows[0]?.totalAmount ?? 0,
+    ).toDecimalPlaces(2);
+    const deductionsBeforeMonthlyFee = platformCommissionAmount
+      .plus(restaurantTransactionFeeAmount)
+      .plus(payoutChargeVatAmount)
+      .plus(previousPayoutAmount)
+      .toDecimalPlaces(2);
+    const payoutBeforeMonthlyFee = Prisma.Decimal.max(
+      platformCollectedAmount.minus(deductionsBeforeMonthlyFee),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const ledgerBalance = Prisma.Decimal.max(
+      new Prisma.Decimal(walletAccount?.balance ?? 0).toDecimalPlaces(2),
+      new Prisma.Decimal(0),
+    );
+    const availablePayoutBeforeMonthlyFee = Prisma.Decimal.min(
+      ledgerBalance,
+      payoutBeforeMonthlyFee,
+    ).toDecimalPlaces(2);
+    const currentMonthHistory = this.getMonthlyBillingHistory(
+      monthlyHistory,
+      currentBillingMonth,
+    );
+    const monthlyFeeAmount = this.resolveMonthlyPayoutFee(plan);
+    const currentMonthPeriod =
+      this.resolveBillingMonthPeriod(currentBillingMonth);
+    const monthlyFeeScheduledToDate = this.resolveMonthlyFeeScheduledToDate(
+      monthlyFeeAmount,
+      currentBillingMonth,
+      new Date(Math.min(now.getTime() + 1, currentMonthPeriod.to.getTime())),
+    );
+    const monthlyFeeVatMultiplier = new Prisma.Decimal(1).plus(
+      vatPercentage.div(100),
+    );
+    const monthlyFeeDeductedAmount = Prisma.Decimal.min(
+      Prisma.Decimal.max(
+        monthlyFeeScheduledToDate.minus(
+          currentMonthHistory.monthlyFeeDeductedAmount,
+        ),
+        new Prisma.Decimal(0),
+      ),
+      availablePayoutBeforeMonthlyFee.div(monthlyFeeVatMultiplier),
+    ).toDecimalPlaces(2);
+    const monthlyFeeVatAmount = monthlyFeeDeductedAmount
+      .mul(vatPercentage)
+      .div(100)
+      .toDecimalPlaces(2);
+    const monthlyFeeDeductedThisMonth =
+      currentMonthHistory.monthlyFeeDeductedAmount
+        .plus(monthlyFeeDeductedAmount)
+        .toDecimalPlaces(2);
+    const monthlyFeeOutstandingAmount = Prisma.Decimal.max(
+      monthlyFeeAmount.minus(monthlyFeeDeductedThisMonth),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const totalDeductionsAmount = deductionsBeforeMonthlyFee
+      .plus(monthlyFeeDeductedAmount)
+      .plus(monthlyFeeVatAmount)
+      .toDecimalPlaces(2);
+    const calculatedRestaurantPayoutAmount = Prisma.Decimal.max(
+      payoutBeforeMonthlyFee
+        .minus(monthlyFeeDeductedAmount)
+        .minus(monthlyFeeVatAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const restaurantPayoutAmount = Prisma.Decimal.max(
+      availablePayoutBeforeMonthlyFee
+        .minus(monthlyFeeDeductedAmount)
+        .minus(monthlyFeeVatAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const periodTotalOrderAmount = sum(
+      rows.map((row) => new Prisma.Decimal(row.periodTotalOrderAmount)),
+    ).toDecimalPlaces(2);
+    const periodPlatformCollectedAmount = sum(
+      rows.map((row) => new Prisma.Decimal(row.periodPlatformCollectedAmount)),
+    ).toDecimalPlaces(2);
+    const periodTransactionFeeAmount = sum(
+      rows.map(
+        (row) => new Prisma.Decimal(row.periodRestaurantTransactionFeeAmount),
+      ),
+    ).toDecimalPlaces(2);
+    const periodCommissionAmount = plan
+      ? Prisma.Decimal.min(
+          plan.commissionType === PackageCommissionType.FIXED
+            ? sum(
+                rows.map(
+                  (row) => new Prisma.Decimal(row.periodFixedCommissionAmount),
+                ),
+              )
+            : sum(
+                rows.map(
+                  (row) =>
+                    new Prisma.Decimal(row.periodPercentageCommissionAmount),
+                ),
+              ),
+          periodTotalOrderAmount,
+        ).toDecimalPlaces(2)
+      : new Prisma.Decimal(0);
+    const periodVatAmount = periodCommissionAmount
+      .plus(periodTransactionFeeAmount)
+      .mul(vatPercentage)
+      .div(100)
+      .toDecimalPlaces(2);
+
+    return {
+      ordersCount: normalizedRows.reduce(
+        (total, row) => total + row.ordersCount,
+        0,
+      ),
+      totalOrderAmount: Number(totalOrderAmount.toDecimalPlaces(2)),
+      platformCollectedAmount: Number(
+        platformCollectedAmount.toDecimalPlaces(2),
+      ),
+      grossAmount: Number(platformCollectedAmount.toDecimalPlaces(2)),
+      platformCommissionAmount: Number(
+        platformCommissionAmount.toDecimalPlaces(2),
+      ),
+      restaurantTransactionFeeAmount: Number(
+        restaurantTransactionFeeAmount.toDecimalPlaces(2),
+      ),
+      vatPercentage: Number(vatPercentage),
+      vatAmount: Number(payoutChargeVatAmount.plus(monthlyFeeVatAmount)),
+      previousPayoutAmount: Number(previousPayoutAmount),
+      billingMonth: currentBillingMonth,
+      billingPeriod,
+      billingPeriodSummary: {
+        ordersCount: normalizedRows.reduce(
+          (total, row) => total + row.periodOrdersCount,
+          0,
+        ),
+        totalOrderAmount: Number(periodTotalOrderAmount),
+        platformCollectedAmount: Number(periodPlatformCollectedAmount),
+        platformCommissionAmount: Number(periodCommissionAmount),
+        restaurantTransactionFeeAmount: Number(periodTransactionFeeAmount),
+        vatAmount: Number(periodVatAmount),
+        previousPayoutAmount: Number(
+          new Prisma.Decimal(
+            specialPayoutRows[0]?.periodAmount ?? 0,
+          ).toDecimalPlaces(2),
+        ),
+      },
+      monthlyFeeAmount: Number(monthlyFeeAmount),
+      monthlyFeeScheduledToDate: Number(monthlyFeeScheduledToDate),
+      monthlyFeeDeductedBefore: Number(
+        currentMonthHistory.monthlyFeeDeductedAmount,
+      ),
+      monthlyFeeDeductedAmount: Number(monthlyFeeDeductedAmount),
+      monthlyFeeVatAmount: Number(monthlyFeeVatAmount),
+      monthlyFeeDeductedThisMonth: Number(monthlyFeeDeductedThisMonth),
+      monthlyFeeOutstandingAmount: Number(monthlyFeeOutstandingAmount),
+      totalDeductionsAmount: Number(totalDeductionsAmount),
+      ledgerBalance: Number(ledgerBalance),
+      calculatedRestaurantPayoutAmount: Number(
+        calculatedRestaurantPayoutAmount,
+      ),
+      restaurantPayoutAmount: Number(restaurantPayoutAmount),
+      currency,
+      activePlan:
+        subscription && plan
+          ? {
+              subscriptionId: subscription.id,
+              id: plan.id,
+              name: plan.name,
+              billingModel: plan.billingModel,
+              commissionType: plan.commissionType,
+              commissionPercentage: Number(plan.commissionPercentage),
+              commissionFixedAmount: Number(plan.commissionFixedAmount),
+              commissionCapAmount:
+                plan.commissionCapAmount === null
+                  ? null
+                  : Number(plan.commissionCapAmount),
+              vatPercentage: Number(plan.vatPercentage),
+              payoutCycle: plan.payoutCycle,
+            }
+          : null,
+    };
+  }
+
   private async listSpecialPayoutSummary(restaurantId: string) {
     const invoices =
       await this.packagePlansRepository.listRestaurantSpecialPayoutInvoices?.(
@@ -1914,15 +2208,37 @@ export class PackagePlansService {
       return history;
     }
 
+    const rangeFrom = this.resolveBillingMonthPeriod(billingMonths[0]).from;
+    const rangeTo = this.resolveBillingMonthPeriod(
+      billingMonths[billingMonths.length - 1],
+    ).to;
+    const rangeInvoices =
+      typeof this.packagePlansRepository
+        .listRestaurantPayoutInvoicesForRange === 'function'
+        ? await this.packagePlansRepository.listRestaurantPayoutInvoicesForRange(
+            restaurantId,
+            rangeFrom,
+            rangeTo,
+            excludeSourceKey,
+          )
+        : null;
+
     for (const month of billingMonths) {
       const { from, to } = this.resolveBillingMonthPeriod(month);
-      const invoices =
-        await this.packagePlansRepository.listRestaurantMonthlyPayoutInvoices(
-          restaurantId,
-          from,
-          to,
-          excludeSourceKey,
-        );
+      const invoices = rangeInvoices
+        ? rangeInvoices.filter(
+            (invoice) =>
+              invoice.periodFrom !== null &&
+              invoice.periodTo !== null &&
+              invoice.periodFrom < to &&
+              invoice.periodTo > from,
+          )
+        : await this.packagePlansRepository.listRestaurantMonthlyPayoutInvoices(
+            restaurantId,
+            from,
+            to,
+            excludeSourceKey,
+          );
       let commissionDeductedAmount = new Prisma.Decimal(0);
       let monthlyFeeDeductedAmount = new Prisma.Decimal(0);
 

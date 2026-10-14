@@ -24,6 +24,7 @@ export interface ReservePayoutInput {
   branchId?: string;
   actorId: string;
   amount: Prisma.Decimal;
+  entitlementAmount: Prisma.Decimal;
   currency: string;
   operationIdentity: string;
   requestHash: string;
@@ -68,6 +69,58 @@ export class PayoutIntegrityRepository {
         if (existing) {
           this.assertReplay(existing, input.requestHash);
           return { request: existing, replayed: true };
+        }
+        const wallet = await tx.restaurantWalletAccount.findUniqueOrThrow({
+          where: { id: input.walletAccountId },
+          select: {
+            id: true,
+            tenantId: true,
+            restaurantId: true,
+            currency: true,
+            balance: true,
+          },
+        });
+        if (
+          wallet.tenantId !== input.tenantId ||
+          wallet.restaurantId !== input.restaurantId ||
+          wallet.currency.trim().toUpperCase() !== currency
+        ) {
+          throw new ConflictException(
+            'Payout wallet scope does not match request',
+          );
+        }
+        const [outstanding] = await tx.$queryRaw<
+          Array<{ amount: Prisma.Decimal }>
+        >(Prisma.sql`
+          SELECT COALESCE(SUM(p."amount"), 0)::numeric AS amount
+          FROM "restaurant_payout_requests" p
+          WHERE p."wallet_account_id" = ${input.walletAccountId}
+            AND p."tenant_id" = ${input.tenantId}
+            AND p."restaurant_id" = ${input.restaurantId}
+            AND upper(p."currency") = ${currency}
+            AND p."status" IN (
+              'RESERVED', 'PROCESSING', 'PROVIDER_SUCCEEDED', 'COMPLETED',
+              'APPROVED', 'PAID', 'NEEDS_RECONCILIATION'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM "generated_invoices" gi
+              WHERE gi."kind" = 'WEEKLY_PAYOUT'
+                AND gi."restaurant_id" = p."restaurant_id"
+                AND gi."source_key" = p."restaurant_id" || ':special:' || p."id"
+            )
+        `);
+        const remainingEntitlement = Prisma.Decimal.max(
+          input.entitlementAmount.minus(outstanding?.amount ?? 0),
+          new Prisma.Decimal(0),
+        );
+        const serializedAvailable = Prisma.Decimal.min(
+          new Prisma.Decimal(wallet.balance),
+          remainingEntitlement,
+        ).toDecimalPlaces(2);
+        if (input.amount.greaterThan(serializedAvailable)) {
+          throw new BadRequestException(
+            'Requested amount exceeds available payout balance after deductions',
+          );
         }
         const request = await tx.restaurantPayoutRequest.create({
           data: {
@@ -449,7 +502,7 @@ export class PayoutIntegrityRepository {
       throw new NotFoundException('Restaurant payout request not found');
     }
     if (snapshot.walletTransactionId) return snapshot;
-    return this.ledger.withFinancialLedgerTransaction(
+    const adoption = await this.ledger.withFinancialLedgerTransaction(
       [
         {
           tenantId: snapshot.tenantId,
@@ -459,18 +512,51 @@ export class PayoutIntegrityRepository {
       ],
       async (tx) => {
         const request = await this.getForUpdate(id, tx);
-        if (request.walletTransactionId) return request;
+        if (request.walletTransactionId) {
+          return { request, quarantineReason: null };
+        }
         const candidates = await tx.restaurantWalletTransaction.findMany({
           where: {
             payoutRequestId: request.id,
             type: RestaurantWalletTransactionType.PAYOUT_DEBIT,
           },
+          select: {
+            id: true,
+            walletAccountId: true,
+            tenantId: true,
+            restaurantId: true,
+            currency: true,
+            amount: true,
+          },
           take: 2,
         });
-        if (candidates.length > 1) {
-          throw new ConflictException(
-            'Legacy payout has ambiguous wallet transactions and is quarantined',
-          );
+        const expectedCurrency = request.currency.trim().toUpperCase();
+        const validCandidates = candidates.filter(
+          (candidate) =>
+            request.amount.greaterThan(0) &&
+            candidate.amount.isNegative() &&
+            candidate.walletAccountId === request.walletAccountId &&
+            candidate.tenantId === request.tenantId &&
+            candidate.restaurantId === request.restaurantId &&
+            candidate.currency.trim().toUpperCase() === expectedCurrency &&
+            candidate.amount.equals(request.amount.negated()),
+        );
+        if (candidates.length !== 1 || validCandidates.length !== 1) {
+          const reason =
+            candidates.length === 0
+              ? 'Legacy payout has no wallet debit and is quarantined'
+              : candidates.length > 1
+                ? 'Legacy payout has ambiguous wallet transactions and is quarantined'
+                : 'Legacy payout wallet transaction scope or amount is mismatched and is quarantined';
+          const quarantined = await tx.restaurantPayoutRequest.update({
+            where: { id: request.id },
+            data: {
+              status: RestaurantPayoutRequestStatus.NEEDS_RECONCILIATION,
+              reviewedBy: actorId,
+              lastError: reason,
+            },
+          });
+          return { request: quarantined, quarantineReason: reason };
         }
         const requestHash =
           request.requestHash ??
@@ -481,33 +567,8 @@ export class PayoutIntegrityRepository {
             currency: request.currency,
             legacyPayoutRequestId: request.id,
           });
-        let transactionId = candidates[0]?.id;
-        if (!transactionId) {
-          const reservation = await this.ledger.applyRestaurantWalletDelta(
-            {
-              tenantId: request.tenantId,
-              restaurantId: request.restaurantId,
-              branchId: request.branchId ?? undefined,
-              operationKey: 'payout:legacy-reserve:' + request.id,
-              requestHash,
-              allowNegative: false,
-              source: 'PAYOUT_RESERVATION',
-              delta: request.amount.negated(),
-              currency: request.currency,
-              type: RestaurantWalletTransactionType.PAYOUT_DEBIT,
-              payoutRequestId: request.id,
-              note: 'Legacy payout funds reserved during adoption',
-              metadata: {
-                payoutRequestId: request.id,
-                lifecycle: 'LEGACY_RESERVATION',
-              },
-              createdBy: actorId,
-            },
-            tx,
-          );
-          transactionId = reservation.transaction.id;
-        }
-        return tx.restaurantPayoutRequest.update({
+        const transactionId = validCandidates[0].id;
+        const adopted = await tx.restaurantPayoutRequest.update({
           where: { id: request.id },
           data: {
             walletTransactionId: transactionId,
@@ -523,8 +584,13 @@ export class PayoutIntegrityRepository {
                 : request.status,
           },
         });
+        return { request: adopted, quarantineReason: null };
       },
     );
+    if (adoption.quarantineReason) {
+      throw new ConflictException(adoption.quarantineReason);
+    }
+    return adoption.request;
   }
 
   private async fencedFailureUpdate(

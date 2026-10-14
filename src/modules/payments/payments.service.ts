@@ -2009,7 +2009,7 @@ export class PaymentsService {
     const bankDetails = this.normalizePayoutBankDetails(dto.bankDetails);
     let data;
     if (this.payoutIntegrityRepository) {
-      await this.assertRestaurantPayoutAvailable(
+      const payoutAvailability = await this.assertRestaurantPayoutAvailable(
         restaurant.id,
         amount,
         wallet.balance,
@@ -2033,6 +2033,9 @@ export class PaymentsService {
         branchId: user.bid,
         actorId: user.uid,
         amount,
+        entitlementAmount: new Prisma.Decimal(
+          payoutAvailability.calculatedPayoutEntitlement,
+        ),
         currency,
         operationIdentity,
         requestHash,
@@ -2495,7 +2498,7 @@ export class PaymentsService {
     const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
     if (this.payoutIntegrityRepository) {
       const currency = (dto.currency ?? wallet.currency).trim().toUpperCase();
-      await this.assertRestaurantPayoutAvailable(
+      const payoutAvailability = await this.assertRestaurantPayoutAvailable(
         restaurant.id,
         amount,
         wallet.balance,
@@ -2518,6 +2521,9 @@ export class PaymentsService {
         walletAccountId: wallet.id,
         actorId: user.uid,
         amount,
+        entitlementAmount: new Prisma.Decimal(
+          payoutAvailability.calculatedPayoutEntitlement,
+        ),
         currency,
         operationIdentity,
         requestHash,
@@ -5531,7 +5537,7 @@ export class PaymentsService {
     ).toDecimalPlaces(2);
     const billingPeriodSummary = payoutSummary?.billingPeriodSummary;
 
-    return {
+    const summary = {
       ledgerBalance: Number(normalizedLedgerBalance),
       totalOrderAmount: billingPeriodSummary?.totalOrderAmount ?? null,
       platformCollectedAmount:
@@ -5561,6 +5567,13 @@ export class PaymentsService {
       availablePayoutBalance: Number(availablePayoutBalance),
       activePlan: payoutSummary?.activePlan ?? null,
     };
+    return Object.defineProperty(summary, 'calculatedPayoutEntitlement', {
+      value:
+        payoutSummary?.calculatedRestaurantPayoutAmount ??
+        Number(calculatedAvailablePayout),
+      enumerable: false,
+      writable: false,
+    }) as typeof summary & { calculatedPayoutEntitlement: number };
   }
 
   private async assertRestaurantPayoutAvailable(
@@ -5578,6 +5591,7 @@ export class PaymentsService {
         'Requested amount exceeds available payout balance after deductions',
       );
     }
+    return summary;
   }
 
   private normalizePayoutBankDetails(

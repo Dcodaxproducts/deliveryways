@@ -1642,6 +1642,7 @@ model Order {
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([deliverymanId, status, createdAt])
+  @@index([restaurantId, status, paidAt, createdAt], map: "orders_restaurant_status_paid_created_idx")
   @@map("orders")
 }
 
@@ -1745,6 +1746,7 @@ model PaymentTransaction {
   @@index([tenantId, createdAt])
   @@index([restaurantId, branchId, createdAt])
   @@index([sourcePaymentTransactionId, type, status], map: "payment_transactions_refund_source_status_idx")
+  @@index([restaurantId, orderId, type, status], map: "payment_transactions_restaurant_order_payout_aggregate_idx")
   @@map("payment_transactions")
 }
 

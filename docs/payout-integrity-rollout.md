@@ -2,37 +2,38 @@
 
 ## Scope
 
-Migration `20261014170000_add_payout_integrity_lifecycle` is additive. It adds payout operation identity, provider identity, lease/fencing, reconciliation state, release linkage, and bounded recovery indexes. The existing public routes remain valid; cancellation and reconciliation are additive.
+Migration `20261014170000_add_payout_integrity_lifecycle` is metadata-only: enum labels and nullable/additive lifecycle columns. It contains no historical UPDATE and no hot-table index build. Application reservation is wallet-serialized and enforces both current ledger balance and post-deduction entitlement after outstanding uninvoiced payouts.
 
 ## Before deploy
 
-1. Back up the target database and verify restore metadata.
-2. Resolve the deployed image to a source commit and prove release ancestry.
-3. Run `scripts/backfill-payout-integrity.sql` as a dry-run. Quarantine every payout with more than one payout debit; do not automatically choose a transaction.
-4. Confirm no migration is running and deploy the migration before application instances that write new lifecycle states.
+1. Back up the database and verify restore metadata.
+2. Resolve the deployed image commit and prove it is an ancestor of the release.
+3. Run the legacy audit section of `scripts/backfill-payout-integrity.sql`. Zero-row, multiple-row, wrong-wallet, wrong-tenant, wrong-restaurant, wrong-currency, zero/non-negative, and wrong-amount matches are quarantined; never synthesize or choose a debit.
+4. Confirm no migration or concurrent index build is active.
 
-## Rollout
+## Online rollout
 
-1. Apply migrations with `prisma migrate deploy`.
-2. Run the application with one worker first and inspect `NEEDS_RECONCILIATION`, expired `PROCESSING` leases, and provider-reference conflicts.
-3. Reconcile ambiguous provider outcomes before releasing any reservation. Provider/network I/O must remain outside database transactions.
-4. Scale workers only after duplicate webhook and stale-lease checks pass.
+1. Apply Prisma migrations: `npx prisma migrate deploy`.
+2. Outside an explicit transaction, run `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/create-payout-indexes-concurrently.sql`. Monitor `pg_stat_progress_create_index` and retry only invalid/failed indexes after inspection.
+3. Run one bounded backfill batch at a time: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=500 -f scripts/backfill-payout-integrity.sql`. It uses `FOR UPDATE SKIP LOCKED`; repeat until `updated_rows = 0`.
+4. Re-run the audit and require zero unsafe rows, or explicitly quarantine and reconcile every returned payout.
+5. Start one payout worker, inspect reconciliation and expired leases, then scale workers.
 
 ## Recovery
 
-- `RESERVED`: funds are already debited and safe to retry or cancel.
-- `PROCESSING` with an expired lease: a new worker may claim it; the durable provider idempotency key is reused.
-- `NEEDS_RECONCILIATION`: poll the provider or accept a validated webhook. Never release based only on a timeout.
-- `PROVIDER_SUCCEEDED`: call local completion; no additional wallet debit is allowed.
-- `RELEASED`/`CANCELLED`: the release ledger operation is idempotent and must not be repeated with a different identity.
+- `RESERVED`: funds are already debited; retry or cancel through the lifecycle API.
+- `PROCESSING` with expired lease: reclaim with the durable provider idempotency key.
+- `NEEDS_RECONCILIATION`: poll provider or accept a validated webhook; never release on timeout alone.
+- `PROVIDER_SUCCEEDED`: finish local completion without another debit.
+- `RELEASED`/`CANCELLED`: release is idempotent and must not be repeated under another identity.
+
+## Performance and correctness gates
+
+- Availability is computed by indexed PostgreSQL aggregates; successful orders and nested payment transactions are not materialized in Node.js.
+- Monthly invoice history is fetched once for the full range, avoiding month-by-month N+1 queries.
+- Reservation holds the wallet financial-ledger lock while checking current wallet scope/currency, uninvoiced outstanding payout amounts, and entitlement. Ledger balance and entitlement are independent ceilings, so reservations are not double-subtracted.
+- Validate with high-cardinality result-equivalence/query-count tests and `EXPLAIN (ANALYZE, BUFFERS)` on representative tenant cardinality.
 
 ## Rollback
 
-1. Stop new payout initiation while allowing reconciliation of committed provider transfers.
-2. Drain or reconcile `PROCESSING`, `PROVIDER_SUCCEEDED`, and `NEEDS_RECONCILIATION` rows.
-3. Roll the application back. Keep additive columns/indexes in place during emergency rollback; old code ignores them.
-4. Only in a later maintenance window, after proving no rows use new states, drop the new indexes and columns. Keep PostgreSQL enum labels: removing labels requires an unsafe type/table rewrite.
-
-## Performance
-
-Reservation uses one wallet-scoped advisory lock, one indexed operation-key lookup, one conditional wallet update, one ledger insert, and one payout update. Reconciliation uses primary/compound indexed lookups. No mutation decision is cached. Lists remain bounded by existing pagination.
+Stop new payout initiation, reconcile committed provider transfers, and roll back application instances. Keep additive columns, enum labels, and valid concurrent indexes during emergency rollback. Removing enum labels or lifecycle data is not an online rollback.
