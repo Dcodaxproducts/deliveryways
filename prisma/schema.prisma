@@ -1771,6 +1771,8 @@ model WalletTransaction {
   metadata             Json?
   createdBy            String?               @map("created_by")
   updatedBy            String?               @map("updated_by")
+  idempotencyKey       String                @unique(map: "wallet_transactions_idempotency_key") @default(dbgenerated("encode(sha256(convert_to(((random())::text || (clock_timestamp())::text), 'UTF8'::name)), 'hex'::text)")) @map("idempotency_key") @db.VarChar(64)
+  requestHash          String?               @map("request_hash") @db.VarChar(64)
   createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -1821,6 +1823,8 @@ model RestaurantWalletTransaction {
   note                   String?
   metadata               Json?
   createdBy              String?                         @map("created_by")
+  idempotencyKey         String                          @unique(map: "restaurant_wallet_transactions_idempotency_key") @default(dbgenerated("encode(sha256(convert_to(((random())::text || (clock_timestamp())::text), 'UTF8'::name)), 'hex'::text)")) @map("idempotency_key") @db.VarChar(64)
+  requestHash            String?                         @map("request_hash") @db.VarChar(64)
   createdAt              DateTime                        @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime                        @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -1931,6 +1935,7 @@ model LoyaltyTransaction {
   createdBy            String?                  @map("created_by")
   updatedBy            String?                  @map("updated_by")
   idempotencyKey       String?                  @unique(map: "loyalty_transactions_idempotency_key") @map("idempotency_key") @db.VarChar(191)
+  requestHash          String?                  @map("request_hash") @db.VarChar(64)
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
 

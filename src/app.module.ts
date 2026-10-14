@@ -42,6 +42,7 @@ import { PosModule } from './modules/pos/pos.module';
 import { PosPrinterModule } from './modules/pos-printer/pos-printer.module';
 import { GlobalSettingsModule } from './modules/global-settings/global-settings.module';
 import { LoyaltyWalletModule } from './modules/loyalty-wallet/loyalty-wallet.module';
+import { FinancialLedgerModule } from './modules/financial-ledger';
 import { SystemHealthModule } from './modules/system-health/system-health.module';
 import { PackagePlansModule } from './modules/package-plans/package-plans.module';
 import { LocalizationsModule } from './modules/localizations';
@@ -118,6 +119,7 @@ import { AppController } from './app.controller';
     PosPrinterModule,
     GlobalSettingsModule,
     LoyaltyWalletModule,
+    FinancialLedgerModule,
     SystemHealthModule,
     PackagePlansModule,
     LocalizationsModule,
