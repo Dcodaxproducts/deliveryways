@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import {
   AddressRefType,
   OrderStatus,
@@ -61,8 +61,16 @@ import {
 } from './dto';
 import { OrdersRepository } from './orders.repository';
 import { extractRestaurantOrderingSettings } from '../../common/utils/restaurant-ordering-settings.util';
+import { lockCartMenuItems } from '../../common/utils/cart-menu-lock.util';
 
 const DEFAULT_SCHEDULE_TIMEZONE = 'Asia/Karachi';
+const POS_POST_COMMIT_EFFECTS = [
+  'LOYALTY',
+  'ORDER_PLACED_NOTIFICATION',
+  'TRACKING',
+  'AUTO_ACCEPT',
+] as const;
+type PosPostCommitEffect = (typeof POS_POST_COMMIT_EFFECTS)[number];
 
 interface OrderModifierLink {
   selectionType?: 'SINGLE' | 'MULTIPLE';
@@ -402,6 +410,7 @@ export class OrdersService {
       const replay = await this.resolveOrderSource(source);
       if (replay) return replay;
     }
+    const isPosSource = source?.sourceKey.startsWith('POS_DRAFT:') === true;
     const quote = await this.buildQuote(user, dto);
     const currency = await this.resolveRestaurantCurrency(
       quote.branch.restaurantId,
@@ -459,6 +468,10 @@ export class OrdersService {
     try {
       data = await this.prisma.$transaction(async (tx) => {
         if (idempotency) {
+          await lockCartMenuItems(
+            tx,
+            quote.lines.map((line) => line.menuItemId),
+          );
           const consumedCart = await tx.cart.deleteMany({
             where: {
               id: idempotency.cartId,
@@ -619,6 +632,14 @@ export class OrdersService {
           );
         }
 
+        if (isPosSource) {
+          await this.ordersRepository.createPostCommitEffects(
+            order.id,
+            POS_POST_COMMIT_EFFECTS,
+            tx,
+          );
+        }
+
         return order;
       });
     } catch (error: unknown) {
@@ -642,6 +663,18 @@ export class OrdersService {
         );
       }
       throw error;
+    }
+
+    if (isPosSource && source) {
+      await this.drainPosPostCommitEffects(data.id, user.uid);
+      const refreshed = await this.ordersRepository.findBySourceKey(
+        source.sourceKey,
+      );
+      return {
+        data: this.toOrderMutationResponse(refreshed ?? data),
+        message: 'Order created successfully',
+        sourceReplay: false,
+      };
     }
 
     try {
@@ -710,7 +743,7 @@ export class OrdersService {
   }
 
   async resolveOrderSource(context: OrderSourceContext) {
-    const existing = await this.ordersRepository.findBySourceKey(
+    let existing = await this.ordersRepository.findBySourceKey(
       context.sourceKey,
     );
     if (!existing) return null;
@@ -727,11 +760,108 @@ export class OrdersService {
         'Order source was already checked out with a different request',
       );
     }
+
+    if (context.sourceKey.startsWith('POS_DRAFT:')) {
+      await this.drainPosPostCommitEffects(existing.id);
+      existing =
+        (await this.ordersRepository.findBySourceKey(context.sourceKey)) ??
+        existing;
+    }
+
     return {
       data: this.toOrderMutationResponse(existing),
       message: 'Order created successfully',
       sourceReplay: true,
     };
+  }
+
+  private async drainPosPostCommitEffects(orderId: string, actorId?: string) {
+    for (const effectType of POS_POST_COMMIT_EFFECTS) {
+      const claimToken = randomBytes(32).toString('hex');
+      const claimedAt = new Date();
+      const claimed = await this.ordersRepository.claimPostCommitEffect({
+        orderId,
+        effectType,
+        claimToken,
+        claimedAt,
+        leaseExpiresAt: new Date(claimedAt.getTime() + 30_000),
+      });
+
+      if (!claimed) {
+        const state = await this.ordersRepository.findPostCommitEffect(
+          orderId,
+          effectType,
+        );
+        if (state?.completedAt) {
+          continue;
+        }
+        break;
+      }
+
+      try {
+        await this.runPosPostCommitEffect(orderId, effectType, actorId);
+        await this.ordersRepository.completePostCommitEffect({
+          orderId,
+          effectType,
+          claimToken,
+          completedAt: new Date(),
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.ordersRepository.releasePostCommitEffect({
+          orderId,
+          effectType,
+          claimToken,
+          lastError: message,
+        });
+        this.logger.error(
+          `POS order ${orderId} post-commit effect ${effectType} failed`,
+          error instanceof Error ? error.stack : message,
+        );
+        break;
+      }
+    }
+  }
+
+  private async runPosPostCommitEffect(
+    orderId: string,
+    effectType: PosPostCommitEffect,
+    actorId?: string,
+  ) {
+    const order = await this.ordersRepository.findById(orderId);
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (effectType === 'LOYALTY') {
+      await this.loyaltyWalletService!.awardPointsForPaidOrder(
+        order.id,
+        undefined,
+        actorId,
+        order.paymentStatus === PaymentStatus.PAID
+          ? undefined
+          : { allowUnpaid: true },
+      );
+      return;
+    }
+
+    if (effectType === 'ORDER_PLACED_NOTIFICATION') {
+      if (order.status === OrderStatus.PLACED) {
+        await this.notificationsService.notifyOrderPlaced(order.id, {
+          source: 'POS',
+          notifyRestaurant: false,
+          deduplicate: true,
+        });
+      }
+      return;
+    }
+
+    if (effectType === 'TRACKING') {
+      await this.emitTrackingUpdate(order.id);
+      return;
+    }
+
+    await this.autoAcceptPlacedOrder(order.id);
   }
 
   private isCheckoutIdempotencyConflict(error: unknown): boolean {

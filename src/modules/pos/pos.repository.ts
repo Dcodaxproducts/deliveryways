@@ -10,6 +10,7 @@ import {
 import { QueryDto } from '../../common/dto';
 import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
+import { lockCartMenuItems } from '../../common/utils/cart-menu-lock.util';
 
 @Injectable()
 export class PosRepository {
@@ -271,63 +272,70 @@ export class PosRepository {
     expectedUpdatedAt: Date;
     claimedAt: Date;
     leaseExpiresAt: Date;
+    menuItemIds?: string[];
   }) {
-    const scope = {
-      id: input.id,
-      tenantId: input.tenantId,
-      restaurantId: input.restaurantId,
-      branchId: input.branchId,
-    };
-    const claimed = await this.prisma.posOrderDraft.updateMany({
-      where: {
-        ...scope,
-        OR: [
-          {
-            status: PosOrderDraftStatus.OPEN,
-            checkoutClaimToken: null,
-            updatedAt: input.expectedUpdatedAt,
-          },
-          {
-            status: PosOrderDraftStatus.OPEN,
-            checkoutRequestHash: input.requestHash,
-            checkoutLeaseExpiresAt: { lte: input.claimedAt },
-          },
-        ],
-      },
-      data: {
-        status: PosOrderDraftStatus.OPEN,
-        checkoutRequestHash: input.requestHash,
-        checkoutClaimToken: input.claimToken,
-        checkoutClaimedAt: input.claimedAt,
-        checkoutLeaseExpiresAt: input.leaseExpiresAt,
-        checkoutAttempt: { increment: 1 },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await lockCartMenuItems(tx, input.menuItemIds ?? []);
+      const scope = {
+        id: input.id,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+      };
+      const claimed = await tx.posOrderDraft.updateMany({
+        where: {
+          ...scope,
+          OR: [
+            {
+              status: PosOrderDraftStatus.OPEN,
+              checkoutClaimToken: null,
+              updatedAt: input.expectedUpdatedAt,
+            },
+            {
+              status: PosOrderDraftStatus.OPEN,
+              checkoutRequestHash: input.requestHash,
+              checkoutLeaseExpiresAt: { lte: input.claimedAt },
+            },
+          ],
+        },
+        data: {
+          status: PosOrderDraftStatus.OPEN,
+          checkoutRequestHash: input.requestHash,
+          checkoutClaimToken: input.claimToken,
+          checkoutClaimedAt: input.claimedAt,
+          checkoutLeaseExpiresAt: input.leaseExpiresAt,
+          checkoutAttempt: { increment: 1 },
+        },
+      });
+      const draft = await tx.posOrderDraft.findFirst({
+        where: scope,
+        include: this.draftInclude,
+      });
+      if (!draft) return { state: 'MISSING' as const };
+      if (claimed.count === 1) return { state: 'CLAIMED' as const, draft };
+      if (
+        draft.checkoutRequestHash &&
+        draft.checkoutRequestHash !== input.requestHash
+      ) {
+        return { state: 'HASH_MISMATCH' as const, draft };
+      }
+      if (
+        draft.status === PosOrderDraftStatus.CHECKED_OUT &&
+        draft.finalOrderId
+      ) {
+        return { state: 'FINALIZED' as const, draft };
+      }
+      if (
+        draft.status === PosOrderDraftStatus.OPEN &&
+        draft.checkoutClaimToken
+      ) {
+        return { state: 'BUSY' as const, draft };
+      }
+      if (draft.status === PosOrderDraftStatus.CANCELLED) {
+        return { state: 'CANCELLED' as const, draft };
+      }
+      return { state: 'RETRY' as const, draft };
     });
-    const draft = await this.prisma.posOrderDraft.findFirst({
-      where: scope,
-      include: this.draftInclude,
-    });
-    if (!draft) return { state: 'MISSING' as const };
-    if (claimed.count === 1) return { state: 'CLAIMED' as const, draft };
-    if (
-      draft.checkoutRequestHash &&
-      draft.checkoutRequestHash !== input.requestHash
-    ) {
-      return { state: 'HASH_MISMATCH' as const, draft };
-    }
-    if (
-      draft.status === PosOrderDraftStatus.CHECKED_OUT &&
-      draft.finalOrderId
-    ) {
-      return { state: 'FINALIZED' as const, draft };
-    }
-    if (draft.status === PosOrderDraftStatus.OPEN && draft.checkoutClaimToken) {
-      return { state: 'BUSY' as const, draft };
-    }
-    if (draft.status === PosOrderDraftStatus.CANCELLED) {
-      return { state: 'CANCELLED' as const, draft };
-    }
-    return { state: 'RETRY' as const, draft };
   }
 
   async finalizeCheckout(input: {

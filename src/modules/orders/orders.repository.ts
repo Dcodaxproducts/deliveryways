@@ -73,6 +73,99 @@ export class OrdersRepository {
     });
   }
 
+  async createPostCommitEffects(
+    orderId: string,
+    effectTypes: readonly string[],
+    tx: PrismaTx,
+  ) {
+    return tx.orderPostCommitEffect.createMany({
+      data: effectTypes.map((effectType) => ({ orderId, effectType })),
+      skipDuplicates: true,
+    });
+  }
+
+  async claimPostCommitEffect(input: {
+    orderId: string;
+    effectType: string;
+    claimToken: string;
+    claimedAt: Date;
+    leaseExpiresAt: Date;
+  }) {
+    const claimed = await this.prisma.orderPostCommitEffect.updateMany({
+      where: {
+        orderId: input.orderId,
+        effectType: input.effectType,
+        completedAt: null,
+        OR: [
+          { claimToken: null },
+          { leaseExpiresAt: { lte: input.claimedAt } },
+        ],
+      },
+      data: {
+        claimToken: input.claimToken,
+        leaseExpiresAt: input.leaseExpiresAt,
+        attempts: { increment: 1 },
+        lastError: null,
+      },
+    });
+    return claimed.count === 1;
+  }
+
+  async findPostCommitEffect(orderId: string, effectType: string) {
+    return this.prisma.orderPostCommitEffect.findUnique({
+      where: { orderId_effectType: { orderId, effectType } },
+      select: {
+        completedAt: true,
+        claimToken: true,
+        leaseExpiresAt: true,
+        attempts: true,
+      },
+    });
+  }
+
+  async completePostCommitEffect(input: {
+    orderId: string;
+    effectType: string;
+    claimToken: string;
+    completedAt: Date;
+  }) {
+    return this.prisma.orderPostCommitEffect.updateMany({
+      where: {
+        orderId: input.orderId,
+        effectType: input.effectType,
+        claimToken: input.claimToken,
+        completedAt: null,
+      },
+      data: {
+        completedAt: input.completedAt,
+        claimToken: null,
+        leaseExpiresAt: null,
+        lastError: null,
+      },
+    });
+  }
+
+  async releasePostCommitEffect(input: {
+    orderId: string;
+    effectType: string;
+    claimToken: string;
+    lastError: string;
+  }) {
+    return this.prisma.orderPostCommitEffect.updateMany({
+      where: {
+        orderId: input.orderId,
+        effectType: input.effectType,
+        claimToken: input.claimToken,
+        completedAt: null,
+      },
+      data: {
+        claimToken: null,
+        leaseExpiresAt: null,
+        lastError: input.lastError.slice(0, 1000),
+      },
+    });
+  }
+
   async findByCheckoutIdempotency(scope: {
     tenantId: string;
     restaurantId: string;

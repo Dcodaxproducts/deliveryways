@@ -77,6 +77,13 @@ export class NotificationsRepository {
     });
   }
 
+  async hasOrderNotification(orderId: string, type: NotificationType) {
+    const count = await this.prisma.notification.count({
+      where: { orderId, type },
+    });
+    return count > 0;
+  }
+
   async findOrderForNotification(id: string) {
     return this.prisma.order.findUnique({
       where: { id },

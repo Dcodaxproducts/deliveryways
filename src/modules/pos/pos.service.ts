@@ -480,6 +480,7 @@ export class PosService {
       expectedUpdatedAt: draft.updatedAt,
       claimedAt,
       leaseExpiresAt: new Date(claimedAt.getTime() + 30_000),
+      menuItemIds: draft.items.map((item) => item.menuItemId),
     });
 
     if (claim.state === 'RETRY') {
@@ -504,6 +505,7 @@ export class PosService {
         expectedUpdatedAt: draft.updatedAt,
         claimedAt,
         leaseExpiresAt: new Date(claimedAt.getTime() + 30_000),
+        menuItemIds: draft.items.map((item) => item.menuItemId),
       });
     }
 

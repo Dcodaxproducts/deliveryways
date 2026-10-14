@@ -12,6 +12,7 @@ import { PrismaService } from '../src/database';
 import { CartService } from '../src/modules/cart/cart.service';
 import { GlobalSettingsService } from '../src/modules/global-settings/global-settings.service';
 import { OrdersService } from '../src/modules/orders/orders.service';
+import { MenuItemRepository } from '../src/modules/menu/item/item.repository';
 
 describe('P0 checkout idempotency persistence (isolated database)', () => {
   let moduleFixture: TestingModule;
@@ -19,6 +20,7 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
   let cartService: CartService;
   let globalSettingsService: GlobalSettingsService;
   let ordersService: OrdersService;
+  let menuItemRepository: MenuItemRepository;
   const runId = `${Date.now()}-${process.pid}`;
 
   beforeAll(async () => {
@@ -29,6 +31,7 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
     cartService = moduleFixture.get(CartService);
     globalSettingsService = moduleFixture.get(GlobalSettingsService);
     ordersService = moduleFixture.get(OrdersService);
+    menuItemRepository = moduleFixture.get(MenuItemRepository);
   }, 60_000);
 
   afterAll(async () => {
@@ -163,6 +166,61 @@ describe('P0 checkout idempotency persistence (isolated database)', () => {
     ).rejects.toThrow(
       'Idempotency key was already used with a different checkout request',
     );
+
+    const raceItem = await prisma.menuItem.create({
+      data: {
+        restaurantId: restaurant.id,
+        categoryId: category.id,
+        name: 'Checkout cleanup race item',
+        slug: `checkout-cleanup-race-${runId}`,
+        basePrice: 10,
+      },
+    });
+    const raceCart = await prisma.cart.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        customerId: customer.id,
+        orderType: OrderType.TAKEAWAY,
+        paymentMethod: PaymentMethod.COD,
+        items: { create: { menuItemId: raceItem.id, quantity: 1 } },
+      },
+    });
+    const race = await Promise.allSettled([
+      cartService.checkout(
+        user as never,
+        {
+          idempotencyKey: '439565e3-81a5-4a91-8ad5-1e5460147b74',
+          cartId: raceCart.id,
+          cartVersion: raceCart.updatedAt.toISOString(),
+          cartRevision: raceCart.revision,
+          paymentMethod: PaymentMethod.COD,
+        } as never,
+      ),
+      prisma.$transaction(async (tx) => {
+        await menuItemRepository.deleteCartItems(raceItem.id, tx);
+        await tx.menuItem.update({
+          where: { id: raceItem.id },
+          data: { isActive: false, deletedAt: new Date() },
+        });
+      }),
+    ]);
+    expect(race[1].status).toBe('fulfilled');
+    const rejectionMessages = race
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected',
+      )
+      .map(({ reason }) =>
+        reason instanceof Error ? reason.message : String(reason),
+      );
+    expect(rejectionMessages.join(' | ')).not.toContain('deadlock detected');
+    await expect(
+      prisma.cartItem.count({
+        where: { cartId: raceCart.id, menuItemId: raceItem.id },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('arbitrates concurrent retries, rolls back failed attempts, and isolates authenticated and guest scopes', async () => {

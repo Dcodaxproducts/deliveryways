@@ -336,10 +336,39 @@ export class MenuCategoryRepository {
     });
   }
 
-  deletePosDraftItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
-    return this.client(tx).posOrderDraftItem.deleteMany({
-      where: { menuItemId: { in: menuItemIds } },
-    });
+  async deletePosDraftItemsForMenuItems(menuItemIds: string[], tx?: PrismaTx) {
+    const client = this.client(tx);
+    if (!menuItemIds.length) {
+      return { count: 0 };
+    }
+    if (tx) {
+      await lockCartMenuItems(tx, menuItemIds);
+    }
+    const [result] = await client.$queryRaw<
+      Array<{ count: number }>
+    >(Prisma.sql`
+      WITH deleted AS (
+        DELETE FROM pos_order_draft_items AS item
+        USING pos_order_drafts AS draft
+        WHERE item.draft_id = draft.id
+          AND item.menu_item_id IN (${Prisma.join(menuItemIds)})
+          AND draft.status = 'OPEN'
+          AND draft.checkout_claim_token IS NULL
+        RETURNING item.draft_id
+      ),
+      affected AS (
+        SELECT DISTINCT draft_id FROM deleted
+      ),
+      advanced AS (
+        UPDATE pos_order_drafts AS draft
+        SET updated_at = CURRENT_TIMESTAMP
+        FROM affected
+        WHERE draft.id = affected.draft_id
+        RETURNING draft.id
+      )
+      SELECT COUNT(*)::int AS count FROM deleted
+    `);
+    return { count: result?.count ?? 0 };
   }
 
   deleteMenuItemLinks(menuItemIds: string[], tx?: PrismaTx) {

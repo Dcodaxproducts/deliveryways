@@ -1611,13 +1611,13 @@ model Order {
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                   DateTime           @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant              Tenant                @relation(fields: [tenantId], references: [id])
-  restaurant          Restaurant            @relation(fields: [restaurantId], references: [id])
-  branch              Branch                @relation(fields: [branchId], references: [id])
-  customer            User                  @relation("OrderCustomer", fields: [customerId], references: [id])
-  coupon              Coupon?               @relation(fields: [couponId], references: [id])
-  deliveryAddress     Address?              @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
-  deliveryman         Deliveryman?          @relation(fields: [deliverymanId], references: [id])
+  tenant              Tenant                  @relation(fields: [tenantId], references: [id])
+  restaurant          Restaurant              @relation(fields: [restaurantId], references: [id])
+  branch              Branch                  @relation(fields: [branchId], references: [id])
+  customer            User                    @relation("OrderCustomer", fields: [customerId], references: [id])
+  coupon              Coupon?                 @relation(fields: [couponId], references: [id])
+  deliveryAddress     Address?                @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id])
+  deliveryman         Deliveryman?            @relation(fields: [deliverymanId], references: [id])
   items               OrderItem[]
   couponUsages        CouponUsage[]
   transactions        PaymentTransaction[]
@@ -1625,15 +1625,35 @@ model Order {
   loyaltyTransactions LoyaltyTransaction[]
   notifications       Notification[]
   chatThreads         ChatThread[]
-  sourceGroupOrder    GroupOrderSession?    @relation("GroupOrderFinalOrder")
+  sourceGroupOrder    GroupOrderSession?      @relation("GroupOrderFinalOrder")
   review              OrderReview?
   winOrderExports     WinOrderOrderExport[]
+  postCommitEffects   OrderPostCommitEffect[]
 
   @@unique([tenantId, restaurantId, customerId, checkoutIdempotencyKey], map: "orders_checkout_idempotency_scope_key")
   @@index([branchId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([deliverymanId, status, createdAt])
   @@map("orders")
+}
+
+model OrderPostCommitEffect {
+  id             String    @id @default(cuid())
+  orderId        String    @map("order_id")
+  effectType     String    @map("effect_type") @db.VarChar(64)
+  claimToken     String?   @map("claim_token") @db.VarChar(64)
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz
+  attempts       Int       @default(0)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz
+  lastError      String?   @map("last_error") @db.VarChar(1000)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, effectType], map: "order_post_commit_effects_order_type_key")
+  @@index([completedAt, leaseExpiresAt, createdAt], map: "order_post_commit_effects_pending_idx")
+  @@map("order_post_commit_effects")
 }
 
 model OrderReview {

@@ -11,6 +11,8 @@ import { PrismaService } from '../src/database';
 import { GlobalSettingsService } from '../src/modules/global-settings/global-settings.service';
 import { PosRepository } from '../src/modules/pos/pos.repository';
 import { PosService } from '../src/modules/pos/pos.service';
+import { MenuItemRepository } from '../src/modules/menu/item/item.repository';
+import { MenuCategoryRepository } from '../src/modules/menu/category/category.repository';
 
 describe('P0 POS checkout claim lifecycle (isolated database)', () => {
   let moduleFixture: TestingModule;
@@ -18,6 +20,8 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
   let repository: PosRepository;
   let service: PosService;
   let globalSettingsService: GlobalSettingsService;
+  let menuItemRepository: MenuItemRepository;
+  let menuCategoryRepository: MenuCategoryRepository;
   const runId = `${Date.now()}-${process.pid}`;
 
   beforeAll(async () => {
@@ -28,6 +32,8 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
     repository = moduleFixture.get(PosRepository);
     service = moduleFixture.get(PosService);
     globalSettingsService = moduleFixture.get(GlobalSettingsService);
+    menuItemRepository = moduleFixture.get(MenuItemRepository);
+    menuCategoryRepository = moduleFixture.get(MenuCategoryRepository);
   }, 60_000);
 
   afterAll(async () => {
@@ -179,6 +185,101 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
     });
   });
 
+  it('preserves claimed and finalized POS snapshots during menu cleanup', async () => {
+    const scope = `cleanup-${runId}`;
+    const tenant = await prisma.tenant.create({
+      data: { name: scope, slug: scope },
+    });
+    const restaurant = await prisma.restaurant.create({
+      data: {
+        tenantId: tenant.id,
+        name: scope,
+        slug: `restaurant-${scope}`,
+        subdomain: scope,
+      },
+    });
+    const branch = await prisma.branch.create({
+      data: { tenantId: tenant.id, restaurantId: restaurant.id, name: scope },
+    });
+    const category = await prisma.menuCategory.create({
+      data: { restaurantId: restaurant.id, name: scope, slug: scope },
+    });
+    const [singleItem, categoryItem] = await Promise.all(
+      ['single', 'category'].map((name) =>
+        prisma.menuItem.create({
+          data: {
+            restaurantId: restaurant.id,
+            categoryId: category.id,
+            name: `${scope}-${name}`,
+            slug: `${scope}-${name}`,
+            basePrice: 10,
+          },
+        }),
+      ),
+    );
+    const createDraft = (data: {
+      status?: PosOrderDraftStatus;
+      checkoutClaimToken?: string;
+      finalOrderId?: string;
+    }) =>
+      prisma.posOrderDraft.create({
+        data: {
+          tenantId: tenant.id,
+          restaurantId: restaurant.id,
+          branchId: branch.id,
+          createdByActorId: 'cleanup-actor',
+          createdByActorType: PosActorType.STAFF,
+          orderType: OrderType.TAKEAWAY,
+          paymentMethod: PaymentMethod.COD,
+          status: data.status,
+          checkoutClaimToken: data.checkoutClaimToken,
+          checkoutRequestHash: data.checkoutClaimToken
+            ? 'c'.repeat(64)
+            : undefined,
+          finalOrderId: data.finalOrderId,
+          items: {
+            create: [
+              { menuItemId: singleItem.id, quantity: 1 },
+              { menuItemId: categoryItem.id, quantity: 1 },
+            ],
+          },
+        },
+      });
+    const [openDraft, claimedDraft, finalizedDraft] = await Promise.all([
+      createDraft({}),
+      createDraft({ checkoutClaimToken: 'active-claim' }),
+      createDraft({
+        status: PosOrderDraftStatus.CHECKED_OUT,
+        finalOrderId: 'durable-order-snapshot',
+      }),
+    ]);
+    const originalOpenUpdatedAt = openDraft.updatedAt;
+
+    await prisma.$transaction(async (tx) => {
+      await menuItemRepository.deletePosDraftItems(singleItem.id, tx);
+      await menuCategoryRepository.deletePosDraftItemsForMenuItems(
+        [categoryItem.id],
+        tx,
+      );
+    });
+
+    await expect(
+      prisma.posOrderDraftItem.count({ where: { draftId: openDraft.id } }),
+    ).resolves.toBe(0);
+    const refreshedOpen = await prisma.posOrderDraft.findUniqueOrThrow({
+      where: { id: openDraft.id },
+    });
+    expect(refreshedOpen.updatedAt.getTime()).toBeGreaterThan(
+      originalOpenUpdatedAt.getTime(),
+    );
+    await expect(
+      prisma.posOrderDraftItem.count({ where: { draftId: claimedDraft.id } }),
+    ).resolves.toBe(2);
+    await expect(
+      prisma.posOrderDraftItem.count({ where: { draftId: finalizedDraft.id } }),
+    ).resolves.toBe(2);
+  });
+
   it('creates one order and one payment effect for concurrent POS service checkout', async () => {
     await globalSettingsService.getCartExpiryMinutes();
     const tenant = await prisma.tenant.create({
@@ -197,13 +298,17 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
         tenantId: tenant.id,
         restaurantId: restaurant.id,
         name: 'POS Service Branch',
+        settings: {
+          automation: { autoAcceptOrders: true, estimatedPrepTime: 5 },
+        },
       },
     });
     await prisma.loyaltyProgram.create({
       data: {
         tenantId: tenant.id,
         restaurantId: restaurant.id,
-        isActive: false,
+        isActive: true,
+        pointsPerCurrencyUnit: 1,
       },
     });
     const customer = await prisma.user.create({
@@ -275,13 +380,44 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
     ).resolves.toBe(0);
     await expect(
       prisma.loyaltyTransaction.count({ where: { orderId } }),
-    ).resolves.toBe(0);
+    ).resolves.toBe(1);
+    await expect(
+      prisma.order.findUniqueOrThrow({ where: { id: orderId } }),
+    ).resolves.toMatchObject({
+      status: 'CONFIRMED',
+      loyaltyPointsAwarded: 24,
+    });
+    await expect(
+      prisma.orderPostCommitEffect.count({
+        where: { orderId, completedAt: { not: null } },
+      }),
+    ).resolves.toBe(4);
     await expect(
       prisma.orderItem.findMany({
         where: { orderId },
         select: { menuItemId: true, quantity: true },
       }),
     ).resolves.toEqual([{ menuItemId: menuItem.id, quantity: 2 }]);
+
+    await prisma.orderPostCommitEffect.update({
+      where: {
+        orderId_effectType: { orderId, effectType: 'LOYALTY' },
+      },
+      data: { completedAt: null },
+    });
+    const recovered = await service.checkout(actor as never, draft.id);
+    expect(recovered.data.order.id).toBe(orderId);
+    await expect(
+      prisma.loyaltyTransaction.count({ where: { orderId } }),
+    ).resolves.toBe(1);
+    const recoveredLoyaltyEffect =
+      await prisma.orderPostCommitEffect.findUniqueOrThrow({
+        where: {
+          orderId_effectType: { orderId, effectType: 'LOYALTY' },
+        },
+      });
+    expect(recoveredLoyaltyEffect.completedAt).toBeInstanceOf(Date);
+    expect(recoveredLoyaltyEffect.attempts).toBe(2);
 
     await prisma.posOrderDraftItem.update({
       where: { id: draft.items[0].id },

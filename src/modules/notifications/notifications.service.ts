@@ -329,6 +329,7 @@ export class NotificationsService {
     options: {
       source?: 'STOREFRONT' | 'POS';
       notifyRestaurant?: boolean;
+      deduplicate?: boolean;
     } = {},
   ): Promise<void> {
     const order =
@@ -336,6 +337,16 @@ export class NotificationsService {
 
     if (!order) {
       throw new NotFoundException('Order not found');
+    }
+
+    if (
+      options.deduplicate &&
+      (await this.notificationsRepository.hasOrderNotification(
+        orderId,
+        NotificationType.ORDER_PLACED,
+      ))
+    ) {
+      return;
     }
 
     const requiresOnlinePayment =
