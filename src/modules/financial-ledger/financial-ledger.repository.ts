@@ -200,6 +200,15 @@ export class FinancialLedgerRepository {
         this.assertWalletReplay(existing, input);
         return { transaction: existing, replayed: true };
       }
+      const legacy = await this.findLegacyWalletTransaction(input, transaction);
+      if (legacy) {
+        this.assertWalletReplay(legacy, input);
+        const adopted = await transaction.walletTransaction.update({
+          where: { id: legacy.id },
+          data: { idempotencyKey: ledgerKey, requestHash: input.requestHash },
+        });
+        return { transaction: adopted, replayed: true };
+      }
       const account = await transaction.walletAccount.upsert({
         where: {
           restaurantId_customerId: {
@@ -300,6 +309,18 @@ export class FinancialLedgerRepository {
         this.assertLoyaltyReplay(existing, input);
         return { transaction: existing, replayed: true };
       }
+      const legacy = await this.findLegacyLoyaltyTransaction(
+        input,
+        transaction,
+      );
+      if (legacy) {
+        this.assertLoyaltyReplay(legacy, input);
+        const adopted = await transaction.loyaltyTransaction.update({
+          where: { id: legacy.id },
+          data: { idempotencyKey: ledgerKey, requestHash: input.requestHash },
+        });
+        return { transaction: adopted, replayed: true };
+      }
       const account = await transaction.loyaltyAccount.upsert({
         where: {
           restaurantId_customerId: {
@@ -389,6 +410,18 @@ export class FinancialLedgerRepository {
         this.assertRestaurantReplay(existing, input);
         return { transaction: existing, replayed: true };
       }
+      const legacy = await this.findLegacyRestaurantTransaction(
+        input,
+        transaction,
+      );
+      if (legacy) {
+        this.assertRestaurantReplay(legacy, input);
+        const adopted = await transaction.restaurantWalletTransaction.update({
+          where: { id: legacy.id },
+          data: { idempotencyKey: ledgerKey, requestHash: input.requestHash },
+        });
+        return { transaction: adopted, replayed: true };
+      }
       const account = await transaction.restaurantWalletAccount.upsert({
         where: { restaurantId: input.restaurantId },
         create: {
@@ -445,6 +478,90 @@ export class FinancialLedgerRepository {
       });
       return { transaction: created, replayed: false };
     });
+  }
+
+  private async findLegacyWalletTransaction(
+    input: ApplyCustomerWalletDeltaInput,
+    tx: PrismaTx,
+  ): Promise<WalletTransaction | null> {
+    const naturalIdentity = input.paymentTransactionId
+      ? { paymentTransactionId: input.paymentTransactionId }
+      : input.orderId
+        ? { orderId: input.orderId, type: input.type }
+        : null;
+    if (!naturalIdentity) return null;
+    const candidates = await tx.walletTransaction.findMany({
+      where: {
+        ...naturalIdentity,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        customerId: input.customerId,
+      },
+      take: 2,
+    });
+    return this.singleLegacyCandidate(candidates, input.source);
+  }
+
+  private async findLegacyLoyaltyTransaction(
+    input: ApplyLoyaltyDeltaInput,
+    tx: PrismaTx,
+  ): Promise<LoyaltyTransaction | null> {
+    if (!input.orderId) return null;
+    const candidates = await tx.loyaltyTransaction.findMany({
+      where: {
+        orderId: input.orderId,
+        type: input.type,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        customerId: input.customerId,
+      },
+      take: 3,
+    });
+    const candidate = this.singleLegacyCandidate(candidates, input.source);
+    if (candidate && input.type === LoyaltyTransactionType.EARN) {
+      const order = await tx.order.findUnique({
+        where: { id: input.orderId },
+        select: { loyaltyPointsAwarded: true },
+      });
+      if (!order || order.loyaltyPointsAwarded !== candidate.points) {
+        throw new ConflictException(
+          'Legacy loyalty award does not match the immutable order award',
+        );
+      }
+    }
+    return candidate;
+  }
+
+  private async findLegacyRestaurantTransaction(
+    input: ApplyRestaurantWalletDeltaInput,
+    tx: PrismaTx,
+  ): Promise<RestaurantWalletTransaction | null> {
+    if (!input.paymentTransactionId) return null;
+    const candidate = await tx.restaurantWalletTransaction.findUnique({
+      where: { paymentTransactionId: input.paymentTransactionId },
+    });
+    if (!candidate) return null;
+    if (sourceFromMetadata(candidate.metadata) !== input.source) {
+      throw new ConflictException(
+        'Legacy restaurant wallet operation source conflicts with replay',
+      );
+    }
+    return candidate;
+  }
+
+  private singleLegacyCandidate<T extends { metadata: Prisma.JsonValue }>(
+    candidates: T[],
+    source: string,
+  ): T | null {
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    const matching = candidates.filter(
+      (candidate) => sourceFromMetadata(candidate.metadata) === source,
+    );
+    if (matching.length !== 1) {
+      throw new ConflictException('Legacy financial operation is ambiguous');
+    }
+    return matching[0];
   }
 
   private async inTransaction<T>(

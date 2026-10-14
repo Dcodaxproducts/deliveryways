@@ -110,6 +110,12 @@ export class LoyaltyWalletService {
         : 'Admin deducted loyalty points');
     const operationKey = this.clientOperationKey(
       'admin-loyalty-adjustment',
+      {
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        customerId: customer.id,
+        accountKind: 'LOYALTY',
+      },
       dto.idempotencyKey,
     );
     const requestHash = this.requestHash({
@@ -239,6 +245,12 @@ export class LoyaltyWalletService {
         : 'Admin credited wallet balance');
     const operationKey = this.clientOperationKey(
       'admin-wallet-adjustment',
+      {
+        tenantId: customer.tenantId!,
+        restaurantId: customer.restaurantId!,
+        customerId: customer.id,
+        accountKind: 'CUSTOMER_WALLET',
+      },
       dto.idempotencyKey,
     );
     const requestHash = this.requestHash({
@@ -687,6 +699,12 @@ export class LoyaltyWalletService {
     }
     const operationKey = this.clientOperationKey(
       'wallet-gift-card-purchase',
+      {
+        tenantId: context.tenantId,
+        restaurantId: context.restaurantId,
+        customerId: context.customerId,
+        accountKind: 'CUSTOMER_WALLET',
+      },
       input.idempotencyKey,
     );
     const requestHash = this.requestHash({
@@ -957,6 +975,12 @@ export class LoyaltyWalletService {
     const normalizedNote = note?.trim() || 'Loyalty points redeemed to wallet';
     const rootKey = this.clientOperationKey(
       'loyalty-wallet-conversion',
+      {
+        tenantId: context.tenantId,
+        restaurantId: context.restaurantId,
+        customerId: context.customerId,
+        accountKind: 'LOYALTY_AND_CUSTOMER_WALLET',
+      },
       idempotencyKey,
     );
     const requestHash = this.requestHash({
@@ -1204,6 +1228,32 @@ export class LoyaltyWalletService {
       return this.financialLedger.withFinancialLedgerTransaction(
         [this.customerLedgerScope(context, 'LOYALTY')],
         async (ledgerTx) => {
+          const lockedOrder = await this.repository.findOrderWithBenefits(
+            orderId,
+            ledgerTx,
+          );
+          if (!lockedOrder) throw new NotFoundException('Order not found');
+          if (
+            lockedOrder.status === 'CANCELLED' ||
+            lockedOrder.status === 'REJECTED' ||
+            (lockedOrder.paymentStatus !== PaymentStatus.PAID &&
+              !options.allowUnpaid)
+          ) {
+            return null;
+          }
+          if (lockedOrder.loyaltyPointsAwarded > 0) {
+            const legacyAward = await ledgerTx.loyaltyTransaction.findFirst({
+              where: {
+                orderId: lockedOrder.id,
+                tenantId: lockedOrder.tenantId,
+                restaurantId: lockedOrder.restaurantId,
+                customerId: lockedOrder.customerId,
+                type: LoyaltyTransactionType.EARN,
+              },
+              select: { id: true },
+            });
+            if (!legacyAward) return lockedOrder.loyaltyPointsAwarded;
+          }
           const program = await this.ensureLoyaltyProgram(context, ledgerTx);
           if (
             !program.isActive ||
@@ -1211,8 +1261,8 @@ export class LoyaltyWalletService {
           ) {
             return null;
           }
-          const qualifyingAmount = order.totalAmount.plus(
-            order.walletAppliedAmount,
+          const qualifyingAmount = lockedOrder.totalAmount.plus(
+            lockedOrder.walletAppliedAmount,
           );
           const pointsAwarded = Math.floor(
             Number(qualifyingAmount.mul(program.pointsPerCurrencyUnit)),
@@ -1225,7 +1275,7 @@ export class LoyaltyWalletService {
               : undefined;
           const requestHash = this.requestHash({
             customerId: context.customerId,
-            orderId: order.id,
+            orderId: lockedOrder.id,
             pointsAwarded,
             programId: program.id,
             qualifyingAmount: qualifyingAmount.toFixed(2),
@@ -1238,9 +1288,9 @@ export class LoyaltyWalletService {
               restaurantId: context.restaurantId,
               customerId: context.customerId,
               branchId: context.branchId,
-              orderId: order.id,
+              orderId: lockedOrder.id,
               paymentTransactionId,
-              operationKey: `order:${order.id}:loyalty-award`,
+              operationKey: `order:${lockedOrder.id}:loyalty-award`,
               requestHash,
               allowNegative: false,
               source: 'PAID_ORDER_LOYALTY_AWARD',
@@ -1259,7 +1309,7 @@ export class LoyaltyWalletService {
             ledgerTx,
           );
           await this.repository.updateOrderBenefits(
-            order.id,
+            lockedOrder.id,
             { loyaltyPointsAwarded: pointsAwarded },
             ledgerTx,
           );
@@ -1407,11 +1457,28 @@ export class LoyaltyWalletService {
     return FinancialLedgerRepository.createCanonicalRequestHash(value);
   }
 
-  private clientOperationKey(prefix: string, supplied?: string): string {
-    const key = supplied?.trim();
-    return key
-      ? `${prefix}:${key}`
-      : `${prefix}:generated:${randomBytes(16).toString('hex')}`;
+  private clientOperationKey(
+    operationType: string,
+    scope: {
+      tenantId: string;
+      restaurantId: string;
+      customerId: string;
+      accountKind: string;
+    },
+    supplied?: string,
+  ): string {
+    const key =
+      supplied?.trim() || `generated:${randomBytes(16).toString('hex')}`;
+    return [
+      scope.tenantId,
+      scope.restaurantId,
+      scope.customerId,
+      scope.accountKind,
+      operationType,
+      key,
+    ]
+      .map((part) => `${part.length}:${part}`)
+      .join('|');
   }
 
   private customerLedgerScope(

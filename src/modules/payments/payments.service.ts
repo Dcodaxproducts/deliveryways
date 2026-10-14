@@ -3181,6 +3181,10 @@ export class PaymentsService {
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${payment.id} FOR UPDATE`,
       );
+      const lockedPayment =
+        (await tx.paymentTransaction.findUnique({
+          where: { id: payment.id },
+        })) ?? payment;
       const existing = await tx.paymentTransaction.findUnique({
         where: { idempotencyKey: operationKey },
       });
@@ -3194,10 +3198,75 @@ export class PaymentsService {
             'Refund idempotency key conflicts with an existing operation',
           );
         }
+        if (existing.status === PaymentStatus.PENDING) {
+          await this.debitRestaurantWalletForRefund(
+            {
+              sourcePaymentTransactionId: payment.id,
+              refundTransactionId: existing.id,
+              tenantId: payment.tenantId,
+              restaurantId: payment.restaurantId,
+              branchId: payment.branchId,
+              orderId,
+              paymentMethod: payment.paymentMethod,
+              amount: existing.amount,
+              currency,
+              actorId: user.uid,
+            },
+            tx,
+          );
+        }
         return existing;
       }
-      if (payment.status !== PaymentStatus.PAID) {
+      if (
+        lockedPayment.status !== PaymentStatus.PAID &&
+        lockedPayment.status !== PaymentStatus.REFUNDED
+      ) {
         throw new BadRequestException('Only paid transactions can be refunded');
+      }
+      const unlinkedLegacyRefunds = await tx.paymentTransaction.findMany({
+        where: {
+          orderId,
+          sourcePaymentTransactionId: null,
+          type: PaymentTransactionType.REFUND,
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.REFUNDED] },
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          restaurantId: true,
+          currency: true,
+        },
+      });
+      if (unlinkedLegacyRefunds.length > 0) {
+        const successfulCharges = await tx.paymentTransaction.findMany({
+          where: {
+            orderId,
+            type: PaymentTransactionType.CHARGE,
+            status: { in: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+          },
+          select: { id: true },
+          take: 2,
+        });
+        const canAdopt =
+          successfulCharges.length === 1 &&
+          successfulCharges[0].id === payment.id &&
+          unlinkedLegacyRefunds.every(
+            (refund) =>
+              refund.tenantId === payment.tenantId &&
+              refund.restaurantId === payment.restaurantId &&
+              refund.currency.toUpperCase() === currency,
+          );
+        if (!canAdopt) {
+          throw new ConflictException(
+            'Legacy refunds are ambiguous and must be reconciled before another refund',
+          );
+        }
+        await tx.paymentTransaction.updateMany({
+          where: {
+            id: { in: unlinkedLegacyRefunds.map((refund) => refund.id) },
+          },
+          data: { sourcePaymentTransactionId: payment.id },
+        });
       }
       const reserved = await tx.paymentTransaction.aggregate({
         where: {
@@ -3213,7 +3282,7 @@ export class PaymentsService {
           'Refund amount exceeds remaining refundable amount',
         );
       }
-      return tx.paymentTransaction.create({
+      const created = await tx.paymentTransaction.create({
         data: {
           orderId: payment.orderId,
           tenantId: payment.tenantId,
@@ -3232,6 +3301,22 @@ export class PaymentsService {
           requestHash,
         },
       });
+      await this.debitRestaurantWalletForRefund(
+        {
+          sourcePaymentTransactionId: payment.id,
+          refundTransactionId: created.id,
+          tenantId: payment.tenantId,
+          restaurantId: payment.restaurantId,
+          branchId: payment.branchId,
+          orderId,
+          paymentMethod: payment.paymentMethod,
+          amount: refundAmount,
+          currency,
+          actorId: user.uid,
+        },
+        tx,
+      );
+      return created;
     });
 
     let providerRef = reservation.providerRef;
@@ -3240,7 +3325,13 @@ export class PaymentsService {
         ? (reservation.providerData as Prisma.InputJsonValue)
         : (dto.providerData as Prisma.InputJsonValue);
     const providerIdempotencyKey = `refund:${reservation.id}`;
-    if (reservation.status !== PaymentStatus.REFUNDED) {
+    const persistedProviderData = this.asJsonObject(reservation.providerData);
+    const providerAlreadySucceeded =
+      persistedProviderData.providerRefundSucceeded === true;
+    if (
+      reservation.status !== PaymentStatus.REFUNDED &&
+      !providerAlreadySucceeded
+    ) {
       if (
         payment.paymentMethod === PaymentMethod.STRIPE &&
         payment.providerRef
@@ -3283,6 +3374,21 @@ export class PaymentsService {
           refund: paypalRefund.payload as Prisma.InputJsonValue,
         };
       }
+      await this.prisma.paymentTransaction.update({
+        where: { id: reservation.id },
+        data: {
+          providerRef,
+          providerData: {
+            providerRefundSucceeded: true,
+            payload: providerData ?? null,
+          },
+        },
+      });
+    } else if (providerAlreadySucceeded) {
+      providerRef = reservation.providerRef;
+      providerData = persistedProviderData.payload as
+        | Prisma.InputJsonValue
+        | undefined;
     }
 
     const finalized = await this.prisma.$transaction(async (tx) => {
@@ -3293,21 +3399,6 @@ export class PaymentsService {
         where: { id: reservation.id },
       });
       if (refundTransaction.status !== PaymentStatus.REFUNDED) {
-        await this.debitRestaurantWalletForRefund(
-          {
-            sourcePaymentTransactionId: payment.id,
-            refundTransactionId: refundTransaction.id,
-            tenantId: payment.tenantId,
-            restaurantId: payment.restaurantId,
-            branchId: payment.branchId,
-            orderId,
-            paymentMethod: payment.paymentMethod,
-            amount: refundAmount,
-            currency,
-            actorId: user.uid,
-          },
-          tx,
-        );
         await tx.paymentTransaction.update({
           where: { id: refundTransaction.id },
           data: {

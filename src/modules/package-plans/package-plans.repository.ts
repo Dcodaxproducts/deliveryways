@@ -427,20 +427,43 @@ export class PackagePlansRepository {
           existing.idempotencyKey !==
             FinancialLedgerRepository.createOperationKey(operationKey)
         ) {
-          if (
-            existing.tenantId !== input.tenantId ||
-            existing.restaurantId !== input.restaurantId ||
-            existing.currency !== input.currency
-          ) {
+          const metadata =
+            existing.metadata &&
+            !Array.isArray(existing.metadata) &&
+            typeof existing.metadata === 'object'
+              ? existing.metadata
+              : {};
+          const identityMatches =
+            existing.tenantId === input.tenantId &&
+            existing.restaurantId === input.restaurantId &&
+            existing.currency === input.currency &&
+            existing.type === RestaurantWalletTransactionType.ADJUSTMENT &&
+            existing.amount.isNegative() &&
+            existing.amount.abs().equals(amountDue) &&
+            metadata.source === 'PACKAGE_PLAN_SUBSCRIPTION_SETTLEMENT' &&
+            metadata.target === 'TENANT_SUBSCRIPTION' &&
+            metadata.subscriptionId === input.subscriptionId &&
+            metadata.invoiceNumber === input.invoiceNumber &&
+            metadata.periodFrom === input.periodFrom.toISOString() &&
+            metadata.periodTo === input.periodTo.toISOString();
+          if (!identityMatches) {
             throw new ConflictException(
-              'Subscription settlement key conflicts with another restaurant wallet operation',
+              'Subscription settlement key conflicts with immutable invoice identity',
             );
           }
+          const adopted = await tx.restaurantWalletTransaction.update({
+            where: { id: existing.id },
+            data: {
+              idempotencyKey:
+                FinancialLedgerRepository.createOperationKey(operationKey),
+              requestHash,
+            },
+          });
           return {
-            appliedAmount: existing.amount.abs().toDecimalPlaces(2),
-            balanceAfter: existing.balanceAfter,
-            walletAccountId: existing.walletAccountId,
-            walletTransactionId: existing.id,
+            appliedAmount: adopted.amount.abs().toDecimalPlaces(2),
+            balanceAfter: adopted.balanceAfter,
+            walletAccountId: adopted.walletAccountId,
+            walletTransactionId: adopted.id,
           };
         }
         if (existing) {
@@ -504,6 +527,8 @@ export class PackagePlansRepository {
                 invoiceNumber: input.invoiceNumber,
                 periodFrom: input.periodFrom.toISOString(),
                 periodTo: input.periodTo.toISOString(),
+                invoiceAmountDue: amountDue.toFixed(2),
+                currency: input.currency,
               },
               createdBy: input.createdBy,
             },

@@ -123,6 +123,8 @@ describe('PaymentsService', () => {
     const transactionTx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'payment-1' }]),
       paymentTransaction: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn(),
         findUnique: jest
           .fn()
           .mockImplementation(() => Promise.resolve(refundRecord)),
@@ -168,6 +170,14 @@ describe('PaymentsService', () => {
     };
 
     const prisma = {
+      paymentTransaction: {
+        update: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            refundRecord = { ...refundRecord, ...data };
+            return Promise.resolve(refundRecord);
+          }),
+      },
       order: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
@@ -1467,6 +1477,58 @@ describe('PaymentsService', () => {
     });
   });
 
+  it('blocks ambiguous unlinked legacy refunds from exceeding charge capacity', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+    } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-legacy-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-legacy-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(100),
+      currency: 'EUR',
+      providerRef: 'pi_legacy',
+      order: {
+        id: 'order-legacy-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    transactionTx.paymentTransaction.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'legacy-refund-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          currency: 'EUR',
+        },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'payment-legacy-1' },
+        { id: 'payment-legacy-2' },
+      ]);
+
+    await expect(
+      service.refund(
+        { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-legacy-1',
+        { amount: 60, idempotencyKey: 'legacy-capacity' },
+      ),
+    ).rejects.toThrow(
+      'Legacy refunds are ambiguous and must be reconciled before another refund',
+    );
+    expect(stripePaymentsService.refundPaymentIntent).not.toHaveBeenCalled();
+    expect(transactionTx.paymentTransaction.create).not.toHaveBeenCalled();
+  });
+
   it('debits the restaurant wallet when a platform-collected order is refunded', async () => {
     const {
       service,
@@ -1677,7 +1739,7 @@ describe('PaymentsService', () => {
     expect(transactionTx.order.update).not.toHaveBeenCalled();
   });
 
-  it('reuses the durable provider idempotency key after local refund finalization fails', async () => {
+  it('reconciles persisted provider success without repeating the provider refund', async () => {
     const {
       service,
       paymentsRepository,
@@ -1706,12 +1768,15 @@ describe('PaymentsService', () => {
     transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
       id: 'wallet-credit-1',
     });
-    financialLedgerRepository.applyRestaurantWalletDelta
+    financialLedgerRepository.applyRestaurantWalletDelta.mockResolvedValue({
+      transaction: { id: 'restaurant-wallet-refund-1' },
+      replayed: false,
+    });
+    transactionTx.paymentTransaction.update
       .mockRejectedValueOnce(new Error('local ledger unavailable'))
-      .mockResolvedValueOnce({
-        transaction: { id: 'restaurant-wallet-refund-1' },
-        replayed: false,
-      });
+      .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve(data),
+      );
     const request = { amount: 10, idempotencyKey: 'refund-retry-1' };
 
     await expect(
@@ -1727,13 +1792,13 @@ describe('PaymentsService', () => {
       request,
     );
 
-    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledTimes(2);
-    const refundCalls = stripePaymentsService.refundPaymentIntent.mock
-      .calls as unknown as Array<[string, number, unknown, string]>;
-    const firstKey = refundCalls[0]?.[3];
-    const retryKey = refundCalls[1]?.[3];
-    expect(firstKey).toBe('refund:refund-transaction-1');
-    expect(retryKey).toBe(firstKey);
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledWith(
+      'pi_retry',
+      10,
+      expect.any(Object),
+      'refund:refund-transaction-1',
+    );
     expect(transactionTx.paymentTransaction.create).toHaveBeenCalledTimes(1);
   });
 

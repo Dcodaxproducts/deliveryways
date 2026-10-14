@@ -3,6 +3,7 @@ import {
   GeneratedInvoiceStatus,
   OrderStatus,
   Prisma,
+  RestaurantWalletTransactionType,
 } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
 
@@ -106,12 +107,22 @@ describe('PackagePlansRepository wallet settlement', () => {
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       currency: 'EUR',
+      type: RestaurantWalletTransactionType.ADJUSTMENT,
       amount: new Prisma.Decimal(-75),
       balanceAfter: new Prisma.Decimal(25),
+      metadata: {
+        source: 'PACKAGE_PLAN_SUBSCRIPTION_SETTLEMENT',
+        target: 'TENANT_SUBSCRIPTION',
+        subscriptionId: 'subscription-1',
+        invoiceNumber: 'SUB-INV-1',
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2026-07-01T00:00:00.000Z',
+      },
     };
     const tx = {
       restaurantWalletTransaction: {
         findUnique: jest.fn().mockResolvedValue(transaction),
+        update: jest.fn().mockResolvedValue(transaction),
       },
       restaurantWalletAccount: { findUnique: jest.fn() },
     };

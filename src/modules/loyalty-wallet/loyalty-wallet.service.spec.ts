@@ -24,6 +24,8 @@ describe('LoyaltyWalletService', () => {
       createWalletTransaction: jest.fn(),
       listPurchasedGiftCardTransactions: jest.fn(),
       findGiftCardsByIds: jest.fn(),
+      findOrderWithBenefits: jest.fn(),
+      updateOrderBenefits: jest.fn(),
     };
 
     const prisma = {
@@ -55,6 +57,31 @@ describe('LoyaltyWalletService', () => {
 
     return { service, repository, prisma, financialLedger };
   };
+
+  it('rechecks paid-order eligibility after acquiring the loyalty lock', async () => {
+    const { service, repository, financialLedger } = makeService();
+    const paidOrder = {
+      id: 'order-race-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: 'customer-1',
+      status: 'PLACED',
+      paymentStatus: 'PAID',
+      loyaltyPointsAwarded: 0,
+      totalAmount: new Prisma.Decimal(100),
+      walletAppliedAmount: new Prisma.Decimal(0),
+    };
+    repository.findOrderWithBenefits
+      .mockResolvedValueOnce(paidOrder)
+      .mockResolvedValueOnce({ ...paidOrder, status: 'CANCELLED' });
+
+    await expect(
+      service.awardPointsForPaidOrder('order-race-1'),
+    ).resolves.toBeNull();
+    expect(repository.findOrderWithBenefits).toHaveBeenCalledTimes(2);
+    expect(financialLedger.applyLoyaltyDelta).not.toHaveBeenCalled();
+  });
 
   it('returns admin customer loyalty summary for business admin in same tenant', async () => {
     const { service, repository } = makeService();
@@ -456,12 +483,33 @@ describe('LoyaltyWalletService', () => {
     expect(financialLedger.applyCustomerWalletDelta).toHaveBeenCalledWith(
       expect.objectContaining({
         delta: new Prisma.Decimal(-1000),
-        operationKey: 'wallet-gift-card-purchase:purchase-1',
+        operationKey:
+          '8:tenant-1|12:restaurant-1|7:buyer-1|15:CUSTOMER_WALLET|25:wallet-gift-card-purchase|10:purchase-1',
         source: 'CUSTOMER_GIFT_CARD_PURCHASE',
       }),
       tx,
     );
     expect(result.walletBalance).toBe(1000);
+
+    await service.purchaseGiftCardFromWallet(
+      {
+        customerId: 'buyer-2',
+        tenantId: 'tenant-2',
+        restaurantId: 'restaurant-2',
+        branchId: 'branch-2',
+      },
+      { amount: 1000, idempotencyKey: 'purchase-1' },
+      'buyer-2',
+    );
+    const operationKeys =
+      financialLedger.applyCustomerWalletDelta.mock.calls.map(
+        ([input]) => (input as { operationKey: string }).operationKey,
+      );
+    expect(operationKeys).toHaveLength(2);
+    expect(operationKeys[0]).not.toBe(operationKeys[1]);
+    expect(operationKeys[1]).toContain(
+      '8:tenant-2|12:restaurant-2|7:buyer-2|15:CUSTOMER_WALLET',
+    );
   });
 
   it('propagates atomic insufficient-funds rejection for gift purchase', async () => {

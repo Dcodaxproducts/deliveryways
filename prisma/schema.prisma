@@ -1793,6 +1793,7 @@ model WalletTransaction {
   @@index([walletAccountId, createdAt])
   @@index([customerId, createdAt])
   @@index([orderId, createdAt])
+  @@index([paymentTransactionId], map: "wallet_transactions_payment_transaction_id_idx")
   @@map("wallet_transactions")
 }
 

@@ -2,6 +2,9 @@ import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   LoyaltyTransactionType,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentTransactionType,
   Prisma,
   RestaurantWalletTransactionType,
   UserRole,
@@ -42,6 +45,14 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
         subdomain: label + '-' + runId,
       },
     });
+    const branch = await prisma.branch.create({
+      data: {
+        tenantId: tenant.id,
+        restaurantId: restaurant.id,
+        name: label + ' main',
+        isMain: true,
+      },
+    });
     const customer = await prisma.user.create({
       data: {
         email: label + '-' + runId + '@example.test',
@@ -53,7 +64,7 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
         isApproved: true,
       },
     });
-    return { tenant, restaurant, customer };
+    return { tenant, restaurant, branch, customer };
   }
 
   function requestHash(payload: Record<string, string | number | boolean>) {
@@ -262,6 +273,120 @@ describe('P0 canonical financial ledger concurrency (isolated database)', () => 
         where: { walletAccountId: restaurantAccount.id },
       }),
     ).resolves.toBe(1);
+  });
+
+  it('adopts pre-migration top-up and restaurant payment rows without duplicating balances', async () => {
+    const scope = await createScope('ledger-legacy-replay');
+    const payment = await prisma.paymentTransaction.create({
+      data: {
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        paymentMethod: PaymentMethod.STRIPE,
+        type: PaymentTransactionType.CHARGE,
+        status: PaymentStatus.PAID,
+        amount: new Prisma.Decimal(50),
+        currency: 'PKR',
+      },
+    });
+    const wallet = await prisma.walletAccount.create({
+      data: {
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        customerId: scope.customer.id,
+        balance: new Prisma.Decimal(50),
+        currency: 'PKR',
+      },
+    });
+    const legacyWallet = await prisma.walletTransaction.create({
+      data: {
+        walletAccountId: wallet.id,
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        customerId: scope.customer.id,
+        paymentTransactionId: payment.id,
+        type: WalletTransactionType.CREDIT,
+        amount: new Prisma.Decimal(50),
+        balanceAfter: new Prisma.Decimal(50),
+        currency: 'PKR',
+        metadata: { source: 'WALLET_TOP_UP' },
+        idempotencyKey: FinancialLedgerRepository.createOperationKey(
+          'legacy:customer-wallet:' + runId,
+        ),
+      },
+    });
+    const topUpHash = requestHash({ payment: payment.id, amount: 50 });
+    const topUpReplay = await ledger.applyCustomerWalletDelta({
+      tenantId: scope.tenant.id,
+      restaurantId: scope.restaurant.id,
+      branchId: scope.branch.id,
+      customerId: scope.customer.id,
+      paymentTransactionId: payment.id,
+      operationKey: 'wallet-top-up:' + payment.id,
+      requestHash: topUpHash,
+      allowNegative: false,
+      source: 'WALLET_TOP_UP',
+      delta: new Prisma.Decimal(50),
+      currency: 'PKR',
+      type: WalletTransactionType.CREDIT,
+    });
+    expect(topUpReplay).toMatchObject({
+      replayed: true,
+      transaction: { id: legacyWallet.id, requestHash: topUpHash },
+    });
+    await expect(
+      prisma.walletAccount.findUniqueOrThrow({ where: { id: wallet.id } }),
+    ).resolves.toMatchObject({ balance: new Prisma.Decimal(50) });
+
+    const restaurantWallet = await prisma.restaurantWalletAccount.create({
+      data: {
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        balance: new Prisma.Decimal(50),
+        currency: 'PKR',
+      },
+    });
+    const legacyRestaurant = await prisma.restaurantWalletTransaction.create({
+      data: {
+        walletAccountId: restaurantWallet.id,
+        tenantId: scope.tenant.id,
+        restaurantId: scope.restaurant.id,
+        branchId: scope.branch.id,
+        paymentTransactionId: payment.id,
+        type: RestaurantWalletTransactionType.ORDER_CREDIT,
+        amount: new Prisma.Decimal(50),
+        balanceAfter: new Prisma.Decimal(50),
+        currency: 'PKR',
+        metadata: { source: 'PLATFORM_COLLECTED_ORDER_PAYMENT' },
+        idempotencyKey: FinancialLedgerRepository.createOperationKey(
+          'legacy:restaurant-wallet:' + runId,
+        ),
+      },
+    });
+    const creditHash = requestHash({ payment: payment.id, amount: 50 });
+    const creditReplay = await ledger.applyRestaurantWalletDelta({
+      tenantId: scope.tenant.id,
+      restaurantId: scope.restaurant.id,
+      branchId: scope.branch.id,
+      paymentTransactionId: payment.id,
+      operationKey: 'restaurant-payment-credit:' + payment.id,
+      requestHash: creditHash,
+      allowNegative: false,
+      source: 'PLATFORM_COLLECTED_ORDER_PAYMENT',
+      delta: new Prisma.Decimal(50),
+      currency: 'PKR',
+      type: RestaurantWalletTransactionType.ORDER_CREDIT,
+    });
+    expect(creditReplay).toMatchObject({
+      replayed: true,
+      transaction: { id: legacyRestaurant.id, requestHash: creditHash },
+    });
+    await expect(
+      prisma.restaurantWalletAccount.findUniqueOrThrow({
+        where: { id: restaurantWallet.id },
+      }),
+    ).resolves.toMatchObject({ balance: new Prisma.Decimal(50) });
   });
 
   it('acquires multi-account locks in sorted order without deadlock', async () => {
