@@ -15,6 +15,9 @@ describe('NotificationsService', () => {
   let service: NotificationsService;
   let notificationsRepository: {
     create: jest.Mock;
+    createIdempotent: jest.Mock;
+    claimIdempotentDelivery: jest.Mock;
+    completeIdempotentDelivery: jest.Mock;
     updateDelivery: jest.Mock;
     list: jest.Mock;
     findById: jest.Mock;
@@ -51,6 +54,9 @@ describe('NotificationsService', () => {
   beforeEach(() => {
     notificationsRepository = {
       create: jest.fn(),
+      createIdempotent: jest.fn(),
+      claimIdempotentDelivery: jest.fn(),
+      completeIdempotentDelivery: jest.fn(),
       updateDelivery: jest.fn(),
       list: jest.fn(),
       findById: jest.fn(),
@@ -1445,5 +1451,71 @@ describe('NotificationsService', () => {
       }),
     );
     expect(mailerService.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('atomically deduplicates and fences durable customer email delivery', async () => {
+    const pending = {
+      id: 'notification-idempotent-1',
+      recipientEmail: 'customer@example.com',
+      subject: 'Order confirmed',
+      body: 'Your order is confirmed',
+      status: NotificationStatus.PENDING,
+    };
+    notificationsRepository.createIdempotent.mockResolvedValue(pending);
+    notificationsRepository.claimIdempotentDelivery.mockResolvedValue({
+      count: 1,
+    });
+    notificationsRepository.completeIdempotentDelivery.mockResolvedValue({
+      count: 1,
+    });
+    notificationsRepository.findById.mockResolvedValue({
+      ...pending,
+      status: NotificationStatus.SENT,
+    });
+
+    await (
+      service as unknown as {
+        createAndDispatchCustomerEmail(input: {
+          tenantId: string;
+          restaurantId: string;
+          branchId: string;
+          recipientEmail: string;
+          type: NotificationType;
+          subject: string;
+          body: string;
+          idempotencyKey: string;
+        }): Promise<unknown>;
+      }
+    ).createAndDispatchCustomerEmail({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      recipientEmail: 'customer@example.com',
+      type: NotificationType.ORDER_STATUS_CHANGED,
+      subject: 'Order confirmed',
+      body: 'Your order is confirmed',
+      idempotencyKey: 'POS:order-1:AUTO_ACCEPT:CUSTOMER_EMAIL',
+    });
+
+    expect(notificationsRepository.createIdempotent).toHaveBeenCalledTimes(1);
+    expect(
+      notificationsRepository.claimIdempotentDelivery,
+    ).toHaveBeenCalledWith(expect.objectContaining({ id: pending.id }));
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'customer@example.com',
+      'Order confirmed',
+      'Your order is confirmed',
+      {
+        messageId: '<POS-order-1-AUTO-ACCEPT-CUSTOMER-EMAIL@feastflow.app>',
+      },
+    );
+    expect(
+      notificationsRepository.completeIdempotentDelivery,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: pending.id,
+        status: NotificationStatus.SENT,
+      }),
+    );
   });
 });

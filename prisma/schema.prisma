@@ -1930,6 +1930,7 @@ model LoyaltyTransaction {
   expiresAt            DateTime?                @map("expires_at") @db.Timestamptz
   createdBy            String?                  @map("created_by")
   updatedBy            String?                  @map("updated_by")
+  idempotencyKey       String?                  @unique(map: "loyalty_transactions_idempotency_key") @map("idempotency_key") @db.VarChar(191)
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -2347,6 +2348,9 @@ model Notification {
   failedAt             DateTime?            @map("failed_at") @db.Timestamptz
   seenAt               DateTime?            @map("seen_at") @db.Timestamptz
   errorMessage         String?              @map("error_message")
+  idempotencyKey       String?              @unique(map: "notifications_idempotency_key") @map("idempotency_key") @db.VarChar(191)
+  deliveryClaimToken   String?              @map("delivery_claim_token") @db.VarChar(64)
+  deliveryLeaseExpires DateTime?            @map("delivery_lease_expires_at") @db.Timestamptz
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz
 

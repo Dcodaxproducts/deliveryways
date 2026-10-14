@@ -1136,7 +1136,7 @@ export class LoyaltyWalletService {
     orderId: string,
     paymentTransactionId?: string,
     actorId?: string,
-    options: { allowUnpaid?: boolean } = {},
+    options: { allowUnpaid?: boolean; idempotencyKey?: string } = {},
   ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await this.repository.findOrderWithBenefits(orderId, tx);
@@ -1216,6 +1216,7 @@ export class LoyaltyWalletService {
           monetaryValue: qualifyingAmount,
           note: 'Loyalty points earned on paid order',
           expiresAt,
+          idempotencyKey: options.idempotencyKey,
           createdBy: actorId,
           updatedBy: actorId,
         },

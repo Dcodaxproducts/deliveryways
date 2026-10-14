@@ -13,6 +13,8 @@ import { PosRepository } from '../src/modules/pos/pos.repository';
 import { PosService } from '../src/modules/pos/pos.service';
 import { MenuItemRepository } from '../src/modules/menu/item/item.repository';
 import { MenuCategoryRepository } from '../src/modules/menu/category/category.repository';
+import { MailerService } from '../src/modules/mailer/mailer.service';
+import { OrderTrackingRealtimeService } from '../src/modules/orders/order-tracking.realtime.service';
 
 describe('P0 POS checkout claim lifecycle (isolated database)', () => {
   let moduleFixture: TestingModule;
@@ -22,6 +24,8 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
   let globalSettingsService: GlobalSettingsService;
   let menuItemRepository: MenuItemRepository;
   let menuCategoryRepository: MenuCategoryRepository;
+  let mailerService: MailerService;
+  let orderTrackingRealtimeService: OrderTrackingRealtimeService;
   const runId = `${Date.now()}-${process.pid}`;
 
   beforeAll(async () => {
@@ -34,6 +38,10 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
     globalSettingsService = moduleFixture.get(GlobalSettingsService);
     menuItemRepository = moduleFixture.get(MenuItemRepository);
     menuCategoryRepository = moduleFixture.get(MenuCategoryRepository);
+    mailerService = moduleFixture.get(MailerService);
+    orderTrackingRealtimeService = moduleFixture.get(
+      OrderTrackingRealtimeService,
+    );
   }, 60_000);
 
   afterAll(async () => {
@@ -391,7 +399,7 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
       prisma.orderPostCommitEffect.count({
         where: { orderId, completedAt: { not: null } },
       }),
-    ).resolves.toBe(4);
+    ).resolves.toBe(7);
     await expect(
       prisma.orderItem.findMany({
         where: { orderId },
@@ -418,6 +426,148 @@ describe('P0 POS checkout claim lifecycle (isolated database)', () => {
       });
     expect(recoveredLoyaltyEffect.completedAt).toBeInstanceOf(Date);
     expect(recoveredLoyaltyEffect.attempts).toBe(2);
+
+    await prisma.orderPostCommitEffect.update({
+      where: {
+        orderId_effectType: { orderId, effectType: 'PLACED_TRACKING' },
+      },
+      data: { completedAt: null },
+    });
+    const trackingFailure = jest
+      .spyOn(orderTrackingRealtimeService, 'emitTrackingUpdate')
+      .mockImplementationOnce(() => {
+        throw new Error('tracking unavailable');
+      });
+    await service.checkout(actor as never, draft.id);
+    await expect(
+      prisma.orderPostCommitEffect.findUniqueOrThrow({
+        where: {
+          orderId_effectType: { orderId, effectType: 'PLACED_TRACKING' },
+        },
+      }),
+    ).resolves.toMatchObject({
+      completedAt: null,
+      lastError: 'tracking unavailable',
+    });
+    trackingFailure.mockRestore();
+    await service.checkout(actor as never, draft.id);
+    const recoveredTrackingEffect =
+      await prisma.orderPostCommitEffect.findUniqueOrThrow({
+        where: {
+          orderId_effectType: { orderId, effectType: 'PLACED_TRACKING' },
+        },
+      });
+    expect(recoveredTrackingEffect.completedAt).toBeInstanceOf(Date);
+
+    const autoAcceptNotificationKey =
+      'POS:' + orderId + ':AUTO_ACCEPT_NOTIFICATION:CUSTOMER_EMAIL';
+    await prisma.notification.update({
+      where: { idempotencyKey: autoAcceptNotificationKey },
+      data: { status: 'FAILED', sentAt: null },
+    });
+    await prisma.orderPostCommitEffect.update({
+      where: {
+        orderId_effectType: {
+          orderId,
+          effectType: 'AUTO_ACCEPT_NOTIFICATION',
+        },
+      },
+      data: { completedAt: null },
+    });
+    const mailFailure = jest
+      .spyOn(mailerService, 'sendEmail')
+      .mockRejectedValueOnce(new Error('mailer unavailable'));
+    await service.checkout(actor as never, draft.id);
+    await expect(
+      prisma.orderPostCommitEffect.findUniqueOrThrow({
+        where: {
+          orderId_effectType: {
+            orderId,
+            effectType: 'AUTO_ACCEPT_NOTIFICATION',
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      completedAt: null,
+      lastError: 'mailer unavailable',
+    });
+    mailFailure.mockRestore();
+    await service.checkout(actor as never, draft.id);
+    await expect(
+      prisma.notification.count({
+        where: { idempotencyKey: autoAcceptNotificationKey },
+      }),
+    ).resolves.toBe(1);
+    const recoveredAutoAcceptNotification =
+      await prisma.orderPostCommitEffect.findUniqueOrThrow({
+        where: {
+          orderId_effectType: {
+            orderId,
+            effectType: 'AUTO_ACCEPT_NOTIFICATION',
+          },
+        },
+      });
+    expect(recoveredAutoAcceptNotification.completedAt).toBeInstanceOf(Date);
+
+    await prisma.notification.update({
+      where: { idempotencyKey: autoAcceptNotificationKey },
+      data: {
+        status: 'FAILED',
+        sentAt: null,
+        deliveryClaimToken: null,
+        deliveryLeaseExpires: null,
+      },
+    });
+    await prisma.orderPostCommitEffect.update({
+      where: {
+        orderId_effectType: {
+          orderId,
+          effectType: 'AUTO_ACCEPT_NOTIFICATION',
+        },
+      },
+      data: { completedAt: null },
+    });
+    let releaseMail!: () => void;
+    const blockedMail = new Promise<void>((resolve) => {
+      releaseMail = resolve;
+    });
+    const overlappingMail = jest
+      .spyOn(mailerService, 'sendEmail')
+      .mockReturnValueOnce(blockedMail);
+    const firstRecovery = service.checkout(actor as never, draft.id);
+    for (
+      let attempt = 0;
+      attempt < 50 && !overlappingMail.mock.calls.length;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(overlappingMail).toHaveBeenCalledTimes(1);
+    await prisma.orderPostCommitEffect.update({
+      where: {
+        orderId_effectType: {
+          orderId,
+          effectType: 'AUTO_ACCEPT_NOTIFICATION',
+        },
+      },
+      data: { leaseExpiresAt: new Date(Date.now() - 1_000) },
+    });
+    await service.checkout(actor as never, draft.id);
+    releaseMail();
+    await firstRecovery;
+    expect(overlappingMail).toHaveBeenCalledTimes(1);
+    overlappingMail.mockRestore();
+    await service.checkout(actor as never, draft.id);
+    const leaseTakeoverEffect =
+      await prisma.orderPostCommitEffect.findUniqueOrThrow({
+        where: {
+          orderId_effectType: {
+            orderId,
+            effectType: 'AUTO_ACCEPT_NOTIFICATION',
+          },
+        },
+      });
+    expect(leaseTakeoverEffect.completedAt).toBeInstanceOf(Date);
 
     await prisma.posOrderDraftItem.update({
       where: { id: draft.items[0].id },

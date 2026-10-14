@@ -98,7 +98,7 @@ export class MailerService {
     to: string,
     subject: string,
     text: string,
-    options?: Pick<SendMailOptions, 'attachments'>,
+    options?: Pick<SendMailOptions, 'attachments' | 'messageId'>,
   ): Promise<void> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(
@@ -112,6 +112,7 @@ export class MailerService {
       subject,
       text,
       attachments: options?.attachments,
+      messageId: options?.messageId,
     });
 
     this.logger.log(`Email queued for ${to} with subject "${subject}"`);

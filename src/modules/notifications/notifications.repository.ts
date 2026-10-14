@@ -47,6 +47,74 @@ export class NotificationsRepository {
     });
   }
 
+  async createIdempotent(
+    idempotencyKey: string,
+    data: Prisma.NotificationCreateInput,
+  ) {
+    return this.prisma.notification.upsert({
+      where: { idempotencyKey },
+      create: { ...data, idempotencyKey },
+      update: {},
+      include: {
+        order: {
+          select: { id: true, status: true, paymentStatus: true },
+        },
+        paymentTransaction: {
+          select: {
+            id: true,
+            status: true,
+            type: true,
+            amount: true,
+            currency: true,
+          },
+        },
+      },
+    });
+  }
+
+  async claimIdempotentDelivery(input: {
+    id: string;
+    claimToken: string;
+    claimedAt: Date;
+    leaseExpiresAt: Date;
+  }) {
+    return this.prisma.notification.updateMany({
+      where: {
+        id: input.id,
+        status: { not: NotificationStatus.SENT },
+        OR: [
+          { deliveryClaimToken: null },
+          { deliveryLeaseExpires: { lte: input.claimedAt } },
+        ],
+      },
+      data: {
+        deliveryClaimToken: input.claimToken,
+        deliveryLeaseExpires: input.leaseExpiresAt,
+      },
+    });
+  }
+
+  async completeIdempotentDelivery(input: {
+    id: string;
+    claimToken: string;
+    status: NotificationStatus;
+    sentAt?: Date | null;
+    failedAt?: Date | null;
+    errorMessage?: string | null;
+  }) {
+    return this.prisma.notification.updateMany({
+      where: { id: input.id, deliveryClaimToken: input.claimToken },
+      data: {
+        status: input.status,
+        sentAt: input.sentAt,
+        failedAt: input.failedAt,
+        errorMessage: input.errorMessage,
+        deliveryClaimToken: null,
+        deliveryLeaseExpires: null,
+      },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.notification.findUnique({
       where: { id },

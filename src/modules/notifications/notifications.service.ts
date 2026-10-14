@@ -1,9 +1,11 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import {
   NotificationAudience,
   NotificationChannel,
@@ -329,7 +331,7 @@ export class NotificationsService {
     options: {
       source?: 'STOREFRONT' | 'POS';
       notifyRestaurant?: boolean;
-      deduplicate?: boolean;
+      idempotencyKey?: string;
     } = {},
   ): Promise<void> {
     const order =
@@ -337,16 +339,6 @@ export class NotificationsService {
 
     if (!order) {
       throw new NotFoundException('Order not found');
-    }
-
-    if (
-      options.deduplicate &&
-      (await this.notificationsRepository.hasOrderNotification(
-        orderId,
-        NotificationType.ORDER_PLACED,
-      ))
-    ) {
-      return;
     }
 
     const requiresOnlinePayment =
@@ -419,6 +411,9 @@ export class NotificationsService {
       totalAmount: Number(order.totalAmount),
       createdAt: order.createdAt,
       source: options.source ?? 'STOREFRONT',
+      ...(options.idempotencyKey
+        ? { eventId: options.idempotencyKey + ':REALTIME' }
+        : {}),
     });
 
     const customerEmailTask = this.isDeliverableEmail(customerRecipientEmail)
@@ -515,6 +510,9 @@ export class NotificationsService {
               branchName: order.branch.name,
               totalAmount: Number(order.totalAmount),
             },
+            idempotencyKey: options.idempotencyKey
+              ? options.idempotencyKey + ':CUSTOMER_EMAIL'
+              : undefined,
           });
         })()
       : null;
@@ -548,15 +546,22 @@ export class NotificationsService {
       );
     }
 
-    void Promise.all(emailTasks).catch((error: unknown) => {
-      this.logger.error(
-        `Order ${order.id} email notification dispatch failed`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    });
+    if (options.idempotencyKey) {
+      await Promise.all(emailTasks);
+    } else {
+      void Promise.all(emailTasks).catch((error: unknown) => {
+        this.logger.error(
+          `Order ${order.id} email notification dispatch failed`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+    }
   }
 
-  async notifyOrderStatusChanged(orderId: string): Promise<void> {
+  async notifyOrderStatusChanged(
+    orderId: string,
+    options: { idempotencyKey?: string } = {},
+  ): Promise<void> {
     const order =
       await this.notificationsRepository.findOrderForNotification(orderId);
 
@@ -571,6 +576,9 @@ export class NotificationsService {
       restaurantId: order.restaurantId,
       branchId: order.branchId,
       updatedAt: order.updatedAt,
+      ...(options.idempotencyKey
+        ? { eventId: options.idempotencyKey + ':STATUS_REALTIME' }
+        : {}),
     });
 
     if (!['PAYMENT_PENDING', 'PLACED'].includes(order.status)) {
@@ -624,6 +632,9 @@ export class NotificationsService {
         status: order.status,
         paymentStatus: order.paymentStatus,
       },
+      idempotencyKey: options.idempotencyKey
+        ? options.idempotencyKey + ':CUSTOMER_EMAIL'
+        : undefined,
     });
 
     if (type === NotificationType.ORDER_CANCELLED) {
@@ -672,6 +683,9 @@ export class NotificationsService {
       branchId: order.branchId,
       paymentStatus: order.paymentStatus,
       updatedAt: order.updatedAt,
+      ...(options.idempotencyKey
+        ? { eventId: options.idempotencyKey + ':ORDER_REALTIME' }
+        : {}),
     });
   }
 
@@ -946,8 +960,9 @@ export class NotificationsService {
     subject: string;
     body: string;
     payload?: Record<string, unknown>;
+    idempotencyKey?: string;
   }) {
-    const notification = await this.notificationsRepository.create({
+    const data: Prisma.NotificationCreateInput = {
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
       branch: { connect: { id: input.branchId } },
@@ -965,9 +980,19 @@ export class NotificationsService {
       subject: input.subject,
       body: input.body,
       payload: input.payload as Prisma.InputJsonValue | undefined,
-    });
+    };
+    const notification = input.idempotencyKey
+      ? await this.notificationsRepository.createIdempotent(
+          input.idempotencyKey,
+          data,
+        )
+      : await this.notificationsRepository.create(data);
 
-    return this.dispatchNotification(notification);
+    if (notification.status === NotificationStatus.SENT) {
+      return notification;
+    }
+
+    return this.dispatchNotification(notification, input.idempotencyKey);
   }
 
   private async createAdminInAppNotification(input: {
@@ -1374,23 +1399,80 @@ export class NotificationsService {
       : null;
   }
 
-  private async dispatchNotification(notification: {
-    id: string;
-    recipientEmail: string | null;
-    subject: string;
-    body: string;
-  }) {
+  private async dispatchNotification(
+    notification: {
+      id: string;
+      recipientEmail: string | null;
+      subject: string;
+      body: string;
+    },
+    idempotencyKey?: string,
+  ) {
     if (!notification.recipientEmail) {
       throw new ForbiddenException('Notification has no email recipient');
     }
 
-    try {
-      await this.mailerService.sendEmail(
-        notification.recipientEmail,
-        notification.subject,
-        notification.body,
-      );
+    const claimToken = idempotencyKey
+      ? randomBytes(32).toString('hex')
+      : undefined;
+    if (claimToken) {
+      const claimedAt = new Date();
+      const claimed =
+        await this.notificationsRepository.claimIdempotentDelivery({
+          id: notification.id,
+          claimToken,
+          claimedAt,
+          leaseExpiresAt: new Date(claimedAt.getTime() + 120_000),
+        });
+      if (claimed.count !== 1) {
+        const current = await this.notificationsRepository.findById(
+          notification.id,
+        );
+        if (current?.status === NotificationStatus.SENT) {
+          return current;
+        }
+        throw new ConflictException('Notification delivery is already claimed');
+      }
+    }
 
+    try {
+      if (idempotencyKey) {
+        await this.mailerService.sendEmail(
+          notification.recipientEmail,
+          notification.subject,
+          notification.body,
+          {
+            messageId:
+              '<' +
+              idempotencyKey.replace(/[^a-zA-Z0-9.-]/g, '-') +
+              '@feastflow.app>',
+          },
+        );
+      } else {
+        await this.mailerService.sendEmail(
+          notification.recipientEmail,
+          notification.subject,
+          notification.body,
+        );
+      }
+
+      if (claimToken) {
+        const completed =
+          await this.notificationsRepository.completeIdempotentDelivery({
+            id: notification.id,
+            claimToken,
+            status: NotificationStatus.SENT,
+            sentAt: new Date(),
+            failedAt: null,
+            errorMessage: null,
+          });
+        if (completed.count !== 1) {
+          throw new ConflictException(
+            'Notification delivery ownership expired before completion',
+          );
+        }
+        return this.notificationsRepository.findById(notification.id);
+      }
       return this.notificationsRepository.updateDelivery(notification.id, {
         status: NotificationStatus.SENT,
         sentAt: new Date(),
@@ -1398,13 +1480,31 @@ export class NotificationsService {
         errorMessage: null,
       });
     } catch (error) {
-      return this.notificationsRepository.updateDelivery(notification.id, {
-        status: NotificationStatus.FAILED,
-        sentAt: null,
-        failedAt: new Date(),
-        errorMessage:
-          error instanceof Error ? error.message : 'Failed to deliver email',
-      });
+      const failed = claimToken
+        ? await this.notificationsRepository.completeIdempotentDelivery({
+            id: notification.id,
+            claimToken,
+            status: NotificationStatus.FAILED,
+            sentAt: null,
+            failedAt: new Date(),
+            errorMessage:
+              error instanceof Error
+                ? error.message
+                : 'Failed to deliver email',
+          })
+        : await this.notificationsRepository.updateDelivery(notification.id, {
+            status: NotificationStatus.FAILED,
+            sentAt: null,
+            failedAt: new Date(),
+            errorMessage:
+              error instanceof Error
+                ? error.message
+                : 'Failed to deliver email',
+          });
+      if (idempotencyKey) {
+        throw error;
+      }
+      return failed;
     }
   }
 

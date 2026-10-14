@@ -67,8 +67,11 @@ const DEFAULT_SCHEDULE_TIMEZONE = 'Asia/Karachi';
 const POS_POST_COMMIT_EFFECTS = [
   'LOYALTY',
   'ORDER_PLACED_NOTIFICATION',
-  'TRACKING',
-  'AUTO_ACCEPT',
+  'PLACED_TRACKING',
+  'AUTO_ACCEPT_STATE',
+  'AUTO_ACCEPT_NOTIFICATION',
+  'AUTO_ACCEPT_CHAT',
+  'AUTO_ACCEPT_TRACKING',
 ] as const;
 type PosPostCommitEffect = (typeof POS_POST_COMMIT_EFFECTS)[number];
 
@@ -800,12 +803,17 @@ export class OrdersService {
 
       try {
         await this.runPosPostCommitEffect(orderId, effectType, actorId);
-        await this.ordersRepository.completePostCommitEffect({
+        const completed = await this.ordersRepository.completePostCommitEffect({
           orderId,
           effectType,
           claimToken,
           completedAt: new Date(),
         });
+        if (completed.count !== 1) {
+          throw new ConflictException(
+            'POS post-commit effect ownership expired before completion',
+          );
+        }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         await this.ordersRepository.releasePostCommitEffect({
@@ -839,8 +847,11 @@ export class OrdersService {
         undefined,
         actorId,
         order.paymentStatus === PaymentStatus.PAID
-          ? undefined
-          : { allowUnpaid: true },
+          ? { idempotencyKey: 'POS:' + order.id + ':LOYALTY' }
+          : {
+              allowUnpaid: true,
+              idempotencyKey: 'POS:' + order.id + ':LOYALTY',
+            },
       );
       return;
     }
@@ -850,18 +861,48 @@ export class OrdersService {
         await this.notificationsService.notifyOrderPlaced(order.id, {
           source: 'POS',
           notifyRestaurant: false,
-          deduplicate: true,
+          idempotencyKey: 'POS:' + order.id + ':ORDER_PLACED',
         });
       }
       return;
     }
 
-    if (effectType === 'TRACKING') {
-      await this.emitTrackingUpdate(order.id);
+    if (effectType === 'PLACED_TRACKING') {
+      await this.emitTrackingUpdate(
+        order.id,
+        'POS:' + order.id + ':PLACED_TRACKING',
+      );
       return;
     }
 
-    await this.autoAcceptPlacedOrder(order.id);
+    if (effectType === 'AUTO_ACCEPT_STATE') {
+      await this.autoAcceptPlacedOrderState(order.id);
+      return;
+    }
+
+    if (order.status !== OrderStatus.CONFIRMED) {
+      return;
+    }
+
+    if (effectType === 'AUTO_ACCEPT_NOTIFICATION') {
+      await this.notificationsService.notifyOrderStatusChanged(order.id, {
+        idempotencyKey: 'POS:' + order.id + ':AUTO_ACCEPT_NOTIFICATION',
+      });
+      return;
+    }
+
+    if (effectType === 'AUTO_ACCEPT_CHAT') {
+      await this.chatService.syncDeliveryThreadForOrderLifecycle(
+        order.id,
+        OrderStatus.CONFIRMED,
+      );
+      return;
+    }
+
+    await this.emitTrackingUpdate(
+      order.id,
+      'POS:' + order.id + ':AUTO_ACCEPT_TRACKING',
+    );
   }
 
   private isCheckoutIdempotencyConflict(error: unknown): boolean {
@@ -1119,6 +1160,22 @@ export class OrdersService {
   }
 
   async autoAcceptPlacedOrder(id: string) {
+    const confirmed = await this.autoAcceptPlacedOrderState(id);
+    if (!confirmed) {
+      return null;
+    }
+
+    await this.notificationsService.notifyOrderStatusChanged(id);
+    await this.chatService.syncDeliveryThreadForOrderLifecycle(
+      id,
+      OrderStatus.CONFIRMED,
+    );
+    await this.emitTrackingUpdate(id);
+
+    return confirmed;
+  }
+
+  private async autoAcceptPlacedOrderState(id: string) {
     const order = await this.ordersRepository.findById(id);
 
     if (!order || order.status !== OrderStatus.PLACED) {
@@ -1148,13 +1205,6 @@ export class OrdersService {
     if (!confirmed) {
       return null;
     }
-
-    await this.notificationsService.notifyOrderStatusChanged(id);
-    await this.chatService.syncDeliveryThreadForOrderLifecycle(
-      id,
-      OrderStatus.CONFIRMED,
-    );
-    await this.emitTrackingUpdate(id);
 
     return confirmed;
   }
@@ -4861,12 +4911,16 @@ export class OrdersService {
     );
   }
 
-  private async emitTrackingUpdate(orderId: string) {
+  private async emitTrackingUpdate(orderId: string, eventId?: string) {
     try {
       const snapshot = await this.getTrackingSnapshotForRealtime(orderId);
-      this.orderTrackingRealtimeService.emitTrackingUpdate(snapshot);
-    } catch {
-      return;
+      this.orderTrackingRealtimeService.emitTrackingUpdate(
+        eventId ? { ...snapshot, eventId } : snapshot,
+      );
+    } catch (error: unknown) {
+      if (eventId) {
+        throw error;
+      }
     }
   }
 
