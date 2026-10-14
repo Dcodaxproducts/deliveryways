@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -280,57 +281,22 @@ export class PosService {
       );
     }
 
-    const data = await this.posRepository.updateDraft(id, {
-      customer:
-        dto.customerId !== undefined
-          ? dto.customerId
-            ? { connect: { id: dto.customerId } }
-            : { disconnect: true }
-          : undefined,
+    const data = await this.posRepository.updateOpenDraft(id, draft.updatedAt, {
+      customerId: dto.customerId,
       orderType: dto.orderType as never,
-      paymentMethod:
-        dto.paymentMethod === undefined
-          ? undefined
-          : dto.paymentMethod === null
-            ? { set: null }
-            : dto.paymentMethod,
-      guestName:
-        dto.guestName === undefined
-          ? undefined
-          : dto.guestName === null
-            ? { set: null }
-            : dto.guestName,
-      guestPhone:
-        dto.guestPhone === undefined
-          ? undefined
-          : dto.guestPhone === null
-            ? { set: null }
-            : dto.guestPhone,
-      tableLabel:
-        dto.tableLabel === undefined
-          ? undefined
-          : dto.tableLabel === null
-            ? { set: null }
-            : dto.tableLabel,
-      guestCount:
-        dto.guestCount === undefined
-          ? undefined
-          : dto.guestCount === null
-            ? { set: null }
-            : dto.guestCount,
-      couponCode:
-        dto.couponCode === undefined
-          ? undefined
-          : dto.couponCode === null
-            ? { set: null }
-            : dto.couponCode,
-      note:
-        dto.note === undefined
-          ? undefined
-          : dto.note === null
-            ? { set: null }
-            : dto.note,
+      paymentMethod: dto.paymentMethod,
+      guestName: dto.guestName,
+      guestPhone: dto.guestPhone,
+      tableLabel: dto.tableLabel,
+      guestCount: dto.guestCount,
+      couponCode: dto.couponCode,
+      note: dto.note,
     });
+    if (!data) {
+      throw new ConflictException(
+        'POS draft changed or checkout started. Refresh and try again',
+      );
+    }
 
     return {
       data: await this.resolveMediaResponse(await this.toDraftResponse(data)),
@@ -347,17 +313,25 @@ export class PosService {
     const draft = await this.getScopedDraftOrThrow(user, draftId);
     this.assertDraftMutable(draft.status);
 
-    await this.posRepository.createDraftItem({
-      draft: { connect: { id: draft.id } },
-      menuItemId: dto.menuItemId,
-      variationId: dto.variationId,
-      quantity: dto.quantity,
-      note: this.resolveOptionalString(dto.note),
-      modifiers: this.normalizeModifierPayload(
-        dto.modifiers,
-        dto.modifierSelections,
-      ),
-    });
+    const created = await this.posRepository.createDraftItemIfOpen(
+      draft.id,
+      draft.updatedAt,
+      {
+        menuItemId: dto.menuItemId,
+        variationId: dto.variationId,
+        quantity: dto.quantity,
+        note: this.resolveOptionalString(dto.note),
+        modifiers: this.normalizeModifierPayload(
+          dto.modifiers,
+          dto.modifierSelections,
+        ),
+      },
+    );
+    if (!created) {
+      throw new ConflictException(
+        'POS draft changed or checkout started. Refresh and try again',
+      );
+    }
 
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
@@ -385,19 +359,32 @@ export class PosService {
       throw new NotFoundException('POS draft item not found');
     }
 
-    await this.posRepository.updateDraftItem(itemId, {
-      quantity: dto.quantity,
-      note:
-        dto.note === undefined
-          ? undefined
-          : dto.note === null
-            ? { set: null }
-            : dto.note,
-      modifiers:
-        dto.modifiers !== undefined || dto.modifierSelections !== undefined
-          ? this.normalizeModifierPayload(dto.modifiers, dto.modifierSelections)
-          : undefined,
-    });
+    const updated = await this.posRepository.updateDraftItemIfOpen(
+      draft.id,
+      draft.updatedAt,
+      itemId,
+      {
+        quantity: dto.quantity,
+        note:
+          dto.note === undefined
+            ? undefined
+            : dto.note === null
+              ? { set: null }
+              : dto.note,
+        modifiers:
+          dto.modifiers !== undefined || dto.modifierSelections !== undefined
+            ? this.normalizeModifierPayload(
+                dto.modifiers,
+                dto.modifierSelections,
+              )
+            : undefined,
+      },
+    );
+    if (!updated) {
+      throw new ConflictException(
+        'POS draft changed or checkout started. Refresh and try again',
+      );
+    }
 
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
@@ -420,7 +407,16 @@ export class PosService {
       throw new NotFoundException('POS draft item not found');
     }
 
-    await this.posRepository.deleteDraftItem(itemId);
+    const deleted = await this.posRepository.deleteDraftItemIfOpen(
+      draft.id,
+      draft.updatedAt,
+      itemId,
+    );
+    if (!deleted) {
+      throw new ConflictException(
+        'POS draft changed or checkout started. Refresh and try again',
+      );
+    }
     const refreshed = await this.getScopedDraftOrThrow(user, draftId);
 
     return {
@@ -459,7 +455,7 @@ export class PosService {
 
   async checkout(user: AuthUserContext, draftId: string) {
     this.assertPosActor(user);
-    const draft = await this.getScopedDraftOrThrow(user, draftId);
+    let draft = await this.getScopedDraftOrThrow(user, draftId);
     if (draft.status === PosOrderDraftStatus.CANCELLED) {
       throw new BadRequestException('POS draft is cancelled');
     }
@@ -471,6 +467,100 @@ export class PosService {
       );
     }
 
+    let requestHash = this.buildCheckoutRequestHash(draft);
+    let claimToken = randomBytes(32).toString('hex');
+    let claimedAt = new Date();
+    let claim = await this.posRepository.claimCheckout({
+      id: draft.id,
+      tenantId: draft.tenantId,
+      restaurantId: draft.restaurantId,
+      branchId: draft.branchId,
+      requestHash,
+      claimToken,
+      expectedUpdatedAt: draft.updatedAt,
+      claimedAt,
+      leaseExpiresAt: new Date(claimedAt.getTime() + 30_000),
+    });
+
+    if (claim.state === 'RETRY') {
+      draft = await this.getScopedDraftOrThrow(user, draftId);
+      this.assertDraftMutable(draft.status);
+      this.assertDraftHasItems(draft.items.length);
+      if (!draft.paymentMethod) {
+        throw new BadRequestException(
+          'paymentMethod is required for POS checkout',
+        );
+      }
+      requestHash = this.buildCheckoutRequestHash(draft);
+      claimToken = randomBytes(32).toString('hex');
+      claimedAt = new Date();
+      claim = await this.posRepository.claimCheckout({
+        id: draft.id,
+        tenantId: draft.tenantId,
+        restaurantId: draft.restaurantId,
+        branchId: draft.branchId,
+        requestHash,
+        claimToken,
+        expectedUpdatedAt: draft.updatedAt,
+        claimedAt,
+        leaseExpiresAt: new Date(claimedAt.getTime() + 30_000),
+      });
+    }
+
+    if (claim.state === 'MISSING') {
+      throw new NotFoundException('POS draft not found');
+    }
+    if (claim.state === 'HASH_MISMATCH') {
+      throw new ConflictException(
+        'POS draft was already checked out with different contents',
+      );
+    }
+    if (claim.state === 'CANCELLED') {
+      throw new BadRequestException('POS draft is cancelled');
+    }
+    if (claim.state === 'RETRY') {
+      throw new ConflictException(
+        'POS draft changed while checkout started. Refresh and try again',
+      );
+    }
+
+    const source = {
+      sourceKey: 'POS_DRAFT:' + draft.id,
+      requestHash,
+      tenantId: draft.tenantId,
+      restaurantId: draft.restaurantId,
+    };
+
+    if (claim.state === 'BUSY' || claim.state === 'FINALIZED') {
+      const replay = await this.waitForOrderSource(source);
+      if (!replay) {
+        throw new ConflictException(
+          'POS checkout is already processing. Retry shortly',
+        );
+      }
+      const recoveredDraft = await this.posRepository.recoverFinalizedCheckout({
+        id: draft.id,
+        tenantId: draft.tenantId,
+        restaurantId: draft.restaurantId,
+        requestHash,
+        finalOrderId: replay.data.id,
+        checkedOutAt: new Date(),
+      });
+      if (!recoveredDraft) {
+        throw new ConflictException(
+          'POS checkout state could not be recovered',
+        );
+      }
+      return {
+        data: {
+          draft: await this.toDraftResponse(recoveredDraft),
+          order: replay.data,
+        },
+        message: 'POS order checked out successfully',
+      };
+    }
+
+    draft = claim.draft;
     const checkoutCustomerId = await this.ensureDraftCheckoutCustomer(draft);
     const orderPayload = {
       branchId: draft.branchId,
@@ -489,49 +579,62 @@ export class PosService {
       paymentMethod: draft.paymentMethod as never,
       customerNote: draft.note ?? undefined,
     };
-    const requestHash = createHash('sha256')
-      .update(
-        JSON.stringify({
-          branchId: draft.branchId,
-          orderType: draft.orderType,
-          paymentMethod: draft.paymentMethod,
-          couponCode: draft.couponCode,
-          note: draft.note,
-          items: draft.items.map((item) => ({
-            menuItemId: item.menuItemId,
-            variationId: item.variationId,
-            quantity: item.quantity,
-            modifiers: item.modifiers,
-            note: item.note,
-          })),
-        }),
-      )
-      .digest('hex');
-    const orderResult = await this.ordersService.create(
-      user,
-      orderPayload,
-      undefined,
-      {
-        sourceKey: 'POS_DRAFT:' + draft.id,
-        requestHash,
+
+    try {
+      const orderResult = await this.ordersService.create(
+        user,
+        orderPayload,
+        undefined,
+        source,
+      );
+      const finalizedDraft = await this.posRepository.finalizeCheckout({
+        id: draft.id,
         tenantId: draft.tenantId,
         restaurantId: draft.restaurantId,
-      },
-    );
-
-    const updatedDraft = await this.posRepository.updateDraft(draft.id, {
-      status: PosOrderDraftStatus.CHECKED_OUT,
-      checkedOutAt: new Date(),
-      finalOrderId: orderResult.data.id,
-    });
-
-    return {
-      data: {
-        draft: await this.toDraftResponse(updatedDraft),
-        order: orderResult.data,
-      },
-      message: 'POS order checked out successfully',
-    };
+        requestHash,
+        claimToken,
+        finalOrderId: orderResult.data.id,
+        checkedOutAt: new Date(),
+      });
+      if (!finalizedDraft) {
+        throw new ConflictException('POS checkout claim was superseded');
+      }
+      return {
+        data: {
+          draft: await this.toDraftResponse(finalizedDraft),
+          order: orderResult.data,
+        },
+        message: 'POS order checked out successfully',
+      };
+    } catch (error: unknown) {
+      const replay = await this.ordersService.resolveOrderSource(source);
+      if (replay) {
+        const recoveredDraft =
+          await this.posRepository.recoverFinalizedCheckout({
+            id: draft.id,
+            tenantId: draft.tenantId,
+            restaurantId: draft.restaurantId,
+            requestHash,
+            finalOrderId: replay.data.id,
+            checkedOutAt: new Date(),
+          });
+        if (recoveredDraft) {
+          return {
+            data: {
+              draft: await this.toDraftResponse(recoveredDraft),
+              order: replay.data,
+            },
+            message: 'POS order checked out successfully',
+          };
+        }
+      }
+      await this.posRepository.releaseCheckoutClaim({
+        id: draft.id,
+        requestHash,
+        claimToken,
+      });
+      throw error;
+    }
   }
 
   async cancel(user: AuthUserContext, id: string) {
@@ -539,9 +642,14 @@ export class PosService {
     const draft = await this.getScopedDraftOrThrow(user, id);
     this.assertDraftMutable(draft.status);
 
-    const data = await this.posRepository.updateDraft(id, {
+    const data = await this.posRepository.updateOpenDraft(id, draft.updatedAt, {
       status: PosOrderDraftStatus.CANCELLED,
     });
+    if (!data) {
+      throw new ConflictException(
+        'POS draft changed or checkout started. Refresh and try again',
+      );
+    }
 
     return {
       data: await this.toDraftResponse(data),
@@ -618,6 +726,65 @@ export class PosService {
         'Customer not found for current branch scope',
       );
     }
+  }
+
+  private buildCheckoutRequestHash(draft: {
+    branchId: string;
+    orderType: OrderType;
+    paymentMethod: PaymentMethod | null;
+    couponCode: string | null;
+    note: string | null;
+    guestName: string | null;
+    guestPhone: string | null;
+    items: Array<{
+      id: string;
+      menuItemId: string;
+      variationId: string | null;
+      quantity: number;
+      modifiers: Prisma.JsonValue | null;
+      note: string | null;
+    }>;
+  }) {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          branchId: draft.branchId,
+          orderType: draft.orderType,
+          paymentMethod: draft.paymentMethod,
+          couponCode: draft.couponCode,
+          note: draft.note,
+          guestName: draft.guestName,
+          guestPhone: draft.guestPhone,
+          items: [...draft.items]
+            .sort((left, right) => left.id.localeCompare(right.id))
+            .map((item) => ({
+              id: item.id,
+              menuItemId: item.menuItemId,
+              variationId: item.variationId,
+              quantity: item.quantity,
+              modifiers: item.modifiers,
+              note: item.note,
+            })),
+        }),
+      )
+      .digest('hex');
+  }
+
+  private async waitForOrderSource(source: {
+    sourceKey: string;
+    requestHash: string;
+    tenantId: string;
+    restaurantId: string;
+  }) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const replay = await this.ordersService.resolveOrderSource(source);
+      if (replay) return replay;
+      if (attempt < 9) {
+        const delayMs = Math.min(50 * 2 ** attempt, 500);
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+    return null;
   }
 
   private async ensureDraftCheckoutCustomer(draft: {

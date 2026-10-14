@@ -709,7 +709,7 @@ export class OrdersService {
     };
   }
 
-  private async resolveOrderSource(context: OrderSourceContext) {
+  async resolveOrderSource(context: OrderSourceContext) {
     const existing = await this.ordersRepository.findBySourceKey(
       context.sourceKey,
     );

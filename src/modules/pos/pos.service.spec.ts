@@ -20,6 +20,11 @@ describe('PosService', () => {
     couponCode: null,
     note: null,
     status: 'OPEN',
+    checkoutRequestHash: null,
+    checkoutClaimToken: null,
+    checkoutClaimedAt: null,
+    checkoutLeaseExpiresAt: null,
+    checkoutAttempt: 0,
     checkedOutAt: null,
     finalOrderId: null,
     createdAt: new Date(),
@@ -45,13 +50,21 @@ describe('PosService', () => {
       listDrafts: jest.fn(),
       findDraftById: jest.fn(),
       updateDraft: jest.fn(),
+      updateOpenDraft: jest.fn(),
+      claimCheckout: jest.fn(),
+      finalizeCheckout: jest.fn(),
+      recoverFinalizedCheckout: jest.fn(),
+      releaseCheckoutClaim: jest.fn().mockResolvedValue({ count: 1 }),
       attachDraftCustomerIfMissing: jest
         .fn()
         .mockResolvedValue({ customerId: 'guest-customer-1' }),
       createDraftItem: jest.fn(),
+      createDraftItemIfOpen: jest.fn().mockResolvedValue({ id: 'item-1' }),
       findDraftItem: jest.fn(),
       updateDraftItem: jest.fn(),
+      updateDraftItemIfOpen: jest.fn().mockResolvedValue(true),
       deleteDraftItem: jest.fn(),
+      deleteDraftItemIfOpen: jest.fn().mockResolvedValue(true),
       findDraftItemDetails: jest
         .fn()
         .mockResolvedValue({ menuItems: [], variations: [] }),
@@ -81,6 +94,7 @@ describe('PosService', () => {
         },
       }),
       create: jest.fn(),
+      resolveOrderSource: jest.fn().mockResolvedValue(null),
     };
 
     const usersService = {
@@ -310,7 +324,7 @@ describe('PosService', () => {
       },
     );
 
-    expect(posRepository.createDraftItem).toHaveBeenCalled();
+    expect(posRepository.createDraftItemIfOpen).toHaveBeenCalled();
     expect(result.data.itemCount).toBe(1);
     expect(result.message).toBe('POS draft item added successfully');
   });
@@ -410,7 +424,9 @@ describe('PosService', () => {
       },
     );
 
-    expect(posRepository.createDraftItem).toHaveBeenCalledWith(
+    expect(posRepository.createDraftItemIfOpen).toHaveBeenCalledWith(
+      'draft-1',
+      expect.any(Date),
       expect.objectContaining({
         modifiers: {
           modifiers: [{ modifierId: 'modifier-1', quantity: 2 }],
@@ -832,12 +848,31 @@ describe('PosService', () => {
         ],
       }),
     );
+    const claimedDraft = makeDraft({
+      paymentMethod: 'COD',
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 2,
+          note: null,
+          modifiers: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    posRepository.claimCheckout.mockResolvedValue({
+      state: 'CLAIMED',
+      draft: claimedDraft,
+    });
     usersService.create.mockResolvedValue({ id: 'guest-customer-1' });
     ordersService.create.mockResolvedValue({
       data: { id: 'order-1', status: 'PLACED' },
       message: 'Order created successfully',
     });
-    posRepository.updateDraft.mockResolvedValue(
+    posRepository.finalizeCheckout.mockResolvedValue(
       makeDraft({
         customerId: 'guest-customer-1',
         status: 'CHECKED_OUT',
@@ -905,6 +940,9 @@ describe('PosService', () => {
       ],
     });
     posRepository.findDraftById.mockResolvedValue(draft);
+    posRepository.claimCheckout
+      .mockResolvedValueOnce({ state: 'CLAIMED', draft })
+      .mockResolvedValueOnce({ state: 'BUSY', draft });
     let generatedCustomers = 0;
     usersService.create.mockImplementation(() => ({
       id: 'guest-' + ++generatedCustomers,
@@ -916,14 +954,13 @@ describe('PosService', () => {
         return { customerId: claimedCustomerId };
       },
     );
-    posRepository.updateDraft.mockImplementation(
-      (_id: string, data: { finalOrderId?: string }) =>
-        makeDraft({
-          ...draft,
-          status: 'CHECKED_OUT',
-          finalOrderId: data.finalOrderId ?? 'order-1',
-        }),
-    );
+    const finalizedDraft = makeDraft({
+      ...draft,
+      status: 'CHECKED_OUT',
+      finalOrderId: 'order-1',
+    });
+    posRepository.finalizeCheckout.mockResolvedValue(finalizedDraft);
+    posRepository.recoverFinalizedCheckout.mockResolvedValue(finalizedDraft);
     let createdOrders = 0;
     let durableOrder: {
       data: { id: string; status: string };
@@ -954,6 +991,7 @@ describe('PosService', () => {
         return durableOrder;
       },
     );
+    ordersService.resolveOrderSource.mockImplementation(() => durableOrder);
     const actor = {
       uid: 'staff-1',
       tid: 'tenant-1',
@@ -969,7 +1007,7 @@ describe('PosService', () => {
 
     expect(createdOrders).toBe(1);
     expect(first.data.order.id).toBe(second.data.order.id);
-    expect(ordersService.create).toHaveBeenCalledTimes(2);
+    expect(ordersService.create).toHaveBeenCalledTimes(1);
     expect(ordersService.create).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
@@ -977,5 +1015,101 @@ describe('PosService', () => {
       undefined,
       expect.objectContaining({ sourceKey: 'POS_DRAFT:draft-1' }),
     );
+  });
+
+  it('rejects a reused POS draft whose durable request hash differs', async () => {
+    const { service, posRepository, ordersService } = makeService();
+    const draft = makeDraft({
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    posRepository.findDraftById.mockResolvedValue(draft);
+    posRepository.claimCheckout.mockResolvedValue({
+      state: 'HASH_MISMATCH',
+      draft: makeDraft({
+        ...draft,
+        status: 'CHECKED_OUT',
+        checkoutRequestHash: 'f'.repeat(64),
+        finalOrderId: 'order-1',
+      }),
+    });
+
+    await expect(
+      service.checkout(
+        {
+          uid: 'staff-1',
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+          role: UserRoleEnum.STAFF,
+        },
+        'draft-1',
+      ),
+    ).rejects.toThrow('different contents');
+    expect(ordersService.create).not.toHaveBeenCalled();
+  });
+
+  it('recovers a durable order after a crash before draft finalization', async () => {
+    const { service, posRepository, ordersService } = makeService();
+    const draft = makeDraft({
+      status: 'OPEN',
+      checkoutRequestHash: 'a'.repeat(64),
+      checkoutClaimToken: 'abandoned-owner',
+      checkoutLeaseExpiresAt: new Date(Date.now() - 1_000),
+      items: [
+        {
+          id: 'item-1',
+          menuItemId: 'menu-1',
+          variationId: null,
+          quantity: 1,
+          note: null,
+          modifiers: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    const recoveredDraft = makeDraft({
+      ...draft,
+      status: 'CHECKED_OUT',
+      finalOrderId: 'order-1',
+    });
+    posRepository.findDraftById.mockResolvedValue(draft);
+    posRepository.claimCheckout.mockResolvedValue({
+      state: 'FINALIZED',
+      draft: recoveredDraft,
+    });
+    ordersService.resolveOrderSource.mockResolvedValue({
+      data: { id: 'order-1', status: 'PLACED' },
+      message: 'Order created successfully',
+      sourceReplay: true,
+    });
+    posRepository.recoverFinalizedCheckout.mockResolvedValue(recoveredDraft);
+
+    const result = await service.checkout(
+      {
+        uid: 'staff-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.STAFF,
+      },
+      'draft-1',
+    );
+
+    expect(result.data.order.id).toBe('order-1');
+    expect(result.data.draft.finalOrderId).toBe('order-1');
+    expect(ordersService.create).not.toHaveBeenCalled();
+    expect(posRepository.recoverFinalizedCheckout).toHaveBeenCalledTimes(1);
   });
 });

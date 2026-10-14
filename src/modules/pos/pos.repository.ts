@@ -170,6 +170,268 @@ export class PosRepository {
     });
   }
 
+  async updateOpenDraft(
+    id: string,
+    expectedUpdatedAt: Date,
+    data: Prisma.PosOrderDraftUncheckedUpdateManyInput,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.posOrderDraft.updateMany({
+        where: {
+          id,
+          status: PosOrderDraftStatus.OPEN,
+          checkoutClaimToken: null,
+          updatedAt: expectedUpdatedAt,
+        },
+        data: { ...data, updatedAt: new Date() },
+      });
+      if (updated.count !== 1) return null;
+      return tx.posOrderDraft.findUnique({
+        where: { id },
+        include: this.draftInclude,
+      });
+    });
+  }
+
+  async createDraftItemIfOpen(
+    draftId: string,
+    expectedUpdatedAt: Date,
+    data: Omit<Prisma.PosOrderDraftItemUncheckedCreateInput, 'draftId'>,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.posOrderDraft.updateMany({
+        where: {
+          id: draftId,
+          status: PosOrderDraftStatus.OPEN,
+          checkoutClaimToken: null,
+          updatedAt: expectedUpdatedAt,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (claimed.count !== 1) return null;
+      return tx.posOrderDraftItem.create({ data: { ...data, draftId } });
+    });
+  }
+
+  async updateDraftItemIfOpen(
+    draftId: string,
+    expectedUpdatedAt: Date,
+    itemId: string,
+    data: Prisma.PosOrderDraftItemUpdateManyMutationInput,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.posOrderDraft.updateMany({
+        where: {
+          id: draftId,
+          status: PosOrderDraftStatus.OPEN,
+          checkoutClaimToken: null,
+          updatedAt: expectedUpdatedAt,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (claimed.count !== 1) return null;
+      const updated = await tx.posOrderDraftItem.updateMany({
+        where: { id: itemId, draftId },
+        data,
+      });
+      return updated.count === 1;
+    });
+  }
+
+  async deleteDraftItemIfOpen(
+    draftId: string,
+    expectedUpdatedAt: Date,
+    itemId: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.posOrderDraft.updateMany({
+        where: {
+          id: draftId,
+          status: PosOrderDraftStatus.OPEN,
+          checkoutClaimToken: null,
+          updatedAt: expectedUpdatedAt,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (claimed.count !== 1) return null;
+      const deleted = await tx.posOrderDraftItem.deleteMany({
+        where: { id: itemId, draftId },
+      });
+      return deleted.count === 1;
+    });
+  }
+
+  async claimCheckout(input: {
+    id: string;
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    requestHash: string;
+    claimToken: string;
+    expectedUpdatedAt: Date;
+    claimedAt: Date;
+    leaseExpiresAt: Date;
+  }) {
+    const scope = {
+      id: input.id,
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      branchId: input.branchId,
+    };
+    const claimed = await this.prisma.posOrderDraft.updateMany({
+      where: {
+        ...scope,
+        OR: [
+          {
+            status: PosOrderDraftStatus.OPEN,
+            checkoutClaimToken: null,
+            updatedAt: input.expectedUpdatedAt,
+          },
+          {
+            status: PosOrderDraftStatus.OPEN,
+            checkoutRequestHash: input.requestHash,
+            checkoutLeaseExpiresAt: { lte: input.claimedAt },
+          },
+        ],
+      },
+      data: {
+        status: PosOrderDraftStatus.OPEN,
+        checkoutRequestHash: input.requestHash,
+        checkoutClaimToken: input.claimToken,
+        checkoutClaimedAt: input.claimedAt,
+        checkoutLeaseExpiresAt: input.leaseExpiresAt,
+        checkoutAttempt: { increment: 1 },
+      },
+    });
+    const draft = await this.prisma.posOrderDraft.findFirst({
+      where: scope,
+      include: this.draftInclude,
+    });
+    if (!draft) return { state: 'MISSING' as const };
+    if (claimed.count === 1) return { state: 'CLAIMED' as const, draft };
+    if (
+      draft.checkoutRequestHash &&
+      draft.checkoutRequestHash !== input.requestHash
+    ) {
+      return { state: 'HASH_MISMATCH' as const, draft };
+    }
+    if (
+      draft.status === PosOrderDraftStatus.CHECKED_OUT &&
+      draft.finalOrderId
+    ) {
+      return { state: 'FINALIZED' as const, draft };
+    }
+    if (draft.status === PosOrderDraftStatus.OPEN && draft.checkoutClaimToken) {
+      return { state: 'BUSY' as const, draft };
+    }
+    if (draft.status === PosOrderDraftStatus.CANCELLED) {
+      return { state: 'CANCELLED' as const, draft };
+    }
+    return { state: 'RETRY' as const, draft };
+  }
+
+  async finalizeCheckout(input: {
+    id: string;
+    tenantId: string;
+    restaurantId: string;
+    requestHash: string;
+    claimToken: string;
+    finalOrderId: string;
+    checkedOutAt: Date;
+  }) {
+    const scope = {
+      id: input.id,
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+    };
+    const finalized = await this.prisma.posOrderDraft.updateMany({
+      where: {
+        ...scope,
+        status: PosOrderDraftStatus.OPEN,
+        checkoutRequestHash: input.requestHash,
+        checkoutClaimToken: input.claimToken,
+      },
+      data: {
+        status: PosOrderDraftStatus.CHECKED_OUT,
+        finalOrderId: input.finalOrderId,
+        checkedOutAt: input.checkedOutAt,
+        checkoutClaimToken: null,
+        checkoutLeaseExpiresAt: null,
+      },
+    });
+    const draft = await this.prisma.posOrderDraft.findFirst({
+      where: scope,
+      include: this.draftInclude,
+    });
+    if (
+      finalized.count === 1 ||
+      (draft?.status === PosOrderDraftStatus.CHECKED_OUT &&
+        draft.checkoutRequestHash === input.requestHash &&
+        draft.finalOrderId === input.finalOrderId)
+    ) {
+      return draft;
+    }
+    return null;
+  }
+
+  async recoverFinalizedCheckout(input: {
+    id: string;
+    tenantId: string;
+    restaurantId: string;
+    requestHash: string;
+    finalOrderId: string;
+    checkedOutAt: Date;
+  }) {
+    await this.prisma.posOrderDraft.updateMany({
+      where: {
+        id: input.id,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        checkoutRequestHash: input.requestHash,
+        status: PosOrderDraftStatus.OPEN,
+      },
+      data: {
+        status: PosOrderDraftStatus.CHECKED_OUT,
+        finalOrderId: input.finalOrderId,
+        checkedOutAt: input.checkedOutAt,
+        checkoutClaimToken: null,
+        checkoutLeaseExpiresAt: null,
+      },
+    });
+    return this.prisma.posOrderDraft.findFirst({
+      where: {
+        id: input.id,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        checkoutRequestHash: input.requestHash,
+        status: PosOrderDraftStatus.CHECKED_OUT,
+        finalOrderId: input.finalOrderId,
+      },
+      include: this.draftInclude,
+    });
+  }
+
+  async releaseCheckoutClaim(input: {
+    id: string;
+    requestHash: string;
+    claimToken: string;
+  }) {
+    return this.prisma.posOrderDraft.updateMany({
+      where: {
+        id: input.id,
+        status: PosOrderDraftStatus.OPEN,
+        checkoutRequestHash: input.requestHash,
+        checkoutClaimToken: input.claimToken,
+      },
+      data: {
+        status: PosOrderDraftStatus.OPEN,
+        checkoutClaimToken: null,
+        checkoutClaimedAt: null,
+        checkoutLeaseExpiresAt: null,
+      },
+    });
+  }
+
   async attachDraftCustomerIfMissing(id: string, customerId: string) {
     return this.prisma.$transaction(async (tx) => {
       await tx.posOrderDraft.updateMany({
