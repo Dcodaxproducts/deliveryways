@@ -22,6 +22,15 @@ export class AdminLoyaltyProgramQueryDto {
 }
 
 export class AdjustCustomerLoyaltyPointsDto {
+  @ApiPropertyOptional({
+    description: 'Stable client key used to safely retry this adjustment',
+    maxLength: 191,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
+
   @ApiProperty({ minimum: 1, example: 100 })
   @Transform(({ value }) => Number(value))
   @IsInt()
@@ -55,6 +64,15 @@ export class AdjustCustomerLoyaltyPointsDto {
 }
 
 export class AdjustCustomerWalletDto {
+  @ApiPropertyOptional({
+    description: 'Stable client key used to safely retry this adjustment',
+    maxLength: 191,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
+
   @ApiProperty({ minimum: 0.01, example: 10 })
   @Transform(({ value }) => Number(value))
   @IsNumber({ maxDecimalPlaces: 2 })

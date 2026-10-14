@@ -23,6 +23,12 @@ import { PrismaTx } from '../../common/types';
 import { PrismaService } from '../../database';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
+  CanonicalJson,
+  FinancialAccountKind,
+  FinancialLedgerRepository,
+  FinancialLedgerScope,
+} from '../financial-ledger';
+import {
   AdjustCustomerLoyaltyPointsDto,
   AdjustCustomerWalletDto,
   UpdateLoyaltyProgramDto,
@@ -53,6 +59,7 @@ export interface QuoteBenefitsResult {
 
 export interface PurchaseGiftCardInput {
   amount: number;
+  idempotencyKey?: string;
   branchId?: string;
   title?: string;
   message?: string;
@@ -70,6 +77,7 @@ export class LoyaltyWalletService {
   constructor(
     private readonly repository: LoyaltyWalletRepository,
     private readonly prisma: PrismaService,
+    private readonly financialLedger: FinancialLedgerRepository,
     private readonly globalSettingsService?: GlobalSettingsService,
   ) {}
 
@@ -94,78 +102,85 @@ export class LoyaltyWalletService {
     dto: AdjustCustomerLoyaltyPointsDto,
   ) {
     const customer = await this.resolveAdminManagedCustomer(user, customerId);
-    const signedPoints = dto.isCredit === false ? dto.points * -1 : dto.points;
-
-    const data = await this.prisma.$transaction(async (tx) => {
-      const program = await this.ensureLoyaltyProgram(
-        {
-          tenantId: customer.tenantId!,
-          restaurantId: customer.restaurantId!,
-        },
-        tx,
-      );
-      const account = await this.ensureLoyaltyAccount(
-        {
-          customerId: customer.id,
-          tenantId: customer.tenantId!,
-          restaurantId: customer.restaurantId!,
-          branchId: customer.branchId,
-        },
-        tx,
-      );
-      const nextPoints = account.availablePoints + signedPoints;
-
-      if (nextPoints < 0) {
-        throw new BadRequestException('Insufficient loyalty points');
-      }
-
-      await this.repository.updateLoyaltyAccount(
-        account.id,
-        {
-          availablePoints: nextPoints,
-          manualAdjustedPoints: {
-            increment: signedPoints,
-          },
-        },
-        tx,
-      );
-
-      await this.repository.createLoyaltyTransaction(
-        {
-          loyaltyAccount: { connect: { id: account.id } },
-          loyaltyProgram: { connect: { id: program.id } },
-          tenant: { connect: { id: customer.tenantId! } },
-          restaurant: { connect: { id: customer.restaurantId! } },
-          branch: customer.branchId
-            ? { connect: { id: customer.branchId } }
-            : undefined,
-          customer: { connect: { id: customer.id } },
-          type: LoyaltyTransactionType.ADJUSTMENT,
-          points: signedPoints,
-          balanceAfter: nextPoints,
-          note:
-            dto.note?.trim() ||
-            (signedPoints > 0
-              ? 'Admin credited loyalty points'
-              : 'Admin deducted loyalty points'),
-          metadata: {
-            adjustedByRole: user.role,
-            adjustmentMode: signedPoints > 0 ? 'CREDIT' : 'DEBIT',
-          },
-          createdBy: user.uid,
-          updatedBy: user.uid,
-        },
-        tx,
-      );
-
-      return this.getLoyaltySummary({
-        customerId: customer.id,
-        tenantId: customer.tenantId!,
-        restaurantId: customer.restaurantId!,
-        branchId: customer.branchId,
-      });
+    const signedPoints = dto.isCredit === false ? -dto.points : dto.points;
+    const note =
+      dto.note?.trim() ||
+      (signedPoints > 0
+        ? 'Admin credited loyalty points'
+        : 'Admin deducted loyalty points');
+    const operationKey = this.clientOperationKey(
+      'admin-loyalty-adjustment',
+      dto.idempotencyKey,
+    );
+    const requestHash = this.requestHash({
+      actorId: user.uid,
+      customerId: customer.id,
+      delta: signedPoints,
+      note,
+      restaurantId: customer.restaurantId!,
+      tenantId: customer.tenantId!,
     });
 
+    await this.financialLedger.withFinancialLedgerTransaction(
+      [
+        this.customerLedgerScope(
+          {
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+            customerId: customer.id,
+          },
+          'LOYALTY',
+        ),
+      ],
+      async (tx) => {
+        const program = await this.ensureLoyaltyProgram(
+          {
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+          },
+          tx,
+        );
+        await this.ensureLoyaltyAccount(
+          {
+            customerId: customer.id,
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+            branchId: customer.branchId,
+          },
+          tx,
+        );
+        await this.financialLedger.applyLoyaltyDelta(
+          {
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+            customerId: customer.id,
+            branchId: customer.branchId ?? undefined,
+            operationKey,
+            requestHash,
+            allowNegative: false,
+            source: 'ADMIN_LOYALTY_ADJUSTMENT',
+            delta: signedPoints,
+            type: LoyaltyTransactionType.ADJUSTMENT,
+            loyaltyProgramId: program.id,
+            manualAdjustedDelta: signedPoints,
+            note,
+            metadata: {
+              adjustedByRole: user.role,
+              adjustmentMode: signedPoints > 0 ? 'CREDIT' : 'DEBIT',
+            },
+            createdBy: user.uid,
+          },
+          tx,
+        );
+      },
+    );
+
+    const data = await this.getLoyaltySummary({
+      customerId: customer.id,
+      tenantId: customer.tenantId!,
+      restaurantId: customer.restaurantId!,
+      branchId: customer.branchId,
+    });
     return {
       data,
       message: 'Customer loyalty points updated successfully',
@@ -217,84 +232,79 @@ export class LoyaltyWalletService {
     const customer = await this.resolveAdminManagedCustomer(user, customerId);
     const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
     const signedAmount = dto.isCredit === false ? amount.negated() : amount;
-
-    const data = await this.prisma.$transaction(async (tx) => {
-      const account = await this.ensureWalletAccount(
-        {
-          customerId: customer.id,
-          tenantId: customer.tenantId!,
-          restaurantId: customer.restaurantId!,
-          branchId: customer.branchId,
-        },
-        tx,
-      );
-      const nextBalance = account.balance.plus(signedAmount);
-
-      if (nextBalance.lessThan(0)) {
-        throw new BadRequestException('Insufficient wallet balance');
-      }
-
-      await this.repository.updateWalletAccount(
-        account.id,
-        { balance: nextBalance },
-        tx,
-      );
-
-      await this.repository.createWalletTransaction(
-        {
-          walletAccount: { connect: { id: account.id } },
-          tenant: { connect: { id: customer.tenantId! } },
-          restaurant: { connect: { id: customer.restaurantId! } },
-          branch: customer.branchId
-            ? { connect: { id: customer.branchId } }
-            : undefined,
-          customer: { connect: { id: customer.id } },
-          type:
-            dto.isCredit === false
-              ? WalletTransactionType.ADJUSTMENT
-              : WalletTransactionType.CREDIT,
-          amount: signedAmount,
-          balanceAfter: nextBalance,
-          currency: account.currency,
-          note:
-            dto.note?.trim() ||
-            (dto.isCredit === false
-              ? 'Admin debited wallet balance'
-              : 'Admin credited wallet balance'),
-          metadata: {
-            adjustedByRole: user.role,
-            adjustmentMode: dto.isCredit === false ? 'DEBIT' : 'CREDIT',
-          },
-          createdBy: user.uid,
-          updatedBy: user.uid,
-        },
-        tx,
-      );
-
-      const history = await this.repository.listWalletTransactions(
-        account.id,
-        20,
-      );
-
-      return {
-        customerId: customer.id,
-        balance: Number(nextBalance),
-        currency: account.currency,
-        history: history.map((entry) => ({
-          id: entry.id,
-          type: entry.type,
-          amount: Number(entry.amount),
-          balanceAfter: Number(entry.balanceAfter),
-          currency: entry.currency,
-          orderId: entry.orderId,
-          paymentTransactionId: entry.paymentTransactionId,
-          note: entry.note,
-          metadata: entry.metadata,
-          createdAt: entry.createdAt,
-        })),
-      };
+    const note =
+      dto.note?.trim() ||
+      (dto.isCredit === false
+        ? 'Admin debited wallet balance'
+        : 'Admin credited wallet balance');
+    const operationKey = this.clientOperationKey(
+      'admin-wallet-adjustment',
+      dto.idempotencyKey,
+    );
+    const requestHash = this.requestHash({
+      actorId: user.uid,
+      amount: signedAmount.toFixed(2),
+      customerId: customer.id,
+      note,
+      restaurantId: customer.restaurantId!,
+      tenantId: customer.tenantId!,
     });
 
+    await this.financialLedger.withFinancialLedgerTransaction(
+      [
+        this.customerLedgerScope(
+          {
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+            customerId: customer.id,
+          },
+          'CUSTOMER_WALLET',
+        ),
+      ],
+      async (tx) => {
+        const account = await this.ensureWalletAccount(
+          {
+            customerId: customer.id,
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+            branchId: customer.branchId,
+          },
+          tx,
+        );
+        await this.financialLedger.applyCustomerWalletDelta(
+          {
+            tenantId: customer.tenantId!,
+            restaurantId: customer.restaurantId!,
+            customerId: customer.id,
+            branchId: customer.branchId ?? undefined,
+            operationKey,
+            requestHash,
+            allowNegative: false,
+            source: 'ADMIN_WALLET_ADJUSTMENT',
+            delta: signedAmount,
+            currency: account.currency,
+            type:
+              dto.isCredit === false
+                ? WalletTransactionType.ADJUSTMENT
+                : WalletTransactionType.CREDIT,
+            note,
+            metadata: {
+              adjustedByRole: user.role,
+              adjustmentMode: dto.isCredit === false ? 'DEBIT' : 'CREDIT',
+            },
+            createdBy: user.uid,
+          },
+          tx,
+        );
+      },
+    );
+
+    const data = await this.getWalletSummary({
+      customerId: customer.id,
+      tenantId: customer.tenantId!,
+      restaurantId: customer.restaurantId!,
+      branchId: customer.branchId,
+    });
     return {
       data,
       message: 'Customer wallet updated successfully',
@@ -437,69 +447,52 @@ export class LoyaltyWalletService {
     note?: string,
     actorId?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const existing =
-        await this.repository.findWalletTransactionByPaymentTransactionId(
+    const creditedAmount = new Prisma.Decimal(amount).toDecimalPlaces(2);
+    const normalizedNote =
+      note?.trim() || 'Wallet top-up credited successfully';
+    const requestHash = this.requestHash({
+      amount: creditedAmount.toFixed(2),
+      customerId: context.customerId,
+      paymentTransactionId,
+      restaurantId: context.restaurantId,
+      tenantId: context.tenantId,
+    });
+
+    return this.financialLedger.withFinancialLedgerTransaction(
+      [this.customerLedgerScope(context, 'CUSTOMER_WALLET')],
+      async (tx) => {
+        const walletAccount = await this.ensureWalletAccount(context, tx);
+        const payment = await this.repository.findPaymentTransaction(
           paymentTransactionId,
           tx,
         );
-
-      if (existing) {
-        const walletAccount = await this.ensureWalletAccount(context, tx);
-
+        const result = await this.financialLedger.applyCustomerWalletDelta(
+          {
+            tenantId: context.tenantId,
+            restaurantId: context.restaurantId,
+            customerId: context.customerId,
+            branchId: context.branchId ?? undefined,
+            paymentTransactionId,
+            operationKey: `wallet-top-up:${paymentTransactionId}`,
+            requestHash,
+            allowNegative: false,
+            source: 'STRIPE_TOP_UP',
+            delta: creditedAmount,
+            currency: payment?.currency ?? walletAccount.currency,
+            type: WalletTransactionType.CREDIT,
+            note: normalizedNote,
+            createdBy: actorId,
+          },
+          tx,
+        );
         return {
           customerId: context.customerId,
-          walletBalance: Number(walletAccount.balance),
-          creditedAmount: Number(existing.amount),
-          currency: existing.currency,
+          walletBalance: Number(result.transaction.balanceAfter),
+          creditedAmount: Number(result.transaction.amount),
+          currency: result.transaction.currency,
         };
-      }
-
-      const walletAccount = await this.ensureWalletAccount(context, tx);
-      const creditedAmount = new Prisma.Decimal(amount).toDecimalPlaces(2);
-      const nextBalance = walletAccount.balance.plus(creditedAmount);
-      const payment = await this.repository.findPaymentTransaction(
-        paymentTransactionId,
-        tx,
-      );
-
-      await this.repository.updateWalletAccount(
-        walletAccount.id,
-        { balance: nextBalance },
-        tx,
-      );
-
-      await this.repository.createWalletTransaction(
-        {
-          walletAccount: { connect: { id: walletAccount.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: context.branchId
-            ? { connect: { id: context.branchId } }
-            : undefined,
-          customer: { connect: { id: context.customerId } },
-          paymentTransaction: { connect: { id: paymentTransactionId } },
-          type: WalletTransactionType.CREDIT,
-          amount: creditedAmount,
-          balanceAfter: nextBalance,
-          currency: payment?.currency ?? walletAccount.currency,
-          note: note?.trim() || 'Wallet top-up credited successfully',
-          metadata: {
-            source: 'STRIPE_TOP_UP',
-          },
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-
-      return {
-        customerId: context.customerId,
-        walletBalance: Number(nextBalance),
-        creditedAmount: Number(creditedAmount),
-        currency: payment?.currency ?? walletAccount.currency,
-      };
-    });
+      },
+    );
   }
 
   async redeemGiftCardToWallet(
@@ -511,149 +504,176 @@ export class LoyaltyWalletService {
     if (!normalizedCode) {
       throw new BadRequestException('Gift card code is required');
     }
+    const locatedGiftCard = await this.prisma.coupon.findFirst({
+      where: {
+        restaurantId: context.restaurantId,
+        code: normalizedCode,
+        kind: CouponCampaignKind.GIFT_CARD,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!locatedGiftCard) {
+      throw new BadRequestException('Gift card not found');
+    }
 
-    return this.prisma.$transaction(async (tx) => {
-      const giftCard = await tx.coupon.findFirst({
-        where: {
-          restaurantId: context.restaurantId,
-          code: normalizedCode,
-          kind: CouponCampaignKind.GIFT_CARD,
-          deletedAt: null,
-        },
-      });
-
-      if (!giftCard) {
-        throw new BadRequestException('Gift card not found');
-      }
-
-      const now = new Date();
-      if (
-        !giftCard.isActive ||
-        giftCard.status !== CouponStatus.ACTIVE ||
-        (giftCard.startsAt !== null && giftCard.startsAt > now) ||
-        (giftCard.expiresAt !== null && giftCard.expiresAt < now)
-      ) {
-        throw new BadRequestException('Gift card is not active');
-      }
-
-      if (giftCard.branchId && giftCard.branchId !== context.branchId) {
-        throw new BadRequestException('Gift card is not valid for this branch');
-      }
-
-      if (giftCard.maxUses !== null && giftCard.usedCount >= giftCard.maxUses) {
-        throw new BadRequestException('Gift card usage limit reached');
-      }
-
-      if (giftCard.maxUsesPerCustomer !== null) {
-        const customerUsage = await tx.couponUsage.count({
-          where: {
-            couponId: giftCard.id,
-            customerId: context.customerId,
-          },
-        });
-
-        if (customerUsage >= giftCard.maxUsesPerCustomer) {
-          throw new BadRequestException('Gift card per-customer limit reached');
-        }
-      }
-
-      const creditedAmount = giftCard.discountValue.toDecimalPlaces(2);
-      if (creditedAmount.lessThanOrEqualTo(0)) {
-        throw new BadRequestException(
-          'Gift card amount must be greater than 0',
+    return this.financialLedger.withFinancialLedgerTransaction(
+      [this.customerLedgerScope(context, 'CUSTOMER_WALLET')],
+      async (tx) => {
+        await tx.$executeRaw(
+          Prisma.sql`SELECT 1 FROM "coupons" WHERE "id" = ${locatedGiftCard.id} FOR UPDATE`,
         );
-      }
-
-      const walletAccount = await this.ensureWalletAccount(context, tx);
-      const nextBalance = walletAccount.balance.plus(creditedAmount);
-      const purchaseTransaction = await tx.walletTransaction.findFirst({
-        where: {
-          restaurantId: context.restaurantId,
-          type: WalletTransactionType.DEBIT,
-          metadata: {
-            path: ['giftCardCode'],
-            equals: giftCard.code,
-          },
-        },
-        select: {
-          id: true,
-          customerId: true,
-        },
-      });
-
-      if (purchaseTransaction?.customerId === context.customerId) {
-        throw new BadRequestException('Gift card cannot be redeemed by buyer');
-      }
-
-      const usage = await tx.couponUsage.create({
-        data: {
-          couponId: giftCard.id,
-          customerId: context.customerId,
-        },
-      });
-
-      if (giftCard.maxUses !== null) {
-        const usageUpdate = await tx.coupon.updateMany({
-          where: {
-            id: giftCard.id,
-            usedCount: { lt: giftCard.maxUses },
-          },
-          data: { usedCount: { increment: 1 } },
+        const giftCard = await tx.coupon.findUnique({
+          where: { id: locatedGiftCard.id },
         });
+        if (!giftCard || giftCard.deletedAt) {
+          throw new BadRequestException('Gift card not found');
+        }
+        const creditedAmount = giftCard.discountValue.toDecimalPlaces(2);
+        const walletAccount = await this.ensureWalletAccount(context, tx);
+        const operationKey = `gift-card-redemption:${giftCard.id}`;
+        const requestHash = this.requestHash({
+          amount: creditedAmount.toFixed(2),
+          branchId: context.branchId ?? null,
+          customerId: context.customerId,
+          giftCardId: giftCard.id,
+          restaurantId: context.restaurantId,
+          tenantId: context.tenantId,
+        });
+        const ledgerKey =
+          FinancialLedgerRepository.createOperationKey(operationKey);
+        const existing = await tx.walletTransaction.findUnique({
+          where: { idempotencyKey: ledgerKey },
+        });
+        if (existing) {
+          const purchaseTransaction = await tx.walletTransaction.findFirst({
+            where: {
+              restaurantId: context.restaurantId,
+              type: WalletTransactionType.DEBIT,
+              metadata: { path: ['giftCardCode'], equals: giftCard.code },
+            },
+            select: { id: true },
+          });
+          const replay = await this.financialLedger.applyCustomerWalletDelta(
+            {
+              tenantId: context.tenantId,
+              restaurantId: context.restaurantId,
+              customerId: context.customerId,
+              branchId: context.branchId ?? undefined,
+              operationKey,
+              requestHash,
+              allowNegative: false,
+              source: 'GIFT_CARD_REDEMPTION',
+              delta: creditedAmount,
+              currency: walletAccount.currency,
+              type: WalletTransactionType.CREDIT,
+              note: `Gift card ${giftCard.code} redeemed`,
+              createdBy: actorId,
+            },
+            tx,
+          );
+          return {
+            customerId: context.customerId,
+            giftCardId: giftCard.id,
+            code: giftCard.code,
+            purchaseWalletTransactionId: purchaseTransaction?.id ?? null,
+            walletTransactionId: replay.transaction.id,
+            creditedAmount: Number(replay.transaction.amount),
+            walletBalance: Number(replay.transaction.balanceAfter),
+            currency: replay.transaction.currency,
+          };
+        }
 
-        if (usageUpdate.count !== 1) {
+        const now = new Date();
+        if (
+          !giftCard.isActive ||
+          giftCard.status !== CouponStatus.ACTIVE ||
+          (giftCard.startsAt !== null && giftCard.startsAt > now) ||
+          (giftCard.expiresAt !== null && giftCard.expiresAt < now)
+        ) {
+          throw new BadRequestException('Gift card is not active');
+        }
+        if (giftCard.branchId && giftCard.branchId !== context.branchId) {
+          throw new BadRequestException(
+            'Gift card is not valid for this branch',
+          );
+        }
+        if (
+          giftCard.maxUses !== null &&
+          giftCard.usedCount >= giftCard.maxUses
+        ) {
           throw new BadRequestException('Gift card usage limit reached');
         }
-      } else {
+        if (giftCard.maxUsesPerCustomer !== null) {
+          const customerUsage = await tx.couponUsage.count({
+            where: { couponId: giftCard.id, customerId: context.customerId },
+          });
+          if (customerUsage >= giftCard.maxUsesPerCustomer) {
+            throw new BadRequestException(
+              'Gift card per-customer limit reached',
+            );
+          }
+        }
+        if (creditedAmount.lessThanOrEqualTo(0)) {
+          throw new BadRequestException(
+            'Gift card amount must be greater than 0',
+          );
+        }
+        const purchaseTransaction = await tx.walletTransaction.findFirst({
+          where: {
+            restaurantId: context.restaurantId,
+            type: WalletTransactionType.DEBIT,
+            metadata: { path: ['giftCardCode'], equals: giftCard.code },
+          },
+          select: { id: true, customerId: true },
+        });
+        if (purchaseTransaction?.customerId === context.customerId) {
+          throw new BadRequestException(
+            'Gift card cannot be redeemed by buyer',
+          );
+        }
+        const usage = await tx.couponUsage.create({
+          data: { couponId: giftCard.id, customerId: context.customerId },
+        });
         await tx.coupon.update({
           where: { id: giftCard.id },
           data: { usedCount: { increment: 1 } },
         });
-      }
-
-      await this.repository.updateWalletAccount(
-        walletAccount.id,
-        { balance: nextBalance },
-        tx,
-      );
-
-      const transaction = await this.repository.createWalletTransaction(
-        {
-          walletAccount: { connect: { id: walletAccount.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: context.branchId
-            ? { connect: { id: context.branchId } }
-            : undefined,
-          customer: { connect: { id: context.customerId } },
-          type: WalletTransactionType.CREDIT,
-          amount: creditedAmount,
-          balanceAfter: nextBalance,
-          currency: walletAccount.currency,
-          note: `Gift card ${giftCard.code} redeemed`,
-          metadata: {
-            source: 'GIFT_CARD',
-            couponId: giftCard.id,
-            couponUsageId: usage.id,
-            code: giftCard.code,
+        const result = await this.financialLedger.applyCustomerWalletDelta(
+          {
+            tenantId: context.tenantId,
+            restaurantId: context.restaurantId,
+            customerId: context.customerId,
+            branchId: context.branchId ?? undefined,
+            operationKey,
+            requestHash,
+            allowNegative: false,
+            source: 'GIFT_CARD_REDEMPTION',
+            delta: creditedAmount,
+            currency: walletAccount.currency,
+            type: WalletTransactionType.CREDIT,
+            note: `Gift card ${giftCard.code} redeemed`,
+            metadata: {
+              couponId: giftCard.id,
+              couponUsageId: usage.id,
+              code: giftCard.code,
+            },
+            createdBy: actorId,
           },
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-
-      return {
-        customerId: context.customerId,
-        giftCardId: giftCard.id,
-        code: giftCard.code,
-        purchaseWalletTransactionId: purchaseTransaction?.id ?? null,
-        walletTransactionId: transaction.id,
-        creditedAmount: Number(creditedAmount),
-        walletBalance: Number(nextBalance),
-        currency: walletAccount.currency,
-      };
-    });
+          tx,
+        );
+        return {
+          customerId: context.customerId,
+          giftCardId: giftCard.id,
+          code: giftCard.code,
+          purchaseWalletTransactionId: purchaseTransaction?.id ?? null,
+          walletTransactionId: result.transaction.id,
+          creditedAmount: Number(result.transaction.amount),
+          walletBalance: Number(result.transaction.balanceAfter),
+          currency: result.transaction.currency,
+        };
+      },
+    );
   }
 
   async purchaseGiftCardFromWallet(
@@ -662,98 +682,146 @@ export class LoyaltyWalletService {
     actorId?: string,
   ) {
     const amount = new Prisma.Decimal(input.amount).toDecimalPlaces(2);
-
     if (amount.lessThanOrEqualTo(0)) {
       throw new BadRequestException('Gift card amount must be greater than 0');
     }
-
-    return this.prisma.$transaction(async (tx) => {
-      const walletAccount = await this.ensureWalletAccount(context, tx);
-      const nextBalance = walletAccount.balance.minus(amount);
-
-      if (nextBalance.lessThan(0)) {
-        throw new BadRequestException('Insufficient wallet balance');
-      }
-
-      const code = await this.generateUniqueGiftCardCode(
-        context.restaurantId,
-        tx,
-      );
-      const now = new Date();
-      const expiresAt = input.expiresAt
-        ? new Date(input.expiresAt)
-        : this.addDays(now, 365);
-
-      if (expiresAt <= now) {
-        throw new BadRequestException('Gift card expiry must be in the future');
-      }
-
-      const giftCard = await tx.coupon.create({
-        data: {
-          tenantId: context.tenantId,
-          restaurantId: context.restaurantId,
-          branchId: input.branchId ?? null,
-          code,
-          title: input.title?.trim() || 'Gift Card',
-          description: input.message?.trim() || null,
-          kind: CouponCampaignKind.GIFT_CARD,
-          status: CouponStatus.ACTIVE,
-          applyMode: CouponApplyMode.ORDER_TOTAL,
-          autoApply: false,
-          discountType: CouponDiscountType.FLAT,
-          discountValue: amount,
-          maxUses: 1,
-          maxUsesPerCustomer: 1,
-          startsAt: now,
-          expiresAt,
-          isActive: true,
-        },
-      });
-
-      await this.repository.updateWalletAccount(
-        walletAccount.id,
-        { balance: nextBalance },
-        tx,
-      );
-
-      const walletTransaction = await this.repository.createWalletTransaction(
-        {
-          walletAccount: { connect: { id: walletAccount.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: context.branchId
-            ? { connect: { id: context.branchId } }
-            : undefined,
-          customer: { connect: { id: context.customerId } },
-          type: WalletTransactionType.DEBIT,
-          amount: amount.mul(-1),
-          balanceAfter: nextBalance,
-          currency: walletAccount.currency,
-          note: `Gift card ${code} purchased from wallet`,
-          metadata: {
-            source: 'CUSTOMER_GIFT_CARD_PURCHASE',
-            giftCardId: giftCard.id,
-            giftCardCode: code,
-            qrPayload: this.buildGiftCardQrPayload(code),
-          },
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-
-      return {
-        customerId: context.customerId,
-        giftCardId: giftCard.id,
-        code,
-        qrPayload: this.buildGiftCardQrPayload(code),
-        amount: Number(amount),
-        walletTransactionId: walletTransaction.id,
-        walletBalance: Number(nextBalance),
-        currency: walletAccount.currency,
-        expiresAt,
-      };
+    const operationKey = this.clientOperationKey(
+      'wallet-gift-card-purchase',
+      input.idempotencyKey,
+    );
+    const requestHash = this.requestHash({
+      amount: amount.toFixed(2),
+      branchId: input.branchId ?? null,
+      customerId: context.customerId,
+      expiresAt: input.expiresAt ?? null,
+      message: input.message?.trim() ?? null,
+      restaurantId: context.restaurantId,
+      tenantId: context.tenantId,
+      title: input.title?.trim() ?? null,
     });
+
+    return this.financialLedger.withFinancialLedgerTransaction(
+      [this.customerLedgerScope(context, 'CUSTOMER_WALLET')],
+      async (tx) => {
+        const walletAccount = await this.ensureWalletAccount(context, tx);
+        const ledgerKey =
+          FinancialLedgerRepository.createOperationKey(operationKey);
+        const existing = await tx.walletTransaction.findUnique({
+          where: { idempotencyKey: ledgerKey },
+        });
+        if (existing) {
+          const replay = await this.financialLedger.applyCustomerWalletDelta(
+            {
+              tenantId: context.tenantId,
+              restaurantId: context.restaurantId,
+              customerId: context.customerId,
+              branchId: context.branchId ?? undefined,
+              operationKey,
+              requestHash,
+              allowNegative: false,
+              source: 'CUSTOMER_GIFT_CARD_PURCHASE',
+              delta: amount.negated(),
+              currency: walletAccount.currency,
+              type: WalletTransactionType.DEBIT,
+              note: existing.note ?? 'Gift card purchased from wallet',
+              createdBy: actorId,
+            },
+            tx,
+          );
+          const metadata = this.readPurchasedGiftCardMetadata(
+            replay.transaction,
+          );
+          const giftCard = metadata.giftCardId
+            ? await tx.coupon.findUnique({ where: { id: metadata.giftCardId } })
+            : null;
+          if (!giftCard) {
+            throw new BadRequestException('Purchased gift card not found');
+          }
+          return {
+            customerId: context.customerId,
+            giftCardId: giftCard.id,
+            code: giftCard.code,
+            qrPayload:
+              metadata.qrPayload ?? this.buildGiftCardQrPayload(giftCard.code),
+            amount: Number(amount),
+            walletTransactionId: replay.transaction.id,
+            walletBalance: Number(replay.transaction.balanceAfter),
+            currency: replay.transaction.currency,
+            expiresAt: giftCard.expiresAt,
+          };
+        }
+
+        const code = await this.generateUniqueGiftCardCode(
+          context.restaurantId,
+          tx,
+        );
+        const now = new Date();
+        const expiresAt = input.expiresAt
+          ? new Date(input.expiresAt)
+          : this.addDays(now, 365);
+        if (expiresAt <= now) {
+          throw new BadRequestException(
+            'Gift card expiry must be in the future',
+          );
+        }
+        const giftCard = await tx.coupon.create({
+          data: {
+            tenantId: context.tenantId,
+            restaurantId: context.restaurantId,
+            branchId: input.branchId ?? null,
+            code,
+            title: input.title?.trim() || 'Gift Card',
+            description: input.message?.trim() || null,
+            kind: CouponCampaignKind.GIFT_CARD,
+            status: CouponStatus.ACTIVE,
+            applyMode: CouponApplyMode.ORDER_TOTAL,
+            autoApply: false,
+            discountType: CouponDiscountType.FLAT,
+            discountValue: amount,
+            maxUses: 1,
+            maxUsesPerCustomer: 1,
+            startsAt: now,
+            expiresAt,
+            isActive: true,
+          },
+        });
+        const qrPayload = this.buildGiftCardQrPayload(code);
+        const result = await this.financialLedger.applyCustomerWalletDelta(
+          {
+            tenantId: context.tenantId,
+            restaurantId: context.restaurantId,
+            customerId: context.customerId,
+            branchId: context.branchId ?? undefined,
+            operationKey,
+            requestHash,
+            allowNegative: false,
+            source: 'CUSTOMER_GIFT_CARD_PURCHASE',
+            delta: amount.negated(),
+            currency: walletAccount.currency,
+            type: WalletTransactionType.DEBIT,
+            note: `Gift card ${code} purchased from wallet`,
+            metadata: {
+              giftCardId: giftCard.id,
+              giftCardCode: code,
+              qrPayload,
+            },
+            createdBy: actorId,
+          },
+          tx,
+        );
+        return {
+          customerId: context.customerId,
+          giftCardId: giftCard.id,
+          code,
+          qrPayload,
+          amount: Number(amount),
+          walletTransactionId: result.transaction.id,
+          walletBalance: Number(result.transaction.balanceAfter),
+          currency: result.transaction.currency,
+          expiresAt,
+        };
+      },
+    );
   }
 
   async listPurchasedGiftCards(
@@ -869,108 +937,93 @@ export class LoyaltyWalletService {
     points: number,
     note?: string,
     actorId?: string,
+    idempotencyKey?: string,
   ) {
     const program = await this.ensureLoyaltyProgram(context);
     if (!program.isActive) {
       throw new BadRequestException('Loyalty program is inactive');
     }
-
     if (!program.allowWalletConversion) {
       throw new BadRequestException('Wallet redemption is not enabled');
     }
-
     if (points < program.minimumRedeemPoints) {
       throw new BadRequestException(
         `Minimum redeemable points are ${program.minimumRedeemPoints}`,
       );
     }
-
-    return this.prisma.$transaction(async (tx) => {
-      const loyaltyAccount = await this.ensureLoyaltyAccount(context, tx);
-      if (loyaltyAccount.availablePoints < points) {
-        throw new BadRequestException('Insufficient loyalty points');
-      }
-
-      const walletAccount = await this.ensureWalletAccount(context, tx);
-      const redeemedAmount = new Prisma.Decimal(points).mul(
-        program.redemptionValuePerPoint,
-      );
-      const nextPoints = loyaltyAccount.availablePoints - points;
-      const nextWalletBalance = walletAccount.balance.plus(redeemedAmount);
-
-      await this.repository.updateLoyaltyAccount(
-        loyaltyAccount.id,
-        {
-          availablePoints: nextPoints,
-          lifetimeRedeemedPoints: {
-            increment: points,
-          },
-        },
-        tx,
-      );
-
-      await this.repository.createLoyaltyTransaction(
-        {
-          loyaltyAccount: { connect: { id: loyaltyAccount.id } },
-          loyaltyProgram: { connect: { id: program.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: context.branchId
-            ? { connect: { id: context.branchId } }
-            : undefined,
-          customer: { connect: { id: context.customerId } },
-          type: LoyaltyTransactionType.REDEEM,
-          points: -points,
-          balanceAfter: nextPoints,
-          monetaryValue: redeemedAmount,
-          redemptionTarget: LoyaltyRedemptionTarget.WALLET,
-          note: note?.trim() || 'Loyalty points redeemed to wallet',
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-
-      await this.repository.updateWalletAccount(
-        walletAccount.id,
-        {
-          balance: nextWalletBalance,
-        },
-        tx,
-      );
-
-      await this.repository.createWalletTransaction(
-        {
-          walletAccount: { connect: { id: walletAccount.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: context.branchId
-            ? { connect: { id: context.branchId } }
-            : undefined,
-          customer: { connect: { id: context.customerId } },
-          type: WalletTransactionType.LOYALTY_REDEMPTION,
-          amount: redeemedAmount,
-          balanceAfter: nextWalletBalance,
-          currency: walletAccount.currency,
-          note: note?.trim() || 'Wallet credited from loyalty redemption',
-          metadata: {
-            pointsRedeemed: points,
-          },
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-
-      return {
-        customerId: context.customerId,
-        redeemedPoints: points,
-        redeemedAmount: Number(redeemedAmount),
-        remainingPoints: nextPoints,
-        walletBalance: Number(nextWalletBalance),
-        currency: walletAccount.currency,
-      };
+    const redeemedAmount = new Prisma.Decimal(points)
+      .mul(program.redemptionValuePerPoint)
+      .toDecimalPlaces(2);
+    const normalizedNote = note?.trim() || 'Loyalty points redeemed to wallet';
+    const rootKey = this.clientOperationKey(
+      'loyalty-wallet-conversion',
+      idempotencyKey,
+    );
+    const requestHash = this.requestHash({
+      amount: redeemedAmount.toFixed(2),
+      customerId: context.customerId,
+      note: normalizedNote,
+      points,
+      programId: program.id,
+      restaurantId: context.restaurantId,
+      tenantId: context.tenantId,
     });
+
+    return this.financialLedger.withFinancialLedgerTransaction(
+      this.customerLedgerScopes(context, ['LOYALTY', 'CUSTOMER_WALLET']),
+      async (tx) => {
+        await this.ensureLoyaltyAccount(context, tx);
+        const walletAccount = await this.ensureWalletAccount(context, tx);
+        const loyalty = await this.financialLedger.applyLoyaltyDelta(
+          {
+            tenantId: context.tenantId,
+            restaurantId: context.restaurantId,
+            customerId: context.customerId,
+            branchId: context.branchId ?? undefined,
+            operationKey: `${rootKey}:loyalty`,
+            requestHash,
+            allowNegative: false,
+            source: 'LOYALTY_WALLET_CONVERSION',
+            delta: -points,
+            type: LoyaltyTransactionType.REDEEM,
+            loyaltyProgramId: program.id,
+            monetaryValue: redeemedAmount,
+            redemptionTarget: LoyaltyRedemptionTarget.WALLET,
+            lifetimeRedeemedDelta: points,
+            note: normalizedNote,
+            createdBy: actorId,
+          },
+          tx,
+        );
+        const wallet = await this.financialLedger.applyCustomerWalletDelta(
+          {
+            tenantId: context.tenantId,
+            restaurantId: context.restaurantId,
+            customerId: context.customerId,
+            branchId: context.branchId ?? undefined,
+            operationKey: `${rootKey}:wallet`,
+            requestHash,
+            allowNegative: false,
+            source: 'LOYALTY_WALLET_CONVERSION',
+            delta: redeemedAmount,
+            currency: walletAccount.currency,
+            type: WalletTransactionType.LOYALTY_REDEMPTION,
+            note: 'Wallet credited from loyalty redemption',
+            metadata: { pointsRedeemed: points },
+            createdBy: actorId,
+          },
+          tx,
+        );
+        return {
+          customerId: context.customerId,
+          redeemedPoints: points,
+          redeemedAmount: Number(redeemedAmount),
+          remainingPoints: loyalty.transaction.balanceAfter,
+          walletBalance: Number(wallet.transaction.balanceAfter),
+          currency: wallet.transaction.currency,
+        };
+      },
+    );
   }
 
   async calculateQuoteBenefits(
@@ -1051,85 +1104,80 @@ export class LoyaltyWalletService {
     },
     actorId?: string,
   ) {
-    if (order.walletAppliedAmount.greaterThan(0)) {
-      const walletAccount = await this.ensureWalletAccount(context, tx);
-      const nextBalance = walletAccount.balance.minus(
-        order.walletAppliedAmount,
-      );
-      if (nextBalance.lessThan(0)) {
-        throw new BadRequestException('Insufficient wallet balance');
-      }
+    const kinds: FinancialAccountKind[] = [];
+    if (order.walletAppliedAmount.greaterThan(0)) kinds.push('CUSTOMER_WALLET');
+    if (order.loyaltyPointsRedeemed > 0) kinds.push('LOYALTY');
+    if (!kinds.length) return;
+    const requestHash = this.requestHash({
+      customerId: context.customerId,
+      loyaltyDiscountAmount: order.loyaltyDiscountAmount.toFixed(2),
+      loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
+      orderId: order.id,
+      restaurantId: context.restaurantId,
+      tenantId: context.tenantId,
+      walletAppliedAmount: order.walletAppliedAmount.toFixed(2),
+    });
 
-      await this.repository.updateWalletAccount(
-        walletAccount.id,
-        { balance: nextBalance },
-        tx,
-      );
-
-      await this.repository.createWalletTransaction(
-        {
-          walletAccount: { connect: { id: walletAccount.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: { connect: { id: context.branchId! } },
-          customer: { connect: { id: context.customerId } },
-          order: { connect: { id: order.id } },
-          type: WalletTransactionType.DEBIT,
-          amount: order.walletAppliedAmount.mul(-1),
-          balanceAfter: nextBalance,
-          currency: walletAccount.currency,
-          note: 'Wallet applied on order checkout',
-          metadata: {
-            loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
-          },
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-    }
-
-    if (order.loyaltyPointsRedeemed > 0) {
-      const loyaltyAccount = await this.ensureLoyaltyAccount(context, tx);
-      const program = await this.ensureLoyaltyProgram(context, tx);
-      const nextPoints =
-        loyaltyAccount.availablePoints - order.loyaltyPointsRedeemed;
-      if (nextPoints < 0) {
-        throw new BadRequestException('Insufficient loyalty points');
-      }
-
-      await this.repository.updateLoyaltyAccount(
-        loyaltyAccount.id,
-        {
-          availablePoints: nextPoints,
-          lifetimeRedeemedPoints: {
-            increment: order.loyaltyPointsRedeemed,
-          },
-        },
-        tx,
-      );
-
-      await this.repository.createLoyaltyTransaction(
-        {
-          loyaltyAccount: { connect: { id: loyaltyAccount.id } },
-          loyaltyProgram: { connect: { id: program.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: { connect: { id: context.branchId! } },
-          customer: { connect: { id: context.customerId } },
-          order: { connect: { id: order.id } },
-          type: LoyaltyTransactionType.REDEEM,
-          points: -order.loyaltyPointsRedeemed,
-          balanceAfter: nextPoints,
-          monetaryValue: order.loyaltyDiscountAmount,
-          redemptionTarget: LoyaltyRedemptionTarget.ORDER_DISCOUNT,
-          note: 'Loyalty points applied as order discount',
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-    }
+    await this.financialLedger.withFinancialLedgerTransaction(
+      this.customerLedgerScopes(context, kinds),
+      async (ledgerTx) => {
+        if (order.walletAppliedAmount.greaterThan(0)) {
+          const walletAccount = await this.ensureWalletAccount(
+            context,
+            ledgerTx,
+          );
+          await this.financialLedger.applyCustomerWalletDelta(
+            {
+              tenantId: context.tenantId,
+              restaurantId: context.restaurantId,
+              customerId: context.customerId,
+              branchId: context.branchId ?? undefined,
+              orderId: order.id,
+              operationKey: `order:${order.id}:wallet-benefit-debit`,
+              requestHash,
+              allowNegative: false,
+              source: 'ORDER_CHECKOUT_BENEFIT',
+              delta: order.walletAppliedAmount.negated(),
+              currency: walletAccount.currency,
+              type: WalletTransactionType.DEBIT,
+              note: 'Wallet applied on order checkout',
+              metadata: {
+                loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
+              },
+              createdBy: actorId,
+            },
+            ledgerTx,
+          );
+        }
+        if (order.loyaltyPointsRedeemed > 0) {
+          await this.ensureLoyaltyAccount(context, ledgerTx);
+          const program = await this.ensureLoyaltyProgram(context, ledgerTx);
+          await this.financialLedger.applyLoyaltyDelta(
+            {
+              tenantId: context.tenantId,
+              restaurantId: context.restaurantId,
+              customerId: context.customerId,
+              branchId: context.branchId ?? undefined,
+              orderId: order.id,
+              operationKey: `order:${order.id}:loyalty-benefit-debit`,
+              requestHash,
+              allowNegative: false,
+              source: 'ORDER_CHECKOUT_BENEFIT',
+              delta: -order.loyaltyPointsRedeemed,
+              type: LoyaltyTransactionType.REDEEM,
+              loyaltyProgramId: program.id,
+              monetaryValue: order.loyaltyDiscountAmount,
+              redemptionTarget: LoyaltyRedemptionTarget.ORDER_DISCOUNT,
+              lifetimeRedeemedDelta: order.loyaltyPointsRedeemed,
+              note: 'Loyalty points applied as order discount',
+              createdBy: actorId,
+            },
+            ledgerTx,
+          );
+        }
+      },
+      tx,
+    );
   }
 
   async awardPointsForPaidOrder(
@@ -1140,96 +1188,82 @@ export class LoyaltyWalletService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await this.repository.findOrderWithBenefits(orderId, tx);
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
-
+      if (!order) throw new NotFoundException('Order not found');
       if (order.paymentStatus !== PaymentStatus.PAID && !options.allowUnpaid) {
         return null;
       }
-
-      const existingEarns = await this.repository.countLoyaltyEarnTransactions(
-        orderId,
-        tx,
-      );
-      if (existingEarns > 0 || order.loyaltyPointsAwarded > 0) {
-        return null;
-      }
-
       const context = {
         customerId: order.customerId,
         tenantId: order.tenantId,
         restaurantId: order.restaurantId,
         branchId: order.branchId,
       };
-      const program = await this.ensureLoyaltyProgram(context, tx);
-      if (
-        !program.isActive ||
-        program.pointsPerCurrencyUnit.lessThanOrEqualTo(0)
-      ) {
-        return null;
-      }
-
-      const qualifyingAmount = order.totalAmount.plus(
-        order.walletAppliedAmount,
-      );
-      const pointsAwarded = Math.floor(
-        Number(qualifyingAmount.mul(program.pointsPerCurrencyUnit)),
-      );
-      if (pointsAwarded <= 0) {
-        return null;
-      }
-
-      const loyaltyAccount = await this.ensureLoyaltyAccount(context, tx);
-      const nextPoints = loyaltyAccount.availablePoints + pointsAwarded;
-      const expiresAt =
-        program.pointsExpiryDays && program.pointsExpiryDays > 0
-          ? new Date(
-              Date.now() + program.pointsExpiryDays * 24 * 60 * 60 * 1000,
-            )
-          : null;
-
-      await this.repository.updateLoyaltyAccount(
-        loyaltyAccount.id,
-        {
-          availablePoints: nextPoints,
-          lifetimeEarnedPoints: { increment: pointsAwarded },
+      return this.financialLedger.withFinancialLedgerTransaction(
+        [this.customerLedgerScope(context, 'LOYALTY')],
+        async (ledgerTx) => {
+          const program = await this.ensureLoyaltyProgram(context, ledgerTx);
+          if (
+            !program.isActive ||
+            program.pointsPerCurrencyUnit.lessThanOrEqualTo(0)
+          ) {
+            return null;
+          }
+          const qualifyingAmount = order.totalAmount.plus(
+            order.walletAppliedAmount,
+          );
+          const pointsAwarded = Math.floor(
+            Number(qualifyingAmount.mul(program.pointsPerCurrencyUnit)),
+          );
+          if (pointsAwarded <= 0) return null;
+          await this.ensureLoyaltyAccount(context, ledgerTx);
+          const expiresAt =
+            program.pointsExpiryDays && program.pointsExpiryDays > 0
+              ? new Date(Date.now() + program.pointsExpiryDays * 86_400_000)
+              : undefined;
+          const requestHash = this.requestHash({
+            customerId: context.customerId,
+            orderId: order.id,
+            pointsAwarded,
+            programId: program.id,
+            qualifyingAmount: qualifyingAmount.toFixed(2),
+            restaurantId: context.restaurantId,
+            tenantId: context.tenantId,
+          });
+          await this.financialLedger.applyLoyaltyDelta(
+            {
+              tenantId: context.tenantId,
+              restaurantId: context.restaurantId,
+              customerId: context.customerId,
+              branchId: context.branchId,
+              orderId: order.id,
+              paymentTransactionId,
+              operationKey: `order:${order.id}:loyalty-award`,
+              requestHash,
+              allowNegative: false,
+              source: 'PAID_ORDER_LOYALTY_AWARD',
+              delta: pointsAwarded,
+              type: LoyaltyTransactionType.EARN,
+              loyaltyProgramId: program.id,
+              monetaryValue: qualifyingAmount,
+              lifetimeEarnedDelta: pointsAwarded,
+              expiresAt,
+              note: 'Loyalty points earned on paid order',
+              metadata: options.idempotencyKey
+                ? { upstreamIdempotencyKey: options.idempotencyKey }
+                : undefined,
+              createdBy: actorId,
+            },
+            ledgerTx,
+          );
+          await this.repository.updateOrderBenefits(
+            order.id,
+            { loyaltyPointsAwarded: pointsAwarded },
+            ledgerTx,
+          );
+          return pointsAwarded;
         },
         tx,
       );
-
-      await this.repository.createLoyaltyTransaction(
-        {
-          loyaltyAccount: { connect: { id: loyaltyAccount.id } },
-          loyaltyProgram: { connect: { id: program.id } },
-          tenant: { connect: { id: context.tenantId } },
-          restaurant: { connect: { id: context.restaurantId } },
-          branch: { connect: { id: context.branchId } },
-          customer: { connect: { id: context.customerId } },
-          order: { connect: { id: order.id } },
-          paymentTransaction: paymentTransactionId
-            ? { connect: { id: paymentTransactionId } }
-            : undefined,
-          type: LoyaltyTransactionType.EARN,
-          points: pointsAwarded,
-          balanceAfter: nextPoints,
-          monetaryValue: qualifyingAmount,
-          note: 'Loyalty points earned on paid order',
-          expiresAt,
-          idempotencyKey: options.idempotencyKey,
-          createdBy: actorId,
-          updatedBy: actorId,
-        },
-        tx,
-      );
-
-      await this.repository.updateOrderBenefits(
-        order.id,
-        { loyaltyPointsAwarded: pointsAwarded },
-        tx,
-      );
-
-      return pointsAwarded;
     });
   }
 
@@ -1240,95 +1274,122 @@ export class LoyaltyWalletService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await this.repository.findOrderWithBenefits(orderId, tx);
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
-
+      if (!order) throw new NotFoundException('Order not found');
       const context = {
         customerId: order.customerId,
         tenantId: order.tenantId,
         restaurantId: order.restaurantId,
         branchId: order.branchId,
       };
-
-      if (order.walletAppliedAmount.greaterThan(0)) {
-        const walletRestoreCount =
-          await this.repository.countWalletRestoreTransactions(order.id, tx);
-        if (!walletRestoreCount) {
-          const walletAccount = await this.ensureWalletAccount(context, tx);
-          const nextBalance = walletAccount.balance.plus(
-            order.walletAppliedAmount,
-          );
-          await this.repository.updateWalletAccount(
-            walletAccount.id,
-            { balance: nextBalance },
-            tx,
-          );
-          await this.repository.createWalletTransaction(
-            {
-              walletAccount: { connect: { id: walletAccount.id } },
-              tenant: { connect: { id: context.tenantId } },
-              restaurant: { connect: { id: context.restaurantId } },
-              branch: { connect: { id: context.branchId } },
-              customer: { connect: { id: context.customerId } },
-              order: { connect: { id: order.id } },
-              type:
-                reason === 'REFUND'
-                  ? WalletTransactionType.REFUND
-                  : WalletTransactionType.PAYMENT_REVERSAL,
-              amount: order.walletAppliedAmount,
-              balanceAfter: nextBalance,
-              currency: walletAccount.currency,
-              note: 'Wallet amount restored from order reversal',
-              createdBy: actorId,
-              updatedBy: actorId,
-            },
-            tx,
-          );
-        }
-      }
-
-      if (order.loyaltyPointsRedeemed > 0) {
-        const loyaltyRestoreCount =
-          await this.repository.countLoyaltyRestoreTransactions(order.id, tx);
-        if (!loyaltyRestoreCount) {
-          const loyaltyAccount = await this.ensureLoyaltyAccount(context, tx);
-          const program = await this.ensureLoyaltyProgram(context, tx);
-          const nextPoints =
-            loyaltyAccount.availablePoints + order.loyaltyPointsRedeemed;
-          await this.repository.updateLoyaltyAccount(
-            loyaltyAccount.id,
-            {
-              availablePoints: nextPoints,
-              lifetimeRedeemedPoints: {
-                decrement: order.loyaltyPointsRedeemed,
+      const kinds: FinancialAccountKind[] = [];
+      if (order.walletAppliedAmount.greaterThan(0))
+        kinds.push('CUSTOMER_WALLET');
+      if (order.loyaltyPointsRedeemed > 0) kinds.push('LOYALTY');
+      if (!kinds.length) return;
+      const requestHash = this.requestHash({
+        customerId: context.customerId,
+        loyaltyDiscountAmount: order.loyaltyDiscountAmount.toFixed(2),
+        loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
+        orderId: order.id,
+        reason,
+        restaurantId: context.restaurantId,
+        tenantId: context.tenantId,
+        walletAppliedAmount: order.walletAppliedAmount.toFixed(2),
+      });
+      await this.financialLedger.withFinancialLedgerTransaction(
+        this.customerLedgerScopes(context, kinds),
+        async (ledgerTx) => {
+          if (order.walletAppliedAmount.greaterThan(0)) {
+            const account = await this.ensureWalletAccount(context, ledgerTx);
+            await this.financialLedger.applyCustomerWalletDelta(
+              {
+                tenantId: context.tenantId,
+                restaurantId: context.restaurantId,
+                customerId: context.customerId,
+                branchId: context.branchId,
+                orderId: order.id,
+                operationKey: `order:${order.id}:wallet-benefit-restore`,
+                requestHash,
+                allowNegative: false,
+                source: 'ORDER_BENEFIT_RESTORE',
+                delta: order.walletAppliedAmount,
+                currency: account.currency,
+                type:
+                  reason === 'REFUND'
+                    ? WalletTransactionType.REFUND
+                    : WalletTransactionType.PAYMENT_REVERSAL,
+                note: 'Wallet amount restored from order reversal',
+                createdBy: actorId,
               },
-            },
-            tx,
-          );
-          await this.repository.createLoyaltyTransaction(
-            {
-              loyaltyAccount: { connect: { id: loyaltyAccount.id } },
-              loyaltyProgram: { connect: { id: program.id } },
-              tenant: { connect: { id: context.tenantId } },
-              restaurant: { connect: { id: context.restaurantId } },
-              branch: { connect: { id: context.branchId } },
-              customer: { connect: { id: context.customerId } },
-              order: { connect: { id: order.id } },
-              type: LoyaltyTransactionType.RESTORE,
-              points: order.loyaltyPointsRedeemed,
-              balanceAfter: nextPoints,
-              monetaryValue: order.loyaltyDiscountAmount,
-              redemptionTarget: LoyaltyRedemptionTarget.ORDER_DISCOUNT,
-              note: 'Loyalty points restored from order reversal',
-              createdBy: actorId,
-              updatedBy: actorId,
-            },
-            tx,
-          );
-        }
-      }
+              ledgerTx,
+            );
+          }
+          if (order.loyaltyPointsRedeemed > 0) {
+            await this.ensureLoyaltyAccount(context, ledgerTx);
+            const program = await this.ensureLoyaltyProgram(context, ledgerTx);
+            await this.financialLedger.applyLoyaltyDelta(
+              {
+                tenantId: context.tenantId,
+                restaurantId: context.restaurantId,
+                customerId: context.customerId,
+                branchId: context.branchId,
+                orderId: order.id,
+                operationKey: `order:${order.id}:loyalty-benefit-restore`,
+                requestHash,
+                allowNegative: false,
+                source: 'ORDER_BENEFIT_RESTORE',
+                delta: order.loyaltyPointsRedeemed,
+                type: LoyaltyTransactionType.RESTORE,
+                loyaltyProgramId: program.id,
+                monetaryValue: order.loyaltyDiscountAmount,
+                redemptionTarget: LoyaltyRedemptionTarget.ORDER_DISCOUNT,
+                lifetimeRedeemedDelta: -order.loyaltyPointsRedeemed,
+                note: 'Loyalty points restored from order reversal',
+                createdBy: actorId,
+              },
+              ledgerTx,
+            );
+          }
+        },
+        tx,
+      );
     });
+  }
+
+  private requestHash(value: CanonicalJson): string {
+    return FinancialLedgerRepository.createCanonicalRequestHash(value);
+  }
+
+  private clientOperationKey(prefix: string, supplied?: string): string {
+    const key = supplied?.trim();
+    return key
+      ? `${prefix}:${key}`
+      : `${prefix}:generated:${randomBytes(16).toString('hex')}`;
+  }
+
+  private customerLedgerScope(
+    context: Pick<
+      CustomerWalletLoyaltyContext,
+      'tenantId' | 'restaurantId' | 'customerId'
+    >,
+    accountKind: FinancialAccountKind,
+  ): FinancialLedgerScope {
+    return {
+      tenantId: context.tenantId,
+      restaurantId: context.restaurantId,
+      customerId: context.customerId,
+      accountKind,
+    };
+  }
+
+  private customerLedgerScopes(
+    context: Pick<
+      CustomerWalletLoyaltyContext,
+      'tenantId' | 'restaurantId' | 'customerId'
+    >,
+    accountKinds: FinancialAccountKind[],
+  ): FinancialLedgerScope[] {
+    return accountKinds.map((kind) => this.customerLedgerScope(context, kind));
   }
 
   async ensureWalletAccount(
@@ -1358,16 +1419,23 @@ export class LoyaltyWalletService {
       (await this.resolveRestaurantCurrency(context.restaurantId, tx)) ??
       'PKR';
 
-    return this.repository.createWalletAccount(
-      {
-        tenant: { connect: { id: context.tenantId } },
-        restaurant: { connect: { id: context.restaurantId } },
-        customer: { connect: { id: context.customerId } },
+    const client = tx ?? this.prisma;
+    return client.walletAccount.upsert({
+      where: {
+        restaurantId_customerId: {
+          restaurantId: context.restaurantId,
+          customerId: context.customerId,
+        },
+      },
+      create: {
+        tenantId: context.tenantId,
+        restaurantId: context.restaurantId,
+        customerId: context.customerId,
         balance: new Prisma.Decimal(legacyBalance),
         currency: legacyCurrency,
       },
-      tx,
-    );
+      update: {},
+    });
   }
 
   private async resolveRestaurantCurrency(restaurantId: string, tx?: PrismaTx) {
@@ -1410,18 +1478,24 @@ export class LoyaltyWalletService {
       ['loyaltyRedeemedPoints'],
     ]);
 
-    return this.repository.createLoyaltyAccount(
-      {
-        tenant: { connect: { id: context.tenantId } },
-        restaurant: { connect: { id: context.restaurantId } },
-        customer: { connect: { id: context.customerId } },
+    const client = tx ?? this.prisma;
+    return client.loyaltyAccount.upsert({
+      where: {
+        restaurantId_customerId: {
+          restaurantId: context.restaurantId,
+          customerId: context.customerId,
+        },
+      },
+      create: {
+        tenantId: context.tenantId,
+        restaurantId: context.restaurantId,
+        customerId: context.customerId,
         availablePoints,
         lifetimeEarnedPoints: availablePoints + redeemedPoints,
         lifetimeRedeemedPoints: redeemedPoints,
-        manualAdjustedPoints: 0,
       },
-      tx,
-    );
+      update: {},
+    });
   }
 
   async ensureLoyaltyProgram(
@@ -1436,10 +1510,12 @@ export class LoyaltyWalletService {
       return existing;
     }
 
-    return this.repository.createLoyaltyProgram(
-      {
-        tenant: { connect: { id: context.tenantId } },
-        restaurant: { connect: { id: context.restaurantId } },
+    const client = tx ?? this.prisma;
+    return client.loyaltyProgram.upsert({
+      where: { restaurantId: context.restaurantId },
+      create: {
+        tenantId: context.tenantId,
+        restaurantId: context.restaurantId,
         isActive: true,
         pointsPerCurrencyUnit: new Prisma.Decimal(0.05),
         currencyAmountPerPoint: new Prisma.Decimal(1),
@@ -1448,8 +1524,8 @@ export class LoyaltyWalletService {
         allowWalletConversion: true,
         allowOrderDiscount: true,
       },
-      tx,
-    );
+      update: {},
+    });
   }
 
   private serializeLoyaltyProgram(program: {

@@ -160,15 +160,20 @@ export class FinancialLedgerRepository {
   async withFinancialLedgerTransaction<T>(
     scopes: FinancialLedgerScope[],
     work: (tx: PrismaTx) => Promise<T>,
+    tx?: PrismaTx,
   ): Promise<T> {
     if (scopes.length === 0 || scopes.length > 64) {
       throw new BadRequestException(
         'Financial ledger transactions require between 1 and 64 scopes',
       );
     }
-    return this.prisma.$transaction(async (tx) => {
+    if (tx) {
       await this.lockScopes(scopes, tx);
       return work(tx);
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      await this.lockScopes(scopes, transaction);
+      return work(transaction);
     });
   }
 

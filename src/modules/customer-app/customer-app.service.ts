@@ -1620,6 +1620,7 @@ export class CustomerAppService {
       dto.points,
       dto.note,
       user.uid,
+      dto.idempotencyKey,
     );
 
     return {

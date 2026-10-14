@@ -3570,6 +3570,7 @@ describe('CustomerAppService', () => {
       100,
       'Checkout discount',
       'customer-1',
+      undefined,
     );
     expect(result.data.remainingPoints).toBe(200);
     expect(result.message).toBe('Loyalty points redeemed successfully');

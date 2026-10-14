@@ -301,6 +301,15 @@ export class HomeScreenQueryDto extends PublicRestaurantQueryDto {
 }
 
 export class RedeemLoyaltyPointsDto {
+  @ApiPropertyOptional({
+    description: 'Stable client key used to safely retry this redemption',
+    maxLength: 191,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
+
   @ApiProperty({ minimum: 1, example: 100 })
   @Transform(({ value }) => Number(value))
   @IsInt()
@@ -322,6 +331,16 @@ export class RedeemLoyaltyPointsDto {
 }
 
 export class RedeemGiftCardDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional client retry key; gift-card redemption is also card-idempotent',
+    maxLength: 191,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
+
   @ApiProperty({
     description: 'Gift card code scanned or entered by the customer',
     example: 'GIFT-ABCD1234',
@@ -338,6 +357,15 @@ export class RedeemGiftCardDto {
 }
 
 export class PurchaseGiftCardDto {
+  @ApiPropertyOptional({
+    description: 'Stable client key used to safely retry this purchase',
+    maxLength: 191,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  idempotencyKey?: string;
+
   @ApiProperty({ minimum: 1, example: 1000 })
   @Transform(({ value }) => Number(value))
   @IsNumber({ maxDecimalPlaces: 2 })
