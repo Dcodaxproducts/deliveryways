@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
+import { FinancialLedgerRepository } from '../financial-ledger';
 import {
   ListPackagePlansDto,
   ListSubscriptionDeductionsDto,
@@ -20,11 +21,12 @@ import {
   MonthlyInvoiceDatevExportQueryDto,
 } from './dto';
 
-class WalletSettlementConflictError extends Error {}
-
 @Injectable()
 export class PackagePlansRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly financialLedgerRepository: FinancialLedgerRepository,
+  ) {}
 
   createPlan(data: Prisma.PackagePlanCreateInput) {
     return this.prisma.packagePlan.create({ data });
@@ -392,118 +394,128 @@ export class PackagePlansRepository {
       return this.emptyWalletSettlement();
     }
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        return await this.prisma.$transaction(async (tx) => {
-          const existing = await tx.restaurantWalletTransaction.findUnique({
-            where: { subscriptionInvoiceKey: input.settlementKey },
-          });
+    const operationKey = `subscription-wallet-settlement:${input.tenantId}:${input.restaurantId}:${input.settlementKey}`;
+    const requestHash = FinancialLedgerRepository.createCanonicalRequestHash({
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      subscriptionId: input.subscriptionId,
+      settlementKey: input.settlementKey,
+      invoiceNumber: input.invoiceNumber,
+      amountDue: amountDue.toFixed(2),
+      currency: input.currency,
+      periodFrom: input.periodFrom.toISOString(),
+      periodTo: input.periodTo.toISOString(),
+    });
 
-          if (existing) {
-            return {
-              appliedAmount: existing.amount.abs().toDecimalPlaces(2),
-              balanceAfter: existing.balanceAfter,
-              walletAccountId: existing.walletAccountId,
-              walletTransactionId: existing.id,
-            };
-          }
-
-          const wallet = await tx.restaurantWalletAccount.findUnique({
-            where: { restaurantId: input.restaurantId },
-          });
-
+    return this.financialLedgerRepository.withFinancialLedgerTransaction(
+      [
+        {
+          tenantId: input.tenantId,
+          restaurantId: input.restaurantId,
+          accountKind: 'RESTAURANT_WALLET',
+        },
+      ],
+      async (tx) => {
+        const existing = await tx.restaurantWalletTransaction.findUnique({
+          where: { subscriptionInvoiceKey: input.settlementKey },
+        });
+        const wallet = await tx.restaurantWalletAccount.findUnique({
+          where: { restaurantId: input.restaurantId },
+        });
+        if (
+          existing &&
+          existing.idempotencyKey !==
+            FinancialLedgerRepository.createOperationKey(operationKey)
+        ) {
           if (
-            !wallet ||
-            wallet.currency !== input.currency ||
-            wallet.balance.lessThanOrEqualTo(0)
+            existing.tenantId !== input.tenantId ||
+            existing.restaurantId !== input.restaurantId ||
+            existing.currency !== input.currency
           ) {
-            return {
-              ...this.emptyWalletSettlement(),
-              balanceAfter: wallet?.balance ?? null,
-              walletAccountId: wallet?.id ?? null,
-            };
+            throw new ConflictException(
+              'Subscription settlement key conflicts with another restaurant wallet operation',
+            );
           }
-
-          const appliedAmount = Prisma.Decimal.min(
-            wallet.balance.toDecimalPlaces(2),
-            amountDue,
-          ).toDecimalPlaces(2);
-          const balanceAfter = wallet.balance
-            .minus(appliedAmount)
-            .toDecimalPlaces(2);
-          const updated = await tx.restaurantWalletAccount.updateMany({
-            where: {
-              id: wallet.id,
-              balance: wallet.balance,
-              currency: input.currency,
-            },
-            data: { balance: { decrement: appliedAmount } },
-          });
-
-          if (updated.count !== 1) {
-            throw new WalletSettlementConflictError();
-          }
-
-          const walletTransaction = await tx.restaurantWalletTransaction.create(
-            {
-              data: {
-                walletAccountId: wallet.id,
+          return {
+            appliedAmount: existing.amount.abs().toDecimalPlaces(2),
+            balanceAfter: existing.balanceAfter,
+            walletAccountId: existing.walletAccountId,
+            walletTransactionId: existing.id,
+          };
+        }
+        if (existing) {
+          const replay =
+            await this.financialLedgerRepository.applyRestaurantWalletDelta(
+              {
                 tenantId: input.tenantId,
                 restaurantId: input.restaurantId,
-                subscriptionInvoiceKey: input.settlementKey,
-                type: RestaurantWalletTransactionType.ADJUSTMENT,
-                amount: appliedAmount.negated(),
-                balanceAfter,
+                operationKey,
+                requestHash,
+                allowNegative: false,
+                source: 'PACKAGE_PLAN_SUBSCRIPTION_SETTLEMENT',
+                delta: existing.amount,
                 currency: input.currency,
-                note: 'FeastFlow subscription invoice settled from restaurant wallet',
-                metadata: {
-                  target: 'TENANT_SUBSCRIPTION',
-                  subscriptionId: input.subscriptionId,
-                  invoiceNumber: input.invoiceNumber,
-                  periodFrom: input.periodFrom.toISOString(),
-                  periodTo: input.periodTo.toISOString(),
-                } as Prisma.InputJsonValue,
+                type: RestaurantWalletTransactionType.ADJUSTMENT,
+                subscriptionInvoiceKey: input.settlementKey,
                 createdBy: input.createdBy,
               },
-            },
-          );
-
+              tx,
+            );
           return {
-            appliedAmount,
-            balanceAfter,
-            walletAccountId: wallet.id,
-            walletTransactionId: walletTransaction.id,
+            appliedAmount: replay.transaction.amount.abs().toDecimalPlaces(2),
+            balanceAfter: replay.transaction.balanceAfter,
+            walletAccountId: replay.transaction.walletAccountId,
+            walletTransactionId: replay.transaction.id,
           };
-        });
-      } catch (error) {
-        if (this.isPrismaError(error, 'P2002')) {
-          const existing =
-            await this.prisma.restaurantWalletTransaction.findUnique({
-              where: { subscriptionInvoiceKey: input.settlementKey },
-            });
-          if (existing) {
-            return {
-              appliedAmount: existing.amount.abs().toDecimalPlaces(2),
-              balanceAfter: existing.balanceAfter,
-              walletAccountId: existing.walletAccountId,
-              walletTransactionId: existing.id,
-            };
-          }
         }
-
         if (
-          error instanceof WalletSettlementConflictError ||
-          this.isPrismaError(error, 'P2034')
+          !wallet ||
+          wallet.tenantId !== input.tenantId ||
+          wallet.currency !== input.currency ||
+          wallet.balance.lessThanOrEqualTo(0)
         ) {
-          continue;
+          return {
+            ...this.emptyWalletSettlement(),
+            balanceAfter: wallet?.balance ?? null,
+            walletAccountId: wallet?.id ?? null,
+          };
         }
-
-        throw error;
-      }
-    }
-
-    throw new WalletSettlementConflictError(
-      'Restaurant wallet balance changed during subscription settlement',
+        const appliedAmount = Prisma.Decimal.min(
+          wallet.balance.toDecimalPlaces(2),
+          amountDue,
+        ).toDecimalPlaces(2);
+        const result =
+          await this.financialLedgerRepository.applyRestaurantWalletDelta(
+            {
+              tenantId: input.tenantId,
+              restaurantId: input.restaurantId,
+              operationKey,
+              requestHash,
+              allowNegative: false,
+              source: 'PACKAGE_PLAN_SUBSCRIPTION_SETTLEMENT',
+              delta: appliedAmount.negated(),
+              currency: input.currency,
+              type: RestaurantWalletTransactionType.ADJUSTMENT,
+              subscriptionInvoiceKey: input.settlementKey,
+              note: 'FeastFlow subscription invoice settled from restaurant wallet',
+              metadata: {
+                target: 'TENANT_SUBSCRIPTION',
+                subscriptionId: input.subscriptionId,
+                invoiceNumber: input.invoiceNumber,
+                periodFrom: input.periodFrom.toISOString(),
+                periodTo: input.periodTo.toISOString(),
+              },
+              createdBy: input.createdBy,
+            },
+            tx,
+          );
+        return {
+          appliedAmount,
+          balanceAfter: result.transaction.balanceAfter,
+          walletAccountId: result.transaction.walletAccountId,
+          walletTransactionId: result.transaction.id,
+        };
+      },
     );
   }
 

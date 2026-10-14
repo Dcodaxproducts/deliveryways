@@ -12,6 +12,7 @@ import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
 import { PaypalOrdersService } from './paypal-orders.service';
 import { OrdersModule } from '../orders/orders.module';
+import { FinancialLedgerModule } from '../financial-ledger';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { OrdersModule } from '../orders/orders.module';
     MailerModule,
     PackagePlansModule,
     OrdersModule,
+    FinancialLedgerModule,
   ],
   controllers: [PaymentsController],
   providers: [

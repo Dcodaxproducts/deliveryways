@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -19,7 +20,7 @@ import {
   RestaurantWalletTransactionType,
   SubscriptionStatus,
 } from '@prisma/client';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
@@ -77,6 +78,7 @@ import {
   type PaypalOrderCredentials,
 } from './paypal-orders.service';
 import { OrdersService } from '../orders/orders.service';
+import { FinancialLedgerRepository } from '../financial-ledger';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -173,6 +175,8 @@ export class PaymentsService {
     private readonly paypalOrdersService?: PaypalOrdersService,
     @Optional() private readonly configService?: ConfigService,
     @Optional() private readonly ordersService?: OrdersService,
+    @Optional()
+    private readonly financialLedgerRepository?: FinancialLedgerRepository,
   ) {}
 
   async createSubscriptionAttempt(
@@ -3117,152 +3121,215 @@ export class PaymentsService {
 
   async refund(user: AuthUserContext, id: string, dto: RefundPaymentDto) {
     const payment = await this.paymentsRepository.findById(id);
-
     if (!payment) {
       throw new NotFoundException('Payment transaction not found');
     }
-
     if (!payment.order || !payment.orderId) {
       throw new BadRequestException(
         'Wallet top-up transactions cannot be refunded here',
       );
     }
-
     const orderId = payment.orderId;
-
     await this.assertAdminPaymentAccess(user, payment.order.restaurantId);
-
     if (payment.type !== PaymentTransactionType.CHARGE) {
       throw new BadRequestException('Only charge transactions can be refunded');
     }
-
-    if (payment.status !== PaymentStatus.PAID) {
+    if (
+      payment.status !== PaymentStatus.PAID &&
+      payment.status !== PaymentStatus.REFUNDED
+    ) {
       throw new BadRequestException('Only paid transactions can be refunded');
     }
 
     const refundAmount = dto.amount
-      ? new Prisma.Decimal(dto.amount)
-      : payment.amount;
-
+      ? new Prisma.Decimal(dto.amount).toDecimalPlaces(2)
+      : payment.amount.toDecimalPlaces(2);
+    const currency = (dto.currency ?? payment.currency).toUpperCase();
+    if (currency !== payment.currency.toUpperCase()) {
+      throw new BadRequestException(
+        'Refund currency must match the source charge',
+      );
+    }
     if (refundAmount.greaterThan(payment.amount)) {
       throw new BadRequestException(
         'Refund amount cannot exceed charge amount',
       );
     }
+    const operationKey = FinancialLedgerRepository.createOperationKey(
+      `payment-refund:${payment.tenantId}:${payment.restaurantId}:${payment.id}:${dto.idempotencyKey}`,
+    );
+    const requestHash = FinancialLedgerRepository.createCanonicalRequestHash({
+      sourcePaymentTransactionId: payment.id,
+      tenantId: payment.tenantId,
+      restaurantId: payment.restaurantId,
+      amount: refundAmount.toFixed(2),
+      currency,
+      paymentMethod: payment.paymentMethod,
+      providerRef: dto.providerRef,
+      note: dto.note,
+    });
 
-    const refundedSoFar =
-      await this.paymentsRepository.sumSuccessfulRefunds(orderId);
-
-    if (refundedSoFar.plus(refundAmount).greaterThan(payment.amount)) {
-      throw new BadRequestException(
-        'Refund amount exceeds remaining refundable amount',
+    const reservation = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${payment.id} FOR UPDATE`,
       );
-    }
-
-    const currency = dto.currency ?? payment.currency;
-    let paypalRefund:
-      | { id: string; status: string; payload: unknown; captureId: string }
-      | undefined;
-
-    if (payment.paymentMethod === PaymentMethod.STRIPE && payment.providerRef) {
-      const stripeCredentials =
-        await this.resolveGlobalStripeCheckoutCredentials();
-      await this.stripePaymentsService.refundPaymentIntent(
-        payment.providerRef,
-        Number(refundAmount),
-        stripeCredentials,
-      );
-    }
-
-    if (payment.paymentMethod === PaymentMethod.PAYPAL) {
-      if (!this.paypalOrdersService) {
-        throw new ServiceUnavailableException('PayPal checkout is unavailable');
+      const existing = await tx.paymentTransaction.findUnique({
+        where: { idempotencyKey: operationKey },
+      });
+      if (existing) {
+        if (
+          existing.sourcePaymentTransactionId !== payment.id ||
+          existing.requestHash !== requestHash ||
+          existing.type !== PaymentTransactionType.REFUND
+        ) {
+          throw new ConflictException(
+            'Refund idempotency key conflicts with an existing operation',
+          );
+        }
+        return existing;
       }
-      const captureId = this.readPaypalCaptureId(payment.providerData);
-      if (!captureId) {
+      if (payment.status !== PaymentStatus.PAID) {
+        throw new BadRequestException('Only paid transactions can be refunded');
+      }
+      const reserved = await tx.paymentTransaction.aggregate({
+        where: {
+          sourcePaymentTransactionId: payment.id,
+          type: PaymentTransactionType.REFUND,
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.REFUNDED] },
+        },
+        _sum: { amount: true },
+      });
+      const reservedAmount = reserved._sum.amount ?? new Prisma.Decimal(0);
+      if (reservedAmount.plus(refundAmount).greaterThan(payment.amount)) {
         throw new BadRequestException(
-          'PayPal capture reference is missing from this payment',
+          'Refund amount exceeds remaining refundable amount',
         );
       }
-      const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
-      const idempotencyKey = createHash('sha256')
-        .update(
-          `${payment.id}:${refundedSoFar.plus(refundAmount).toFixed(2)}:${currency}`,
-        )
-        .digest('hex')
-        .slice(0, 32);
-      const providerRefund = await this.paypalOrdersService.refundCapture({
-        captureId,
-        amount: Number(refundAmount),
-        currency,
-        idempotencyKey,
-        credentials,
-      });
-      paypalRefund = { ...providerRefund, captureId };
-    }
-
-    const data = await this.prisma.$transaction(async (tx) => {
-      const refundTransaction = await this.paymentsRepository.create(
-        {
-          order: { connect: { id: orderId } },
-          tenant: { connect: { id: payment.tenantId } },
-          restaurant: { connect: { id: payment.restaurantId } },
-          branch: { connect: { id: payment.branchId } },
-          paymentMethod: payment.paymentMethod,
-          type: PaymentTransactionType.REFUND,
-          status: PaymentStatus.REFUNDED,
-          amount: refundAmount,
-          currency,
-          providerRef:
-            paypalRefund?.id ?? dto.providerRef ?? payment.providerRef,
-          providerData: paypalRefund
-            ? ({
-                provider: 'paypal',
-                captureId: paypalRefund.captureId,
-                refund: paypalRefund.payload,
-              } as Prisma.InputJsonValue)
-            : (dto.providerData as Prisma.InputJsonValue),
-          note: dto.note,
-          processedAt: new Date(),
-        },
-        tx,
-      );
-
-      await this.debitRestaurantWalletForRefund(
-        {
-          sourcePaymentTransactionId: payment.id,
-          refundTransactionId: refundTransaction.id,
+      return tx.paymentTransaction.create({
+        data: {
+          orderId: payment.orderId,
           tenantId: payment.tenantId,
           restaurantId: payment.restaurantId,
           branchId: payment.branchId,
-          orderId,
           paymentMethod: payment.paymentMethod,
+          type: PaymentTransactionType.REFUND,
+          status: PaymentStatus.PENDING,
           amount: refundAmount,
           currency,
-          actorId: user.uid,
+          providerRef: dto.providerRef,
+          providerData: dto.providerData as Prisma.InputJsonValue,
+          note: dto.note,
+          sourcePaymentTransactionId: payment.id,
+          idempotencyKey: operationKey,
+          requestHash,
         },
-        tx,
+      });
+    });
+
+    let providerRef = reservation.providerRef;
+    let providerData: Prisma.InputJsonValue | undefined =
+      reservation.providerData && reservation.status === PaymentStatus.REFUNDED
+        ? (reservation.providerData as Prisma.InputJsonValue)
+        : (dto.providerData as Prisma.InputJsonValue);
+    const providerIdempotencyKey = `refund:${reservation.id}`;
+    if (reservation.status !== PaymentStatus.REFUNDED) {
+      if (
+        payment.paymentMethod === PaymentMethod.STRIPE &&
+        payment.providerRef
+      ) {
+        const credentials = await this.resolveGlobalStripeCheckoutCredentials();
+        const stripeRefund =
+          await this.stripePaymentsService.refundPaymentIntent(
+            payment.providerRef,
+            Number(refundAmount),
+            credentials,
+            providerIdempotencyKey,
+          );
+        providerRef = stripeRefund.id;
+        providerData = stripeRefund as unknown as Prisma.InputJsonValue;
+      }
+      if (payment.paymentMethod === PaymentMethod.PAYPAL) {
+        if (!this.paypalOrdersService) {
+          throw new ServiceUnavailableException(
+            'PayPal checkout is unavailable',
+          );
+        }
+        const captureId = this.readPaypalCaptureId(payment.providerData);
+        if (!captureId) {
+          throw new BadRequestException(
+            'PayPal capture reference is missing from this payment',
+          );
+        }
+        const credentials = await this.resolveGlobalPaypalCheckoutCredentials();
+        const paypalRefund = await this.paypalOrdersService.refundCapture({
+          captureId,
+          amount: Number(refundAmount),
+          currency,
+          idempotencyKey: providerIdempotencyKey,
+          credentials,
+        });
+        providerRef = paypalRefund.id;
+        providerData = {
+          provider: 'paypal',
+          captureId,
+          refund: paypalRefund.payload as Prisma.InputJsonValue,
+        };
+      }
+    }
+
+    const finalized = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "payment_transactions" WHERE "id" = ${payment.id} FOR UPDATE`,
       );
-
-      const updatedStatus = refundedSoFar
-        .plus(refundAmount)
-        .equals(payment.amount)
-        ? PaymentStatus.REFUNDED
-        : PaymentStatus.PAID;
-
-      await this.paymentsRepository.updateOrderPaymentStatus(
-        orderId,
-        updatedStatus,
-        tx,
-      );
-
-      if (updatedStatus === PaymentStatus.REFUNDED) {
-        await this.paymentsRepository.updateStatus(
-          payment.id,
+      const refundTransaction = await tx.paymentTransaction.findUniqueOrThrow({
+        where: { id: reservation.id },
+      });
+      if (refundTransaction.status !== PaymentStatus.REFUNDED) {
+        await this.debitRestaurantWalletForRefund(
           {
+            sourcePaymentTransactionId: payment.id,
+            refundTransactionId: refundTransaction.id,
+            tenantId: payment.tenantId,
+            restaurantId: payment.restaurantId,
+            branchId: payment.branchId,
+            orderId,
+            paymentMethod: payment.paymentMethod,
+            amount: refundAmount,
+            currency,
+            actorId: user.uid,
+          },
+          tx,
+        );
+        await tx.paymentTransaction.update({
+          where: { id: refundTransaction.id },
+          data: {
             status: PaymentStatus.REFUNDED,
+            providerRef,
+            providerData,
             processedAt: new Date(),
           },
+        });
+      }
+      const total = await tx.paymentTransaction.aggregate({
+        where: {
+          sourcePaymentTransactionId: payment.id,
+          type: PaymentTransactionType.REFUND,
+          status: PaymentStatus.REFUNDED,
+        },
+        _sum: { amount: true },
+      });
+      const fullyRefunded = (total._sum.amount ?? new Prisma.Decimal(0)).equals(
+        payment.amount,
+      );
+      if (fullyRefunded) {
+        await this.paymentsRepository.updateStatus(
+          payment.id,
+          { status: PaymentStatus.REFUNDED, processedAt: new Date() },
+          tx,
+        );
+        await this.paymentsRepository.updateOrderPaymentStatus(
+          orderId,
+          PaymentStatus.REFUNDED,
           tx,
         );
         await this.paymentsRepository.updateOrderState(
@@ -3274,24 +3341,32 @@ export class PaymentsService {
           },
           tx,
         );
+      } else {
+        await this.paymentsRepository.updateOrderPaymentStatus(
+          orderId,
+          PaymentStatus.PAID,
+          tx,
+        );
       }
-
-      return refundTransaction;
+      return {
+        data: await tx.paymentTransaction.findUniqueOrThrow({
+          where: { id: reservation.id },
+        }),
+        fullyRefunded,
+      };
     });
 
-    if (data.status === PaymentStatus.REFUNDED) {
+    if (finalized.fullyRefunded) {
       await this.loyaltyWalletService!.restoreOrderBenefits(
         orderId,
         'REFUND',
         user.uid,
       );
     }
-    await this.notificationsService.notifyPaymentStatusChanged(data.id);
-
-    return {
-      data,
-      message: 'Payment refunded successfully',
-    };
+    await this.notificationsService.notifyPaymentStatusChanged(
+      finalized.data.id,
+    );
+    return { data: finalized.data, message: 'Payment refunded successfully' };
   }
 
   private readPaypalCaptureId(
@@ -5178,46 +5253,31 @@ export class PaymentsService {
       return;
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.restaurantWalletAccount.upsert({
-        where: { restaurantId: payment.restaurantId },
-        create: {
-          tenantId: payment.tenantId,
-          restaurantId: payment.restaurantId,
-          currency: payment.currency,
-        },
-        update: {},
-      });
-      const existing = await tx.restaurantWalletTransaction.findUnique({
-        where: { paymentTransactionId: payment.id },
-        select: { id: true },
-      });
-
-      if (existing) {
-        return;
-      }
-
-      const nextBalance = wallet.balance.plus(payment.amount);
-      await tx.restaurantWalletAccount.update({
-        where: { id: wallet.id },
-        data: { balance: nextBalance },
-      });
-      await tx.restaurantWalletTransaction.create({
-        data: {
-          walletAccountId: wallet.id,
-          tenantId: payment.tenantId,
-          restaurantId: payment.restaurantId,
-          branchId: payment.branchId,
-          orderId: payment.orderId,
-          paymentTransactionId: payment.id,
-          type: RestaurantWalletTransactionType.ORDER_CREDIT,
-          amount: payment.amount,
-          balanceAfter: nextBalance,
-          currency: payment.currency,
-          note: 'Paid platform-collected order credited to restaurant wallet',
-          createdBy: actorId,
-        },
-      });
+    const requestHash = FinancialLedgerRepository.createCanonicalRequestHash({
+      tenantId: payment.tenantId,
+      restaurantId: payment.restaurantId,
+      paymentTransactionId: payment.id,
+      orderId: payment.orderId,
+      amount: payment.amount.toFixed(2),
+      currency: payment.currency,
+      paymentMethod: payment.paymentMethod,
+    });
+    await this.financialLedgerRepository!.applyRestaurantWalletDelta({
+      tenantId: payment.tenantId,
+      restaurantId: payment.restaurantId,
+      branchId: payment.branchId,
+      orderId: payment.orderId,
+      paymentTransactionId: payment.id,
+      operationKey: `restaurant-payment-credit:${payment.tenantId}:${payment.restaurantId}:${payment.id}`,
+      requestHash,
+      allowNegative: false,
+      source: 'PLATFORM_COLLECTED_ORDER_PAYMENT',
+      delta: payment.amount,
+      currency: payment.currency,
+      type: RestaurantWalletTransactionType.ORDER_CREDIT,
+      note: 'Paid platform-collected order credited to restaurant wallet',
+      metadata: { paymentMethod: payment.paymentMethod },
+      createdBy: actorId,
     });
   }
 
@@ -5252,53 +5312,42 @@ export class PaymentsService {
       where: { paymentTransactionId: input.sourcePaymentTransactionId },
       select: { id: true },
     });
-
     if (!sourceCredit) {
       return;
     }
 
-    const wallet = await tx.restaurantWalletAccount.upsert({
-      where: { restaurantId: input.restaurantId },
-      create: {
-        tenantId: input.tenantId,
-        restaurantId: input.restaurantId,
-        currency: input.currency,
-      },
-      update: {},
+    const requestHash = FinancialLedgerRepository.createCanonicalRequestHash({
+      tenantId: input.tenantId,
+      restaurantId: input.restaurantId,
+      sourcePaymentTransactionId: input.sourcePaymentTransactionId,
+      refundTransactionId: input.refundTransactionId,
+      amount: input.amount.toFixed(2),
+      currency: input.currency,
+      paymentMethod: input.paymentMethod,
     });
-    const existing = await tx.restaurantWalletTransaction.findUnique({
-      where: { paymentTransactionId: input.refundTransactionId },
-      select: { id: true },
-    });
-
-    if (existing) {
-      return;
-    }
-
-    const nextBalance = wallet.balance.minus(input.amount);
-    await tx.restaurantWalletAccount.update({
-      where: { id: wallet.id },
-      data: { balance: nextBalance },
-    });
-    await tx.restaurantWalletTransaction.create({
-      data: {
-        walletAccountId: wallet.id,
+    await this.financialLedgerRepository!.applyRestaurantWalletDelta(
+      {
         tenantId: input.tenantId,
         restaurantId: input.restaurantId,
         branchId: input.branchId,
         orderId: input.orderId,
         paymentTransactionId: input.refundTransactionId,
-        type: RestaurantWalletTransactionType.REFUND_DEBIT,
-        amount: input.amount,
-        balanceAfter: nextBalance,
+        operationKey: `restaurant-refund-debit:${input.tenantId}:${input.restaurantId}:${input.refundTransactionId}`,
+        requestHash,
+        allowNegative: false,
+        source: 'ORDER_PAYMENT_REFUND',
+        delta: input.amount.negated(),
         currency: input.currency,
+        type: RestaurantWalletTransactionType.REFUND_DEBIT,
         note: 'Refunded platform-collected order debited from restaurant wallet',
         metadata: {
           paymentMethod: input.paymentMethod,
+          sourcePaymentTransactionId: input.sourcePaymentTransactionId,
         },
         createdBy: input.actorId,
       },
-    });
+      tx,
+    );
   }
 
   private async resolveRestaurantId(

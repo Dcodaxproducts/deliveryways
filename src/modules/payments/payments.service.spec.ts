@@ -119,7 +119,32 @@ describe('PaymentsService', () => {
         ),
     };
 
+    let refundRecord: Record<string, unknown> | null = null;
     const transactionTx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'payment-1' }]),
+      paymentTransaction: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(() => Promise.resolve(refundRecord)),
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: { amount: new Prisma.Decimal(0) },
+        }),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            refundRecord = { id: 'refund-transaction-1', ...data };
+            return Promise.resolve(refundRecord);
+          }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockImplementation(() => Promise.resolve(refundRecord)),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            refundRecord = { ...refundRecord, ...data };
+            return Promise.resolve(refundRecord);
+          }),
+      },
       order: {
         update: jest.fn(),
       },
@@ -209,7 +234,9 @@ describe('PaymentsService', () => {
         status: 'requires_payment_method',
       }),
       cancelPaymentIntent: jest.fn(),
-      refundPaymentIntent: jest.fn(),
+      refundPaymentIntent: jest
+        .fn()
+        .mockResolvedValue({ id: 'stripe-refund-1' }),
     };
     const paypalPayoutsService = {
       createPayout: jest.fn(),
@@ -303,6 +330,13 @@ describe('PaymentsService', () => {
       }),
     };
 
+    const financialLedgerRepository = {
+      applyRestaurantWalletDelta: jest.fn().mockResolvedValue({
+        transaction: { id: 'restaurant-wallet-transaction-1' },
+        replayed: false,
+      }),
+    };
+
     const service = new PaymentsService(
       paymentsRepository as never,
       prisma as never,
@@ -316,6 +350,8 @@ describe('PaymentsService', () => {
       packagePlansService as never,
       paypalOrdersService as never,
       configService as never,
+      undefined,
+      financialLedgerRepository as never,
     );
 
     return {
@@ -333,6 +369,7 @@ describe('PaymentsService', () => {
       packagePlansService,
       configService,
       transactionTx,
+      financialLedgerRepository,
     };
   };
 
@@ -1436,6 +1473,7 @@ describe('PaymentsService', () => {
       paymentsRepository,
       stripePaymentsService,
       transactionTx,
+      financialLedgerRepository,
     } = makeService();
 
     paymentsRepository.findById.mockResolvedValue({
@@ -1482,30 +1520,26 @@ describe('PaymentsService', () => {
         role: UserRoleEnum.SUPER_ADMIN,
       } as never,
       'payment-1',
-      { amount: 10 },
+      { amount: 10, idempotencyKey: 'refund-test-10' },
     );
 
     expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledWith(
       'pi_123',
       10,
-      expect.objectContaining({ secretKey: 'sk_test_platform' }),
+      expect.any(Object),
+      'refund:refund-transaction-1',
     );
-    expect(transactionTx.restaurantWalletAccount.update).toHaveBeenCalledWith({
-      where: { id: 'wallet-1' },
-      data: { balance: new Prisma.Decimal(13) },
-    });
     expect(
-      transactionTx.restaurantWalletTransaction.create,
-    ).toHaveBeenCalledWith({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data: expect.objectContaining({
-        paymentTransactionId: 'refund-1',
+      financialLedgerRepository.applyRestaurantWalletDelta,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentTransactionId: 'refund-transaction-1',
         type: RestaurantWalletTransactionType.REFUND_DEBIT,
-        amount: new Prisma.Decimal(10),
-        balanceAfter: new Prisma.Decimal(13),
+        delta: new Prisma.Decimal(-10),
         currency: 'EUR',
       }),
-    });
+      transactionTx,
+    );
   });
 
   it('completes a PayPal provider refund before recording it locally', async () => {
@@ -1571,15 +1605,14 @@ describe('PaymentsService', () => {
         role: UserRoleEnum.SUPER_ADMIN,
       } as never,
       'payment-paypal-1',
-      { amount: 10 },
+      { amount: 10, idempotencyKey: 'refund-test-10' },
     );
 
     expect(paypalOrdersService.refundCapture).toHaveBeenCalledWith({
       captureId: 'paypal-capture-1',
       amount: 10,
       currency: 'EUR',
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      idempotencyKey: expect.stringMatching(/^[a-f0-9]{32}$/),
+      idempotencyKey: 'refund:refund-transaction-1',
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       credentials: expect.objectContaining({
         clientId: 'paypal-platform-client',
@@ -1587,17 +1620,14 @@ describe('PaymentsService', () => {
       }),
     });
     expect(stripePaymentsService.refundPaymentIntent).not.toHaveBeenCalled();
-    expect(paymentsRepository.create).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(transactionTx.paymentTransaction.update).toHaveBeenCalledWith({
+      where: { id: 'refund-transaction-1' },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: expect.objectContaining({
         providerRef: 'paypal-refund-1',
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        providerData: expect.objectContaining({
-          provider: 'paypal',
-          captureId: 'paypal-capture-1',
-        }),
+        status: PaymentStatus.REFUNDED,
       }),
-      transactionTx,
-    );
+    });
   });
 
   it('keeps local payment state unchanged when PayPal rejects a refund', async () => {
@@ -1637,12 +1667,72 @@ describe('PaymentsService', () => {
           role: UserRoleEnum.SUPER_ADMIN,
         } as never,
         'payment-paypal-1',
-        { amount: 10 },
+        { amount: 10, idempotencyKey: 'refund-test-10' },
       ),
     ).rejects.toThrow('PayPal refund failed');
 
     expect(paymentsRepository.create).not.toHaveBeenCalled();
     expect(transactionTx.order.update).not.toHaveBeenCalled();
+  });
+
+  it('reuses the durable provider idempotency key after local refund finalization fails', async () => {
+    const {
+      service,
+      paymentsRepository,
+      stripePaymentsService,
+      transactionTx,
+      financialLedgerRepository,
+    } = makeService();
+    paymentsRepository.findById.mockResolvedValue({
+      id: 'payment-retry-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      orderId: 'order-1',
+      paymentMethod: PaymentMethod.STRIPE,
+      type: PaymentTransactionType.CHARGE,
+      status: PaymentStatus.PAID,
+      amount: new Prisma.Decimal(23),
+      currency: 'EUR',
+      providerRef: 'pi_retry',
+      order: {
+        id: 'order-1',
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+      },
+    });
+    transactionTx.restaurantWalletTransaction.findUnique.mockResolvedValue({
+      id: 'wallet-credit-1',
+    });
+    financialLedgerRepository.applyRestaurantWalletDelta
+      .mockRejectedValueOnce(new Error('local ledger unavailable'))
+      .mockResolvedValueOnce({
+        transaction: { id: 'restaurant-wallet-refund-1' },
+        replayed: false,
+      });
+    const request = { amount: 10, idempotencyKey: 'refund-retry-1' };
+
+    await expect(
+      service.refund(
+        { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'payment-retry-1',
+        request,
+      ),
+    ).rejects.toThrow('local ledger unavailable');
+    await service.refund(
+      { uid: 'super-admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'payment-retry-1',
+      request,
+    );
+
+    expect(stripePaymentsService.refundPaymentIntent).toHaveBeenCalledTimes(2);
+    const refundCalls = stripePaymentsService.refundPaymentIntent.mock
+      .calls as unknown as Array<[string, number, unknown, string]>;
+    const firstKey = refundCalls[0]?.[3];
+    const retryKey = refundCalls[1]?.[3];
+    expect(firstKey).toBe('refund:refund-transaction-1');
+    expect(retryKey).toBe(firstKey);
+    expect(transactionTx.paymentTransaction.create).toHaveBeenCalledTimes(1);
   });
 
   it('does not debit the restaurant wallet for cash order refunds', async () => {
@@ -1680,7 +1770,7 @@ describe('PaymentsService', () => {
         role: UserRoleEnum.SUPER_ADMIN,
       } as never,
       'payment-cash-1',
-      { amount: 10 },
+      { amount: 10, idempotencyKey: 'refund-test-10' },
     );
 
     expect(transactionTx.restaurantWalletAccount.upsert).not.toHaveBeenCalled();

@@ -123,15 +123,19 @@ export class StripePaymentsService {
     paymentIntentId: string,
     amount?: number,
     credentials?: StripeCheckoutCredentials,
+    idempotencyKey?: string,
   ) {
     const stripe = this.requireStripe(credentials);
 
-    return stripe.refunds.create({
-      payment_intent: paymentIntentId,
-      ...(amount !== undefined
-        ? { amount: this.toMinorUnitAmount(amount) }
-        : {}),
-    });
+    return stripe.refunds.create(
+      {
+        payment_intent: paymentIntentId,
+        ...(amount !== undefined
+          ? { amount: this.toMinorUnitAmount(amount) }
+          : {}),
+      },
+      idempotencyKey ? { idempotencyKey } : {},
+    );
   }
 
   async createTransfer(

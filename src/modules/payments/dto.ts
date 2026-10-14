@@ -184,6 +184,16 @@ export class AdminUpdatePaymentStatusDto extends UpdatePaymentStatusDto {
 }
 
 export class RefundPaymentDto {
+  @ApiProperty({
+    description:
+      'Stable caller-generated key used to replay this refund safely',
+    maxLength: 200,
+  })
+  @IsDefined()
+  @IsString()
+  @MaxLength(200)
+  idempotencyKey!: string;
+
   @ApiPropertyOptional({ description: 'Defaults to the source charge amount' })
   @IsOptional()
   @Transform(({ value }) =>
