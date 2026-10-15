@@ -75,7 +75,7 @@ describe('AdminReportsRepository', () => {
       groupBy: jest.fn().mockResolvedValue([]),
       findMany: jest.fn().mockResolvedValue([]),
     };
-    const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
+    const orderItem = { groupBy: jest.fn().mockResolvedValue([]) };
     const restaurantPayoutRequest = {
       findMany: jest.fn().mockResolvedValue([]),
     };
@@ -126,22 +126,22 @@ describe('AdminReportsRepository', () => {
     const firstAggregate = aggregateCalls[0]?.[0];
     const secondAggregate = aggregateCalls[1]?.[0];
 
-    expect(firstAggregate?.where).toEqual(expectedWhere);
     const { status: _excludedStatus, ...sharedWhere } = expectedWhere;
     void _excludedStatus;
-    expect(secondAggregate?.where).toMatchObject(sharedWhere);
-    expect(secondAggregate?.where?.status?.in).toEqual(
-      expect.arrayContaining([OrderStatus.CONFIRMED, OrderStatus.DELIVERED]),
+    expect(firstAggregate?.where).toMatchObject(sharedWhere);
+    expect(firstAggregate?.where?.status?.in).toEqual(
+      expect.arrayContaining([OrderStatus.PLACED, OrderStatus.DELIVERED]),
     );
-    const reportableWhere = {
-      ...sharedWhere,
-      status: secondAggregate?.where?.status,
-    };
+    expect(secondAggregate?.where).toEqual(firstAggregate?.where);
+    const reportableWhere = firstAggregate?.where;
     expect(order.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: reportableWhere }),
     );
-    expect(orderItem.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { order: reportableWhere } }),
+    expect(orderItem.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { order: reportableWhere },
+        take: 10,
+      }),
     );
     const payoutCalls = restaurantPayoutRequest.findMany.mock
       .calls as unknown as Array<[{ where: { createdAt: unknown } }]>;
@@ -162,52 +162,58 @@ describe('AdminReportsRepository', () => {
             _sum: { totalAmount: 50 },
             _avg: { totalAmount: 25 },
           }),
-        groupBy: jest.fn().mockResolvedValue([
-          { paymentMethod: PaymentMethod.COD, _sum: { totalAmount: 30 } },
-          { paymentMethod: PaymentMethod.STRIPE, _sum: { totalAmount: 20 } },
-        ]),
-        findMany: jest
+        groupBy: jest
           .fn()
           .mockResolvedValueOnce([
             {
-              status: OrderStatus.CONFIRMED,
-              orderType: 'DELIVERY',
-              paymentStatus: PaymentStatus.PENDING,
-            },
-            {
-              status: OrderStatus.DELIVERED,
-              orderType: 'DELIVERY',
-              paymentStatus: PaymentStatus.PAID,
-            },
-          ])
-          .mockResolvedValueOnce([
-            { paymentMethod: PaymentMethod.COD },
-            { paymentMethod: PaymentMethod.STRIPE },
-          ])
-          .mockResolvedValueOnce([
-            {
-              id: 'order-cash',
-              status: OrderStatus.CONFIRMED,
-              orderType: 'DELIVERY',
-              sourceGroupOrder: null,
-              createdAt: new Date('2026-08-28T12:00:00.000Z'),
               paymentMethod: PaymentMethod.COD,
-              paymentStatus: PaymentStatus.PENDING,
-              totalAmount: 30,
+              _count: { _all: 1 },
+              _sum: { totalAmount: 30 },
             },
             {
-              id: 'order-online',
+              paymentMethod: PaymentMethod.STRIPE,
+              _count: { _all: 1 },
+              _sum: { totalAmount: 20 },
+            },
+          ])
+          .mockResolvedValueOnce([
+            {
+              status: OrderStatus.CONFIRMED,
+              orderType: 'DELIVERY',
+              paymentStatus: PaymentStatus.PENDING,
+              _count: { _all: 1 },
+            },
+            {
               status: OrderStatus.DELIVERED,
               orderType: 'DELIVERY',
-              sourceGroupOrder: { id: 'group-1' },
-              createdAt: new Date('2026-08-28T12:15:00.000Z'),
-              paymentMethod: PaymentMethod.STRIPE,
               paymentStatus: PaymentStatus.PAID,
-              totalAmount: 20,
+              _count: { _all: 1 },
             },
           ]),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'order-cash',
+            status: OrderStatus.CONFIRMED,
+            orderType: 'DELIVERY',
+            sourceGroupOrder: null,
+            createdAt: new Date('2026-08-28T12:00:00.000Z'),
+            paymentMethod: PaymentMethod.COD,
+            paymentStatus: PaymentStatus.PENDING,
+            totalAmount: 30,
+          },
+          {
+            id: 'order-online',
+            status: OrderStatus.DELIVERED,
+            orderType: 'DELIVERY',
+            sourceGroupOrder: { id: 'group-1' },
+            createdAt: new Date('2026-08-28T12:15:00.000Z'),
+            paymentMethod: PaymentMethod.STRIPE,
+            paymentStatus: PaymentStatus.PAID,
+            totalAmount: 20,
+          },
+        ]),
       },
-      orderItem: { findMany: jest.fn().mockResolvedValue([]) },
+      orderItem: { groupBy: jest.fn().mockResolvedValue([]) },
       restaurantPayoutRequest: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -300,7 +306,7 @@ describe('AdminReportsRepository', () => {
       groupBy: jest.fn().mockResolvedValue([]),
       findMany: jest.fn().mockResolvedValue([]),
     };
-    const orderItem = { findMany: jest.fn().mockResolvedValue([]) };
+    const orderItem = { groupBy: jest.fn().mockResolvedValue([]) };
     const restaurantPayoutRequest = {
       findMany: jest.fn().mockResolvedValue([]),
     };
@@ -322,9 +328,12 @@ describe('AdminReportsRepository', () => {
     const findManyCalls = order.findMany.mock.calls as unknown as Array<
       [{ where: { status: { in: OrderStatus[] } } }]
     >;
-    const successfulRowsCall = findManyCalls[1][0];
-    const reportRowsCall = findManyCalls[2][0];
-    expect(successfulRowsCall.where.status.in).toContain(OrderStatus.CONFIRMED);
+    const reportRowsCall = findManyCalls[0][0];
+    const groupByCalls = order.groupBy.mock.calls as unknown as Array<
+      [{ where: { status: { in: OrderStatus[] } } }]
+    >;
+    const breakdownCall = groupByCalls[1][0];
+    expect(breakdownCall.where.status.in).toContain(OrderStatus.CONFIRMED);
     expect(reportRowsCall.where.status.in).toContain(OrderStatus.CONFIRMED);
     expect(reportRowsCall).toMatchObject({
       orderBy: [{ createdAt: 'asc' }],
@@ -336,32 +345,42 @@ describe('AdminReportsRepository', () => {
       aggregate: jest
         .fn()
         .mockResolvedValueOnce({
-          _count: { id: 25 },
-          _sum: { deliveryFee: 0, discountAmount: 0 },
+          _count: { id: 14 },
+          _sum: { deliveryFee: 28, discountAmount: 7 },
         })
         .mockResolvedValueOnce({
           _count: { id: 14 },
           _sum: { totalAmount: 391.6 },
           _avg: { totalAmount: 27.9714 },
         }),
-      groupBy: jest.fn().mockResolvedValue([
-        {
-          paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
-          _count: { _all: 1 },
-          _sum: { totalAmount: 34.5 },
-        },
-      ]),
-      findMany: jest
+      groupBy: jest
         .fn()
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
-          { paymentMethod: PaymentMethod.CARD_ON_DELIVERY },
+          {
+            paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
+            _count: { _all: 1 },
+            _sum: { totalAmount: 34.5 },
+          },
         ])
-        .mockResolvedValueOnce([]),
+        .mockResolvedValueOnce([
+          {
+            status: OrderStatus.PLACED,
+            orderType: 'DELIVERY',
+            paymentStatus: PaymentStatus.PAID,
+            _count: { _all: 13 },
+          },
+          {
+            status: OrderStatus.DELIVERED,
+            orderType: 'DELIVERY',
+            paymentStatus: PaymentStatus.PAID,
+            _count: { _all: 1 },
+          },
+        ]),
+      findMany: jest.fn().mockResolvedValue([]),
     };
     const prisma = {
       order,
-      orderItem: { findMany: jest.fn().mockResolvedValue([]) },
+      orderItem: { groupBy: jest.fn().mockResolvedValue([]) },
       restaurantPayoutRequest: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn((queries: Array<Promise<unknown>>) =>
         Promise.all(queries),
@@ -378,6 +397,7 @@ describe('AdminReportsRepository', () => {
       [{ where: { status: { in: OrderStatus[] } } }]
     >;
     const reportStatuses = aggregateCalls[1][0].where.status.in;
+    expect(aggregateCalls[0][0].where.status.in).toEqual(reportStatuses);
     expect(reportStatuses).toContain(OrderStatus.PLACED);
     expect(reportStatuses).toContain(OrderStatus.DELIVERED);
     expect(reportStatuses).not.toContain(OrderStatus.CANCELLED);
@@ -392,11 +412,14 @@ describe('AdminReportsRepository', () => {
         },
       ]
     >;
-    const historyCall = findManyCalls[2][0];
+    const historyCall = findManyCalls[0][0];
     expect(historyCall.where.status.in).toEqual(reportStatuses);
     expect(historyCall.take).toBe(5_000);
     expect(result.totalOrders).toBe(14);
+    expect(result.successfulOrders).toBe(1);
     expect(result.totalRevenue).toBe(391.6);
+    expect(result.totalDeliveryFee).toBe(28);
+    expect(result.totalDiscount).toBe(7);
     expect(result.paymentMethodSummary).toEqual([
       {
         paymentMethod: PaymentMethod.CARD_ON_DELIVERY,

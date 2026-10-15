@@ -726,14 +726,13 @@ export class AdminReportsRepository {
       aggregate,
       recognizedAggregate,
       paymentMethodTotals,
-      orders,
-      successfulReportOrders,
+      orderBreakdownRows,
       reportOrders,
-      items,
+      topItems,
       payoutRequests,
     ] = await this.prisma.$transaction([
       this.prisma.order.aggregate({
-        where,
+        where: recognizedWhere,
         _count: { id: true },
         _sum: { deliveryFee: true, discountAmount: true },
       }),
@@ -750,19 +749,11 @@ export class AdminReportsRepository {
         _count: { _all: true },
         _sum: { totalAmount: true },
       }),
-      this.prisma.order.findMany({
+      this.prisma.order.groupBy({
+        by: ['status', 'orderType', 'paymentStatus'],
         where: recognizedWhere,
-        select: {
-          status: true,
-          orderType: true,
-          paymentStatus: true,
-        },
-      }),
-      this.prisma.order.findMany({
-        where: recognizedWhere,
-        select: {
-          paymentMethod: true,
-        },
+        orderBy: [{ status: 'asc' }, { orderType: 'asc' }],
+        _count: { _all: true },
       }),
       this.prisma.order.findMany({
         where: recognizedWhere,
@@ -781,16 +772,15 @@ export class AdminReportsRepository {
           },
         },
       }),
-      this.prisma.orderItem.findMany({
+      this.prisma.orderItem.groupBy({
+        by: ['menuItemId'],
         where: {
           order: recognizedWhere,
         },
-        select: {
-          menuItemId: true,
-          menuItemName: true,
-          quantity: true,
-          lineTotal: true,
-        },
+        _sum: { quantity: true, lineTotal: true },
+        _max: { menuItemName: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take: 10,
       }),
       this.prisma.restaurantPayoutRequest.findMany({
         where: {
@@ -825,17 +815,41 @@ export class AdminReportsRepository {
       );
 
     const countFor = (methods: readonly PaymentMethod[]) =>
-      successfulReportOrders.filter((order) =>
-        methods.includes(order.paymentMethod),
-      ).length;
-    const statusCount = (status: string) =>
-      orders.filter((order) => order.status === status).length;
+      paymentMethodTotals
+        .filter((entry) => methods.includes(entry.paymentMethod))
+        .reduce(
+          (total, entry) =>
+            total +
+            (typeof entry._count === 'object'
+              ? Number(entry._count?._all ?? 0)
+              : 0),
+          0,
+        );
+    const breakdownFor = (field: 'status' | 'orderType' | 'paymentStatus') => {
+      const counts = new Map<string, number>();
+      for (const row of orderBreakdownRows) {
+        const key = row[field];
+        const count =
+          typeof row._count === 'object' ? Number(row._count?._all ?? 0) : 0;
+        counts.set(key, (counts.get(key) ?? 0) + count);
+      }
+      return Array.from(counts.entries()).map(([key, count]) => ({
+        key,
+        count,
+      }));
+    };
+    const statusBreakdown = breakdownFor('status');
+    const statusCount = (status: OrderStatus) =>
+      statusBreakdown.find((entry) => entry.key === status)?.count ?? 0;
 
     return {
       totalOrders: recognizedAggregate._count.id,
-      successfulOrders: recognizedAggregate._count.id,
-      cancelledOrders: statusCount('CANCELLED'),
-      rejectedOrders: statusCount('REJECTED'),
+      successfulOrders: SUCCESSFUL_ORDER_STATUSES.reduce(
+        (total, status) => total + statusCount(status),
+        0,
+      ),
+      cancelledOrders: statusCount(OrderStatus.CANCELLED),
+      rejectedOrders: statusCount(OrderStatus.REJECTED),
       totalRevenue: Number(recognizedAggregate._sum.totalAmount ?? 0),
       averageOrderValue: Number(recognizedAggregate._avg.totalAmount ?? 0),
       codAmount: amountFor([PaymentMethod.COD]),
@@ -854,10 +868,15 @@ export class AdminReportsRepository {
       })),
       totalDeliveryFee: Number(aggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(aggregate._sum.discountAmount ?? 0),
-      statusBreakdown: this.countByField(orders, 'status'),
-      orderTypeBreakdown: this.countByField(orders, 'orderType'),
-      paymentStatusBreakdown: this.countByField(orders, 'paymentStatus'),
-      topItems: this.buildTopItems(items),
+      statusBreakdown,
+      orderTypeBreakdown: breakdownFor('orderType'),
+      paymentStatusBreakdown: breakdownFor('paymentStatus'),
+      topItems: topItems.map((item) => ({
+        menuItemId: item.menuItemId,
+        menuItemName: item._max?.menuItemName ?? '-',
+        quantity: Number(item._sum?.quantity ?? 0),
+        revenue: Number(item._sum?.lineTotal ?? 0),
+      })),
       orders: reportOrders.map((order) => ({
         id: order.id,
         createdAt: order.createdAt,
