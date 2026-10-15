@@ -68,7 +68,13 @@ export class WinOrderConnectionService {
   ) {
     const scope = await this.resolveAuthorizedScope(user, branchId, true);
     await this.requireConnection(scope);
-    await this.repository.update(scope, { ...dto, actorId: user.uid });
+    const result = await this.repository.update(scope, {
+      ...dto,
+      actorId: user.uid,
+    });
+    if (result.count === 0) {
+      throw new NotFoundException('WinOrder connection not found');
+    }
 
     return this.get(user, branchId);
   }
@@ -77,11 +83,14 @@ export class WinOrderConnectionService {
     const scope = await this.resolveAuthorizedScope(user, branchId, true);
     await this.requireConnection(scope);
     const credentials = this.generateCredentials(scope.branchId);
-    await this.repository.rotate(scope, {
+    const result = await this.repository.rotate(scope, {
       username: credentials.username,
       passwordHash: await bcrypt.hash(credentials.password, 12),
       actorId: user.uid,
     });
+    if (result.count === 0) {
+      throw new NotFoundException('WinOrder connection not found');
+    }
     const connection = await this.repository.findByBranch(scope);
 
     return {
