@@ -7,6 +7,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
+  OrderStatus,
   Prisma,
   UserRole,
 } from '@prisma/client';
@@ -33,6 +34,13 @@ export interface AdminReportsScope {
   restaurantId?: string;
   branchId?: string;
 }
+
+const REPORTABLE_ORDER_STATUSES: readonly OrderStatus[] = [
+  OrderStatus.PLACED,
+  ...SUCCESSFUL_ORDER_STATUSES,
+];
+
+const ORDER_HISTORY_LIMIT = 5_000;
 
 @Injectable()
 export class AdminReportsRepository {
@@ -703,13 +711,16 @@ export class AdminReportsRepository {
     query: AdminOrdersReportQueryDto,
   ) {
     const where = this.buildOrderWhere(scope, query);
+    const reportableStatuses = query.successfulOnly
+      ? SUCCESSFUL_ORDER_STATUSES
+      : REPORTABLE_ORDER_STATUSES;
     const recognizedWhere: Prisma.OrderWhereInput = {
       ...where,
       status: query.status
-        ? SUCCESSFUL_ORDER_STATUSES.includes(query.status)
+        ? reportableStatuses.includes(query.status)
           ? query.status
           : { in: [] }
-        : { in: SUCCESSFUL_ORDER_STATUSES },
+        : { in: [...reportableStatuses] },
     };
     const [
       aggregate,
@@ -736,10 +747,11 @@ export class AdminReportsRepository {
         by: ['paymentMethod'],
         orderBy: { paymentMethod: 'asc' },
         where: recognizedWhere,
+        _count: { _all: true },
         _sum: { totalAmount: true },
       }),
       this.prisma.order.findMany({
-        where,
+        where: recognizedWhere,
         select: {
           status: true,
           orderType: true,
@@ -753,8 +765,9 @@ export class AdminReportsRepository {
         },
       }),
       this.prisma.order.findMany({
-        where,
+        where: recognizedWhere,
         orderBy: [{ createdAt: 'asc' }],
+        take: ORDER_HISTORY_LIMIT,
         select: {
           id: true,
           createdAt: true,
@@ -770,7 +783,7 @@ export class AdminReportsRepository {
       }),
       this.prisma.orderItem.findMany({
         where: {
-          order: where,
+          order: recognizedWhere,
         },
         select: {
           menuItemId: true,
@@ -819,7 +832,7 @@ export class AdminReportsRepository {
       orders.filter((order) => order.status === status).length;
 
     return {
-      totalOrders: aggregate._count.id,
+      totalOrders: recognizedAggregate._count.id,
       successfulOrders: recognizedAggregate._count.id,
       cancelledOrders: statusCount('CANCELLED'),
       rejectedOrders: statusCount('REJECTED'),
@@ -831,6 +844,14 @@ export class AdminReportsRepository {
       offlineAmount: amountFor(OFFLINE_PAYMENT_METHODS),
       onlineOrderCount: countFor(DIGITAL_PAYMENT_METHODS),
       onlineAmount: amountFor(DIGITAL_PAYMENT_METHODS),
+      paymentMethodSummary: paymentMethodTotals.map((entry) => ({
+        paymentMethod: entry.paymentMethod,
+        count:
+          typeof entry._count === 'object'
+            ? Number(entry._count?._all ?? 0)
+            : 0,
+        amount: Number(entry._sum?.totalAmount ?? 0),
+      })),
       totalDeliveryFee: Number(aggregate._sum.deliveryFee ?? 0),
       totalDiscount: Number(aggregate._sum.discountAmount ?? 0),
       statusBreakdown: this.countByField(orders, 'status'),
@@ -847,6 +868,8 @@ export class AdminReportsRepository {
         totalAmount: Number(order.totalAmount),
         groupOrderId: order.sourceGroupOrder?.id ?? null,
       })),
+      orderHistoryTruncated:
+        recognizedAggregate._count.id > reportOrders.length,
       payoutActivity: payoutRequests.map((request) => ({
         id: request.id,
         requestedAt: request.createdAt,
