@@ -64,7 +64,7 @@ export class WinOrderConnectionRepository {
     });
   }
 
-  update(
+  async update(
     scope: WinOrderConnectionScope,
     data: {
       storeId?: number | null;
@@ -73,14 +73,37 @@ export class WinOrderConnectionRepository {
       actorId: string;
     },
   ) {
-    return this.prisma.winOrderConnection.updateMany({
-      where: scope,
-      data: {
-        storeId: data.storeId,
-        storeName: data.storeName,
-        isEnabled: data.isEnabled,
-        updatedBy: data.actorId,
-      },
+    const updateData = {
+      storeId: data.storeId,
+      storeName: data.storeName,
+      isEnabled: data.isEnabled,
+      updatedBy: data.actorId,
+    };
+
+    if (data.isEnabled !== true) {
+      return this.prisma.winOrderConnection.updateMany({
+        where: scope,
+        data: updateData,
+      });
+    }
+
+    const activatedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.winOrderConnection.updateMany({
+        where: {
+          ...scope,
+          isEnabled: false,
+          lastPollAt: null,
+        },
+        data: {
+          orderExportCutoffAt: activatedAt,
+        },
+      });
+
+      return tx.winOrderConnection.updateMany({
+        where: scope,
+        data: updateData,
+      });
     });
   }
 
