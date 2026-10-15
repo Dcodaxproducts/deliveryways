@@ -1,4 +1,8 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { UserRoleEnum } from '../../common/enums';
 import { WinOrderConnectionService } from './winorder-connection.service';
@@ -10,8 +14,8 @@ describe('WinOrderConnectionService', () => {
       findByBranch: jest.fn(),
       findAuthenticationRecord: jest.fn(),
       create: jest.fn(),
-      update: jest.fn(),
-      rotate: jest.fn(),
+      update: jest.fn().mockResolvedValue({ count: 1 }),
+      rotate: jest.fn().mockResolvedValue({ count: 1 }),
     };
     return {
       service: new WinOrderConnectionService(repository as never),
@@ -214,6 +218,46 @@ describe('WinOrderConnectionService', () => {
       expect.objectContaining({ branchId: 'branch-1' }),
       expect.objectContaining({ storeId: null, actorId: 'admin-1' }),
     );
+  });
+
+  it('reports an update race when the scoped connection disappears', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+    });
+    repository.findByBranch.mockResolvedValue({ id: 'connection-1' });
+    repository.update.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.update(
+        { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+        'branch-1',
+        { isEnabled: true },
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('reports a credential-rotation race when the scoped connection disappears', async () => {
+    const { service, repository } = makeService();
+    repository.findBranch.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main',
+    });
+    repository.findByBranch.mockResolvedValue({ id: 'connection-1' });
+    repository.rotate.mockResolvedValue({ count: 0 });
+    jest.spyOn(bcrypt, 'hash').mockResolvedValue('stored-hash' as never);
+
+    await expect(
+      service.rotate(
+        { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+        'branch-1',
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('blocks branch-admin credential mutation', async () => {

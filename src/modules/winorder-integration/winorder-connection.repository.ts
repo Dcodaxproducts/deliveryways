@@ -57,6 +57,8 @@ export class WinOrderConnectionRepository {
         passwordHash: data.passwordHash,
         storeId: data.storeId,
         storeName: data.storeName,
+        isEnabled: true,
+        orderExportCutoffAt: new Date(),
         createdBy: data.actorId,
         updatedBy: data.actorId,
       },
@@ -107,7 +109,7 @@ export class WinOrderConnectionRepository {
     });
   }
 
-  rotate(
+  async rotate(
     scope: WinOrderConnectionScope,
     data: {
       username: string;
@@ -115,15 +117,29 @@ export class WinOrderConnectionRepository {
       actorId: string;
     },
   ) {
-    return this.prisma.winOrderConnection.updateMany({
-      where: scope,
-      data: {
-        username: data.username,
-        passwordHash: data.passwordHash,
-        credentialVersion: { increment: 1 },
-        isEnabled: true,
-        updatedBy: data.actorId,
-      },
+    const activatedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.winOrderConnection.updateMany({
+        where: {
+          ...scope,
+          isEnabled: false,
+          lastPollAt: null,
+        },
+        data: {
+          orderExportCutoffAt: activatedAt,
+        },
+      });
+
+      return tx.winOrderConnection.updateMany({
+        where: scope,
+        data: {
+          username: data.username,
+          passwordHash: data.passwordHash,
+          credentialVersion: { increment: 1 },
+          isEnabled: true,
+          updatedBy: data.actorId,
+        },
+      });
     });
   }
 
