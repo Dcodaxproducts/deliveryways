@@ -44,18 +44,19 @@ describe('MenuItemRepository', () => {
     const count = jest.fn().mockResolvedValue(0);
     const findFirst = jest.fn().mockResolvedValue(null);
     const update = jest.fn().mockResolvedValue({});
+    const transaction = jest.fn(
+      (
+        operation:
+          | Array<Promise<unknown>>
+          | ((tx: MenuItemTransactionMock) => Promise<unknown>),
+      ) =>
+        typeof operation === 'function'
+          ? operation({ menuItem: { findMany, findFirst, update } })
+          : Promise.all(operation),
+    );
     const prisma = {
       menuItem: { findMany, findFirst, count, update },
-      $transaction: jest.fn(
-        (
-          operation:
-            | Array<Promise<unknown>>
-            | ((tx: MenuItemTransactionMock) => Promise<unknown>),
-        ) =>
-          typeof operation === 'function'
-            ? operation({ menuItem: { findMany, findFirst, update } })
-            : Promise.all(operation),
-      ),
+      $transaction: transaction,
     };
 
     return {
@@ -63,6 +64,7 @@ describe('MenuItemRepository', () => {
       findMany,
       findFirst,
       update,
+      transaction,
     };
   };
 
@@ -146,8 +148,25 @@ describe('MenuItemRepository', () => {
     ).toEqual(sharedModifierPriceOverrides);
   });
 
+  it('rejects reorder scopes above the hard bound before opening a transaction', async () => {
+    const { repository, findMany, transaction } = createRepository();
+    findMany.mockResolvedValue(
+      Array.from({ length: 501 }, (_, index) => ({ id: `item-${index}` })),
+    );
+
+    await expect(
+      repository.reorderRestaurantItems(
+        'restaurant-1',
+        [{ id: 'item-1', sortOrder: 1 }],
+        'category-1',
+      ),
+    ).resolves.toBe('TOO_LARGE');
+
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it('puts the submitted category order first and normalizes legacy ties', async () => {
-    const { repository, findMany, update } = createRepository();
+    const { repository, findMany, update, transaction } = createRepository();
     findMany.mockResolvedValue([
       { id: 'legacy-zero-1' },
       { id: 'item-2' },
@@ -179,7 +198,10 @@ describe('MenuItemRepository', () => {
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: { id: true },
+      take: 501,
     });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(Array.isArray(transaction.mock.calls[0][0])).toBe(true);
     expect(update).toHaveBeenNthCalledWith(1, {
       where: { id: 'item-2' },
       data: { sortOrder: 1 },

@@ -517,5 +517,24 @@ describe('RestaurantMenuRepository', () => {
     } as never);
 
     expect('modifierGroups' in result.items[0]).toBe(false);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.menuItem.findMany).toHaveBeenCalledTimes(2);
+
+    expect(prisma.menuItem.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        skip: 0,
+        take: 20,
+        select: { id: true },
+      }),
+    );
+    const hydrationQueryJson = JSON.stringify(
+      prisma.menuItem.findMany.mock.calls[1] as unknown,
+    );
+    expect(hydrationQueryJson).toContain('"where":{"id":{"in":["item-1"]}}');
+    expect(hydrationQueryJson).not.toContain('"items":');
+    expect(hydrationQueryJson).toContain(
+      '"itemPriceOverrides":{"where":{"menuItemId":{"in":["item-1"]}}}',
+    );
   });
 });

@@ -72,6 +72,20 @@ export class RestaurantMenuRepository {
     )[0];
   }
 
+  async findAccessById(id: string) {
+    return this.prisma.restaurantMenu.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        restaurantId: true,
+        isTimed: true,
+        timingConfig: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+  }
+
   async list(restaurantId: string | undefined, query: ListRestaurantMenusDto) {
     const where: Prisma.RestaurantMenuWhereInput = {
       ...(restaurantId ? { restaurantId } : {}),
@@ -655,72 +669,80 @@ export class RestaurantMenuRepository {
 
     const orderDirection = query.sortOrder.toLowerCase() as 'asc' | 'desc';
 
-    const [items, total] = await this.prisma.$transaction([
+    const orderBy: Prisma.MenuItemOrderByWithRelationInput[] =
+      query.sortBy === 'sortOrder'
+        ? [{ category: { sortOrder: orderDirection } }, { name: 'asc' }]
+        : [{ [query.sortBy]: orderDirection }];
+
+    const [pageItems, total] = await Promise.all([
       this.prisma.menuItem.findMany({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy:
-          query.sortBy === 'sortOrder'
-            ? [{ category: { sortOrder: orderDirection } }, { name: 'asc' }]
-            : [{ [query.sortBy]: orderDirection }],
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              imageUrl: true,
-              items: {
-                where: {
-                  deletedAt: null,
-                  isActive: true,
+        orderBy,
+        select: { id: true },
+      }),
+      this.prisma.menuItem.count({ where }),
+    ]);
+    const pageItemIds = pageItems.map((item) => item.id);
+    const pageItemIdFilter = { menuItemId: { in: pageItemIds } };
+
+    const items = pageItemIds.length
+      ? await this.prisma.menuItem.findMany({
+          where: { id: { in: pageItemIds } },
+          orderBy,
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                imageUrl: true,
+                variations: {
+                  where: {
+                    deletedAt: null,
+                    ...(query.includeInactive ? {} : { isActive: true }),
+                  },
+                  include: {
+                    itemPriceOverrides: { where: pageItemIdFilter },
+                  },
+                  orderBy: { sortOrder: 'asc' },
                 },
-                select: {
-                  id: true,
-                  name: true,
-                  slug: true,
+                variationLinks: {
+                  where: {
+                    ...(query.includeInactive ? {} : { isActive: true }),
+                    variation: { deletedAt: null },
+                  },
+                  include: {
+                    variation: {
+                      include: {
+                        itemPriceOverrides: { where: pageItemIdFilter },
+                      },
+                    },
+                  },
+                  orderBy: [{ sortOrder: 'asc' }],
                 },
-                orderBy: [{ createdAt: 'asc' }],
-              },
-              variations: {
-                where: {
-                  deletedAt: null,
-                  ...(query.includeInactive ? {} : { isActive: true }),
-                },
-                include: {
-                  itemPriceOverrides: true,
-                },
-                orderBy: { sortOrder: 'asc' },
-              },
-              variationLinks: {
-                where: {
-                  ...(query.includeInactive ? {} : { isActive: true }),
-                  variation: { deletedAt: null },
-                },
-                include: {
-                  variation: { include: { itemPriceOverrides: true } },
-                },
-                orderBy: [{ sortOrder: 'asc' }],
-              },
-              modifierLinks: {
-                orderBy: [{ sortOrder: 'asc' }],
-                include: {
-                  modifierGroup: {
-                    include: {
-                      modifierLinks: {
-                        where: {
-                          modifier: { deletedAt: null, isActive: true },
-                        },
-                        orderBy: [
-                          { sortOrder: 'asc' },
-                          { modifier: { createdAt: 'asc' } },
-                        ],
-                        include: {
-                          modifier: {
-                            include: {
-                              itemPriceOverrides: true,
-                              variationPriceOverrides: true,
+                modifierLinks: {
+                  orderBy: [{ sortOrder: 'asc' }],
+                  include: {
+                    modifierGroup: {
+                      include: {
+                        modifierLinks: {
+                          where: {
+                            modifier: { deletedAt: null, isActive: true },
+                          },
+                          orderBy: [
+                            { sortOrder: 'asc' },
+                            { modifier: { createdAt: 'asc' } },
+                          ],
+                          include: {
+                            modifier: {
+                              include: {
+                                itemPriceOverrides: { where: pageItemIdFilter },
+                                variationPriceOverrides: {
+                                  where: pageItemIdFilter,
+                                },
+                              },
                             },
                           },
                         },
@@ -730,52 +752,52 @@ export class RestaurantMenuRepository {
                 },
               },
             },
-          },
-          menuLinks: {
-            where: { restaurantMenuId },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            select: {
-              id: true,
-              sortOrder: true,
-              isActive: true,
+            menuLinks: {
+              where: { restaurantMenuId },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              select: {
+                id: true,
+                sortOrder: true,
+                isActive: true,
+              },
             },
-          },
-          modifierLinks: {
-            orderBy: [{ sortOrder: 'asc' }],
-            include: {
-              modifierGroup: {
-                include: {
-                  modifierLinks: {
-                    where: {
-                      modifier: { deletedAt: null, isActive: true },
-                    },
-                    include: {
-                      modifier: {
-                        include: {
-                          itemPriceOverrides: true,
-                          variationPriceOverrides: true,
+            modifierLinks: {
+              orderBy: [{ sortOrder: 'asc' }],
+              include: {
+                modifierGroup: {
+                  include: {
+                    modifierLinks: {
+                      where: {
+                        modifier: { deletedAt: null, isActive: true },
+                      },
+                      include: {
+                        modifier: {
+                          include: {
+                            itemPriceOverrides: { where: pageItemIdFilter },
+                            variationPriceOverrides: {
+                              where: pageItemIdFilter,
+                            },
+                          },
                         },
                       },
+                      orderBy: [
+                        { sortOrder: 'asc' },
+                        { modifier: { createdAt: 'asc' } },
+                      ],
                     },
-                    orderBy: [
-                      { sortOrder: 'asc' },
-                      { modifier: { createdAt: 'asc' } },
-                    ],
                   },
                 },
               },
             },
-          },
-          modifierPriceOverrides: {
-            include: {
-              modifier: true,
+            modifierPriceOverrides: {
+              include: {
+                modifier: true,
+              },
+              orderBy: [{ modifier: { sortOrder: 'asc' } }],
             },
-            orderBy: [{ modifier: { sortOrder: 'asc' } }],
           },
-        },
-      }),
-      this.prisma.menuItem.count({ where }),
-    ]);
+        })
+      : [];
 
     const menuCategoryLinks = await this.prisma.restaurantMenuCategory.findMany(
       {

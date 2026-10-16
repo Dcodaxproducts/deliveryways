@@ -6,6 +6,7 @@ describe('RestaurantMenuService', () => {
     const restaurantMenuRepository = {
       create: jest.fn(),
       findById: jest.fn(),
+      findAccessById: jest.fn(),
       list: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
@@ -150,7 +151,7 @@ describe('RestaurantMenuService', () => {
   it('lists effective menu items resolved from direct and category links', async () => {
     const { service, restaurantMenuRepository, storageService } = makeService();
 
-    restaurantMenuRepository.findById.mockResolvedValue({
+    restaurantMenuRepository.findAccessById.mockResolvedValue({
       id: 'menu-1',
       restaurantId: 'restaurant-1',
       deletedAt: null,
@@ -196,7 +197,7 @@ describe('RestaurantMenuService', () => {
   it('returns no customer menu items when selected timed menu is inactive', async () => {
     const { service, restaurantMenuRepository } = makeService();
 
-    restaurantMenuRepository.findById.mockResolvedValue({
+    restaurantMenuRepository.findAccessById.mockResolvedValue({
       id: 'menu-1',
       restaurantId: 'restaurant-1',
       deletedAt: null,

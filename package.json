@@ -40,6 +40,7 @@
     "deploy:safe": "bash scripts/deploy-safe.sh",
     "setup:local": "npm run db:up && npm run prisma:generate && npm run prisma:migrate -- --name init && npm run seed:base && npm run start:dev",
     "test:realtime-stress": "node --expose-gc -r ts-node/register stress/socket-io-admission.stress.ts",
+    "test:menu-memory-stress": "node --expose-gc -r ts-node/register stress/menu-list-memory.stress.ts",
     "test:realtime-isolation": "bash scripts/test-realtime-process-isolation.sh"
   },
   "dependencies": {

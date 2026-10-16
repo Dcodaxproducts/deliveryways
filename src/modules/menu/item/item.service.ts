@@ -23,6 +23,7 @@ import {
   DEFAULT_MENU_ITEM_LABELS,
   DuplicateMenuItemDto,
   ListMenuItemsDto,
+  MAX_MENU_REORDER_ITEMS,
   ReorderMenuItemDto,
   ReorderMenuItemsDto,
   UpdateAllergenAdditiveTemplateEntryDto,
@@ -1257,7 +1258,13 @@ export class MenuItemService {
         where: { restaurantMenuId: dto.menuId },
         orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         select: { id: true, menuItemId: true },
+        take: MAX_MENU_REORDER_ITEMS + 1,
       });
+      if (allLinks.length > MAX_MENU_REORDER_ITEMS) {
+        throw new BadRequestException(
+          `Menu reorder scope cannot exceed ${MAX_MENU_REORDER_ITEMS} items`,
+        );
+      }
       let requestedIndex = 0;
       const completeLinks = allLinks.map((link) =>
         requestedIdSet.has(link.menuItemId)
@@ -1309,6 +1316,12 @@ export class MenuItemService {
         dto.items,
         dto.categoryId,
       );
+
+      if (reorderedCount === 'TOO_LARGE') {
+        throw new BadRequestException(
+          `Menu reorder scope cannot exceed ${MAX_MENU_REORDER_ITEMS} items`,
+        );
+      }
 
       if (reorderedCount === null) {
         throw new BadRequestException(

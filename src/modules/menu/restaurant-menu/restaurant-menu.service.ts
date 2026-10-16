@@ -212,7 +212,7 @@ export class RestaurantMenuService {
     menuId: string,
     query: ListRestaurantMenuItemsDto,
   ) {
-    const menu = await this.restaurantMenuRepository.findById(menuId);
+    const menu = await this.restaurantMenuRepository.findAccessById(menuId);
     if (!menu || menu.deletedAt) {
       throw new NotFoundException('Restaurant menu not found');
     }

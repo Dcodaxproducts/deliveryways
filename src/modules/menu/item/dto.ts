@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   ArrayUnique,
   IsBoolean,
@@ -16,6 +17,7 @@ import {
 } from 'class-validator';
 import { QueryDto } from '../../../common/dto';
 
+export const MAX_MENU_REORDER_ITEMS = 500;
 export const MENU_ITEM_PRICING_MODE_VALUES = ['SINGLE', 'MULTIPLE'] as const;
 export const MENU_ITEM_LABEL_VALUES = [
   'SPICY',
@@ -848,8 +850,12 @@ export class ReorderMenuItemsDto {
   @IsString()
   categoryId?: string;
 
-  @ApiProperty({ type: [ReorderMenuEntryDto] })
+  @ApiProperty({
+    type: [ReorderMenuEntryDto],
+    maxItems: MAX_MENU_REORDER_ITEMS,
+  })
   @IsArray()
+  @ArrayMaxSize(MAX_MENU_REORDER_ITEMS)
   @ArrayUnique((entry: ReorderMenuEntryDto) => entry.id)
   @ValidateNested({ each: true })
   @Type(() => ReorderMenuEntryDto)
