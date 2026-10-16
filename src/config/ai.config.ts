@@ -17,26 +17,29 @@ const parseInteger = (
 };
 
 const parseModels = () => {
-  const models = (process.env.AI_ALLOWED_MODELS ?? 'gpt-6-luna,gpt-6.1-sol')
+  const models = (process.env.AI_ALLOWED_MODELS ?? '')
     .split(',')
     .map((model) => model.trim())
     .filter(Boolean);
-  if (models.length === 0 || models.length > 10) {
-    throw new Error('AI_ALLOWED_MODELS must contain between 1 and 10 models');
+  if (models.length > 10) {
+    throw new Error('AI_ALLOWED_MODELS cannot contain more than 10 models');
   }
   return [...new Set(models)];
 };
 
 export default registerAs('ai', () => {
   const enabled = process.env.AI_ANALYTICS_COPILOT_ENABLED === 'true';
-  const provider = process.env.AI_PROVIDER ?? 'openai';
+  const configuredProvider = process.env.AI_PROVIDER?.trim();
+  const provider = configuredProvider || 'disabled';
   const allowedModels = parseModels();
-  const model = process.env.AI_ANALYTICS_MODEL ?? allowedModels[0];
+  const model = process.env.AI_ANALYTICS_MODEL?.trim() || '';
   if (provider !== 'openai' && provider !== 'disabled')
     throw new Error('AI_PROVIDER must be openai or disabled');
-  if (!allowedModels.includes(model))
-    throw new Error('AI_ANALYTICS_MODEL must be included in AI_ALLOWED_MODELS');
-  const hasProviderKey = Boolean(process.env.OPENAI_API_KEY?.trim());
+  if (enabled && !configuredProvider)
+    throw new Error(
+      'AI_PROVIDER must be explicitly configured when Analytics Copilot is enabled',
+    );
+  const apiKey = process.env.OPENAI_API_KEY?.trim() || null;
   const inputCostMicroUsdPerMillionTokens = parseInteger(
     'AI_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS',
     0,
@@ -52,10 +55,25 @@ export default registerAs('ai', () => {
   if (
     enabled &&
     provider === 'openai' &&
-    hasProviderKey &&
-    (inputCostMicroUsdPerMillionTokens === 0 ||
+    (allowedModels.length === 0 ||
+      !model ||
+      !allowedModels.includes(model) ||
+      !apiKey ||
+      inputCostMicroUsdPerMillionTokens === 0 ||
       outputCostMicroUsdPerMillionTokens === 0)
   ) {
+    if (allowedModels.length === 0)
+      throw new Error(
+        'AI_ALLOWED_MODELS must be explicitly configured before enabling OpenAI provider mode',
+      );
+    if (!model || !allowedModels.includes(model))
+      throw new Error(
+        'AI_ANALYTICS_MODEL must be explicitly configured and included in AI_ALLOWED_MODELS',
+      );
+    if (!apiKey)
+      throw new Error(
+        'OPENAI_API_KEY must be configured before enabling OpenAI provider mode',
+      );
     throw new Error(
       'OpenAI token pricing must be configured before enabling provider mode',
     );
@@ -66,7 +84,7 @@ export default registerAs('ai', () => {
       provider,
       model,
       allowedModels,
-      apiKey: process.env.OPENAI_API_KEY?.trim() || null,
+      apiKey,
       timeoutMs: parseInteger('AI_ANALYTICS_TIMEOUT_MS', 10_000, 1_000, 30_000),
       maxInputTokens: parseInteger(
         'AI_ANALYTICS_MAX_INPUT_TOKENS',

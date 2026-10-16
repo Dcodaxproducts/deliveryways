@@ -16,7 +16,7 @@ Provide restaurant owners/admins a read-only, tenant-safe analytics copilot that
 
 ### AC-01 Configuration safety
 
-Feature flag defaults false. No key is required for build/tests. Enabled configuration validates provider/model allowlist, numeric bounds, timeouts, and pricing inputs. Missing key produces deterministic fallback, not a provider call.
+Feature flag and provider mode default to disabled. No model or key is required for build/tests while disabled. Enabled OpenAI configuration requires an explicit non-empty model allowlist, an explicitly selected allowlisted model, a provider key, and nonzero pricing. Missing OpenAI configuration fails startup; intentional provider-free deterministic fallback requires explicitly enabling the feature with `AI_PROVIDER=disabled`.
 
 ### AC-02 Tenant and role isolation
 

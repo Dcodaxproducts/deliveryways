@@ -21,7 +21,7 @@ Six queries per period inside one short Prisma transaction; 12 with comparison; 
 
 ## Failure behavior
 
-Feature disabled -> capabilities disabled and query 503. Enabled but key absent/provider disabled/timeout/error/malformed output/budget model unavailable -> successful deterministic fallback with exact evidence. Database/audit failure fails closed. Duplicate completed request returns persisted safe response; duplicate in progress returns conflict.
+Feature disabled -> capabilities disabled and query 503. Enabled with provider disabled -> successful deterministic fallback with exact evidence. Enabled OpenAI mode requires an explicit allowlist, selected model, key, and nonzero pricing at startup; missing configuration fails closed. Runtime timeout/error/malformed output/budget exhaustion -> deterministic fallback. Database/audit failure fails closed. Duplicate completed request returns persisted safe response; duplicate in progress returns conflict.
 
 ## Security
 

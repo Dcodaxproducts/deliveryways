@@ -2,7 +2,7 @@
 
 ## Safety state
 
-The feature is disabled by default. No provider key is required for install, tests, typecheck, or build. When enabled without a key, authenticated restaurant owners receive a deterministic read-only summary; no provider request is attempted.
+The feature and provider mode are disabled by default. No model allowlist, selected model, provider key, or pricing is required for install, tests, typecheck, or build while the feature is disabled. Enabled OpenAI mode fails startup unless all four are explicitly configured. Intentional deterministic-only operation requires `AI_ANALYTICS_COPILOT_ENABLED=true` together with `AI_PROVIDER=disabled`; a missing key never silently selects fallback provider mode.
 
 ## API contract
 
@@ -45,9 +45,9 @@ Migration `20261016054500_add_ai_analytics_usage` is additive and has no backfil
 ## Enablement
 
 1. Apply the migration through the protected release process after backup/rehearsal.
-2. Add protected environment values from `.env.example`; never commit or paste the key in chat.
-3. Set current provider token pricing values so cost budgets are meaningful.
-4. Set `AI_ANALYTICS_COPILOT_ENABLED=true` only for approved environments.
-5. Verify capabilities, deterministic fallback, provider mode, rate/budget fallback, audit rows, metrics, and kill switch.
+2. Keep `AI_PROVIDER=disabled` for an explicitly approved deterministic-only rollout, or set `AI_PROVIDER=openai` for provider mode.
+3. For OpenAI mode, explicitly set a non-empty `AI_ALLOWED_MODELS`, set `AI_ANALYTICS_MODEL` to an exact member of that allowlist, add `OPENAI_API_KEY` through protected environment management, and set both current nonzero token-pricing values. Never commit or paste the key in chat.
+4. Set `AI_ANALYTICS_COPILOT_ENABLED=true` only after the complete selected-mode configuration and rollout approval are in place.
+5. Verify capabilities, deterministic-only mode or provider mode as selected, runtime rate/budget fallback, audit rows, metrics, and kill switch.
 
 Disable immediately with `AI_ANALYTICS_COPILOT_ENABLED=false`. Existing reports remain independent.

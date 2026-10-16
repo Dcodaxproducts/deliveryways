@@ -207,7 +207,9 @@ export class AnalyticsCopilotService {
           usageId,
           fallbackBase,
           snapshotHash,
-          'AI_KEY_MISSING',
+          config.provider === 'disabled'
+            ? 'AI_PROVIDER_DISABLED'
+            : 'AI_KEY_MISSING',
           startedAt,
         );
       if (this.providerActive >= config.maxProviderConcurrency)

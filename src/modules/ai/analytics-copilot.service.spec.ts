@@ -99,6 +99,7 @@ const replayRecord = {
 const makeService = (overrides?: {
   enabled?: boolean;
   configured?: boolean;
+  provider?: 'openai' | 'disabled';
   dailyCount?: number;
   generation?: () => Promise<AiTextGenerationResult>;
 }) => {
@@ -138,9 +139,11 @@ const makeService = (overrides?: {
       ),
   };
   const configService = {
-    getOrThrow: jest
-      .fn()
-      .mockReturnValue({ ...config, enabled: overrides?.enabled ?? true }),
+    getOrThrow: jest.fn().mockReturnValue({
+      ...config,
+      enabled: overrides?.enabled ?? true,
+      provider: overrides?.provider ?? 'openai',
+    }),
   };
   const globalSettings = {
     getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR'),
@@ -164,13 +167,14 @@ describe('AnalyticsCopilotService', () => {
     );
   });
 
-  it('returns complete deterministic evidence without a provider key and stores only a question hash', async () => {
+  it('returns complete deterministic evidence in explicit provider-disabled mode and stores only a question hash', async () => {
     const { service, repository, usageRepository, provider } = makeService({
       configured: false,
+      provider: 'disabled',
     });
     const result = await service.query(user as never, dto);
     expect(result.data.mode).toBe('DETERMINISTIC_FALLBACK');
-    expect(result.data.fallbackReason).toBe('AI_KEY_MISSING');
+    expect(result.data.fallbackReason).toBe('AI_PROVIDER_DISABLED');
     expect(result.data.evidence.metrics.map((metric) => metric.id)).toEqual(
       expect.arrayContaining([
         'revenue',
@@ -199,7 +203,10 @@ describe('AnalyticsCopilotService', () => {
   });
 
   it('localizes deterministic summaries and metric definitions', async () => {
-    const { service } = makeService({ configured: false });
+    const { service } = makeService({
+      configured: false,
+      provider: 'disabled',
+    });
     const result = await service.query(user as never, { ...dto, locale: 'de' });
     expect(result.data.answer.summary).toContain('Bestellungen');
     expect(result.data.evidence.definitions[0]).toContain('Umsatz');
