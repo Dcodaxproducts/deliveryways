@@ -13,6 +13,8 @@ import {
   trustedNetworkKey,
 } from './bounded-socket-io.adapter';
 
+class RealtimeTestError extends Error {}
+
 const generousOptions: AdmissionOptions = {
   requestWindowMs: 10_000,
   freshHandshakesPerWindow: 20_000,
@@ -286,7 +288,7 @@ describe('BoundedSocketIoAdapter integration', () => {
     });
     socketServer.of('/authorized').use((socket, next) => {
       if (socket.handshake.auth.token === 'test-token') next();
-      else next(new Error('Unauthorized'));
+      else next(new RealtimeTestError('Unauthorized'));
     });
     socketServer.of('/authorized').on('connection', (socket) => {
       socket.on('amplify', () => {
@@ -296,7 +298,7 @@ describe('BoundedSocketIoAdapter integration', () => {
     for (const namespace of ['/orders-tracking', '/chat']) {
       socketServer.of(namespace).use((socket, next) => {
         if (socket.handshake.auth.token === 'test-token') next();
-        else next(new Error('Unauthorized'));
+        else next(new RealtimeTestError('Unauthorized'));
       });
     }
     socketServer
@@ -578,7 +580,7 @@ function engineCall(
 function parseSid(body: string): string {
   const packet = body.startsWith('0') ? body.slice(1) : body;
   const parsed = JSON.parse(packet) as { sid?: unknown };
-  if (typeof parsed.sid !== 'string') throw new Error('Missing Engine.IO sid');
+  if (typeof parsed.sid !== 'string') throw new RealtimeTestError('Missing Engine.IO sid');
   return parsed.sid;
 }
 
@@ -608,7 +610,7 @@ function emitWithAck(
   body: Record<string, string>,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Ack timed out')), 2_000);
+    const timer = setTimeout(() => reject(new RealtimeTestError('Ack timed out')), 2_000);
     client.emit(event, body, (value: unknown) => {
       clearTimeout(timer);
       resolve(value);
@@ -626,7 +628,7 @@ function upgraded(client: ClientSocket): Promise<void> {
   if (client.io.engine.transport.name === 'websocket') return Promise.resolve();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error('Upgrade timed out')),
+      () => reject(new RealtimeTestError('Upgrade timed out')),
       3_000,
     );
     client.io.engine.once('upgrade', () => {
@@ -639,7 +641,7 @@ function upgraded(client: ClientSocket): Promise<void> {
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 3_000;
   while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error('Condition timed out');
+    if (Date.now() >= deadline) throw new RealtimeTestError('Condition timed out');
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }

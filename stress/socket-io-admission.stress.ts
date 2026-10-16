@@ -8,9 +8,19 @@ import {
   EngineRequestAdmissionStats,
 } from '../src/common/realtime/bounded-socket-io.adapter';
 
-const REQUEST_COUNT = Number(process.env.STRESS_REQUESTS ?? 50_000);
-const RECONNECT_COUNT = Number(process.env.STRESS_RECONNECTS ?? 500);
-const CONCURRENCY = Number(process.env.STRESS_CONCURRENCY ?? 128);
+class StressInvariantError extends Error {}
+
+const readPositiveIntegerArg = (name: string, fallback: number): number => {
+  const prefix = `--${name}=`;
+  const rawValue = process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+  if (!rawValue) return fallback;
+  const value = Number(rawValue);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+};
+
+const REQUEST_COUNT = readPositiveIntegerArg('requests', 50_000);
+const RECONNECT_COUNT = readPositiveIntegerArg('reconnects', 500);
+const CONCURRENCY = readPositiveIntegerArg('concurrency', 128);
 const MAX_HEAP_GROWTH = 32 * 1024 * 1024;
 const MAX_RSS_GROWTH = 192 * 1024 * 1024;
 const MAX_SECOND_WAVE_HEAP_GROWTH = 16 * 1024 * 1024;
@@ -18,7 +28,7 @@ const MAX_SECOND_WAVE_RSS_GROWTH = 64 * 1024 * 1024;
 const MAX_EVENT_LOOP_P99_MS = 750;
 
 if (!global.gc) {
-  throw new Error('Run with node --expose-gc');
+  throw new StressInvariantError('Run with node --expose-gc');
 }
 
 async function main(): Promise<void> {
@@ -27,7 +37,7 @@ async function main(): Promise<void> {
   const ioServer = adapter.createIOServer(0);
   ioServer.of('/authorized').use((socket, next) => {
     if (socket.handshake.auth.token === 'stress-token') next();
-    else next(new Error('Unauthorized'));
+    else next(new StressInvariantError('Unauthorized'));
   });
   ioServer.of('/authorized').on('connection', (socket) => {
     socket.on(
@@ -74,7 +84,7 @@ async function main(): Promise<void> {
       RECONNECT_COUNT,
     );
     if (reconnectResults.completed !== RECONNECT_COUNT) {
-      throw new Error('Reconnect harness did not complete every attempt');
+      throw new StressInvariantError('Reconnect harness did not complete every attempt');
     }
     await sleep(10_100);
     await assertValidClients(validClients);
@@ -97,7 +107,7 @@ async function main(): Promise<void> {
       packetStatsAfter.rejectedSessions - packetStatsBefore.rejectedSessions !==
       16
     ) {
-      throw new Error(
+      throw new StressInvariantError(
         'Packet admission did not close every abusive session: ' +
           JSON.stringify({ packetStatsBefore, packetStatsAfter }),
       );
@@ -138,23 +148,23 @@ async function main(): Promise<void> {
 
     assertBounded(maxStats, settled);
     if (heapGrowth > MAX_HEAP_GROWTH) {
-      throw new Error('Heap did not settle: +' + heapGrowth + ' bytes');
+      throw new StressInvariantError('Heap did not settle: +' + heapGrowth + ' bytes');
     }
     if (rssGrowth > MAX_RSS_GROWTH) {
-      throw new Error('RSS exceeded bounded plateau: +' + rssGrowth + ' bytes');
+      throw new StressInvariantError('RSS exceeded bounded plateau: +' + rssGrowth + ' bytes');
     }
     if (secondWaveHeapGrowth > MAX_SECOND_WAVE_HEAP_GROWTH) {
-      throw new Error(
+      throw new StressInvariantError(
         'Heap kept growing in second wave: +' + secondWaveHeapGrowth + ' bytes',
       );
     }
     if (secondWaveRssGrowth > MAX_SECOND_WAVE_RSS_GROWTH) {
-      throw new Error(
+      throw new StressInvariantError(
         'RSS kept growing in second wave: +' + secondWaveRssGrowth + ' bytes',
       );
     }
     if (p99Ms > MAX_EVENT_LOOP_P99_MS) {
-      throw new Error('Event-loop p99 exceeded bound: ' + p99Ms + ' ms');
+      throw new StressInvariantError('Event-loop p99 exceeded bound: ' + p99Ms + ' ms');
     }
     if (
       (statuses.get(101) ?? 0) +
@@ -162,7 +172,7 @@ async function main(): Promise<void> {
         (statuses.get(403) ?? 0) !==
       REQUEST_COUNT
     ) {
-      throw new Error(
+      throw new StressInvariantError(
         'Direct WebSocket attempts did not complete cleanly: ' +
           JSON.stringify(Object.fromEntries(statuses)),
       );
@@ -181,7 +191,7 @@ async function main(): Promise<void> {
       attackEngineConnections > attackAdmissionCap ||
       attackAccepted > attackAdmissionCap
     ) {
-      throw new Error(
+      throw new StressInvariantError(
         'Fresh handshake work escaped pre-upgrade cap: ' +
           JSON.stringify({
             attackMiddlewareRequests,
@@ -199,7 +209,7 @@ async function main(): Promise<void> {
       cleaned.pendingReservations !== 0 ||
       cleaned.pendingNetworkKeys !== 0
     ) {
-      throw new Error('Fresh handshake maps did not clean up');
+      throw new StressInvariantError('Fresh handshake maps did not clean up');
     }
 
     process.stdout.write(
@@ -326,7 +336,7 @@ async function exerciseDuplicatePoll(
     agent,
     headers,
   );
-  if (handshake.statusCode !== 200) throw new Error('Polling handshake failed');
+  if (handshake.statusCode !== 200) throw new StressInvariantError('Polling handshake failed');
   const sid = parseSid(handshake.body);
   const endpoint =
     origin +
@@ -336,7 +346,7 @@ async function exerciseDuplicatePoll(
   await sleep(20);
   const duplicate = await engineCallWithBody(endpoint, agent, headers);
   if (duplicate.statusCode !== 429) {
-    throw new Error('Duplicate polling GET was not rejected');
+    throw new StressInvariantError('Duplicate polling GET was not rejected');
   }
   await engineCallWithBody(endpoint, agent, headers, 'POST', '1');
   await first;
@@ -386,10 +396,10 @@ async function runReconnectAttempts(
 
 async function assertValidClients(clients: ClientSocket[]): Promise<void> {
   for (const client of clients) {
-    if (!client.connected) throw new Error('Valid client disconnected');
+    if (!client.connected) throw new StressInvariantError('Valid client disconnected');
     const reply = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error('Probe timed out')),
+        () => reject(new StressInvariantError('Probe timed out')),
         2_000,
       );
       client.emit('probe', 'ok', (value: string) => {
@@ -397,7 +407,7 @@ async function assertValidClients(clients: ClientSocket[]): Promise<void> {
         resolve(value);
       });
     });
-    if (reply !== 'ok') throw new Error('Valid client probe failed');
+    if (reply !== 'ok') throw new StressInvariantError('Valid client probe failed');
   }
 }
 
@@ -405,15 +415,15 @@ function assertBounded(
   maximum: EngineRequestAdmissionStats,
   settled: EngineRequestAdmissionStats,
 ): void {
-  if (maximum.activeSessions > 32) throw new Error('Session cap exceeded');
+  if (maximum.activeSessions > 32) throw new StressInvariantError('Session cap exceeded');
   if (maximum.networkRequestKeys > 512)
-    throw new Error('Network map cap exceeded');
+    throw new StressInvariantError('Network map cap exceeded');
   if (maximum.sessionRequestKeys > 32)
-    throw new Error('Session map cap exceeded');
-  if (maximum.pendingReservations > 32) throw new Error('Pending cap exceeded');
-  if (maximum.inflightRequests > 192) throw new Error('Inflight cap exceeded');
+    throw new StressInvariantError('Session map cap exceeded');
+  if (maximum.pendingReservations > 32) throw new StressInvariantError('Pending cap exceeded');
+  if (maximum.inflightRequests > 192) throw new StressInvariantError('Inflight cap exceeded');
   if (maximum.pollingGets > 32 || maximum.upgrades > 32) {
-    throw new Error('Per-session operation maps exceeded session cap');
+    throw new StressInvariantError('Per-session operation maps exceeded session cap');
   }
   if (
     settled.activeSessions !== 0 ||
@@ -423,7 +433,7 @@ function assertBounded(
     settled.pollingGets !== 0 ||
     settled.upgrades !== 0
   ) {
-    throw new Error(
+    throw new StressInvariantError(
       'Admission state did not settle: ' + JSON.stringify(settled),
     );
   }
@@ -514,7 +524,7 @@ function parseSid(body: string): string {
   const parsed = JSON.parse(body.startsWith('0') ? body.slice(1) : body) as {
     sid?: unknown;
   };
-  if (typeof parsed.sid !== 'string') throw new Error('Missing sid');
+  if (typeof parsed.sid !== 'string') throw new StressInvariantError('Missing sid');
   return parsed.sid;
 }
 
@@ -528,7 +538,7 @@ function connected(client: ClientSocket): Promise<void> {
 function upgraded(client: ClientSocket): Promise<void> {
   if (client.io.engine.transport.name === 'websocket') return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Upgrade timeout')), 3_000);
+    const timer = setTimeout(() => reject(new StressInvariantError('Upgrade timeout')), 3_000);
     client.io.engine.once('upgrade', () => {
       clearTimeout(timer);
       resolve();
@@ -542,14 +552,14 @@ async function waitFor(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error('Condition timed out');
+    if (Date.now() >= deadline) throw new StressInvariantError('Condition timed out');
     await sleep(20);
   }
 }
 
 function forceGarbageCollection(): void {
   const collect = global.gc;
-  if (!collect) throw new Error('Garbage collector unavailable');
+  if (!collect) throw new StressInvariantError('Garbage collector unavailable');
   collect();
 }
 
