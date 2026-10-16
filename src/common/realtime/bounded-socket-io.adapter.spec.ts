@@ -580,7 +580,8 @@ function engineCall(
 function parseSid(body: string): string {
   const packet = body.startsWith('0') ? body.slice(1) : body;
   const parsed = JSON.parse(packet) as { sid?: unknown };
-  if (typeof parsed.sid !== 'string') throw new RealtimeTestError('Missing Engine.IO sid');
+  if (typeof parsed.sid !== 'string')
+    throw new RealtimeTestError('Missing Engine.IO sid');
   return parsed.sid;
 }
 
@@ -610,7 +611,10 @@ function emitWithAck(
   body: Record<string, string>,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new RealtimeTestError('Ack timed out')), 2_000);
+    const timer = setTimeout(
+      () => reject(new RealtimeTestError('Ack timed out')),
+      2_000,
+    );
     client.emit(event, body, (value: unknown) => {
       clearTimeout(timer);
       resolve(value);
@@ -641,7 +645,8 @@ function upgraded(client: ClientSocket): Promise<void> {
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 3_000;
   while (!predicate()) {
-    if (Date.now() >= deadline) throw new RealtimeTestError('Condition timed out');
+    if (Date.now() >= deadline)
+      throw new RealtimeTestError('Condition timed out');
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }

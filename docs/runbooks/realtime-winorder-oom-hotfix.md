@@ -1,6 +1,4 @@
-
 ## Scope
-
 
 - Production sampling on 2026-10-12 found 4,997 direct WebSocket requests, 3 polling requests, and no `sid` across the last 5,000 `/socket.io/` requests. This is a fresh direct-WebSocket handshake storm, not an existing-session polling storm.
 - Fresh polling and direct-WebSocket handshakes are admitted by Socket.IO's `ServerOptions.allowRequest` before WebSocket transport allocation. The gate permits at most 48 fresh handshakes per 10 seconds per API process and 4 per trusted network, and keeps at most 128 bounded network-window keys. Any pre-existing `allowRequest` is composed after this gate; denial, exception, connection error, and expiry release reservations. The Engine.IO middleware remains only for requests carrying an existing `sid`, so fresh handshakes are not counted or reserved twice.
@@ -28,8 +26,8 @@ Test against the new API container through an operator-controlled internal path;
 4. Invalid socket authentication is rejected without user/token details in logs.
 5. A valid WinOrder poll returns the unchanged vendor payload. A concurrent burst performs one poll workload; excess requests return 429 and an integer `Retry-After` header.
 6. A valid tracking callback still succeeds.
-8. Exercise invalid MIME/magic, SVG, GIF/animation, corrupt bytes, dimensions, >20 MB, rate, and concurrency cases. Confirm pre-body/capacity responses are 429 with integer `Retry-After`, no temp files remain after success/error/abort, and logs contain no token, credential, user ID, address, file name, URL, or image bytes.
-10. Observe heap, RSS, CPU, event-loop responsiveness, database connections, and API restarts for at least 15 minutes. Heap must settle after each burst rather than rise monotonically; restart count must remain zero.
+7. Exercise invalid MIME/magic, SVG, GIF/animation, corrupt bytes, dimensions, >20 MB, rate, and concurrency cases. Confirm pre-body/capacity responses are 429 with integer `Retry-After`, no temp files remain after success/error/abort, and logs contain no token, credential, user ID, address, file name, URL, or image bytes.
+8. Observe heap, RSS, CPU, event-loop responsiveness, database connections, and API restarts for at least 15 minutes. Heap must settle after each burst rather than rise monotonically; restart count must remain zero.
 
 ## Safe removal of temporary route blocks
 
@@ -40,7 +38,7 @@ Remove only one route block at a time, in the order below.
 3. Remove only the `/socket.io/` temporary block, reload through the established nginx runbook, and verify an authorized polling connection upgrades to WebSocket, authorized namespace behavior remains unchanged, spoofed X-Forwarded-For prefixes do not change the network key, unknown/stale session IDs are rejected, duplicate polling GETs receive 429 plus integer `Retry-After`, and valid polling POST plus WebSocket upgrade continue to work. Observe the API for at least 15 minutes.
 4. If Engine.IO sessions exceed 32, fresh-handshake windows exceed 128 network keys, existing-session request windows exceed 512 network keys/32 session keys, pending sessions exceed 32, in-flight requests exceed 192, heap grows monotonically, event-loop p99 exceeds the harness bound, CPU remains saturated, health fails, or the process restarts, immediately restore that block and the previous known-good API image.
 5. Only after the realtime observation passes, remove the `GetNewOrders` temporary block, validate/reload, perform one authorized poll, then a bounded concurrency check. Observe for at least 15 minutes.
-8. Record final API commit/image, each nginx validation result, each route's status, temp-file baseline, memory/CPU baseline, request rates, and restart count.
+6. Record final API commit/image, each nginx validation result, each route's status, temp-file baseline, memory/CPU baseline, request rates, and restart count.
 
 ## Client reconnect guidance
 
@@ -51,4 +49,3 @@ Remove only one route block at a time, in the order below.
 - Operators should investigate a sustained fresh-handshake rejection rate rather than raising the 48/10-second process cap. Confirm clients are reusing connections and reconnecting with backoff first.
 
 ## Rollback
-
