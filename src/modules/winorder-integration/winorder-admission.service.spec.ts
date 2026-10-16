@@ -51,6 +51,56 @@ describe('WinOrderAdmissionService', () => {
     ).rejects.toMatchObject({ retryAfterSeconds: 60 });
   });
 
+  it('does not trust spoofed forwarding headers from public peers', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const service = new WinOrderAdmissionService();
+
+    for (let index = 0; index < 120; index += 1) {
+      expect(
+        service.admitPreAuthentication(
+          {
+            headers: { 'x-forwarded-for': `198.51.100.${index}` },
+            socket: { remoteAddress: '203.0.113.10' },
+          },
+          `Basic credential-${index}`,
+        ).allowed,
+      ).toBe(true);
+    }
+
+    expect(
+      service.admitPreAuthentication(
+        {
+          headers: { 'x-forwarded-for': '198.51.100.250' },
+          socket: { remoteAddress: '203.0.113.10' },
+        },
+        'Basic final-credential',
+      ),
+    ).toMatchObject({ allowed: false, retryAfterSeconds: 60 });
+    expect(service.getStats().networkRateKeys).toBe(1);
+  });
+
+  it('uses forwarding headers only behind a trusted private proxy', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const service = new WinOrderAdmissionService();
+
+    service.admitPreAuthentication(
+      {
+        headers: { 'x-forwarded-for': '198.51.100.10' },
+        socket: { remoteAddress: '10.0.0.5' },
+      },
+      'Basic credential-a',
+    );
+    service.admitPreAuthentication(
+      {
+        headers: { 'x-forwarded-for': '198.51.101.11' },
+        socket: { remoteAddress: '10.0.0.5' },
+      },
+      'Basic credential-b',
+    );
+
+    expect(service.getStats().networkRateKeys).toBe(2);
+  });
+
   it('bounds rate maps under randomized unauthenticated traffic', () => {
     jest.spyOn(Date, 'now').mockReturnValue(1_000);
     const service = new WinOrderAdmissionService();

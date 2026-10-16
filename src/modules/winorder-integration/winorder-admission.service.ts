@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { trustedNetworkKey } from '../../common/realtime/bounded-socket-io.adapter';
 
 type RateWindow = { count: number; resetAt: number };
 type InFlightPoll = { promise: Promise<unknown>; followers: number };
@@ -154,14 +155,10 @@ export class WinOrderAdmissionService {
   }
 
   private networkKey(request: HttpRequestIdentity): string {
-    const forwarded = request.headers['x-forwarded-for'];
-    const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-    return (
-      value?.split(',').at(-1)?.trim() ||
-      request.ip ||
-      request.socket?.remoteAddress ||
-      'unknown'
-    );
+    return trustedNetworkKey({
+      remoteAddress: request.socket?.remoteAddress ?? request.ip,
+      headers: request.headers,
+    });
   }
 
   private digest(value: string): string {
