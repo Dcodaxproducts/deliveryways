@@ -806,13 +806,14 @@ export class AdminReportsService {
       query.restaurantId,
       query.branchId,
     );
+    const isSelectedPeriod = Boolean(query.fromDate || query.toDate);
     const [data, payoutSummary] = await Promise.all([
       this.adminReportsRepository.getFinancialReport(scope, {
         ...query,
         restaurantId: scope.restaurantId,
         branchId: scope.branchId,
       }),
-      scope.restaurantId && !scope.branchId
+      scope.restaurantId && !scope.branchId && !isSelectedPeriod
         ? (this.packagePlansService?.getRestaurantPayoutBalanceSummary(
             scope.restaurantId,
           ) ?? Promise.resolve(null))

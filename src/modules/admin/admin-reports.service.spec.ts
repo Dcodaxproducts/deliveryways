@@ -102,6 +102,128 @@ describe('AdminReportsService', () => {
     expect(result.message).toBe('Orders report fetched successfully');
   });
 
+  it('loads selected-period financial summaries for every authorized owner restaurant without all-history payout work', async () => {
+    const summaries = new Map([
+      ['american-corner', { totalOrders: 4, grossRevenue: 120 }],
+      ['shop-two', { totalOrders: 2, grossRevenue: 55 }],
+      ['empty-shop', { totalOrders: 0, grossRevenue: 0 }],
+    ]);
+    const repository = {
+      findRestaurantScope: jest.fn((restaurantId: string, tenantId: string) =>
+        Promise.resolve(
+          summaries.has(restaurantId) && tenantId === 'tenant-1'
+            ? { id: restaurantId, tenantId }
+            : null,
+        ),
+      ),
+      getFinancialReport: jest.fn((scope: { restaurantId: string }) =>
+        Promise.resolve(summaries.get(scope.restaurantId)),
+      ),
+    };
+    const packagePlansService = {
+      getRestaurantPayoutBalanceSummary: jest
+        .fn()
+        .mockRejectedValue(new Error('legacy payout summary failed')),
+    };
+    const service = new AdminReportsService(
+      repository as never,
+      undefined,
+      undefined,
+      undefined,
+      packagePlansService as never,
+    );
+    const user = {
+      uid: 'owner-1',
+      tid: 'tenant-1',
+      role: 'BUSINESS_ADMIN',
+    } as never;
+    const period = { fromDate: '2026-10-01', toDate: '2026-10-16' };
+
+    const results = await Promise.all(
+      [...summaries.keys()].map((restaurantId) =>
+        service.getFinancialReport(user, { restaurantId, ...period }),
+      ),
+    );
+
+    expect(results.map((result) => result.data.totalOrders)).toEqual([4, 2, 0]);
+    expect(results[2].data).toMatchObject({
+      grossRevenue: 0,
+      payoutSummary: null,
+      availablePayoutAmount: null,
+    });
+    expect(
+      packagePlansService.getRestaurantPayoutBalanceSummary,
+    ).not.toHaveBeenCalled();
+    expect(repository.getFinancialReport).toHaveBeenCalledTimes(3);
+    expect(repository.getFinancialReport).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'shop-two' },
+      expect.objectContaining({
+        restaurantId: 'shop-two',
+        branchId: undefined,
+        ...period,
+      }),
+    );
+  });
+
+  it('keeps selected-period financial reports tenant and branch scoped', async () => {
+    const repository = {
+      findRestaurantScope: jest.fn().mockResolvedValue(null),
+      getFinancialReport: jest.fn().mockResolvedValue({
+        totalOrders: 1,
+        grossRevenue: 20,
+      }),
+    };
+    const packagePlansService = {
+      getRestaurantPayoutBalanceSummary: jest.fn(),
+    };
+    const service = new AdminReportsService(
+      repository as never,
+      undefined,
+      undefined,
+      undefined,
+      packagePlansService as never,
+    );
+
+    await expect(
+      service.getFinancialReport(
+        { uid: 'owner-1', tid: 'tenant-1', role: 'BUSINESS_ADMIN' } as never,
+        {
+          restaurantId: 'other-tenant-shop',
+          fromDate: '2026-10-01',
+          toDate: '2026-10-16',
+        },
+      ),
+    ).rejects.toThrow('outside your tenant restaurants');
+    expect(repository.getFinancialReport).not.toHaveBeenCalled();
+
+    const branchResult = await service.getFinancialReport(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'shop-two',
+        bid: 'branch-two',
+        role: 'BRANCH_ADMIN',
+      } as never,
+      { fromDate: '2026-10-01', toDate: '2026-10-16' },
+    );
+
+    expect(repository.getFinancialReport).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        restaurantId: 'shop-two',
+        branchId: 'branch-two',
+      },
+      expect.objectContaining({
+        restaurantId: 'shop-two',
+        branchId: 'branch-two',
+      }),
+    );
+    expect(branchResult.data.totalOrders).toBe(1);
+    expect(
+      packagePlansService.getRestaurantPayoutBalanceSummary,
+    ).not.toHaveBeenCalled();
+  });
+
   it('returns tenant-wide order totals for staff with all-restaurant access', async () => {
     const repository = {
       getOrdersReport: jest.fn().mockResolvedValue({
