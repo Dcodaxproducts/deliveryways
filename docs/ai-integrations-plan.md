@@ -5,6 +5,10 @@
 **Companion baselines inspected:** restaurant admin `70a9778948be21347c71042036c26d9bb4ad9d79`; customer website `2552d319b665916857e5a560f31e9b6836931f35`  
 **Last verified:** 2026-10-16
 
+## Analytics Copilot MVP implementation addendum (2026-10-16)
+
+The implementation branch uses one additive `AiAnalyticsUsage` table for durable redacted audit, idempotency, usage budgets, and safe-response replay. This differs from the broader future-platform model set by intentionally avoiding speculative tables. The MVP uses PostgreSQL plus existing Nest scheduling/throttling; it adds no Redis, BullMQ, vector store, or provider SDK. Native HTTP calls are isolated behind `AiTextProvider`. Snapshots are not cached because freshness and simple tenant-safe invalidation outweigh the small aggregate-query cost at pilot scale. See [Analytics Copilot runbook](./analytics-copilot-runbook.md).
+
 ## 1. Executive recommendation
 
 Build a small shared AI platform, then ship a **read-only Restaurant Analytics Copilot first**. It has the best data readiness and lowest operational risk because FeastFlow already has bounded, tenant-scoped reporting queries and dashboard UI. The model should explain a server-generated, deterministic analytics snapshot; it must not generate or execute SQL.

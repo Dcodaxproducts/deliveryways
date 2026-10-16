@@ -424,6 +424,13 @@ enum LocalizationEntityType {
   COUPON
 }
 
+enum AiAnalyticsUsageStatus {
+  IN_PROGRESS
+  COMPLETED
+  FALLBACK
+  FAILED
+}
+
 model Tenant {
   id             String    @id @default(cuid())
   name           String
@@ -467,6 +474,7 @@ model Tenant {
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
   branchMenuAssignments  BranchMenuAssignment[]
+  aiAnalyticsUsages      AiAnalyticsUsage[]
 
   @@map("tenants")
 }
@@ -528,6 +536,7 @@ model Restaurant {
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
   branchMenuAssignments  BranchMenuAssignment[]
+  aiAnalyticsUsages      AiAnalyticsUsage[]
 
   @@unique([id, tenantId])
   @@map("restaurants")
@@ -573,9 +582,53 @@ model Branch {
   orderReviews        OrderReview[]
   contactSubmissions  ContactSubmission[]
   menuAssignments     BranchMenuAssignment[]
+  aiAnalyticsUsages   AiAnalyticsUsage[]
 
   @@unique([id, tenantId, restaurantId])
   @@map("branches")
+}
+
+model AiAnalyticsUsage {
+  id                 String                 @id @default(cuid())
+  tenantId           String                 @map("tenant_id")
+  restaurantId       String                 @map("restaurant_id")
+  branchId           String?                @map("branch_id")
+  actorId            String                 @map("actor_id")
+  actorRole          String                 @map("actor_role") @db.VarChar(40)
+  requestId          String                 @map("request_id") @db.Uuid
+  intent             String                 @db.VarChar(40)
+  periodFrom         DateTime               @map("period_from") @db.Timestamptz
+  periodToExclusive  DateTime               @map("period_to_exclusive") @db.Timestamptz
+  comparisonFrom     DateTime?              @map("comparison_from") @db.Timestamptz
+  comparisonTo       DateTime?              @map("comparison_to") @db.Timestamptz
+  timezone           String                 @db.VarChar(64)
+  locale             String                 @db.VarChar(16)
+  questionHash       String                 @map("question_hash") @db.VarChar(64)
+  snapshotHash       String?                @map("snapshot_hash") @db.VarChar(64)
+  promptVersion      String                 @map("prompt_version") @db.VarChar(80)
+  provider           String?                @db.VarChar(40)
+  model              String?                @db.VarChar(120)
+  status             AiAnalyticsUsageStatus @default(IN_PROGRESS)
+  fallbackReason     String?                @map("fallback_reason") @db.VarChar(80)
+  inputTokens        Int                    @default(0) @map("input_tokens")
+  outputTokens       Int                    @default(0) @map("output_tokens")
+  estimatedCostMicro Int                    @default(0) @map("estimated_cost_micro")
+  latencyMs          Int                    @default(0) @map("latency_ms")
+  response           Json?
+  errorCode          String?                @map("error_code") @db.VarChar(80)
+  expiresAt          DateTime               @map("expires_at") @db.Timestamptz
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branch     Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, restaurantId, requestId], map: "ai_analytics_usage_scope_request_key")
+  @@index([tenantId, restaurantId, createdAt], map: "ai_analytics_usage_scope_created_idx")
+  @@index([tenantId, restaurantId, actorId, createdAt], map: "ai_analytics_usage_actor_created_idx")
+  @@index([expiresAt], map: "ai_analytics_usage_retention_idx")
+  @@map("ai_analytics_usage")
 }
 
 model Address {

@@ -12,6 +12,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { DatabaseModule } from './database/database.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
+import aiConfig from './config/ai.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { RestaurantsModule } from './modules/restaurants/restaurants.module';
@@ -48,6 +49,7 @@ import { PackagePlansModule } from './modules/package-plans/package-plans.module
 import { LocalizationsModule } from './modules/localizations';
 import { ContactSubmissionsModule } from './modules/contact-submissions/contact-submissions.module';
 import { WinOrderIntegrationModule } from './modules/winorder-integration/winorder-integration.module';
+import { AiModule } from './modules/ai/ai.module';
 import {
   JwtAuthGuard,
   PosPrinterAccessGuard,
@@ -66,7 +68,7 @@ import { RealtimeAdmissionModule } from './common/realtime/realtime-admission.mo
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig],
+      load: [appConfig, databaseConfig, aiConfig],
       envFilePath: ['.env.local', '.env'],
     }),
 
@@ -128,6 +130,7 @@ import { RealtimeAdmissionModule } from './common/realtime/realtime-admission.mo
     LocalizationsModule,
     ContactSubmissionsModule,
     WinOrderIntegrationModule,
+    AiModule,
   ],
   providers: [
     {
