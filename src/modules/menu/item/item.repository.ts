@@ -91,51 +91,56 @@ export class MenuItemRepository {
       .map((item) => item.id);
     const requestedIdSet = new Set(requestedIds);
 
-    const currentItems = await this.prisma.menuItem.findMany({
-      where: {
-        restaurantId,
-        deletedAt: null,
-        ...(categoryId
-          ? {
-              OR: [
-                { categoryId },
-                { categoryLinks: { some: { menuCategoryId: categoryId } } },
-              ],
-            }
-          : {}),
+    return this.prisma.$transaction(
+      async (tx) => {
+        const currentItems = await tx.menuItem.findMany({
+          where: {
+            restaurantId,
+            deletedAt: null,
+            ...(categoryId
+              ? {
+                  OR: [
+                    { categoryId },
+                    {
+                      categoryLinks: { some: { menuCategoryId: categoryId } },
+                    },
+                  ],
+                }
+              : {}),
+          },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+          take: MAX_MENU_REORDER_ITEMS + 1,
+        });
+
+        if (currentItems.length > MAX_MENU_REORDER_ITEMS) {
+          return 'TOO_LARGE' as const;
+        }
+
+        const currentIdSet = new Set(currentItems.map((item) => item.id));
+
+        if (requestedIds.some((id) => !currentIdSet.has(id))) {
+          return null;
+        }
+
+        const orderedIds = [
+          ...requestedIds,
+          ...currentItems
+            .map((item) => item.id)
+            .filter((id) => !requestedIdSet.has(id)),
+        ];
+
+        for (const [index, id] of orderedIds.entries()) {
+          await tx.menuItem.update({
+            where: { id },
+            data: { sortOrder: index + 1 },
+          });
+        }
+
+        return orderedIds.length;
       },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-      select: { id: true },
-      take: MAX_MENU_REORDER_ITEMS + 1,
-    });
-
-    if (currentItems.length > MAX_MENU_REORDER_ITEMS) {
-      return 'TOO_LARGE' as const;
-    }
-
-    const currentIdSet = new Set(currentItems.map((item) => item.id));
-
-    if (requestedIds.some((id) => !currentIdSet.has(id))) {
-      return null;
-    }
-
-    const orderedIds = [
-      ...requestedIds,
-      ...currentItems
-        .map((item) => item.id)
-        .filter((id) => !requestedIdSet.has(id)),
-    ];
-
-    await this.prisma.$transaction(
-      orderedIds.map((id, index) =>
-        this.prisma.menuItem.update({
-          where: { id },
-          data: { sortOrder: index + 1 },
-        }),
-      ),
+      { maxWait: 5_000, timeout: 30_000 },
     );
-
-    return orderedIds.length;
   }
 
   async list(restaurantId: string | undefined, query: ListMenuItemsDto) {

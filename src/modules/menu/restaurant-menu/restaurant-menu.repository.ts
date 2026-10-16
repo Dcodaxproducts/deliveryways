@@ -109,6 +109,7 @@ export class RestaurantMenuRepository {
         orderBy: [
           { sortOrder: 'asc' },
           { [query.sortBy]: query.sortOrder.toLowerCase() as 'asc' | 'desc' },
+          { id: 'asc' },
         ],
         select: restaurantMenuSelect,
       }),
@@ -671,8 +672,12 @@ export class RestaurantMenuRepository {
 
     const orderBy: Prisma.MenuItemOrderByWithRelationInput[] =
       query.sortBy === 'sortOrder'
-        ? [{ category: { sortOrder: orderDirection } }, { name: 'asc' }]
-        : [{ [query.sortBy]: orderDirection }];
+        ? [
+            { category: { sortOrder: orderDirection } },
+            { name: 'asc' },
+            { id: 'asc' },
+          ]
+        : [{ [query.sortBy]: orderDirection }, { id: 'asc' }];
 
     const [pageItems, total] = await Promise.all([
       this.prisma.menuItem.findMany({

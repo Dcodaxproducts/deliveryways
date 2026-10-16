@@ -215,7 +215,11 @@ describe('RestaurantMenuRepository', () => {
     } as never);
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(prisma.restaurantMenu.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.restaurantMenu.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }],
+      }),
+    );
     expect(prisma.restaurantMenu.count).toHaveBeenCalledTimes(1);
     expect(prisma.restaurantMenuItem.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.restaurantMenuCategory.findMany).toHaveBeenCalledTimes(1);
@@ -525,6 +529,7 @@ describe('RestaurantMenuRepository', () => {
       expect.objectContaining({
         skip: 0,
         take: 20,
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         select: { id: true },
       }),
     );

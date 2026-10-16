@@ -35,7 +35,13 @@ describe('MenuItemService', () => {
       getNextRestaurantSortOrder: jest.fn().mockResolvedValue(99),
     };
 
+    const restaurantMenuItemFindMany = jest.fn();
+    const restaurantMenuItemUpdate = jest.fn();
     const tx = {
+      restaurantMenuItem: {
+        findMany: restaurantMenuItemFindMany,
+        update: restaurantMenuItemUpdate,
+      },
       menuItemModifierPriceOverride: {
         deleteMany: jest.fn(),
         createMany: jest.fn(),
@@ -77,9 +83,9 @@ describe('MenuItemService', () => {
         findUnique: jest.fn(),
       },
       restaurantMenuItem: {
-        findMany: jest.fn(),
+        findMany: restaurantMenuItemFindMany,
         findUnique: jest.fn(),
-        update: jest.fn(),
+        update: restaurantMenuItemUpdate,
       },
       modifierGroup: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -1748,6 +1754,47 @@ describe('MenuItemService', () => {
     expect(result.data.count).toBe(2);
   });
 
+  it('validates and updates menu links sequentially in one bounded transaction', async () => {
+    const { service, prisma } = makeService();
+    prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });
+    prisma.restaurantMenu.findUnique.mockResolvedValue({
+      id: 'menu-1',
+      restaurantId: 'restaurant-1',
+      deletedAt: null,
+    });
+    prisma.restaurantMenuItem.findMany.mockResolvedValue([
+      { id: 'link-1', menuItemId: 'item-1' },
+      { id: 'link-2', menuItemId: 'item-2' },
+    ]);
+
+    await service.reorder(
+      {
+        uid: 'admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      {
+        menuId: 'menu-1',
+        items: [
+          { id: 'item-2', sortOrder: 1 },
+          { id: 'item-1', sortOrder: 2 },
+        ],
+      },
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 5_000,
+      timeout: 30_000,
+    });
+    expect(prisma.restaurantMenuItem.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 'link-2' },
+      data: { sortOrder: 0 },
+    });
+    expect(prisma.restaurantMenuItem.update).toHaveBeenNthCalledWith(2, {
+      where: { id: 'link-1' },
+      data: { sortOrder: 1 },
+    });
+  });
   it('reorders a single menu item inside a restaurant menu', async () => {
     const { service, prisma } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({ id: 'restaurant-1' });

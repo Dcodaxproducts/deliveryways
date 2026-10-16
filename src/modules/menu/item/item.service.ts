@@ -1241,52 +1241,53 @@ export class MenuItemService {
 
       await this.ensureCanAccessRestaurant(user, menu.restaurantId, 'write');
 
-      const links = await this.prisma.restaurantMenuItem.findMany({
-        where: { restaurantMenuId: dto.menuId, menuItemId: { in: ids } },
-        select: { id: true, menuItemId: true },
-      });
-
-      if (links.length !== ids.length) {
-        throw new BadRequestException('All items must be attached to the menu');
-      }
-
       const requestedOrder = [...dto.items]
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((item) => item.id);
       const requestedIdSet = new Set(requestedOrder);
-      const allLinks = await this.prisma.restaurantMenuItem.findMany({
-        where: { restaurantMenuId: dto.menuId },
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-        select: { id: true, menuItemId: true },
-        take: MAX_MENU_REORDER_ITEMS + 1,
-      });
-      if (allLinks.length > MAX_MENU_REORDER_ITEMS) {
-        throw new BadRequestException(
-          `Menu reorder scope cannot exceed ${MAX_MENU_REORDER_ITEMS} items`,
-        );
-      }
-      let requestedIndex = 0;
-      const completeLinks = allLinks.map((link) =>
-        requestedIdSet.has(link.menuItemId)
-          ? {
-              ...link,
-              menuItemId: requestedOrder[requestedIndex++],
-            }
-          : link,
-      );
-      const linkByMenuItemId = new Map(
-        allLinks.map((link) => [link.menuItemId, link]),
-      );
-
       await this.prisma.$transaction(
-        completeLinks.map((entry, sortOrder) =>
-          this.prisma.restaurantMenuItem.update({
-            where: {
-              id: linkByMenuItemId.get(entry.menuItemId)?.id ?? entry.id,
-            },
-            data: { sortOrder },
-          }),
-        ),
+        async (tx) => {
+          const allLinks = await tx.restaurantMenuItem.findMany({
+            where: { restaurantMenuId: dto.menuId },
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            select: { id: true, menuItemId: true },
+            take: MAX_MENU_REORDER_ITEMS + 1,
+          });
+          if (allLinks.length > MAX_MENU_REORDER_ITEMS) {
+            throw new BadRequestException(
+              `Menu reorder scope cannot exceed ${MAX_MENU_REORDER_ITEMS} items`,
+            );
+          }
+
+          const linkByMenuItemId = new Map(
+            allLinks.map((link) => [link.menuItemId, link]),
+          );
+          if (requestedOrder.some((id) => !linkByMenuItemId.has(id))) {
+            throw new BadRequestException(
+              'All items must be attached to the menu',
+            );
+          }
+
+          let requestedIndex = 0;
+          const completeLinks = allLinks.map((link) =>
+            requestedIdSet.has(link.menuItemId)
+              ? {
+                  ...link,
+                  menuItemId: requestedOrder[requestedIndex++],
+                }
+              : link,
+          );
+
+          for (const [sortOrder, entry] of completeLinks.entries()) {
+            await tx.restaurantMenuItem.update({
+              where: {
+                id: linkByMenuItemId.get(entry.menuItemId)?.id ?? entry.id,
+              },
+              data: { sortOrder },
+            });
+          }
+        },
+        { maxWait: 5_000, timeout: 30_000 },
       );
     } else {
       const items = await this.prisma.menuItem.findMany({

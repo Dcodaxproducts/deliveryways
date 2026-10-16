@@ -148,7 +148,7 @@ describe('MenuItemRepository', () => {
     ).toEqual(sharedModifierPriceOverrides);
   });
 
-  it('rejects reorder scopes above the hard bound before opening a transaction', async () => {
+  it('rejects reorder scopes above the hard bound inside the atomic transaction', async () => {
     const { repository, findMany, transaction } = createRepository();
     findMany.mockResolvedValue(
       Array.from({ length: 501 }, (_, index) => ({ id: `item-${index}` })),
@@ -162,7 +162,10 @@ describe('MenuItemRepository', () => {
       ),
     ).resolves.toBe('TOO_LARGE');
 
-    expect(transaction).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 5_000,
+      timeout: 30_000,
+    });
   });
 
   it('puts the submitted category order first and normalizes legacy ties', async () => {
@@ -200,8 +203,10 @@ describe('MenuItemRepository', () => {
       select: { id: true },
       take: 501,
     });
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(Array.isArray(transaction.mock.calls[0][0])).toBe(true);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 5_000,
+      timeout: 30_000,
+    });
     expect(update).toHaveBeenNthCalledWith(1, {
       where: { id: 'item-2' },
       data: { sortOrder: 1 },
