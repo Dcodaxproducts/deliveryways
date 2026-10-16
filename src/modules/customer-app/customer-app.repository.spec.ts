@@ -16,6 +16,9 @@ type FindManyCuisines = (
   args: Prisma.CuisineFindManyArgs,
 ) => Promise<unknown[]>;
 type CountCuisines = (args: Prisma.CuisineCountArgs) => Promise<number>;
+type FindFirstRestaurant = (
+  args: Prisma.RestaurantFindFirstArgs,
+) => Promise<unknown>;
 
 type CompactMenuItemInclude = {
   category: {
@@ -41,6 +44,35 @@ type CompactMenuItemInclude = {
 };
 
 describe('CustomerAppRepository', () => {
+  it('canonicalizes apex and www custom domains to the same verified restaurant', async () => {
+    const findFirst = jest
+      .fn<ReturnType<FindFirstRestaurant>, Parameters<FindFirstRestaurant>>()
+      .mockResolvedValue({ id: 'restaurant-1' });
+    const repository = new CustomerAppRepository({
+      restaurant: { findFirst },
+    } as unknown as PrismaService);
+
+    await repository.findRestaurantDomainContext('restaurant.example');
+
+    expect(findFirst.mock.calls[0]?.[0]?.where).toMatchObject({
+      customDomainVerifiedAt: { not: null },
+      OR: [
+        {
+          customDomain: {
+            equals: 'restaurant.example',
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+        {
+          customDomain: {
+            equals: 'www.restaurant.example',
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+      ],
+    });
+  });
+
   it('loads cuisine schedule data without a read transaction or item detail graph', async () => {
     const findMany = jest
       .fn<ReturnType<FindManyCuisines>, Parameters<FindManyCuisines>>()
