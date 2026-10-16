@@ -373,6 +373,10 @@ describe('AdminDashboardService', () => {
 
   it('returns scoped revenue trend data for business admin', async () => {
     const repository = {
+      findRestaurantScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-2',
+        tenantId: 'tenant-1',
+      }),
       getRevenueTrend: jest.fn().mockResolvedValue({
         range: 'weekly',
         totalRevenueInRange: 25000,
@@ -398,7 +402,7 @@ describe('AdminDashboardService', () => {
           rid: 'restaurant-1',
           role: 'BUSINESS_ADMIN',
         } as never,
-        { range: 'weekly', restaurantId: 'restaurant-1' },
+        { range: 'weekly', restaurantId: 'restaurant-2' },
       ),
     ).resolves.toEqual({
       data: {
@@ -417,10 +421,14 @@ describe('AdminDashboardService', () => {
       message: 'Admin dashboard revenue trend fetched successfully',
     });
 
+    expect(repository.findRestaurantScope).toHaveBeenCalledWith(
+      'restaurant-2',
+      'tenant-1',
+    );
     expect(repository.getRevenueTrend).toHaveBeenCalledWith(
       {
         tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
+        restaurantId: 'restaurant-2',
       },
       {
         range: 'weekly',

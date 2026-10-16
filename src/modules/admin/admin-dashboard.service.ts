@@ -405,7 +405,6 @@ export class AdminDashboardService {
       const branch = await this.adminDashboardRepository.findBranchScope(
         requestedBranchId,
         user.tid,
-        user.rid,
       );
 
       if (!branch) {
@@ -430,19 +429,6 @@ export class AdminDashboardService {
       };
     }
 
-    if (user.rid) {
-      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot access resources outside your restaurant',
-        );
-      }
-
-      return {
-        tenantId: user.tid,
-        restaurantId: user.rid,
-      };
-    }
-
     if (requestedRestaurantId) {
       const restaurant =
         await this.adminDashboardRepository.findRestaurantScope(
@@ -459,6 +445,13 @@ export class AdminDashboardService {
       return {
         tenantId: user.tid,
         restaurantId: restaurant.id,
+      };
+    }
+
+    if (user.rid) {
+      return {
+        tenantId: user.tid,
+        restaurantId: user.rid,
       };
     }
 

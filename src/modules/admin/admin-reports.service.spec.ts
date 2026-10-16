@@ -135,6 +135,7 @@ describe('AdminReportsService', () => {
     const user = {
       uid: 'owner-1',
       tid: 'tenant-1',
+      rid: 'american-corner',
       role: 'BUSINESS_ADMIN',
     } as never;
     const period = { fromDate: '2026-10-01', toDate: '2026-10-16' };
@@ -186,7 +187,12 @@ describe('AdminReportsService', () => {
 
     await expect(
       service.getFinancialReport(
-        { uid: 'owner-1', tid: 'tenant-1', role: 'BUSINESS_ADMIN' } as never,
+        {
+          uid: 'owner-1',
+          tid: 'tenant-1',
+          rid: 'shop-one',
+          role: 'BUSINESS_ADMIN',
+        } as never,
         {
           restaurantId: 'other-tenant-shop',
           fromDate: '2026-10-01',

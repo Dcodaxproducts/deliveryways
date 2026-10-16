@@ -1658,7 +1658,6 @@ export class AdminReportsService {
       const branch = await this.adminReportsRepository.findBranchScope(
         requestedBranchId,
         user.tid,
-        user.rid,
       );
       if (!branch) {
         throw new ForbiddenException(
@@ -1682,19 +1681,6 @@ export class AdminReportsService {
       };
     }
 
-    if (user.rid) {
-      if (requestedRestaurantId && requestedRestaurantId !== user.rid) {
-        throw new ForbiddenException(
-          'You cannot access resources outside your restaurant',
-        );
-      }
-
-      return {
-        tenantId: user.tid,
-        restaurantId: user.rid,
-      };
-    }
-
     if (requestedRestaurantId) {
       const restaurant = await this.adminReportsRepository.findRestaurantScope(
         requestedRestaurantId,
@@ -1709,6 +1695,13 @@ export class AdminReportsService {
       return {
         tenantId: user.tid,
         restaurantId: restaurant.id,
+      };
+    }
+
+    if (user.rid) {
+      return {
+        tenantId: user.tid,
+        restaurantId: user.rid,
       };
     }
 
