@@ -20,6 +20,7 @@ const FEATURE_BY_ROUTE: Array<[string, string]> = [
 ];
 
 const EXACT_FEATURE_BY_ROUTE = new Map<string, string>([
+  ['admin/reports/financial', 'orderManagement'],
   ['admin/reports/orders', 'orderManagement'],
 ]);
 
