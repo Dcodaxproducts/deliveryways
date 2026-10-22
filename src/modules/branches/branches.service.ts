@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { Branch, Prisma } from '@prisma/client';
+import { Branch, Prisma, StaffAccountType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
@@ -303,6 +303,34 @@ export class BranchesService {
   async list(user: AuthUserContext, query: ListBranchesDto) {
     const nearestOrigin = this.resolveNearestOrigin(query);
 
+    if (this.isPosPrinter(user)) {
+      const branchId = this.resolveTokenBranchScope(user);
+      if (!user.tid || !user.rid || !branchId) {
+        throw new ForbiddenException('POS printer branch context is required');
+      }
+      const items = (
+        await this.branchesRepository.listByBranchId(branchId)
+      ).filter(
+        (branch) =>
+          branch.tenantId === user.tid &&
+          branch.restaurantId === user.rid &&
+          branch.id === branchId,
+      );
+
+      return {
+        data: items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          tenantId: item.tenantId,
+          restaurantId: item.restaurantId,
+          isMain: item.isMain,
+          isActive: item.isActive,
+        })),
+        message: 'Assigned POS printer branch fetched successfully',
+        meta: buildPaginationMeta(query, items.length),
+      };
+    }
+
     if (this.isStaff(user)) {
       const staffAccess = await this.resolveStaffBranchAccess(user, 'read');
       const effectiveRestaurantId = this.resolveStaffRestaurantId(
@@ -482,6 +510,10 @@ export class BranchesService {
       user.role === UserRoleEnum.STAFF ||
       Boolean(user.staffRoleId)
     );
+  }
+
+  private isPosPrinter(user: AuthUserContext) {
+    return user.accountType === StaffAccountType.POS_PRINTER;
   }
 
   private async resolveStaffBranchAccess(
@@ -1640,6 +1672,23 @@ export class BranchesService {
       isActive: boolean;
     },
   ) {
+    if (this.isPosPrinter(user)) {
+      const scopedBranchId = this.resolveTokenBranchScope(user);
+      if (
+        !user.tid ||
+        !user.rid ||
+        !scopedBranchId ||
+        branch.tenantId !== user.tid ||
+        branch.restaurantId !== user.rid ||
+        branch.id !== scopedBranchId
+      ) {
+        throw new ForbiddenException(
+          'POS printer account is not assigned to this branch',
+        );
+      }
+      return;
+    }
+
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
     }

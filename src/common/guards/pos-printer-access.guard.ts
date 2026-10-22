@@ -43,7 +43,7 @@ export class PosPrinterAccessGuard implements CanActivate {
     );
     if (!allowed) {
       throw new ForbiddenException(
-        'POS printer accounts can only access order management and table reservations',
+        'POS printer accounts can only access order management, table reservations, and assigned branch details',
       );
     }
 

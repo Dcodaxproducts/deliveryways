@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { StaffAccountType } from '@prisma/client';
 import { PaymentMethodEnum, UserRoleEnum } from '../../common/enums';
 import { BranchScheduleDayEnum } from './dto';
 import { BranchesService } from './branches.service';
@@ -71,6 +72,68 @@ describe('BranchesService', () => {
       storageService,
     };
   };
+
+  it('lists only the branch assigned to a POS printer account', async () => {
+    const { service, repository } = makeService();
+    repository.listByBranchId.mockResolvedValue([
+      {
+        id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        settings: { openingHours: [] as unknown[] },
+      },
+      {
+        id: 'branch-2',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        settings: {},
+      },
+    ]);
+
+    const result = await service.list(
+      {
+        uid: 'printer-1',
+        role: UserRoleEnum.STAFF,
+        actorType: 'STAFF',
+        accountType: StaffAccountType.POS_PRINTER,
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+      },
+      { page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' },
+    );
+
+    expect(repository.listByBranchId).toHaveBeenCalledWith('branch-1');
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toEqual(expect.objectContaining({ id: 'branch-1' }));
+    expect(repository.findStaffBranchAccess).not.toHaveBeenCalled();
+  });
+
+  it('denies POS printer opening hours outside its assigned scope', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-2',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.getOpeningHours(
+        {
+          uid: 'printer-1',
+          role: UserRoleEnum.STAFF,
+          actorType: 'STAFF',
+          accountType: StaffAccountType.POS_PRINTER,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        },
+        'branch-2',
+      ),
+    ).rejects.toThrow('POS printer account is not assigned to this branch');
+  });
 
   it('allows super admin to soft delete a non-main branch', async () => {
     const { service, repository } = makeService();
