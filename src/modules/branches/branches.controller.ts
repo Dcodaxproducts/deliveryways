@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { CurrentUser, Roles } from '../../common/decorators';
+import { CurrentUser, PosPrinterAccess, Roles } from '../../common/decorators';
 import { AuthUserContext } from '../../common/decorators';
 import { RolesEnum } from '../../common/enums';
 import {
@@ -130,6 +130,7 @@ export class BranchesController {
     description: 'Admin only',
   })
   @Get()
+  @PosPrinterAccess()
   list(@CurrentUser() user: AuthUserContext, @Query() query: ListBranchesDto) {
     return this.branchesService.list(user, query);
   }
@@ -158,6 +159,7 @@ export class BranchesController {
     RolesEnum.CUSTOMER,
   )
   @Get(':id/opening-hours')
+  @PosPrinterAccess()
   openingHours(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.getOpeningHours(user, id);
   }
@@ -189,6 +191,7 @@ export class BranchesController {
     RolesEnum.STAFF,
   )
   @Get(':id/holiday-opening-hours')
+  @PosPrinterAccess()
   holidayOpeningHours(
     @CurrentUser() user: AuthUserContext,
     @Param('id') id: string,
@@ -223,6 +226,7 @@ export class BranchesController {
     RolesEnum.STAFF,
   )
   @Get(':id/delivery-time')
+  @PosPrinterAccess()
   deliveryTime(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.getDeliveryTime(user, id);
   }
@@ -254,6 +258,7 @@ export class BranchesController {
     RolesEnum.STAFF,
   )
   @Get(':id/delivery-hours')
+  @PosPrinterAccess()
   deliveryHours(@CurrentUser() user: AuthUserContext, @Param('id') id: string) {
     return this.branchesService.getDeliveryHours(user, id);
   }
