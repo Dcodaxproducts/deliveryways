@@ -11,6 +11,7 @@ describe('BranchesService', () => {
       update: jest.fn(),
       setDefault: jest.fn(),
       listByBranchId: jest.fn(),
+      listPosPrinterBranchSummary: jest.fn(),
       listByRestaurant: jest.fn(),
       listAllByRestaurant: jest.fn(),
       findTenantIdByRestaurant: jest.fn(),
@@ -75,11 +76,16 @@ describe('BranchesService', () => {
 
   it('lists only the branch assigned to a POS printer account', async () => {
     const { service, repository } = makeService();
-    repository.listByBranchId.mockResolvedValue([
+    repository.listPosPrinterBranchSummary.mockResolvedValue([
       {
         id: 'branch-1',
         tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
+        name: 'Assigned branch',
+        isMain: false,
+        isActive: true,
+        managerId: 'manager-1',
+        manager: { email: 'manager@example.com' },
         settings: { openingHours: [] as unknown[] },
       },
       {
@@ -103,9 +109,18 @@ describe('BranchesService', () => {
       { page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' },
     );
 
-    expect(repository.listByBranchId).toHaveBeenCalledWith('branch-1');
+    expect(repository.listPosPrinterBranchSummary).toHaveBeenCalledWith(
+      'branch-1',
+    );
     expect(result.data).toHaveLength(1);
-    expect(result.data[0]).toEqual(expect.objectContaining({ id: 'branch-1' }));
+    expect(result.data[0]).toEqual({
+      id: 'branch-1',
+      name: 'Assigned branch',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isMain: false,
+      isActive: true,
+    });
     expect(repository.findStaffBranchAccess).not.toHaveBeenCalled();
   });
 

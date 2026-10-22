@@ -242,6 +242,24 @@ export class BranchesRepository {
     });
   }
 
+  async listPosPrinterBranchSummary(branchId: string) {
+    return this.prisma.branch.findMany({
+      where: {
+        id: branchId,
+        deletedAt: null,
+      },
+      take: 1,
+      select: {
+        id: true,
+        name: true,
+        tenantId: true,
+        restaurantId: true,
+        isMain: true,
+        isActive: true,
+      },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.branch.findUnique({
       where: { id },
