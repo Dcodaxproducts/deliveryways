@@ -309,7 +309,7 @@ export class BranchesService {
         throw new ForbiddenException('POS printer branch context is required');
       }
       const items = (
-        await this.branchesRepository.listByBranchId(branchId)
+        await this.branchesRepository.listPosPrinterBranchSummary(branchId)
       ).filter(
         (branch) =>
           branch.tenantId === user.tid &&

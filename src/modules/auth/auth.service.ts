@@ -1244,6 +1244,14 @@ export class AuthService {
       accountType: StaffAccountType.POS_PRINTER,
       authVersion: staff.authVersion,
     });
+    const subscriptionFeatures = await this.resolveSubscriptionFeatures(
+      staff.tenantId,
+      staff.restaurantId,
+    );
+    const permissions = [
+      'order-management',
+      ...(subscriptionFeatures.tableBooking ? ['table-reservations'] : []),
+    ];
 
     return {
       data: {
@@ -1261,12 +1269,38 @@ export class AuthService {
           tenantId: staff.tenantId,
           restaurantId: staff.restaurantId,
           branchId: staff.branchId,
-          permissions: ['order-management', 'table-reservations'],
+          permissions,
+          subscriptionFeatures,
           isActive: staff.isActive,
         },
       },
       message: 'POS printer login successful',
     };
+  }
+
+  private async resolveSubscriptionFeatures(
+    tenantId: string,
+    restaurantId: string,
+  ): Promise<{ tableBooking: boolean }> {
+    const subscription = await this.prisma.tenantSubscription.findFirst({
+      where: {
+        tenantId,
+        OR: [{ restaurantId }, { restaurantId: null }],
+        status: {
+          in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
+        },
+      },
+      orderBy: [{ restaurantId: 'desc' }, { createdAt: 'desc' }],
+      select: { packagePlan: { select: { features: true } } },
+    });
+    const features = subscription?.packagePlan.features;
+    const featureMap =
+      features && typeof features === 'object' && !Array.isArray(features)
+        ? features
+        : {};
+
+    // Match SubscriptionFeaturesGuard exactly: only an explicit false denies.
+    return { tableBooking: featureMap.tableBooking !== false };
   }
 
   async loginDeliveryman(dto: LoginDto) {

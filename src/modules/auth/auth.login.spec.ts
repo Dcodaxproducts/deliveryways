@@ -656,6 +656,44 @@ describe('AuthService login', () => {
       'order-management',
       'table-reservations',
     ]);
+    expect(result.data.user.subscriptionFeatures).toEqual({
+      tableBooking: true,
+    });
+  });
+
+  it('does not advertise table reservations when the canonical plan feature is disabled', async () => {
+    staffManagementRepository.findPosPrinterByLoginIdentifier!.mockResolvedValue(
+      {
+        id: 'printer-1',
+        email: 'printer@example.com',
+        password: 'hashed-password',
+        ownerUserId: 'admin-1',
+        staffRoleId: 'role-1',
+        panelType: 'BUSINESS_ADMIN',
+        accountType: StaffAccountType.POS_PRINTER,
+        authVersion: 0,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isActive: true,
+        deletedAt: null,
+        staffRole: { isActive: true, deletedAt: null },
+      },
+    );
+    prismaService.tenantSubscription.findFirst.mockResolvedValue({
+      packagePlan: { features: { tableBooking: false } },
+    });
+
+    const result = await service.loginPosPrinter({
+      usernameOrEmail: 'printer@example.com',
+      password: 'Password@123',
+    });
+
+    expect(prismaService.tenantSubscription.findFirst).toHaveBeenCalled();
+    expect(result.data.user.permissions).toEqual(['order-management']);
+    expect(result.data.user.subscriptionFeatures).toEqual({
+      tableBooking: false,
+    });
   });
 
   it('accepts the legacy email field for existing POS printer accounts', async () => {
