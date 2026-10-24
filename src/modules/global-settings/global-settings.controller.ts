@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   AuthUserContext,
@@ -29,6 +36,7 @@ export class GlobalSettingsController {
 
   @Public()
   @Get('public/landing-page')
+  @Header('Cache-Control', 'no-store, max-age=0')
   @ApiOperation({
     summary: 'Get public landing-page branding and footer settings',
   })
