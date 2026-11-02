@@ -24,6 +24,23 @@ async function bootstrap(): Promise<void> {
     });
 
     const configService = app.get(ConfigService);
+
+    // Do not trust forwarded client IP headers unless operators explicitly
+    // configure the known reverse-proxy addresses/CIDRs.
+    const trustProxy = configService.get<string>('TRUST_PROXY');
+    if (trustProxy?.trim()) {
+      const express = app.getHttpAdapter().getInstance() as {
+        set(name: string, value: string[]): void;
+      };
+      express.set(
+        'trust proxy',
+        trustProxy
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      );
+    }
+
     // Security
     app.use(
       helmet({

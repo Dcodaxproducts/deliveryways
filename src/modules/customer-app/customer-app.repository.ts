@@ -2227,4 +2227,230 @@ export class CustomerAppRepository {
             },
     });
   }
+  async createTableReservationAtomic(input: {
+    tenantId: string;
+    restaurantId: string;
+    branchId: string;
+    customerId: string | null;
+    reservationDate: Date;
+    durationMinutes: number;
+    guestCount: number;
+    note: string | null;
+    guestName: string;
+    guestEmail: string;
+    guestPhone: string;
+    idempotencyScope: string;
+    clientRequestId: string;
+    requestFingerprint: string;
+    autoAccept: boolean;
+    tableCount: number;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.idempotencyScope + ':' + input.clientRequestId}, 0))`;
+      await tx.$queryRaw`SELECT id FROM branches WHERE id = ${input.branchId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+
+      const existing = await tx.tableReservation.findUnique({
+        where: {
+          idempotencyScope_clientRequestId: {
+            idempotencyScope: input.idempotencyScope,
+            clientRequestId: input.clientRequestId,
+          },
+        },
+      });
+      if (existing) {
+        return {
+          reservation: existing,
+          created: false,
+          fingerprintMatches:
+            existing.requestFingerprint === input.requestFingerprint,
+        };
+      }
+
+      const slotEnd = new Date(
+        input.reservationDate.getTime() + input.durationMinutes * 60_000,
+      );
+      const earliestOverlap = new Date(
+        input.reservationDate.getTime() - input.durationMinutes * 60_000 + 1,
+      );
+      const acceptedCount = input.autoAccept
+        ? await tx.tableReservation.count({
+            where: {
+              branchId: input.branchId,
+              status: { in: ['CONFIRMED', 'SEATED'] },
+              reservationDate: { gte: earliestOverlap, lt: slotEnd },
+            },
+          })
+        : 0;
+      const status =
+        input.autoAccept &&
+        input.tableCount > 0 &&
+        acceptedCount < input.tableCount
+          ? 'CONFIRMED'
+          : 'REQUESTED';
+      const reservation = await tx.tableReservation.create({
+        data: {
+          tenantId: input.tenantId,
+          restaurantId: input.restaurantId,
+          branchId: input.branchId,
+          customerId: input.customerId,
+          reservationDate: input.reservationDate,
+          durationMinutes: input.durationMinutes,
+          guestCount: input.guestCount,
+          note: input.note,
+          status,
+          guestName: input.guestName,
+          guestEmail: input.guestEmail,
+          guestPhone: input.guestPhone,
+          idempotencyScope: input.idempotencyScope,
+          clientRequestId: input.clientRequestId,
+          requestFingerprint: input.requestFingerprint,
+        },
+      });
+
+      return { reservation, created: true, fingerprintMatches: true };
+    });
+  }
+
+  findTableReservationByIdempotency(
+    idempotencyScope: string,
+    clientRequestId: string,
+  ) {
+    return this.prisma.tableReservation.findUnique({
+      where: {
+        idempotencyScope_clientRequestId: {
+          idempotencyScope,
+          clientRequestId,
+        },
+      },
+    });
+  }
+
+  findTableReservationsForCustomer(customerId: string) {
+    return this.prisma.tableReservation.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  findTableReservationForCustomer(id: string, customerId: string) {
+    return this.prisma.tableReservation.findFirst({
+      where: { id, customerId },
+    });
+  }
+
+  cancelTableReservationForCustomer(id: string, customerId: string) {
+    return this.prisma.tableReservation.updateMany({
+      where: { id, customerId, status: { not: 'CANCELLED' } },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    });
+  }
+
+  findAdminTableReservations(input: {
+    restaurantId: string;
+    branchId?: string;
+    customerId?: string;
+    status?: string;
+    search?: string;
+  }) {
+    return this.prisma.tableReservation.findMany({
+      where: {
+        restaurantId: input.restaurantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+        ...(input.customerId ? { customerId: input.customerId } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.search
+          ? {
+              OR: [
+                { guestName: { contains: input.search, mode: 'insensitive' } },
+                { guestEmail: { contains: input.search, mode: 'insensitive' } },
+                { guestPhone: { contains: input.search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            profile: { select: { avatarUrl: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+  }
+
+  findAdminTableReservationById(input: {
+    id: string;
+    restaurantId: string;
+    branchId?: string;
+  }) {
+    return this.prisma.tableReservation.findFirst({
+      where: {
+        id: input.id,
+        restaurantId: input.restaurantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+      },
+      include: {
+        customer: {
+          select: { id: true, profile: { select: { avatarUrl: true } } },
+        },
+      },
+    });
+  }
+
+  updateAdminTableReservationStatusAtomic(input: {
+    id: string;
+    restaurantId: string;
+    branchId: string;
+    status: string;
+    tableCount: number;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM branches WHERE id = ${input.branchId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+      const reservation = await tx.tableReservation.findFirst({
+        where: {
+          id: input.id,
+          restaurantId: input.restaurantId,
+          branchId: input.branchId,
+        },
+      });
+      if (!reservation) return { reservation: null, capacityExceeded: false };
+      if (input.status === 'CONFIRMED') {
+        const slotEnd = new Date(
+          reservation.reservationDate.getTime() +
+            reservation.durationMinutes * 60_000,
+        );
+        const earliestOverlap = new Date(
+          reservation.reservationDate.getTime() -
+            reservation.durationMinutes * 60_000 +
+            1,
+        );
+        const accepted = await tx.tableReservation.count({
+          where: {
+            id: { not: reservation.id },
+            branchId: reservation.branchId,
+            status: { in: ['CONFIRMED', 'SEATED'] },
+            reservationDate: { gte: earliestOverlap, lt: slotEnd },
+          },
+        });
+        if (input.tableCount <= 0 || accepted >= input.tableCount) {
+          return { reservation: null, capacityExceeded: true };
+        }
+      }
+      const updated = await tx.tableReservation.update({
+        where: { id: reservation.id },
+        data: {
+          status: input.status,
+          cancelledAt:
+            input.status === 'CANCELLED'
+              ? (reservation.cancelledAt ?? new Date())
+              : null,
+        },
+      });
+      return { reservation: updated, capacityExceeded: false };
+    });
+  }
 }

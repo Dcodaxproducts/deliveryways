@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -14,9 +15,9 @@ import {
   ModifierSelectionType,
   Prisma,
   StaffAccountType,
+  TableReservation,
 } from '@prisma/client';
-import { createHash, randomBytes, randomUUID } from 'crypto';
-import * as bcrypt from 'bcrypt';
+import { createHash, randomUUID } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
@@ -1847,13 +1848,21 @@ export class CustomerAppService {
       query.restaurantId,
     );
     const branchId = this.resolveAdminReservationBranchId(user, query.branchId);
+    const durableReservations =
+      await this.customerAppRepository.findAdminTableReservations({
+        restaurantId,
+        ...(branchId ? { branchId } : {}),
+        ...(query.customerId ? { customerId: query.customerId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.search ? { search: query.search } : {}),
+      });
     const customers =
       await this.customerAppRepository.findCustomersForTableReservations({
         restaurantId,
         customerId: query.customerId,
         search: query.search,
       });
-    const reservations = customers.flatMap((customer) =>
+    const legacyReservations = customers.flatMap((customer) =>
       this.readTableReservations(customer.profile?.metadata)
         .filter((reservation) =>
           branchId ? reservation.branchId === branchId : true,
@@ -1879,6 +1888,21 @@ export class CustomerAppService {
           },
         })),
     );
+    const durableIds = new Set(durableReservations.map((item) => item.id));
+    const reservations = [
+      ...durableReservations.map((item) => ({
+        ...this.toTableReservationRecord(item),
+        customer: {
+          id: item.customerId ?? item.id,
+          email: item.guestEmail,
+          firstName: item.guestName.split(/\s+/)[0] ?? null,
+          lastName: item.guestName.split(/\s+/).slice(1).join(' ') || null,
+          phone: item.guestPhone || null,
+          avatarUrl: item.customer?.profile?.avatarUrl ?? null,
+        },
+      })),
+      ...legacyReservations.filter((item) => !durableIds.has(item.id)),
+    ];
     const branchIds = [...new Set(reservations.map((item) => item.branchId))];
     const branches = await this.customerAppRepository.findBranchesPublicContent(
       branchIds,
@@ -1917,7 +1941,17 @@ export class CustomerAppService {
     requestedCustomerId?: string,
   ) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
-    const reservations = this.readTableReservations(customer.profile?.metadata);
+    const durableReservations =
+      await this.customerAppRepository.findTableReservationsForCustomer(
+        customer.id,
+      );
+    const durableIds = new Set(durableReservations.map((item) => item.id));
+    const reservations = [
+      ...durableReservations.map((item) => this.toTableReservationRecord(item)),
+      ...this.readTableReservations(customer.profile?.metadata).filter(
+        (item) => !durableIds.has(item.id),
+      ),
+    ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const branchIds = [...new Set(reservations.map((item) => item.branchId))];
     const branches = customer.restaurantId
       ? await this.customerAppRepository.findBranchesPublicContent(
@@ -1963,6 +1997,83 @@ export class CustomerAppService {
       dto.restaurantId,
     );
     const branchId = this.resolveAdminReservationBranchId(user, dto.branchId);
+    const durable =
+      await this.customerAppRepository.findAdminTableReservationById({
+        id: reservationId,
+        restaurantId,
+        ...(branchId ? { branchId } : {}),
+      });
+    if (durable) {
+      const branches =
+        await this.customerAppRepository.findBranchesPublicContent(
+          [durable.branchId],
+          restaurantId,
+        );
+      const branch = branches.find((item) => item.id === durable.branchId);
+      if (!branch) {
+        throw new NotFoundException('Table reservation not found');
+      }
+      const update =
+        await this.customerAppRepository.updateAdminTableReservationStatusAtomic(
+          {
+            id: durable.id,
+            restaurantId,
+            branchId: durable.branchId,
+            status: dto.status,
+            tableCount: this.readNumberValue(branch.settings, [
+              ['tableCount'],
+              ['tableReservations', 'tableCount'],
+            ]),
+          },
+        );
+      if (update.capacityExceeded) {
+        throw new BadRequestException(
+          'No tables are available for this reservation time',
+        );
+      }
+      if (!update.reservation) {
+        throw new NotFoundException('Table reservation not found');
+      }
+      const reservation = this.toTableReservationRecord(update.reservation);
+      const nameParts = durable.guestName.split(/\s+/);
+      if (dto.status === 'CONFIRMED') {
+        await this.notifyTableReservationAdmin({
+          branch,
+          customer: {
+            id: durable.customerId ?? durable.id,
+            email: durable.guestEmail,
+            firstName: nameParts[0] ?? null,
+            lastName: nameParts.slice(1).join(' ') || null,
+          },
+          reservation,
+        });
+      }
+      if (durable.customerId) {
+        await this.notifyTableReservationCustomer({
+          branch,
+          customer: { id: durable.customerId },
+          reservation,
+          source: 'STATUS_UPDATED',
+        });
+      }
+      return {
+        data: {
+          ...reservation,
+          customer: {
+            id: durable.customerId ?? durable.id,
+            email: durable.guestEmail,
+            firstName: nameParts[0] ?? null,
+            lastName: nameParts.slice(1).join(' ') || null,
+            phone: durable.guestPhone || null,
+            avatarUrl: durable.customer?.profile?.avatarUrl ?? null,
+          },
+          branch: await this.resolveBranchMedia(
+            this.toReservationBranchPublic(branch),
+          ),
+        },
+        message: 'Table reservation status updated successfully',
+      };
+    }
     const customers =
       await this.customerAppRepository.findCustomersForTableReservations({
         restaurantId,
@@ -2090,101 +2201,51 @@ export class CustomerAppService {
     requestedCustomerId?: string,
   ) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
-
     if (!customer.restaurantId) {
       throw new BadRequestException('Customer restaurant context is required');
     }
-
     const branch = await this.customerAppRepository.findBranchPublicContent(
       dto.branchId,
       customer.restaurantId,
     );
-
     if (!branch) {
       throw new NotFoundException('Branch not found');
     }
-
-    const tableReservationsEnabled = this.readBooleanValue(branch.settings, [
-      ['tableReservationsEnabled'],
-    ]);
-
-    if (!tableReservationsEnabled) {
-      throw new BadRequestException(
-        'Table reservations are not enabled for this branch',
-      );
-    }
-
-    const reservationDate = new Date(dto.reservationDate);
-    if (Number.isNaN(reservationDate.getTime())) {
-      throw new BadRequestException('Invalid reservation date');
-    }
-
-    if (reservationDate.getTime() <= Date.now()) {
-      throw new BadRequestException('Reservation date must be in the future');
-    }
-
-    const autoAccept = this.readBooleanValue(branch.settings, [
-      ['tableReservationAutoAccept'],
-      ['tableReservations', 'autoAccept'],
-    ]);
-    const canAutoAccept =
-      autoAccept &&
-      (await this.hasTableReservationCapacityAvailable({
-        restaurantId: customer.restaurantId,
-        branchId: branch.id,
-        branchSettings: branch.settings,
-        reservationDate: reservationDate.toISOString(),
-      }));
-
-    const existingReservations = this.readTableReservations(
-      customer.profile?.metadata,
-    );
-    const reservation: TableReservationRecord = {
-      id: randomUUID(),
-      branchId: dto.branchId,
-      reservationDate: reservationDate.toISOString(),
-      guestCount: dto.guestCount,
-      note: dto.note?.trim() || null,
-      status: canAutoAccept ? 'CONFIRMED' : 'REQUESTED',
-      createdAt: new Date().toISOString(),
-      cancelledAt: null,
-    };
-
-    const reservations = [reservation, ...existingReservations].slice(0, 20);
-    const nextMetadata = this.writeCustomerAppMetadata(
-      customer.profile?.metadata,
-      {
-        tableReservations: reservations,
-      },
-    );
-
-    await this.customerAppRepository.upsertCustomerProfile(
-      customer.id,
-      nextMetadata,
-    );
-
-    await this.notifyTableReservationAdmin({
+    this.assertTableReservationsEnabled(branch.settings);
+    const guestName =
+      [customer.profile?.firstName, customer.profile?.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || 'Customer';
+    const result = await this.persistTableReservation({
       branch,
-      customer: {
-        id: customer.id,
-        email: customer.email,
-        firstName: customer.profile?.firstName ?? null,
-        lastName: customer.profile?.lastName ?? null,
-      },
-      reservation,
+      customerId: customer.id,
+      dto,
+      guestName,
+      guestEmail: customer.email,
+      guestPhone: customer.profile?.phone ?? '',
+      idempotencyScope: `user:${customer.id}`,
     });
-
-    await this.notifyTableReservationCustomer({
-      branch,
-      customer: {
-        id: customer.id,
-      },
-      reservation,
-      source: 'CREATED',
-    });
-
+    if (result.created) {
+      await this.notifyTableReservationAdmin({
+        branch,
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          firstName: customer.profile?.firstName ?? null,
+          lastName: customer.profile?.lastName ?? null,
+        },
+        reservation: result.reservation,
+      });
+      await this.notifyTableReservationCustomer({
+        branch,
+        customer: { id: customer.id },
+        reservation: result.reservation,
+        source: 'CREATED',
+      });
+    }
     return {
-      data: reservation,
+      data: result.reservation,
       message: 'Table reservation created successfully',
     };
   }
@@ -2196,7 +2257,6 @@ export class CustomerAppService {
     if (user) {
       return this.createTableReservation(user, dto);
     }
-
     const branch = await this.customerAppRepository.findBranchPublicContent(
       dto.branchId,
       dto.restaurantId,
@@ -2204,102 +2264,115 @@ export class CustomerAppService {
     if (!branch) {
       throw new NotFoundException('Branch not found');
     }
-
-    const tableReservationsEnabled = this.readBooleanValue(branch.settings, [
-      ['tableReservationsEnabled'],
-    ]);
-    if (!tableReservationsEnabled) {
-      throw new BadRequestException(
-        'Table reservations are not enabled for this branch',
-      );
-    }
-
-    const reservationDate = new Date(dto.reservationDate);
-    if (reservationDate.getTime() <= Date.now()) {
-      throw new BadRequestException('Reservation date must be in the future');
-    }
-
-    const nameParts = dto.guestName.split(/\s+/).filter(Boolean);
-    const syntheticEmailHash = createHash('sha256')
-      .update(`${dto.restaurantId}:${dto.clientRequestId}`)
-      .digest('hex')
-      .slice(0, 32);
-    const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
-    const customer =
-      await this.customerAppRepository.upsertPublicReservationGuest({
-        email: `reservation-guest-${syntheticEmailHash}@deliveryways.local`,
-        password,
-        tenantId: branch.tenantId,
-        restaurantId: branch.restaurantId,
-        branchId: branch.id,
-        firstName: nameParts[0] ?? 'Guest',
-        lastName: nameParts.slice(1).join(' ') || 'Customer',
-        phone: dto.guestPhone,
-      });
-
-    const existingReservations = this.readTableReservations(
-      customer.profile?.metadata,
-    );
-    const duplicate = existingReservations.find(
-      (reservation) => reservation.clientRequestId === dto.clientRequestId,
-    );
-    if (duplicate) {
-      return {
-        data: this.toPublicReservationResponse(duplicate),
-        message: 'Table reservation created successfully',
-      };
-    }
-
-    const autoAccept = this.readBooleanValue(branch.settings, [
-      ['tableReservationAutoAccept'],
-      ['tableReservations', 'autoAccept'],
-    ]);
-    const canAutoAccept =
-      autoAccept &&
-      (await this.hasTableReservationCapacityAvailable({
-        restaurantId: branch.restaurantId,
-        branchId: branch.id,
-        branchSettings: branch.settings,
-        reservationDate: reservationDate.toISOString(),
-      }));
-    const reservation: TableReservationRecord = {
-      id: randomUUID(),
-      branchId: branch.id,
-      reservationDate: reservationDate.toISOString(),
-      guestCount: dto.guestCount,
-      note: dto.note?.trim() || null,
-      status: canAutoAccept ? 'CONFIRMED' : 'REQUESTED',
-      createdAt: new Date().toISOString(),
-      cancelledAt: null,
-      clientRequestId: dto.clientRequestId,
+    this.assertTableReservationsEnabled(branch.settings);
+    const result = await this.persistTableReservation({
+      branch,
+      customerId: null,
+      dto,
       guestName: dto.guestName,
       guestEmail: dto.guestEmail,
       guestPhone: dto.guestPhone,
-    };
-    const nextMetadata = this.writeCustomerAppMetadata(
-      customer.profile?.metadata,
-      {
-        tableReservations: [reservation],
-      },
-    );
-    await this.customerAppRepository.upsertCustomerProfile(
-      customer.id,
-      nextMetadata,
-    );
-    await this.notifyTableReservationAdmin({
-      branch,
-      customer: {
-        id: customer.id,
-        email: dto.guestEmail,
-        firstName: nameParts[0] ?? null,
-        lastName: nameParts.slice(1).join(' ') || null,
-      },
-      reservation,
+      idempotencyScope: `guest:${branch.restaurantId}`,
     });
-
+    if (result.created) {
+      const nameParts = dto.guestName.split(/\s+/).filter(Boolean);
+      await this.notifyTableReservationAdmin({
+        branch,
+        customer: {
+          id: result.reservation.id,
+          email: dto.guestEmail,
+          firstName: nameParts[0] ?? null,
+          lastName: nameParts.slice(1).join(' ') || null,
+        },
+        reservation: result.reservation,
+      });
+    }
     return {
-      data: this.toPublicReservationResponse(reservation),
+      data: this.toPublicReservationResponse(result.reservation),
       message: 'Table reservation created successfully',
+    };
+  }
+
+  private async persistTableReservation(input: {
+    branch: {
+      id: string;
+      tenantId: string;
+      restaurantId: string;
+      settings: Prisma.JsonValue | null;
+    };
+    customerId: string | null;
+    dto: CreateTableReservationDto;
+    guestName: string;
+    guestEmail: string;
+    guestPhone: string;
+    idempotencyScope: string;
+  }) {
+    const normalized = {
+      branchId: input.branch.id,
+      reservationDate: new Date(input.dto.reservationDate).toISOString(),
+      guestCount: input.dto.guestCount,
+      note: input.dto.note?.trim() || null,
+      guestName: input.guestName.trim(),
+      guestEmail: input.guestEmail?.trim().toLowerCase() ?? '',
+      guestPhone: input.guestPhone?.trim() ?? '',
+    };
+    const requestFingerprint = createHash('sha256')
+      .update(JSON.stringify(normalized))
+      .digest('hex');
+    const clientRequestId = input.dto.clientRequestId ?? randomUUID();
+    const existing =
+      await this.customerAppRepository.findTableReservationByIdempotency(
+        input.idempotencyScope,
+        clientRequestId,
+      );
+    if (existing) {
+      if (existing.requestFingerprint !== requestFingerprint) {
+        throw new ConflictException(
+          'clientRequestId was already used for a different reservation payload',
+        );
+      }
+      return {
+        created: false,
+        reservation: this.toTableReservationRecord(existing),
+      };
+    }
+    this.assertSelectableReservationSlot(
+      input.branch.settings,
+      new Date(normalized.reservationDate),
+    );
+    const result =
+      await this.customerAppRepository.createTableReservationAtomic({
+        tenantId: input.branch.tenantId,
+        restaurantId: input.branch.restaurantId,
+        branchId: input.branch.id,
+        customerId: input.customerId,
+        reservationDate: new Date(normalized.reservationDate),
+        durationMinutes: 30,
+        guestCount: normalized.guestCount,
+        note: normalized.note,
+        guestName: normalized.guestName,
+        guestEmail: normalized.guestEmail,
+        guestPhone: normalized.guestPhone,
+        idempotencyScope: input.idempotencyScope,
+        clientRequestId,
+        requestFingerprint,
+        autoAccept: this.readBooleanValue(input.branch.settings, [
+          ['tableReservationAutoAccept'],
+          ['tableReservations', 'autoAccept'],
+        ]),
+        tableCount: this.readNumberValue(input.branch.settings, [
+          ['tableCount'],
+          ['tableReservations', 'tableCount'],
+        ]),
+      });
+    if (!result.fingerprintMatches) {
+      throw new ConflictException(
+        'clientRequestId was already used for a different reservation payload',
+      );
+    }
+    return {
+      created: result.created,
+      reservation: this.toTableReservationRecord(result.reservation),
     };
   }
 
@@ -2315,12 +2388,220 @@ export class CustomerAppService {
     };
   }
 
+  private toTableReservationRecord(
+    reservation: TableReservation,
+  ): TableReservationRecord {
+    return {
+      id: reservation.id,
+      branchId: reservation.branchId,
+      reservationDate: reservation.reservationDate.toISOString(),
+      guestCount: reservation.guestCount,
+      note: reservation.note,
+      status: reservation.status as TableReservationStatus,
+      createdAt: reservation.createdAt.toISOString(),
+      cancelledAt: reservation.cancelledAt?.toISOString() ?? null,
+      clientRequestId: reservation.clientRequestId,
+      guestName: reservation.guestName,
+      guestEmail: reservation.guestEmail,
+      guestPhone: reservation.guestPhone,
+    };
+  }
+
+  private assertTableReservationsEnabled(settings: unknown) {
+    if (!this.readBooleanValue(settings, [['tableReservationsEnabled']])) {
+      throw new BadRequestException(
+        'Table reservations are not enabled for this branch',
+      );
+    }
+  }
+
+  private assertSelectableReservationSlot(settings: unknown, slotStart: Date) {
+    if (Number.isNaN(slotStart.getTime())) {
+      throw new BadRequestException('Invalid reservation date');
+    }
+    if (slotStart.getTime() <= Date.now()) {
+      throw new BadRequestException('Reservation date must be in the future');
+    }
+    const duration = 30;
+    const slotEnd = new Date(slotStart.getTime() + duration * 60_000);
+    const closure = this.readPath(settings, ['temporaryClosure']);
+    if (closure && typeof closure === 'object' && !Array.isArray(closure)) {
+      const value = closure as Record<string, unknown>;
+      const from =
+        typeof value.closedAt === 'string'
+          ? new Date(value.closedAt).getTime()
+          : Number.NEGATIVE_INFINITY;
+      const to =
+        typeof value.closedUntil === 'string'
+          ? new Date(value.closedUntil).getTime()
+          : Number.POSITIVE_INFINITY;
+      if (
+        value.isClosed === true &&
+        slotStart.getTime() < to &&
+        slotEnd.getTime() > from
+      ) {
+        throw new BadRequestException(
+          'The branch is temporarily closed for this reservation time',
+        );
+      }
+    }
+
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+      weekday: 'long',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(slotStart);
+    const readPart = (type: string) =>
+      parts.find((item) => item.type === type)?.value ?? '';
+    const localDate = `${readPart('year')}-${readPart('month')}-${readPart('day')}`;
+    const dayOfWeek = readPart('weekday').toUpperCase();
+    const slotMinutes =
+      Number(readPart('hour')) * 60 + Number(readPart('minute'));
+
+    const readDate = (value: unknown) =>
+      typeof value === 'string' ? value.slice(0, 10) : '';
+    for (const key of [
+      'holidayRanges',
+      'reservationDateRanges',
+      'tableReservationDateRanges',
+      'reservationBlackoutRanges',
+    ]) {
+      const ranges = this.readPath(settings, [key]);
+      if (!Array.isArray(ranges)) continue;
+      for (const entry of ranges) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+          continue;
+        const rule = entry as Record<string, unknown>;
+        const from = readDate(
+          rule.fromDate ?? rule.startDate ?? rule.dateFrom ?? rule.date,
+        );
+        const to =
+          readDate(rule.toDate ?? rule.endDate ?? rule.dateTo ?? rule.date) ||
+          from;
+        if (
+          rule.isClosed === true &&
+          from &&
+          to &&
+          localDate >= from &&
+          localDate <= to
+        ) {
+          throw new BadRequestException(
+            'The branch is closed for this reservation date',
+          );
+        }
+      }
+    }
+
+    let schedule: Record<string, unknown> | null = null;
+    const holidays = this.readPath(settings, ['holidayOpeningHours']);
+    if (Array.isArray(holidays)) {
+      schedule =
+        (holidays.find((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            return false;
+          }
+          const rule = entry as Record<string, unknown>;
+          const from = readDate(rule.fromDate ?? rule.date);
+          const to = readDate(rule.toDate ?? rule.date) || from;
+          return Boolean(from && to && localDate >= from && localDate <= to);
+        }) as Record<string, unknown> | undefined) ?? null;
+    }
+    if (!schedule) {
+      const openingHours = this.readPath(settings, ['openingHours']);
+      if (!Array.isArray(openingHours) || openingHours.length === 0) {
+        return;
+      }
+      if (Array.isArray(openingHours)) {
+        schedule =
+          (openingHours.find(
+            (entry) =>
+              entry &&
+              typeof entry === 'object' &&
+              !Array.isArray(entry) &&
+              String(
+                (entry as Record<string, unknown>).dayOfWeek,
+              ).toUpperCase() === dayOfWeek,
+          ) as Record<string, unknown> | undefined) ?? null;
+      }
+    }
+    if (!schedule || schedule.isClosed === true) {
+      throw new BadRequestException(
+        'The branch is closed for this reservation date',
+      );
+    }
+    const open = this.parseTimeMinutes(
+      typeof schedule.openTime === 'string' ? schedule.openTime : null,
+    );
+    const close = this.parseTimeMinutes(
+      typeof schedule.closeTime === 'string' ? schedule.closeTime : null,
+    );
+    if (
+      open === null ||
+      close === null ||
+      slotMinutes < open ||
+      slotMinutes + duration > close ||
+      (slotMinutes - open) % duration !== 0
+    ) {
+      throw new BadRequestException('Invalid table reservation time slot');
+    }
+    const breaks = Array.isArray(schedule.breakTimes)
+      ? schedule.breakTimes
+      : [];
+    for (const entry of breaks) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const value = entry as Record<string, unknown>;
+      const start = this.parseTimeMinutes(
+        typeof value.startTime === 'string' ? value.startTime : null,
+      );
+      const end = this.parseTimeMinutes(
+        typeof value.endTime === 'string' ? value.endTime : null,
+      );
+      if (
+        start !== null &&
+        end !== null &&
+        slotMinutes < end &&
+        slotMinutes + duration > start
+      ) {
+        throw new BadRequestException(
+          'The selected reservation time overlaps a branch break',
+        );
+      }
+    }
+  }
+
   async cancelTableReservation(
     user: AuthUserContext,
     reservationId: string,
     requestedCustomerId?: string,
   ) {
     const customer = await this.resolveCustomer(user, requestedCustomerId);
+    const durable =
+      await this.customerAppRepository.findTableReservationForCustomer(
+        reservationId,
+        customer.id,
+      );
+    if (durable) {
+      if (durable.status === 'CANCELLED') {
+        throw new BadRequestException('Table reservation is already cancelled');
+      }
+      await this.customerAppRepository.cancelTableReservationForCustomer(
+        reservationId,
+        customer.id,
+      );
+      return {
+        data: {
+          ...this.toTableReservationRecord(durable),
+          status: 'CANCELLED' as const,
+          cancelledAt: new Date().toISOString(),
+        },
+        message: 'Table reservation cancelled successfully',
+      };
+    }
     const existingReservations = this.readTableReservations(
       customer.profile?.metadata,
     );

@@ -5,8 +5,13 @@ import {
   Prisma,
 } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
-import { CustomerAppService } from './customer-app.service';
 import { createBrandingVersion } from './branding-version.util';
+import { CustomerAppRepository } from './customer-app.repository';
+import { CustomerAppService } from './customer-app.service';
+
+type ReservationCreateInput = Parameters<
+  CustomerAppRepository['createTableReservationAtomic']
+>[0];
 
 describe('CustomerAppService', () => {
   const itemFixture = {
@@ -164,12 +169,50 @@ describe('CustomerAppService', () => {
       findCustomerProfile: jest.fn(),
       findActiveCustomer: jest.fn(),
       findCustomersForTableReservations: jest.fn(),
+      findAdminTableReservations: jest.fn().mockResolvedValue([]),
+      findAdminTableReservationById: jest.fn().mockResolvedValue(null),
+      updateAdminTableReservationStatusAtomic: jest.fn(),
+      findTableReservationByIdempotency: jest.fn().mockResolvedValue(null),
+      findTableReservationsForCustomer: jest.fn().mockResolvedValue([]),
+      findTableReservationForCustomer: jest.fn().mockResolvedValue(null),
+      cancelTableReservationForCustomer: jest.fn(),
+      createTableReservationAtomic: jest
+        .fn()
+        .mockImplementation((input: ReservationCreateInput) =>
+          Promise.resolve({
+            created: true,
+            fingerprintMatches: true,
+            reservation: {
+              id: 'reservation-created',
+              tenantId: input.tenantId,
+              restaurantId: input.restaurantId,
+              branchId: input.branchId,
+              customerId: input.customerId,
+              reservationDate: input.reservationDate,
+              durationMinutes: input.durationMinutes,
+              guestCount: input.guestCount,
+              note: input.note,
+              status:
+                input.autoAccept && input.tableCount > 0
+                  ? 'CONFIRMED'
+                  : 'REQUESTED',
+              guestName: input.guestName,
+              guestEmail: input.guestEmail,
+              guestPhone: input.guestPhone,
+              idempotencyScope: input.idempotencyScope,
+              clientRequestId: input.clientRequestId,
+              requestFingerprint: input.requestFingerprint,
+              cancelledAt: null,
+              createdAt: new Date('2099-03-29T10:00:00.000Z'),
+              updatedAt: new Date('2099-03-29T10:00:00.000Z'),
+            },
+          }),
+        ),
       findRestaurantScope: jest.fn(),
       findRestaurantDomainContext: jest.fn(),
       listPublicBranches: jest.fn(),
       countActiveBranches: jest.fn().mockResolvedValue(1),
       upsertCustomerProfile: jest.fn(),
-      upsertPublicReservationGuest: jest.fn(),
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
       findBranchPublicContent: jest.fn(),
@@ -3922,20 +3965,6 @@ describe('CustomerAppService', () => {
       description: null,
       settings: { tableReservationsEnabled: true },
     });
-    repository.upsertPublicReservationGuest.mockResolvedValue({
-      id: 'guest-1',
-      email: 'reservation-guest@deliveryways.local',
-      restaurantId: 'restaurant-1',
-      branchId: 'branch-1',
-      profile: {
-        firstName: 'Ali',
-        lastName: 'Khan',
-        phone: '+491701234567',
-        avatarUrl: null,
-        metadata: null,
-      },
-    });
-
     const result = await service.createPublicTableReservation(undefined, {
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
@@ -3952,7 +3981,7 @@ describe('CustomerAppService', () => {
       'branch-1',
       'restaurant-1',
     );
-    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(repository.createTableReservationAtomic).toHaveBeenCalled();
     expect(notificationsService.notifyTableReservationAdmin).toHaveBeenCalled();
     expect(result.data).not.toHaveProperty('guestEmail');
     expect(result.data).not.toHaveProperty('guestPhone');
@@ -3994,13 +4023,14 @@ describe('CustomerAppService', () => {
       },
       {
         branchId: 'branch-1',
+        clientRequestId: '00000000-0000-4000-8000-000000000001',
         reservationDate: '2099-03-30T19:30:00.000Z',
         guestCount: 4,
         note: 'Window side',
       },
     );
 
-    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(repository.createTableReservationAtomic).toHaveBeenCalled();
     expect(notificationsService.notifyTableReservationAdmin).toHaveBeenCalled();
     expect(
       notificationsService.notifyTableReservationCustomer,
@@ -4133,6 +4163,7 @@ describe('CustomerAppService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       {
+        clientRequestId: '00000000-0000-4000-8000-000000000003',
         branchId: 'branch-1',
         reservationDate: '2099-03-30T19:30:00.000Z',
         guestCount: 4,
@@ -4181,6 +4212,21 @@ describe('CustomerAppService', () => {
         },
       },
     ]);
+    repository.createTableReservationAtomic.mockImplementationOnce(
+      (input: ReservationCreateInput) =>
+        Promise.resolve({
+          created: true,
+          fingerprintMatches: true,
+          reservation: {
+            id: 'reservation-created',
+            ...input,
+            status: 'REQUESTED',
+            cancelledAt: null,
+            createdAt: new Date('2099-03-29T10:00:00.000Z'),
+            updatedAt: new Date('2099-03-29T10:00:00.000Z'),
+          },
+        }),
+    );
 
     const result = await service.createTableReservation(
       {
@@ -4190,6 +4236,7 @@ describe('CustomerAppService', () => {
         role: UserRoleEnum.CUSTOMER,
       },
       {
+        clientRequestId: '00000000-0000-4000-8000-000000000004',
         branchId: 'branch-1',
         reservationDate: '2099-03-30T19:30:00.000Z',
         guestCount: 4,
@@ -4230,6 +4277,7 @@ describe('CustomerAppService', () => {
           role: UserRoleEnum.CUSTOMER,
         },
         {
+          clientRequestId: '00000000-0000-4000-8000-000000000005',
           branchId: 'branch-1',
           reservationDate: '2099-03-30T19:30:00.000Z',
           guestCount: 4,
@@ -4277,5 +4325,87 @@ describe('CustomerAppService', () => {
     expect(repository.upsertCustomerProfile).toHaveBeenCalled();
     expect(result.data?.status).toBe('CANCELLED');
     expect(result.message).toBe('Table reservation cancelled successfully');
+  });
+
+  it('rejects reuse of an idempotency key with a different payload', async () => {
+    const { service, repository } = makeService();
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main Branch',
+      settings: { tableReservationsEnabled: true },
+    });
+    repository.findTableReservationByIdempotency.mockResolvedValue({
+      id: 'reservation-existing',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      customerId: null,
+      reservationDate: new Date('2099-03-30T19:30:00.000Z'),
+      durationMinutes: 30,
+      guestCount: 2,
+      note: null,
+      status: 'REQUESTED',
+      guestName: 'Ali Khan',
+      guestEmail: 'ali@example.com',
+      guestPhone: '+491701234567',
+      idempotencyScope: 'guest:restaurant-1',
+      clientRequestId: '0f26c438-f7e0-4caf-aab4-c43b116b5723',
+      requestFingerprint: 'different',
+      cancelledAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      service.createPublicTableReservation(undefined, {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        reservationDate: '2099-03-30T19:30:00.000Z',
+        guestCount: 4,
+        guestName: 'Ali Khan',
+        guestEmail: 'ali@example.com',
+        guestPhone: '+491701234567',
+        clientRequestId: '0f26c438-f7e0-4caf-aab4-c43b116b5723',
+      }),
+    ).rejects.toThrow('clientRequestId was already used');
+    expect(repository.createTableReservationAtomic).not.toHaveBeenCalled();
+  });
+
+  it('rejects direct API reservations during a configured break', async () => {
+    const { service, repository } = makeService();
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main Branch',
+      settings: {
+        tableReservationsEnabled: true,
+        openingHours: [
+          {
+            dayOfWeek: 'MONDAY',
+            isClosed: false,
+            openTime: '00:00',
+            closeTime: '23:59',
+            breakTimes: [{ startTime: '14:00', endTime: '15:00' }],
+          },
+        ],
+      },
+    });
+
+    await expect(
+      service.createPublicTableReservation(undefined, {
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        reservationDate: '2099-03-30T09:30:00.000Z',
+        guestCount: 4,
+        guestName: 'Ali Khan',
+        guestEmail: 'ali@example.com',
+        guestPhone: '+491701234567',
+        clientRequestId: '1f26c438-f7e0-4caf-aab4-c43b116b5723',
+      }),
+    ).rejects.toThrow('overlaps a branch break');
+    expect(repository.createTableReservationAtomic).not.toHaveBeenCalled();
   });
 });

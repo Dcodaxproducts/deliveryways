@@ -447,6 +447,7 @@ model Tenant {
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
+  tableReservations      TableReservation[]
 
   @@map("tenants")
 }
@@ -507,6 +508,7 @@ model Restaurant {
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
+  tableReservations      TableReservation[]
 
   @@map("restaurants")
 }
@@ -550,6 +552,7 @@ model Branch {
   posOrderDrafts      PosOrderDraft[]
   orderReviews        OrderReview[]
   contactSubmissions  ContactSubmission[]
+  tableReservations   TableReservation[]
 
   @@map("branches")
 }
@@ -631,6 +634,7 @@ model User {
   groupOrderParticipants GroupOrderParticipant[]
   contactSubmissions     ContactSubmission[]     @relation("ContactSubmissionCustomer")
   contactReplies         ContactSubmission[]     @relation("ContactSubmissionReplier")
+  tableReservations      TableReservation[]      @relation("TableReservationCustomer")
 
   @@unique([email, restaurantId])
   @@map("users")
@@ -666,6 +670,39 @@ model ContactSubmission {
   @@index([branchId, createdAt])
   @@index([status, createdAt])
   @@map("contact_submissions")
+}
+
+model TableReservation {
+  id                 String    @id @default(cuid())
+  tenantId           String    @map("tenant_id")
+  restaurantId       String    @map("restaurant_id")
+  branchId           String    @map("branch_id")
+  customerId         String?   @map("customer_id")
+  reservationDate    DateTime  @map("reservation_date") @db.Timestamptz
+  durationMinutes    Int       @default(30) @map("duration_minutes")
+  guestCount         Int       @map("guest_count")
+  note               String?
+  status             String    @default("REQUESTED") @db.VarChar(20)
+  guestName          String    @map("guest_name") @db.VarChar(100)
+  guestEmail         String    @map("guest_email") @db.VarChar(254)
+  guestPhone         String    @map("guest_phone") @db.VarChar(20)
+  idempotencyScope   String    @map("idempotency_scope") @db.VarChar(200)
+  clientRequestId    String    @map("client_request_id") @db.Uuid
+  requestFingerprint String    @map("request_fingerprint") @db.Char(64)
+  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  customer   User?      @relation("TableReservationCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@unique([idempotencyScope, clientRequestId])
+  @@index([restaurantId, createdAt])
+  @@index([branchId, reservationDate, status])
+  @@index([customerId, createdAt])
+  @@map("table_reservations")
 }
 
 model Profile {

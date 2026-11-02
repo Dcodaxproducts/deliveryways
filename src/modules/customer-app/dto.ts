@@ -424,6 +424,13 @@ export class CreateTableReservationDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @ApiPropertyOptional({
+    description: 'Stable across retries of the same logical reservation',
+  })
+  @IsOptional()
+  @IsUUID()
+  clientRequestId?: string;
 }
 
 export class CreatePublicTableReservationDto extends CreateTableReservationDto {
@@ -460,10 +467,10 @@ export class CreatePublicTableReservationDto extends CreateTableReservationDto {
   guestPhone!: string;
 
   @ApiProperty({
-    description: 'Stable per submit attempt; prevents duplicate reservations',
+    description: 'Stable across retries of the same logical reservation',
   })
   @IsUUID()
-  clientRequestId!: string;
+  declare clientRequestId: string;
 }
 
 export const TABLE_RESERVATION_STATUS_VALUES = [
