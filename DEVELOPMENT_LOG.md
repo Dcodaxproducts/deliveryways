@@ -13,6 +13,7 @@
 ## 2026-11-02 — Guest reservation release blockers corrected
 
 - Recomposed this feature onto cumulative release base `81d362bc7eeee350d6012f9e92ef7b4f6252d44f` (`origin/fix/landing-settings-reflection-20261024`), which contains `origin/develop` `35ab16057318c97545e598ce13727d9e6c0c5f36` plus the 228 cumulative production/release commits through the landing-settings freshness fix.
+- Read-only deployment evidence records API production at `4f2a050881ad60e7e489f7574a2f5fe7e6c00fcc`. Git proves it is an ancestor of the cumulative base (79 commits behind it) and of this feature; the feature is exactly two commits ahead of the cumulative base, so it omits no deployed commit.
 - Replaced synthetic guest users/profile metadata writes with additive `table_reservations` persistence. Authenticated reservations retain nullable `customer_id`; all rows store immutable guest contact snapshots. Public responses remain PII-free, while admin reads remain role/restaurant/branch scoped.
 - Added durable idempotency for authenticated and guest flows: unique `(idempotency_scope, client_request_id)`, SHA-256 normalized payload fingerprint, transaction advisory lock, stable replay, and HTTP 409 for key reuse with a different payload.
 - Serialized capacity claims with a branch-row `FOR UPDATE` lock and overlap count inside the same transaction. Canonical duration remains 30 minutes; auto-accept never confirms more than configured `tableCount`.
