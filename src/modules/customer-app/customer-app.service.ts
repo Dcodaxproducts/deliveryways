@@ -2316,8 +2316,21 @@ export class CustomerAppService {
       guestEmail: input.guestEmail?.trim().toLowerCase() ?? '',
       guestPhone: input.guestPhone?.trim() ?? '',
     };
+    const fingerprintPayload = {
+      branchId: normalized.branchId,
+      reservationDate: normalized.reservationDate,
+      guestCount: normalized.guestCount,
+      note: normalized.note,
+      ...(input.customerId
+        ? {}
+        : {
+            guestName: normalized.guestName,
+            guestEmail: normalized.guestEmail,
+            guestPhone: normalized.guestPhone,
+          }),
+    };
     const requestFingerprint = createHash('sha256')
-      .update(JSON.stringify(normalized))
+      .update(JSON.stringify(fingerprintPayload))
       .digest('hex');
     const clientRequestId = input.dto.clientRequestId ?? randomUUID();
     const existing =
