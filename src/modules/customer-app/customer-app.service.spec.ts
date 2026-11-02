@@ -169,6 +169,7 @@ describe('CustomerAppService', () => {
       listPublicBranches: jest.fn(),
       countActiveBranches: jest.fn().mockResolvedValue(1),
       upsertCustomerProfile: jest.fn(),
+      upsertPublicReservationGuest: jest.fn(),
       findFavoriteMenuItems: jest.fn(),
       findRestaurantPublicContent: jest.fn(),
       findBranchPublicContent: jest.fn(),
@@ -3905,6 +3906,57 @@ describe('CustomerAppService', () => {
       coverImage: 'cover.jpg',
       description: 'Downtown branch',
     });
+  });
+
+  it('creates an unauthenticated reservation without exposing contact PII', async () => {
+    const { service, repository, notificationsService } = makeService({
+      notifications: true,
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main Branch',
+      logoUrl: null,
+      coverImage: null,
+      description: null,
+      settings: { tableReservationsEnabled: true },
+    });
+    repository.upsertPublicReservationGuest.mockResolvedValue({
+      id: 'guest-1',
+      email: 'reservation-guest@deliveryways.local',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      profile: {
+        firstName: 'Ali',
+        lastName: 'Khan',
+        phone: '+491701234567',
+        avatarUrl: null,
+        metadata: null,
+      },
+    });
+
+    const result = await service.createPublicTableReservation(undefined, {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationDate: '2099-03-30T19:30:00.000Z',
+      guestCount: 4,
+      note: 'Window seat',
+      guestName: 'Ali Khan',
+      guestEmail: 'ali@example.com',
+      guestPhone: '+491701234567',
+      clientRequestId: '0f26c438-f7e0-4caf-aab4-c43b116b5723',
+    });
+
+    expect(repository.findBranchPublicContent).toHaveBeenCalledWith(
+      'branch-1',
+      'restaurant-1',
+    );
+    expect(repository.upsertCustomerProfile).toHaveBeenCalled();
+    expect(notificationsService.notifyTableReservationAdmin).toHaveBeenCalled();
+    expect(result.data).not.toHaveProperty('guestEmail');
+    expect(result.data).not.toHaveProperty('guestPhone');
+    expect(result.data).not.toHaveProperty('guestName');
   });
 
   it('creates a table reservation request in customer metadata', async () => {

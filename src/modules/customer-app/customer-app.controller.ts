@@ -28,6 +28,7 @@ import {
 } from '../../common/guards';
 import {
   CreateTableReservationDto,
+  CreatePublicTableReservationDto,
   CustomerAppCustomerScopeDto,
   DomainContextQueryDto,
   HomeScreenQueryDto,
@@ -622,6 +623,18 @@ export class CustomerAppController {
       dto,
       scope.customerId,
     );
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Post('table-reservations/public')
+  @ApiOperation({ summary: 'Create a table reservation without login' })
+  createPublicTableReservation(
+    @CurrentUser() user: AuthUserContext | undefined,
+    @Body() dto: CreatePublicTableReservationDto,
+  ) {
+    return this.customerAppService.createPublicTableReservation(user, dto);
   }
 
   @ApiBearerAuth()

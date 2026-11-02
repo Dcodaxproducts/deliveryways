@@ -15,7 +15,8 @@ import {
   Prisma,
   StaffAccountType,
 } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
 import {
@@ -28,6 +29,7 @@ import {
 } from '../../common/utils';
 import {
   CreateTableReservationDto,
+  CreatePublicTableReservationDto,
   HomeScreenQueryDto,
   ListAdminTableReservationsQueryDto,
   ListCuisineItemsQueryDto,
@@ -224,6 +226,10 @@ export interface TableReservationRecord {
   status: TableReservationStatus;
   createdAt: string;
   cancelledAt: string | null;
+  clientRequestId?: string;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
 }
 
 export interface TableReservationResponse extends TableReservationRecord {
@@ -1859,10 +1865,16 @@ export class CustomerAppService {
           ...reservation,
           customer: {
             id: customer.id,
-            email: customer.email,
-            firstName: customer.profile?.firstName ?? null,
-            lastName: customer.profile?.lastName ?? null,
-            phone: customer.profile?.phone ?? null,
+            email: reservation.guestEmail ?? customer.email,
+            firstName:
+              reservation.guestName?.split(/\s+/)[0] ??
+              customer.profile?.firstName ??
+              null,
+            lastName:
+              reservation.guestName?.split(/\s+/).slice(1).join(' ') ||
+              customer.profile?.lastName ||
+              null,
+            phone: reservation.guestPhone ?? customer.profile?.phone ?? null,
             avatarUrl: customer.profile?.avatarUrl ?? null,
           },
         })),
@@ -2174,6 +2186,132 @@ export class CustomerAppService {
     return {
       data: reservation,
       message: 'Table reservation created successfully',
+    };
+  }
+
+  async createPublicTableReservation(
+    user: AuthUserContext | undefined,
+    dto: CreatePublicTableReservationDto,
+  ) {
+    if (user) {
+      return this.createTableReservation(user, dto);
+    }
+
+    const branch = await this.customerAppRepository.findBranchPublicContent(
+      dto.branchId,
+      dto.restaurantId,
+    );
+    if (!branch) {
+      throw new NotFoundException('Branch not found');
+    }
+
+    const tableReservationsEnabled = this.readBooleanValue(branch.settings, [
+      ['tableReservationsEnabled'],
+    ]);
+    if (!tableReservationsEnabled) {
+      throw new BadRequestException(
+        'Table reservations are not enabled for this branch',
+      );
+    }
+
+    const reservationDate = new Date(dto.reservationDate);
+    if (reservationDate.getTime() <= Date.now()) {
+      throw new BadRequestException('Reservation date must be in the future');
+    }
+
+    const nameParts = dto.guestName.split(/\s+/).filter(Boolean);
+    const syntheticEmailHash = createHash('sha256')
+      .update(`${dto.restaurantId}:${dto.clientRequestId}`)
+      .digest('hex')
+      .slice(0, 32);
+    const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
+    const customer =
+      await this.customerAppRepository.upsertPublicReservationGuest({
+        email: `reservation-guest-${syntheticEmailHash}@deliveryways.local`,
+        password,
+        tenantId: branch.tenantId,
+        restaurantId: branch.restaurantId,
+        branchId: branch.id,
+        firstName: nameParts[0] ?? 'Guest',
+        lastName: nameParts.slice(1).join(' ') || 'Customer',
+        phone: dto.guestPhone,
+      });
+
+    const existingReservations = this.readTableReservations(
+      customer.profile?.metadata,
+    );
+    const duplicate = existingReservations.find(
+      (reservation) => reservation.clientRequestId === dto.clientRequestId,
+    );
+    if (duplicate) {
+      return {
+        data: this.toPublicReservationResponse(duplicate),
+        message: 'Table reservation created successfully',
+      };
+    }
+
+    const autoAccept = this.readBooleanValue(branch.settings, [
+      ['tableReservationAutoAccept'],
+      ['tableReservations', 'autoAccept'],
+    ]);
+    const canAutoAccept =
+      autoAccept &&
+      (await this.hasTableReservationCapacityAvailable({
+        restaurantId: branch.restaurantId,
+        branchId: branch.id,
+        branchSettings: branch.settings,
+        reservationDate: reservationDate.toISOString(),
+      }));
+    const reservation: TableReservationRecord = {
+      id: randomUUID(),
+      branchId: branch.id,
+      reservationDate: reservationDate.toISOString(),
+      guestCount: dto.guestCount,
+      note: dto.note?.trim() || null,
+      status: canAutoAccept ? 'CONFIRMED' : 'REQUESTED',
+      createdAt: new Date().toISOString(),
+      cancelledAt: null,
+      clientRequestId: dto.clientRequestId,
+      guestName: dto.guestName,
+      guestEmail: dto.guestEmail,
+      guestPhone: dto.guestPhone,
+    };
+    const nextMetadata = this.writeCustomerAppMetadata(
+      customer.profile?.metadata,
+      {
+        tableReservations: [reservation],
+      },
+    );
+    await this.customerAppRepository.upsertCustomerProfile(
+      customer.id,
+      nextMetadata,
+    );
+    await this.notifyTableReservationAdmin({
+      branch,
+      customer: {
+        id: customer.id,
+        email: dto.guestEmail,
+        firstName: nameParts[0] ?? null,
+        lastName: nameParts.slice(1).join(' ') || null,
+      },
+      reservation,
+    });
+
+    return {
+      data: this.toPublicReservationResponse(reservation),
+      message: 'Table reservation created successfully',
+    };
+  }
+
+  private toPublicReservationResponse(reservation: TableReservationRecord) {
+    return {
+      id: reservation.id,
+      branchId: reservation.branchId,
+      reservationDate: reservation.reservationDate,
+      guestCount: reservation.guestCount,
+      note: reservation.note,
+      status: reservation.status,
+      createdAt: reservation.createdAt,
     };
   }
 
@@ -2881,7 +3019,7 @@ export class CustomerAppService {
             ? (reservation.status as TableReservationStatus)
             : 'REQUESTED';
 
-        return {
+        const parsedReservation: TableReservationRecord = {
           id: reservation.id,
           branchId: reservation.branchId,
           reservationDate: reservation.reservationDate,
@@ -2893,7 +3031,24 @@ export class CustomerAppService {
             typeof reservation.cancelledAt === 'string'
               ? reservation.cancelledAt
               : null,
+          clientRequestId:
+            typeof reservation.clientRequestId === 'string'
+              ? reservation.clientRequestId
+              : undefined,
+          guestName:
+            typeof reservation.guestName === 'string'
+              ? reservation.guestName
+              : undefined,
+          guestEmail:
+            typeof reservation.guestEmail === 'string'
+              ? reservation.guestEmail
+              : undefined,
+          guestPhone:
+            typeof reservation.guestPhone === 'string'
+              ? reservation.guestPhone
+              : undefined,
         };
+        return parsedReservation;
       })
       .filter((item): item is TableReservationRecord => item !== null)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));

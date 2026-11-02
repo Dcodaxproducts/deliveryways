@@ -9,9 +9,12 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
+  MinLength,
 } from 'class-validator';
 import { QueryDto } from '../../common/dto';
 
@@ -416,10 +419,51 @@ export class CreateTableReservationDto {
   @Max(50)
   guestCount!: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   note?: string;
+}
+
+export class CreatePublicTableReservationDto extends CreateTableReservationDto {
+  @ApiProperty({
+    description: 'Authoritative restaurant scope for the selected branch',
+  })
+  @IsString()
+  @IsNotEmpty()
+  restaurantId!: string;
+
+  @ApiProperty({ example: 'Ali Khan', minLength: 2, maxLength: 100 })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value,
+  )
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  guestName!: string;
+
+  @ApiProperty({ example: 'ali@example.com', maxLength: 254 })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  @MaxLength(254)
+  guestEmail!: string;
+
+  @ApiProperty({ example: '+491701234567', minLength: 7, maxLength: 20 })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().replace(/[\s().-]/g, '') : value,
+  )
+  @IsString()
+  @Matches(/^\+?[0-9]{7,19}$/)
+  guestPhone!: string;
+
+  @ApiProperty({
+    description: 'Stable per submit attempt; prevents duplicate reservations',
+  })
+  @IsUUID()
+  clientRequestId!: string;
 }
 
 export const TABLE_RESERVATION_STATUS_VALUES = [
