@@ -172,6 +172,9 @@ describe('CustomerAppService', () => {
       findAdminTableReservations: jest.fn().mockResolvedValue([]),
       findAdminTableReservationById: jest.fn().mockResolvedValue(null),
       updateAdminTableReservationStatusAtomic: jest.fn(),
+      updateLegacyTableReservationStatusAtomic: jest
+        .fn()
+        .mockResolvedValue({ updated: true, capacityExceeded: false }),
       findTableReservationByIdempotency: jest.fn().mockResolvedValue(null),
       findTableReservationsForCustomer: jest.fn().mockResolvedValue([]),
       findTableReservationForCustomer: jest.fn().mockResolvedValue(null),
@@ -3863,9 +3866,14 @@ describe('CustomerAppService', () => {
       restaurantId: 'restaurant-1',
       customerId: 'customer-1',
     });
-    expect(repository.upsertCustomerProfile).toHaveBeenCalledWith(
-      'customer-1',
-      expect.any(Object),
+    expect(
+      repository.updateLegacyTableReservationStatusAtomic,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: 'customer-1',
+        reservationId: 'reservation-1',
+        status: 'CONFIRMED',
+      }),
     );
     expect(result.data?.status).toBe('CONFIRMED');
     expect(
@@ -4398,7 +4406,7 @@ describe('CustomerAppService', () => {
       service.createPublicTableReservation(undefined, {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
-        reservationDate: '2099-03-30T09:30:00.000Z',
+        reservationDate: '2099-03-30T12:30:00.000Z',
         guestCount: 4,
         guestName: 'Ali Khan',
         guestEmail: 'ali@example.com',
@@ -4407,5 +4415,80 @@ describe('CustomerAppService', () => {
       }),
     ).rejects.toThrow('overlaps a branch break');
     expect(repository.createTableReservationAtomic).not.toHaveBeenCalled();
+  });
+
+  it('validates public slots in the configured Europe/Berlin DST timezone', async () => {
+    const { service, repository } = makeService();
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Berlin Branch',
+      settings: {
+        tableReservationsEnabled: true,
+        timezone: 'Europe/Berlin',
+        openingHours: [
+          {
+            dayOfWeek: 'SUNDAY',
+            isClosed: false,
+            openTime: '03:00',
+            closeTime: '04:00',
+            breakTimes: [],
+          },
+        ],
+      },
+    });
+
+    await service.createPublicTableReservation(undefined, {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationDate: '2030-03-31T01:00:00.000Z',
+      guestCount: 2,
+      guestName: 'Berlin Guest',
+      guestEmail: 'berlin@example.com',
+      guestPhone: '+491701234567',
+      clientRequestId: '2f26c438-f7e0-4caf-aab4-c43b116b5723',
+    });
+
+    expect(repository.createTableReservationAtomic).toHaveBeenCalled();
+  });
+
+  it('preserves authenticated reservations outside newly enforced public slots', async () => {
+    const { service, repository } = makeService();
+    repository.findCustomerProfile.mockResolvedValue({
+      id: 'customer-1',
+      email: 'customer@example.com',
+      deletedAt: null,
+      restaurantId: 'restaurant-1',
+      profile: { metadata: { customerApp: { tableReservations: [] } } },
+    });
+    repository.findBranchPublicContent.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      name: 'Main Branch',
+      settings: {
+        tableReservationsEnabled: true,
+        timezone: 'Europe/Berlin',
+        openingHours: [{ dayOfWeek: 'MONDAY', isClosed: true }],
+      },
+    });
+
+    await expect(
+      service.createTableReservation(
+        {
+          uid: 'customer-1',
+          rid: 'restaurant-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.CUSTOMER,
+        },
+        {
+          branchId: 'branch-1',
+          reservationDate: '2099-03-30T19:17:00.000Z',
+          guestCount: 2,
+          note: 'Legacy client alignment',
+        },
+      ),
+    ).resolves.toMatchObject({ data: { branchId: 'branch-1' } });
   });
 });

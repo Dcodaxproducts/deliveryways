@@ -2273,13 +2273,19 @@ export class CustomerAppRepository {
         input.reservationDate.getTime() - input.durationMinutes * 60_000 + 1,
       );
       const acceptedCount = input.autoAccept
-        ? await tx.tableReservation.count({
+        ? (await tx.tableReservation.count({
             where: {
               branchId: input.branchId,
               status: { in: ['CONFIRMED', 'SEATED'] },
               reservationDate: { gte: earliestOverlap, lt: slotEnd },
             },
-          })
+          })) +
+          (await this.countLegacyAcceptedReservations(tx, {
+            restaurantId: input.restaurantId,
+            branchId: input.branchId,
+            slotStart: input.reservationDate,
+            slotEnd,
+          }))
         : 0;
       const status =
         input.autoAccept &&
@@ -2428,7 +2434,7 @@ export class CustomerAppRepository {
             reservation.durationMinutes * 60_000 +
             1,
         );
-        const accepted = await tx.tableReservation.count({
+        const acceptedDurable = await tx.tableReservation.count({
           where: {
             id: { not: reservation.id },
             branchId: reservation.branchId,
@@ -2436,6 +2442,14 @@ export class CustomerAppRepository {
             reservationDate: { gte: earliestOverlap, lt: slotEnd },
           },
         });
+        const accepted =
+          acceptedDurable +
+          (await this.countLegacyAcceptedReservations(tx, {
+            restaurantId: input.restaurantId,
+            branchId: input.branchId,
+            slotStart: reservation.reservationDate,
+            slotEnd,
+          }));
         if (input.tableCount <= 0 || accepted >= input.tableCount) {
           return { reservation: null, capacityExceeded: true };
         }
@@ -2452,5 +2466,169 @@ export class CustomerAppRepository {
       });
       return { reservation: updated, capacityExceeded: false };
     });
+  }
+
+  updateLegacyTableReservationStatusAtomic(input: {
+    customerId: string;
+    reservationId: string;
+    restaurantId: string;
+    branchId: string;
+    status: string;
+    tableCount: number;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM branches WHERE id = ${input.branchId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+      const customer = await tx.user.findFirst({
+        where: {
+          id: input.customerId,
+          restaurantId: input.restaurantId,
+          role: 'CUSTOMER',
+          deletedAt: null,
+          isActive: true,
+        },
+        select: { profile: { select: { id: true, metadata: true } } },
+      });
+      const metadata = customer?.profile?.metadata;
+      if (
+        !customer?.profile ||
+        !metadata ||
+        typeof metadata !== 'object' ||
+        Array.isArray(metadata)
+      ) {
+        return { updated: false, capacityExceeded: false };
+      }
+      const root = structuredClone(metadata);
+      const customerApp = root.customerApp;
+      if (
+        !customerApp ||
+        typeof customerApp !== 'object' ||
+        Array.isArray(customerApp)
+      ) {
+        return { updated: false, capacityExceeded: false };
+      }
+      const reservations = customerApp.tableReservations;
+      if (!Array.isArray(reservations)) {
+        return { updated: false, capacityExceeded: false };
+      }
+      const index = reservations.findIndex(
+        (value) =>
+          value !== null &&
+          typeof value === 'object' &&
+          !Array.isArray(value) &&
+          value.id === input.reservationId,
+      );
+      if (index < 0) return { updated: false, capacityExceeded: false };
+      const reservation = reservations[index];
+      if (
+        !reservation ||
+        typeof reservation !== 'object' ||
+        Array.isArray(reservation) ||
+        reservation.branchId !== input.branchId ||
+        typeof reservation.reservationDate !== 'string'
+      ) {
+        return { updated: false, capacityExceeded: false };
+      }
+      const slotStart = new Date(reservation.reservationDate);
+      const slotEnd = new Date(slotStart.getTime() + 30 * 60_000);
+      if (input.status === 'CONFIRMED') {
+        const earliestOverlap = new Date(slotStart.getTime() - 30 * 60_000 + 1);
+        const durable = await tx.tableReservation.count({
+          where: {
+            branchId: input.branchId,
+            status: { in: ['CONFIRMED', 'SEATED'] },
+            reservationDate: { gte: earliestOverlap, lt: slotEnd },
+          },
+        });
+        const legacy = await this.countLegacyAcceptedReservations(tx, {
+          restaurantId: input.restaurantId,
+          branchId: input.branchId,
+          slotStart,
+          slotEnd,
+          excludeReservationId: input.reservationId,
+        });
+        if (input.tableCount <= 0 || durable + legacy >= input.tableCount) {
+          return { updated: false, capacityExceeded: true };
+        }
+      }
+      reservations[index] = {
+        ...reservation,
+        status: input.status,
+        cancelledAt:
+          input.status === 'CANCELLED'
+            ? (reservation.cancelledAt ?? new Date().toISOString())
+            : null,
+      };
+      await tx.profile.update({
+        where: { id: customer.profile.id },
+        data: { metadata: root },
+      });
+      return { updated: true, capacityExceeded: false };
+    });
+  }
+
+  private async countLegacyAcceptedReservations(
+    tx: Prisma.TransactionClient,
+    input: {
+      restaurantId: string;
+      branchId: string;
+      slotStart: Date;
+      slotEnd: Date;
+      excludeReservationId?: string;
+    },
+  ) {
+    const customers = await tx.user.findMany({
+      where: {
+        role: 'CUSTOMER',
+        restaurantId: input.restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { profile: { select: { metadata: true } } },
+    });
+    let count = 0;
+    for (const customer of customers) {
+      const metadata = customer.profile?.metadata;
+      if (
+        !metadata ||
+        typeof metadata !== 'object' ||
+        Array.isArray(metadata)
+      ) {
+        continue;
+      }
+      const customerApp = metadata.customerApp;
+      if (
+        !customerApp ||
+        typeof customerApp !== 'object' ||
+        Array.isArray(customerApp)
+      ) {
+        continue;
+      }
+      const reservations = customerApp.tableReservations;
+      if (!Array.isArray(reservations)) continue;
+      for (const reservation of reservations) {
+        if (
+          !reservation ||
+          typeof reservation !== 'object' ||
+          Array.isArray(reservation) ||
+          reservation.id === input.excludeReservationId ||
+          reservation.branchId !== input.branchId ||
+          typeof reservation.status !== 'string' ||
+          !['CONFIRMED', 'SEATED'].includes(reservation.status) ||
+          typeof reservation.reservationDate !== 'string'
+        ) {
+          continue;
+        }
+        const start = new Date(reservation.reservationDate);
+        const end = new Date(start.getTime() + 30 * 60_000);
+        if (
+          !Number.isNaN(start.getTime()) &&
+          start.getTime() < input.slotEnd.getTime() &&
+          end.getTime() > input.slotStart.getTime()
+        ) {
+          count += 1;
+        }
+      }
+    }
+    return count;
   }
 }

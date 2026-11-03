@@ -2096,22 +2096,16 @@ export class CustomerAppService {
         throw new NotFoundException('Table reservation not found');
       }
 
-      if (dto.status === 'CONFIRMED') {
-        const branches =
-          await this.customerAppRepository.findBranchesPublicContent(
-            [reservation.branchId],
-            restaurantId,
-          );
-        const reservationBranch = branches.find(
-          (item) => item.id === reservation.branchId,
-        );
-        await this.assertTableReservationCapacityAvailable({
+      const reservationBranches =
+        await this.customerAppRepository.findBranchesPublicContent(
+          [reservation.branchId],
           restaurantId,
-          branchId: reservation.branchId,
-          branchSettings: reservationBranch?.settings,
-          reservationDate: reservation.reservationDate,
-          excludeReservationId: reservation.id,
-        });
+        );
+      const reservationBranch = reservationBranches.find(
+        (item) => item.id === reservation.branchId,
+      );
+      if (!reservationBranch) {
+        throw new NotFoundException('Table reservation not found');
       }
 
       const cancelledAt =
@@ -2125,17 +2119,28 @@ export class CustomerAppService {
       );
       const updatedReservation =
         reservations.find((item) => item.id === reservationId) ?? null;
-      const nextMetadata = this.writeCustomerAppMetadata(
-        customer.profile?.metadata,
-        {
-          tableReservations: reservations,
-        },
-      );
-
-      await this.customerAppRepository.upsertCustomerProfile(
-        customer.id,
-        nextMetadata,
-      );
+      const legacyUpdate =
+        await this.customerAppRepository.updateLegacyTableReservationStatusAtomic(
+          {
+            customerId: customer.id,
+            reservationId,
+            restaurantId,
+            branchId: reservation.branchId,
+            status: dto.status,
+            tableCount: this.readNumberValue(reservationBranch.settings, [
+              ['tableCount'],
+              ['tableReservations', 'tableCount'],
+            ]),
+          },
+        );
+      if (legacyUpdate.capacityExceeded) {
+        throw new BadRequestException(
+          'No tables are available for this reservation time',
+        );
+      }
+      if (!legacyUpdate.updated) {
+        throw new NotFoundException('Table reservation not found');
+      }
 
       const branches = updatedReservation
         ? await this.customerAppRepository.findBranchesPublicContent(
@@ -2225,6 +2230,7 @@ export class CustomerAppService {
       guestEmail: customer.email,
       guestPhone: customer.profile?.phone ?? '',
       idempotencyScope: `user:${customer.id}`,
+      validateConfiguredSlot: false,
     });
     if (result.created) {
       await this.notifyTableReservationAdmin({
@@ -2273,6 +2279,7 @@ export class CustomerAppService {
       guestEmail: dto.guestEmail,
       guestPhone: dto.guestPhone,
       idempotencyScope: `guest:${branch.restaurantId}`,
+      validateConfiguredSlot: true,
     });
     if (result.created) {
       const nameParts = dto.guestName.split(/\s+/).filter(Boolean);
@@ -2306,6 +2313,7 @@ export class CustomerAppService {
     guestEmail: string;
     guestPhone: string;
     idempotencyScope: string;
+    validateConfiguredSlot: boolean;
   }) {
     const normalized = {
       branchId: input.branch.id,
@@ -2349,17 +2357,22 @@ export class CustomerAppService {
         reservation: this.toTableReservationRecord(existing),
       };
     }
-    this.assertSelectableReservationSlot(
-      input.branch.settings,
-      new Date(normalized.reservationDate),
-    );
+    const reservationDate = new Date(normalized.reservationDate);
+    this.assertFutureReservationDate(reservationDate);
+    if (input.validateConfiguredSlot) {
+      this.assertSelectableReservationSlot(
+        input.branch.settings,
+        reservationDate,
+        await this.resolveReservationTimezone(input.branch.settings),
+      );
+    }
     const result =
       await this.customerAppRepository.createTableReservationAtomic({
         tenantId: input.branch.tenantId,
         restaurantId: input.branch.restaurantId,
         branchId: input.branch.id,
         customerId: input.customerId,
-        reservationDate: new Date(normalized.reservationDate),
+        reservationDate,
         durationMinutes: 30,
         guestCount: normalized.guestCount,
         note: normalized.note,
@@ -2428,13 +2441,21 @@ export class CustomerAppService {
     }
   }
 
-  private assertSelectableReservationSlot(settings: unknown, slotStart: Date) {
+  private assertFutureReservationDate(slotStart: Date) {
     if (Number.isNaN(slotStart.getTime())) {
       throw new BadRequestException('Invalid reservation date');
     }
     if (slotStart.getTime() <= Date.now()) {
       throw new BadRequestException('Reservation date must be in the future');
     }
+  }
+
+  private assertSelectableReservationSlot(
+    settings: unknown,
+    slotStart: Date,
+    timezone: string,
+  ) {
+    this.assertFutureReservationDate(slotStart);
     const duration = 30;
     const slotEnd = new Date(slotStart.getTime() + duration * 60_000);
     const closure = this.readPath(settings, ['temporaryClosure']);
@@ -2460,7 +2481,7 @@ export class CustomerAppService {
     }
 
     const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Karachi',
+      timeZone: timezone,
       weekday: 'long',
       year: 'numeric',
       month: '2-digit',
@@ -5593,6 +5614,23 @@ export class CustomerAppService {
     return typeof timezone === 'string' && timezone.trim().length
       ? timezone.trim()
       : null;
+  }
+
+  private async resolveReservationTimezone(settings: unknown): Promise<string> {
+    const branchTimezone = this.readStringValue(settings, [
+      ['timezone'],
+      ['scheduleTimings', 'timezone'],
+      ['timingConfig', 'timezone'],
+    ]);
+    const timezone =
+      branchTimezone ?? (await this.resolveHomeTimezone()) ?? 'UTC';
+
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: timezone });
+      return timezone;
+    } catch {
+      return 'UTC';
+    }
   }
 
   private extractLegalProfile(settings: unknown) {

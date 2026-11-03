@@ -104,4 +104,55 @@ describeDatabase('CustomerAppRepository reservation concurrency', () => {
       }),
     ).resolves.toBe(2);
   });
+
+  it('counts legacy metadata confirmations against durable capacity', async () => {
+    const customer = await prisma.user.create({
+      data: {
+        email: 'legacy-capacity@example.com',
+        password: 'not-used',
+        role: 'CUSTOMER',
+        tenantId,
+        restaurantId,
+        profile: {
+          create: {
+            firstName: 'Legacy',
+            lastName: 'Guest',
+            metadata: {
+              customerApp: {
+                tableReservations: [
+                  {
+                    id: 'legacy-confirmed',
+                    branchId,
+                    reservationDate: '2099-03-30T19:30:00.000Z',
+                    guestCount: 2,
+                    status: 'CONFIRMED',
+                    createdAt: '2099-03-01T00:00:00.000Z',
+                    cancelledAt: null,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 5 }, (_, index) =>
+          repository.createTableReservationAtomic({
+            ...createInput(
+              `30000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+            ),
+            tableCount: 1,
+          }),
+        ),
+      );
+      expect(
+        results.filter((result) => result.reservation.status === 'CONFIRMED'),
+      ).toHaveLength(0);
+    } finally {
+      await prisma.profile.deleteMany({ where: { userId: customer.id } });
+      await prisma.user.delete({ where: { id: customer.id } });
+    }
+  });
 });

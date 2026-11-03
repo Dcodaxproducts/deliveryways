@@ -36,9 +36,13 @@ describe('CreatePublicTableReservationDto', () => {
     ['guestPhone', '12'],
     ['guestName', 'x'.repeat(101)],
     ['guestEmail', `${'x'.repeat(245)}@example.com`],
-    ['note', 'x'.repeat(501)],
   ])('rejects invalid or oversized %s', async (field, value) => {
     const { errors } = await errorsFor({ [field]: value });
     expect(errors.some((error) => error.property === field)).toBe(true);
+  });
+
+  it('preserves unbounded legacy note compatibility', async () => {
+    const { errors } = await errorsFor({ note: 'x'.repeat(501) });
+    expect(errors.some((error) => error.property === 'note')).toBe(false);
   });
 });

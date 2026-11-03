@@ -419,10 +419,9 @@ export class CreateTableReservationDto {
   @Max(50)
   guestCount!: number;
 
-  @ApiPropertyOptional({ maxLength: 500 })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(500)
   note?: string;
 
   @ApiPropertyOptional({
