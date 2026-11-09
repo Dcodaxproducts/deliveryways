@@ -876,6 +876,7 @@ export class NotificationsService {
 
     const recipients =
       await this.notificationsRepository.listAdminEmailRecipients({
+        tenantId: input.tenantId,
         restaurantId: input.restaurantId,
         branchId: input.branchId,
       });

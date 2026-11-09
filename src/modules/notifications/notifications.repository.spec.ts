@@ -144,6 +144,41 @@ describe('NotificationsRepository', () => {
     );
   });
 
+  it('selects tenant Business Admins and branch-scoped Branch Admins for reservation email', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 'business-admin-1', email: 'owner@example.com' },
+      { id: 'branch-admin-1', email: 'branch@example.com' },
+    ]);
+    const repository = new NotificationsRepository({
+      user: { findMany },
+    } as never);
+
+    await repository.listAdminEmailRecipients({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        OR: [
+          {
+            role: UserRole.BUSINESS_ADMIN,
+            tenantId: 'tenant-1',
+          },
+          {
+            role: UserRole.BRANCH_ADMIN,
+            restaurantId: 'restaurant-1',
+            branchId: 'branch-1',
+          },
+        ],
+      },
+      select: { id: true, email: true },
+    });
+  });
+
   it('selects tenant Business Admins and branch-scoped Branch Admins for admin push', async () => {
     const findUsers = jest
       .fn()

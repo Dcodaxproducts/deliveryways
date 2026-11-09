@@ -1409,6 +1409,7 @@ describe('NotificationsService', () => {
     expect(
       notificationsRepository.listAdminEmailRecipients,
     ).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       branchId: 'branch-1',
     });

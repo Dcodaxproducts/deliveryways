@@ -424,6 +424,7 @@ export class NotificationsRepository {
   }
 
   async listAdminEmailRecipients(input: {
+    tenantId: string;
     restaurantId: string;
     branchId: string;
   }) {
@@ -434,10 +435,11 @@ export class NotificationsRepository {
         OR: [
           {
             role: UserRole.BUSINESS_ADMIN,
-            restaurantId: input.restaurantId,
+            tenantId: input.tenantId,
           },
           {
             role: UserRole.BRANCH_ADMIN,
+            restaurantId: input.restaurantId,
             branchId: input.branchId,
           },
         ],
