@@ -95,6 +95,12 @@ describe('SubscriptionFeaturesGuard', () => {
   it('maps protected routes to plan features', () => {
     expect(resolveSubscriptionFeature('orders')).toBe('orderManagement');
     expect(resolveSubscriptionFeature('pos/orders')).toBe('posCashRegister');
+    expect(resolveSubscriptionFeature('table-reservations')).toBe(
+      'tableBooking',
+    );
+    expect(
+      resolveSubscriptionFeature('customer-app/admin/table-reservations'),
+    ).toBe('tableBooking');
     expect(resolveSubscriptionFeature('admin/reports/financial')).toBe(
       'orderManagement',
     );
@@ -103,6 +109,29 @@ describe('SubscriptionFeaturesGuard', () => {
     );
     expect(resolveSubscriptionFeature('admin/reports/orders/export')).toBe(
       'customerAnalytics',
+    );
+  });
+
+  it('allows table reservations only when the eligible plan does not disable table booking', async () => {
+    const enabledPrisma = createPrisma({ features: { tableBooking: true } });
+    const enabledGuard = new SubscriptionFeaturesGuard(enabledPrisma as never);
+    const context = createContext('table-reservations', '', {
+      role: 'RESTAURANT_ADMIN',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+    });
+
+    await expect(enabledGuard.canActivate(context as never)).resolves.toBe(
+      true,
+    );
+
+    const disabledPrisma = createPrisma({ features: { tableBooking: false } });
+    const disabledGuard = new SubscriptionFeaturesGuard(
+      disabledPrisma as never,
+    );
+
+    await expect(disabledGuard.canActivate(context as never)).rejects.toThrow(
+      'Your current subscription does not include tableBooking',
     );
   });
 

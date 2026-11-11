@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -323,6 +324,7 @@ export class PublicPackagePlansController {
 
   @Public()
   @Get()
+  @Header('Cache-Control', 'no-store, max-age=0')
   @ApiOperation({ summary: 'List public package plans for landing pages' })
   listPublicPlans(@Query() query: ListPackagePlansDto) {
     return this.packagePlansService.listPublicPlans(query);

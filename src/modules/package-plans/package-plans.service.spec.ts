@@ -261,8 +261,18 @@ describe('PackagePlansService', () => {
 
     expect(result.data).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'ORDER_MANAGEMENT' }),
-        expect.objectContaining({ code: 'BRANCH_MANAGEMENT' }),
+        expect.objectContaining({
+          code: 'ORDER_MANAGEMENT',
+          key: 'orderManagement',
+        }),
+        expect.objectContaining({
+          code: 'BRANCH_MANAGEMENT',
+          key: 'multiBranches',
+        }),
+        expect.objectContaining({
+          code: 'TABLE_BOOKING',
+          key: 'tableBooking',
+        }),
       ]),
     );
   });
@@ -598,8 +608,8 @@ describe('PackagePlansService', () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(
         makeSubscription({
-          startsAt: new Date('2026-10-01T00:00:00.000Z'),
-          nextBillingAt: new Date('2026-11-01T00:00:00.000Z'),
+          startsAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          nextBillingAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         }),
       ),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),

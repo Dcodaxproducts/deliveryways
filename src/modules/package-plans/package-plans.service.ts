@@ -195,45 +195,71 @@ export class PackagePlansService {
       data: [
         {
           code: 'ORDER_MANAGEMENT',
+          key: 'orderManagement',
           name: 'Order Management',
           description: 'Create, manage, track, and update orders',
         },
         {
           code: 'MENU_MANAGEMENT',
+          key: 'menuManagement',
           name: 'Menu Management',
           description:
             'Create menus, items, categories, modifiers, and pricing',
         },
         {
           code: 'BRANCH_MANAGEMENT',
+          key: 'multiBranches',
           name: 'Branch Management',
           description: 'Manage branches and branch settings',
           supportsLimit: true,
         },
         {
           code: 'REPORTS_ANALYTICS',
+          key: 'customerAnalytics',
           name: 'Reports & Analytics',
           description: 'Dashboard, sales reports, and performance analytics',
         },
         {
           code: 'PRIORITY_SUPPORT',
+          key: 'prioritySupport',
           name: 'Priority Support',
           description: 'Priority support access for the restaurant',
         },
         {
           code: 'PROMOTIONS_COUPONS',
+          key: 'promotionsCoupons',
           name: 'Promotions & Coupons',
           description: 'Coupons, campaigns, and promotions',
         },
         {
           code: 'POS',
+          key: 'posCashRegister',
           name: 'POS',
           description: 'Point-of-sale ordering and operational tools',
         },
         {
           code: 'LOYALTY_WALLET',
+          key: 'loyaltyWallet',
           name: 'Loyalty & Wallet',
           description: 'Customer loyalty, wallet, and reward features',
+        },
+        {
+          code: 'TABLE_BOOKING',
+          key: 'tableBooking',
+          name: 'Table Booking',
+          description: 'Create and manage restaurant table reservations',
+        },
+        {
+          code: 'SELF_DELIVERY',
+          key: 'selfDelivery',
+          name: 'Self Delivery',
+          description: 'Manage restaurant-operated delivery workflows',
+        },
+        {
+          code: 'CHAT',
+          key: 'chat',
+          name: 'Chat',
+          description: 'Use customer and restaurant chat workflows',
         },
       ],
       message: 'Package plan feature catalog fetched successfully',
