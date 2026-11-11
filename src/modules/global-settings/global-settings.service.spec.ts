@@ -468,6 +468,21 @@ describe('GlobalSettingsService', () => {
     expect(updateInput.landingPageSettings.packagePlanIds).toEqual([]);
   });
 
+  it('bounds malformed persisted package-plan selections to three unique IDs', async () => {
+    ensureSingletonSpy.mockResolvedValue({
+      scopeKey: 'GLOBAL',
+      landingPageSettings: {
+        packagePlanIds: ['plan-1', 'plan-2', 'plan-2', 'plan-3', 'plan-4'],
+      },
+    });
+
+    await expect(service.getLandingPackagePlanIds()).resolves.toEqual([
+      'plan-1',
+      'plan-2',
+      'plan-3',
+    ]);
+  });
+
   it('returns null for the legacy unconfigured package-plan selection', async () => {
     ensureSingletonSpy.mockResolvedValue({
       scopeKey: 'GLOBAL',

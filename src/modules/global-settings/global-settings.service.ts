@@ -1379,7 +1379,7 @@ export class GlobalSettingsService {
           .map((item) => item.trim())
           .filter(Boolean),
       ),
-    );
+    ).slice(0, 3);
   }
 
   private mergeGlobalLegalProfile(
