@@ -1442,12 +1442,22 @@ describe('NotificationsService', () => {
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(2);
   });
 
-  it('creates customer in-app notification when table reservation status changes', async () => {
-    notificationsRepository.create.mockResolvedValue({
-      id: 'customer-in-app-1',
-      recipientEmail: null,
-      subject: 'Reservation status updated at Main Branch',
-      body: 'body',
+  it('emails the customer and creates an in-app notification when a reservation status changes', async () => {
+    notificationsRepository.create
+      .mockResolvedValueOnce({
+        id: 'customer-in-app-1',
+        recipientEmail: null,
+        subject: 'Reservation status updated at Main Branch',
+        body: 'body',
+      })
+      .mockResolvedValueOnce({
+        id: 'customer-email-1',
+        recipientEmail: 'customer@example.com',
+        subject: 'Reservation status updated at Main Branch',
+        body: 'body',
+      });
+    notificationsRepository.updateDelivery.mockResolvedValue({
+      status: NotificationStatus.SENT,
     });
 
     await service.notifyTableReservationCustomer({
@@ -1457,13 +1467,15 @@ describe('NotificationsService', () => {
       reservationId: 'reservation-1',
       branchName: 'Main Branch',
       customerId: 'customer-1',
+      customerEmail: 'customer@example.com',
       reservationDate: '2099-03-30T19:30:00.000Z',
       guestCount: 4,
       status: 'CONFIRMED',
       source: 'STATUS_UPDATED',
     });
 
-    expect(notificationsRepository.create).toHaveBeenCalledWith(
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         audience: NotificationAudience.CUSTOMER,
         channel: NotificationChannel.IN_APP,
@@ -1481,6 +1493,59 @@ describe('NotificationsService', () => {
         },
       }),
     );
-    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+    expect(notificationsRepository.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'customer@example.com',
+        type: NotificationType.TABLE_RESERVATION_STATUS_CHANGED,
+      }),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'customer@example.com',
+      'Reservation status updated at Main Branch',
+      expect.any(String),
+    );
+  });
+
+  it('emails a guest reservation customer without creating an in-app notification', async () => {
+    notificationsRepository.create.mockResolvedValue({
+      id: 'guest-email-1',
+      recipientEmail: 'guest@example.com',
+      subject: 'Reservation requested at Main Branch',
+      body: 'body',
+    });
+    notificationsRepository.updateDelivery.mockResolvedValue({
+      status: NotificationStatus.SENT,
+    });
+
+    await service.notifyTableReservationCustomer({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationId: 'reservation-1',
+      branchName: 'Main Branch',
+      customerEmail: 'guest@example.com',
+      reservationDate: '2099-03-30T19:30:00.000Z',
+      guestCount: 4,
+      status: 'REQUESTED',
+      source: 'CREATED',
+    });
+
+    expect(notificationsRepository.create).toHaveBeenCalledTimes(1);
+    expect(notificationsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: NotificationAudience.CUSTOMER,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: 'guest@example.com',
+        type: NotificationType.TABLE_RESERVATION_CREATED,
+      }),
+    );
+    expect(mailerService.sendEmail).toHaveBeenCalledWith(
+      'guest@example.com',
+      'Reservation requested at Main Branch',
+      expect.any(String),
+    );
   });
 });

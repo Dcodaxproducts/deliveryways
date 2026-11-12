@@ -3991,6 +3991,13 @@ describe('CustomerAppService', () => {
     );
     expect(repository.createTableReservationAtomic).toHaveBeenCalled();
     expect(notificationsService.notifyTableReservationAdmin).toHaveBeenCalled();
+    expect(
+      notificationsService.notifyTableReservationCustomer,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerEmail: 'ali@example.com',
+      }),
+    );
     expect(result.data).not.toHaveProperty('guestEmail');
     expect(result.data).not.toHaveProperty('guestPhone');
     expect(result.data).not.toHaveProperty('guestName');

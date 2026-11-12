@@ -2048,14 +2048,15 @@ export class CustomerAppService {
           reservation,
         });
       }
-      if (durable.customerId) {
-        await this.notifyTableReservationCustomer({
-          branch,
-          customer: { id: durable.customerId },
-          reservation,
-          source: 'STATUS_UPDATED',
-        });
-      }
+      await this.notifyTableReservationCustomer({
+        branch,
+        customer: {
+          id: durable.customerId ?? undefined,
+          email: durable.guestEmail,
+        },
+        reservation,
+        source: 'STATUS_UPDATED',
+      });
       return {
         data: {
           ...reservation,
@@ -2170,6 +2171,7 @@ export class CustomerAppService {
           branch,
           customer: {
             id: customer.id,
+            email: customer.email,
           },
           reservation: updatedReservation,
           source: 'STATUS_UPDATED',
@@ -2245,7 +2247,7 @@ export class CustomerAppService {
       });
       await this.notifyTableReservationCustomer({
         branch,
-        customer: { id: customer.id },
+        customer: { id: customer.id, email: customer.email },
         reservation: result.reservation,
         source: 'CREATED',
       });
@@ -2292,6 +2294,12 @@ export class CustomerAppService {
           lastName: nameParts.slice(1).join(' ') || null,
         },
         reservation: result.reservation,
+      });
+      await this.notifyTableReservationCustomer({
+        branch,
+        customer: { email: dto.guestEmail },
+        reservation: result.reservation,
+        source: 'CREATED',
       });
     }
     return {
@@ -3231,7 +3239,8 @@ export class CustomerAppService {
       name: string;
     };
     customer: {
-      id: string;
+      id?: string;
+      email: string;
     };
     reservation: TableReservationRecord;
     source: 'CREATED' | 'STATUS_UPDATED';
@@ -3247,6 +3256,7 @@ export class CustomerAppService {
       branchName: input.branch.name,
       reservationId: input.reservation.id,
       customerId: input.customer.id,
+      customerEmail: input.customer.email,
       reservationDate: input.reservation.reservationDate,
       guestCount: input.reservation.guestCount,
       status: input.reservation.status,

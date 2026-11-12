@@ -905,7 +905,8 @@ export class NotificationsService {
     branchId: string;
     reservationId: string;
     branchName: string;
-    customerId: string;
+    customerId?: string;
+    customerEmail: string;
     reservationDate: string;
     guestCount: number;
     status: string;
@@ -937,11 +938,25 @@ export class NotificationsService {
       source: input.source,
     };
 
-    await this.createCustomerInAppNotification({
+    if (input.customerId) {
+      await this.createCustomerInAppNotification({
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+        recipientUserId: input.customerId,
+        type,
+        subject,
+        body,
+        payload,
+      });
+    }
+
+    await this.createAndDispatchCustomerEmail({
       tenantId: input.tenantId,
       restaurantId: input.restaurantId,
       branchId: input.branchId,
       recipientUserId: input.customerId,
+      recipientEmail: input.customerEmail,
       type,
       subject,
       body,
