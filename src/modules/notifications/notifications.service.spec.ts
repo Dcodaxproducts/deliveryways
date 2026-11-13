@@ -25,6 +25,7 @@ describe('NotificationsService', () => {
     markSeen: jest.Mock;
     markAllSeen: jest.Mock;
     claimPendingOrderNotifications: jest.Mock;
+    findReservationEmailNotification: jest.Mock;
     listAdminEmailRecipients: jest.Mock;
     upsertPushToken: jest.Mock;
     deactivatePushToken: jest.Mock;
@@ -63,6 +64,7 @@ describe('NotificationsService', () => {
       markSeen: jest.fn(),
       markAllSeen: jest.fn(),
       claimPendingOrderNotifications: jest.fn(),
+      findReservationEmailNotification: jest.fn().mockResolvedValue(null),
       listAdminEmailRecipients: jest.fn(),
       upsertPushToken: jest.fn(),
       deactivatePushToken: jest.fn(),
@@ -1373,19 +1375,19 @@ describe('NotificationsService', () => {
       .mockResolvedValueOnce({
         id: 'admin-in-app-1',
         recipientEmail: null,
-        subject: 'New reservation request at Main Branch',
+        subject: 'Neue Reservierungsanfrage – Main Branch',
         body: 'body',
       })
       .mockResolvedValueOnce({
         id: 'admin-email-1',
         recipientEmail: 'admin@example.com',
-        subject: 'New reservation request at Main Branch',
+        subject: 'Neue Reservierungsanfrage – Main Branch',
         body: 'body',
       })
       .mockResolvedValueOnce({
         id: 'admin-email-2',
         recipientEmail: 'branch@example.com',
-        subject: 'New reservation request at Main Branch',
+        subject: 'Neue Reservierungsanfrage – Main Branch',
         body: 'body',
       });
     notificationsRepository.updateDelivery.mockResolvedValue({
@@ -1447,13 +1449,13 @@ describe('NotificationsService', () => {
       .mockResolvedValueOnce({
         id: 'customer-in-app-1',
         recipientEmail: null,
-        subject: 'Reservation status updated at Main Branch',
+        subject: 'Reservierungsstatus bei Main Branch aktualisiert',
         body: 'body',
       })
       .mockResolvedValueOnce({
         id: 'customer-email-1',
         recipientEmail: 'customer@example.com',
-        subject: 'Reservation status updated at Main Branch',
+        subject: 'Reservierungsstatus bei Main Branch aktualisiert',
         body: 'body',
       });
     notificationsRepository.updateDelivery.mockResolvedValue({
@@ -1504,7 +1506,7 @@ describe('NotificationsService', () => {
     );
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'customer@example.com',
-      'Reservation status updated at Main Branch',
+      'Reservierungsstatus bei Main Branch aktualisiert',
       expect.any(String),
     );
   });
@@ -1513,7 +1515,7 @@ describe('NotificationsService', () => {
     notificationsRepository.create.mockResolvedValue({
       id: 'guest-email-1',
       recipientEmail: 'guest@example.com',
-      subject: 'Reservation requested at Main Branch',
+      subject: 'Reservierung bei Main Branch angefragt',
       body: 'body',
     });
     notificationsRepository.updateDelivery.mockResolvedValue({
@@ -1544,8 +1546,105 @@ describe('NotificationsService', () => {
     );
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'guest@example.com',
-      'Reservation requested at Main Branch',
+      'Reservierung bei Main Branch angefragt',
       expect.any(String),
+    );
+  });
+
+  it('does not duplicate a sent guest reservation email on request replay', async () => {
+    notificationsRepository.findReservationEmailNotification.mockResolvedValue({
+      id: 'guest-email-1',
+      status: NotificationStatus.SENT,
+      recipientEmail: 'guest@example.com',
+      subject: 'Reservierung bei Main Branch angefragt',
+      body: 'body',
+    });
+
+    await service.notifyTableReservationCustomer({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationId: 'reservation-1',
+      branchName: 'Main Branch',
+      customerEmail: 'guest@example.com',
+      reservationDate: '2099-03-30T19:30:00.000Z',
+      guestCount: 4,
+      status: 'REQUESTED',
+      source: 'CREATED',
+      persistInApp: false,
+    });
+
+    expect(notificationsRepository.create).not.toHaveBeenCalled();
+    expect(mailerService.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed guest reservation email and marks it sent', async () => {
+    notificationsRepository.findReservationEmailNotification.mockResolvedValue({
+      id: 'guest-email-1',
+      status: NotificationStatus.FAILED,
+      recipientEmail: 'guest@example.com',
+      subject: 'Reservierung bei Main Branch angefragt',
+      body: 'body',
+    });
+    notificationsRepository.updateDelivery.mockResolvedValue({
+      id: 'guest-email-1',
+      status: NotificationStatus.SENT,
+    });
+
+    await service.notifyTableReservationCustomer({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      reservationId: 'reservation-1',
+      branchName: 'Main Branch',
+      customerEmail: 'guest@example.com',
+      reservationDate: '2099-03-30T19:30:00.000Z',
+      guestCount: 4,
+      status: 'REQUESTED',
+      source: 'CREATED',
+      persistInApp: false,
+    });
+
+    expect(mailerService.sendEmail).toHaveBeenCalledTimes(1);
+    expect(notificationsRepository.updateDelivery).toHaveBeenCalledWith(
+      'guest-email-1',
+      expect.objectContaining({ status: NotificationStatus.SENT }),
+    );
+  });
+
+  it('persists and surfaces reservation email delivery failures', async () => {
+    notificationsRepository.create.mockResolvedValue({
+      id: 'guest-email-1',
+      recipientEmail: 'guest@example.com',
+      subject: 'Reservierung bei Main Branch angefragt',
+      body: 'body',
+    });
+    notificationsRepository.updateDelivery.mockResolvedValue({
+      id: 'guest-email-1',
+      status: NotificationStatus.FAILED,
+    });
+    mailerService.sendEmail.mockRejectedValue(new Error('SMTP unavailable'));
+
+    await expect(
+      service.notifyTableReservationCustomer({
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        reservationId: 'reservation-1',
+        branchName: 'Main Branch',
+        customerEmail: 'guest@example.com',
+        reservationDate: '2099-03-30T19:30:00.000Z',
+        guestCount: 4,
+        status: 'REQUESTED',
+        source: 'CREATED',
+      }),
+    ).rejects.toThrow('Email notification delivery failed');
+    expect(notificationsRepository.updateDelivery).toHaveBeenCalledWith(
+      'guest-email-1',
+      expect.objectContaining({
+        status: NotificationStatus.FAILED,
+        errorMessage: 'SMTP unavailable',
+      }),
     );
   });
 });

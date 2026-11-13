@@ -3709,6 +3709,56 @@ describe('CustomerAppService', () => {
     });
   });
 
+  it('maps durable guest contact details without exposing a reservation id as customer id', async () => {
+    const { service, repository } = makeService();
+    repository.findAdminTableReservations.mockResolvedValue([
+      {
+        id: 'reservation-guest-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        customerId: null,
+        reservationDate: new Date('2099-03-30T19:30:00.000Z'),
+        durationMinutes: 30,
+        guestCount: 4,
+        note: null,
+        status: 'REQUESTED',
+        guestName: 'Anna Schmidt',
+        guestEmail: 'anna@example.de',
+        guestPhone: '+491701234567',
+        idempotencyScope: 'guest:restaurant-1',
+        clientRequestId: '0f26c438-f7e0-4caf-aab4-c43b116b5723',
+        requestFingerprint: 'fingerprint',
+        cancelledAt: null,
+        createdAt: new Date('2099-03-29T10:00:00.000Z'),
+        updatedAt: new Date('2099-03-29T10:00:00.000Z'),
+        customer: null,
+      },
+    ] as never);
+    repository.findCustomersForTableReservations.mockResolvedValue([]);
+    repository.findBranchesPublicContent.mockResolvedValue([]);
+
+    const result = await service.listAdminTableReservations(
+      {
+        uid: 'admin-1',
+        rid: 'restaurant-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'DESC' } as never,
+    );
+
+    expect(result.data[0]?.customer).toEqual({
+      id: null,
+      email: 'anna@example.de',
+      firstName: 'Anna',
+      lastName: 'Schmidt',
+      phone: '+491701234567',
+      avatarUrl: null,
+    });
+    expect(result.data[0]?.createdAt).toBe('2099-03-29T10:00:00.000Z');
+  });
+
   it('lists table reservations for permission-authorized staff scope', async () => {
     const { service, repository } = makeService();
     repository.findCustomersForTableReservations.mockResolvedValue([]);

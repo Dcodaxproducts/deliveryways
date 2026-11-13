@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   NotificationAudience,
@@ -844,15 +845,17 @@ export class NotificationsService {
     reservationDate: string;
     guestCount: number;
     status: 'REQUESTED' | 'CONFIRMED';
+    persistInApp?: boolean;
   }): Promise<void> {
     const accepted = input.status === 'CONFIRMED';
     const type = accepted
       ? NotificationType.TABLE_RESERVATION_ACCEPTED
       : NotificationType.TABLE_RESERVATION_CREATED;
     const subject = accepted
-      ? `Reservation auto-accepted at ${input.branchName}`
-      : `New reservation request at ${input.branchName}`;
-    const body = `${input.customerName ?? input.customerEmail ?? 'Customer'} requested a table for ${input.guestCount} guest(s) at ${input.reservationDate}.`;
+      ? `Reservierung automatisch bestätigt – ${input.branchName}`
+      : `Neue Reservierungsanfrage – ${input.branchName}`;
+    const guestLabel = input.guestCount === 1 ? 'Gast' : 'Gäste';
+    const body = `${input.customerName ?? input.customerEmail ?? 'Kunde'} hat einen Tisch für ${input.guestCount} ${guestLabel} am ${input.reservationDate} angefragt.`;
     const payload = {
       reservationId: input.reservationId,
       branchId: input.branchId,
@@ -864,15 +867,17 @@ export class NotificationsService {
       status: input.status,
     };
 
-    await this.createAdminInAppNotification({
-      tenantId: input.tenantId,
-      restaurantId: input.restaurantId,
-      branchId: input.branchId,
-      type,
-      subject,
-      body,
-      payload,
-    });
+    if (input.persistInApp !== false) {
+      await this.createAdminInAppNotification({
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        branchId: input.branchId,
+        type,
+        subject,
+        body,
+        payload,
+      });
+    }
 
     const recipients =
       await this.notificationsRepository.listAdminEmailRecipients({
@@ -911,6 +916,7 @@ export class NotificationsService {
     guestCount: number;
     status: string;
     source: 'CREATED' | 'STATUS_UPDATED';
+    persistInApp?: boolean;
   }): Promise<void> {
     const type =
       input.source === 'CREATED'
@@ -921,13 +927,22 @@ export class NotificationsService {
     const subject =
       input.source === 'CREATED'
         ? input.status === 'CONFIRMED'
-          ? `Reservation confirmed at ${input.branchName}`
-          : `Reservation requested at ${input.branchName}`
-        : `Reservation status updated at ${input.branchName}`;
+          ? `Reservierung bei ${input.branchName} bestätigt`
+          : `Reservierung bei ${input.branchName} angefragt`
+        : `Reservierungsstatus bei ${input.branchName} aktualisiert`;
+    const statusLabels: Record<string, string> = {
+      REQUESTED: 'angefragt',
+      CONFIRMED: 'bestätigt',
+      SEATED: 'platziert',
+      COMPLETED: 'abgeschlossen',
+      CANCELLED: 'storniert',
+    };
+    const statusLabel = statusLabels[input.status] ?? input.status;
+    const guestLabel = input.guestCount === 1 ? 'Gast' : 'Gäste';
     const body =
       input.source === 'CREATED'
-        ? `Your table reservation for ${input.guestCount} guest(s) at ${input.reservationDate} is ${input.status.toLowerCase()}.`
-        : `Your table reservation for ${input.guestCount} guest(s) at ${input.reservationDate} is now ${input.status.toLowerCase()}.`;
+        ? `Ihre Tischreservierung für ${input.guestCount} ${guestLabel} am ${input.reservationDate} wurde ${statusLabel}.`
+        : `Ihre Tischreservierung für ${input.guestCount} ${guestLabel} am ${input.reservationDate} ist jetzt ${statusLabel}.`;
     const payload = {
       reservationId: input.reservationId,
       branchId: input.branchId,
@@ -938,7 +953,7 @@ export class NotificationsService {
       source: input.source,
     };
 
-    if (input.customerId) {
+    if (input.customerId && input.persistInApp !== false) {
       await this.createCustomerInAppNotification({
         tenantId: input.tenantId,
         restaurantId: input.restaurantId,
@@ -977,6 +992,25 @@ export class NotificationsService {
     body: string;
     payload?: Record<string, unknown>;
   }) {
+    const reservationId =
+      typeof input.payload?.reservationId === 'string'
+        ? input.payload.reservationId
+        : null;
+    if (reservationId) {
+      const existing =
+        await this.notificationsRepository.findReservationEmailNotification({
+          reservationId,
+          audience: NotificationAudience.CUSTOMER,
+          recipientEmail: input.recipientEmail,
+          type: input.type,
+        });
+      if (existing) {
+        return existing.status === NotificationStatus.FAILED
+          ? this.dispatchNotification(existing, true)
+          : existing;
+      }
+    }
+
     const notification = await this.notificationsRepository.create({
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
@@ -997,7 +1031,7 @@ export class NotificationsService {
       payload: input.payload as Prisma.InputJsonValue | undefined,
     });
 
-    return this.dispatchNotification(notification);
+    return this.dispatchNotification(notification, Boolean(reservationId));
   }
 
   private async createAdminInAppNotification(input: {
@@ -1110,6 +1144,25 @@ export class NotificationsService {
     body: string;
     payload?: Record<string, unknown>;
   }) {
+    const reservationId =
+      typeof input.payload?.reservationId === 'string'
+        ? input.payload.reservationId
+        : null;
+    if (reservationId) {
+      const existing =
+        await this.notificationsRepository.findReservationEmailNotification({
+          reservationId,
+          audience: NotificationAudience.ADMIN,
+          recipientEmail: input.recipientEmail,
+          type: input.type,
+        });
+      if (existing) {
+        return existing.status === NotificationStatus.FAILED
+          ? this.dispatchNotification(existing, true)
+          : existing;
+      }
+    }
+
     const notification = await this.notificationsRepository.create({
       tenant: { connect: { id: input.tenantId } },
       restaurant: { connect: { id: input.restaurantId } },
@@ -1126,7 +1179,7 @@ export class NotificationsService {
       payload: input.payload as Prisma.InputJsonValue | undefined,
     });
 
-    return this.dispatchNotification(notification);
+    return this.dispatchNotification(notification, Boolean(reservationId));
   }
 
   private uniqueEmailRecipients(
@@ -1404,12 +1457,15 @@ export class NotificationsService {
       : null;
   }
 
-  private async dispatchNotification(notification: {
-    id: string;
-    recipientEmail: string | null;
-    subject: string;
-    body: string;
-  }) {
+  private async dispatchNotification(
+    notification: {
+      id: string;
+      recipientEmail: string | null;
+      subject: string;
+      body: string;
+    },
+    throwOnFailure = false,
+  ) {
     if (!notification.recipientEmail) {
       throw new ForbiddenException('Notification has no email recipient');
     }
@@ -1428,13 +1484,20 @@ export class NotificationsService {
         errorMessage: null,
       });
     } catch (error) {
-      return this.notificationsRepository.updateDelivery(notification.id, {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to deliver email';
+      await this.notificationsRepository.updateDelivery(notification.id, {
         status: NotificationStatus.FAILED,
         sentAt: null,
         failedAt: new Date(),
-        errorMessage:
-          error instanceof Error ? error.message : 'Failed to deliver email',
+        errorMessage,
       });
+      if (throwOnFailure) {
+        throw new ServiceUnavailableException(
+          'Email notification delivery failed. Retry the request safely.',
+        );
+      }
+      return this.notificationsRepository.findById(notification.id);
     }
   }
 

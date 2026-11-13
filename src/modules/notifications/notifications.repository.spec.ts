@@ -144,6 +144,31 @@ describe('NotificationsRepository', () => {
     );
   });
 
+  it('finds an existing reservation email by audience, recipient, type, and reservation id', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const repository = new NotificationsRepository({
+      notification: { findFirst },
+    } as never);
+
+    await repository.findReservationEmailNotification({
+      reservationId: 'reservation-1',
+      audience: NotificationAudience.ADMIN,
+      recipientEmail: 'Owner@Example.com',
+      type: NotificationType.TABLE_RESERVATION_CREATED,
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        audience: NotificationAudience.ADMIN,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: { equals: 'Owner@Example.com', mode: 'insensitive' },
+        type: NotificationType.TABLE_RESERVATION_CREATED,
+        payload: { path: ['reservationId'], equals: 'reservation-1' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
   it('selects tenant Business Admins and branch-scoped Branch Admins for reservation email', async () => {
     const findMany = jest.fn().mockResolvedValue([
       { id: 'business-admin-1', email: 'owner@example.com' },

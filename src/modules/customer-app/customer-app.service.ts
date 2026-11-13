@@ -245,7 +245,7 @@ export interface TableReservationResponse extends TableReservationRecord {
 
 export interface AdminTableReservationResponse extends TableReservationResponse {
   customer: {
-    id: string;
+    id: string | null;
     email: string;
     firstName: string | null;
     lastName: string | null;
@@ -1893,7 +1893,7 @@ export class CustomerAppService {
       ...durableReservations.map((item) => ({
         ...this.toTableReservationRecord(item),
         customer: {
-          id: item.customerId ?? item.id,
+          id: item.customerId,
           email: item.guestEmail,
           firstName: item.guestName.split(/\s+/)[0] ?? null,
           lastName: item.guestName.split(/\s+/).slice(1).join(' ') || null,
@@ -2234,8 +2234,8 @@ export class CustomerAppService {
       idempotencyScope: `user:${customer.id}`,
       validateConfiguredSlot: false,
     });
-    if (result.created) {
-      await this.notifyTableReservationAdmin({
+    const notificationResults = await Promise.allSettled([
+      this.notifyTableReservationAdmin({
         branch,
         customer: {
           id: customer.id,
@@ -2244,13 +2244,21 @@ export class CustomerAppService {
           lastName: customer.profile?.lastName ?? null,
         },
         reservation: result.reservation,
-      });
-      await this.notifyTableReservationCustomer({
+        persistInApp: result.created,
+      }),
+      this.notifyTableReservationCustomer({
         branch,
         customer: { id: customer.id, email: customer.email },
         reservation: result.reservation,
         source: 'CREATED',
-      });
+        persistInApp: result.created,
+      }),
+    ]);
+    const notificationFailure = notificationResults.find(
+      (item): item is PromiseRejectedResult => item.status === 'rejected',
+    );
+    if (notificationFailure) {
+      throw notificationFailure.reason;
     }
     return {
       data: result.reservation,
@@ -2283,9 +2291,9 @@ export class CustomerAppService {
       idempotencyScope: `guest:${branch.restaurantId}`,
       validateConfiguredSlot: true,
     });
-    if (result.created) {
-      const nameParts = dto.guestName.split(/\s+/).filter(Boolean);
-      await this.notifyTableReservationAdmin({
+    const nameParts = dto.guestName.split(/\s+/).filter(Boolean);
+    const notificationResults = await Promise.allSettled([
+      this.notifyTableReservationAdmin({
         branch,
         customer: {
           id: result.reservation.id,
@@ -2294,13 +2302,21 @@ export class CustomerAppService {
           lastName: nameParts.slice(1).join(' ') || null,
         },
         reservation: result.reservation,
-      });
-      await this.notifyTableReservationCustomer({
+        persistInApp: result.created,
+      }),
+      this.notifyTableReservationCustomer({
         branch,
         customer: { email: dto.guestEmail },
         reservation: result.reservation,
         source: 'CREATED',
-      });
+        persistInApp: result.created,
+      }),
+    ]);
+    const notificationFailure = notificationResults.find(
+      (item): item is PromiseRejectedResult => item.status === 'rejected',
+    );
+    if (notificationFailure) {
+      throw notificationFailure.reason;
     }
     return {
       data: this.toPublicReservationResponse(result.reservation),
@@ -3205,6 +3221,7 @@ export class CustomerAppService {
       lastName?: string | null;
     };
     reservation: TableReservationRecord;
+    persistInApp?: boolean;
   }) {
     if (!this.notificationsService) {
       return;
@@ -3228,6 +3245,7 @@ export class CustomerAppService {
       guestCount: input.reservation.guestCount,
       status:
         input.reservation.status === 'CONFIRMED' ? 'CONFIRMED' : 'REQUESTED',
+      persistInApp: input.persistInApp,
     });
   }
 
@@ -3244,6 +3262,7 @@ export class CustomerAppService {
     };
     reservation: TableReservationRecord;
     source: 'CREATED' | 'STATUS_UPDATED';
+    persistInApp?: boolean;
   }) {
     if (!this.notificationsService) {
       return;
@@ -3261,6 +3280,7 @@ export class CustomerAppService {
       guestCount: input.reservation.guestCount,
       status: input.reservation.status,
       source: input.source,
+      persistInApp: input.persistInApp,
     });
   }
 

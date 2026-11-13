@@ -423,6 +423,30 @@ export class NotificationsRepository {
     });
   }
 
+  async findReservationEmailNotification(input: {
+    reservationId: string;
+    audience: NotificationAudience;
+    recipientEmail: string;
+    type: NotificationType;
+  }) {
+    return this.prisma.notification.findFirst({
+      where: {
+        audience: input.audience,
+        channel: NotificationChannel.EMAIL,
+        recipientEmail: {
+          equals: input.recipientEmail,
+          mode: 'insensitive',
+        },
+        type: input.type,
+        payload: {
+          path: ['reservationId'],
+          equals: input.reservationId,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async listAdminEmailRecipients(input: {
     tenantId: string;
     restaurantId: string;
