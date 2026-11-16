@@ -143,7 +143,10 @@ export class WinOrderPollingService {
         };
       });
       if (item.dealId) {
-        subArticles.unshift({ Comment: 'Deal-Artikel', Count: 1 });
+        subArticles.unshift({
+          Comment: `Deal-Artikel (${item.dealId})`,
+          Count: 1,
+        });
       }
       if (item.note) {
         subArticles.push({ Comment: item.note, Count: 1 });

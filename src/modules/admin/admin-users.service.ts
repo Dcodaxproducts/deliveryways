@@ -32,6 +32,16 @@ export class AdminUsersService {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    if (
+      query.fromDate &&
+      query.toDate &&
+      new Date(query.fromDate).getTime() > new Date(query.toDate).getTime()
+    ) {
+      throw new BadRequestException(
+        'fromDate must be before or equal to toDate',
+      );
+    }
+
     const scopedQuery: AdminListCustomersDto = { ...query };
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {

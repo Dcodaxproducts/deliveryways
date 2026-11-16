@@ -2734,4 +2734,59 @@ describe('BranchesService', () => {
     });
     expect(result.message).toBe('Branch reopened successfully');
   });
+
+  it('accepts cross-midnight opening hours and overnight breaks', async () => {
+    const { service, repository } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isActive: true,
+      deletedAt: null,
+      settings: {},
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+
+    await expect(
+      service.updateOpeningHours(
+        {
+          uid: 'admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        },
+        'branch-1',
+        {
+          openingHours: [
+            {
+              dayOfWeek: BranchScheduleDayEnum.FRIDAY,
+              isClosed: false,
+              openTime: '18:00',
+              closeTime: '02:00',
+              breakTimes: [{ startTime: '23:30', endTime: '00:15' }],
+            },
+          ],
+        },
+      ),
+    ).resolves.toMatchObject({
+      message: 'Branch opening hours updated successfully',
+    });
+  });
+
+  it('blocks business admins from branch lifecycle operations in the service layer', async () => {
+    const { service, repository } = makeService();
+    const user = {
+      uid: 'admin-1',
+      tid: 'tenant-1',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    };
+
+    await expect(service.suspend(user, 'branch-1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(service.remove(user, 'branch-1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(repository.setActive).not.toHaveBeenCalled();
+    expect(repository.softDelete).not.toHaveBeenCalled();
+  });
 });

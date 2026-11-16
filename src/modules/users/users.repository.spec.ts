@@ -78,6 +78,94 @@ describe('UsersRepository', () => {
     expect(findMany.mock.calls[0]?.[0].where.isGuest).toBe(false);
   });
 
+  it('excludes orderless guest profiles from both rows and count', async () => {
+    type QueryArgs = {
+      where: Record<string, unknown>;
+      skip?: number;
+      take?: number;
+    };
+    const findMany = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve([]);
+    });
+    const count = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve(0);
+    });
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    await repository.listCustomers('tenant-1', {
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    const expectedEligibility = [
+      {
+        OR: [
+          { isGuest: false },
+          { isGuest: true, customerOrders: { some: {} } },
+        ],
+      },
+    ];
+    expect(findMany.mock.calls[0]?.[0].where.AND).toEqual(expectedEligibility);
+    expect(count.mock.calls[0]?.[0].where.AND).toEqual(expectedEligibility);
+  });
+
+  it('applies account and inclusive creation-date filters before pagination', async () => {
+    type QueryArgs = {
+      where: Record<string, unknown>;
+      skip?: number;
+      take?: number;
+    };
+    const findMany = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve([]);
+    });
+    const count = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve(0);
+    });
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    await repository.listCustomers('tenant-1', {
+      page: 2,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      isActive: false,
+      isVerified: true,
+      fromDate: '2026-11-01',
+      toDate: '2026-11-16',
+    });
+
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      skip: 10,
+      take: 10,
+      where: {
+        isActive: false,
+        isVerified: true,
+        createdAt: {
+          gte: new Date('2026-11-01T00:00:00.000Z'),
+          lte: new Date('2026-11-16T23:59:59.999Z'),
+        },
+      },
+    });
+  });
+
   const makeTransaction = () => {
     const calls: string[] = [];
     const modelMocks = new Map<string, Record<string, jest.Mock>>();

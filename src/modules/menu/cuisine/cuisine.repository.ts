@@ -4,6 +4,8 @@ import { PrismaService } from '../../../database';
 import { PrismaTx } from '../../../common/types';
 import { ListCuisinesAdminDto } from './dto';
 
+const CUISINE_DETAIL_ITEM_LIMIT = 200;
+
 @Injectable()
 export class CuisineRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -44,7 +46,9 @@ export class CuisineRepository {
       where: { id },
       include: {
         itemLinks: {
-          orderBy: [{ sortOrder: 'asc' }],
+          where: { menuItem: { deletedAt: null } },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          take: CUISINE_DETAIL_ITEM_LIMIT,
           include: {
             menuItem: {
               select: {
@@ -59,7 +63,11 @@ export class CuisineRepository {
             },
           },
         },
-        _count: { select: { itemLinks: true } },
+        _count: {
+          select: {
+            itemLinks: { where: { menuItem: { deletedAt: null } } },
+          },
+        },
       },
     });
   }

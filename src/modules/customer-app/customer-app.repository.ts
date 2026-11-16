@@ -1013,6 +1013,7 @@ export class CustomerAppRepository {
         coverImage: true,
         description: true,
         settings: true,
+        restaurant: { select: { name: true } },
       },
     });
   }

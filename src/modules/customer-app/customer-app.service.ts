@@ -508,23 +508,21 @@ export class CustomerAppService {
       ? globalContent?.pages.privacyPolicy.contentDe
       : globalContent?.pages.privacyPolicy.contentEn;
     const globalLegalProfile = globalContent?.legalProfile;
-    const globalAddress = globalLegalProfile?.businessAddress;
     const legalProfile = {
-      ownerName: globalLegalProfile?.ownerName ?? tenantName,
+      ownerName:
+        restaurantLegalProfile.ownerName ??
+        globalLegalProfile?.ownerName ??
+        tenantName,
+      representativeName: restaurantLegalProfile.representativeName,
       legalBusinessName:
+        restaurantLegalProfile.legalBusinessName ??
         globalLegalProfile?.legalBusinessName ??
-        restaurantLegalProfile.legalBusinessName,
+        null,
       taxNumber: restaurantLegalProfile.taxNumber,
       businessAddress:
-        globalAddress && Object.values(globalAddress).some(Boolean)
-          ? {
-              street: globalAddress.street,
-              shopNumber: globalAddress.shopNumber,
-              state: globalAddress.postalCode,
-              city: globalAddress.city,
-              country: globalAddress.country,
-            }
-          : restaurantLegalProfile.businessAddress,
+        restaurantLegalProfile.businessAddress ??
+        globalLegalProfile?.businessAddress ??
+        null,
       contractText:
         globalLegalProfile?.contractText ?? restaurantLegalProfile.contractText,
     };
@@ -3213,6 +3211,8 @@ export class CustomerAppService {
       tenantId: string;
       restaurantId: string;
       name: string;
+      settings?: unknown;
+      restaurant?: { name: string } | null;
     };
     customer: {
       id: string;
@@ -3241,8 +3241,12 @@ export class CustomerAppService {
       customerId: input.customer.id,
       customerEmail: input.customer.email,
       customerName: customerName || null,
+      customerPhone: input.reservation.guestPhone,
+      restaurantName: input.branch.restaurant?.name ?? input.branch.name,
       reservationDate: input.reservation.reservationDate,
       guestCount: input.reservation.guestCount,
+      note: input.reservation.note,
+      timezone: await this.resolveReservationTimezone(input.branch.settings),
       status:
         input.reservation.status === 'CONFIRMED' ? 'CONFIRMED' : 'REQUESTED',
       persistInApp: input.persistInApp,
@@ -3255,6 +3259,8 @@ export class CustomerAppService {
       tenantId: string;
       restaurantId: string;
       name: string;
+      settings?: unknown;
+      restaurant?: { name: string } | null;
     };
     customer: {
       id?: string;
@@ -3276,8 +3282,13 @@ export class CustomerAppService {
       reservationId: input.reservation.id,
       customerId: input.customer.id,
       customerEmail: input.customer.email,
+      customerName: input.reservation.guestName ?? null,
+      customerPhone: input.reservation.guestPhone,
+      restaurantName: input.branch.restaurant?.name ?? input.branch.name,
       reservationDate: input.reservation.reservationDate,
       guestCount: input.reservation.guestCount,
+      note: input.reservation.note,
+      timezone: await this.resolveReservationTimezone(input.branch.settings),
       status: input.reservation.status,
       source: input.source,
       persistInApp: input.persistInApp,
@@ -5685,6 +5696,13 @@ export class CustomerAppService {
           ['billing', 'ownerName'],
           ['invoice', 'ownerName'],
           ['ownerName'],
+        ]) ?? null,
+      representativeName:
+        this.readStringValue(settings, [
+          ['legalProfile', 'representativeName'],
+          ['legalProfile', 'authorizedRepresentative'],
+          ['billing', 'representativeName'],
+          ['representativeName'],
         ]) ?? null,
       legalBusinessName:
         this.readStringValue(settings, [

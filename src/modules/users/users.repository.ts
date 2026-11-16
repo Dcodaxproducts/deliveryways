@@ -104,6 +104,8 @@ export class UsersRepository {
       isVerified?: boolean;
       isActive?: boolean;
       isGuest?: boolean;
+      fromDate?: string;
+      toDate?: string;
     },
     withDeleted = false,
   ) {
@@ -116,6 +118,30 @@ export class UsersRepository {
         : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.isGuest !== undefined ? { isGuest: query.isGuest } : {}),
+      ...(query.isGuest === false
+        ? {}
+        : query.isGuest === true
+          ? { customerOrders: { some: {} } }
+          : {
+              AND: [
+                {
+                  OR: [
+                    { isGuest: false },
+                    { isGuest: true, customerOrders: { some: {} } },
+                  ],
+                },
+              ],
+            }),
+      ...(query.fromDate || query.toDate
+        ? {
+            createdAt: {
+              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+              ...(query.toDate
+                ? { lte: this.inclusiveDateEnd(query.toDate) }
+                : {}),
+            },
+          }
+        : {}),
       ...(withDeleted ? {} : { deletedAt: null }),
       ...(query.search
         ? {
@@ -172,6 +198,14 @@ export class UsersRepository {
     ]);
 
     return { items, total };
+  }
+
+  private inclusiveDateEnd(value: string): Date {
+    const date = new Date(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      date.setUTCHours(23, 59, 59, 999);
+    }
+    return date;
   }
 
   async findCustomerById(

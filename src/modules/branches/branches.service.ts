@@ -1218,7 +1218,11 @@ export class BranchesService {
     };
   }
 
-  async suspend(_user: AuthUserContext, id: string, tx?: PrismaTx) {
+  async suspend(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can suspend branches');
+    }
+
     const data = await this.branchesRepository.setActive(id, false, tx);
 
     return {
@@ -1308,6 +1312,10 @@ export class BranchesService {
   }
 
   async remove(user: AuthUserContext, id: string, tx?: PrismaTx) {
+    if (user.role !== UserRoleEnum.SUPER_ADMIN) {
+      throw new ForbiddenException('Only super admin can delete branches');
+    }
+
     const branch = await this.branchesRepository.findById(id);
 
     if (!branch || branch.deletedAt) {
@@ -2264,12 +2272,6 @@ export class BranchesService {
         );
       }
 
-      if (item.openTime >= item.closeTime) {
-        throw new BadRequestException(
-          `closeTime must be later than openTime for ${item.dayOfWeek}`,
-        );
-      }
-
       const breakTimes = this.normalizeOpeningHourBreakTimes(
         item.breakTimes ?? [],
         item.openTime,
@@ -2300,14 +2302,22 @@ export class BranchesService {
     closeTime: string,
     dayOfWeek: BranchScheduleDayEnum,
   ): BranchOpeningHourBreakDto[] {
+    const openMinutes = this.scheduleMinutes(openTime);
+    const closeMinutes = this.scheduleEndMinutes(closeTime, openMinutes);
     const normalized = breakTimes.map((breakTime) => {
-      if (breakTime.startTime >= breakTime.endTime) {
+      if (breakTime.startTime === breakTime.endTime) {
         throw new BadRequestException(
-          `break endTime must be later than startTime for ${dayOfWeek}`,
+          `break startTime and endTime must differ for ${dayOfWeek}`,
         );
       }
 
-      if (breakTime.startTime < openTime || breakTime.endTime > closeTime) {
+      let startMinutes = this.scheduleMinutes(breakTime.startTime);
+      while (startMinutes < openMinutes) startMinutes += 24 * 60;
+      const endMinutes = this.scheduleEndMinutes(
+        breakTime.endTime,
+        startMinutes,
+      );
+      if (startMinutes < openMinutes || endMinutes > closeMinutes) {
         throw new BadRequestException(
           `breakTimes must be inside openTime and closeTime for ${dayOfWeek}`,
         );
@@ -2325,12 +2335,26 @@ export class BranchesService {
       };
     });
 
-    const sorted = normalized.sort((a, b) =>
-      a.startTime.localeCompare(b.startTime),
-    );
+    const sorted = normalized.sort((a, b) => {
+      const relativeMinutes = (value: string) => {
+        const minutes = this.scheduleMinutes(value);
+        return minutes < openMinutes ? minutes + 24 * 60 : minutes;
+      };
+      return relativeMinutes(a.startTime) - relativeMinutes(b.startTime);
+    });
 
     for (let index = 1; index < sorted.length; index += 1) {
-      if (sorted[index - 1].endTime > sorted[index].startTime) {
+      const previousStart = this.scheduleMinutes(sorted[index - 1].startTime);
+      const adjustedPreviousStart =
+        previousStart < openMinutes ? previousStart + 24 * 60 : previousStart;
+      const previousEnd = this.scheduleEndMinutes(
+        sorted[index - 1].endTime,
+        adjustedPreviousStart,
+      );
+      const currentStart = this.scheduleMinutes(sorted[index].startTime);
+      const adjustedCurrentStart =
+        currentStart < openMinutes ? currentStart + 24 * 60 : currentStart;
+      if (previousEnd > adjustedCurrentStart) {
         throw new BadRequestException(
           `breakTimes cannot overlap for ${dayOfWeek}`,
         );
@@ -2338,6 +2362,17 @@ export class BranchesService {
     }
 
     return sorted;
+  }
+
+  private scheduleMinutes(value: string): number {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+
+  private scheduleEndMinutes(value: string, startMinutes: number): number {
+    let minutes = this.scheduleMinutes(value);
+    while (minutes <= startMinutes) minutes += 24 * 60;
+    return minutes;
   }
 
   private normalizeHolidayOpeningHours(
@@ -2406,12 +2441,6 @@ export class BranchesService {
       if (!item.openTime || !item.closeTime) {
         throw new BadRequestException(
           `openTime and closeTime are required for ${periodKey}`,
-        );
-      }
-
-      if (item.openTime >= item.closeTime) {
-        throw new BadRequestException(
-          `closeTime must be later than openTime for ${periodKey}`,
         );
       }
 

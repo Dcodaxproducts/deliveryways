@@ -3337,6 +3337,7 @@ describe('CustomerAppService', () => {
     expect(result.data.tenantName).toBe('Tenant Kitchen Group');
     expect(result.data.legalProfile).toEqual({
       ownerName: 'Tenant Kitchen Group',
+      representativeName: null,
       legalBusinessName: null,
       taxNumber: null,
       businessAddress: {
@@ -3402,12 +3403,13 @@ describe('CustomerAppService', () => {
     expect(result.data.content).toBe('<p>Globale Datenschutzerklärung</p>');
     expect(result.data.legalProfile).toEqual({
       ownerName: 'DeliveryWay GmbH',
-      legalBusinessName: 'DeliveryWay GmbH',
+      representativeName: null,
+      legalBusinessName: 'Restaurant Legal Name',
       taxNumber: 'LOCAL-TAX',
       businessAddress: {
         street: 'Global Street',
         shopNumber: '10',
-        state: '10115',
+        postalCode: '10115',
         city: 'Berlin',
         country: 'Germany',
       },

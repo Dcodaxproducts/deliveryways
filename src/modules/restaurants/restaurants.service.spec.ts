@@ -621,6 +621,7 @@ describe('RestaurantsService notification settings', () => {
     );
     expect(result.data.legalProfile).toEqual({
       ownerName: 'Ali Khan',
+      representativeName: null,
       legalBusinessName: 'DeliveryWays Kitchen LLC',
       taxNumber: 'VAT-123',
       businessAddress: {
@@ -664,6 +665,7 @@ describe('RestaurantsService notification settings', () => {
 
     expect(result.data.legalProfile).toEqual({
       ownerName: 'Billing Owner',
+      representativeName: null,
       legalBusinessName: 'Billing Legal Name',
       taxNumber: 'VAT-456',
       businessAddress: {

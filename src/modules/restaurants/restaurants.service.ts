@@ -1244,6 +1244,13 @@ export class RestaurantsService {
           ['invoice', 'ownerName'],
           ['ownerName'],
         ]) ?? null,
+      representativeName:
+        this.readStringValue(settings, [
+          ['legalProfile', 'representativeName'],
+          ['legalProfile', 'authorizedRepresentative'],
+          ['billing', 'representativeName'],
+          ['representativeName'],
+        ]) ?? null,
       legalBusinessName:
         this.readStringValue(settings, [
           ['legalProfile', 'legalBusinessName'],
@@ -1306,6 +1313,9 @@ export class RestaurantsService {
         ...legalProfile,
         ...(dto.ownerName !== undefined
           ? { ownerName: dto.ownerName.trim() || null }
+          : {}),
+        ...(dto.representativeName !== undefined
+          ? { representativeName: dto.representativeName.trim() || null }
           : {}),
         ...(dto.legalBusinessName !== undefined
           ? { legalBusinessName: dto.legalBusinessName.trim() || null }

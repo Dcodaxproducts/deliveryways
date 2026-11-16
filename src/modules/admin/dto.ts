@@ -46,6 +46,30 @@ export class AdminListCustomersDto extends AdminListQueryDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   isGuest?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filter by account verification state' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isVerified?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filter by active account state' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Inclusive customer creation date start',
+  })
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional({ description: 'Inclusive customer creation date end' })
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
 }
 
 export class AdminCustomerDetailsQueryDto {

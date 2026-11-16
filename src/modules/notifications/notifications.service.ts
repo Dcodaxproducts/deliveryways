@@ -842,8 +842,12 @@ export class NotificationsService {
     customerId: string;
     customerName?: string | null;
     customerEmail?: string | null;
+    customerPhone?: string | null;
+    restaurantName?: string;
     reservationDate: string;
     guestCount: number;
+    note?: string | null;
+    timezone?: string;
     status: 'REQUESTED' | 'CONFIRMED';
     persistInApp?: boolean;
   }): Promise<void> {
@@ -854,16 +858,38 @@ export class NotificationsService {
     const subject = accepted
       ? `Reservierung automatisch bestätigt – ${input.branchName}`
       : `Neue Reservierungsanfrage – ${input.branchName}`;
-    const guestLabel = input.guestCount === 1 ? 'Gast' : 'Gäste';
-    const body = `${input.customerName ?? input.customerEmail ?? 'Kunde'} hat einen Tisch für ${input.guestCount} ${guestLabel} am ${input.reservationDate} angefragt.`;
+    const formattedDate = this.formatReservationDate(
+      input.reservationDate,
+      input.timezone ?? 'UTC',
+    );
+    const body = [
+      accepted
+        ? 'Eine Tischreservierung wurde automatisch bestätigt.'
+        : 'Eine neue Tischreservierung wurde angefragt.',
+      `Gast: ${input.customerName ?? 'Nicht angegeben'}`,
+      `Personen: ${input.guestCount}`,
+      `Restaurant: ${input.restaurantName ?? input.branchName}`,
+      `Filiale: ${input.branchName}`,
+      `Datum und Uhrzeit: ${formattedDate}`,
+      `Zeitzone: ${input.timezone ?? 'UTC'}`,
+      `E-Mail: ${input.customerEmail ?? 'Nicht angegeben'}`,
+      `Telefon: ${input.customerPhone ?? 'Nicht angegeben'}`,
+      `Notiz: ${input.note ?? 'Keine'}`,
+    ].join('\n\n');
     const payload = {
       reservationId: input.reservationId,
       branchId: input.branchId,
       branchName: input.branchName,
       customerId: input.customerId,
       customerEmail: input.customerEmail,
+      customerName: input.customerName ?? null,
+      customerPhone: input.customerPhone ?? null,
+      restaurantName: input.restaurantName ?? input.branchName,
       reservationDate: input.reservationDate,
+      formattedReservationDate: formattedDate,
+      timezone: input.timezone ?? 'UTC',
       guestCount: input.guestCount,
+      note: input.note ?? null,
       status: input.status,
     };
 
@@ -912,8 +938,13 @@ export class NotificationsService {
     branchName: string;
     customerId?: string;
     customerEmail: string;
+    customerName?: string | null;
+    customerPhone?: string | null;
+    restaurantName?: string;
     reservationDate: string;
     guestCount: number;
+    note?: string | null;
+    timezone?: string;
     status: string;
     source: 'CREATED' | 'STATUS_UPDATED';
     persistInApp?: boolean;
@@ -938,17 +969,45 @@ export class NotificationsService {
       CANCELLED: 'storniert',
     };
     const statusLabel = statusLabels[input.status] ?? input.status;
-    const guestLabel = input.guestCount === 1 ? 'Gast' : 'Gäste';
+    const formattedDate = this.formatReservationDate(
+      input.reservationDate,
+      input.timezone ?? 'UTC',
+    );
     const body =
       input.source === 'CREATED'
-        ? `Ihre Tischreservierung für ${input.guestCount} ${guestLabel} am ${input.reservationDate} wurde ${statusLabel}.`
-        : `Ihre Tischreservierung für ${input.guestCount} ${guestLabel} am ${input.reservationDate} ist jetzt ${statusLabel}.`;
+        ? [
+            `Ihre Tischreservierung wurde ${statusLabel}.`,
+            `Name: ${input.customerName ?? 'Nicht angegeben'}`,
+            `Personen: ${input.guestCount}`,
+            `Restaurant: ${input.restaurantName ?? input.branchName}`,
+            `Filiale: ${input.branchName}`,
+            `Datum und Uhrzeit: ${formattedDate}`,
+            `Zeitzone: ${input.timezone ?? 'UTC'}`,
+            `E-Mail: ${input.customerEmail}`,
+            `Telefon: ${input.customerPhone ?? 'Nicht angegeben'}`,
+            `Notiz: ${input.note ?? 'Keine'}`,
+          ].join('\n\n')
+        : [
+            `Der Status Ihrer Tischreservierung ist jetzt ${statusLabel}.`,
+            `Restaurant: ${input.restaurantName ?? input.branchName}`,
+            `Filiale: ${input.branchName}`,
+            `Datum und Uhrzeit: ${formattedDate}`,
+            `Zeitzone: ${input.timezone ?? 'UTC'}`,
+            `Personen: ${input.guestCount}`,
+            `Notiz: ${input.note ?? 'Keine'}`,
+          ].join('\n\n');
     const payload = {
       reservationId: input.reservationId,
       branchId: input.branchId,
       branchName: input.branchName,
+      restaurantName: input.restaurantName ?? input.branchName,
       reservationDate: input.reservationDate,
+      formattedReservationDate: formattedDate,
+      timezone: input.timezone ?? 'UTC',
       guestCount: input.guestCount,
+      customerName: input.customerName ?? null,
+      customerPhone: input.customerPhone ?? null,
+      note: input.note ?? null,
       status: input.status,
       source: input.source,
     };
@@ -1197,6 +1256,22 @@ export class NotificationsService {
       seen.add(emailKey);
       return true;
     });
+  }
+
+  private formatReservationDate(value: string, timezone: string): string {
+    const date = new Date(value);
+    let safeTimezone = timezone;
+    try {
+      Intl.DateTimeFormat('de-DE', { timeZone: timezone }).format(date);
+    } catch {
+      safeTimezone = 'UTC';
+    }
+
+    return new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: safeTimezone,
+    }).format(date);
   }
 
   private resolveNewOrderRestaurantEmail(
