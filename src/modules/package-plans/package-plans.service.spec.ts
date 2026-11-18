@@ -1245,7 +1245,7 @@ describe('PackagePlansService', () => {
     expect(pdfText).not.toContain('Order ID | Date | Paid By');
   });
 
-  it('generates restaurant subscription invoice PDF', async () => {
+  it('generates a subscription invoice PDF without subscription status', async () => {
     const repository = {
       findSubscriptionById: jest.fn().mockResolvedValue(makeSubscription()),
       listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
@@ -1269,6 +1269,18 @@ describe('PackagePlansService', () => {
     expect(result.fileName).toBe('SUB-INV-12345678-20260701.pdf');
     expect(result.mimeType).toBe('application/pdf');
     expect(result.content.subarray(0, 8).toString('utf8')).toBe('%PDF-1.4');
+
+    const pdfText = result.content.toString('utf8');
+    expect(pdfText).not.toContain('Subscription Status');
+    expect(pdfText).not.toContain('Abonnementstatus');
+    expect(pdfText).not.toContain(SubscriptionStatus.ACTIVE);
+    expect(pdfText).toContain('Invoice Payment Status');
+    expect(pdfText).toContain(PaymentStatus.PENDING);
+    expect(pdfText).toContain('Invoice Amount Due');
+    expect(pdfText).toContain('VAT');
+    expect(pdfText).toContain('750.00');
+    expect(pdfText).toContain('Tax ID');
+    expect(pdfText).toContain('SUB-INV-12345678-20260701');
     expect(invoiceRecordsService.persist).toHaveBeenCalledWith(
       expect.objectContaining({
         invoiceNumber: 'SUB-INV-12345678-20260701',

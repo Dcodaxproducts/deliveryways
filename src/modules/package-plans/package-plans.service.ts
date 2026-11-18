@@ -3079,7 +3079,6 @@ export class PackagePlansService {
             invoice.documentType === 'CREDIT_NOTE'
               ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
               : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
-            `Subscription Status: ${invoice.status}`,
             invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
           ],
         },
